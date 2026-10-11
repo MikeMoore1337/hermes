@@ -13,6 +13,7 @@ REQUIRED_PATHS = (
     "docs/architecture/OVERVIEW.md",
     "docs/architecture/OWNERSHIP.md",
     "docs/architecture/MIGRATION.md",
+    "docs/architecture/H-01-runtime-plan.md",
     "docs/roadmap/ROADMAP.md",
     "docs/security/THREAT_MODEL.md",
     "docs/operations/DEPLOYMENT.md",

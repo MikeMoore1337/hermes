@@ -17,6 +17,10 @@ YFC production data, Telegram bot credentials, provider keys, GitHub permissions
 | Supply-chain, внешний SKILL.md | Exact tag/SHA, просмотр лицензии и содержимого, блокировать произвольную установку | Изменённый digest отклонён; SBOM/сканер при runtime |
 | Ошибочный auto-deploy/merge | Нет workflows с write permissions/production secrets в bootstrap | CI имеет только `contents: read` |
 
+## Уточнение по upstream v0.21.6 (2026-10-11)
+
+Официальная [модель угроз](https://github.com/NousResearch/hermes-agent/blob/v0.21.6/SECURITY.md) считает **OS-level isolation единственной существенной границей** для агента, получающего недоверенные данные. Terminal backend, approvals, Skills Guard, redaction, denylist и разные Hermes profiles **не эквивалентны изоляции всего процесса**: плагины, hooks, MCP и процессы Python работают с правами основного Hermes Agent. Для будущих Research Scout / Ops Watch требуется isolated full-process runtime; см. [H-01 plan](../architecture/H-01-runtime-plan.md). Нельзя по умолчанию копировать `network_mode: host` из upstream Docker Compose.
+
 ## Правило по умолчанию
 
 Нет tool = нет возможности вызвать его; **но декларативный файл не ограничивает реальный доступ автоматически**. Для полного Hermes Agent требуются доказанные runtime-проверки + ограничения ОС/сети. Любая внешняя интеграция проходит отдельный owner approval. Не использовать неофициальные OAuth subscription gateway.
