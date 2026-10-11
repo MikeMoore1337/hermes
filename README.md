@@ -41,7 +41,7 @@ CI проводит только статическую проверку реп�
 
 ## Очередь работ
 
-- [H-00: аудит runtime (#1)](https://github.com/MikeMoore1337/hermes/issues/1) - можно исследовать без изменений production.
+- [H-00: аудит runtime (#1)](https://github.com/MikeMoore1337/hermes/issues/1) - фактические измерения оформлены в [отчёте](docs/audits/H-00-2026-10-11.md); задача закрывается по CI и PR.
 - [H-01: независимый Agent (#2)](https://github.com/MikeMoore1337/hermes/issues/2) - заблокирован до доказательств и отдельного разрешения.
 - [Ops Watch (#3)](https://github.com/MikeMoore1337/hermes/issues/3), [Research Scout (#4)](https://github.com/MikeMoore1337/hermes/issues/4), [QA Advisor (#5)](https://github.com/MikeMoore1337/hermes/issues/5).
 - [Second Brain Bridge (#6)](https://github.com/MikeMoore1337/hermes/issues/6), [news runtime migration (#7)](https://github.com/MikeMoore1337/hermes/issues/7), [future capabilities (#8)](https://github.com/MikeMoore1337/hermes/issues/8).
