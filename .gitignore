@@ -1,0 +1,38 @@
+# Local/runtime secrets and personal knowledge
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.sqlite
+*.sqlite3
+*.db
+secrets/
+credentials/
+auth/
+private/
+vault/
+data/
+state/
+logs/
+.backups/
+.artifacts/
+# Python/tooling
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+.coverage
+coverage/
+dist/
+build/
+# OS/editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

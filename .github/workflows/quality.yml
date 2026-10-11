@@ -1,0 +1,23 @@
+name: Hermes repository checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  static-and-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Validate repository baseline
+        run: python3 scripts/validate_repo.py
+      - name: Unit tests
+        run: python3 -m unittest discover -s tests -v
