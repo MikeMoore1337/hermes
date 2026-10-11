@@ -23,6 +23,9 @@ REQUIRED_PATHS = (
     "integrations/README.md",
     "skills/README.md",
     "deploy/README.md",
+    "deploy/smoke.sh",
+    "scripts/host_capacity.py",
+    "tests/test_host_capacity.py",
 )
 
 FORBIDDEN_TRACKED_FILENAMES = frozenset({".env", "id_rsa", "id_ed25519", "credentials.json"})
