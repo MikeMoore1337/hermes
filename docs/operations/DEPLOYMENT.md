@@ -2,7 +2,7 @@
 
 ## Сейчас
 
-Этот репозиторий не подключён к production. Единственный workflow `.github/workflows/quality.yml` выполняет статическую проверку файлов и unittest на GitHub-hosted runner. В нём нет production secrets, Docker socket, SSH, моделей, API или сервисных ключей.
+Этот репозиторий не имеет активного gateway, deployment workflow или секретов. 2026-10-11 на действующем Hermes VPS в `/opt/hermes-agent-owner` размещены только версии `host_capacity.py` и `smoke.sh`, подтверждены source git blob SHA и выполнен изолированный CLI smoke. Образ v0.21.6 pin-digest скачан, но **ни один постоянно работающий агент не установлен/включён**. Единственный workflow `.github/workflows/quality.yml` выполняет статическую проверку файлов и unittest на GitHub-hosted runner. В нём нет production secrets, Docker socket, SSH, моделей, API или сервисных ключей.
 
 ## Когда появится runtime (после H-00 и отдельного owner GO)
 

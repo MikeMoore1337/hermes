@@ -26,6 +26,8 @@ REQUIRED_PATHS = (
     "deploy/smoke.sh",
     "scripts/host_capacity.py",
     "tests/test_host_capacity.py",
+    "tests/test_smoke_contract.py",
+    "docs/audits/H-01-on-host-smoke-2026-10-11.md",
 )
 
 FORBIDDEN_TRACKED_FILENAMES = frozenset({".env", "id_rsa", "id_ed25519", "credentials.json"})
