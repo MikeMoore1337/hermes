@@ -1,0 +1,15 @@
+{
+  "schema": "hermes-image-provenance-v1",
+  "repository": "NousResearch/hermes-agent",
+  "image": "nousresearch/hermes-agent@sha256:32d095e84190ae7266afbb361579e6921f2c633e899f5eacfb88111b9c851a22",
+  "observed_image_id": "sha256:32d095e84190ae7266afbb361579e6921f2c633e899f5eacfb88111b9c851a22",
+  "architecture": "amd64",
+  "observed_created_utc": "2026-10-08T06:14:28.921848602Z",
+  "reported_embedded_commit": "a28a5d03a9fa60418db5f44f3436fa2aa029c8f2",
+  "upstream_release_tag": "v0.21.6",
+  "upstream_release_tag_commit": "818c13be1dc4fd28987e1e881a9408224afd4535",
+  "known_commits_behind_release": 39,
+  "source_release_parity_verified": false,
+  "permanent_agent_runtime_approved": false,
+  "allowed_use": "single-bounded-readonly-purpose-todo-test-only"
+}
