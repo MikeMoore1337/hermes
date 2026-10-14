@@ -31,3 +31,8 @@
 ## Контрольные ссылки
 
 [Исходный акт Agent](../audits/H-01-full-agent-tool-turn-2026-10-14.md), [сетевая защита](../audits/H-01-network-guard-vps-2026-10-14.md), [PR #56](https://github.com/MikeMoore1337/hermes/pull/56), [PR #57](https://github.com/MikeMoore1337/hermes/pull/57), [PR #58](https://github.com/MikeMoore1337/hermes/pull/58), [PR #39](https://github.com/MikeMoore1337/hermes/pull/39).
+
+
+## Обновление H-02: автоматические Telegram-уведомления включены, 21:00 UTC
+
+После прямого разрешения владельца [PR #74](https://github.com/MikeMoore1337/hermes/pull/74) и [PR #75](https://github.com/MikeMoore1337/hermes/pull/75) объединены после CI. Изолированный `hermes-ops-alerts.timer` на VPS активен и включён в автозагрузку, `hermes-ops-alerts.service` прошёл запуск с `EMPTY_OR_LEASED`; рабочая очередь была пуста. Ранее реальный Telegram E2E с `message_id=4` подтверждён владельцем. Это **обновление заменяет устаревшее описание H-02 в таблице выше**. Подробности: [аудит](../audits/H-02-autosender-vps-2026-10-14.md). #3 остаётся PARTIAL до проверки естественных инцидентов, восстановления и внешних источников.
