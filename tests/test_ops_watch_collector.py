@@ -11,6 +11,18 @@ from unittest.mock import patch
 from ops_watch.collector import InputError, _read_state, normalized, once
 
 
+class ServiceSandboxContractTests(unittest.TestCase):
+    def test_service_has_read_only_traversal_but_no_write_override(self) -> None:
+        from pathlib import Path
+        root = Path(__file__).resolve().parents[1]
+        unit = (root / "deploy/hermes-ops-watch.service").read_text(encoding="utf-8")
+        self.assertIn("CapabilityBoundingSet=CAP_DAC_READ_SEARCH", unit)
+        self.assertIn("PrivateNetwork=yes", unit)
+        self.assertIn("ProtectSystem=strict", unit)
+        self.assertIn("ReadWritePaths=/var/lib/hermes-agent/ops-watch", unit)
+        self.assertNotIn("CAP_DAC_OVERRIDE", unit)
+
+
 class HostCollectorTests(unittest.TestCase):
     def setUp(self) -> None:
         self.now = datetime(2026, 10, 14, 7, 30, tzinfo=UTC)
