@@ -42,7 +42,7 @@ class HostCollectorTests(unittest.TestCase):
         from unittest.mock import patch
         from ops_watch.collector import _agent_network_guard_status
 
-        absent = "LoadState=not-found\\nActiveState=inactive\\nUnitFileState=disabled\\n"
+        absent = chr(10).join(["LoadState=not-found", "ActiveState=inactive", "UnitFileState=disabled"]) + chr(10)
         with patch("ops_watch.collector.subprocess.run",
                    return_value=CompletedProcess([], 0, absent, "")):
             self.assertEqual(_agent_network_guard_status(),
@@ -53,7 +53,7 @@ class HostCollectorTests(unittest.TestCase):
         from unittest.mock import patch
         from ops_watch.collector import _agent_network_guard_status
 
-        incomplete = "LoadState=loaded\\nActiveState=active\\n"
+        incomplete = chr(10).join(["LoadState=loaded", "ActiveState=active"]) + chr(10)
         with patch("ops_watch.collector.subprocess.run",
                    return_value=CompletedProcess([], 0, incomplete, "")):
             with self.assertRaises(InputError):
