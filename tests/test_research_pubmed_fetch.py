@@ -3,11 +3,11 @@ from __future__ import annotations
 
 import socket
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from research_scout.pubmed_fetch import (
     MAX_HTML_BYTES, PubmedFetchError, public_dns_address, pubmed_metadata,
-    validate_pmid,
+    get_pubmed_html, validate_pmid,
 )
 
 
@@ -138,6 +138,102 @@ class PubmedCitationTests(unittest.TestCase):
             b'')
         with self.assertRaises(PubmedFetchError):
             pubmed_metadata("12345678", fetch=lambda _: raw)
+
+
+class TransportPolicyTests(unittest.TestCase):
+    def fake(self, status=200, body=b"<html/>", headers=None):
+        response = Mock()
+        response.status = status
+        response.getheader.side_effect = lambda key, default=None: (
+            (headers or {}).get(key, default)
+        )
+        response.read.side_effect = lambda size: body[:size]
+        client = Mock()
+        client.getresponse.return_value = response
+        return client
+
+    @patch("research_scout.pubmed_fetch.public_dns_address", return_value="8.8.8.8")
+    @patch("research_scout.pubmed_fetch._PinnedHTTPS")
+    def test_exact_single_get_and_https_host_header(self, connection, dns):
+        client = self.fake(headers={"Content-Type": "text/html"})
+        connection.return_value = client
+        self.assertEqual(get_pubmed_html("12345678"), b"<html/>")
+        dns.assert_called_once_with()
+        connection.assert_called_once_with("8.8.8.8")
+        args, kwargs = client.request.call_args
+        self.assertEqual(args, ("GET", "/12345678/"))
+        self.assertEqual(kwargs["headers"]["Host"], "pubmed.ncbi.nlm.nih.gov")
+        self.assertEqual(kwargs["headers"]["Accept-Encoding"], "identity")
+        client.close.assert_called_once_with()
+
+    @patch("research_scout.pubmed_fetch.public_dns_address", return_value="8.8.8.8")
+    @patch("research_scout.pubmed_fetch._PinnedHTTPS")
+    def test_redirect_does_not_trigger_a_second_request(self, connection, dns):
+        client = self.fake(status=302, headers={"Content-Type": "text/html"})
+        connection.return_value = client
+        with self.assertRaisesRegex(PubmedFetchError, "article_unavailable"):
+            get_pubmed_html("12345678")
+        self.assertEqual(client.request.call_count, 1)
+        client.close.assert_called_once_with()
+
+    @patch("research_scout.pubmed_fetch.public_dns_address", return_value="8.8.8.8")
+    @patch("research_scout.pubmed_fetch._PinnedHTTPS")
+    def test_wrong_content_type_is_denied(self, connection, dns):
+        client = self.fake(headers={"Content-Type": "application/json"})
+        connection.return_value = client
+        with self.assertRaisesRegex(PubmedFetchError, "non_html_response"):
+            get_pubmed_html("12345678")
+
+    @patch("research_scout.pubmed_fetch.public_dns_address", return_value="8.8.8.8")
+    @patch("research_scout.pubmed_fetch._PinnedHTTPS")
+    def test_compressed_html_is_refused(self, connection, dns):
+        client = self.fake(headers={"Content-Type": "text/html",
+                                    "Content-Encoding": "gzip"})
+        connection.return_value = client
+        with self.assertRaisesRegex(PubmedFetchError, "compressed_response_denied"):
+            get_pubmed_html("12345678")
+
+    @patch("research_scout.pubmed_fetch.public_dns_address", return_value="8.8.8.8")
+    @patch("research_scout.pubmed_fetch._PinnedHTTPS")
+    def test_declared_large_response_is_denied_before_read(self, connection, dns):
+        client = self.fake(headers={"Content-Type": "text/html",
+                                    "Content-Length": str(MAX_HTML_BYTES + 1)})
+        connection.return_value = client
+        with self.assertRaisesRegex(PubmedFetchError, "oversized_article"):
+            get_pubmed_html("12345678")
+        client.getresponse.return_value.read.assert_not_called()
+
+    @patch("research_scout.pubmed_fetch.public_dns_address", return_value="8.8.8.8")
+    @patch("research_scout.pubmed_fetch._PinnedHTTPS")
+    def test_undeclared_large_body_is_denied_after_bounded_read(self, connection, dns):
+        client = self.fake(headers={"Content-Type": "text/html"},
+                           body=b"A" * (MAX_HTML_BYTES + 8))
+        connection.return_value = client
+        with self.assertRaisesRegex(PubmedFetchError, "oversized_article"):
+            get_pubmed_html("12345678")
+        self.assertEqual(client.getresponse.return_value.read.call_args.args[0],
+                         MAX_HTML_BYTES + 1)
+
+    @patch("research_scout.pubmed_fetch.public_dns_address",
+           side_effect=PubmedFetchError("private_dns_address"))
+    @patch("research_scout.pubmed_fetch._PinnedHTTPS")
+    def test_private_dns_denial_prevents_any_connection(self, connection, dns):
+        with self.assertRaisesRegex(PubmedFetchError, "private_dns_address"):
+            get_pubmed_html("12345678")
+        connection.assert_not_called()
+
+    @patch("research_scout.pubmed_fetch.public_dns_address", return_value="8.8.8.8")
+    @patch("research_scout.pubmed_fetch._PinnedHTTPS")
+    def test_remote_error_class_is_constant_and_connection_closed(self, connection, dns):
+        client = self.fake(headers={"Content-Type": "text/html"})
+        client.request.side_effect = OSError("Bearer secret-should-not-appear")
+        connection.return_value = client
+        with self.assertRaises(PubmedFetchError) as failure:
+            get_pubmed_html("12345678")
+        self.assertEqual(str(failure.exception), "network_or_tls_error")
+        client.close.assert_called_once_with()
+
+
 
 if __name__ == "__main__":
     unittest.main()
