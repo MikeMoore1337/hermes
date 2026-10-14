@@ -38,6 +38,39 @@ def _state(name: str, command: str) -> bool:
     return value == ("active" if command == "is-active" else "enabled")
 
 
+def _agent_network_guard_status() -> dict[str, bool]:
+    """Check only systemd metadata of our independent Hermes network guard.
+
+    'not-found' is a genuine critical incident, not silently healthy.
+    Invalid systemctl evidence fails closed without inventing any status.
+    """
+    try:
+        process = subprocess.run(
+            ["systemctl", "show", "hermes-cloudflare-network-guard.service",
+             "-p", "LoadState", "-p", "ActiveState", "-p", "UnitFileState", "--no-pager"],
+            capture_output=True, text=True, check=False, timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise InputError("agent_guard_status_unavailable") from exc
+    if process.returncode != 0 or len(process.stdout) > 2048:
+        raise InputError("agent_guard_status_unavailable")
+    properties = {}
+    for line in process.stdout.splitlines():
+        if "=" not in line:
+            raise InputError("agent_guard_status_unavailable")
+        key, value = line.split("=", 1)
+        if key not in {"LoadState", "ActiveState", "UnitFileState"} or key in properties:
+            raise InputError("agent_guard_status_unavailable")
+        properties[key] = value
+    if set(properties) != {"LoadState", "ActiveState", "UnitFileState"}:
+        raise InputError("agent_guard_status_unavailable")
+    return {
+        "loaded": properties["LoadState"] == "loaded",
+        "enabled": properties["UnitFileState"] == "enabled",
+        "active": properties["ActiveState"] == "active",
+    }
+
+
 def _count(source: dict[str, Any], name: str) -> int:
     value = source.get(name)
     if type(value) is not int or not 0 <= value <= 1_000_000_000:
@@ -45,12 +78,12 @@ def _count(source: dict[str, Any], name: str) -> int:
     return value
 
 
-def normalized(news_health: dict[str, Any], observed: datetime, *, timer_enabled: bool, timer_active: bool) -> dict[str, Any]:
+def normalized(news_health: dict[str, Any], observed: datetime, *, timer_enabled: bool, timer_active: bool, agent_guard: dict[str, bool] | None = None) -> dict[str, Any]:
     """Project only allowlisted numeric/timestamp fields from untrusted state."""
     last = news_health.get("last_successful_discovery_at")
     if last is not None and not isinstance(last, str):
         raise InputError("invalid_last_discovery")
-    return {
+    result = {
         "schema": SCHEMA,
         "observed_at": observed.isoformat(),
         "news": {
@@ -66,6 +99,9 @@ def normalized(news_health: dict[str, Any], observed: datetime, *, timer_enabled
             "recent_provider_rate_limits": 0,
         },
     }
+    if agent_guard is not None:
+        result["agent_guard"] = agent_guard
+    return result
 
 
 def _read_state(path: Path) -> dict[str, Any]:
@@ -113,7 +149,7 @@ def _atomic_json(directory: Path, name: str, document: object) -> None:
             temporary.unlink()
 
 
-def once(source: Path = SOURCE, target: Path = TARGET, observed: datetime | None = None) -> dict[str, Any]:
+def once(source: Path = SOURCE, target: Path = TARGET, observed: datetime | None = None, *, agent_guard: dict[str, bool] | None = None) -> dict[str, Any]:
     """Collect, deduplicate, and atomically store safe findings under a lock."""
     if target.is_symlink() or not target.is_dir() or (target.stat().st_mode & 0o077) != 0:
         raise InputError("unsafe_target_directory")
@@ -127,6 +163,7 @@ def once(source: Path = SOURCE, target: Path = TARGET, observed: datetime | None
             health, now,
             timer_enabled=_state("hermes-discovery.timer", "is-enabled"),
             timer_active=_state("hermes-discovery.timer", "is-active"),
+            agent_guard=agent_guard if agent_guard is not None else _agent_network_guard_status(),
         )
         findings = analyze(snapshot, now=now)
         old = _read_previous(target / "findings.json")
@@ -151,6 +188,7 @@ def main() -> int:
             "missing_health_section", "unsafe_target_directory", "collector_already_running",
             "invalid_previous_state", "unreadable_previous_state",
             "invalid_last_discovery", "systemd_status_unavailable",
+            "agent_guard_status_unavailable",
             "invalid_consecutive_discovery_failures", "invalid_consecutive_drain_failures",
             "invalid_pending_jobs", "invalid_oldest_pending_age_seconds",
         }:

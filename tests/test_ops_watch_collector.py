@@ -36,6 +36,29 @@ class HostCollectorTests(unittest.TestCase):
             "secret_content": "Bearer secret should never be repeated",
         }
 
+
+    def test_systemd_guard_absence_is_an_explicit_incident(self) -> None:
+        from subprocess import CompletedProcess
+        from unittest.mock import patch
+        from ops_watch.collector import _agent_network_guard_status
+
+        absent = chr(10).join(["LoadState=not-found", "ActiveState=inactive", "UnitFileState=disabled"]) + chr(10)
+        with patch("ops_watch.collector.subprocess.run",
+                   return_value=CompletedProcess([], 0, absent, "")):
+            self.assertEqual(_agent_network_guard_status(),
+                             {"loaded": False, "enabled": False, "active": False})
+
+    def test_untrusted_incomplete_guard_status_fails_closed(self) -> None:
+        from subprocess import CompletedProcess
+        from unittest.mock import patch
+        from ops_watch.collector import _agent_network_guard_status
+
+        incomplete = chr(10).join(["LoadState=loaded", "ActiveState=active"]) + chr(10)
+        with patch("ops_watch.collector.subprocess.run",
+                   return_value=CompletedProcess([], 0, incomplete, "")):
+            with self.assertRaises(InputError):
+                _agent_network_guard_status()
+
     def test_normalized_snapshot_omits_tokens_and_cumulative_429(self) -> None:
         snapshot = normalized(self.health, self.now, timer_enabled=True, timer_active=True)
         self.assertNotIn("secret", str(snapshot))
@@ -67,8 +90,8 @@ class HostCollectorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp)
             target.chmod(0o700)
-            first = once(Path(tmp) / "dummy", target, self.now)
-            second = once(Path(tmp) / "dummy", target, self.now)
+            first = once(Path(tmp) / "dummy", target, self.now, agent_guard={"loaded": True, "enabled": True, "active": True})
+            second = once(Path(tmp) / "dummy", target, self.now, agent_guard={"loaded": True, "enabled": True, "active": True})
             self.assertEqual(first["changes"]["raised"], ["ops:discovery_failures"])
             self.assertEqual(second["changes"]["raised"], [])
 
@@ -80,8 +103,8 @@ class HostCollectorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp)
             target.chmod(0o700)
-            first = once(Path(tmp) / "dummy", target, self.now)
+            first = once(Path(tmp) / "dummy", target, self.now, agent_guard={"loaded": True, "enabled": True, "active": True})
             self.assertEqual(first["changes"]["raised"], ["ops:drain_failures"])
             self.health["consecutive_drain_failures"] = 0
-            second = once(Path(tmp) / "dummy", target, self.now)
+            second = once(Path(tmp) / "dummy", target, self.now, agent_guard={"loaded": True, "enabled": True, "active": True})
             self.assertEqual(second["changes"]["resolved"], ["ops:drain_failures"])

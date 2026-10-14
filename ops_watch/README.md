@@ -39,3 +39,8 @@ Failure of reading health **fails closed**: no old success is claimed, and the s
 ### Least-privilege note (2026-10-14)
 
 The original unit with no Linux capabilities cannot traverse the existing news service's 0700 private state directory (owned by another UID). The new unit needs exactly `CAP_DAC_READ_SEARCH` **for reading**, not `CAP_DAC_OVERRIDE` for writing, and keeps `ProtectSystem=strict`, `PrivateNetwork=yes`, `RestrictAddressFamilies=AF_UNIX`, and a single `ReadWritePaths` output directory. This capability permits reading other filesystem paths if the process were compromised; its security boundary is the audited, tiny, read-only Python collector, no network, non-secret logging and systemd sandbox. Future migration to a dedicated scoped health API should eliminate the privileged filesystem read.
+
+
+## Control of Hermes Agent network safety
+
+The local 10-minute Ops Watch also reads **systemd metadata only** for `hermes-cloudflare-network-guard.service`. It reports stable, allowlisted incident codes when the guard is missing, disabled, or inactive, and preserves existing incident deduplication/recovery. It never reads AI credentials, model output or raw nft rules. A malformed systemd response is **UNKNOWN / collection failure**, never reported as a healthy guard. No automatic repairs or Telegram notifications are implied. This is an additional operational signal, not a proof that exact firewall rules stayed unchanged after the last startup check.

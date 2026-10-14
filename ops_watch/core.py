@@ -11,6 +11,7 @@ INCIDENT_CODES = frozenset({
     "discovery_failures", "drain_failures", "outbox_backlog", "outbox_oldest",
     "provider_rate_limited", "telegram_polling_down", "backend_unhealthy",
     "worker_unhealthy", "ci_failed", "deploy_failed",
+    "agent_guard_missing", "agent_guard_disabled", "agent_guard_inactive",
 })
 
 
@@ -108,6 +109,19 @@ def analyze(snapshot: Mapping[str, Any], *, now: datetime) -> list[dict[str, str
     ]:
         if value >= minimum:
             found.append(_finding(code, severity, value))
+
+    if data.get("agent_guard") is not None:
+        agent_guard = _mapping(data["agent_guard"], "agent_guard")
+        loaded = _bool(agent_guard, "loaded")
+        active = _bool(agent_guard, "active")
+        enabled = _bool(agent_guard, "enabled")
+        if not loaded:
+            found.append(_finding("agent_guard_missing", "critical"))
+        else:
+            if not enabled:
+                found.append(_finding("agent_guard_disabled", "warning"))
+            if not active:
+                found.append(_finding("agent_guard_inactive", "critical"))
 
     if data.get("yfc") is not None:
         yfc = _mapping(data["yfc"], "yfc")
