@@ -7,6 +7,7 @@ import unittest
 from unittest.mock import Mock, patch
 from urllib.parse import parse_qs, urlsplit
 
+from research_scout.ncbi_rate_limit import NCBIRateGateError
 from research_scout.ncbi_esummary import (
     HOST, NCBIError, _contact, _fetch, _resolve, get_citation, parse_esummary,
 )
@@ -132,6 +133,24 @@ class NCBIParseTests(unittest.TestCase):
 
 
 class NCBITransportTests(unittest.TestCase):
+    def setUp(self):
+        guard = patch("research_scout.ncbi_esummary.reserve_request")
+        guard.start()
+        self.addCleanup(guard.stop)
+
+    def test_rate_gate_refusal_prevents_http(self):
+        with patch(
+            "research_scout.ncbi_esummary.reserve_request",
+            side_effect=NCBIRateGateError("ncbi_rate_limited"),
+        ), patch(
+            "research_scout.ncbi_esummary._resolve", return_value="8.8.8.8"
+        ), patch("research_scout.ncbi_esummary._PinnedNCBI") as client:
+            with self.assertRaisesRegex(NCBIError, "ncbi_rate_limited"):
+                _fetch(PMID, EMAIL)
+            client.return_value.request.assert_not_called()
+            client.return_value.close.assert_called_once_with()
+
+
     @patch("research_scout.ncbi_esummary.socket.getaddrinfo")
     def test_private_ip_in_any_answer_is_refused(self, dns):
         dns.return_value = [
