@@ -14,9 +14,19 @@ NOW = datetime(2026, 10, 14, 15, 0, tzinfo=UTC)
 EMAIL = "maintainer@example.org"
 
 
+def discovery(topic, pmids, *, status=None):
+    return {
+        "status": status or ("UNVERIFIED_PMID_CANDIDATES" if pmids else "NO_DATA"),
+        "topic": topic,
+        "window": "30_days_entrez_entry",
+        "reported_total": len(pmids),
+        "pmids": pmids,
+        "source_api": "NCBI_ESEARCH",
+    }
+
+
 def search(topic, *, contact):
-    return {"status": "UNVERIFIED_PMID_CANDIDATES",
-            "topic": topic, "pmids": ["36334240", "37120382"]}
+    return discovery(topic, ["36334240", "37120382"])
 
 
 def item(pmid, *, contact):
@@ -54,9 +64,7 @@ class ManualResearchTests(unittest.TestCase):
 
     def test_no_data_stops_without_citation_lookup(self):
         result = review_topic("exercise-recovery", contact=EMAIL,
-                              search=lambda *_a, **_k: {
-                                  "status": "NO_DATA", "pmids": []
-                              },
+                              search=lambda topic, **_k: discovery(topic, []),
                               citation=lambda *_a, **_k: self.fail("must not lookup"),
                               pause=lambda _: self.fail("must not pause"), now=NOW)
         self.assertEqual(result["status"], "NO_DATA")
@@ -65,11 +73,33 @@ class ManualResearchTests(unittest.TestCase):
         for ids in (["36334240", "36334240"], ["http://127.0.0.1/"], [12345678]):
             with self.subTest(ids=ids), self.assertRaises(NCBIError):
                 review_topic("exercise-recovery", contact=EMAIL,
-                             search=lambda *_a, **_k: {
-                                 "status": "UNVERIFIED_PMID_CANDIDATES", "pmids": ids
-                             },
+                             search=lambda topic, **_k: discovery(topic, ids),
                              citation=lambda *_a, **_k: self.fail("must not lookup"),
                              now=NOW)
+
+    def test_forged_discovery_metadata_never_triggers_citation_fetch(self):
+        valid = discovery("exercise-recovery", ["36334240"])
+        invalid = (
+            None, [], {"status": "NO_DATA", "pmids": []},
+            {**valid, "topic": "resistance-training"},
+            {**valid, "source_api": "UNTRUSTED"},
+            {**valid, "window": "all_time"},
+            {**valid, "reported_total": True},
+            {**valid, "reported_total": -1},
+            {**valid, "reported_total": 0},
+            {**valid, "pmids": ("36334240",)},
+            {**valid, "extra": "hidden instructions"},
+            {**valid, "status": "NO_DATA"},
+            {**valid, "status": "UNVERIFIED_PMID_CANDIDATES", "pmids": []},
+        )
+        for payload in invalid:
+            with self.subTest(payload=repr(payload)[:100]), self.assertRaises(NCBIError):
+                review_topic(
+                    "exercise-recovery", contact=EMAIL,
+                    search=lambda *_a, **_k: payload,
+                    citation=lambda *_a, **_k: self.fail("must not lookup"),
+                    pause=lambda _: self.fail("must not pause"), now=NOW,
+                )
 
     def test_quarantined_article_stops_before_second_lookup(self):
         calls = []
