@@ -1,7 +1,7 @@
 [Unit]
 Description=Cloudflare-only CONNECT relay for independent Hermes
-After=docker.service
-Requires=docker.service
+After=docker.service hermes-cloudflare-network-guard.service
+Requires=docker.service hermes-cloudflare-network-guard.service
 ConditionPathExists=/opt/hermes-agent-owner/scripts/cloudflare_connect_proxy.py
 
 [Service]
