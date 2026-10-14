@@ -70,7 +70,7 @@ def _url(value: object, field: str) -> str:
     except ValueError:
         raise RegistryError("invalid_" + field) from None
     if (parsed.scheme != "https" or not parsed.netloc or not parsed.hostname
-            or parsed.username or parsed.password or parsed.port
+            or parsed.username or parsed.password or port or parsed.query
             or "\\" in url or parsed.hostname.endswith(".")):
         raise RegistryError("invalid_" + field)
     try:
