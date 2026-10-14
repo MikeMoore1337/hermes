@@ -1,0 +1,24 @@
+# Example only; do not install/enable until authorized.
+[Unit]
+Description=Hermes Agent standalone offline-only candidate
+After=docker.service
+Requires=docker.service
+StartLimitIntervalSec=3600
+StartLimitBurst=2
+ConditionPathExists=/opt/hermes-agent-owner/deploy/run-agent-sandbox.sh
+
+[Service]
+Type=simple
+ExecStartPre=/usr/bin/python3 /opt/hermes-agent-owner/scripts/host_capacity.py --reserve-mib 640 --margin-mib 256
+ExecStart=/opt/hermes-agent-owner/deploy/run-agent-sandbox.sh
+ExecStop=/usr/bin/docker stop -t 10 hermes-agent-sandbox
+Restart=no
+RuntimeMaxSec=1800
+TimeoutStartSec=45
+TimeoutStopSec=30
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+
+[Install]
+WantedBy=multi-user.target
