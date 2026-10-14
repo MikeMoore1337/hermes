@@ -114,21 +114,42 @@ def _fetch(pmid: str, contact: str) -> bytes:
         conn.close()
 
 
+def _unique_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    """Reject ambiguous JSON where later duplicate keys shadow earlier data."""
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise NCBIError("ncbi_duplicate_json_key")
+        result[key] = value
+    return result
+
+
+def _deny_reported_api_errors(section: dict[str, Any]) -> None:
+    """A JSON 200 with a provider error cannot become valid citation evidence."""
+    if any(key in section for key in ("error", "errors")):
+        raise NCBIError("ncbi_api_reported_error")
+
+
 def parse_esummary(payload: bytes, pmid: str) -> dict[str, Any]:
     """Strictly reduce public bibliographic metadata; not evidence validation."""
     validate_pmid(pmid)
     if type(payload) is not bytes or len(payload) > MAX_BODY:
         raise NCBIError("ncbi_response_invalid")
     try:
-        root = json.loads(payload)
+        root = json.loads(payload, object_pairs_hook=_unique_json_object)
+    except NCBIError:
+        raise
     except (ValueError, UnicodeError) as exc:
         raise NCBIError("ncbi_response_invalid") from exc
     if not isinstance(root, dict) or not isinstance(root.get("result"), dict):
         raise NCBIError("ncbi_schema_invalid")
+    _deny_reported_api_errors(root)
     result = root["result"]
+    _deny_reported_api_errors(result)
     if result.get("uids") != [pmid] or not isinstance(result.get(pmid), dict):
         raise NCBIError("ncbi_pmid_mismatch")
     record = result[pmid]
+    _deny_reported_api_errors(record)
     if record.get("uid") != pmid:
         raise NCBIError("ncbi_pmid_mismatch")
     title = record.get("title")

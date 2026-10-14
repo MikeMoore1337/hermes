@@ -85,6 +85,41 @@ class NCBIParseTests(unittest.TestCase):
         with self.assertRaises(NCBIError):
             parse_esummary(json.dumps(row).encode(), PMID)
 
+    def test_duplicate_json_keys_cannot_override_pmid_or_title(self):
+        original = response().decode("utf-8")
+        poisoned = [
+            original.replace('"title": "Resistance training: review"',
+                             '"title": "approved", "title": "malicious"', 1),
+            original.replace('"result": {', '"result": {"uids": ["00000000"],', 1),
+            original.replace('"articleids": [',
+                             '"articleids": [], "articleids": [', 1),
+        ]
+        for body in poisoned:
+            with self.subTest(length=len(body)):
+                with self.assertRaisesRegex(NCBIError, "ncbi_duplicate_json_key"):
+                    parse_esummary(body.encode("utf-8"), PMID)
+
+    def test_embedded_json_errors_never_appear_as_valid_citation(self):
+        for location in ("root", "result", "record"):
+            obj = json.loads(response())
+            section = (
+                obj if location == "root"
+                else obj["result"] if location == "result"
+                else obj["result"][PMID]
+            )
+            section["error"] = "Your request contains Bearer SECRET"
+            with self.subTest(location=location):
+                with self.assertRaises(NCBIError) as captured:
+                    parse_esummary(json.dumps(obj).encode("utf-8"), PMID)
+                self.assertEqual(str(captured.exception), "ncbi_api_reported_error")
+                self.assertNotIn("SECRET", str(captured.exception))
+
+    def test_provider_errors_array_not_treated_as_healthy(self):
+        obj = json.loads(response())
+        obj["result"]["errors"] = []
+        with self.assertRaisesRegex(NCBIError, "ncbi_api_reported_error"):
+            parse_esummary(json.dumps(obj).encode("utf-8"), PMID)
+
     def test_only_required_pmid_and_contact_are_passed_to_fetch(self):
         called = []
         def fake(pmid, contact):
