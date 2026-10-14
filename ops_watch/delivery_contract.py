@@ -184,7 +184,10 @@ def stats(directory: Path) -> dict[str, int]:
             or stat.S_IMODE(info.st_mode) != 0o600 or info.st_nlink != 1):
         raise InputError("unsafe_outbox_db")
     try:
-        with sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=2) as db:
+        # as_uri percent-encodes '?' and '#' in legitimate directory names,
+        # preventing those characters from changing SQLite URI parameters.
+        uri = path.absolute().as_uri() + "?mode=ro"
+        with sqlite3.connect(uri, uri=True, timeout=2) as db:
             tables = {row[0] for row in db.execute(
                 "SELECT name FROM sqlite_master WHERE type='table'"
             )}
