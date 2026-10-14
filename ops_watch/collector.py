@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from ops_watch.core import InputError, analyze, changes
-from ops_watch.incident_preview import render
+from ops_watch.state_store import persist
 
 SOURCE = Path("/var/lib/hermes/state.json")
 TARGET = Path("/var/lib/hermes-agent/ops-watch")
@@ -167,13 +167,18 @@ def once(source: Path = SOURCE, target: Path = TARGET, observed: datetime | None
             agent_guard=agent_guard if agent_guard is not None else _agent_network_guard_status(),
         )
         findings = analyze(snapshot, now=now)
-        old = _read_previous(target / "findings.json")
-        delta = changes(old, findings)
-        previews = render(delta, findings)
+        delta, previews, queued = persist(
+            target, findings,
+            lambda: _read_previous(target / "findings.json"),
+            observed=now,
+        )
+        # Legacy JSON snapshots are recoverable derivatives of the DB.
         _atomic_json(target, "findings.json", findings)
-        # Per-run preview, NOT a durable delivery queue; no outbound alerts.
         _atomic_json(target, "incident-preview.json", previews)
-        return {"status": "ok", "active_codes": [f["code"] for f in findings], "changes": delta}
+        return {
+            "status": "ok", "active_codes": [f["code"] for f in findings],
+            "changes": delta, "queued_incident_events": queued,
+        }
     except BlockingIOError as exc:
         raise InputError("collector_already_running") from exc
     finally:
@@ -195,6 +200,8 @@ def main() -> int:
             "agent_guard_status_unavailable",
             "invalid_consecutive_discovery_failures", "invalid_consecutive_drain_failures",
             "invalid_pending_jobs", "invalid_oldest_pending_age_seconds",
+            "unsafe_outbox_db", "outbox_unavailable", "outbox_full",
+            "corrupt_outbox_state", "legacy_state_oversize", "current_state_oversize",
         }:
             reason = "invalid_evidence"
         print(json.dumps({"status": "rejected", "reason": reason}))
