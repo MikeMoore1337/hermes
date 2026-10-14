@@ -1,0 +1,29 @@
+[Unit]
+Description=Hermes Agent private bridge and nft firewall - fail closed
+Requires=docker.service
+After=docker.service
+Before=hermes-cloudflare-proxy.service
+AssertPathExists=/opt/hermes-agent-owner/scripts/ensure_cloudflare_egress.py
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/hermes-agent-owner/scripts/ensure_cloudflare_egress.py --ensure
+RemainAfterExit=yes
+NoNewPrivileges=yes
+CapabilityBoundingSet=CAP_NET_ADMIN
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_NETLINK
+MemoryMax=64M
+CPUQuota=20%
+TasksMax=40
+TimeoutStartSec=35s
+
+[Install]
+WantedBy=multi-user.target
