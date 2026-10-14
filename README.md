@@ -33,6 +33,10 @@
 
 Second Brain v4 проходит эксплуатационную проверку [#386](https://github.com/MikeMoore1337/second-brain/issues/386); прямой доступ к приватному vault и новые интеграции не разрешены. SEO Growth Operator уже учитывается в [YFC #322](https://github.com/MikeMoore1337/your-fitness-coach/issues/322) и блокируется условиями [#320](https://github.com/MikeMoore1337/your-fitness-coach/issues/320).
 
+## Cloudflare Workers AI Free
+
+Подготовлен [проверяемый модуль бесплатного провайдера](plugins/cloudflare-workers-ai-free/README.md): строго один допущенный `@cf/openai/gpt-oss-20b`, без платных моделей и автоматического выбора другого тарифа. Установка не включает сеть и не требует ключа, для **реального** запроса необходим отдельный Account ID/API token Workers Free. [Текущий статус и ограничения](docs/architecture/GROQ_FREE_BLOCKER.md).
+
 ## Проверки
 
 Только стандартная библиотека Python; запуск из корня:

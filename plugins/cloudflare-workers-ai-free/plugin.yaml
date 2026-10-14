@@ -1,0 +1,9 @@
+name: cloudflare-workers-ai-free
+kind: model-provider
+version: 1.0.0-yfc1
+description: Restricted free-only Cloudflare Workers AI Hermes model profile
+author: MikeMoore1337 (adapted from AhmetArif0, MIT)
+requires_hermes: ">=0.21.5"
+requires_env:
+  - CLOUDFLARE_WORKERS_AI_API_TOKEN
+  - CLOUDFLARE_WORKERS_AI_BASE_URL
