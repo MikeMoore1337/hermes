@@ -107,7 +107,7 @@ class FirewallGateTests(unittest.TestCase):
         )
         self.assertIn("User=hermes-egress", proxy)
         self.assertIn("NoNewPrivileges=yes", proxy)
-        self.assertIn("CapabilityBoundingSet=\\n", proxy)
+        self.assertIn("CapabilityBoundingSet=" + chr(10), proxy)
         runner = (ROOT / "scripts/agent_turn_probe.py").read_text()
         self.assertIn('"--check"', runner)
         self.assertIn("ensure_cloudflare_egress.py", runner)
