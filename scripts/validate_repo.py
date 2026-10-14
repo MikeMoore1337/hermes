@@ -68,6 +68,8 @@ REQUIRED_PATHS = (
     "qa_advisor/core.py",
     "qa_advisor/github_public.py",
     "tests/test_qa_github_public.py",
+    "qa_advisor/github_public.py",
+    "tests/test_qa_github_public.py",
     "qa_advisor/README.md",
     "tests/test_qa_advisor.py",
     "research_scout/__init__.py",
