@@ -29,6 +29,7 @@ class OpsWatchTests(unittest.TestCase):
             },
             "yfc": {"backend": "healthy", "worker": "healthy", "bot_polling": "healthy"},
             "actions": {"ci": "success", "deploy": "success"},
+            "agent_guard": {"loaded": True, "enabled": True, "active": True},
         }
 
     def incidents(self) -> set[str]:
@@ -37,6 +38,24 @@ class OpsWatchTests(unittest.TestCase):
     def test_no_news_but_healthy_pipeline_is_not_an_outage(self) -> None:
         self.snapshot["news"]["accepted_count"] = 0
         self.assertEqual(self.incidents(), set())
+
+
+    def test_missing_hermes_network_guard_is_detected(self) -> None:
+        self.snapshot["agent_guard"] = {"loaded": False, "enabled": False, "active": False}
+        self.assertEqual(self.incidents(), {"agent_guard_missing"})
+
+    def test_disabled_hermes_network_guard_is_detected(self) -> None:
+        self.snapshot["agent_guard"]["enabled"] = False
+        self.assertEqual(self.incidents(), {"agent_guard_disabled"})
+
+    def test_inactive_hermes_network_guard_is_detected(self) -> None:
+        self.snapshot["agent_guard"]["active"] = False
+        self.assertEqual(self.incidents(), {"agent_guard_inactive"})
+
+    def test_invalid_network_guard_evidence_is_not_assumed_healthy(self) -> None:
+        self.snapshot["agent_guard"]["active"] = "active"
+        with self.assertRaises(InputError):
+            self.incidents()
 
     def test_timer_disabled_and_inactive_is_detected(self) -> None:
         self.snapshot["news"]["timer_enabled"] = False
