@@ -1,12 +1,15 @@
-"""One-shot read-only GitHub Actions metadata client for PUBLIC owner repos only.
+"""Opt-in one-shot GitHub Actions metadata, public YFC or scoped private Hermes.
 
-This is a host diagnostic, not the Hermes Agent network profile. Never use
-GitHub tokens, private logs, automatic actions, retries or redirects.
+Private access requires an explicit root-owned 0600 file with a narrowly
+scoped Actions: read token. No raw logs, retries, redirects or write actions.
 """
 
 from __future__ import annotations
 
 import json
+import os
+import stat
+from pathlib import Path
 import re
 import urllib.error
 import urllib.request
@@ -17,6 +20,9 @@ from qa_advisor.core import ALLOWED_REPOS, InvalidEvidence, analyze
 MAX_RUNS = 3
 MAX_BODY_BYTES = 700_000
 API_ORIGIN = "https://api.github.com"
+PRIVATE_REPO = "MikeMoore1337/hermes"
+TOKEN_FILE = Path("/etc/hermes-agent/github-actions-read.token")
+MAX_TOKEN_BYTES = 255
 
 
 class GithubPublicError(ValueError):
@@ -35,23 +41,52 @@ def public_opener():
     )
 
 
-def get_json(path: str, *, opener: Any = None) -> dict[str, Any]:
+def _private_token(path: Path) -> str:
+    """Load only owner-controlled scoped credential; never log its value."""
+    if path.is_symlink():
+        raise GithubPublicError("github_token_file_unsafe")
+    try:
+        metadata = path.stat(follow_symlinks=False)
+        if (not stat.S_ISREG(metadata.st_mode)
+                or metadata.st_uid != os.geteuid()
+                or stat.S_IMODE(metadata.st_mode) != 0o600
+                or metadata.st_nlink != 1 or metadata.st_size > MAX_TOKEN_BYTES):
+            raise GithubPublicError("github_token_file_unsafe")
+        token = path.read_text(encoding="ascii").strip()
+    except (OSError, UnicodeError) as exc:
+        raise GithubPublicError("github_private_token_unavailable") from None
+    if (not 20 <= len(token) <= MAX_TOKEN_BYTES
+            or not token.isascii() or not token.isprintable()
+            or any(ch.isspace() for ch in token)):
+        raise GithubPublicError("github_private_token_invalid")
+    return token
+
+
+def get_json(path: str, *, opener: Any = None, token: str | None = None) -> dict[str, Any]:
     if not re.fullmatch(
         r"/repos/MikeMoore1337/(?:hermes|your-fitness-coach)/actions/runs\?per_page=3",
         path,
     ):
         raise GithubPublicError("endpoint_not_allowlisted")
+    is_private = path.startswith("/repos/MikeMoore1337/hermes/")
+    if is_private and token is None:
+        raise GithubPublicError("github_private_token_required")
+    if not is_private and token is not None:
+        raise GithubPublicError("github_token_scope_denied")
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "Hermes-QA-Advisor-Readonly/1.0",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    if token is not None:
+        if (type(token) is not str or not 20 <= len(token) <= MAX_TOKEN_BYTES
+                or not token.isascii() or not token.isprintable()
+                or any(ch.isspace() for ch in token)):
+            raise GithubPublicError("github_private_token_invalid")
+        headers["Authorization"] = "Bearer " + token
     request = urllib.request.Request(
-        API_ORIGIN + path,
-        headers={
-            "Accept": "application/vnd.github+json",
-            "User-Agent": "Hermes-QA-Advisor-Readonly/1.0",
-            "X-GitHub-Api-Version": "2022-11-28",
-        },
-        method="GET",
+        API_ORIGIN + path, headers=headers, method="GET"
     )
-    if request.headers.get("Authorization") is not None:
-        raise GithubPublicError("authorization_not_allowed")
     try:
         with (opener or public_opener()).open(request, timeout=12) as response:
             if response.status != 200:
@@ -75,11 +110,16 @@ def get_json(path: str, *, opener: Any = None) -> dict[str, Any]:
     return data
 
 
-def public_runs(repo: str, *, opener: Any = None) -> list[dict[str, Any]]:
+def public_runs(
+    repo: str, *, opener: Any = None, token_file: Path = TOKEN_FILE,
+) -> list[dict[str, Any]]:
     """Whitelist public REST fields before passing into the offline analyzer."""
     if repo not in ALLOWED_REPOS:
         raise GithubPublicError("repository_not_allowlisted")
-    data = get_json(f"/repos/{repo}/actions/runs?per_page=3", opener=opener)
+    token = _private_token(token_file) if repo == PRIVATE_REPO else None
+    data = get_json(
+        f"/repos/{repo}/actions/runs?per_page=3", opener=opener, token=token
+    )
     incoming = data.get("workflow_runs")
     if not isinstance(incoming, list) or len(incoming) > MAX_RUNS:
         raise GithubPublicError("unexpected_run_collection")
@@ -107,8 +147,10 @@ def public_runs(repo: str, *, opener: Any = None) -> list[dict[str, Any]]:
     return result
 
 
-def run_public_report(repo: str, *, opener: Any = None) -> dict[str, Any]:
-    return analyze(public_runs(repo, opener=opener))
+def run_public_report(
+    repo: str, *, opener: Any = None, token_file: Path = TOKEN_FILE,
+) -> dict[str, Any]:
+    return analyze(public_runs(repo, opener=opener, token_file=token_file))
 
 
 def main() -> int:
