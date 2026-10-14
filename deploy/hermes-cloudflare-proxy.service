@@ -1,0 +1,31 @@
+[Unit]
+Description=Cloudflare-only CONNECT relay for independent Hermes
+After=docker.service
+Requires=docker.service
+ConditionPathExists=/opt/hermes-agent-owner/scripts/cloudflare_connect_proxy.py
+
+[Service]
+Type=simple
+User=hermes-egress
+Group=hermes-egress
+ExecStart=/usr/bin/python3 /opt/hermes-agent-owner/scripts/cloudflare_connect_proxy.py
+Restart=on-failure
+RestartSec=10s
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_UNIX
+MemoryMax=64M
+CPUQuota=15%
+TasksMax=40
+LimitNOFILE=128
+
+[Install]
+WantedBy=multi-user.target
