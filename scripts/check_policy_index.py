@@ -45,8 +45,10 @@ def check_text(root: Path, content: str) -> list[str]:
         for link in parsed:
             candidate = root / "policies" / link
             cleaned = link.removeprefix("../")
+            components = link.split("/")
+            allowed_parent = 1 if link.startswith("../") else 0
             if (not SAFE_MD.fullmatch(cleaned) or link.startswith("/")
-                    or "://" in link or link.count("../") > 1):
+                    or "://" in link or components.count("..") != allowed_parent):
                 problems.append("unsafe_policy_link")
                 continue
             try:
@@ -54,7 +56,16 @@ def check_text(root: Path, content: str) -> list[str]:
                 if not resolved.is_relative_to(root.resolve()):
                     problems.append("policy_link_outside_repository")
                     continue
-                if any(node.is_symlink() for node in (candidate, candidate.parent)):
+                node = candidate
+                symlinked = False
+                while node.is_relative_to(root):
+                    if node.is_symlink():
+                        symlinked = True
+                        break
+                    if node == root:
+                        break
+                    node = node.parent
+                if symlinked:
                     problems.append("symlinked_policy_link")
                     continue
                 if not candidate.is_file():
