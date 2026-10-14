@@ -53,7 +53,11 @@ def public_dns_address(host: str = HOST) -> str:
         raise PubmedFetchError("dns_invalid_address") from exc
     if not all(address.is_global for address in addresses):
         raise PubmedFetchError("private_dns_address")
-    return ips[0]
+    # Prefer IPv4 after validating ALL answers. Some small VPS hosts resolve
+    # AAAA records but have no IPv6 default route, so choosing an IPv6 address
+    # first prevents a valid public HTTPS request despite working IPv4 egress.
+    ipv4 = [address for address in addresses if address.version == 4]
+    return str(sorted(ipv4 or addresses, key=lambda item: int(item))[0])
 
 
 class _PinnedHTTPS(http.client.HTTPSConnection):
