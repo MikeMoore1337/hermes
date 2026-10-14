@@ -136,6 +136,21 @@ class LeaseContractTests(unittest.TestCase):
             )}
         self.assertNotIn("delivery_receipts", tables)
 
+    def test_readonly_stats_handles_uri_metacharacters_in_folder_name(self):
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp) / "events?mode=rwc#not-a-fragment"
+            directory.mkdir(mode=0o700)
+            persist(directory, [], lambda: [], observed=NOW)
+            persist(directory, incident("timer_inactive"), lambda: [], observed=NOW)
+            original = (directory / DATABASE).stat()
+            self.assertEqual(stats(directory)["unacknowledged"], 1)
+            self.assertEqual((directory / DATABASE).stat().st_size, original.st_size)
+            with sqlite3.connect(directory / DATABASE) as db:
+                names = {r[0] for r in db.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                )}
+            self.assertNotIn("delivery_receipts", names)
+
     def test_no_telegram_egress_or_secrets_in_module(self):
         import inspect
         from ops_watch import delivery_contract
