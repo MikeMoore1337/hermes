@@ -1,6 +1,6 @@
 # Ops Watch: offline core (H-02)
 
-Status (2026-10-14): the local-only health collector, durable SQLite event journal and 10-minute timer are operational on Hermes VPS. Opt-in Telegram delivery code and private-chat receipt validation exist in GitHub but no outbound delivery has been enabled or verified; the code is not an authorized active sender. No model calls, SSH probes, GitHub access or service modifications by the Ops Watch runtime.
+Status (2026-10-14): the networkless health collector and SQLite outbox are active on Hermes VPS. Separately authorized one-event-per-tick Telegram sender and timer are now active (see [on-host audit](../docs/audits/H-02-autosender-vps-2026-10-14.md)). The owner manually verified a real Telegram transport receipt (message_id=4). Sender is NOT an AI agent, and no self-repair, unrestricted GitHub, YFC edits or publication permissions were added. The first automatic sender run observed an empty queue, not a real incident.
 
 The component accepts a bounded normalized JSON snapshot:
 - schema = hermes-ops-snapshot-v1
