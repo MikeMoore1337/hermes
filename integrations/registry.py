@@ -31,6 +31,21 @@ SCOPES = frozenset({"none", "public_metadata", "private_repo_metadata",
                     "sanitized_only", "private_vault", "private_owner_only",
                     "unknown"})
 
+# Admission to GO is a CODE REVIEWED allowlist, not a boolean in user-editable JSON.
+# Even a forged owner_approved=true cannot grant a new connector runtime authority.
+APPROVED_GO_CONTRACTS = {
+    "local-evidence-parser": (
+        "local", (), "none", "none", (), "none",
+    ),
+    "github-yfc-public-actions": (
+        "api", ("api.github.com",), "read_only", "public_metadata", (), "none",
+    ),
+    "telegram-ops-watch-owner": (
+        "api", ("api.telegram.org",), "owner_notification", "private_owner_only",
+        ("sendMessage:verified_private_chat",), "scoped_file",
+    ),
+}
+
 
 class RegistryError(ValueError):
     """Static error codes only; never print untrusted field values."""
@@ -108,6 +123,12 @@ def evaluate(item: dict[str, object]) -> str:
     if item["credentials"] in ("developer_contact", "separate_future_auth"):
         return "DEFER"
     if item["kind"] != "local" and not item["hosts"]:
+        return "DEFER"
+    contract = (
+        item["kind"], tuple(item["hosts"]), item["side_effect"],
+        item["data_scope"], tuple(item["permissions"]), item["credentials"],
+    )
+    if APPROVED_GO_CONTRACTS.get(item["id"]) != contract:
         return "DEFER"
     return "GO"
 
