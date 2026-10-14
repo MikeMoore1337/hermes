@@ -16,8 +16,11 @@ from .delivery_contract import stats
 from .telegram_e2e import VerificationError, read_credentials
 from .telegram_sender import TARGET, TelegramGateError, send_one
 
+# systemd mounts only this approved outbox inside a private runtime directory.
+SANDBOX_OUTBOX = Path("/run/hermes-ops-alerts/outbox")
 
-def dispatch_once(directory: Path = TARGET) -> dict[str, object]:
+
+def dispatch_once(directory: Path = SANDBOX_OUTBOX) -> dict[str, object]:
     """Read protected credentials, reserve one event, and persist real ACK."""
     token, chat = read_credentials()
     return send_one(directory, token=token, chat=chat, now=datetime.now(UTC))

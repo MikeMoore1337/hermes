@@ -35,6 +35,7 @@ class ScheduledSenderTests(unittest.TestCase):
                 arguments = send.call_args
                 self.assertEqual(arguments.kwargs["token"], BOT)
                 self.assertEqual(arguments.kwargs["chat"], CHAT)
+                self.assertEqual(arguments.args[0], telegram_dispatch.SANDBOX_OUTBOX)
 
     def test_absent_or_unsafe_credentials_no_delivery(self):
         from ops_watch.telegram_e2e import VerificationError
@@ -59,7 +60,10 @@ class ScheduledSenderTests(unittest.TestCase):
             "CapabilityBoundingSet=\n", "NoNewPrivileges=yes",
             "ProtectSystem=strict", "ProtectHome=yes", "PrivateDevices=yes",
             "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6",
-            "ReadWritePaths=/var/lib/hermes-agent/ops-watch",
+            "ReadWritePaths=/run/hermes-ops-alerts/outbox",
+            "BindPaths=/var/lib/hermes-agent/ops-watch:/run/hermes-ops-alerts/outbox",
+            "InaccessiblePaths=/var/lib/hermes /var/lib/hermes-agent ",
+            "RuntimeDirectory=hermes-ops-alerts",
             "InaccessiblePaths=/var/lib/hermes ",
             "MemoryMax=96M", "TimeoutStartSec=35s",
             "ReadOnlyPaths=/etc/hermes-agent/ops-watch.env",
