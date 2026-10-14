@@ -185,3 +185,8 @@ sudo systemctl disable --now hermes-ops-alerts.timer
 ```
 
 Остановка таймера не отменяет уже начатый запрос `sendMessage`: проверь отдельно службу `hermes-ops-alerts.service`. Не выводить файл с токеном в консоль, GitHub, journal или отчёты. Статусы `DRY_RUN_ONLY`/`EMPTY_OR_LEASED` не означают, что Telegram доступен: при пустой очереди сетевого запроса нет. Реальную проверку действующего таймера проводить на новых фактических инцидентах, без искусственного нарушения YFC.
+
+
+### Ограничение каталогов при отправке
+
+Родительский `/var/lib/hermes-agent` защищён `0700` и принадлежит системному пользователю `hermes-agent`. Служба без дополнительных Linux capabilities не может пройти через этот каталог. Вместо выдачи `CAP_DAC_READ_SEARCH` systemd монтирует только очередь `/var/lib/hermes-agent/ops-watch` в изолированный `/run/hermes-ops-alerts/outbox` с помощью `BindPaths`, закрывая доступ к исходному каталогу с помощью `InaccessiblePaths`. Read-only диагностика в transient sandbox на VPS показала, что очередь доступна через ограниченный путь. Это не открывает полный каталог Hermes, не меняет права production DB и не даёт sender доступ к YFC.
