@@ -15,6 +15,7 @@ REQUIRED_PATHS = (
     "docs/architecture/MIGRATION.md",
     "docs/architecture/H-01-runtime-plan.md",
     "docs/roadmap/ROADMAP.md",
+    "docs/status/HERMES-CURRENT-2026-10-14.md",
     "docs/audits/H-02-vps-monitor-2026-10-14.md",
     "docs/architecture/GROQ_FREE_BLOCKER.md",
     "docs/security/THREAT_MODEL.md",
