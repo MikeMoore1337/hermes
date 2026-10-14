@@ -74,6 +74,58 @@ class BoundedAgentTurnTests(unittest.TestCase):
                 db.execute("INSERT INTO messages VALUES ('tool','todo_list',NULL,1)")
             self.assertEqual(probe._count_todo_tool_events(dbpath), 2)
 
+
+    def test_two_concurrent_invocations_cannot_share_agent_proxy_or_ip(self):
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as folder:
+            lock_path = Path(folder) / "hermes-agent.lock"
+            with probe.exclusive_agent_lock(lock_path):
+                with self.assertRaisesRegex(probe.Rejected, "agent_already_running"):
+                    with probe.exclusive_agent_lock(lock_path):
+                        self.fail("second request must never reach preflight")
+            with probe.exclusive_agent_lock(lock_path):
+                self.assertTrue(lock_path.is_file())
+
+    def test_symlinked_lock_file_is_refused_without_following_target(self):
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as folder:
+            target = Path(folder) / "target"
+            target.write_text("safe")
+            link = Path(folder) / "hermes-agent.lock"
+            link.symlink_to(target)
+            with self.assertRaisesRegex(probe.Rejected, "agent_lock_unavailable"):
+                with probe.exclusive_agent_lock(link):
+                    self.fail("symlink must be denied")
+            self.assertEqual(target.read_text(), "safe")
+
+    def test_insecure_existing_lock_file_refuses_execution(self):
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as folder:
+            file = Path(folder) / "hermes-agent.lock"
+            file.write_text("x")
+            file.chmod(0o644)
+            with self.assertRaisesRegex(probe.Rejected, "agent_lock_permissions"):
+                with probe.exclusive_agent_lock(file):
+                    self.fail("unsafe lock must be denied")
+
+    def test_proxy_is_stopped_even_when_start_command_reports_failure(self):
+        with patch.object(probe, "preflight"), \
+             patch.object(probe, "ok", return_value=False) as healthy, \
+             patch.object(probe, "run_command") as command, \
+             self.assertRaisesRegex(probe.Rejected, "proxy_start_failed"):
+            probe._guarded_turn_locked()
+        self.assertEqual(healthy.call_count, 1)
+        self.assertEqual(command.call_args.args[0],
+                         ["systemctl", "stop", "hermes-cloudflare-proxy.service"])
+
+    def test_guarded_turn_holds_lock_before_preflight(self):
+        with patch.object(probe, "exclusive_agent_lock") as lock, \
+             patch.object(probe, "_guarded_turn_locked", return_value={"status": "pass"}) as inner:
+            result = probe.guarded_turn(tool_test=True)
+        self.assertEqual(result, {"status": "pass"})
+        lock.assert_called_once_with()
+        inner.assert_called_once_with(tool_test=True)
+
     def test_nonroot_fails_closed(self):
         with patch.object(probe.os, "geteuid", return_value=1000):
             with self.assertRaisesRegex(probe.Rejected, "root_required"):

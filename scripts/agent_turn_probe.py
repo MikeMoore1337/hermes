@@ -1,12 +1,14 @@
 """Single bounded Cloudflare-only Hermes turn; no raw model or credential logging."""
 from __future__ import annotations
 import argparse
+import fcntl
 import json
 import os
 import pwd
 import re
 import sqlite3
 import stat
+from contextlib import contextmanager
 import subprocess
 import tempfile
 import time
@@ -21,6 +23,7 @@ MAX_LOAD_START = 1.10
 MAX_LOAD_DURING = 1.30
 MAX_DURATION = 130
 MAX_TOOL_DURATION = 205
+LOCK_FILE = Path('/run/hermes-agent-test.lock')
 
 
 class Rejected(Exception):
@@ -140,16 +143,53 @@ def _count_todo_tool_events(path: Path = STATE / 'state.db') -> int:
         raise Rejected('session_db_unavailable') from exc
 
 
+@contextmanager
+def exclusive_agent_lock(path: Path = LOCK_FILE):
+    """Prevent races for the fixed container name, IP, proxy and private DB.
+
+    Root-owned /run, O_NOFOLLOW and a nonblocking advisory lock ensure a
+    competing invocation never touches the proxy or Docker. The lock inode
+    remains after use to avoid unlink/recreate races.
+    """
+    flags = os.O_CREAT | os.O_RDWR | os.O_CLOEXEC | os.O_NOFOLLOW
+    try:
+        fd = os.open(path, flags, 0o600)
+    except OSError as exc:
+        raise Rejected("agent_lock_unavailable") from exc
+    try:
+        info = os.fstat(fd)
+        if (not stat.S_ISREG(info.st_mode)
+                or stat.S_IMODE(info.st_mode) != 0o600
+                or info.st_uid != os.geteuid() or info.st_nlink != 1):
+            raise Rejected("agent_lock_permissions")
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise Rejected("agent_already_running") from exc
+        try:
+            yield
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+        os.close(fd)
+
+
 def guarded_turn(*, tool_test: bool = False) -> dict:
+    """Hold the exclusive lock across preflight, proxy and container teardown."""
+    with exclusive_agent_lock():
+        return _guarded_turn_locked(tool_test=tool_test)
+
+
+def _guarded_turn_locked(*, tool_test: bool = False) -> dict:
     preflight()
     prior_tool_events = _count_todo_tool_events() if tool_test else 0
-    started = False
+    proxy_start_attempted = False
     process: subprocess.Popen | None = None
     start = time.monotonic()
     try:
+        proxy_start_attempted = True
         if not ok("systemctl", "start", "hermes-cloudflare-proxy.service"):
             raise Rejected("proxy_start_failed")
-        started = True
         if not ok("systemctl", "is-active", "--quiet", "hermes-cloudflare-proxy.service"):
             raise Rejected("proxy_unhealthy")
         if os.getloadavg()[0] > MAX_LOAD_START:
@@ -184,7 +224,7 @@ def guarded_turn(*, tool_test: bool = False) -> dict:
             run_command(["docker", "rm", "-f", NAME])
             process.kill()
             process.wait(timeout=5)
-        if started:
+        if proxy_start_attempted:
             run_command(["systemctl", "stop", "hermes-cloudflare-proxy.service"])
 
 

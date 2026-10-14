@@ -36,3 +36,15 @@ a merely claimed TOOL_OK without an actual persisted call is NOT a pass.
 This test allows at most 205 seconds to accommodate two model round trips.
 There is no vault, repository or news access, and no external write tool.
 No background task or periodic monitoring is enabled.
+
+## Mutual exclusion (race guard for VPS use)
+
+The executable now takes a root-owned, mode-0600 nonblocking flock on
+`/run/hermes-agent-test.lock` **before** the capacity checks and keeps it
+until the Cloudflare proxy has been stopped and the agent container has been
+removed. A competing invocation immediately fails with `agent_already_running`.
+A symlink, unexpected owner, non-regular or overly permissive lock is refused.
+Never delete the lock file during operation: keeping the inode prevents lock
+replacement races. Partial systemd proxy startup failures also trigger proxy
+stop in the finally block. This is an agent-only lock; it does not modify
+YFC discovery or Ops Watch scheduling.
