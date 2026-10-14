@@ -120,13 +120,12 @@
         "api.cloudflare.com"
       ],
       "owner_approved": true,
-      "permissions": [
-        "Workers AI:run"
-      ],
+      "permissions": [],
       "reasons": [
         "independent_account_billing_check_pending",
         "provenance_and_burnin_gate",
-        "no_paid_fallback"
+        "no_paid_fallback",
+        "cloudflare_scope_not_verified"
       ],
       "issue": "https://github.com/MikeMoore1337/hermes/issues/33"
     },
