@@ -12,7 +12,7 @@ from time import sleep
 from typing import Any, Callable
 
 from .citation_review import CitationInputError, review_batch
-from .ncbi_esearch import NCBIError, TOPICS, find_candidates
+from .ncbi_esearch import MAX_IDS, NCBIError, TOPICS, find_candidates
 from .ncbi_esummary import _contact, get_citation
 
 MAX_CITATIONS = 2
@@ -34,19 +34,30 @@ def review_topic(
     if not isinstance(stamp, datetime) or stamp.tzinfo is None:
         raise CitationInputError("now_timezone_required")
     discovery = search(topic, contact=contact)
-    if discovery.get("status") == "NO_DATA":
-        if discovery.get("pmids") != []:
+    # An injectable or changed discovery implementation is untrusted until
+    # its complete fixed NCBI contract is checked before any citation GET.
+    required = {"status", "topic", "window", "reported_total", "pmids", "source_api"}
+    if type(discovery) is not dict or set(discovery) != required:
+        raise NCBIError("ncbi_discovery_contract_invalid")
+    pmids = discovery["pmids"]
+    total = discovery["reported_total"]
+    if (discovery["topic"] != topic
+            or discovery["source_api"] != "NCBI_ESEARCH"
+            or discovery["window"] != "30_days_entrez_entry"
+            or type(total) is not int or total < 0
+            or type(pmids) is not list or len(pmids) > MAX_IDS
+            or len(pmids) > total):
+        raise NCBIError("ncbi_discovery_contract_invalid")
+    if discovery["status"] == "NO_DATA":
+        if pmids:
             raise NCBIError("ncbi_discovery_inconsistent")
         return {
             "status": "NO_DATA", "topic": topic, "candidates": 0,
             "review": review_batch([], now=stamp),
             "scientific_claims_verified": False,
         }
-    if discovery.get("status") != "UNVERIFIED_PMID_CANDIDATES":
+    if discovery["status"] != "UNVERIFIED_PMID_CANDIDATES" or not pmids:
         raise NCBIError("ncbi_discovery_unverified")
-    pmids = discovery.get("pmids")
-    if not isinstance(pmids, list) or len(pmids) > 5:
-        raise NCBIError("ncbi_discovery_invalid_ids")
     # Always validate all discovered IDs, even those beyond the two-read cap.
     from .pubmed_fetch import validate_pmid, PubmedFetchError
     seen = set()
