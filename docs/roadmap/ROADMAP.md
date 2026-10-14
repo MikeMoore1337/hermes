@@ -31,12 +31,32 @@
 - YFC dedicated Hermes production services нельзя менять для H-01 без подтверждённых ресурсов и отдельного owner approval.
 - Выбор режима платных API и ключей не делается без конкретного разрешения.
 
+## Дополнительное развитие H-08...H-15 (решение владельца 14.10.2026)
+
+Полезные идеи из 24 репозиториев artemiimillier планируются постепенно, **не вместо текущих задач**. Источник идеи не является проверенной зависимостью, техническим решением или разрешением на установку. Перед разработкой сверить существующий код и лицензии.
+
+| Issue | Приоритет | Что добавляем | Когда начинать |
+| --- | --- | --- | --- |
+| [H-08 #60](https://github.com/MikeMoore1337/hermes/issues/60) | P2 | Доказательные проверки качества, индекс правил, шаблон задач (bulletproof, rules, claude-code-starter) | После H-02/H-03 и проверки реальных пробелов |
+| [H-09 #61](https://github.com/MikeMoore1337/hermes/issues/61) | P2 | Реестр безопасных MCP/API/CLI, допуск провайдеров и источников (podbor-podklyucheniy) | Поддерживает #4; без установки новых инструментов |
+| [H-10 #62](https://github.com/MikeMoore1337/hermes/issues/62) | P2 | Роли агентов, бюджет, учёт фактической скорости/квот (ai-cofounder, hermes-models-table) | После выполнения P0 условий #33 |
+| [H-11 #63](https://github.com/MikeMoore1337/hermes/issues/63) | P2 BLOCKED | Актуальность/противоречия и происхождение знаний (start-second-brain) | После Second Brain #386 и gate Hermes #6 |
+| [H-12 #64](https://github.com/MikeMoore1337/hermes/issues/64) | P2 | Исследование SEO/контента (statejnik, kontentzavod, VIBE-SERCH) | Только через YFC #320/#322 и границы #4 |
+| [H-13 #65](https://github.com/MikeMoore1337/hermes/issues/65) | P3 | Редактура и вспомогательный правовой аудит (anti-ai-skill, legal-scanner) | После сравнения с Clear Voice |
+| [H-14 #66](https://github.com/MikeMoore1337/hermes/issues/66) | P3 DEFER | Прототипы и образовательные проекты (ai-smetchik-idey, englesy, NEUROLING, slava-znayka, gambitik, praktika-5) | Только при появлении продукта/потребности |
+| [H-15 #67](https://github.com/MikeMoore1337/hermes/issues/67) | P3 DEFER | Статус оператора, инструкции, Coach OS/Content Studio (hermes-codex-limits, hermes-install-guide, SELLER, reels-autopost-skill) | После обязательных проверок #8 |
+
+Запрещённые в эксплуатации варианты тоже учтены: hermes-codex-pool и claude-subscription-gateway не устанавливать для обхода условий провайдеров. AGPL-3.0 код gambitik не переносить в YFC. Владелец подтвердил разрешение автора statejnik, но авторство, условия разрешения и состав копируемых файлов фиксировать при реальном переносе.
+
+**Порядок сейчас:** #3 и #4 (P1), #33 (P0, там где возможны проверки без обслуживания VPS), затем разрешённая часть #5, после этого H-08/H-09 и остальные по приоритету/зависимостям. Зелёный CI и код в main не означают VPS deployment или разрешение на отправку сообщений.
+
 ## Волны
 
 0. H-00 + реестр прав/контрактов + bootstrap CI без runtime.
 1. H-01 после формального решения по H-00, затем H-02 и H-03.
 2. H-04, а H-05 - только после Second Brain gate.
 3. H-06 через YFC backlog, H-07 и M-01 по отдельной доказанной необходимости.
+4. H-08...H-15 - по приоритетам и gate из дополнительного плана; P3 не блокируют P0/P1.
 
 ## Definition of Done
 
