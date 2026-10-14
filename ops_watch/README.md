@@ -44,3 +44,14 @@ The original unit with no Linux capabilities cannot traverse the existing news s
 ## Control of Hermes Agent network safety
 
 The local 10-minute Ops Watch also reads **systemd metadata only** for `hermes-cloudflare-network-guard.service`. It reports stable, allowlisted incident codes when the guard is missing, disabled, or inactive, and preserves existing incident deduplication/recovery. It never reads AI credentials, model output or raw nft rules. A malformed systemd response is **UNKNOWN / collection failure**, never reported as a healthy guard. No automatic repairs or Telegram notifications are implied. This is an additional operational signal, not a proof that exact firewall rules stayed unchanged after the last startup check.
+
+## Локальный предварительный текст инцидента (без отправки)
+
+Каждый запуск сборщика формирует **фиксированные, проверенные** описания только
+для новых и закрытых инцидентов и сохраняет их в локальном
+`/var/lib/hermes-agent/ops-watch/incident-preview.json`. Текст никогда не
+интерполирует сведения из новостей, ошибки модели, журналов CI, приватных
+сервисов или URL. После прохода без изменений файл становится пустым массивом.
+Это **снимок последнего прохода**, а не надёжная очередь доставки: внешнего
+Telegram/почтового сообщения и подтверждения получения пока нет.
+Разрешение и новый отдельный канал оповещений остаются обязательными.
