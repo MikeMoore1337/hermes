@@ -9,6 +9,7 @@ import json
 import os
 import sqlite3
 import stat
+from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Callable
@@ -78,7 +79,7 @@ def persist(
         raise InputError("observed_timezone_required")
     safe_current = _safe_findings(current)
     try:
-        with _connection(directory) as db:
+        with closing(_connection(directory)) as db, db:
             db.execute("BEGIN IMMEDIATE")
             db.execute(
                 "CREATE TABLE IF NOT EXISTS state ("
