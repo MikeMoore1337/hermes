@@ -19,6 +19,19 @@ class HermessImagePinContract(unittest.TestCase):
         self.assertEqual(data["observed_image_id"], "sha256:" + data["image"].rsplit(":", 1)[-1])
         self.assertEqual(data["architecture"], "amd64")
 
+    def test_official_registry_v0216_amd64_artifact_matches_pin(self) -> None:
+        data = self.manifest
+        self.assertEqual(
+            data["published_registry_tag"],
+            "nousresearch/hermes-agent:v0.21.6",
+        )
+        self.assertTrue(data["published_tag_amd64_match_verified"])
+        self.assertEqual(
+            data["published_tag_linux_amd64_digest"],
+            data["observed_image_id"],
+        )
+        self.assertEqual(data["registry_manifest_inspected_date"], "2026-10-14")
+
     def test_source_commit_mismatch_keeps_resident_agent_disallowed(self) -> None:
         data = self.manifest
         self.assertNotEqual(data["reported_embedded_commit"], data["upstream_release_tag_commit"])
