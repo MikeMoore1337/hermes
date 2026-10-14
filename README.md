@@ -18,6 +18,7 @@
 - [Каноническое владение данными и контрактами](docs/architecture/OWNERSHIP.md)
 - [План безопасной миграции конвейера новостей](docs/architecture/MIGRATION.md)
 - [H-01: upstream, модель угроз и требования к изолированному runtime](docs/architecture/H-01-runtime-plan.md)
+- [H-01: ограниченный локальный контур на выделенном VPS](deploy/H-01-LOCAL-SANDBOX.md)
 - [Безопасность и угрозы](docs/security/THREAT_MODEL.md)
 - [Дорожная карта H-00...H-07](docs/roadmap/ROADMAP.md)
 - [Эксплуатация и выпуск](docs/operations/DEPLOYMENT.md)
