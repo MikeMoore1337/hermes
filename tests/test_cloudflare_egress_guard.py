@@ -98,6 +98,20 @@ class FirewallGateTests(unittest.TestCase):
             guard.ensure(mutate=False)
         run.assert_not_called()
 
+    def test_proxy_checks_exact_network_again_before_listening(self):
+        proxy = (ROOT / "deploy/hermes-cloudflare-proxy.service").read_text()
+        self.assertIn(
+            "ExecStartPre=+/usr/bin/python3 "
+            "/opt/hermes-agent-owner/scripts/ensure_cloudflare_egress.py --check",
+            proxy,
+        )
+        self.assertIn("User=hermes-egress", proxy)
+        self.assertIn("NoNewPrivileges=yes", proxy)
+        self.assertIn("CapabilityBoundingSet=" + chr(10), proxy)
+        runner = (ROOT / "scripts/agent_turn_probe.py").read_text()
+        self.assertIn('"--check"', runner)
+        self.assertIn("ensure_cloudflare_egress.py", runner)
+
     def test_proxy_service_requires_guard_unit(self):
         unit = (ROOT / "deploy/hermes-cloudflare-proxy.service").read_text()
         self.assertIn("Requires=docker.service hermes-cloudflare-network-guard.service", unit)

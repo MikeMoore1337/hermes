@@ -8,6 +8,7 @@ ConditionPathExists=/opt/hermes-agent-owner/scripts/cloudflare_connect_proxy.py
 Type=simple
 User=hermes-egress
 Group=hermes-egress
+ExecStartPre=+/usr/bin/python3 /opt/hermes-agent-owner/scripts/ensure_cloudflare_egress.py --check
 ExecStart=/usr/bin/python3 /opt/hermes-agent-owner/scripts/cloudflare_connect_proxy.py
 Restart=on-failure
 RestartSec=10s
