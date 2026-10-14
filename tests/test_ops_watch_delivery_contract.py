@@ -127,6 +127,15 @@ class LeaseContractTests(unittest.TestCase):
                         telegram_message_id=777,
                         now=NOW + timedelta(seconds=92))
 
+    def test_aggregate_stats_is_readonly_before_any_delivery(self):
+        self.raise_one()
+        self.assertEqual(stats(self.directory)["unacknowledged"], 1)
+        with sqlite3.connect(self.directory / DATABASE) as db:
+            tables = {r[0] for r in db.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )}
+        self.assertNotIn("delivery_receipts", tables)
+
     def test_no_telegram_egress_or_secrets_in_module(self):
         import inspect
         from ops_watch import delivery_contract

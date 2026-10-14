@@ -8,7 +8,9 @@ retry MAY duplicate a message. No exactly-once delivery claim is made.
 """
 from __future__ import annotations
 
+import os
 import re
+import stat
 import secrets
 import sqlite3
 from contextlib import closing
@@ -173,20 +175,34 @@ def confirm_one(
 
 
 def stats(directory: Path) -> dict[str, int]:
-    """Read only aggregate local counts, never secrets or event text."""
+    """Aggregate state using a read-only SQLite connection (no DDL)."""
+    path = directory / "incidents.sqlite3"
+    if path.is_symlink() or not path.is_file():
+        raise InputError("delivery_storage_unavailable")
+    info = path.stat(follow_symlinks=False)
+    if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid()
+            or stat.S_IMODE(info.st_mode) != 0o600 or info.st_nlink != 1):
+        raise InputError("unsafe_outbox_db")
     try:
-        with closing(_connection(directory)) as db:
-            _create_receipts(db)
-            all_events = int(db.execute("SELECT count(*) FROM events").fetchone()[0])
-            acknowledged = int(db.execute(
-                "SELECT count(*) FROM delivery_receipts WHERE status='acknowledged'"
-            ).fetchone()[0])
-            exhausted = int(db.execute(
-                "SELECT count(*) FROM delivery_receipts "
-                "WHERE status='leased' AND attempts>=?", (MAX_ATTEMPTS,)
-            ).fetchone()[0])
-            return {"total": all_events, "acknowledged": acknowledged,
-                    "unacknowledged": all_events - acknowledged,
-                    "exhausted": exhausted}
+        with sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=2) as db:
+            tables = {row[0] for row in db.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )}
+            if "events" not in tables:
+                raise InputError("delivery_storage_unavailable")
+            total = int(db.execute("SELECT count(*) FROM events").fetchone()[0])
+            acknowledged = exhausted = 0
+            if "delivery_receipts" in tables:
+                acknowledged = int(db.execute(
+                    "SELECT count(*) FROM delivery_receipts WHERE status='acknowledged'"
+                ).fetchone()[0])
+                exhausted = int(db.execute(
+                    "SELECT count(*) FROM delivery_receipts "
+                    "WHERE status='leased' AND attempts>=?", (MAX_ATTEMPTS,)
+                ).fetchone()[0])
+            if acknowledged > total:
+                raise InputError("delivery_storage_invalid")
+            return {"total": total, "acknowledged": acknowledged,
+                    "unacknowledged": total - acknowledged, "exhausted": exhausted}
     except sqlite3.Error as exc:
         raise InputError("delivery_storage_unavailable") from exc

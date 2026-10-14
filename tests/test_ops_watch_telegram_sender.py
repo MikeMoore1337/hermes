@@ -142,6 +142,17 @@ class LocalAcknowledgeTests(unittest.TestCase):
             send_one(self.dir, token=BOT, chat=CHAT, now=NOW, transport=failure)
         self.assertEqual(stats(self.dir)["acknowledged"], 0)
 
+    def test_exhausted_event_is_an_error_instead_of_empty_queue(self):
+        from datetime import timedelta
+        from ops_watch.delivery_contract import claim_one
+        for attempt in range(5):
+            current = NOW + timedelta(seconds=91 * attempt)
+            self.assertEqual(claim_one(self.dir, now=current)["attempt"], attempt + 1)
+        with self.assertRaisesRegex(TelegramGateError, "telegram_delivery_exhausted"):
+            send_one(self.dir, token=BOT, chat=CHAT,
+                     now=NOW + timedelta(seconds=91 * 6),
+                     transport=lambda **_: self.fail("must not send"))
+
     def test_send_message_contains_only_bounded_fixed_catalog_text(self):
         from ops_watch.delivery_contract import claim_one
         item = claim_one(self.dir, now=NOW)

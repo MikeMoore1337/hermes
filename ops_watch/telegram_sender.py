@@ -154,6 +154,8 @@ def send_one(
         raise TelegramGateError("telegram_clock_invalid")
     event = claim_one(directory, now=now)
     if event is None:
+        if stats(directory)["exhausted"]:
+            raise TelegramGateError("telegram_delivery_exhausted")
         return {"status": "EMPTY_OR_LEASED"}
     receipt = transport(token=token, chat_id=chat_id, text=_message(event))
     confirm_one(
