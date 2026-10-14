@@ -74,6 +74,22 @@ class ScheduledSenderTests(unittest.TestCase):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, data)
 
+    def test_installer_does_not_touch_news_or_editorial_units(self):
+        data = (ROOT / "deploy/install-ops-alerts.sh").read_text()
+        for required in (
+            "read_credentials()", "systemd-analyze verify",
+            "systemctl start hermes-ops-alerts.service",
+            "systemctl enable --now hermes-ops-alerts.timer",
+        ):
+            self.assertIn(required, data)
+        for prohibited in (
+            "systemctl restart hermes-discovery",
+            "systemctl disable hermes-discovery",
+            "systemctl restart hermes-ops-watch",
+            "curl ", "docker ",
+        ):
+            self.assertNotIn(prohibited, data)
+
     def test_one_event_per_10_minute_tick_without_catch_up_burst(self):
         data = TIMER.read_text()
         for required in (
