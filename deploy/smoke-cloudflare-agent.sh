@@ -15,12 +15,12 @@ if docker inspect hermes-agent-test >/dev/null 2>&1; then
   echo "Another agent test exists" >&2
   exit 1
 fi
-timeout --signal=TERM --kill-after=5s 110s docker run --rm --name hermes-agent-test \
+timeout --signal=TERM --kill-after=5s 75s docker run --rm --name hermes-agent-test \
   --pull=never --platform linux/amd64 \
   --network hermes-agent-isolated --ip 172.29.250.2 \
   --read-only --user "$(id -u hermes-agent):$(id -g hermes-agent)" \
   --cap-drop ALL --security-opt no-new-privileges \
-  --pids-limit 96 --cpus 0.5 --memory 640m --memory-swap 896m \
+  --pids-limit 96 --cpus 0.15 --memory 640m --memory-swap 896m \
   --tmpfs /tmp:rw,nosuid,nodev,size=32m \
   --tmpfs /run:rw,nosuid,nodev,size=16m \
   --mount type=bind,src="$STATE",dst=/opt/data \
