@@ -109,14 +109,17 @@ class BoundedAgentTurnTests(unittest.TestCase):
                     self.fail("unsafe lock must be denied")
 
     def test_proxy_is_stopped_even_when_start_command_reports_failure(self):
+        from subprocess import CompletedProcess
         with patch.object(probe, "preflight"), \
              patch.object(probe, "ok", return_value=False) as healthy, \
-             patch.object(probe, "run_command") as command, \
+             patch.object(probe, "run_command",
+                          return_value=CompletedProcess([], 0, "", "")) as command, \
              self.assertRaisesRegex(probe.Rejected, "proxy_start_failed"):
             probe._guarded_turn_locked()
-        self.assertEqual(healthy.call_count, 1)
-        self.assertEqual(command.call_args.args[0],
-                         ["systemctl", "stop", "hermes-cloudflare-proxy.service"])
+        self.assertEqual(healthy.call_count, 2)
+        command.assert_called_once_with(
+            ["systemctl", "stop", "hermes-cloudflare-proxy.service"]
+        )
 
     def test_proxy_stop_must_succeed_and_leave_service_inactive(self):
         from subprocess import CompletedProcess
