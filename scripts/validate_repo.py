@@ -27,6 +27,10 @@ REQUIRED_PATHS = (
     "scripts/host_capacity.py",
     "tests/test_host_capacity.py",
     "tests/test_smoke_contract.py",
+    "ops_watch/core.py",
+    "ops_watch/cli.py",
+    "ops_watch/README.md",
+    "tests/test_ops_watch.py",
     "docs/audits/H-01-on-host-smoke-2026-10-11.md",
 )
 
