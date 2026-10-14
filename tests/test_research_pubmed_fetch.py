@@ -46,6 +46,34 @@ class PubmedSourceBoundaryTests(unittest.TestCase):
         self.assertEqual(public_dns_address(), "8.8.8.8")
 
     @patch("research_scout.pubmed_fetch.socket.getaddrinfo")
+    def test_ipv4_preferred_over_public_ipv6_after_validating_every_answer(self, resolver):
+        # Debian VPS has both DNS families but no IPv6 default route.
+        resolver.return_value = [
+            (socket.AF_INET6, socket.SOCK_STREAM, 6, "",
+             ("2606:4700:4700::1111", 443, 0, 0)),
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("8.8.8.8", 443)),
+        ]
+        self.assertEqual(public_dns_address(), "8.8.8.8")
+
+    @patch("research_scout.pubmed_fetch.socket.getaddrinfo")
+    def test_ipv4_preference_cannot_hide_private_ipv6_dns(self, resolver):
+        resolver.return_value = [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("8.8.8.8", 443)),
+            (socket.AF_INET6, socket.SOCK_STREAM, 6, "",
+             ("fd00::1", 443, 0, 0)),
+        ]
+        with self.assertRaisesRegex(PubmedFetchError, "private_dns_address"):
+            public_dns_address()
+
+    @patch("research_scout.pubmed_fetch.socket.getaddrinfo")
+    def test_ipv6_only_remains_supported_when_public(self, resolver):
+        resolver.return_value = [
+            (socket.AF_INET6, socket.SOCK_STREAM, 6, "",
+             ("2606:4700:4700::1111", 443, 0, 0))
+        ]
+        self.assertEqual(public_dns_address(), "2606:4700:4700::1111")
+
+    @patch("research_scout.pubmed_fetch.socket.getaddrinfo")
     def test_private_metadata_and_loopback_dns_denied(self, resolver):
         for address in ("127.0.0.1", "192.168.1.50", "169.254.169.254",
                         "10.0.0.1", "172.16.0.1", "0.0.0.0"):
