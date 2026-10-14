@@ -1,0 +1,208 @@
+{
+  "schema": "hermes-integration-registry-v1",
+  "candidates": [
+    {
+      "id": "local-evidence-parser",
+      "kind": "local",
+      "decision": "GO",
+      "purpose": "Hermes offline evidence and provenance classification",
+      "documentation": "https://docs.python.org/3/library/",
+      "license": "PSF-2.0",
+      "verified_on": "2026-10-14",
+      "verified_status": "checked",
+      "billing": "zero_guaranteed",
+      "card_requirement": "none",
+      "credentials": "none",
+      "data_scope": "none",
+      "side_effect": "none",
+      "hosts": [],
+      "owner_approved": true,
+      "permissions": [],
+      "reasons": [
+        "stdlib_only",
+        "no_network_or_secrets"
+      ],
+      "issue": "https://github.com/MikeMoore1337/hermes/issues/4"
+    },
+    {
+      "id": "github-yfc-public-actions",
+      "kind": "api",
+      "decision": "GO",
+      "purpose": "Manual fetch of up to three public YFC workflow-run metadata records",
+      "documentation": "https://docs.github.com/en/rest/actions/workflow-runs",
+      "license": "official_api_terms",
+      "verified_on": "2026-10-14",
+      "verified_status": "checked",
+      "billing": "zero_guaranteed",
+      "card_requirement": "none",
+      "credentials": "none",
+      "data_scope": "public_metadata",
+      "side_effect": "read_only",
+      "hosts": [
+        "api.github.com"
+      ],
+      "owner_approved": true,
+      "permissions": [],
+      "reasons": [
+        "one_exact_get_verified_live",
+        "no_raw_logs"
+      ],
+      "issue": "https://github.com/MikeMoore1337/hermes/issues/5"
+    },
+    {
+      "id": "github-hermes-private-actions",
+      "kind": "api",
+      "decision": "DEFER",
+      "purpose": "Read only private Hermes Actions metadata; live HTTP 404",
+      "documentation": "https://docs.github.com/en/rest/actions/workflow-runs",
+      "license": "official_api_terms",
+      "verified_on": "2026-10-14",
+      "verified_status": "blocked",
+      "billing": "zero_guaranteed",
+      "card_requirement": "none",
+      "credentials": "scoped_file",
+      "data_scope": "private_repo_metadata",
+      "side_effect": "read_only",
+      "hosts": [
+        "api.github.com"
+      ],
+      "owner_approved": true,
+      "permissions": [
+        "Actions:read"
+      ],
+      "reasons": [
+        "live_http_404_scope_unverified",
+        "never_use_write_pat"
+      ],
+      "issue": "https://github.com/MikeMoore1337/hermes/issues/5"
+    },
+    {
+      "id": "ncbi-eutils-esearch-esummary",
+      "kind": "api",
+      "decision": "DEFER",
+      "purpose": "Bounded official PubMed scientific metadata for manual review",
+      "documentation": "https://www.ncbi.nlm.nih.gov/books/NBK25497/",
+      "license": "official_api_terms",
+      "verified_on": "2026-10-14",
+      "verified_status": "pending",
+      "billing": "zero_guaranteed",
+      "card_requirement": "none",
+      "credentials": "developer_contact",
+      "data_scope": "public_metadata",
+      "side_effect": "read_only",
+      "hosts": [
+        "eutils.ncbi.nlm.nih.gov"
+      ],
+      "owner_approved": false,
+      "permissions": [],
+      "reasons": [
+        "developer_tool_registration_not_confirmed",
+        "host_global_rate_400ms_not_live_qualified",
+        "no_automatic_publication"
+      ],
+      "issue": "https://github.com/MikeMoore1337/hermes/issues/4"
+    },
+    {
+      "id": "cloudflare-workers-ai",
+      "kind": "api",
+      "decision": "DEFER",
+      "purpose": "Bounded free-only model calls in separately isolated Agent",
+      "documentation": "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+      "license": "official_api_terms",
+      "verified_on": "2026-10-14",
+      "verified_status": "pending",
+      "billing": "free_plan_owner_attested",
+      "card_requirement": "unknown",
+      "credentials": "scoped_file",
+      "data_scope": "sanitized_only",
+      "side_effect": "read_only",
+      "hosts": [
+        "api.cloudflare.com"
+      ],
+      "owner_approved": true,
+      "permissions": [
+        "Workers AI:run"
+      ],
+      "reasons": [
+        "independent_account_billing_check_pending",
+        "provenance_and_burnin_gate",
+        "no_paid_fallback"
+      ],
+      "issue": "https://github.com/MikeMoore1337/hermes/issues/33"
+    },
+    {
+      "id": "second-brain-readonly",
+      "kind": "api",
+      "decision": "DEFER",
+      "purpose": "Only a future approved read-only Second Brain API",
+      "documentation": "https://github.com/MikeMoore1337/hermes/issues/6",
+      "license": "project_owned",
+      "verified_on": "2026-10-14",
+      "verified_status": "blocked",
+      "billing": "unknown",
+      "card_requirement": "unknown",
+      "credentials": "separate_future_auth",
+      "data_scope": "private_vault",
+      "side_effect": "read_only",
+      "hosts": [],
+      "owner_approved": false,
+      "permissions": [],
+      "reasons": [
+        "second_brain_386_gate",
+        "no_private_vault_or_filesystem_access"
+      ],
+      "issue": "https://github.com/MikeMoore1337/hermes/issues/6"
+    },
+    {
+      "id": "telegram-ops-watch-owner",
+      "kind": "api",
+      "decision": "GO",
+      "purpose": "Approved bounded private owner notifications only",
+      "documentation": "https://core.telegram.org/bots/api#sendmessage",
+      "license": "official_api_terms",
+      "verified_on": "2026-10-14",
+      "verified_status": "checked",
+      "billing": "zero_guaranteed",
+      "card_requirement": "none",
+      "credentials": "scoped_file",
+      "data_scope": "private_owner_only",
+      "side_effect": "owner_notification",
+      "hosts": [
+        "api.telegram.org"
+      ],
+      "owner_approved": true,
+      "permissions": [
+        "sendMessage:verified_private_chat"
+      ],
+      "reasons": [
+        "manual_live_e2e_ack_verified",
+        "isolated_sender_timer_live",
+        "at_least_once_not_exactly_once"
+      ],
+      "issue": "https://github.com/MikeMoore1337/hermes/issues/3"
+    },
+    {
+      "id": "subscription-oauth-proxy-pools",
+      "kind": "api",
+      "decision": "REJECT",
+      "purpose": "Use unauthorized subscription pool as provider token alternative",
+      "documentation": "https://github.com/MikeMoore1337/hermes/blob/main/AGENTS.md",
+      "license": "unknown",
+      "verified_on": "2026-10-14",
+      "verified_status": "blocked",
+      "billing": "uncontrolled",
+      "card_requirement": "unknown",
+      "credentials": "unscoped_pool",
+      "data_scope": "unknown",
+      "side_effect": "untrusted_execution",
+      "hosts": [],
+      "owner_approved": false,
+      "permissions": [],
+      "reasons": [
+        "prohibited_subscription_bypass",
+        "uncontrolled_external_credentials"
+      ],
+      "issue": "https://github.com/MikeMoore1337/hermes/issues/61"
+    }
+  ]
+}
