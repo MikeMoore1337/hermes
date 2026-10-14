@@ -67,10 +67,7 @@ def preflight() -> None:
                            "--format", "{{.Internal}}", "hermes-agent-isolated"])
     if network.returncode != 0 or network.stdout.strip().lower() != "true":
         raise Rejected("private_network_missing")
-    nft = run_command(["nft", "list", "table", "inet", "hermes_agent_isolation"])
-    checks = ('iifname "br-hcf-agent"', "172.29.250.2", "172.29.250.1",
-              "18573", "forward", "drop")
-    if nft.returncode != 0 or any(item not in nft.stdout for item in checks):
+    if not ok("python3", str(ROOT / "scripts/ensure_cloudflare_egress.py"), "--check"):
         raise Rejected("firewall_not_verified")
 
 
