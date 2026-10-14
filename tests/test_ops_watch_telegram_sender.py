@@ -5,7 +5,7 @@ import json
 import socket
 import tempfile
 import unittest
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -189,14 +189,12 @@ class LocalAcknowledgeTests(unittest.TestCase):
         persist(self.dir, event(), lambda: [], observed=NOW)
 
     def test_confirm_real_mock_transport_receipt_only(self):
-        # A fixed lease time requires a fixed acknowledgment clock too.
-        # Otherwise this test starts failing 90 seconds after the fixture date.
-        with patch("ops_watch.telegram_sender.datetime") as clock:
-            clock.now.return_value = NOW + timedelta(seconds=1)
-            accepted = send_one(
-                self.dir, token=BOT, chat=CHAT, now=NOW,
-                transport=lambda **_: 55,
-            )
+        # The production send path acknowledges against the real UTC clock.
+        # Use a fresh lease to avoid an expired fixed-date fixture.
+        accepted = send_one(
+            self.dir, token=BOT, chat=CHAT, now=datetime.now(UTC),
+            transport=lambda **_: 55,
+        )
         self.assertEqual(accepted["status"], "ACCEPTED_BY_TELEGRAM")
         self.assertEqual(stats(self.dir)["acknowledged"], 1)
 
