@@ -80,6 +80,8 @@ REQUIRED_PATHS = (
     "ops_watch/incident_preview.py",
     "ops_watch/state_store.py",
     "ops_watch/delivery_contract.py",
+    "ops_watch/telegram_sender.py",
+    "tests/test_ops_watch_telegram_sender.py",
     "tests/test_ops_watch_delivery_contract.py",
     "tests/test_ops_watch_state_store.py",
     "tests/test_ops_watch_incident_preview.py",
