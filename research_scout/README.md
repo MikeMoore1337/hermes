@@ -30,3 +30,10 @@ Next gate: owner-approved public source registry, hardened time/size-bounded
 fetch, real DOI/PMID/license evidence, direct evidence citations, link checks
 and rate limits, at least 20 negative cases, operational budgets and a
 bounded approved delivery mechanism. Keep #4 OPEN.
+
+
+## Матрица негативных случаев (14.10.2026)
+
+[Набор сквозных синтетических проверок](../tests/test_research_safety_matrix.py) покрывает 29 отдельно названных отклонений URL/SSRF, схемы, контрольных символов, дат, правдивости заявлений и внедрённых команд. Дополнительно проверяются многоязычные инструкции, приоритет причины при stale+injection, ложная независимость доменов и противоречия.
+
+CI подтверждает только офлайн-защиту. Актуальность реальных исследований, NCBI registration, общая квота IP и live API остаются в статусе OPEN в [#4](https://github.com/MikeMoore1337/hermes/issues/4). `READY_FOR_REVIEW` и `MANUAL_REVIEW` не означают доказанный научный вывод и не дают разрешения публиковать материалы.

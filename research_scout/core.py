@@ -26,8 +26,13 @@ MAX_AGE_DAYS = 45
 MAX_RECORDS = 100
 PROMPT_INJECTION = re.compile(
     r"ignore\s+(?:all\s+)?(?:previous|prior)\s+instructions"
+    r"|disregard\s+(?:all\s+)?(?:previous|prior)\s+instructions"
     r"|system\s+prompt|developer\s+instructions"
-    r"|<\|(?:im_start|system|assistant)\|>|BEGIN\s+SYSTEM\s+PROMPT",
+    r"|act\s+as\s+(?:the\s+)?system"
+    r"|<\|(?:im_start|system|assistant)\|>|BEGIN\s+SYSTEM\s+PROMPT"
+    r"|игнорируй\s+(?:все\s+)?(?:предыдущие|прежние)\s+инструкции"
+    r"|системн(?:ый|ые|ого)\s+(?:промпт|инструкции)"
+    r"|инструкции\s+разработчика",
     re.IGNORECASE,
 )
 
@@ -76,7 +81,8 @@ def safe_source_url(value: Any) -> tuple[str, str]:
 
 def bounded_text(value: Any, name: str, maximum: int) -> str:
     if (not isinstance(value, str) or not value.strip()
-            or len(value) > maximum or "\x00" in value):
+            or len(value) > maximum
+            or any(ord(char) < 32 or ord(char) == 127 for char in value)):
         raise EvidenceError(f"{name}_invalid")
     return value.strip()
 
@@ -98,9 +104,14 @@ def normalize(source: Any, *, now: datetime) -> dict[str, Any]:
     published = timestamp(source["published_at"], field="published_at")
     if published > now + timedelta(days=1):
         raise EvidenceError("published_in_future")
-    warning = "prompt_injection" if PROMPT_INJECTION.search(title + " " + summary) else None
-    if now - published > timedelta(days=MAX_AGE_DAYS):
+    # Suspected instruction injection remains the primary review blocker
+    # even when the same source also happens to be stale.
+    if PROMPT_INJECTION.search(title + " " + summary):
+        warning = "prompt_injection"
+    elif now - published > timedelta(days=MAX_AGE_DAYS):
         warning = "stale_source"
+    else:
+        warning = None
     return {
         "claim_id": claim, "polarity": source["polarity"],
         "url": url, "title": title, "published_at": published.isoformat(),

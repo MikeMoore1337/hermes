@@ -101,6 +101,7 @@ REQUIRED_PATHS = (
     "research_scout/PUBMED.md",
     "research_scout/README.md",
     "tests/test_research_scout.py",
+    "tests/test_research_safety_matrix.py",
     "ops_watch/incident_preview.py",
     "ops_watch/state_store.py",
     "ops_watch/delivery_contract.py",
