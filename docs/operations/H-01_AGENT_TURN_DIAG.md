@@ -48,3 +48,23 @@ Never delete the lock file during operation: keeping the inode prevents lock
 replacement races. Partial systemd proxy startup failures also trigger proxy
 stop in the finally block. This is an agent-only lock; it does not modify
 YFC discovery or Ops Watch scheduling.
+
+## Cloudflare Workers Free failure policy (14 Oct 2026)
+
+The free-only provider classifies **every** provider failure as `retryable=false`
+and `should_fallback=false`, including 401, 402, 403, 408, 429, 5xx,
+and network/unknown errors. Provider-supplied error text is never returned.
+Official Cloudflare docs distinguish 429/3036 (daily 10,000 Neurons spent)
+from 429/3040 (out of capacity), and 403/5035 (model needs Paid plan).
+The provider does not inspect response bodies or silently purchase credits;
+both causes therefore fail closed under a fixed diagnostic category.
+
+Sources: https://developers.cloudflare.com/workers-ai/platform/pricing/
+and https://developers.cloudflare.com/workers-ai/platform/errors/
+
+**Billing boundary:** a pinned free-eligible model and non-retryable policy are
+NOT sufficient to enforce a zero-dollar limit if the owner's Cloudflare
+account were later upgraded to Workers Paid or AI Gateway prepaid billing.
+Before a scheduled service, verify the account is on Workers Free and no
+unified/prepaid billing applies; introduce a separately verified daily hard
+budget and quota observation. No automatic gateway/agent run is allowed yet.

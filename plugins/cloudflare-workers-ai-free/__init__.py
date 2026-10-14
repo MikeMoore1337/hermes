@@ -38,15 +38,25 @@ def reasoning_effort_for(model: str | None, reasoning_config: Any) -> str | None
 
 def classify_api_error(
     error: Any, *, status_code: Any = None, message: Any = "", **_: Any
-) -> dict[str, Any] | None:
-    """Fail closed on free-plan/entitlement errors: never trigger paid fallback."""
-    if status_code in (402, 403, 429):
-        return {
-            "reason": "free_plan_unavailable",
-            "retryable": False,
-            "should_fallback": False,
-        }
-    return None
+) -> dict[str, Any]:
+    """Fail closed for ANY provider failure, without another billable attempt.
+
+    Cloudflare 3036 (daily free quota) and 3040 (out of capacity) both
+    surface as HTTP 429. The error message is untrusted and never reflected.
+    Without a verified Free-plan account, this profile alone cannot promise
+    that a provider-side Paid billing configuration was not enabled.
+    """
+    if type(status_code) is int and status_code == 401:
+        code = "cloudflare_auth_denied"
+    elif type(status_code) is int and status_code in (402, 403):
+        code = "cloudflare_access_or_billing_denied"
+    elif type(status_code) is int and status_code == 429:
+        code = "cloudflare_free_quota_or_capacity_exceeded"
+    elif type(status_code) is int and status_code in (408, 500, 502, 503, 504):
+        code = "cloudflare_temporary_unavailable"
+    else:
+        code = "cloudflare_provider_error"
+    return {"reason": code, "retryable": False, "should_fallback": False}
 
 
 class WorkersAIFreeProfile(ProviderProfile):
