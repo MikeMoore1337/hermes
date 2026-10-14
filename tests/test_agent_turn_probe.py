@@ -118,6 +118,31 @@ class BoundedAgentTurnTests(unittest.TestCase):
         self.assertEqual(command.call_args.args[0],
                          ["systemctl", "stop", "hermes-cloudflare-proxy.service"])
 
+    def test_proxy_stop_must_succeed_and_leave_service_inactive(self):
+        from subprocess import CompletedProcess
+        with patch.object(probe, "run_command", return_value=CompletedProcess([], 0, "", "")) as command, \
+             patch.object(probe, "ok", return_value=False) as active:
+            probe.stop_cloudflare_proxy()
+        command.assert_called_once_with(
+            ["systemctl", "stop", "hermes-cloudflare-proxy.service"]
+        )
+        active.assert_called_once_with(
+            "systemctl", "is-active", "--quiet", "hermes-cloudflare-proxy.service"
+        )
+
+    def test_failed_proxy_stop_can_never_report_agent_success(self):
+        from subprocess import CompletedProcess
+        with patch.object(probe, "run_command", return_value=CompletedProcess([], 1, "", "")), \
+             self.assertRaisesRegex(probe.Rejected, "proxy_cleanup_unverified"):
+            probe.stop_cloudflare_proxy()
+
+    def test_proxy_still_active_after_stop_is_fail_closed(self):
+        from subprocess import CompletedProcess
+        with patch.object(probe, "run_command", return_value=CompletedProcess([], 0, "", "")), \
+             patch.object(probe, "ok", return_value=True), \
+             self.assertRaisesRegex(probe.Rejected, "proxy_cleanup_unverified"):
+            probe.stop_cloudflare_proxy()
+
     def test_guarded_turn_holds_lock_before_preflight(self):
         with patch.object(probe, "exclusive_agent_lock") as lock, \
              patch.object(probe, "_guarded_turn_locked", return_value={"status": "pass"}) as inner:

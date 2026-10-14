@@ -174,6 +174,15 @@ def exclusive_agent_lock(path: Path = LOCK_FILE):
         os.close(fd)
 
 
+def stop_cloudflare_proxy() -> None:
+    """Do not return a successful turn if the private relay remains online."""
+    response = run_command(["systemctl", "stop", "hermes-cloudflare-proxy.service"])
+    if response.returncode != 0:
+        raise Rejected("proxy_cleanup_unverified")
+    if ok("systemctl", "is-active", "--quiet", "hermes-cloudflare-proxy.service"):
+        raise Rejected("proxy_cleanup_unverified")
+
+
 def guarded_turn(*, tool_test: bool = False) -> dict:
     """Hold the exclusive lock across preflight, proxy and container teardown."""
     with exclusive_agent_lock():
@@ -225,7 +234,7 @@ def _guarded_turn_locked(*, tool_test: bool = False) -> dict:
             process.kill()
             process.wait(timeout=5)
         if proxy_start_attempted:
-            run_command(["systemctl", "stop", "hermes-cloudflare-proxy.service"])
+            stop_cloudflare_proxy()
 
 
 def main() -> int:
