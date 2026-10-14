@@ -1,0 +1,12 @@
+[Unit]
+Description=Collect local Hermes news health metrics every 10 minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=10min
+RandomizedDelaySec=30s
+Persistent=false
+Unit=hermes-ops-watch.service
+
+[Install]
+WantedBy=timers.target

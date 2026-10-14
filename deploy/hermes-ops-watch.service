@@ -1,0 +1,32 @@
+[Unit]
+Description=Hermes Ops Watch: read-only news health summary
+Wants=hermes-discovery.timer
+After=local-fs.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/opt/hermes-agent-owner
+ExecStart=/usr/bin/python3 -m ops_watch.collector
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateNetwork=yes
+RestrictAddressFamilies=AF_UNIX
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+LockPersonality=yes
+RestrictSUIDSGID=yes
+MemoryMax=96M
+CPUQuota=10%
+TasksMax=25
+TimeoutStartSec=30
+ReadOnlyPaths=/var/lib/hermes/state.json
+ReadWritePaths=/var/lib/hermes-agent/ops-watch
+UMask=0077
