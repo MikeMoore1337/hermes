@@ -1,6 +1,9 @@
 """The agent test must be fail-closed even if a provider returns apparently OK."""
 from __future__ import annotations
+import sqlite3
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 from scripts import agent_turn_probe as probe
 
@@ -44,6 +47,32 @@ class BoundedAgentTurnTests(unittest.TestCase):
         self.assertNotIn("secret123", serialized)
         self.assertNotIn("01234567890123456789012345678901", serialized)
         self.assertTrue(probe.summarize(untrusted, 1, None, 3)["signals"]["auth"])
+
+
+    @patch.object(probe.pwd, "getpwnam")
+    def test_explicit_tool_prompt_stays_in_single_todo_toolset(self, account):
+        account.return_value.pw_uid, account.return_value.pw_gid = 988, 981
+        command = probe.docker_args(tool_test=True)
+        self.assertIn("todo_list", " ".join(command))
+        self.assertEqual(command[command.index("-t") + 1], "todo")
+        self.assertEqual(command[command.index("-m") + 1], "@cf/openai/gpt-oss-20b")
+
+    def test_claim_of_tool_use_without_real_persisted_event_fails(self):
+        result = probe.summarize("TOOL_OK", 0, None, 45, tool_test=True, todo_delta=0)
+        self.assertEqual(result["status"], "incomplete")
+        verified = probe.summarize("TOOL_OK", 0, None, 45, tool_test=True, todo_delta=2)
+        self.assertEqual(verified["status"], "pass")
+        self.assertEqual(verified["todo_tool_calls_verified"], 2)
+
+    def test_tool_event_counter_reads_only_aggregate_metadata(self):
+        with tempfile.TemporaryDirectory() as folder:
+            dbpath = Path(folder) / "state.db"
+            with sqlite3.connect(dbpath) as db:
+                db.execute("CREATE TABLE messages (role TEXT, tool_name TEXT, tool_calls TEXT, active INTEGER)")
+                db.execute("INSERT INTO messages VALUES ('assistant',NULL,'[]',1)")
+                db.execute("INSERT INTO messages VALUES ('assistant',NULL,'[{\"function\":{\"name\":\"todo_list\"}}]',1)")
+                db.execute("INSERT INTO messages VALUES ('tool','todo_list',NULL,1)")
+            self.assertEqual(probe._count_todo_tool_events(dbpath), 2)
 
     def test_nonroot_fails_closed(self):
         with patch.object(probe.os, "geteuid", return_value=1000):

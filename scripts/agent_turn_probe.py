@@ -5,6 +5,7 @@ import json
 import os
 import pwd
 import re
+import sqlite3
 import stat
 import subprocess
 import tempfile
@@ -19,6 +20,7 @@ NAME = "hermes-agent-test"
 MAX_LOAD_START = 1.10
 MAX_LOAD_DURING = 1.30
 MAX_DURATION = 130
+MAX_TOOL_DURATION = 205
 
 
 class Rejected(Exception):
@@ -72,7 +74,7 @@ def preflight() -> None:
         raise Rejected("firewall_not_verified")
 
 
-def docker_args() -> list[str]:
+def docker_args(*, tool_test: bool = False) -> list[str]:
     """Allow only private state, todo tools and free Cloudflare model."""
     user = pwd.getpwnam("hermes-agent")
     return [
@@ -93,13 +95,19 @@ def docker_args() -> list[str]:
         "--env", "NO_PROXY=localhost,127.0.0.1",
         "--env", "NO_COLOR=1",
         "--entrypoint", "/opt/hermes/bin/hermes", IMAGE,
-        "-z", "Reply exactly with OK. Do not use tools.",
+        "-z", (
+            "Use the todo_list tool to create one completed in-memory task: "
+            "id=smoke-1, content=ephemeral diagnostic, status=completed. "
+            "Then reply exactly TOOL_OK." if tool_test
+            else "Reply exactly with OK. Do not use tools."
+        ),
         "--provider", "workers-ai", "-m", MODEL,
         "-t", "todo", "--reasoning", "low",
     ]
 
 
-def summarize(raw: str, rc: int, cause: str | None, elapsed: float) -> dict:
+def summarize(raw: str, rc: int, cause: str | None, elapsed: float, *,
+              tool_test: bool = False, todo_delta: int = 0) -> dict:
     """Never echo raw inference, bearer keys, user content or account numbers."""
     flags = {
         "auth": bool(re.search(r"\b401\b|invalid.api.key|authentication", raw, re.I)),
@@ -108,16 +116,36 @@ def summarize(raw: str, rc: int, cause: str | None, elapsed: float) -> dict:
         "pm_lock": bool(re.search(r"\.install\.lock|pm repair|dependency.lock", raw, re.I)),
         "network": bool(re.search(r"proxy.error|connect.error|network.unreachable", raw, re.I)),
     }
-    success = rc == 0 and raw.strip() == "OK" and cause is None
+    expected = "TOOL_OK" if tool_test else "OK"
+    success = (rc == 0 and raw.strip() == expected and cause is None
+               and (not tool_test or todo_delta > 0))
     return {
         "status": "pass" if success else "stopped" if cause else "incomplete",
         "reason": cause, "exit_code": rc, "seconds": round(elapsed, 1),
         "signals": flags, "lines": len(raw.splitlines()),
+        "todo_tool_calls_verified": todo_delta if tool_test else None,
     }
 
 
-def guarded_turn() -> dict:
+def _count_todo_tool_events(path: Path = STATE / 'state.db') -> int:
+    """Count persisted todo tool call/result rows, never read message content."""
+    if path.is_symlink() or not path.is_file():
+        raise Rejected('session_db_unavailable')
+    try:
+        with sqlite3.connect(f'file:{path}?mode=ro', uri=True, timeout=2) as db:
+            row = db.execute(
+                "SELECT count(*) FROM messages WHERE active=1 AND ("
+                "(role='tool' AND tool_name='todo_list') OR "
+                "(role='assistant' AND tool_calls LIKE '%todo_list%'))"
+            ).fetchone()
+            return int(row[0])
+    except sqlite3.Error as exc:
+        raise Rejected('session_db_unavailable') from exc
+
+
+def guarded_turn(*, tool_test: bool = False) -> dict:
     preflight()
+    prior_tool_events = _count_todo_tool_events() if tool_test else 0
     started = False
     process: subprocess.Popen | None = None
     start = time.monotonic()
@@ -130,14 +158,14 @@ def guarded_turn() -> dict:
         if os.getloadavg()[0] > MAX_LOAD_START:
             raise Rejected("host_high_load")
         with tempfile.TemporaryFile(mode="w+b", dir="/run") as logfile:
-            process = subprocess.Popen(docker_args(), stdout=logfile,
+            process = subprocess.Popen(docker_args(tool_test=tool_test), stdout=logfile,
                                        stderr=subprocess.STDOUT, close_fds=True)
             reason = None
             while process.poll() is None:
                 if os.getloadavg()[0] > MAX_LOAD_DURING:
                     reason = "news_load_pressure"
                     break
-                if time.monotonic() - start >= MAX_DURATION:
+                if time.monotonic() - start >= (MAX_TOOL_DURATION if tool_test else MAX_DURATION):
                     reason = "time_budget"
                     break
                 time.sleep(2)
@@ -151,7 +179,9 @@ def guarded_turn() -> dict:
                 rc, reason = -9, reason or "time_budget"
             logfile.seek(0)
             raw = logfile.read(65536).decode("utf-8", errors="replace")
-            return summarize(raw, rc, reason, time.monotonic() - start)
+            delta = max(0, _count_todo_tool_events() - prior_tool_events) if tool_test else 0
+            return summarize(raw, rc, reason, time.monotonic() - start,
+                             tool_test=tool_test, todo_delta=delta)
     finally:
         if process is not None and process.poll() is None:
             run_command(["docker", "rm", "-f", NAME])
@@ -164,11 +194,13 @@ def guarded_turn() -> dict:
 def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--execute", action="store_true", help="Run one real Workers Free turn")
-    if not p.parse_args().execute:
+    p.add_argument("--tool-test", action="store_true", help="Use a single in-memory todo tool")
+    args = p.parse_args()
+    if not args.execute:
         print(json.dumps({"status": "not_executed"}))
         return 0
     try:
-        result = guarded_turn()
+        result = guarded_turn(tool_test=args.tool_test)
     except Rejected as exc:
         result = {"status": "rejected", "reason": str(exc)}
     except (OSError, ValueError, subprocess.TimeoutExpired):
