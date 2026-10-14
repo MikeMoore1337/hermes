@@ -1,0 +1,44 @@
+{
+  "schema": "hermes-upstream-security-diff-v1",
+  "compared_on": "2026-10-14",
+  "upstream_repository": "NousResearch/hermes-agent",
+  "installed_embedded_source_sha": "a28a5d03a9fa60418db5f44f3436fa2aa029c8f2",
+  "official_release_tag": "v0.21.6",
+  "official_release_git_sha": "818c13be1dc4fd28987e1e881a9408224afd4535",
+  "ahead_by": 39,
+  "behind_by": 0,
+  "total_files_changed": 54,
+  "observed_registry_digest_match": true,
+  "source_release_parity_verified": false,
+  "sbom_verified": false,
+  "publisher_provenance_verified": false,
+  "resident_agent_approved": false,
+  "approval_review_required": [
+    "tools/approval_yolo.py",
+    "tests/tools/test_approval_yolo.py",
+    "gateway/slash_commands.py",
+    "gateway/run_agent_cache.py",
+    "gateway/run_turn.py",
+    "hermes_cli/cli_session_mixin.py",
+    "hermes_cli/cli_commands_mixin.py",
+    "tests/hermes_cli/test_cli_yolo_resume_persistence.py",
+    "tests/gateway/test_yolo_command.py",
+    "tui_gateway/methods_session.py",
+    "tui_gateway/methods_session_model_guard.py",
+    "run_agent.py"
+  ],
+  "release_review_required": [
+    ".github/workflows/docker.yml",
+    ".github/workflows/stable-release.yml",
+    "plugin-catalog/commandcode-oauth.yaml"
+  ],
+  "blocked_claims": [
+    "git_tag_equals_embedded_source",
+    "official_registry_digest_implies_source_parity",
+    "one_todo_tool_turn_approves_resident_service",
+    "yolo_mode_restoration_is_reviewed_safe",
+    "unsigned_image_has_verified_sbom"
+  ],
+  "safe_next_stage": "offline_source_diff_and_negative_permission_tests_only",
+  "link": "https://github.com/NousResearch/hermes-agent/compare/a28a5d03a9fa60418db5f44f3436fa2aa029c8f2...818c13be1dc4fd28987e1e881a9408224afd4535"
+}
