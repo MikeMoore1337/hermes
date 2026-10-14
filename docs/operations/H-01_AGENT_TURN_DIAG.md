@@ -68,3 +68,12 @@ account were later upgraded to Workers Paid or AI Gateway prepaid billing.
 Before a scheduled service, verify the account is on Workers Free and no
 unified/prepaid billing applies; introduce a separately verified daily hard
 budget and quota observation. No automatic gateway/agent run is allowed yet.
+
+## Explicit proxy stop proof
+
+Returning `status=pass` also requires `systemctl stop hermes-cloudflare-proxy.service`
+to complete successfully **and** for a follow-up `systemctl is-active --quiet`
+check to prove the relay is inactive. A failed or unverified stop rejects the
+whole turn as `proxy_cleanup_unverified`, even when the model had answered OK.
+This guard is an explicit fail-closed condition, not an invitation to retry
+model calls or restart any YFC news timer.
