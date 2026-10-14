@@ -43,3 +43,8 @@ Read-only команда `docker manifest inspect nousresearch/hermes-agent:v0.2
 Результат проверен против `docker image inspect` на том же VPS.
 **Это доказывает совпадение опубликованного AMD64 артефакта, но не доказывает
 source parity или криптографическую подпись разработчика.**
+
+
+## Дополнение по правам после сравнения GitHub API
+
+[Свежая матрица риска и точных путей](H-01-upstream-security-diff-2026-10-14.md) фиксирует сравнение `a28a5d03...818c13be`: 39 commit ahead, 54 изменённых файла, в том числе новая централизация сессионного `/yolo`, перенос/восстановление live approval после смены идентификатора сессии, изменения gateway и release workflow. Это **не доказательство уязвимости** и не доказательство Git release source parity. Постоянный сервис остаётся запрещённым до source/SBOM/negative permissions/burn-in gate.
