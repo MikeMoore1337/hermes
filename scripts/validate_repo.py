@@ -71,6 +71,8 @@ REQUIRED_PATHS = (
     "research_scout/__init__.py",
     "research_scout/core.py",
     "research_scout/pubmed_fetch.py",
+    "research_scout/ncbi_esummary.py",
+    "tests/test_research_ncbi_esummary.py",
     "tests/test_research_pubmed_fetch.py",
     "research_scout/PUBMED.md",
     "research_scout/README.md",
