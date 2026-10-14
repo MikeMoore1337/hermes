@@ -77,7 +77,7 @@ class ScheduledSenderTests(unittest.TestCase):
     def test_one_event_per_10_minute_tick_without_catch_up_burst(self):
         data = TIMER.read_text()
         for required in (
-            "OnBootSec=8min", "OnUnitActiveSec=10min", "Persistent=false",
+            "OnActiveSec=2min", "OnUnitActiveSec=10min", "Persistent=false",
             "Unit=hermes-ops-alerts.service", "RandomizedDelaySec=20s",
         ):
             self.assertIn(required, data)
