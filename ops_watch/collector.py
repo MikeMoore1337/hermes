@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from ops_watch.core import InputError, analyze, changes
+from ops_watch.incident_preview import render
 
 SOURCE = Path("/var/lib/hermes/state.json")
 TARGET = Path("/var/lib/hermes-agent/ops-watch")
@@ -168,7 +169,10 @@ def once(source: Path = SOURCE, target: Path = TARGET, observed: datetime | None
         findings = analyze(snapshot, now=now)
         old = _read_previous(target / "findings.json")
         delta = changes(old, findings)
+        previews = render(delta, findings)
         _atomic_json(target, "findings.json", findings)
+        # Per-run preview, NOT a durable delivery queue; no outbound alerts.
+        _atomic_json(target, "incident-preview.json", previews)
         return {"status": "ok", "active_codes": [f["code"] for f in findings], "changes": delta}
     except BlockingIOError as exc:
         raise InputError("collector_already_running") from exc
