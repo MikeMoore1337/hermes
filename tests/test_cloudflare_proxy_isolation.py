@@ -33,7 +33,7 @@ class CloudflareIsolationTests(unittest.TestCase):
     def test_agent_uses_only_private_proxy(self) -> None:
         script = (ROOT / "deploy/smoke-cloudflare-agent.sh").read_text()
         for required in ("--network hermes-agent-isolated", "--ip 172.29.250.2",
-                         "--read-only", "--cap-drop ALL", "--memory 640m",
+                         "--read-only", "--cap-drop ALL", "--memory 640m", "--cpus 0.15",
                          "--env-file", "HTTPS_PROXY=http://172.29.250.1:18573",
                          "--oneshot", "-t todo"):
             self.assertIn(required, script)
