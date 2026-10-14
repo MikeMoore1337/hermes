@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import Mock, patch
 from urllib.parse import parse_qs, urlsplit
 
+from research_scout.ncbi_rate_limit import NCBIRateGateError
 from research_scout.ncbi_esearch import (
     NCBIError, TOPICS, _fetch, find_candidates, parse_candidates,
 )
@@ -80,6 +81,24 @@ class SearchContractTests(unittest.TestCase):
 
 
 class SearchTransportTests(unittest.TestCase):
+    def setUp(self):
+        guard = patch("research_scout.ncbi_esearch.reserve_request")
+        guard.start()
+        self.addCleanup(guard.stop)
+
+    def test_rate_gate_refusal_prevents_http(self):
+        with patch(
+            "research_scout.ncbi_esearch.reserve_request",
+            side_effect=NCBIRateGateError("ncbi_rate_limited"),
+        ), patch(
+            "research_scout.ncbi_esearch._resolve", return_value="8.8.8.8"
+        ), patch("research_scout.ncbi_esearch._PinnedNCBI") as client:
+            with self.assertRaisesRegex(NCBIError, "ncbi_rate_limited"):
+                _fetch("exercise-recovery", EMAIL)
+            client.return_value.request.assert_not_called()
+            client.return_value.close.assert_called_once_with()
+
+
     def connection(self, status=200, media="application/json"):
         client = Mock()
         response = Mock(status=status)
