@@ -11,6 +11,7 @@ from .ncbi_esummary import (
     HOST, MAX_BODY, NCBIError, TOOL, _PinnedNCBI, _contact, _resolve,
     _unique_json_object,
 )
+from .ncbi_rate_limit import NCBIRateGateError, reserve_request
 from .pubmed_fetch import validate_pmid
 
 TOPICS = {
@@ -42,6 +43,10 @@ def _fetch(topic: str, contact: str) -> bytes:
         "tool": TOOL, "email": contact,
     })
     try:
+        try:
+            reserve_request()
+        except NCBIRateGateError as exc:
+            raise NCBIError(str(exc)) from None
         connection.request(
             "GET", "/entrez/eutils/esearch.fcgi?" + query,
             headers={

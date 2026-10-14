@@ -73,6 +73,8 @@ REQUIRED_PATHS = (
     "research_scout/core.py",
     "research_scout/pubmed_fetch.py",
     "research_scout/ncbi_esummary.py",
+    "research_scout/ncbi_rate_limit.py",
+    "tests/test_research_ncbi_rate_limit.py",
     "research_scout/ncbi_esearch.py",
     "research_scout/ncbi_end_to_end.py",
     "research_scout/REVIEW_RUN.md",

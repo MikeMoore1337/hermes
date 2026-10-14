@@ -17,6 +17,7 @@ import ssl
 from typing import Any, Callable
 from urllib.parse import urlencode
 
+from .ncbi_rate_limit import NCBIRateGateError, reserve_request
 from .core import PROMPT_INJECTION
 from .pubmed_fetch import DOI, PubmedFetchError, validate_pmid
 
@@ -81,6 +82,10 @@ def _fetch(pmid: str, contact: str) -> bytes:
         "tool": TOOL, "email": contact,
     })
     try:
+        try:
+            reserve_request()
+        except NCBIRateGateError as exc:
+            raise NCBIError(str(exc)) from None
         conn.request(
             "GET", "/entrez/eutils/esummary.fcgi?" + query,
             headers={

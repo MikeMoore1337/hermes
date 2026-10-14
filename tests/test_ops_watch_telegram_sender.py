@@ -189,8 +189,10 @@ class LocalAcknowledgeTests(unittest.TestCase):
         persist(self.dir, event(), lambda: [], observed=NOW)
 
     def test_confirm_real_mock_transport_receipt_only(self):
+        # The production send path acknowledges against the real UTC clock.
+        # Use a fresh lease to avoid an expired fixed-date fixture.
         accepted = send_one(
-            self.dir, token=BOT, chat=CHAT, now=NOW,
+            self.dir, token=BOT, chat=CHAT, now=datetime.now(UTC),
             transport=lambda **_: 55,
         )
         self.assertEqual(accepted["status"], "ACCEPTED_BY_TELEGRAM")
