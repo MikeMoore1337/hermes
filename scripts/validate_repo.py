@@ -73,6 +73,8 @@ REQUIRED_PATHS = (
     "research_scout/README.md",
     "tests/test_research_scout.py",
     "ops_watch/incident_preview.py",
+    "ops_watch/state_store.py",
+    "tests/test_ops_watch_state_store.py",
     "tests/test_ops_watch_incident_preview.py",
     "ops_watch/core.py",
     "ops_watch/collector.py",
