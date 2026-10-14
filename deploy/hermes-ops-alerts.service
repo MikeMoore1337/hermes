@@ -1,0 +1,44 @@
+[Unit]
+Description=Hermes Ops Watch: send one queued owner-only Telegram alert
+Documentation=https://github.com/MikeMoore1337/hermes/issues/3
+Wants=network-online.target
+After=network-online.target local-fs.target
+RequiresMountsFor=/var/lib/hermes-agent/ops-watch /etc/hermes-agent
+AssertPathExists=/var/lib/hermes-agent/ops-watch/incidents.sqlite3
+AssertPathExists=/etc/hermes-agent/ops-watch.env
+StartLimitIntervalSec=3600
+StartLimitBurst=6
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/opt/hermes-agent-owner
+ExecStart=/usr/bin/python3 -m ops_watch.telegram_dispatch --execute
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+LockPersonality=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictRealtime=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+UMask=0077
+ReadWritePaths=/var/lib/hermes-agent/ops-watch
+ReadOnlyPaths=/etc/hermes-agent/ops-watch.env
+InaccessiblePaths=/var/lib/hermes /etc/hermes-agent/github-actions-read.token /etc/hermes-agent/research-scout.env
+MemoryMax=96M
+CPUQuota=10%
+TasksMax=20
+TimeoutStartSec=35s
+StandardOutput=journal
+StandardError=journal
