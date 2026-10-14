@@ -1,0 +1,14 @@
+[Unit]
+Description=Hermes Ops Watch: bounded private Telegram delivery every 10 minutes
+Documentation=https://github.com/MikeMoore1337/hermes/issues/3
+
+[Timer]
+OnBootSec=8min
+OnUnitActiveSec=10min
+AccuracySec=1min
+RandomizedDelaySec=20s
+Persistent=false
+Unit=hermes-ops-alerts.service
+
+[Install]
+WantedBy=timers.target
