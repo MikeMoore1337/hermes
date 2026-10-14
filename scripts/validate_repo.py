@@ -57,6 +57,7 @@ REQUIRED_PATHS = (
     "docs/architecture/CLOUDFLARE_EGRESS.md",
     "docs/audits/H-01-cloudflare-live-2026-10-14.md",
     "docs/audits/H-01-full-agent-tool-turn-2026-10-14.md",
+    "docs/audits/H-01-network-guard-vps-2026-10-14.md",
     "tests/test_cloudflare_text_probe.py",
     "docs/operations/CLOUDFLARE_TEXT_PROBE.md",
     "tests/test_cloudflare_free_provider.py",

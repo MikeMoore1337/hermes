@@ -98,6 +98,57 @@ class FirewallGateTests(unittest.TestCase):
             guard.ensure(mutate=False)
         run.assert_not_called()
 
+
+    @patch.object(guard.os, "geteuid", return_value=0)
+    @patch.object(guard, "get_network", return_value=(True, True))
+    @patch.object(guard, "get_nft", side_effect=[(False, False), (True, True), (True, True)])
+    @patch.object(guard, "process", return_value=response(0))
+    def test_missing_firewall_rebuilt_without_touching_existing_bridge(self, run, nft, *_):
+        self.assertEqual(guard.ensure(mutate=True), "verified")
+        self.assertEqual(run.call_count, 1)
+        self.assertEqual(run.call_args.args[0], ["nft", "-f", "-"])
+        self.assertIn("add table inet hermes_agent_isolation", run.call_args.kwargs["stdin"])
+        self.assertEqual(nft.call_count, 3)
+
+    @patch.object(guard.os, "geteuid", return_value=0)
+    @patch.object(guard, "get_network", side_effect=[(False, False), (True, True)])
+    @patch.object(guard, "get_nft", side_effect=[(False, False), (True, True), (True, True)])
+    @patch.object(guard, "process",
+                  side_effect=[response(0), response(0, ""), response(0)])
+    def test_both_missing_restored_firewall_first_then_internal_bridge(self, run, *_):
+        self.assertEqual(guard.ensure(mutate=True), "verified")
+        commands = [c.args[0] for c in run.call_args_list]
+        self.assertEqual(commands[0], ["nft", "-f", "-"])
+        self.assertEqual(commands[1], ["ip", "-4", "route", "show", guard.SUBNET])
+        self.assertEqual(commands[2][:3], ["docker", "network", "create"])
+        self.assertIn("--internal", commands[2])
+
+    @patch.object(guard.os, "geteuid", return_value=0)
+    @patch.object(guard, "get_network", return_value=(False, False))
+    @patch.object(guard, "get_nft", return_value=(False, False))
+    @patch.object(guard, "process", return_value=response(1))
+    def test_firewall_creation_failure_never_creates_network(self, run, *_):
+        with self.assertRaisesRegex(guard.GuardError, "firewall_create_failed"):
+            guard.ensure(mutate=True)
+        self.assertEqual(run.call_count, 1)
+        self.assertEqual(run.call_args.args[0], ["nft", "-f", "-"])
+
+    @patch.object(guard, "process",
+                  side_effect=[response(1), response(0, "table inet hermes_agent_isolation")])
+    def test_failed_nft_table_inspection_does_not_forge_absence(self, run):
+        with self.assertRaisesRegex(guard.GuardError, "nft_inspection_failed"):
+            guard.get_nft()
+        self.assertEqual(run.call_count, 2)
+
+    @patch.object(guard.os, "geteuid", return_value=0)
+    @patch.object(guard, "get_network", return_value=(True, False))
+    @patch.object(guard, "get_nft", return_value=(False, False))
+    @patch.object(guard, "process")
+    def test_modified_existing_network_is_never_repaired_or_overwritten(self, run, *_):
+        with self.assertRaisesRegex(guard.GuardError, "existing_isolation_drift"):
+            guard.ensure(mutate=True)
+        run.assert_not_called()
+
     def test_proxy_checks_exact_network_again_before_listening(self):
         proxy = (ROOT / "deploy/hermes-cloudflare-proxy.service").read_text()
         self.assertIn(
