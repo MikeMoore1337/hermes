@@ -53,6 +53,22 @@ class ParseEvidenceTests(unittest.TestCase):
         with self.assertRaises(InvalidEvidence):
             parse_run(item)
 
+    def test_unhashable_status_and_conclusion_are_rejected_cleanly(self):
+        for bad in ([], {}, ["failure"], {"code": "failure"}, 123, True):
+            for field in ("status", "conclusion"):
+                item = run()
+                item[field] = bad
+                with self.subTest(field=field, bad=type(bad).__name__):
+                    with self.assertRaises(InvalidEvidence):
+                        parse_run(item)
+
+    def test_unhashable_job_conclusion_is_rejected_cleanly(self):
+        for bad in ([], {}, ["failure"], {"code": 429}):
+            item = run(jobs=[{"name": "unit", "conclusion": bad}])
+            with self.subTest(type=type(bad).__name__):
+                with self.assertRaises(InvalidEvidence):
+                    parse_run(item)
+
     def test_pending_run_has_no_conclusion(self):
         with self.assertRaises(InvalidEvidence):
             parse_run(run(status="in_progress", conclusion="success"))

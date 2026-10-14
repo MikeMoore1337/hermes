@@ -43,7 +43,9 @@ def parse_job(obj: Any) -> dict[str, Any]:
     if not JOB_NAME.fullmatch(name):
         raise InvalidEvidence("job_name_invalid")
     conclusion = obj["conclusion"]
-    if conclusion is not None and conclusion not in CONCLUSIONS:
+    if conclusion is not None and (
+        not isinstance(conclusion, str) or conclusion not in CONCLUSIONS
+    ):
         raise InvalidEvidence("job_conclusion_invalid")
     return {"name": name, "conclusion": conclusion}
 
@@ -67,9 +69,10 @@ def parse_run(obj: Any) -> dict[str, Any]:
         raise InvalidEvidence("head_sha_invalid")
     status = obj["status"]
     conclusion = obj["conclusion"]
-    if status not in RUN_STATUS or (
-        status == "completed" and conclusion not in CONCLUSIONS
-    ) or (status != "completed" and conclusion is not None):
+    if (not isinstance(status, str) or status not in RUN_STATUS
+            or (status == "completed" and (
+                not isinstance(conclusion, str) or conclusion not in CONCLUSIONS
+            )) or (status != "completed" and conclusion is not None)):
         raise InvalidEvidence("run_state_invalid")
     jobs = obj["jobs"]
     if not isinstance(jobs, list) or len(jobs) > MAX_JOBS:
