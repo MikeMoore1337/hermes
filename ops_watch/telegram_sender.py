@@ -94,6 +94,20 @@ def _message(event: dict[str, Any]) -> str:
     return message
 
 
+def _unique_telegram_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    """Reject duplicate keys at any depth, rather than accepting last value."""
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise TelegramGateError("telegram_duplicate_json_key")
+        result[key] = value
+    return result
+
+
+def _invalid_constant(_value: str) -> Any:
+    raise TelegramGateError("telegram_nonfinite_json")
+
+
 def post_once(
     *, token: str, chat_id: int, text: str,
     connect: Callable[[str], Any] = _PinnedTelegram,
@@ -121,11 +135,25 @@ def post_once(
             raise TelegramGateError("telegram_api_refused")
         if reply.getheader("Content-Encoding", "identity").lower() != "identity":
             raise TelegramGateError("telegram_compressed_response")
+        media = reply.getheader("Content-Type", "").lower()
+        if not media.startswith("application/json"):
+            raise TelegramGateError("telegram_response_content_invalid")
+        declared = reply.getheader("Content-Length")
+        if declared is not None and (
+            not declared.isascii() or not declared.isdigit()
+            or int(declared) > MAX_BODY_BYTES
+        ):
+            raise TelegramGateError("telegram_response_oversize")
         raw = reply.read(MAX_BODY_BYTES + 1)
         if len(raw) > MAX_BODY_BYTES:
             raise TelegramGateError("telegram_response_oversize")
         try:
-            result = json.loads(raw)
+            result = json.loads(
+                raw, object_pairs_hook=_unique_telegram_object,
+                parse_constant=_invalid_constant,
+            )
+        except TelegramGateError:
+            raise
         except (ValueError, UnicodeError) as exc:
             raise TelegramGateError("telegram_response_invalid") from exc
         if not isinstance(result, dict) or result.get("ok") is not True:
@@ -135,7 +163,8 @@ def post_once(
             raise TelegramGateError("telegram_receipt_missing")
         target = sent.get("chat")
         if (not isinstance(target, dict) or type(target.get("id")) is not int
-                or target["id"] != chat_id or sent["message_id"] <= 0):
+                or target["id"] != chat_id or target.get("type") != "private"
+                or sent["message_id"] <= 0):
             raise TelegramGateError("telegram_receipt_mismatch")
         return sent["message_id"]
     except (OSError, TimeoutError, http.client.HTTPException) as exc:

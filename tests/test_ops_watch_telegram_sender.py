@@ -55,11 +55,13 @@ class SenderTransportTests(unittest.TestCase):
     def fake(self, *, status=200, data=None):
         payload = data if data is not None else {
             "ok": True, "result": {
-                "message_id": 445, "chat": {"id": int(CHAT)}
+                "message_id": 445, "chat": {"id": int(CHAT), "type": "private"}
             }
         }
         response = Mock(status=status)
-        response.getheader.side_effect = lambda key, default=None: default
+        response.getheader.side_effect = lambda key, default=None: (
+            {"Content-Type": "application/json"}.get(key, default)
+        )
         response.read.return_value = json.dumps(payload).encode("utf-8")
         client = Mock()
         client.getresponse.return_value = response
@@ -81,14 +83,78 @@ class SenderTransportTests(unittest.TestCase):
     @patch("ops_watch.telegram_sender._resolve", return_value="8.8.8.8")
     def test_wrong_chat_or_missing_receipt_refused(self, resolver):
         for answer in (
-            {"ok": True, "result": {"message_id": 33, "chat": {"id": 999}}},
-            {"ok": True, "result": {"message_id": 0, "chat": {"id": int(CHAT)}}},
-            {"ok": True, "result": {"chat": {"id": int(CHAT)}}},
+            {"ok": True, "result": {"message_id": 33, "chat": {"id": 999, "type": "private"}}},
+            {"ok": True, "result": {"message_id": 0, "chat": {"id": int(CHAT), "type": "private"}}},
+            {"ok": True, "result": {"chat": {"id": int(CHAT), "type": "private"}}},
         ):
             client = self.fake(data=answer)
             with self.assertRaises(TelegramGateError):
                 post_once(token=BOT, chat_id=int(CHAT), text="test",
                           connect=lambda _: client)
+
+    @patch("ops_watch.telegram_sender._resolve", return_value="8.8.8.8")
+    def test_message_receipt_must_be_private_chat(self, resolver):
+        for kind in (None, "group", "supergroup", "channel"):
+            with self.subTest(kind=kind):
+                client = self.fake(data={
+                    "ok": True, "result": {
+                        "message_id": 1001,
+                        "chat": {"id": int(CHAT), "type": kind},
+                    },
+                })
+                with self.assertRaisesRegex(TelegramGateError, "telegram_receipt_mismatch"):
+                    post_once(token=BOT, chat_id=int(CHAT), text="test",
+                              connect=lambda _: client)
+                client.close.assert_called_once_with()
+
+    @patch("ops_watch.telegram_sender._resolve", return_value="8.8.8.8")
+    def test_duplicate_json_keys_are_denied_even_when_api_says_ok(self, resolver):
+        bodies = (
+            b'{"ok":true,"ok":false,"result":{"message_id":44}}',
+            ('{"ok":true,"result":{"message_id":44,"message_id":55,'
+             '"chat":{"id":' + CHAT + ',"type":"private"}}}').encode(),
+            ('{"ok":true,"result":{"message_id":44,"chat":{"id":'
+             + CHAT + ',"id":' + CHAT + ',"type":"private"}}}').encode(),
+        )
+        for value in bodies:
+            client = self.fake()
+            client.getresponse.return_value.read.return_value = value
+            with self.subTest(size=len(value)), self.assertRaisesRegex(
+                TelegramGateError, "telegram_duplicate_json_key"
+            ):
+                post_once(token=BOT, chat_id=int(CHAT), text="test",
+                          connect=lambda _: client)
+
+    @patch("ops_watch.telegram_sender._resolve", return_value="8.8.8.8")
+    def test_non_json_wrong_type_and_oversized_response_rejected(self, resolver):
+        client = self.fake()
+        client.getresponse.return_value.getheader.side_effect = (
+            lambda key, default=None: {
+                "Content-Type": "text/html"
+            }.get(key, default)
+        )
+        with self.assertRaisesRegex(TelegramGateError, "telegram_response_content_invalid"):
+            post_once(token=BOT, chat_id=int(CHAT), text="test",
+                      connect=lambda _: client)
+        client2 = self.fake()
+        client2.getresponse.return_value.getheader.side_effect = (
+            lambda key, default=None: {
+                "Content-Type": "application/json",
+                "Content-Length": "1000000",
+            }.get(key, default)
+        )
+        with self.assertRaisesRegex(TelegramGateError, "telegram_response_oversize"):
+            post_once(token=BOT, chat_id=int(CHAT), text="test",
+                      connect=lambda _: client2)
+        client2.getresponse.return_value.read.assert_not_called()
+
+    @patch("ops_watch.telegram_sender._resolve", return_value="8.8.8.8")
+    def test_nonfinite_json_is_never_valid_receipt(self, resolver):
+        client = self.fake()
+        client.getresponse.return_value.read.return_value = b'{"ok":true,"result":NaN}'
+        with self.assertRaisesRegex(TelegramGateError, "telegram_nonfinite_json"):
+            post_once(token=BOT, chat_id=int(CHAT), text="test",
+                      connect=lambda _: client)
 
     @patch("ops_watch.telegram_sender._resolve", return_value="8.8.8.8")
     def test_http_429_and_other_errors_no_retry(self, resolver):
