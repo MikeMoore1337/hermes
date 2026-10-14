@@ -22,3 +22,7 @@ news or Ops Watch units.
 
 Caveat: relay only validates CONNECT authority, not TLS contents; client must
 validate Cloudflare certificate. A compromised host/proxy is outside this model.
+
+## Проверка на действующем VPS 14.10.2026
+
+[Подробные доказательства](../audits/H-01-cloudflare-live-2026-10-14.md). Dedicated bridge/nft policies действительно созданы без изменения прежней таблицы hermes_egress. Из контейнера: прямые IP и чужие домены заблокированы, Cloudflare доступен; GPT-OSS 20B HTTP 200, 91 токен через urllib; штатный OpenAI SDK HTTP 200, 91 токен. После теста relay stopped/disabled, agent stopped/disabled. Полный CLI Hermes не завершился в пределах 86 секунд; [блокер #24](https://github.com/MikeMoore1337/hermes/issues/24). Нельзя включать автозапуск или утверждать, что уже работает автономный AI Agent.

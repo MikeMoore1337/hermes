@@ -7,6 +7,7 @@
 - Владелец сохранил отдельные Cloudflare Workers AI credentials под учетной записью hermes-agent. Режим файла 0600, права hermes-agent:hermes-agent, ключ не выводился в чат, GitHub, stdout/stderr или Issue.
 - PR #22 - однократная проверка API без повторов и автозамен; сервер подтвердил Workers AI GPT-OSS 20B HTTP **200**, израсходовано **92 токена** (76 на входе, 16 на выходе). Только текстовый ответ, без инструментов.
 - PR #23 - отдельная изолированная сеть и строгий TLS CONNECT proxy. На том же VPS внутри Docker-контейнера, с 0.15 CPU, private bridge, без Docker socket и host volumes, живой вызов той же бесплатной модели подтвердил HTTP **200**, **91 токен**. Доступ к API/сертификатам через прокси работает.
+- Дополнительная проверка **OpenAI Python SDK из самого закреплённого Hermes Docker-образа** в той же изолированной сети с тем же proxy: успешный `chat.completions.create`, HTTP **200**, **91 токен**, CPU 0.20 / RAM 320 MiB. Таким образом, сама SDK/Cloudflare transport совместимость подтверждена. Зависание полного Hermes CLI связано с иной фазой (не обязательно моделью), причина пока не установлена.
 - Workers Free официально даёт **10 000 Neurons в сутки** и прекращает обработку запросов сверх лимита; не подключалась Workers Paid / prepaid AI Gateway. Документация: https://developers.cloudflare.com/workers-ai/platform/pricing/ ; модель: https://developers.cloudflare.com/workers-ai/models/gpt-oss-20b/ .
 
 ## Защита сетевого маршрута: фактические проверки
@@ -15,7 +16,7 @@
 - Только новая nft-таблица hermes_agent_isolation, INPUT пропускает из этого интерфейса только gateway 172.29.250.1:18573 от агента; FORWARD drop. Существующая таблица hermes_egress новостного конвейера **не менялась**.
 - Прокси cloudflare_connect_proxy.py с постоянным origin api.cloudflare.com:443, проверкой client IP и CONNECT authority; заголовки/содержимое TLS и bearer-токенов не логируются.
 - Проверено из контейнера: Cloudflare API отвечает через TLS (ответ 400 от Cloudflare на намеренный анонимный диагностический GET, с cloudflare/cf-ray заголовками); чужой CONNECT к example.com отклонён; прямые попытки к 1.1.1.1:443 и 172.21.0.1:443 заблокированы. Это проверка конкретных отрицательных сценариев, не полное доказательство отсутствия обходов.
-- Proxy systemd unit поставлен с отдельным низкопривилегированным системным пользователем hermes-egress. **В конце испытаний proxy stopped/disabled**. Отдельный AI gateway unit также disabled/inactive.
+- Proxy systemd unit поставлен с отдельным низкопривилегированным системным пользователем hermes-egress. **В конце испытаний proxy stopped/disabled**, AI service disabled/inactive; лишние агентные контейнеры и временные скрипты удалены. Отдельный AI gateway unit также disabled/inactive.
 
 ## Проблема полноценного Hermes CLI
 
@@ -47,3 +48,7 @@
 4. Не подключать Telegram/YFC/Second Brain, автоматическую публикацию, shell/MCP доступ и изменения production news, пока этот блокер не снят.
 
 **H-01/#2 и #19 остаются открытыми. H-02 локальный мониторинг работает независимо.**
+
+## Уточнение после третьего теста
+
+Даже повторённый эксперимент со штатным SDK прошёл через HTTPS CONNECT, имея только частный Docker bridge и Cloudflare-only маршрут. Следовательно, статус **H-01 not functional** вызван не отсутствием токена, не Workers Free 403 и не невозможностью отправить HTTP-запрос к Cloudflare. Дальше нужны безопасная диагностика startup / профиля / tool initialization / вспомогательных запросов Hermes CLI и измерение времени до первого LLM вызова. Не нужно менять тариф или запрашивать повторно секрет у владельца.
