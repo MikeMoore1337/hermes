@@ -102,6 +102,21 @@ class TransactionalOutboxTests(unittest.TestCase):
         _, _, count = self.save(data)
         self.assertEqual(count, 1)
         self.assertNotIn("should-stay-private", str(inspect(self.path)))
+        with sqlite3.connect(self.path / DATABASE) as db:
+            state = db.execute("SELECT findings_json FROM state WHERE id=1").fetchone()[0]
+        self.assertNotIn("should-stay-private", state)
+
+    def test_duplicate_current_incident_cannot_be_saved(self):
+        with self.assertRaisesRegex(InputError, "invalid_current_incidents"):
+            self.save(active("timer_inactive") + active("timer_inactive"))
+
+    def test_input_cannot_persist_unrecognized_keys(self):
+        data = active("timer_inactive")
+        data[0]["raw_model_output"] = "SECRET PRIVATE DATA"
+        self.save(data)
+        with sqlite3.connect(self.path / DATABASE) as db:
+            row = db.execute("SELECT findings_json FROM state").fetchone()[0]
+        self.assertNotIn("PRIVATE DATA", row)
 
     def test_readonly_inspection_has_strict_limit(self):
         self.save(active("timer_disabled"))

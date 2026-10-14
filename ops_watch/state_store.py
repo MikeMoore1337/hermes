@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Callable
 
-from .core import InputError, changes
+from .core import INCIDENT_CODES, InputError, changes
 from .incident_preview import render
 
 DATABASE = "incidents.sqlite3"
@@ -43,6 +43,24 @@ def _connection(directory: Path) -> sqlite3.Connection:
         raise InputError("outbox_unavailable") from exc
 
 
+def _safe_findings(items: Any) -> list[dict[str, str]]:
+    """Store only approved incident IDs, never raw input values."""
+    if not isinstance(items, list) or len(items) > len(INCIDENT_CODES):
+        raise InputError("invalid_current_incidents")
+    result: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for item in items:
+        if not isinstance(item, dict) or type(item.get("code")) is not str:
+            raise InputError("invalid_current_incidents")
+        code = item["code"]
+        if (code not in INCIDENT_CODES or item.get("fingerprint") != f"ops:{code}"
+                or code in seen):
+            raise InputError("invalid_current_incidents")
+        seen.add(code)
+        result.append({"code": code, "fingerprint": f"ops:{code}"})
+    return sorted(result, key=lambda x: x["code"])
+
+
 def persist(
     directory: Path,
     current: list[dict[str, Any]],
@@ -58,8 +76,7 @@ def persist(
     """
     if observed.tzinfo is None:
         raise InputError("observed_timezone_required")
-    if not isinstance(current, list):
-        raise InputError("invalid_current_incidents")
+    safe_current = _safe_findings(current)
     try:
         with _connection(directory) as db:
             db.execute("BEGIN IMMEDIATE")
@@ -76,9 +93,7 @@ def persist(
             )
             row = db.execute("SELECT findings_json FROM state WHERE id=1").fetchone()
             if row is None:
-                previous = legacy_loader()
-                # Validate legacy contents through the same deterministic gate.
-                changes(previous, [])
+                previous = _safe_findings(legacy_loader())
                 previous_raw = json.dumps(previous, sort_keys=True, separators=(",", ":"))
                 if len(previous_raw) > MAX_STATE_BYTES:
                     raise InputError("legacy_state_oversize")
@@ -93,10 +108,9 @@ def persist(
                     previous = json.loads(row[0])
                 except ValueError as exc:
                     raise InputError("corrupt_outbox_state") from exc
-                if not isinstance(previous, list):
-                    raise InputError("corrupt_outbox_state")
-            delta = changes(previous, current)
-            previews = render(delta, current)
+                previous = _safe_findings(previous)
+            delta = changes(previous, safe_current)
+            previews = render(delta, safe_current)
             event_count = db.execute("SELECT COUNT(*) FROM events").fetchone()[0]
             if event_count + len(previews) > MAX_EVENTS:
                 raise InputError("outbox_full")
@@ -111,7 +125,7 @@ def persist(
                         item["title"], item["action"], when,
                     ),
                 )
-            current_json = json.dumps(current, sort_keys=True, separators=(",", ":"))
+            current_json = json.dumps(safe_current, sort_keys=True, separators=(",", ":"))
             if len(current_json) > MAX_STATE_BYTES:
                 raise InputError("current_state_oversize")
             db.execute("UPDATE state SET findings_json=? WHERE id=1", (current_json,))
