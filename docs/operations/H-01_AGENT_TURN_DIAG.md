@@ -25,3 +25,14 @@ python3 /opt/hermes-agent-owner/scripts/agent_turn_probe.py --execute
 
 This smoke does not enable a daemon, Telegram publishing or other tools.
 A successful response alone is not authorization to enable 24/7 gateway.
+
+## Confirming real tool use (separate, bounded operation)
+
+After a successful text-only call, one more explicit run can use --execute
+--tool-test. The model is instructed to call ONLY the in-memory todo_list
+tool with synthetic content, then print TOOL_OK. The runner verifies that the
+agent-owned SQLite state.db has a new active todo tool call/result row;
+a merely claimed TOOL_OK without an actual persisted call is NOT a pass.
+This test allows at most 205 seconds to accommodate two model round trips.
+There is no vault, repository or news access, and no external write tool.
+No background task or periodic monitoring is enabled.
