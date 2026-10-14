@@ -48,10 +48,11 @@ def public_dns_address(host: str = HOST) -> str:
     if not ips:
         raise PubmedFetchError("dns_unavailable")
     try:
-        if not all(ipaddress.ip_address(ip).is_global for ip in ips):
-            raise PubmedFetchError("private_dns_address")
+        addresses = [ipaddress.ip_address(ip) for ip in ips]
     except ValueError as exc:
         raise PubmedFetchError("dns_invalid_address") from exc
+    if not all(address.is_global for address in addresses):
+        raise PubmedFetchError("private_dns_address")
     return ips[0]
 
 
