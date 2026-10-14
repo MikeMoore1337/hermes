@@ -19,6 +19,7 @@
 - [План безопасной миграции конвейера новостей](docs/architecture/MIGRATION.md)
 - [H-01: upstream, модель угроз и требования к изолированному runtime](docs/architecture/H-01-runtime-plan.md)
 - [H-01: ограниченный локальный контур на выделенном VPS](deploy/H-01-LOCAL-SANDBOX.md)
+- [H-01: фактический запуск и статус после увеличения RAM 14.10.2026](docs/audits/H-01-vps-upgrade-2026-10-14.md)
 - [Безопасность и угрозы](docs/security/THREAT_MODEL.md)
 - [Дорожная карта H-00...H-07](docs/roadmap/ROADMAP.md)
 - [Эксплуатация и выпуск](docs/operations/DEPLOYMENT.md)
