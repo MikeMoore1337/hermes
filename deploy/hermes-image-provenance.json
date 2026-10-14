@@ -11,5 +11,9 @@
   "known_commits_behind_release": 39,
   "source_release_parity_verified": false,
   "permanent_agent_runtime_approved": false,
-  "allowed_use": "single-bounded-readonly-purpose-todo-test-only"
+  "allowed_use": "single-bounded-readonly-purpose-todo-test-only",
+  "published_registry_tag": "nousresearch/hermes-agent:v0.21.6",
+  "published_tag_linux_amd64_digest": "sha256:32d095e84190ae7266afbb361579e6921f2c633e899f5eacfb88111b9c851a22",
+  "published_tag_amd64_match_verified": true,
+  "registry_manifest_inspected_date": "2026-10-14"
 }
