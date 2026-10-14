@@ -52,7 +52,7 @@ def _time(value: Any, name: str) -> datetime:
 
 def _state(data: Mapping[str, Any], key: str, options: frozenset[str]) -> str:
     value = data.get(key, "unknown")
-    if value not in options or not isinstance(value, str):
+    if not isinstance(value, str) or value not in options:
         raise InputError(f"{key}: invalid status")
     return value
 
@@ -138,9 +138,10 @@ def changes(previous: list[Mapping[str, Any]], current: list[Mapping[str, Any]])
     def fingerprints(items: list[Mapping[str, Any]]) -> set[str]:
         found: set[str] = set()
         for item in items:
+            item = _mapping(item, "finding")
             code = item.get("code")
             fingerprint = item.get("fingerprint")
-            if code not in INCIDENT_CODES or fingerprint != f"ops:{code}":
+            if not isinstance(code, str) or code not in INCIDENT_CODES or fingerprint != f"ops:{code}":
                 raise InputError("invalid incident fingerprint")
             found.add(fingerprint)
         return found

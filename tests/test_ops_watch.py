@@ -123,6 +123,15 @@ class OpsWatchTests(unittest.TestCase):
             ["ops:timer_inactive"],
         )
 
+    def test_invalid_status_type_is_rejected_with_an_input_error(self) -> None:
+        self.snapshot["yfc"]["backend"] = []
+        with self.assertRaises(InputError):
+            self.incidents()
+
+    def test_non_object_previous_finding_is_rejected(self) -> None:
+        with self.assertRaises(InputError):
+            changes(["untrusted text"], [])
+
     def test_invented_incident_fingerprint_is_rejected(self) -> None:
         with self.assertRaises(InputError):
             changes([{"code": "unreviewed_shell", "fingerprint": "ops:unreviewed_shell"}], [])
