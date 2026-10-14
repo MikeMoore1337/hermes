@@ -20,3 +20,17 @@ Not done: scoped read-only GitHub API tokens, fetching sanitized CI logs,
 live monitoring or Telegram alerts. These require separate owner-approved
 permissions, authentication, quota/egress and tested data-redaction controls.
 No code here can write Issues, change branches, rerun CI, merge PRs or deploy.
+
+
+## Public metadata retrieval (separate manual diagnostic)
+
+`python3 -m qa_advisor.github_public --repository MikeMoore1337/hermes`
+
+The optional module downloads at most three **public** GitHub Actions run metadata
+objects via a single exact GET to api.github.com, with no GitHub token, no logs,
+no redirects, no proxy environment, no writes, no retries, 12s timeout and a
+700 KiB body limit. It reduces the response to allowlisted fields before the
+no-network analyzer sees it. Rate limit, HTTP, schema and DNS failures are
+`UNKNOWN`, not healthy. This component is NOT wired to the Cloudflare-only
+agent container, Ops Watch timer, or autonomous alerts. Network deployment
+requires separate egress review. Public metadata alone cannot prove root cause.
