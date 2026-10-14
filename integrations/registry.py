@@ -21,6 +21,7 @@ ENTRY_ID = re.compile(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*\Z")
 HOST = re.compile(r"[a-z0-9][a-z0-9.-]{0,251}[a-z0-9]\Z")
 PERMISSION = re.compile(r"[A-Za-z][A-Za-z0-9:_-]{0,63}\Z")
 REASON = re.compile(r"[a-z][a-z0-9_]{2,70}\Z")
+SECRET_LIKE = re.compile(r"(?:github_pat_|ghp_|gho_|sk-[A-Za-z0-9]{12}|AIza[A-Za-z0-9_-]{20})", re.IGNORECASE)
 CREDENTIAL_MODES = frozenset({"none", "scoped_file", "developer_contact",
                               "separate_future_auth", "unscoped_pool"})
 BILLING_MODES = frozenset({"zero_guaranteed", "free_plan_owner_attested",
@@ -56,12 +57,18 @@ def _string(value: object, field: str, maximum: int = 180) -> str:
         raise RegistryError("invalid_" + field)
     if any(ord(c) < 32 or ord(c) == 127 for c in value):
         raise RegistryError("invalid_" + field)
+    if SECRET_LIKE.search(value):
+        raise RegistryError("suspected_credential_literal")
     return value
 
 
 def _url(value: object, field: str) -> str:
     url = _string(value, field, 300)
-    parsed = urlsplit(url)
+    try:
+        parsed = urlsplit(url)
+        port = parsed.port
+    except ValueError:
+        raise RegistryError("invalid_" + field) from None
     if (parsed.scheme != "https" or not parsed.netloc or not parsed.hostname
             or parsed.username or parsed.password or parsed.port
             or "\\" in url or parsed.hostname.endswith(".")):
