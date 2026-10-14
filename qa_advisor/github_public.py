@@ -6,6 +6,7 @@ scoped Actions: read token. No raw logs, retries, redirects or write actions.
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import stat
@@ -45,7 +46,9 @@ def _private_token(path: Path) -> str:
     """Load only owner-controlled scoped credential; never log its value."""
     try:
         fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
-    except OSError:
+    except OSError as exc:
+        if exc.errno == errno.ELOOP:
+            raise GithubPublicError("github_token_file_unsafe") from None
         raise GithubPublicError("github_private_token_unavailable") from None
     try:
         metadata = os.fstat(fd)
