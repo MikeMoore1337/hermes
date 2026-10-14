@@ -43,18 +43,23 @@ def public_opener():
 
 def _private_token(path: Path) -> str:
     """Load only owner-controlled scoped credential; never log its value."""
-    if path.is_symlink():
-        raise GithubPublicError("github_token_file_unsafe")
     try:
-        metadata = path.stat(follow_symlinks=False)
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    except OSError:
+        raise GithubPublicError("github_private_token_unavailable") from None
+    try:
+        metadata = os.fstat(fd)
         if (not stat.S_ISREG(metadata.st_mode)
                 or metadata.st_uid != os.geteuid()
                 or stat.S_IMODE(metadata.st_mode) != 0o600
                 or metadata.st_nlink != 1 or metadata.st_size > MAX_TOKEN_BYTES):
             raise GithubPublicError("github_token_file_unsafe")
-        token = path.read_text(encoding="ascii").strip()
-    except (OSError, UnicodeError) as exc:
-        raise GithubPublicError("github_private_token_unavailable") from None
+        try:
+            token = os.read(fd, MAX_TOKEN_BYTES + 1).decode("ascii").strip()
+        except (OSError, UnicodeError):
+            raise GithubPublicError("github_private_token_invalid") from None
+    finally:
+        os.close(fd)
     if (not 20 <= len(token) <= MAX_TOKEN_BYTES
             or not token.isascii() or not token.isprintable()
             or any(ch.isspace() for ch in token)):
