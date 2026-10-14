@@ -1,6 +1,6 @@
 # Ops Watch: offline core (H-02)
 
-Status: deterministic evaluation and local CLI only. NOT a deployed monitor. No polling sources, scheduled tasks, state persistence, messages, model calls or runtime operations.
+Status: deterministic offline core plus optional local-only on-VPS news health collector and a separately reviewed 10-minute timer. No outbound notifications, third-party APIs, model calls, SSH probes, GitHub access or service modification.
 
 The component accepts a bounded normalized JSON snapshot:
 - schema = hermes-ops-snapshot-v1
@@ -26,3 +26,12 @@ Before production:
 2. Add independently reviewed read-only collectors for YFC and GitHub, with authentication and exact minimal privileges.
 3. End-to-end test missing signals, drift, restart/recovery, rate limits, dedup, resource ceilings and negative permissions.
 4. Obtain explicit approval for any actual alert destination. No restart, merge, deploy, news publication or vault access.
+
+
+## Local collector (approved Hermes host only)
+
+The collector reads **only the health subsection** of the existing YFC-owned `/var/lib/hermes/state.json` (the full file is private and never logged). It reads only the state of `hermes-discovery.timer`; writes a sanitized list of incident codes in root-owned `/var/lib/hermes-agent/ops-watch/findings.json` and logs added/resolved fingerprints to the local system journal. The systemd timer may be enabled independently of a model provider, without affecting YFC's news processing.
+
+Install **only after tested PR/CI** and confirm no pre-existing system monitor: `bash deploy/install-ops-watch.sh` on approved server with matching source. Check via `systemctl list-timers hermes-ops-watch.timer`, `journalctl -u hermes-ops-watch.service`. The service is sandboxed, network-less, has no write access to YFC state, and is not an alternative publication path. A user-facing Telegram channel is a later separate task with new credentials/approval.
+
+Failure of reading health **fails closed**: no old success is claimed, and the systemd unit reports an error. Rate-limit anomaly is intentionally disabled until a source reports a real recent interval, not a cumulative counter. Optional remote connectors remain unknown until genuinely implemented.
