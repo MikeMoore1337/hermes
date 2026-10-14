@@ -31,11 +31,11 @@ class CloudflareIsolationTests(unittest.TestCase):
         self.assertNotIn("hermes_egress", script)
 
     def test_agent_uses_only_private_proxy(self) -> None:
-        script = (ROOT / "deploy/smoke-cloudflare-agent.sh").read_text()
+        script = (ROOT / "scripts/agent_turn_probe.py").read_text()
         for required in ("--network hermes-agent-isolated", "--ip 172.29.250.2",
-                         "--read-only", "--cap-drop ALL", "--memory 640m", "--cpus 0.15",
+                         "--read-only", "--cap-drop ALL", "--memory", "\"640m\"", "--cpus", "\"0.30\"",
                          "--env-file", "HTTPS_PROXY=http://172.29.250.1:18573",
-                         "--oneshot", "-t todo"):
+                         "\"-z\"", "\"-t\"", "todo"):
             self.assertIn(required, script)
         for forbidden in ("--network host", "--privileged", "docker.sock", "second-brain-vault"):
             self.assertNotIn(forbidden, script)
