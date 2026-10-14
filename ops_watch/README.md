@@ -1,6 +1,6 @@
 # Ops Watch: offline core (H-02)
 
-Status: deterministic offline core plus optional local-only on-VPS news health collector and a separately reviewed 10-minute timer. No outbound notifications, third-party APIs, model calls, SSH probes, GitHub access or service modification.
+Status (2026-10-14): the local-only health collector, durable SQLite event journal and 10-minute timer are operational on Hermes VPS. Opt-in Telegram delivery code and private-chat receipt validation exist in GitHub but no outbound delivery has been enabled or verified; the code is not an authorized active sender. No model calls, SSH probes, GitHub access or service modifications by the Ops Watch runtime.
 
 The component accepts a bounded normalized JSON snapshot:
 - schema = hermes-ops-snapshot-v1
