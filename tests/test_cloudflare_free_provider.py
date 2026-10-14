@@ -68,6 +68,39 @@ class CloudflareFreeProfileTests(unittest.TestCase):
                 self.assertFalse(verdict["retryable"])
                 self.assertFalse(verdict["should_fallback"])
 
+    def test_any_provider_failure_disables_retries_and_model_fallbacks(self) -> None:
+        for status in (None, 400, 401, 402, 403, 408, 429, 500, 502, 503, 504, 599):
+            with self.subTest(status=status):
+                result = self.profile.classify_api_error(
+                    RuntimeError("Bearer example-secret"),
+                    status_code=status,
+                    message="cloudflare user must upgrade and retry",
+                )
+                self.assertIsInstance(result, dict)
+                self.assertFalse(result["retryable"])
+                self.assertFalse(result["should_fallback"])
+                self.assertNotIn("example-secret", str(result))
+                self.assertNotIn("must upgrade", str(result))
+
+    def test_quota_capacity_access_and_auth_have_safe_distinct_codes(self) -> None:
+        classify = self.profile.classify_api_error
+        self.assertEqual(
+            classify(None, status_code=429)["reason"],
+            "cloudflare_free_quota_or_capacity_exceeded",
+        )
+        self.assertEqual(
+            classify(None, status_code=403)["reason"],
+            "cloudflare_access_or_billing_denied",
+        )
+        self.assertEqual(
+            classify(None, status_code=401)["reason"],
+            "cloudflare_auth_denied",
+        )
+        self.assertEqual(
+            classify(None, status_code=503)["reason"],
+            "cloudflare_temporary_unavailable",
+        )
+
     def test_no_broad_cloudflare_or_editorial_secret_variable(self) -> None:
         self.assertEqual(self.profile.env_vars, (
             "CLOUDFLARE_WORKERS_AI_API_TOKEN",
