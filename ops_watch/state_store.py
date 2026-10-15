@@ -136,6 +136,34 @@ def persist(
         raise InputError("outbox_unavailable") from exc
 
 
+def read_current(directory: Path) -> list[dict[str, str]]:
+    """Read canonical active fingerprints without creating or mutating SQLite."""
+    path = directory / DATABASE
+    if not path.exists():
+        if path.is_symlink():
+            raise InputError("unsafe_outbox_db")
+        return []
+    if path.is_symlink():
+        raise InputError("unsafe_outbox_db")
+    info = path.stat(follow_symlinks=False)
+    if (not stat.S_ISREG(info.st_mode) or
+            info.st_uid != os.geteuid() or
+            stat.S_IMODE(info.st_mode) != 0o600 or
+            info.st_nlink != 1):
+        raise InputError("unsafe_outbox_db")
+    try:
+        with sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=2) as db:
+            row = db.execute("SELECT findings_json FROM state WHERE id=1").fetchone()
+    except sqlite3.Error as exc:
+        raise InputError("corrupt_outbox_state") from exc
+    if row is None or type(row[0]) is not str or len(row[0]) > MAX_STATE_BYTES:
+        raise InputError("corrupt_outbox_state")
+    try:
+        return _safe_findings(json.loads(row[0]))
+    except (ValueError, TypeError) as exc:
+        raise InputError("corrupt_outbox_state") from exc
+
+
 def inspect(directory: Path, *, max_items: int = 50) -> list[dict[str, Any]]:
     """Read a bounded durable local queue. No acknowledgment or delivery."""
     if type(max_items) is not int or not 1 <= max_items <= 50:
