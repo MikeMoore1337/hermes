@@ -85,3 +85,8 @@
 ### Проверены байты 1410 core Python файлов в pinned Docker v0.22.1
 
 [Акт H-01](../audits/H-01-v0221-core-python-parity-2026-10-15.md): на отдельном Docker Desktop сверены Git blob SHA-1 и размеры **1410/1410** Python-файлов из `agent/`, `gateway/`, `hermes_cli/`, `hermes_platform/`, `providers/` с официальным исходным деревом commit `297552a9...`; missing/extra/different = **0/0/0** в этой области. Более широкий кодовый охват, но **не** полная source/build/image attestation или SBOM. `tools/` и прочие бинарные компоненты ещё не проверены; постоянный Agent **NO-GO**. Рабочий VPS не изменялся.
+
+
+### Встроенные runtimes отделены от 353 исходных файлов tools/
+
+[Акт проверки](../audits/H-01-v0221-tools-runtime-layout-2026-10-15.md): в pinned offline v0.22.1 **353/353** Git blob SHA-1 исходных Python файлов `tools/` совпали с upstream commit; 0 missed/extra/different в ограниченной области. Дополнительные **1176** Python файлов находятся в трёх каталогах встроенных Python/Node/npm runtimes и **не** прошли побайтовую аттестацию. Вместе с 1410 файлами из предыдущего акта проверены **1763** исходных Python файла. Полная SBOM/provenance/cost/resource gate не получены; resident AI всё ещё **NO-GO**.
