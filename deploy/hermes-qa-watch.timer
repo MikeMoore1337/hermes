@@ -1,0 +1,13 @@
+[Unit]
+Description=Hermes QA Advisor: one private main CI check per 15 minutes
+
+[Timer]
+OnActiveSec=2min
+OnUnitActiveSec=15min
+RandomizedDelaySec=20s
+AccuracySec=1min
+Persistent=false
+Unit=hermes-qa-watch.service
+
+[Install]
+WantedBy=timers.target
