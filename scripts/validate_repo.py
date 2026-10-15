@@ -127,6 +127,8 @@ REQUIRED_PATHS = (
     "research_scout/PUBMED.md",
     "research_scout/README.md",
     "research_scout/europe_pmc.py",
+    "research_scout/crossref.py",
+    "tests/test_research_crossref.py",
     "research_scout/EUROPE_PMC.md",
     "tests/test_research_europe_pmc.py",
     "tests/test_research_scout.py",
