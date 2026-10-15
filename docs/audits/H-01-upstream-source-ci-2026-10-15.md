@@ -13,9 +13,9 @@
 
 ## Воспроизводимая проверка
 
-Безопасный режим: `python3 scripts/verify_upstream_source_ci.py` -> `NOT_EXECUTED` без сетевых запросов.
+Безопасный режим: `python3 -m scripts.verify_upstream_source_ci` -> `NOT_EXECUTED` без сетевых запросов.
 
-Проверка: `python3 scripts/verify_upstream_source_ci.py --execute` - ровно два чтения из публичного GitHub API (workflow metadata и список его 40 jobs). Проверка фиксирует точные `run_id`, `head_sha`, статусы и обязательные задания, отклоняет подменённые и пропущенные элементы.
+Проверка: `python3 -m scripts.verify_upstream_source_ci --execute` - ровно два чтения из публичного GitHub API (workflow metadata и список его 40 jobs). Проверка фиксирует точные `run_id`, `head_sha`, статусы и обязательные задания, отклоняет подменённые и пропущенные элементы.
 
 Даже если основные проверки прошли, выдаётся `SOURCE_CORE_CI_PASS_IMAGE_UNVERIFIED`, код выхода 2 и `resident_agent_allowed=false`. Инструмент не читает логи, не имеет GitHub write, не запускает Docker или модель и не запрашивает личный токен.
 
