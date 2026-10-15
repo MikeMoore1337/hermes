@@ -108,7 +108,7 @@ class IsolatedIncidentAndRecoveryTests(unittest.TestCase):
         )
         self.assertEqual(collector.TARGET.as_posix(),
                          "/var/lib/hermes-agent/ops-watch")
-        self.assertIn("systemctl", collector._state.__code__.co_names)
+        self.assertIn("systemctl", collector._state.__code__.co_consts)
 
 
 if __name__ == "__main__":
