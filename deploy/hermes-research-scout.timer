@@ -1,0 +1,13 @@
+[Unit]
+Description=Hermes Research Scout: independent daily public metadata search
+
+[Timer]
+OnActiveSec=2min
+OnCalendar=*-*-* 19:30:00
+RandomizedDelaySec=5min
+AccuracySec=1min
+Persistent=false
+Unit=hermes-research-scout.service
+
+[Install]
+WantedBy=timers.target
