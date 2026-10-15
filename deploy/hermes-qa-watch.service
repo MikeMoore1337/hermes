@@ -1,0 +1,44 @@
+[Unit]
+Description=Hermes QA Advisor: private read-only main CI outcome
+Documentation=https://github.com/MikeMoore1337/hermes/issues/5
+After=network-online.target local-fs.target
+Wants=network-online.target
+AssertPathExists=/etc/hermes-agent/github-actions-read.token
+StartLimitIntervalSec=3600
+StartLimitBurst=6
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/opt/hermes-agent-owner
+StateDirectory=hermes-qa-watch
+StateDirectoryMode=0700
+ExecStart=/usr/bin/python3 -m qa_advisor.watch_once --execute
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictRealtime=yes
+ProtectHostname=yes
+ProtectClock=yes
+ProtectProc=invisible
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/var/lib/hermes-qa-watch
+ReadOnlyPaths=/etc/hermes-agent/github-actions-read.token
+InaccessiblePaths=/var/lib/hermes /var/lib/hermes-agent /etc/hermes-agent/ops-watch.env /etc/hermes-agent/research-scout.env
+MemoryMax=96M
+CPUQuota=10%
+TasksMax=20
+TimeoutStartSec=22s
+UMask=0077
+StandardOutput=journal
+StandardError=journal
