@@ -95,3 +95,14 @@ python3 -m scripts.hermes_ai_pilot run --engine mock --case research:plant_recov
 python3 -m unittest discover -s tests -p test_research_abstract_quality.py
 
 Реальный запрос не выполняется до сброса дневного лимита UTC.
+
+
+### Стоимость не возвращена в API - сохраняем результат, останавливаем вызовы
+
+На Workers Free API может вернуть успешный валидированный ответ без
+поля фактической стоимости. Такой ответ не должен теряться:
+результат и оценка проверки сохраняются с status=BLOCKED,
+validation_status=PASS, model_execution=LIVE_OBSERVED_COST_NOT_VERIFIED.
+При этом запуск **немедленно прекращается**, второй case не выполняется.
+Статус стоимости COST_NOT_VERIFIED, а не доказанные нулевые расходы.
+Это позволяет изучить один ответ настоящей модели, не ослабляя ограничитель.

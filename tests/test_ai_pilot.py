@@ -192,6 +192,10 @@ class PilotTests(unittest.TestCase):
             )
         self.assertEqual(records[0]["status"], "BLOCKED")
         self.assertEqual(records[0]["reason"], "COST_NOT_VERIFIED")
+        self.assertEqual(records[0]["validation_status"], "PASS")
+        self.assertEqual(records[0]["model_execution"], "LIVE_OBSERVED_COST_NOT_VERIFIED")
+        self.assertEqual(records[0]["model_result"]["status"], "active")
+        self.assertTrue(records[0]["quality"]["deterministic_invariants"]["evidence_from_input"])
         self.assertEqual(fake.calls, 1)
         self.assertEqual(len(records), 1)
 

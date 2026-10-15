@@ -606,14 +606,22 @@ def _blocked_after_response(
     preparation: float,
     validation: float,
     process: float,
+    validated_result: Mapping[str, object],
+    validated_quality: Mapping[str, object],
 ) -> dict[str, object]:
+    # Cost data can be absent on a successful model response. Preserve the
+    # validated operator-visible result for scientific assessment while refusing
+    # any further live case in this pilot run.
     return {
         "schema": RESULT_SCHEMA,
         "case": name,
         "task": task,
         "provenance": provenance,
         "status": "BLOCKED",
-        "model_execution": "LIVE_OBSERVED_FAILURE",
+        "model_execution": "LIVE_OBSERVED_COST_NOT_VERIFIED",
+        "validation_status": "PASS",
+        "model_result": dict(validated_result),
+        "quality": dict(validated_quality),
         "reason": reason,
         "model_calls": 1,
         "metrics": {
@@ -708,6 +716,8 @@ def _run_case(name: str, *, engine: str, provider: LocalMockProvider | Cloudflar
             preparation=preparation,
             validation=validation,
             process=time.perf_counter() - started,
+            validated_result=result,
+            validated_quality=quality,
         )
     if engine == "live" and response.provider_cost_usd != 0:
         return _blocked_after_response(
@@ -719,6 +729,8 @@ def _run_case(name: str, *, engine: str, provider: LocalMockProvider | Cloudflar
             preparation=preparation,
             validation=validation,
             process=time.perf_counter() - started,
+            validated_result=result,
+            validated_quality=quality,
         )
     formation_started = time.perf_counter()
     record = {
