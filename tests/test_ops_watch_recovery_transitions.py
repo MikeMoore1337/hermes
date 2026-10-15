@@ -12,7 +12,6 @@ from unittest.mock import patch
 from ops_watch import collector, telegram_sender
 from ops_watch.delivery_contract import stats
 
-NOW = datetime(2026, 10, 15, 3, 40, tzinfo=UTC)
 TOKEN = "123456789:" + "X"*35
 CHAT = "123456789"
 GOOD_GUARD = {"loaded": True, "enabled": True, "active": True}
@@ -20,12 +19,13 @@ GOOD_GUARD = {"loaded": True, "enabled": True, "active": True}
 
 class IsolatedIncidentAndRecoveryTests(unittest.TestCase):
     def test_true_collector_state_transitions_with_separate_fake_delivery(self):
+        now = datetime.now(UTC)
         with tempfile.TemporaryDirectory(prefix="hermes-recovery-offline-") as tmp:
             directory = Path(tmp)
             directory.chmod(0o700)
             source = directory / "snapshot.json"
             source.write_text(json.dumps({"health": {
-                "last_successful_discovery_at": NOW.isoformat(),
+                "last_successful_discovery_at": now.isoformat(),
                 "consecutive_discovery_failures": 0,
                 "consecutive_drain_failures": 0,
                 "pending_jobs": 0,
@@ -38,7 +38,7 @@ class IsolatedIncidentAndRecoveryTests(unittest.TestCase):
 
             with patch.object(collector, "_state", side_effect=disabled):
                 first = collector.once(
-                    source=source, target=directory, observed=NOW,
+                    source=source, target=directory, observed=now,
                     agent_guard=GOOD_GUARD,
                 )
             self.assertEqual(first["changes"], {
@@ -52,7 +52,7 @@ class IsolatedIncidentAndRecoveryTests(unittest.TestCase):
 
             with patch.object(collector, "_state", side_effect=enabled):
                 recovery = collector.once(
-                    source=source, target=directory, observed=NOW,
+                    source=source, target=directory, observed=now,
                     agent_guard=GOOD_GUARD,
                 )
             self.assertEqual(recovery["changes"], {
@@ -69,13 +69,13 @@ class IsolatedIncidentAndRecoveryTests(unittest.TestCase):
                 return 800 + len(sent_messages)
 
             one = telegram_sender.send_one(
-                directory, token=TOKEN, chat=CHAT, now=NOW, transport=fake_delivery,
+                directory, token=TOKEN, chat=CHAT, now=now, transport=fake_delivery,
             )
             two = telegram_sender.send_one(
-                directory, token=TOKEN, chat=CHAT, now=NOW, transport=fake_delivery,
+                directory, token=TOKEN, chat=CHAT, now=now, transport=fake_delivery,
             )
             again = telegram_sender.send_one(
-                directory, token=TOKEN, chat=CHAT, now=NOW, transport=fake_delivery,
+                directory, token=TOKEN, chat=CHAT, now=now, transport=fake_delivery,
             )
             self.assertEqual(one["status"], "ACCEPTED_BY_TELEGRAM")
             self.assertEqual(two["status"], "ACCEPTED_BY_TELEGRAM")

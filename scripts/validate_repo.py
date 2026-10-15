@@ -71,6 +71,7 @@ REQUIRED_PATHS = (
     "deploy/hermes-image-provenance.json",
     "deploy/hermes-upstream-security-diff.json",
     "docs/audits/H-01-upstream-security-diff-2026-10-14.md",
+    "docs/audits/H-01-image-sbom-source-load-2026-10-15.md",
     "tests/test_h01_upstream_security_diff.py",
     "tests/test_hermes_image_provenance.py",
     "docs/audits/H-01-network-guard-vps-2026-10-14.md",
