@@ -15,7 +15,8 @@ from qa_advisor.github_public import (
     GithubPublicError, PRIVATE_REPO, TOKEN_FILE, public_runs,
 )
 
-ALLOWLISTED_WORKFLOWS = frozenset()  # Empty until the exact required CI workflow_id is independently verified.
+# Verified from GitHub Actions run 38680004024 on PR #85 (quality.yml).
+ALLOWLISTED_WORKFLOWS = frozenset({"workflow-381262090"})
 MAX_RUNS = 3
 
 
