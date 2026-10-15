@@ -202,6 +202,32 @@
         "uncontrolled_external_credentials"
       ],
       "issue": "https://github.com/MikeMoore1337/hermes/issues/61"
+    },
+    {
+      "id": "europe-pmc-manual",
+      "kind": "api",
+      "decision": "GO",
+      "purpose": "One bounded manual query for public medical research citation candidates without registration",
+      "documentation": "https://europepmc.org/RestfulWebService",
+      "license": "official_api_terms",
+      "verified_on": "2026-10-15",
+      "verified_status": "checked",
+      "billing": "zero_guaranteed",
+      "card_requirement": "none",
+      "credentials": "none",
+      "data_scope": "public_metadata",
+      "side_effect": "read_only",
+      "hosts": [
+        "www.ebi.ac.uk"
+      ],
+      "owner_approved": true,
+      "permissions": [],
+      "reasons": [
+        "vps_live_200_public_json",
+        "fixed_topics_one_get",
+        "no_publication"
+      ],
+      "issue": "https://github.com/MikeMoore1337/hermes/issues/4"
     }
   ]
 }
