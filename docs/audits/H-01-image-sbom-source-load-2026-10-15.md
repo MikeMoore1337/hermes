@@ -47,3 +47,8 @@
 4. Отдельный контролируемый **burn-in на фоне пикового news load** с отказом при high load, измерением времени, RAM/swap, ошибками Cloudflare и проверяемым откатом. 113.4 секунды и 45 секунд CPU stress не доказывают сутками стабильный агент.
 
 Связанные [предыдущая матрица прав](H-01-upstream-security-diff-2026-10-14.md), [Issue #33](https://github.com/MikeMoore1337/hermes/issues/33). Текущие новости и Ops Watch оставлены включёнными; никакой новый resident service не создавался.
+
+
+## Уточнение по Python virtualenv (15.10.2026)
+
+Дополнительный официально закреплённый, read-only/no-network Docker запуск показал `/opt/hermes/.venv/bin/python` Python 3.14.7 и 146 metadata entries, среди которых `hermes-agent 0.0.0` фигурирует **дважды, но оба пути указывают на один и тот же каталог inode 3761798**. То есть это проблема двойного перечисления одного файла, а не свидетельство двух копий пакета. Система образа насчитывает 274 dpkg записей; полный package inventory содержит 420 сырых entries, но не является supplier SBOM. Подробнее [инструкция инвентаризации](../operations/H-01-LOCAL-IMAGE-INVENTORY.md).
