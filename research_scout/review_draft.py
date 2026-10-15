@@ -14,6 +14,7 @@ from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 from .core import PROMPT_INJECTION
+from .daily_digest import TOPIC_IDS
 from .pubmed_fetch import DOI, validate_pmid
 
 SCHEMA = "hermes-research-review-draft-v1"
@@ -38,6 +39,17 @@ CONFIRMED_FIELDS = frozenset({
     "correction_status",
 })
 PMCID = re.compile(r"PMC[1-9][0-9]{1,11}\Z")
+
+
+DAILY_ITEM_KEYS = frozenset({
+    "topic", "title", "identifier", "source_url", "doi", "status",
+    "reason", "publication_date", "crossref_doi_status",
+    "article_notice_state", "article_notice_codes", "scientific_claims_verified",
+})
+ARTICLE_NOTICE_CODES = frozenset({
+    "CORRECTION_NOTICE", "RETRACTION_OR_WITHDRAWAL_NOTICE",
+    "EXPRESSION_OF_CONCERN", "OTHER_OR_UNKNOWN_NOTICE",
+})
 
 
 class ReviewDraftError(ValueError):
@@ -234,6 +246,55 @@ def build_draft(candidate: Any) -> dict[str, Any]:
     }
 
 
+def build_daily_item_draft(item: Any) -> dict[str, Any]:
+    """Project an existing daily metadata item, without inventing scientific results."""
+    if type(item) is not dict or set(item) != DAILY_ITEM_KEYS:
+        raise ReviewDraftError("daily_item_schema_invalid")
+    if (type(item["topic"]) is not str or item["topic"] not in TOPIC_IDS
+            or item["scientific_claims_verified"] is not False
+            or type(item["crossref_doi_status"]) is not str
+            or item["crossref_doi_status"] not in (
+                "NOT_CHECKED", "MATCHED_METADATA_ONLY")
+            or type(item["article_notice_state"]) is not str
+            or item["article_notice_state"] not in (
+                "NOT_CHECKED", "NOT_REPORTED_IN_THIS_METADATA",
+                "REVIEW_REQUIRED", "UNAVAILABLE")):
+        raise ReviewDraftError("daily_item_contract_invalid")
+    codes = item["article_notice_codes"]
+    if (type(codes) is not list or len(codes) > 4
+            or any(type(code) is not str or code not in ARTICLE_NOTICE_CODES
+                   for code in codes)
+            or (item["article_notice_state"] == "REVIEW_REQUIRED") != bool(codes)):
+        raise ReviewDraftError("daily_item_notice_invalid")
+    if (item["article_notice_state"] in {"REVIEW_REQUIRED", "UNAVAILABLE"}
+            and item["status"] != "HOLD"):
+        raise ReviewDraftError("daily_item_notice_not_held")
+    if type(item["status"]) is not str or item["status"] not in {"MANUAL_REVIEW", "HOLD"}:
+        raise ReviewDraftError("daily_item_status_invalid")
+    identifier = item["identifier"]
+    if type(identifier) is not str or not (
+            identifier.isdigit() or PMCID.fullmatch(identifier)):
+        raise ReviewDraftError("daily_item_identifier_invalid")
+    candidate = {
+        "source": "EUROPE_PMC",
+        "id": identifier, "source_url": item["source_url"],
+        "title": item["title"], "doi": item["doi"],
+        "pmid": identifier if identifier.isdigit() else None,
+        "status": item["status"], "reason": item["reason"],
+        "first_publication_date": item["publication_date"],
+        "scientific_claims_verified": False,
+    }
+    draft = build_draft(candidate)
+    draft["source_daily_report"] = {
+        "topic": item["topic"],
+        "crossref_doi_status": item["crossref_doi_status"],
+        "article_notice_state": item["article_notice_state"],
+        "article_notice_codes": list(codes),
+        "metadata_only": True,
+    }
+    return draft
+
+
 def compare_drafts(drafts: Any) -> dict[str, Any]:
     """Prepare a comparison frame; never infer contradiction or consensus."""
     if type(drafts) is not list or not 1 <= len(drafts) <= MAX_DRAFTS:
@@ -275,17 +336,19 @@ def main(argv: list[str] | None = None) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description="Offline Research Scout review draft")
-    parser.add_argument("--review-stdin", action="store_true")
-    parser.add_argument("--compare-stdin", action="store_true")
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--review-stdin", action="store_true")
+    group.add_argument("--compare-stdin", action="store_true")
+    group.add_argument("--daily-item-stdin", action="store_true")
     args = parser.parse_args(argv)
-    if args.review_stdin == args.compare_stdin:
-        print(json.dumps({"status": "REJECTED", "reason": "explicit_mode_required"}))
-        return 2
     try:
         payload = _read_stdin()
-        result = (
-            build_draft(payload) if args.review_stdin else compare_drafts(payload)
-        )
+        if args.review_stdin:
+            result = build_draft(payload)
+        elif args.daily_item_stdin:
+            result = build_daily_item_draft(payload)
+        else:
+            result = compare_drafts(payload)
     except (OSError, ReviewDraftError) as exc:
         reason = str(exc) if isinstance(exc, ReviewDraftError) else "stdin_unavailable"
         print(json.dumps({"status": "REJECTED", "reason": reason}))

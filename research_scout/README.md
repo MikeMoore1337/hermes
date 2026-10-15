@@ -98,3 +98,27 @@ meta-analysis на `MANUAL_REVIEW_REQUIRED`/`NOT_ASSESSED_WITHOUT_EXPERT_REVIEW`
 Офлайн-фикстуры проверяют documented/incomplete/secondary/correction/unknown
 effect/missing sample, попытку сильного claim и comparison без автоматического
 вывода consensus.
+
+## От ежедневного публичного кандидата к офлайн-черновику (15.10.2026)
+
+Выбранный элемент массива `items[]` из проверяемого отчёта
+`latest-citations.json` можно передать напрямую, без ручного преобразования
+ключей и без чтения защищённого каталога самим инструментом:
+
+```bash
+python3 -m research_scout.review_draft --daily-item-stdin < selected-public-item.json
+```
+
+Модуль проверяет ровно известные поля сборщика и сохраняет состояние
+`article_notice_state`. Значение `NOT_CHECKED` не интерпретируется как
+«исправлений нет»; `REVIEW_REQUIRED`/`UNAVAILABLE` требуют `HOLD`.
+`scientific_claims_verified=false` и `automatic_publication=false` сохраняются.
+Научные результаты, методы и размер выборки остаются `UNKNOWN` до
+отдельной проверки полного текста. Никаких запросов модели, сети или
+публикации не происходит.
+
+[Предметный черновик по фактической публикации о растительном питании
+и восстановлении](../docs/audits/H-03-plant-recovery-review-2026-10-15.md)
+отделяет машинный библиографический кандидат от аналитического обзора
+с указанием источников и неопределённости. Обзор требует экспертного
+утверждения; изменений YFC, Second Brain и Telegram нет.
