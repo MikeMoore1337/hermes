@@ -25,6 +25,14 @@ MAX_DURATION = 130
 MAX_TOOL_DURATION = 205
 LOCK_FILE = Path('/run/hermes-agent-test.lock')
 
+# P0: current cached amd64 image 32d095... differs from the image
+# ffa4... in the official v0.21.6 release receipt; account billing
+# restrictions and signed source-to-image provenance are not verified.
+# Reopening requires a separately reviewed change after independent
+# provenance, quotas, security and host resource evidence. This must NOT
+# be toggled by environment variables or CLI args.
+MODEL_PROBE_RELEASE_GATE_APPROVED = False
+
 
 class Rejected(Exception):
     """Safe category, never constructed from an external response."""
@@ -45,6 +53,9 @@ def preflight() -> None:
     """Protect the news lane and verify exact private-network restrictions."""
     if os.geteuid() != 0:
         raise Rejected("root_required")
+    if MODEL_PROBE_RELEASE_GATE_APPROVED is not True:
+        # Fail before accessing credentials, filesystem, Docker or proxy.
+        raise Rejected("upstream_release_or_billing_gate_closed")
     secret = STATE / ".env"
     uid = pwd.getpwnam("hermes-agent").pw_uid
     if (STATE.is_symlink() or secret.is_symlink() or not secret.is_file()
