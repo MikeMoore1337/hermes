@@ -256,6 +256,21 @@ def save(record: dict[str, object], directory: Path = DIRECTORY) -> None:
             original["reason"] = "duplicate_doi"
         if item["reason"] in ("integrity_hold", "integrity_unknown"):
             original["reason"] = "metadata_only"
+        _review_item(original, item["topic"])
+        if item["crossref_doi_status"] not in ("NOT_CHECKED", "MATCHED_METADATA_ONLY"):
+            raise DigestError("report_crossref_state_invalid")
+        state, codes = item["article_notice_state"], item["article_notice_codes"]
+        if (state not in ("NOT_CHECKED", "NOT_REPORTED_IN_THIS_METADATA",
+                          "REVIEW_REQUIRED", "UNAVAILABLE")
+                or type(codes) is not list or len(codes) > 4
+                or any(type(code) is not str or code not in (
+                    "CORRECTION_NOTICE", "RETRACTION_OR_WITHDRAWAL_NOTICE",
+                    "EXPRESSION_OF_CONCERN", "OTHER_OR_UNKNOWN_NOTICE",
+                ) for code in codes)
+                or (state == "REVIEW_REQUIRED") != bool(codes)):
+            raise DigestError("report_article_notice_invalid")
+        if state in ("REVIEW_REQUIRED", "UNAVAILABLE") and item["status"] != "HOLD":
+            raise DigestError("report_article_not_on_hold")
         normalized = _review_item(original, item["topic"])
         # Checking only the schema is insufficient: untrusted or accidentally
         # mutated reports must not promote absent DOI / stale / suspicious
@@ -279,20 +294,6 @@ def save(record: dict[str, object], directory: Path = DIRECTORY) -> None:
             item["reason"] != "metadata_only" or item["doi"] is None
         ):
             raise DigestError("report_item_status_reason_conflict")
-        if item["crossref_doi_status"] not in ("NOT_CHECKED", "MATCHED_METADATA_ONLY"):
-            raise DigestError("report_crossref_state_invalid")
-        state, codes = item["article_notice_state"], item["article_notice_codes"]
-        if (state not in ("NOT_CHECKED", "NOT_REPORTED_IN_THIS_METADATA",
-                          "REVIEW_REQUIRED", "UNAVAILABLE")
-                or type(codes) is not list or len(codes) > 4
-                or any(type(code) is not str or code not in (
-                    "CORRECTION_NOTICE", "RETRACTION_OR_WITHDRAWAL_NOTICE",
-                    "EXPRESSION_OF_CONCERN", "OTHER_OR_UNKNOWN_NOTICE",
-                ) for code in codes)
-                or (state == "REVIEW_REQUIRED") != bool(codes)):
-            raise DigestError("report_article_notice_invalid")
-        if state in ("REVIEW_REQUIRED", "UNAVAILABLE") and item["status"] != "HOLD":
-            raise DigestError("report_article_not_on_hold")
     for error in errors:
         if (type(error) is not dict or set(error) != {"topic", "reason"}
                 or error["topic"] not in (*TOPIC_IDS, "crossref", "article-integrity")
