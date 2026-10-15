@@ -109,6 +109,47 @@ def _ops_alert_timer_status() -> dict[str, bool]:
     }
 
 
+def _ops_alert_service_status() -> dict[str, bool]:
+    """Observe the actual sender exit result, not merely its active timer.
+
+    systemd oneshot services normally report inactive after a successful
+    dispatch. Inactivity alone is NOT a failure. Query only the fixed unit.
+    """
+    try:
+        process = subprocess.run(
+            ["systemctl", "show", "hermes-ops-alerts.service",
+             "-p", "LoadState", "-p", "Result", "--no-pager"],
+            capture_output=True, text=True, check=False, timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise InputError("alert_delivery_status_unavailable") from exc
+    if process.returncode != 0 or len(process.stdout) > 2048:
+        raise InputError("alert_delivery_status_unavailable")
+    properties: dict[str, str] = {}
+    for line in process.stdout.splitlines():
+        if "=" not in line:
+            raise InputError("alert_delivery_status_unavailable")
+        key, value = line.split("=", 1)
+        if key not in {"LoadState", "Result"} or key in properties:
+            raise InputError("alert_delivery_status_unavailable")
+        properties[key] = value
+    if set(properties) != {"LoadState", "Result"}:
+        raise InputError("alert_delivery_status_unavailable")
+    allowed = {
+        "success", "exit-code", "signal", "core-dump", "watchdog",
+        "timeout", "resources", "start-limit-hit", "protocol",
+        "oom-kill", "dependency", "assert", "condition",
+    }
+    if properties["Result"] not in allowed or properties["LoadState"] not in {
+        "loaded", "not-found", "error", "masked", "bad-setting",
+    }:
+        raise InputError("alert_delivery_status_unavailable")
+    return {"failed": (
+        properties["LoadState"] != "loaded" or
+        properties["Result"] != "success"
+    )}
+
+
 def _count(source: dict[str, Any], name: str) -> int:
     value = source.get(name)
     if type(value) is not int or not 0 <= value <= 1_000_000_000:
@@ -116,7 +157,7 @@ def _count(source: dict[str, Any], name: str) -> int:
     return value
 
 
-def normalized(news_health: dict[str, Any], observed: datetime, *, timer_enabled: bool, timer_active: bool, agent_guard: dict[str, bool] | None = None, alerts_timer: dict[str, bool] | None = None) -> dict[str, Any]:
+def normalized(news_health: dict[str, Any], observed: datetime, *, timer_enabled: bool, timer_active: bool, agent_guard: dict[str, bool] | None = None, alerts_timer: dict[str, bool] | None = None, alerts_service: dict[str, bool] | None = None) -> dict[str, Any]:
     """Project only allowlisted numeric/timestamp fields from untrusted state."""
     last = news_health.get("last_successful_discovery_at")
     if last is not None and not isinstance(last, str):
@@ -141,6 +182,8 @@ def normalized(news_health: dict[str, Any], observed: datetime, *, timer_enabled
         result["agent_guard"] = agent_guard
     if alerts_timer is not None:
         result["alerts_timer"] = alerts_timer
+    if alerts_service is not None:
+        result["alerts_service"] = alerts_service
     return result
 
 
@@ -203,7 +246,7 @@ def _atomic_json(directory: Path, name: str, document: object) -> None:
         temporary.unlink(missing_ok=True)
 
 
-def once(source: Path = SOURCE, target: Path = TARGET, observed: datetime | None = None, *, agent_guard: dict[str, bool] | None = None, alerts_timer: dict[str, bool] | None = None) -> dict[str, Any]:
+def once(source: Path = SOURCE, target: Path = TARGET, observed: datetime | None = None, *, agent_guard: dict[str, bool] | None = None, alerts_timer: dict[str, bool] | None = None, alerts_service: dict[str, bool] | None = None) -> dict[str, Any]:
     """Collect, deduplicate, and atomically store safe findings under a lock."""
     if target.is_symlink() or not target.is_dir() or (target.stat().st_mode & 0o077) != 0:
         raise InputError("unsafe_target_directory")
@@ -219,6 +262,7 @@ def once(source: Path = SOURCE, target: Path = TARGET, observed: datetime | None
             timer_active=_state("hermes-discovery.timer", "is-active"),
             agent_guard=agent_guard if agent_guard is not None else _agent_network_guard_status(),
             alerts_timer=alerts_timer,
+            alerts_service=alerts_service,
         )
         findings = analyze(snapshot, now=now)
         # Separate QA reader never has Telegram credentials or access to the
@@ -256,7 +300,10 @@ def once(source: Path = SOURCE, target: Path = TARGET, observed: datetime | None
 def main() -> int:
     os.umask(0o077)
     try:
-        result = once(alerts_timer=_ops_alert_timer_status())
+        result = once(
+            alerts_timer=_ops_alert_timer_status(),
+            alerts_service=_ops_alert_service_status(),
+        )
     except (InputError, OSError, ValueError) as exc:
         # Log only an allowlisted internal error CLASS; no paths or user text.
         reason = str(exc) if type(exc) is InputError else type(exc).__name__
@@ -267,6 +314,7 @@ def main() -> int:
             "invalid_last_discovery", "systemd_status_unavailable",
             "agent_guard_status_unavailable",
             "alert_sender_status_unavailable",
+            "alert_delivery_status_unavailable",
             "invalid_consecutive_discovery_failures", "invalid_consecutive_drain_failures",
             "invalid_pending_jobs", "invalid_oldest_pending_age_seconds",
             "unsafe_outbox_db", "outbox_unavailable", "outbox_full",
