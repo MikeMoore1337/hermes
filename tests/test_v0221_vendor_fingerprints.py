@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from scripts import verify_v0221_vendor_fingerprints as vendor
+from scripts.bounded_subprocess import run_bounded
 from scripts.verify_v0221_local_image import IMAGE
 
 META = json.dumps([IMAGE]).encode() + b"|amd64"
@@ -36,6 +37,9 @@ def payload(doc=None):
 
 
 class VendorFileContracts(unittest.TestCase):
+    def test_real_collector_defaults_to_bounded_reader(self):
+        self.assertIs(vendor.collect.__defaults__[0], run_bounded)
+
     def test_dry_run_never_touches_docker(self):
         with patch.object(vendor, "collect") as collect:
             with patch("sys.stdout", new_callable=io.StringIO) as out:

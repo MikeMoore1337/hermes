@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from . import verify_v0221_core_python as core
+from .bounded_subprocess import BoundedProcessError, run_bounded
 from .verify_v0221_local_image import IMAGE, SOURCE_SHA
 
 VENDOR_COUNTS = {
@@ -136,19 +137,22 @@ def commands() -> tuple[list[str], list[str]]:
     return inspect, [*run[:-1], INSPECTOR]
 
 
-def collect(runner: Callable[..., subprocess.CompletedProcess] = subprocess.run
+def collect(runner: Callable[..., subprocess.CompletedProcess] = run_bounded
             ) -> tuple[dict[str, Any], dict[str, Any]]:
     inspect, run = commands()
     try:
-        first = runner(inspect, check=False, capture_output=True, timeout=10)
+        first = runner(inspect, check=False, capture_output=True, timeout=10,
+                       stdout_limit=8192, stderr_limit=16384)
         if first.returncode:
             raise FingerprintDenied("pinned_image_unavailable")
         core.image_identity(first.stdout)
-        second = runner(run, check=False, capture_output=True, timeout=90)
+        second = runner(run, check=False, capture_output=True, timeout=90,
+                        stdout_limit=MAX_REPLY, stderr_limit=16384)
         if second.returncode:
             raise FingerprintDenied("vendor_inspector_unavailable")
         return validate(second.stdout)
-    except (OSError, subprocess.TimeoutExpired, core.ParityDenied):
+    except (OSError, subprocess.TimeoutExpired, core.ParityDenied,
+            BoundedProcessError):
         raise FingerprintDenied("offline_docker_unavailable") from None
 
 
