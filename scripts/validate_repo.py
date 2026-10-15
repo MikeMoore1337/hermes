@@ -86,6 +86,8 @@ REQUIRED_PATHS = (
     "qa_advisor/__init__.py",
     "qa_advisor/core.py",
     "qa_advisor/github_public.py",
+    "qa_advisor/evidence.py",
+    "tests/test_qa_h04_evidence.py",
     "tests/test_qa_github_public.py",
     "qa_advisor/github_public.py",
     "tests/test_qa_github_public.py",
