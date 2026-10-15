@@ -73,6 +73,17 @@ class InventoryContracts(unittest.TestCase):
         self.assertFalse(one["transitive_dependency_completeness_verified"])
         self.assertEqual(len(one["components"]),4)
 
+    def test_duplicate_package_is_retained_and_flagged_for_supply_chain_review(self):
+        doc = parse(raw(py_items=[
+            {"name": "hermes-agent", "version": "0.21.6"},
+            {"name": "Hermes_Agent", "version": "0.21.6"},
+        ]), inspected_image_id=IMAGE_ID.decode())
+        self.assertEqual(doc["ambiguous_package_count"], 1)
+        self.assertEqual(doc["ambiguous_package_names"], ["python-venv:hermes-agent"])
+        self.assertEqual(doc["python_venv_packages_count"], 2)
+        self.assertEqual(len(doc["components"]), 4)
+        self.assertFalse(doc["supplier_sbom_verified"])
+
     def test_untrusted_image_tag_or_architecture_never_passes(self):
         for identity in ("sha256:" + DIGEST + " arm64",
                          "sha256:" + "0"*64 + " amd64",
@@ -85,8 +96,6 @@ class InventoryContracts(unittest.TestCase):
         for image,reason in (
             (raw(os_items=[]),"package_list_invalid"),
             (raw(py_items=[]),"package_list_invalid"),
-            (raw(py_items=[{"name":"Foo","version":"1"},
-                           {"name":"foo","version":"2"}]),"duplicate_package_name"),
             (raw(os_items=[{"name":"evil\nJWT=secret","version":"1"}]),"package_value_invalid"),
             (raw(py_items=[{"name":"hello","version":"file:///secret"}]),"package_value_invalid"),
             (raw(py_items=[{"name":"x","version":"1","secret":"TOKEN"}]),"package_schema_invalid"),
