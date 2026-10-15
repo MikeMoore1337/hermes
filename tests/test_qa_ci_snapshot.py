@@ -42,7 +42,8 @@ class RequiredMainCIReportTests(unittest.TestCase):
                 result = decide([run(21, conclusion=b),run(20, conclusion=a)],
                                 trusted_workflow_ids=ALLOWLISTED_WORKFLOWS)
                 self.assertEqual(result["status"], expected_status)
-                self.assertEqual(result["verified_recovery"], recovered)
+                self.assertEqual(result["latest_run_success"], recovered)
+                self.assertIs(result["verified_recovery"], False)
                 self.assertEqual(result["run_id"], 21)
 
     def test_latest_pending_does_not_resolve_old_failure(self):
