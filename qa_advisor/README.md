@@ -1,47 +1,29 @@
-# Hermes QA Advisor - offline GitHub CI triage
+# Hermes QA Advisor - анализ GitHub Actions без записи
 
-**Only metadata classification, not deployed and no live GitHub connector.**
+[H-04 #5](https://github.com/MikeMoore1337/hermes/issues/5). Отдельный ограниченный клиент GitHub API **установлен на VPS и вручную проверен**. 15.10.2026 после корректировки PAT запрос к *приватному* `MikeMoore1337/hermes` вернул `NO_INCIDENT_EVIDENCE`, `observed_runs=3`, exit 0. Чтение трёх запусков публичного YFC ранее также проверено.
 
-Partial [Issue #5](https://github.com/MikeMoore1337/hermes/issues/5).
-For now the module accepts already-provided synthetic/scoped GitHub Actions
-metadata for two explicitly allowlisted repositories: Hermes and YFC.
-No Second Brain data is authorized by this module.
+Действия только для ручного запуска:
 
-Allowed input fields: repo, workflow name, run id, full SHA, status,
-conclusion, list of bounded job names and conclusions. All other fields,
-including unredacted logs/tokens, are rejected.
+```bash
+cd /opt/hermes-agent-owner
+python3 -m qa_advisor.github_public --repository MikeMoore1337/hermes
+python3 -m qa_advisor.github_public --repository MikeMoore1337/your-fitness-coach
+```
 
-Output is a deterministic list of suspected failure categories, not a
-claim of verified root cause. If the SAME repo+workflow+SHA has both success
-and failure, label **possible flakiness, compare environments**. No reliable
-flake diagnosis can be made from metadata alone.
+Private Hermes использует `/etc/hermes-agent/github-actions-read.token`: отдельный fine-grained PAT с `Actions: Read-only`, только `hermes`, root-owned `0600`, отсутствие ссылок и неизвестных полей. Публичный YFC запрашивается без токена. Токен НИКОГДА не передаётся публичному репозиторию.
 
-Not done: scoped read-only GitHub API tokens, fetching sanitized CI logs,
-live monitoring or Telegram alerts. These require separate owner-approved
-permissions, authentication, quota/egress and tested data-redaction controls.
-No code here can write Issues, change branches, rerun CI, merge PRs or deploy.
+Разрешён **один** фиксированный `GET https://api.github.com/repos/MikeMoore1337/<hermes или your-fitness-coach>/actions/runs?per_page=3`: таймаут 12 с, тело до 700 KiB, без прокси/редиректов/повторов/других URL. Данные сужаются до безопасных номеров запусков, фикcированных кодов статуса и SHA. API получает только read-only запросы. Ни push, ни merge, ни перезапуск CI, ни публикация, ни чтение raw logs не реализованы.
 
+## Приёмка и диагностическая достоверность
 
-## Opt-in metadata retrieval (manual only, not deployed)
+- `qa_advisor.core.analyze` на метаданных различает выполненный/ожидающий запуск, сбой, отмену, тайм-аут, невозможность запуска и `same_commit_success_and_failure_check_environment` как **возможный сигнал нестабильности**, а не доказанную flaky-причину.
+- `qa_advisor.evidence.summarize_log` - **только офлайн-функция**. Если оператор отдельно предоставил *очищенный*, допустимый к обработке фрагмент журнала, она ищет ограниченные категории (429/quota, права, сеть, тестовые ошибки, deploy) и возвращает **только фиксированные коды**. Исходные строки, токены, адреса и URL никогда не входят в ответ, не сохраняются и не отправляются. Это **не доказательство причины сбоя**: текст журнала может быть поддельным. Логи реальных CI автоматически не загружаются.
+- `qa_advisor.evidence.scenario_review` сохраняет отдельно факт status/conclusion, гипотезы и шаг ручной проверки. 401/403/404/429/5xx не трактуются как здоровый CI. 403 может означать и rate limit: это отражено в коде `github_forbidden_or_rate_limited`.
+- Негативные тесты проверяют red CI, flaky, quota 429, failed deploy, здоровый CI, отсутствие логов, отсутствие секретов в отчёте, запрет сторонних URL и отсутствие retries.
+- Отдельный последний ручной запрос к приватному Hermes выполнился успешно после исправления токена; сведения о его полном наборе разрешений и политике срока действия подтверждаются владельцем в интерфейсе GitHub.
 
-Public YFC: `python3 -m qa_advisor.github_public --repository MikeMoore1337/your-fitness-coach`
+## Что не подключено
 
-Private Hermes: `python3 -m qa_advisor.github_public --repository MikeMoore1337/hermes`
+Этот этап **не создаёт новую службу мониторинга** и не отправляет CI-сбои в Ops Watch. Для постоянного включения нужны отдельная схема хранения состояния, проверка актуальности и разрешённая доставка. Сбой чтения API не должен ошибочно закрывать уже открытый инцидент как восстановленный. При обнаружении нового CI failure будут требоваться привязка к конкретному repo/run и защита от устаревших/переигранных запусков.
 
-Hermes is **private** and cannot be fetched anonymously. Its command fails closed
-before network unless an explicitly owner-installed fine-grained GitHub PAT or
-GitHub App installation token exists at `/etc/hermes-agent/github-actions-read.token`.
-The dedicated file must be a non-symlink regular file, 0600 and owned by the
-running UID; the token must be scoped ONLY to Hermes with repository Actions:
-read and no write permissions. Do not use a broad classic `repo` token,
-the YFC editorial token, or an unscoped environment variable. No token is
-created or installed by the code, and no periodic access is enabled.
-
-The optional module fetches at most three GitHub Actions run metadata records
-via one exact GET to api.github.com, no logs, redirects, proxies, retries
-or GitHub writes (12-second timeout, 700 KiB bound). HTTP errors, absent
-permissions, schema faults and rate limits yield `UNKNOWN`, never healthy.
-Only allowlisted metadata reaches offline triage; no token or raw response is
-printed. The code is not connected to the Cloudflare-only AI agent, Ops Watch
-or scheduled monitoring. Network egress and permission scopes require separate
-approval and verification before live use.
+В GitHub Issue #5 кодовые и проверочные этапы можно отметить выполненными отдельно от production-планировщика. Работающий новостной конвейер YFC и служба Ops Watch не меняются.
