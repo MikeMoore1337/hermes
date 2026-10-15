@@ -80,6 +80,40 @@ class LeaseContractTests(unittest.TestCase):
         self.assertIsNone(claim_one(self.directory, now=NOW + timedelta(seconds=91 * 6)))
         self.assertEqual(stats(self.directory)["exhausted"], 1)
 
+    def test_exhausted_incident_never_blocks_later_recovery(self):
+        self.raise_one()
+        persist(self.directory, [], lambda: [], observed=NOW)
+        for index in range(5):
+            current = NOW + timedelta(seconds=91 * index)
+            leased = claim_one(self.directory, now=current)
+            self.assertEqual(leased["event_id"], 1)
+            self.assertEqual(leased["attempt"], index + 1)
+        # Once the fifth lease expires, preserve its receipt but offer
+        # the later real recovery instead of blocking all notifications.
+        subsequent = claim_one(self.directory, now=NOW + timedelta(seconds=91 * 6))
+        self.assertEqual(subsequent["event_id"], 2)
+        self.assertEqual(subsequent["phase"], "resolved")
+        self.assertEqual(subsequent["attempt"], 1)
+        confirm_one(self.directory, event_id=2,
+                    lease_token=subsequent["lease_token"],
+                    telegram_message_id=31,
+                    now=NOW + timedelta(seconds=91 * 6 + 1))
+        self.assertEqual(stats(self.directory),
+                         {"total": 2, "acknowledged": 1,
+                          "unacknowledged": 1, "exhausted": 1})
+        self.assertIsNone(claim_one(self.directory, now=NOW + timedelta(hours=3)))
+
+    def test_exhausted_but_tampered_message_fails_closed(self):
+        self.raise_one()
+        persist(self.directory, [], lambda: [], observed=NOW)
+        for index in range(5):
+            leased = claim_one(self.directory, now=NOW + timedelta(seconds=91 * index))
+            self.assertEqual(leased["event_id"], 1)
+        with sqlite3.connect(self.directory / DATABASE) as db:
+            db.execute("UPDATE events SET title='FAKE UNKNOWN INSTRUCTION' WHERE id=1")
+        with self.assertRaisesRegex(InputError,"delivery_event_tampered"):
+            claim_one(self.directory, now=NOW + timedelta(seconds=91 * 6))
+
     def test_queue_is_fifo_and_ordered_behind_unacked_item(self):
         self.raise_one()
         persist(self.directory, [], lambda: [], observed=NOW)

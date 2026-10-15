@@ -221,6 +221,34 @@ class LocalAcknowledgeTests(unittest.TestCase):
                      now=NOW + timedelta(seconds=91 * 6),
                      transport=lambda **_: self.fail("must not send"))
 
+    def test_delivery_after_exhaustion_keeps_service_unhealthy(self):
+        from datetime import timedelta
+        from ops_watch.delivery_contract import claim_one
+        from ops_watch.telegram_sender import send_one
+        # Add the recovery and simulate one incident timing out five
+        # times in a *separate temp SQLite*, never modifying production.
+        persist(self.dir, [], lambda: [], observed=NOW)
+        baseline=datetime.now(UTC) - timedelta(seconds=600)
+        for attempt in range(5):
+            current=baseline + timedelta(seconds=91*attempt)
+            leased=claim_one(self.dir,now=current)
+            self.assertEqual(leased["event_id"],1)
+        transports=[]
+        def accepted(**kwargs):
+            transports.append(kwargs["chat_id"])
+            return 801
+        delivered=send_one(self.dir,token=BOT,chat=CHAT,
+                           now=datetime.now(UTC),transport=accepted)
+        self.assertEqual(delivered["status"],"ACCEPTED_WITH_EXHAUSTED")
+        self.assertEqual(delivered["event_id"],2)
+        self.assertEqual(delivered["exhausted"],1)
+        self.assertEqual(transports,[int(CHAT)])
+        self.assertEqual(stats(self.dir)["acknowledged"],1)
+        self.assertEqual(stats(self.dir)["exhausted"],1)
+        with self.assertRaisesRegex(TelegramGateError,"telegram_delivery_exhausted"):
+            send_one(self.dir,token=BOT,chat=CHAT,now=datetime.now(UTC),
+                     transport=lambda **_: self.fail("unexpected retry of poisoned event"))
+
     def test_send_message_contains_only_bounded_fixed_catalog_text(self):
         from ops_watch.delivery_contract import claim_one
         item = claim_one(self.dir, now=NOW)
