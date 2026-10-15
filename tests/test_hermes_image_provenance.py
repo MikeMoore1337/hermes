@@ -39,6 +39,34 @@ class HermessImagePinContract(unittest.TestCase):
         self.assertFalse(data["source_release_parity_verified"])
         self.assertFalse(data["permanent_agent_runtime_approved"])
 
+    def test_explicit_oci_sbom_and_attestation_absence_does_not_unlock_agent(self) -> None:
+        data = self.manifest
+        self.assertEqual(data["observed_oci_attestation_entries"], 0)
+        self.assertIs(data["observed_oci_sbom_published"], False)
+        self.assertIs(data["observed_oci_provenance_published"], False)
+        self.assertIs(data["verified_full_sbom"], False)
+        self.assertIs(data["permanent_agent_runtime_approved"], False)
+
+    def test_local_image_file_samples_match_embedded_revision_but_not_tag(self) -> None:
+        data = self.manifest
+        self.assertEqual(len(data["verified_image_source_blobs"]), 4)
+        self.assertEqual(data["verified_image_source_matches_embedded_count"], 4)
+        self.assertEqual(data["verified_image_source_sample_date"], "2026-10-15")
+        self.assertIs(data["source_release_parity_verified"], False)
+        self.assertEqual(data["local_dpkg_package_count"], 274)
+        self.assertRegex(data["local_dpkg_inventory_sha256"], r"^[0-9a-f]{64}$")
+
+    def test_sampled_safe_stress_does_not_claim_burnin_or_unlock_agent(self) -> None:
+        data = self.manifest
+        self.assertEqual(data["last_bounded_text_turn"]["status"], "pass")
+        self.assertEqual(data["last_bounded_text_turn"]["elapsed_seconds"], 113.4)
+        stress = data["isolated_cpu_stress"]
+        self.assertEqual(stress["samples"], 48)
+        self.assertGreater(stress["load1_max"], 1.3)
+        self.assertEqual(stress["swap_used_max_mib"], 0)
+        self.assertTrue(stress["news_and_ops_timers_healthy"])
+        self.assertIs(data["permanent_agent_runtime_approved"], False)
+
     def test_bounded_agent_uses_exact_pinned_digest(self) -> None:
         source = (ROOT / "scripts/agent_turn_probe.py").read_text()
         self.assertIn(self.manifest["image"], source)
