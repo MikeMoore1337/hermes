@@ -38,6 +38,10 @@ APPROVED_GO_CONTRACTS = {
     "local-evidence-parser": (
         "local", (), "none", "none", (), "none",
     ),
+    "github-hermes-private-actions": (
+        "api", ("api.github.com",), "read_only", "private_repo_metadata",
+        ("Actions:read",), "scoped_file",
+    ),
     "github-yfc-public-actions": (
         "api", ("api.github.com",), "read_only", "public_metadata", (), "none",
     ),
