@@ -52,12 +52,12 @@
     {
       "id": "github-hermes-private-actions",
       "kind": "api",
-      "decision": "DEFER",
-      "purpose": "Read only private Hermes Actions metadata; live HTTP 404",
+      "decision": "GO",
+      "purpose": "Bounded read-only Hermes main GitHub Actions metadata for reviewed CI signal",
       "documentation": "https://docs.github.com/en/rest/actions/workflow-runs",
       "license": "official_api_terms",
-      "verified_on": "2026-10-14",
-      "verified_status": "blocked",
+      "verified_on": "2026-10-15",
+      "verified_status": "checked",
       "billing": "zero_guaranteed",
       "card_requirement": "none",
       "credentials": "scoped_file",
@@ -71,8 +71,10 @@
         "Actions:read"
       ],
       "reasons": [
-        "live_http_404_scope_unverified",
-        "never_use_write_pat"
+        "vps_private_main_one_get_200",
+        "restricted_actions_read_pat",
+        "no_write_or_ci_logs",
+        "no_false_recovery"
       ],
       "issue": "https://github.com/MikeMoore1337/hermes/issues/5"
     },

@@ -38,9 +38,9 @@ class IntegrationRegistryTests(unittest.TestCase):
         self.assertEqual(
             {x["id"] for x in entries if x["decision"] == "GO"},
             {"local-evidence-parser", "github-yfc-public-actions",
-             "telegram-ops-watch-owner", "europe-pmc-manual"},
+             "github-hermes-private-actions", "telegram-ops-watch-owner", "europe-pmc-manual"},
         )
-        self.assertEqual(sum(x["decision"] == "DEFER" for x in entries), 4)
+        self.assertEqual(sum(x["decision"] == "DEFER" for x in entries), 3)
         self.assertEqual(sum(x["decision"] == "REJECT" for x in entries), 1)
         self.assertTrue(all(x["issue"].startswith("https://") for x in entries))
 
@@ -50,9 +50,11 @@ class IntegrationRegistryTests(unittest.TestCase):
         self.assertEqual(evaluate(item), "DEFER")
         self.rejects(item, "declared_decision_conflicts_with_policy")
 
-    def test_private_hermes_404_is_not_presented_as_go(self):
+    def test_private_hermes_access_now_verified_with_narrow_scope(self):
         item = self.candidate("github-hermes-private-actions")
-        self.assertEqual(item["verified_status"], "blocked")
+        self.assertEqual(item["verified_status"], "checked")
+        self.assertEqual(evaluate(item), "GO")
+        item["permissions"] = ["Actions:write"]
         self.assertEqual(evaluate(item), "DEFER")
 
     def test_billing_permission_and_private_data_fail_closed(self):
