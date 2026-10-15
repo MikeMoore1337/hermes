@@ -39,3 +39,11 @@ python -m scripts.export_v0221_observed_sbom --execute --output docs/sbom/new-re
 - scripts/validate_repo.py: PASS, 188 required files.
 - JSON parser: PASS; git diff --check: PASS.
 - Полный набор на Windows напрямую НЕ прошёл из-за POSIX-only модулей fcntl/os.geteuid/O_NOFOLLOW; результаты Linux-тестов относятся к реально поддерживаемой платформе.
+
+## Ревью P0-A от 15.10.2026
+
+- Исправлен риск неограниченной буферизации `stdout` и `stderr`: новый общий `scripts/bounded_subprocess.py` читает оба потока параллельно с лимитами байтов, принудительно прекращает процесс и его дочерние процессы при переполнении или таймауте и не отражает сырой stderr. `CompletedProcess.args` очищен, чтобы не раскрывать аргументы с возможными секретами.
+- Реальные Windows Python 3.14 тесты ограниченного процесса: 13/13 PASS. Linux офлайн Docker: 690/690 PASS.
+- Официальная JSON Schema CycloneDX 1.5 из `CycloneDX/specification` tag `1.5`, SHA256 `067f7824b08653839ea050ae9e09ca48375eadc2652b0e2a299476e7db90335b`: формальная проверка jsonschema в изолированном Docker PASS, 419 компонентов, 0 ошибок.
+- На Windows checkout Git преобразовывал LF в CRLF, меняя SHA готового JSON. Добавлена `.gitattributes` с LF для `docs/sbom/*.json`; нормализованный файл совпал с заявленным SHA256 `45f52a61878f892bc3d0d420b1504d3356ed1a06a8d008069ed1c66b896bb48c`.
+- Отношения зависимостей, PURL, лицензии, хеши установленных пакетов не измышлялись. Документ остаётся частичной наблюдаемой инвентаризацией, **не** удостоверением происхождения и **не** разрешением resident Agent.

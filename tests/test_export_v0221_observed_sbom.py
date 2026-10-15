@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from scripts import export_v0221_observed_sbom as sbom
+from scripts.bounded_subprocess import run_bounded
 from scripts import verify_v0221_local_image as image
 
 META = json.dumps([image.IMAGE]).encode() + b"|amd64"
@@ -30,6 +31,9 @@ def record(source=image.SOURCE_SHA, os_count=274, py_count=146, conflict=False):
 
 
 class ObservedSbomTest(unittest.TestCase):
+    def test_default_collector_uses_bounded_process_reader(self):
+        self.assertIs(sbom.collect.__defaults__[0], run_bounded)
+
     def test_default_is_noop(self):
         with patch.object(sbom, "collect") as collect:
             with patch("sys.stdout", new_callable=io.StringIO) as out:
@@ -67,6 +71,8 @@ class ObservedSbomTest(unittest.TestCase):
         refs = [component["bom-ref"] for component in bom["components"]]
         self.assertEqual(len(refs), len(set(refs)))
         self.assertTrue(all("licenses" not in item for item in bom["components"]))
+        self.assertNotIn("dependencies", bom)
+        self.assertTrue(all("purl" not in item for item in bom["components"]))
 
     def test_tampering_and_conflicting_versions_fail_closed(self):
         cases = [

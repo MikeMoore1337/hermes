@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from . import verify_v0221_local_image as image
+from .bounded_subprocess import BoundedProcessError, run_bounded
 
 EXPECTED_OS = 274
 EXPECTED_PYTHON = 146
@@ -110,18 +111,20 @@ def build(metadata: bytes, inspector: bytes) -> tuple[dict[str, Any], dict[str, 
     return bom, summary
 
 
-def collect(runner: Callable[..., subprocess.CompletedProcess] = subprocess.run
+def collect(runner: Callable[..., subprocess.CompletedProcess] = run_bounded
             ) -> tuple[dict[str, Any], dict[str, Any]]:
     inspect, run = image.commands()
     try:
-        first = runner(inspect, check=False, capture_output=True, timeout=10)
+        first = runner(inspect, check=False, capture_output=True, timeout=10,
+                       stdout_limit=8192, stderr_limit=16384)
         if first.returncode:
             raise SbomDenied("pinned_image_unavailable")
-        second = runner(run, check=False, capture_output=True, timeout=30)
+        second = runner(run, check=False, capture_output=True, timeout=30,
+                        stdout_limit=image.MAX_BYTES, stderr_limit=16384)
         if second.returncode:
             raise SbomDenied("isolated_inspector_failed")
         return build(first.stdout, second.stdout)
-    except (OSError, subprocess.TimeoutExpired):
+    except (OSError, subprocess.TimeoutExpired, BoundedProcessError):
         raise SbomDenied("local_docker_unavailable") from None
 
 
