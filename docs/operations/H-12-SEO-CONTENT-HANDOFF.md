@@ -1,0 +1,36 @@
+# H-12: редакционный черновик на основе публичной карточки Research Scout
+
+## Назначение
+
+Задача #64: предложить редактору темы на основе разрешённых публичных
+исследований, но не запускать второго научного сборщика или SEO Growth
+Operator YFC (#320/#322). Принимается только одна существующая публичная
+запись daily Research Scout; вход проверяет
+research_scout.review_draft.build_daily_item_draft.
+
+Выход: источник с DOI/PMID, датой и статусом исправлений, рабочий
+заголовок, вопрос для редактора. Это не статья и не научный вывод.
+Поисковая статистика недоступна и маркируется NO_DATA;
+не генерируются search volume, keyword difficulty, конкурентные разрывы.
+Отсутствие исправлений не следует из NOT_CHECKED.
+
+## Пример
+
+Сохранить одну разрешённую публичную запись
+latest-citations.json.items[] в selected-public-item.json:
+
+python3 -m scripts.hermes_seo_brief --from-daily-stdin --theme training_recovery < selected-public-item.json
+
+Темы: training_recovery, nutrition_and_sport, research_quality.
+При входе HOLD либо REVIEW_REQUIRED/UNAVAILABLE остаётся HOLD.
+
+## Разделение полномочий
+
+Research Scout #4: единственный научный источник и происхождение данных.
+Hermes #64: предложение вопроса/темы без догадок о поисковом спросе.
+YFC #320/#322: SEO-оценка, редактура, проверка медицинских
+утверждений и право публикации. Передача в YFC не выполняется.
+
+В выходе publication_allowed=false, yfc_write_allowed=false,
+outbound_messages_allowed=false. Новые аккаунты, платные API и
+внешние модели не нужны. Проверка локальная без сети и записи в YFC.
