@@ -38,6 +38,7 @@ REQUIRED_PATHS = (
     "agent_budget/policy.json",
     "tests/test_agent_budget_policy.py",
     "docs/operations/H-10-AGENT-ROLES-BUDGETS.md",
+    "docs/operations/H-10-CLOUDFLARE-FREE-VERIFICATION.md",
     "tests/test_integration_registry.py",
     "skills/README.md",
     "deploy/README.md",
