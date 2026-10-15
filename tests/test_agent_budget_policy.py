@@ -92,6 +92,16 @@ class BudgetGateTests(unittest.TestCase):
         self.assertEqual(approved["status"], "ELIGIBLE_BY_LOCAL_POLICY_ONLY")
         self.assertEqual(approved["side_effect"], "none")
 
+    def test_invalid_kind_type_denied_with_fixed_code(self):
+        for kind in ([], {}, None, 1, True):
+            with self.subTest(kind=repr(kind)):
+                with self.assertRaisesRegex(BudgetDenied,
+                                             "execution_kind_denied"):
+                    authorize(self.data, role="analyst",
+                              action="classify_sanitized_codes", kind=kind,
+                              expected_calls=0, estimated_cost_usd=0,
+                              quota_remaining=None, owner_approved=False)
+
     def test_invalid_roles_retries_budget_and_timing_denied(self):
         invalid = [
             ("daily_spend_cap_usd", 0.01),
@@ -134,7 +144,9 @@ class BudgetGateTests(unittest.TestCase):
             "output_tokens": None, "provider_neurons": None,
             "provider_cost_usd": 0, "http_status": 200,
         }
-        for status in (401, 402, 403, 408, 429, 500, 503, 599):
+        for status in (100, 201, 204, 301, 302, 307, 308,
+                       400, 401, 402, 403, 404, 408, 422, 429,
+                       500, 503, 599):
             with self.subTest(status=status):
                 current = {**base, "http_status": status}
                 self.assertEqual(verify_metrics(current)["status"], "STOP_NO_RETRY")
@@ -145,10 +157,14 @@ class BudgetGateTests(unittest.TestCase):
             "input_tokens": None, "output_tokens": None,
             "provider_neurons": None, "provider_cost_usd": None, "http_status": None,
         }
-        self.assertEqual(verify_metrics(data)["status"], "UNKNOWN_SPEND")
-        self.assertEqual(verify_metrics({**data, "provider_cost_usd": 1})["status"],
-                         "STOP_NONZERO_COST")
+        self.assertEqual(verify_metrics(data)["status"], "UNKNOWN_PROVIDER_STATUS")
         self.assertEqual(verify_metrics({**data, "provider_cost_usd": 0})["status"],
+                         "UNKNOWN_PROVIDER_STATUS")
+        success={**data,"http_status":200}
+        self.assertEqual(verify_metrics(success)["status"], "UNKNOWN_SPEND")
+        self.assertEqual(verify_metrics({**success, "provider_cost_usd": 1})["status"],
+                         "STOP_NONZERO_COST")
+        self.assertEqual(verify_metrics({**success, "provider_cost_usd": 0})["status"],
                          "MEASURED_ZERO_RECORDED")
         with self.assertRaisesRegex(BudgetDenied, "attempts_invalid"):
             verify_metrics({**data, "attempts": 2})
