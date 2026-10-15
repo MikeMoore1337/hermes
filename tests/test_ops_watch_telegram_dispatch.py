@@ -37,6 +37,12 @@ class ScheduledSenderTests(unittest.TestCase):
                 self.assertEqual(arguments.kwargs["chat"], CHAT)
                 self.assertEqual(arguments.args[0], telegram_dispatch.SANDBOX_OUTBOX)
 
+    def test_delivered_with_older_exhaustion_still_reports_nonzero_service(self):
+        with patch.object(telegram_dispatch,"dispatch_once",return_value={
+                "status":"ACCEPTED_WITH_EXHAUSTED","event_id":7,"exhausted":1
+            }):
+            self.assertEqual(telegram_dispatch.main(["--execute"]),2)
+
     def test_absent_or_unsafe_credentials_no_delivery(self):
         from ops_watch.telegram_e2e import VerificationError
         with patch.object(telegram_dispatch, "read_credentials",
