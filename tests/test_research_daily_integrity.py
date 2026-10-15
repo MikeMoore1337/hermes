@@ -151,6 +151,46 @@ class DailyIntegrityGateTests(unittest.TestCase):
         self.assertEqual(report["errors"][0]["reason"],"source_unknown")
         self.assertEqual(report["requests_attempted"],3)
 
+    def test_any_corrected_article_holds_whole_packet_even_with_healthy_neighbors(self):
+        def mixed(topic, *, now):
+            r=finder(topic, now=now)
+            if topic == TOPIC_IDS[1]:
+                r={"topic":topic,"status":"MANUAL_REVIEW","candidates":[{
+                    "source":"EUROPE_PMC","id":"42733310",
+                    "source_url":"https://europepmc.org/article/MED/42733310",
+                    "doi":"10.1002/ejsc.70246","first_publication_date":"2026-10-01",
+                    "title":"Second study unaffected", "status":"MANUAL_REVIEW",
+                    "reason":"metadata_only","scientific_claims_verified":False,
+                }]}
+            return r
+        r=prepare(now=NOW,searcher=mixed,doi_verifier=crossref,
+                  integrity_verifier=lambda *_:article())
+        self.assertEqual(r["status"],"HOLD")
+        self.assertEqual(r["errors"],[])
+        self.assertEqual(r["items"][0]["reason"],"integrity_hold")
+        self.assertEqual(r["items"][1]["status"],"MANUAL_REVIEW")
+        self.assertEqual(r["items"][1]["article_notice_state"],"NOT_CHECKED")
+
+    def test_pmc_without_doi_is_hold_not_a_reviewable_citation(self):
+        def pmc(topic, *, now):
+            r=finder(topic, now=now)
+            if r["candidates"]:
+                r["candidates"][0]["id"]="PMC13639859"
+                r["candidates"][0]["source_url"]="https://europepmc.org/articles/PMC13639859"
+                r["candidates"][0]["doi"]=None
+            return r
+        lookup,integrity=Mock(),Mock()
+        r=prepare(now=NOW,searcher=pmc,doi_verifier=lookup,
+                  integrity_verifier=integrity)
+        self.assertEqual(r["status"],"HOLD")
+        self.assertEqual(r["items"][0]["reason"],"doi_missing")
+        self.assertEqual(r["items"][0]["article_notice_state"],"NOT_CHECKED")
+        lookup.assert_not_called()
+        integrity.assert_not_called()
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory);path.chmod(0o700)
+            save(r,path)
+
     def test_existing_callers_remain_offline_without_integrity_opt_in(self):
         network=Mock()
         report=prepare(now=NOW,searcher=finder,doi_verifier=crossref)
