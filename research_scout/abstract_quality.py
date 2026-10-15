@@ -12,6 +12,20 @@ SOURCE_URL = "https://pubmed.ncbi.nlm.nih.gov/42797032/"
 SOURCE_DOI = "10.3390/nu18183049"
 EVIDENCE_BASIS = "curated_public_abstract_facts_not_full_text"
 
+# Allowed evidence domains per output field. An existing fact ID is not
+# sufficient if it belongs to another field (e.g. lactate != performance).
+PLANT_FIELD_FACTS: dict[str, tuple[str, ...]] = {
+    "study_type": ("F1",),
+    "population": ("F2",),
+    "intervention": ("F3",),
+    "main_results": ("F4", "F5"),
+    "subjective_outcomes": ("F4",),
+    "objective_outcomes": ("F5",),
+    "limitations": ("F6", "F7"),
+    "practical_significance": ("F8",),
+}
+
+
 ABSTRACT_FACTS = {
     "F1": "A systematic review included 36 human intervention studies.",
     "F2": "Eligible studies involved physically active people aged at least 14 years.",
@@ -109,6 +123,7 @@ def with_abstract_facts(draft: Mapping[str, object]) -> dict[str, object]:
         case: dict[str, object] = {
             "url": SOURCE_URL, "doi": SOURCE_DOI, "facts": ABSTRACT_FACTS,
             "sample_size": "UNKNOWN", "correction_status": "UNKNOWN",
+            "field_facts": PLANT_FIELD_FACTS,
         }
     else:
         case = OTHER_ABSTRACTS.get(pmid, {})
@@ -127,6 +142,16 @@ def with_abstract_facts(draft: Mapping[str, object]) -> dict[str, object]:
         "expected_correction_status": case["correction_status"],
         "sample_size_citations": ["F2"] if case["sample_size"] != "UNKNOWN" else [],
         "correction_citations": ["F6", "F7", "F8"] if pmid == "42771055" else [],
+        # Field-level citation whitelist is a *structural* requirement only.
+        # It cannot prove the semantic meaning of a generated sentence.
+        "field_fact_allowlist": {
+            name: list(ids)
+            for name, ids in (
+                case["field_facts"] if pmid == "42797032" else {
+                    key: tuple(item[1]) for key, item in case["fields"].items()
+                }
+            ).items()
+        },
     }
     return result
 

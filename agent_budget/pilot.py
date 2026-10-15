@@ -500,6 +500,11 @@ def validate_research_result(raw: str | Mapping[str, object], draft: Mapping[str
                     or any(type(token) is not str or token not in allowed_ids for token in cited)
                     or len(set(cited)) != len(cited)):
                 raise PilotError("abstract_ungrounded_fact_id")
+            # A valid F ID attached to the wrong scientific field is *not*
+            # acceptable provenance (e.g. a lactate marker used for strength).
+            permitted = set(constraints["field_fact_allowlist"].get(field, []))
+            if not permitted or not set(cited).issubset(permitted):
+                raise PilotError("abstract_fact_field_mismatch")
         for field, requirement in (
             ("sample_size", constraints["sample_size_citations"]),
             ("correction_status", constraints["correction_citations"]),

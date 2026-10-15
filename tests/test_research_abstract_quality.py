@@ -110,17 +110,39 @@ class ResearchAbstractPilotTests(unittest.TestCase):
         with self.assertRaisesRegex(PilotError, "abstract_sample_size_or_correction_unverified"):
             validate_research_result(output, draft)
 
+    def test_known_fact_cannot_cite_unrelated_research_field(self) -> None:
+        for case, field, bad_id in (
+            ("plant_recovery_public_abstract", "objective_outcomes", "F4"),
+            ("whey_gut_brain_public_abstract", "main_results", "F1"),
+            ("ironman_correction_public_abstract", "main_results", "F2"),
+            ("massage_cret_public_abstract", "objective_outcomes", "F4"),
+        ):
+            with self.subTest(case=case, field=field):
+                _, _, _, draft, _, mock = _prepared_case("research:" + case)
+                value = json.loads(mock())
+                value["field_evidence"][field] = [bad_id]
+                with self.assertRaisesRegex(PilotError, "abstract_fact_field_mismatch"):
+                    validate_research_result(value, draft)
+
+    def test_scientific_output_cannot_cite_empty_unsupported_field(self) -> None:
+        _, _, _, draft, _, mock = _prepared_case("research:whey_gut_brain_public_abstract")
+        value = json.loads(mock())
+        value["objective_outcomes"] = "Доказано улучшение памяти."
+        value["field_evidence"]["objective_outcomes"] = ["F3"]
+        with self.assertRaisesRegex(PilotError, "abstract_fact_field_mismatch"):
+            validate_research_result(value, draft)
+
     def test_ironman_correction_references_actual_erratum(self) -> None:
         _, _, _, draft, _, mock = _prepared_case("research:ironman_correction_public_abstract")
         provenance = draft["abstract_source_provenance"]
         self.assertIn("10.1007/s00520-026-11294-6", provenance["correction_url"])
         result = json.loads(mock())
-        result["field_evidence"]["correction_status"] = ["F4"]
+        result["field_evidence"]["correction_status"] = ["F6"]
         with self.assertRaisesRegex(PilotError, "abstract_required_source_citation_missing"):
             validate_research_result(result, draft)
         result = json.loads(mock())
         result["field_evidence"]["sample_size"] = ["F3"]
-        with self.assertRaisesRegex(PilotError, "abstract_required_source_citation_missing"):
+        with self.assertRaisesRegex(PilotError, "abstract_fact_field_mismatch"):
             validate_research_result(result, draft)
 
     def test_massage_biomarker_cannot_be_substituted_for_functional_gain(self) -> None:
