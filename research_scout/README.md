@@ -1,7 +1,6 @@
 # Hermes Research Scout - offline evidence gate
 
-Status: **offline core only**, no fetcher, no AI calls, no autonomous reports and
-no production deployment. Partial progress for [Issue #4](https://github.com/MikeMoore1337/hermes/issues/4).
+Status 15.10.2026: **daily public metadata research collector active on VPS**; offline evidence gate also operates. No AI model calls, no external reporting, no automatic publication or YFC/Second Brain writes. Partial progress for [Issue #4](https://github.com/MikeMoore1337/hermes/issues/4).
 
 This deliberately does not copy code from VIBE-SERCH or other repositories
 with unclear licences. Uses Python standard library.
@@ -26,10 +25,7 @@ This stage does **not** verify the truth or factual independence of studies.
 Even `READY_FOR_REVIEW` is NOT permission to publish to Telegram/YFC,
 change a fitness recommendation, send a message or store in Second Brain.
 
-Next gate: owner-approved public source registry, hardened time/size-bounded
-fetch, real DOI/PMID/license evidence, direct evidence citations, link checks
-and rate limits, at least 20 negative cases, operational budgets and a
-bounded approved delivery mechanism. Keep #4 OPEN.
+Follow-up gate: independent manual assessment of original study methods, DOI/PMID/license, evidence citations and human-approved research delivery. Fixed public source clients, timeout/size limits and 20+ negative cases exist; keep #4 OPEN until scientific review and outgoing channel are separately authorized.
 
 
 ## Матрица негативных случаев (14.10.2026)
@@ -47,3 +43,8 @@ CI подтверждает только офлайн-защиту. Актуал
 ## Ежедневный автономный сбор открытых научных метаданных
 
 [Протокол безопасности, установка и остановка](../docs/operations/H-03-DAILY-RESEARCH.md): отдельный ограниченный публичный сборщик, не более 3 фиксированных Europe PMC GET + 1 Crossref DOI lookup, 1 защищённый локальный JSON отчёт, без платных API, LLM, YFC/Second Brain, Telegram-рассылки или публикации. Scientific claims всегда `verified=false`; материалы `MANUAL_REVIEW` требуют проверки оригинала и согласования редактора. Никаких duplicate-source доказательств.
+
+
+## Фактическая ежедневная работа на VPS
+
+[Акт установки 15.10.2026](../docs/audits/H-03-research-digest-vps-2026-10-15.md): `hermes-research-scout.timer` включён, отдельная root-only служба в проверенном sandbox, 3 темы и максимум 4 публичных GET в сутки. Первый ограниченный отчёт содержит 4 кандидата, 1 зарегистрированный DOI Crossref, 0 ошибок; [правила отчёта и отката](../docs/operations/H-03-DAILY-RESEARCH.md). Это не означает доказанные рекомендации для тренировок и не даёт разрешения публиковать.
