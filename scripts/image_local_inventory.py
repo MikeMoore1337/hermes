@@ -57,10 +57,11 @@ def commands() -> tuple[list[str], list[str]]:
     return inspect, run
 
 
-def _packages(raw: object, kind: str) -> list[dict[str, str]]:
+def _packages(raw: object, kind: str) -> tuple[list[dict[str, str]], list[str]]:
     if type(raw) is not list or not 1 <= len(raw) <= MAX_PACKAGES:
         raise InventoryDenied("package_list_invalid")
     seen: set[str] = set()
+    ambiguous: set[str] = set()
     result: list[dict[str, str]] = []
     for row in raw:
         if type(row) is not dict or set(row) != {"name", "version"}:
@@ -71,10 +72,13 @@ def _packages(raw: object, kind: str) -> list[dict[str, str]]:
             raise InventoryDenied("package_value_invalid")
         key = name.casefold().replace("_", "-")
         if key in seen:
-            raise InventoryDenied("duplicate_package_name")
+            # Multiple package installations under the same canonical name
+            # are important audit evidence. Preserve both, do not hide either.
+            ambiguous.add(kind + ":" + key)
         seen.add(key)
         result.append({"ecosystem": kind, "name": name, "version": version})
-    return sorted(result, key=lambda x: (x["name"].casefold(), x["version"]))
+    return (sorted(result, key=lambda x: (x["name"].casefold(), x["version"])),
+            sorted(ambiguous))
 
 
 def parse(raw: bytes, *, inspected_image_id: str) -> dict[str, Any]:
@@ -99,8 +103,8 @@ def parse(raw: bytes, *, inspected_image_id: str) -> dict[str, Any]:
             "schema", "os_packages", "python_venv_packages"
         } or root["schema"] != "hermes-pinned-image-inspector-v1"):
         raise InventoryDenied("image_schema_invalid")
-    os_items = _packages(root["os_packages"], "dpkg")
-    py_items = _packages(root["python_venv_packages"], "python-venv")
+    os_items, os_ambiguous = _packages(root["os_packages"], "dpkg")
+    py_items, py_ambiguous = _packages(root["python_venv_packages"], "python-venv")
     components = sorted(os_items + py_items,
                         key=lambda x: (x["ecosystem"], x["name"].casefold(), x["version"]))
     canonical = json.dumps(components, separators=(",", ":"), sort_keys=True,
@@ -112,6 +116,8 @@ def parse(raw: bytes, *, inspected_image_id: str) -> dict[str, Any]:
         "os_packages_count": len(os_items),
         "python_venv_packages_count": len(py_items),
         "components": components,
+        "ambiguous_package_names": os_ambiguous + py_ambiguous,
+        "ambiguous_package_count": len(os_ambiguous) + len(py_ambiguous),
         "supplier_sbom_verified": False,
         "source_release_parity_verified": False,
         "signature_verified": False,
@@ -196,7 +202,8 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({"status": "UNKNOWN", "reason": "image_inventory_unavailable"}))
         return 2
     print(json.dumps({
-        "status": "LOCAL_INVENTORY_ONLY",
+        "status": "INVENTORY_REQUIRES_REVIEW" if report["ambiguous_package_count"] else "LOCAL_INVENTORY_ONLY",
+        "ambiguous_package_count": report["ambiguous_package_count"],
         "os_packages": report["os_packages_count"],
         "python_venv_packages": report["python_venv_packages_count"],
         "aggregate_sha256": report["inventory_sha256"],
