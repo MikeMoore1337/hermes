@@ -242,3 +242,19 @@ sudo systemctl disable --now hermes-ops-alerts.timer
 ## Исправление чтения SQLite в 2026-10-15
 
 `read_current()` и `inspect()` используют percent-encoded SQLite URI (`Path.absolute().as_uri() + "?mode=ro"`), поэтому `?` и `#` в легальном пути не изменяют режим подключения и не приводят к чтению другой базы. Обе операции не изменяют файл; `inspect()` также отклоняет hardlinked DB, согласованно с основным транзакционным интерфейсом. Сценарии проверены только в временной SQLite фикстуре, production очередь не меняется. Это укрепление чтения, **не** доказательство естественной Telegram-доставки инцидента или восстановления.
+
+
+## Ops Incident Advisor: только объяснение оператору
+
+`docs/operations/H-02-OPS-INCIDENT-ADVISOR.md` описывает ограниченный первый
+функциональный сценарий. `python3 -m scripts.ops_incident_advisor --all
+--engine offline` проверяет 12 подготовленных случаев без модели. Для одного
+локального Docker-прогона через настоящий CLI Hermes используйте, например,
+`py -3.14 -m scripts.ops_incident_advisor --scenario provider_http_429
+--engine docker`.
+
+Advisor принимает только обезличенный allowlist-контекст, не запускает tools,
+не имеет production credentials и возвращает только проверенный операторский
+разбор. Mock provider нужен для воспроизводимости; его `MOCK_ONLY` не является
+оценкой качества реальной LLM. Подключение к Cloudflare Workers AI заблокировано
+до отдельного подтверждения Workers Free и владельческого пилота по #62.
