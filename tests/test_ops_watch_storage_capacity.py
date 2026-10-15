@@ -23,7 +23,9 @@ class CapacityAuditTests(unittest.TestCase):
         self.db.chmod(0o600)
 
     def check(self):
-        return audit.inspect_capacity(self.root)
+        with patch.object(audit.os, "statvfs",
+                          return_value=self.filesystem(40 << 30, 12 << 30)):
+            return audit.inspect_capacity(self.root)
 
     @staticmethod
     def filesystem(total: int, available: int):
@@ -54,7 +56,7 @@ class CapacityAuditTests(unittest.TestCase):
             with self.subTest(total=total, free=free):
                 with patch.object(audit.os, "statvfs",
                                   return_value=self.filesystem(total, free)):
-                    result = self.check()
+                    result = audit.inspect_capacity(self.root)
                 self.assertEqual(result["status"] == "REVIEW",
                                  free <= max(audit.MIN_FREE_BYTES, total // 10))
 
@@ -82,7 +84,7 @@ class CapacityAuditTests(unittest.TestCase):
         with patch.object(audit.os, "statvfs", side_effect=OSError("PRIVATE_STRING")):
             with self.assertRaisesRegex(audit.StorageAuditDenied,
                                         "storage_metadata_unavailable"):
-                self.check()
+                audit.inspect_capacity(self.root)
         self.db.unlink()
         with self.assertRaises(audit.StorageAuditDenied):
             self.check()
@@ -95,7 +97,7 @@ class CapacityAuditTests(unittest.TestCase):
                 with patch.object(audit.os, "statvfs", return_value=bogus):
                     with self.assertRaisesRegex(audit.StorageAuditDenied,
                                                 "invalid_filesystem_metrics"):
-                        self.check()
+                        audit.inspect_capacity(self.root)
 
     def test_cli_dry_run_is_inert_and_errors_are_redacted(self):
         with patch.object(audit, "inspect_capacity") as observer:
