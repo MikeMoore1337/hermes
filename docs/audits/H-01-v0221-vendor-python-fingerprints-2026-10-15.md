@@ -32,3 +32,9 @@ python -m scripts.verify_v0221_vendor_fingerprints --execute --output docs/sbom/
 - 6/6 новых unittest PASS в Windows Python 3.14.
 - 676/676 offline Linux Docker unittest PASS с исходниками только для чтения; exit 0.
 - scripts/validate_repo.py PASS (188 required files); JSON parse PASS.
+
+## Ревью P0-A 15.10.2026
+
+- PR #133 теперь зависит от PR #132: для обеих веток используется **один** `scripts/bounded_subprocess.py`, без второго механизма. `verify_v0221_vendor_fingerprints.collect()` больше не использует необязанный `subprocess.run(capture_output=True)` по умолчанию; лимиты `stdout=400000`, `stderr=16384`, отдельно идентификация image (8192 байт) и timeout 10/90 секунд.
+- В реальном Docker Desktop повторно считаны все 1176 vendor Python файлов; канонический SHA256 JSON `29a5d3bc3b84c0ac2d974d6d3369820817a0eb2d551e494b49744fe086cafe08` совпал. LF зафиксирован правилами `.gitattributes` зависимого PR #132.
+- Недоверенный stdout/stderr не попадает в исключения или отчёты; запрет `resident_agent_allowed=false` и ожидаемый код выхода 2 сохранены.
