@@ -48,7 +48,7 @@ def _review_item(candidate: object, topic: str) -> dict[str, object]:
     if type(reason) is not str or reason not in {
         "metadata_only", "suspicious_title", "stale_publication_date",
         "date_unverified", "invalid_publication_date",
-        "future_publication_date", "duplicate_doi",
+        "future_publication_date", "duplicate_doi", "doi_missing",
     }:
         raise DigestError("candidate_reason_invalid")
     identifier = candidate.get("id")
@@ -70,6 +70,10 @@ def _review_item(candidate: object, topic: str) -> dict[str, object]:
     if doi is not None and (type(doi) is not str or len(doi) > 256
                             or DOI.fullmatch(doi) is None):
         raise DigestError("candidate_doi_invalid")
+    # A missing DOI in the lite row cannot be treated as publication-ready:
+    # the same PMCID may still have a DOI in a separate PubMed record.
+    if doi is None and status == "MANUAL_REVIEW":
+        status, reason = "HOLD", "doi_missing"
     return {
         "topic": topic, "title": title, "identifier": identifier,
         "source_url": source_url, "doi": doi, "status": status,
@@ -187,9 +191,10 @@ def prepare(
             if name in seen_dois:
                 item["status"], item["reason"] = "HOLD", "duplicate_across_topics"
             seen_dois.add(name)
-    status = ("HOLD" if errors else
-              "MANUAL_REVIEW" if any(x["status"] == "MANUAL_REVIEW" for x in items)
-              else "HOLD" if items else "NO_DATA")
+    # A single unsafe/uncertain citation holds the whole packet. Consumers
+    # must never interpret a mixed report as universally reviewable.
+    status = ("HOLD" if errors or any(x["status"] == "HOLD" for x in items) else
+              "MANUAL_REVIEW" if items else "NO_DATA")
     return {
         "schema": SCHEMA,
         "observed_at": now.astimezone(UTC).isoformat(),
