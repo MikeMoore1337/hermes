@@ -15,7 +15,8 @@ from pathlib import Path
 from typing import Any
 
 from ops_watch.core import InputError, analyze, changes
-from ops_watch.state_store import persist
+from ops_watch.state_store import persist, read_current
+from qa_advisor.signal_store import SignalError, observed_status
 
 SOURCE = Path("/var/lib/hermes/state.json")
 TARGET = Path("/var/lib/hermes-agent/ops-watch")
@@ -167,6 +168,20 @@ def once(source: Path = SOURCE, target: Path = TARGET, observed: datetime | None
             agent_guard=agent_guard if agent_guard is not None else _agent_network_guard_status(),
         )
         findings = analyze(snapshot, now=now)
+        # Separate QA reader never has Telegram credentials or access to the
+        # news source. Missing/stale/denied API observations must not falsely
+        # clear a previously persisted CI incident.
+        try:
+            ci = observed_status(now=now)
+        except (SignalError, OSError):
+            ci = None
+        previous = read_current(target)
+        was_ci_failed = any(item["code"] == "ci_failed" for item in previous)
+        if ci == "FAILURE" or (ci is None and was_ci_failed):
+            findings.append({
+                "code": "ci_failed", "severity": "warning",
+                "fingerprint": "ops:ci_failed",
+            })
         delta, previews, queued = persist(
             target, findings,
             lambda: _read_previous(target / "findings.json"),
