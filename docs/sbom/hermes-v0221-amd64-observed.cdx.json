@@ -1,0 +1,6736 @@
+{
+  "bomFormat": "CycloneDX",
+  "components": [
+    {
+      "bom-ref": "urn:hermes:observed:f4712427d815c54410731794ccbbbe5bfae6217f1a9bf94a296568fc938c38b1",
+      "name": "adduser",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.152"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:10a91d2f43c34390e3f2d07f78a1b27be9b64bfc1ee3d4c2d3ddb200381b2d6d",
+      "name": "apt",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.0.3"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:03f50a64e6557f8cbea721ecb11c63603982953029c649316b01e31ea4f14d28",
+      "name": "at-spi2-common",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.56.2-1+deb13u2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:27386b1954a439d11e19467142b60666783d6f596531f4c41e224b9732c6f1ad",
+      "name": "base-files",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "13.8+deb13u4"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:c38965afb797186fda1c564ddba6cd21c0be8e5e3bdb681a69d4db9abba64718",
+      "name": "base-passwd",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.6.7"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:82df41adb43a063fac1710c24c2f8c8a0ba19188700b478f67af3d20187d5787",
+      "name": "bash",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "5.2.37-2+b8"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:c373c72741d8ffba1ad4ac3568d160d1118221d772ea0b6028b259565cf48400",
+      "name": "binutils",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.44-3"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:b2f0a5e86280a004a30cc4cef682da70ff827a8f52596ac1bc20a5760ada5df2",
+      "name": "binutils-common:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.44-3"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:7798d3e905b88ad500850fc478504ed6ad3966a8adeb734d24ad0e9f51f22e2e",
+      "name": "binutils-x86-64-linux-gnu",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.44-3"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:c160fce865a2a98d7179e3ae18d1a07c2134dc92d2f454460d32cbf44e2849df",
+      "name": "bsdutils",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1:2.41-5"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:9f36e33a346c0172f68f1f446cb771f5303c2a0f0655b779f3e430bc2c92890f",
+      "name": "ca-certificates",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "20250419"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:3edbcc11ad6d207a506248576cb4bb2619941bea727816fb8856fd028ea96752",
+      "name": "cmake",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.31.6-2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:cf5ee5344ac3b631c99e5552ff4234c3fa57efc964dfd2f02978151f7801b5ba",
+      "name": "cmake-data",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.31.6-2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:353785cd70acdbb03894641e4999eab5d72a62c07c542475f5eb09550801207f",
+      "name": "coreutils",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "9.7-3"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:6eb712f33a2f2e980a493c83013958f99bffd1351ca413c469ab28ae2aad0080",
+      "name": "cpp",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "4:14.2.0-1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:c0742d1f3ee7eb82561fd5fd84341db53fcb8c04fc9d7b732891c168d74c34b3",
+      "name": "cpp-14",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "14.2.0-19"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:3134517eddad651cf790b5f4df7b7f6851e09e15964ea184ddf3ba42bae1c2bf",
+      "name": "cpp-14-x86-64-linux-gnu",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "14.2.0-19"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:507c8f616183e799cd022784b1bf0f0994777609477d4792ef007654e3dd7cde",
+      "name": "cpp-x86-64-linux-gnu",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "4:14.2.0-1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:c4361f65d7a32c25d5bbae4d7ea338f48adb66379e8befd1fd5c9f1dbce7d35f",
+      "name": "curl",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "8.14.1-2+deb13u5"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:c651833b8671753cae439ca73a452c48714003cd41cbcda6bb7dd3d30b6bad95",
+      "name": "dash",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.5.12-12"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:5ee83026a7bdaa3e776d01c8391db285fca86d66a126f3d4636b34e14975249b",
+      "name": "debconf",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.5.91"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:7cea1d592afd2b6f2140fee5c2c706f852fa87a225261d408641ce4049591bb4",
+      "name": "debian-archive-keyring",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2025.1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:fa0a72cb5ac2cdcc45824551ddf8d17c8317642d7856af454e3b65e1a572b8b5",
+      "name": "debianutils",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "5.23.2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:a4a5ba435373045464c8aa148b081ac625bab40eb53dc995fade49cbd174252e",
+      "name": "diffutils",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1:3.10-4"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:2754ce49408abca004039cb116173ca43beee1e8273032a6438fbe11d480e3f5",
+      "name": "docker-cli",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "26.1.5+dfsg1-9+deb13u1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:6864f33b80a0a4ddff1f9ffdcddf0927010e58c2925dc241dfc6692a5fd6f6bf",
+      "name": "dpkg",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.22.22"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:774c0357288029f6f946906179341df54eaaa20a7def4487cb1ee1d3b2c0cb72",
+      "name": "findutils",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "4.10.0-3"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:25c8868d2aa74db60c63d28dcc15a2b1710a4fb3be6892c3eee276e18098024c",
+      "name": "fontconfig",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.15.0-2.3"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:b63cd5705452f0aa3307c928ca0bfc346a37f26330d5e3cabc78fcc401d5a985",
+      "name": "fontconfig-config",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.15.0-2.3"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:36f2507c1a3e3e6b985f67c18a9645bda01b11a9d944d94531409b6ae39acd73",
+      "name": "fonts-dejavu-core",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.37-8"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:61519fffad8ae8d16cec07e1cfc561000aafe30bd7d14f352497298a792f777d",
+      "name": "fonts-dejavu-mono",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.37-8"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:7b1aaf1f81ffbb858a3769aaad4ab8284356fc434abb4f887dd1ce1c2447fb65",
+      "name": "g++",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "4:14.2.0-1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:345e3b6342b54c8f33ea8acae77bdbd4ea14a0f143a1e58bb8c661953e8d9886",
+      "name": "g++-14",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "14.2.0-19"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:52c28d3126719a00167162bd559e65565f5a8bc060bed362907bcb6de517a602",
+      "name": "g++-14-x86-64-linux-gnu",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "14.2.0-19"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:c48f8678879aacf122cf51541c513ed8566809d0ea367b19a8d6dad5547ad032",
+      "name": "g++-x86-64-linux-gnu",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "4:14.2.0-1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:12898c32433d893c208463aed1ddad37a5978bdf2b7468b909f66e23ac026da0",
+      "name": "gcc",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "4:14.2.0-1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:e1e13f8b2dab619db2ae895673beba80cdebdf83f64e85f55d1ecc0c18c3cc5d",
+      "name": "gcc-14",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "14.2.0-19"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:99fd8d69de9ae5ada8ac92b34442b170a9d76a3570270ce8eff8d781cc1ce553",
+      "name": "gcc-14-base:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "14.2.0-19"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:c8d86c821d5e974edc39032e57c4da0426b821428a9b9479d0b3f60aff946e88",
+      "name": "gcc-14-x86-64-linux-gnu",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "14.2.0-19"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:c39dc3347fac977dd9abfd3c0930e6c4743dfa8b03e90b6fd6e121db5efa3280",
+      "name": "gcc-x86-64-linux-gnu",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "4:14.2.0-1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:5be0ff658f5d34a9f12cca404ef01aab8266628d465c69e4ec04498ba8ec6e12",
+      "name": "git",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1:2.47.3-0+deb13u1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:b0e001b20f6994f995695931e3d8c45f3beba25979de81fb8c54bd1eb499fea9",
+      "name": "git-man",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1:2.47.3-0+deb13u1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:54728a45aea4db35984a371b6cc68c8b8f5bd88be8b40ab20643fbd9595adb86",
+      "name": "grep",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.11-4"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:44dfa0b2c31bae8ace3e65ad7a074e4680be439db3933b759b81aab8cdb01435",
+      "name": "gzip",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.13-1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:28e2627aab42c050256e7103ffdabb3c2195a688b589485179fb2e4c3fdeb594",
+      "name": "hostname",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.25"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:101c90863e2d47696e1c02cc5f20d21173e5400920f764788b69c58718d6c8f7",
+      "name": "init-system-helpers",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.69~deb13u1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:83f8910449ba49f78deabc20a26040b6d167e98e7d82e6f1796d728c8330145d",
+      "name": "iputils-ping",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3:20240905-3"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:724d118f1abd72c96dacc91822e951d939af9b35cf9a9d18128be353a63a9f72",
+      "name": "libacl1:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.3.2-2+b1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:a34b990df51c86c9544e23dfaf17bb896926dd16aa9ef3e4f99fba8e7fd97a63",
+      "name": "libapt-pkg7.0:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.0.3"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:16d472369af1b26a91db50fcdee15585462d1117ffec98d43737ed78780a5cc4",
+      "name": "libarchive13t64:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.7.4-4+deb13u1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:ab1076df6624a2e0a64b47fbf6549c1362f345969914f9524cb5f28cc7e6605f",
+      "name": "libasan8:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "14.2.0-19"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:eda632d4665fe3bff6ca814cf86dba26877de0cecb62ec06c78b4a1d031ceaf6",
+      "name": "libasound2-data",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.2.14-1+deb13u1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:d22815500ee73fb99363200d0cf99d738ae7fceed5e4dbdefc026c842c80881e",
+      "name": "libasound2t64:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.2.14-1+deb13u1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:1c64cb31fe59f1f89d3f82e7e402e5496377314b59204b2652c8c5ad09d93847",
+      "name": "libatk-bridge2.0-0t64:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.56.2-1+deb13u2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:998434fe4d7476aaf5485f0cf3dee9d41a3210adedf069f0ddde3270a441b46a",
+      "name": "libatk1.0-0t64:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.56.2-1+deb13u2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:24a0b8e9a1254898dd9209001b00137fc0f42f794d374c54770cbaf915a8baee",
+      "name": "libatomic1:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "14.2.0-19"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:980bba1c151abbeca6de95197604debf97deb69d54f28a614c62fb7d330918c3",
+      "name": "libatspi2.0-0t64:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.56.2-1+deb13u2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:da851266ee98f4accb3cfd8cc16c478735227f3a6e37a0ad3aa5c9857740928a",
+      "name": "libattr1:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1:2.5.2-3"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:03281b56e1ad6547415ecb9041ba5af831652b873824e2e6ddbc204df3d4867a",
+      "name": "libaudit-common",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1:4.0.2-2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:3cd796b0166ad4a985ae411562935f4dd6ebbae08ff61ce8928873c0efec8501",
+      "name": "libaudit1:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1:4.0.2-2+b2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:30b7ef0295c909ed05030ff66f7d17736f9118198cb01a3bb048e942e72a8fb3",
+      "name": "libavahi-client3:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.8-16"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:630426030c28fda1e72ced078439cb2e1eca53a7de150c939f0846d08f7e1d9f",
+      "name": "libavahi-common-data:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.8-16"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:45fec1d880ffa71b1be08b20ef4a61a37b6845d242ff60718d23507b1c9058ff",
+      "name": "libavahi-common3:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.8-16"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:210c3c308a157b6480063e1dbc64b2b30082afe1b6b3ff20f6df0ef6e5811a3f",
+      "name": "libbinutils:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.44-3"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:5ee7b8f51f05d70bf7929b1ad4e9c8deff773e083e6bc9dbce6803a31a12ac87",
+      "name": "libblkid1:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.41-5"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:d314e237f732aa8ebcf3cdc5d426d9478b1aebb759f2f4a59e5cb0b0c7a31cc1",
+      "name": "libbrotli1:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.1.0-2+b7"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:581ba9bab15d44e487a703a8c4262edd1f446cf778efc53859da40bf8e528938",
+      "name": "libbsd0:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.12.2-2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:6ee0cdc09b22a8b9afdb69e004d6bcc5c7445c408a6289207effdcde02b3bff3",
+      "name": "libbz2-1.0:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.0.8-6"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:ed4a7d7ec80966b07103a9bfee96a8fa584b65ee77f68b9f9e1eed8b59129589",
+      "name": "libc-bin",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.41-12+deb13u4"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:efb590765266f8831290e8be2170d09657bb40a0d7cff2079900ca845f753782",
+      "name": "libc-dev-bin",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.41-12+deb13u4"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:cbf5db9228a92d88d53bc9f1c6432a90d618922630d99548695da09a315824a7",
+      "name": "libc6-dev:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.41-12+deb13u4"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:f84a70cb92c1231b00e680a45b3e9674e7121e6fb58010e09fa72aa9220c13c3",
+      "name": "libc6:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.41-12+deb13u4"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:35ada0794780c3893acb70c7a5248f77e4b460f4b0f932674e715d0de83f06cf",
+      "name": "libcairo2:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.18.4-1+b1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:c701ffdf60d74566b25080aa02c2ada2703e888a6aeb1070c8063669aadd57bf",
+      "name": "libcap-ng0:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.8.5-4+b1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:77f36a8d3665240eec03816f98067c1ca20750d263245efbdf19213f8f1c3e06",
+      "name": "libcap2:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1:2.75-10+b8"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:1e56065a87be6cd8774abe94fd57c3ab951d26c98faadcda6a90bcfc377d5fe8",
+      "name": "libcbor0.10:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.10.2-2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:540b667a3dff9133f00a2e7fdf6ad4bfdfa43f4465ce5515fc8b25d8c34fe823",
+      "name": "libcc1-0:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "14.2.0-19"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:c4a58de9f4f918f5b36f8f507f9d4336374b5a7b3a5f390b723eb1092e2f1fe2",
+      "name": "libcom-err2:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.47.2-3+b12"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:73a5f141e84c439ace7a865acd0823a8d8b445f5502249558bf9dae348c50317",
+      "name": "libcrypt-dev:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1:4.4.38-1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:c3e2e3b113767cb47a9ebcfc85e72f8a95e77c7825188c3f83ae11baf5542d02",
+      "name": "libcrypt1:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1:4.4.38-1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:ff2f219261d795a4fa019d64995b376fa6c143915914bfd95c099e438fcba559",
+      "name": "libctf-nobfd0:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.44-3"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:37065ced182a651679439b18a71905a941f81f0c45554e632650fbfafadf059c",
+      "name": "libctf0:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.44-3"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:ee9874657d7ab73e2c4404ae57d57707eb093d870566132bdfbf73bfef89c813",
+      "name": "libcups2t64:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.4.10-3+deb13u2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:77094e3e2904f0ad6d528109ee4102f790abdca13c7b3c72d75b5a1e5665c30b",
+      "name": "libcurl3t64-gnutls:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "8.14.1-2+deb13u5"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:c9b3726078c3030bec2b1c40bd58d66fdee1726a1e8bb50dc8d6ba6b46b77e6f",
+      "name": "libcurl4t64:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "8.14.1-2+deb13u5"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:9581c0934b88707c088764b0c17d2c9845581f9dc7bf50305e418feef7ca2486",
+      "name": "libdatrie1:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.2.13-3+b1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:0fba87b4441a1dcb4308357fa3d00098b98f3b40c77670d8a3584eca1ddbed08",
+      "name": "libdb5.3t64:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "5.3.28+dfsg2-9"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:47769e128a83c7885b27e884c2f351732798ad4c85cc12ed55826c6d13a2dd3e",
+      "name": "libdbus-1-3:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.16.2-2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:a6365df9c5d35a98841ed9c8336bddee27be8ab445798463aaa95ff8ea1189e9",
+      "name": "libdebconfclient0:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.280"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:983d06a383aa9a4daa71694c295f779b8304b2a6d952eb25132615503f11721f",
+      "name": "libdrm-amdgpu1:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.4.124-2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:7ca7dffff4d2b50f315951e4461b5e1d9cb32a4311602a41c60570ea21f48f8d",
+      "name": "libdrm-common",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.4.124-2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:f9a956ea7796d5dbd0439f51e957c1d80048254626caa80d1f1addc6887ad372",
+      "name": "libdrm-intel1:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.4.124-2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:15c8cf5b3606378984e3227ba030542dfaa4b7392b9e04b602ab652dbb2f276c",
+      "name": "libdrm2:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.4.124-2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:0e7e6e71ce61a0c6c12f0e37bf7a1e72fcb07b3e55987bdc768cc835de53829c",
+      "name": "libedit2:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.1-20250104-1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:69553fada745d77ab576de73a5d0f90b21196179860bf02df8b6d0bb55e71b77",
+      "name": "libelf1t64:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.192-4"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:8ef36cab06b9fd5bf9ce62c043c2a0e595762772799a9777b5e6c8c648171ede",
+      "name": "liberror-perl",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.17030-1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:9273f991886648d3c84294b7a83d9151d780c58da387208fa13c5efd5e4b54a6",
+      "name": "libexpat1-dev:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.8.3-1~deb13u1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:b0f0ff50531840f9c627e7a9171efa71be5fc977edd6b01142bbc0af157232d2",
+      "name": "libexpat1:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.8.3-1~deb13u1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:8fd1f0ed1aab1eb7069deda510f2e0fb003b3526ce3a5626aeaa3dd0c08cde18",
+      "name": "libffi-dev:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.4.8-2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:786e7d0c56188628e95dc4d9f59834b9e9287782baa9752588e73d5f6f667c16",
+      "name": "libffi8:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.4.8-2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:f6660fdbc235f41ffc860419ff7c286c7d8cf5b6a98e81cd657c68e161c9b9a8",
+      "name": "libfido2-1:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.15.0-1+b1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:dfd509c94ef038f28959bb9fc7bc1be78e484a55d4c5e8dd34ccc2665105bb11",
+      "name": "libfontconfig1:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.15.0-2.3"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:8ca84756db088d34e98ef17a325485097bfedb8777128325b703577435a3052c",
+      "name": "libfreetype6:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.13.3+dfsg-1+deb13u1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:04b9e10548191152e8917e1ff51a996d1f47b784d3c5e16b24963a0f8028bf6e",
+      "name": "libfribidi0:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.0.16-1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:8b4f645cef90be52daf3d1ed5b14145f93bea6956e7c7741c725ce5675ec1ed0",
+      "name": "libgbm1:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "25.0.7-2+deb13u1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:8d185b535b205705c3cf66a027dadbef7ed6442a3954e1b68c2725a1e2df7b51",
+      "name": "libgcc-14-dev:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "14.2.0-19"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:ec975bfebbf7e7318316499482e87675a8a53d4e2bfe43b46f4f633a73c49a64",
+      "name": "libgcc-s1:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "14.2.0-19"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:54750ef247121a1640b3a27c2a2b80936a0fa85bd8f2a9f131ea0f3a0baabbf5",
+      "name": "libgdbm-compat4t64:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.24-2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:846bdd71ab2988ad6d72468ae53e218561472d46ef32042a0302085ddfd1cfd4",
+      "name": "libgdbm6t64:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.24-2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:d5c2a5f9322d1c109502ee29652acdb448baab5cf84befecbe2c6ccfdaeffe91",
+      "name": "libglib2.0-0t64:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.84.4-3~deb13u5"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:bed6a4ac9c6460dde8019312e0af766f2c9411944763eb3a546fa1e1752a0d67",
+      "name": "libgmp10:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2:6.3.0+dfsg-3"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:0b91a0deca0d6196b4812e5cb1b1e3868ef2ba3a5213786201b4f5231302de95",
+      "name": "libgnutls30t64:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.8.9-3+deb13u4"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:da766257688e0b3fb6a9ff8ba1dcde8eee5f4d2065c31d2215137dce3b74775b",
+      "name": "libgomp1:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "14.2.0-19"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:622934305378bcba68d34e3d7bc86cc592c858d9fceafd4a35ea86e008b70e50",
+      "name": "libgprofng0:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.44-3"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:b8dba5f69ac50153605d9986fc8cc653fc32de3161a4346bd0a03b182f8aee39",
+      "name": "libgraphite2-3:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.3.14-2+deb13u1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:f8821748e6a61b5880091493bf31e38cf9e8bee5f8b782624c0a86e79503b212",
+      "name": "libgssapi-krb5-2:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.21.3-5+deb13u1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:fb87b72fb039fa93605d8946e67fe047f51003664b454cdd8fe0230c455e64ca",
+      "name": "libharfbuzz0b:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "10.2.0-1+deb13u1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:5d7c874e910b98019f69b5d5abd07002c5d62aedd2c3d2fd7050306a0ce4aeed",
+      "name": "libhogweed6t64:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.10.1-1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:2a84f2618609acfec89d2477bf817ac00fcf183c5f2962a66b1b017d9fbdb59f",
+      "name": "libhwasan0:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "14.2.0-19"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:d0c0a37d5bb1e9cc2bf29b809d54b7f934cda701702819d930fe21d2c37027db",
+      "name": "libidn2-0:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.3.8-2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:a991325bd5e133150a82e1c1ecb941a2d8f8b23cdf8afce10766c7d7f44914fb",
+      "name": "libisl23:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.27-1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:e3af1ffb424016c7ad70d37183ad917aa3f527cd921d91c3a6121ba4a5b5a498",
+      "name": "libitm1:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "14.2.0-19"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:499e8f285f49cb06182365c52e0faaf1c5be42250e6b12a1228280df18dfc9ae",
+      "name": "libjansson4:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.14-2+b3"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:1e77f4ebbef0eac5d0f1b88fa6ddfbdeaf1df3f59d0ee7b3bda6b6f9ec6ad397",
+      "name": "libjs-jquery",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.6.1+dfsg+~3.5.14-1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:14c342bd3f82bc50569caabfd1f0f5bc8ce91a07d50c7b4d8bb44d0e95ae7c32",
+      "name": "libjs-sphinxdoc",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "8.1.3-5"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:4f789bc638860a5f8754075323722b2c14714eb7e130c8eb8fb19f60f5165a93",
+      "name": "libjs-underscore",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.13.4~dfsg+~1.11.4-3"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:c2c1763813b5dc71f8f56696f8d1f5e80b665312fa281a0a87541ffbf8873951",
+      "name": "libjsoncpp26:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.9.6-3"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:0eb04cd7fc5fa82fe1ef295a270e7dcba057d1140e4b9a5e739d267b6ed7f186",
+      "name": "libk5crypto3:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.21.3-5+deb13u1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:09267399f308c1fd90ceaa9a8803f6676f2bb232ade07d1fc76998b653fc840c",
+      "name": "libkeyutils1:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.6.3-6"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:f167a9b4a8417f00376211502583dbb371c0fd03216b52c9d95ce2070c37ddfa",
+      "name": "libkrb5-3:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.21.3-5+deb13u1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:7c1bdbff6bb45055c48bd16132e132d941644905c497c9e01606dbfbe7d208ce",
+      "name": "libkrb5support0:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.21.3-5+deb13u1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:9dc4d1eff7edfd741c74fe181b40ca8076e32b0addeb2fe32548cea84cd9101a",
+      "name": "liblastlog2-2:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.41-5"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:3f74b9c6a5dbbb86a9ab13751ec464a9833beeb708e43aa17bd9f45a5ae9f486",
+      "name": "libldap2:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.6.10+dfsg-1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:3abbd9450f02508ec6c64bf21b70a0cd4686e3553aaf887344bb462c33ec00bd",
+      "name": "libllvm19:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1:19.1.7-3+b1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:1265f33a4a67ce37400f618c8e57d0b0917e82dcdbe8a6cb556072103fb3dd03",
+      "name": "liblsan0:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "14.2.0-19"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:778988fca104edbb4c202cacdaefcb8fe441ed27f8f626a33db32dd6dc4b3127",
+      "name": "liblz4-1:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.10.0-4"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:571cf926c058f9c389db6cdc1c61a9b11ac003789bc14824447897884d1cdf46",
+      "name": "liblzma5:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "5.8.1-1+deb13u2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:3978183c6543ce5c4d906da1ad8dee8c91c1766ba85df684998e72079737c1a0",
+      "name": "libmd0:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.1.0-2+b1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:6324869c325f284ef54a2c774f1c6806a5e8fd6ccf5ae2f5b81a63a414cb70c6",
+      "name": "libmount1:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.41-5"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:17b7c3ee05440b3773e128bb6cd2d2b61247568276de7142e678f0b0e5a42595",
+      "name": "libmpc3:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.3.1-1+b3"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:ee2efb2c5bd90d248239bbcbe7c7fc62e9d41836de28caf65de81d3bfb4c6d5b",
+      "name": "libmpfr6:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "4.2.2-1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:dc02fe426a4efb2671651052d4ebd2744905ce347c1635247bc5e8da7e576e23",
+      "name": "libncursesw6:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "6.5+20250216-2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:d8438e5b8531c7eca6914a842b8cecb7e3ffd7510d03690352476f7b17f9dbdd",
+      "name": "libnettle8t64:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.10.1-1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:41106316c4b7a4746d6a7fcdc9f122d9b87e3fca011e9b477d9148faa75a952a",
+      "name": "libnghttp2-14:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.64.0-1.1+deb13u1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:770121341f75184120ec1b355236ee3cc40b6badbb2c7c36c906e61fc0d342a2",
+      "name": "libnghttp3-9:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.8.0-1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:59edafa69391374c31587475a0ab60064812b4ffe3245ba98949ecd2e4c4c867",
+      "name": "libngtcp2-16:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.11.0-1+deb13u1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:041ac025ae90ef0056ad096ccd9cf52c3f80fde216e06bc3ad84687e602022dd",
+      "name": "libngtcp2-crypto-gnutls8:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.11.0-1+deb13u1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:96656c411f383f2134d395725d5540fab4063cb0b99754403235324cd81e63a7",
+      "name": "libnspr4:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2:4.36-1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:e4a01d86bf4de132b04cdd8b080019687b00991e6ef6ccbc1463c5c89548c47e",
+      "name": "libnss3:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2:3.110-1+deb13u4"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:a4591f84a2f36de496763df4da5432b92e3e91ccd40c3b41dfe23737bc41dd95",
+      "name": "libolm-dev:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.2.16+dfsg-3"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:07ef7d39d15c6d07890a686ebc12944974154a684848bd978eac1c82ecf621e9",
+      "name": "libolm3:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.2.16+dfsg-3"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:c815cb841e0bd5614bfb526bceb83c6579f8f211f7590e010180fbeed5f6a292",
+      "name": "libp11-kit0:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.25.5-3"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:9509b5ebe107c0ed49ad9f3b1431d1ce0eb862a322b25d4b02bd57de81e8da17",
+      "name": "libpam-modules-bin",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.7.0-5"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:4070303ca77e6f382f5c0e7087dbf8540d03c4f1faa6d7eb572a88b813c7527e",
+      "name": "libpam-modules:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.7.0-5"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:1b88893ef53400ee50797246791373f9c34b0c41bbcfd3636b5afbcb4ac842ad",
+      "name": "libpam-runtime",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.7.0-5"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:6db5471b77f6b3e9c77775cc3d5a96ff89e63b4c4be117ff121589d7db0b9e05",
+      "name": "libpam0g:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.7.0-5"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:de1cd8b41db14b42ea16b09d906c0bce5d47c8e8c9f73e508b906f4a94cad384",
+      "name": "libpango-1.0-0:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.56.3-1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:c477603d86aba6bd3ace3c2954cf7f589cc5b1a1e09cbe3a898a351f8f5aefb6",
+      "name": "libpciaccess0:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.17-3+b3"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:cd1bb851896f8631f6845aec6edbe1032ee9871f791295a334e8c86a96fa75b5",
+      "name": "libpcre2-8-0:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "10.46-1~deb13u1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:87a2e7b2fc9a6d9d4a003f95da2b86b145198cb9c4610cc93988c7f51e88ba5d",
+      "name": "libperl5.40:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "5.40.1-6+deb13u1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:ed04ee4a8d743a85f2a077616c76d83ee6d1fa8798e05d5e3f1b110ba990e347",
+      "name": "libpixman-1-0:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.44.0-3"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:e7701b1ec34d93003b038f45faafe9f61ef0d23c70816f6ea3b8df9fb9719c59",
+      "name": "libpkgconf3:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.8.1-4"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:d9c0f6bcae1678a4ed8159beec455672edabe1ab2371cb2977191c05fa7893c4",
+      "name": "libpng16-16t64:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.6.48-1+deb13u6"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:ae0f36c32c9df2069911d0e962994de977e9b5f50336bfa267ad3b9adc4bfd6b",
+      "name": "libproc2-0:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2:4.0.4-9"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:6b75bc6127e1db89353ef518be3b76c3972be2dce35156f380d5370d8e5a35ca",
+      "name": "libpsl5t64:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.21.2-1.1+b1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:bf6af9f35452a732961501024f3aa3ac48712bf605259dd57f22ecd12480331c",
+      "name": "libpython3-dev:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.13.5-1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:f01a1a19b7d34fd616cfcacd0d46549f0030d9ef2330de0bf24153c46ba21be6",
+      "name": "libpython3-stdlib:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.13.5-1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:a802708baead5272d3abde424f1292d3e9e53cb08096400a70077b55d56c78b3",
+      "name": "libpython3.13-dev:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.13.5-2+deb13u5"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:f677e74056289ad41f9d489ca455727860fb70bbb1cb120611cc63a7b537c491",
+      "name": "libpython3.13-minimal:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.13.5-2+deb13u5"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:c6fe9918662261fe71c8d6eea228819272d1d3b6fd6300f6280b0caa4997d338",
+      "name": "libpython3.13-stdlib:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.13.5-2+deb13u5"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:79aa57f3824fdc85e2beb93e1ed51ad54a96df8ce87fdd283174974bf2cd3f0e",
+      "name": "libpython3.13:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.13.5-2+deb13u5"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:1c6a0222daf0e34c659b8144358cd86c5a56639545167d6efc69662adc8db5f1",
+      "name": "libquadmath0:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "14.2.0-19"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:ec6f32ff641e3c0c503c7b55aa447a2c1ca54d0514457ebd484650cba63a5d4d",
+      "name": "libreadline8t64:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "8.2-6"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:6f07217a1f885d2c738368b744b7424b47f11a257ffba0ace690d9ce80592262",
+      "name": "librhash1:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.4.5-1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:30a00438f65aba2057013e9288d50efe6706f1ed6ef672f3dcd50f421a45b0d9",
+      "name": "librtmp1:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.4+20151223.gitfa8646d.1-2+b5"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:730193a31fdb773bc4fcbea0c8089e9b8abc46854094001f760f287b2f05206c",
+      "name": "libsasl2-2:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.1.28+dfsg1-9"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:e91cd6e5ff66cbb5e1399e9b3a52705bcd47511d4ea41b38e2f2bfa30f535e32",
+      "name": "libsasl2-modules-db:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.1.28+dfsg1-9"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:98db24c3198745066f63f0ab8277cac302e40b70485fbf1b3c4ee5b163c66ab8",
+      "name": "libseccomp2:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.6.0-2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:0021ef27694938e1e59ed8eb5309386813fb81cc0f97d90da8575f0083092ea9",
+      "name": "libselinux1:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.8.1-1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:478b4829de2181f2cbebcf9e44c50dd3353af497a1a7079bf50dcec88287bb63",
+      "name": "libsemanage-common",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.8.1-1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:f4c8d97286db8bfc3409090985cb5010d35108a2bc04c9b4f47e8a3b36dcb484",
+      "name": "libsemanage2:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.8.1-1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:ae4c62070fbc4229daaf125210b8b450d2e8694757285134a62156a225d17cd0",
+      "name": "libsensors-config",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1:3.6.2-2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:eacf50b734ebc9048c7496ebf991dc357fcae03ab076b737b05fea87143c230b",
+      "name": "libsensors5:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1:3.6.2-2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:e3646a02b9797397235ce9ecad2362707d57c327a899cc302bb02a4820d609c6",
+      "name": "libsepol2:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.8.1-1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:1f42ccad186014b31b85a36814d288262a4b6492e128eb0805a179caae7b894a",
+      "name": "libsframe1:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.44-3"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:03e5b7da54aa497df28689bb246eb7829bf4f58814d819d8da7f204d9a0ea931",
+      "name": "libsmartcols1:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.41-5"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:883ee5e4b7526a65358ee6051867893605d266ec4b813087a6934d7b53e62542",
+      "name": "libsqlite3-0:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.46.1-7+deb13u1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:f97918ec329b85cf3691b512d5e94da0e067f7eb9e9468dc73301e199bf8684e",
+      "name": "libssh2-1t64:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.11.1-1+deb13u2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:5a245e97b6eba5d76399a7475e5b83ce50db04397d6494f0f774b7cea7840742",
+      "name": "libssl3t64:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.5.7-1~deb13u3"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:1cba61b843f3f566595933d944ea298bc55244e34452cf371ab52d60a303bdcb",
+      "name": "libstdc++-14-dev:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "14.2.0-19"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:36b2b1e8bb166ad1cf5ef76d1680fdf18d54e7d694d4b0cc7d178f68ba64887f",
+      "name": "libstdc++6:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "14.2.0-19"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:af7f9ee39e1aebb9a30eae85b6230d3eb66eda9a0567cd1d7fddf0d879e99e39",
+      "name": "libsystemd0:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "257.9-1~deb13u1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:c266685ef1366875431476bb4bf0d14f262883e35848808f0354b80aa154f961",
+      "name": "libtasn1-6:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "4.20.0-2+deb13u1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:c37b98a627612b0291b72ca3689a4a08c13039d0f798f003a072e1bd4df63a83",
+      "name": "libthai-data",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.1.29-2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:6c64d4a4d02b0c37c83119fd20da85b74997c9f824b82ff6c448f07a5891a6b9",
+      "name": "libthai0:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.1.29-2+b1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:811394971c40c93515308d9db1c13b51a31e5b316ba61b22926813981c0ab684",
+      "name": "libtinfo6:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "6.5+20250216-2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:3e14201bf725fda1049e033cd11410656add5cca8730c5af9c9c9d54573fe8d0",
+      "name": "libtsan2:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "14.2.0-19"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:2d6ceb6d55dc5fc6d582f3f97895cd699087f7e4e39e419b0f1460b5c48aaebc",
+      "name": "libubsan1:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "14.2.0-19"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:fdfb169422c175f3f22f0dd431d8ccad5fb9d8ef3d6703a442e75a8cd90e12bf",
+      "name": "libudev1:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "257.9-1~deb13u1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:ed74d9ff30c1178bdf8b716f7b1547f6427fd0d0b251a3a00f78a6b4e421d365",
+      "name": "libunistring5:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.3-2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:5c260dbb6547dc10614be7bd17f3f1254ca7ce1249346dd94de27e640f20f55e",
+      "name": "libuuid1:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.41-5"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:e3eb07f17ba0739e8183baa723fbf52493a18d89dc69f3c69a2097857246a13b",
+      "name": "libuv1t64:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.50.0-2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:0c42d87cd2ae0e4b57a567a4f7fa1f7a84e3c97fe378e8204a5fcaec5ce42c1a",
+      "name": "libwayland-server0:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.23.1-3"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:7e4d9034e346b46f9e37d8a8f2110b7be8444508591a91cb61a6fc5963f2a945",
+      "name": "libx11-6:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2:1.8.12-1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:e1066c581a79a2278d69a2e6f0667cb597589bb3488005f6a30d5030fc2a2fd5",
+      "name": "libx11-data",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2:1.8.12-1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:23e71f82be0e043ca3e0d9cdbadddc7fcde86b0c844b688086def2a8551ada50",
+      "name": "libx11-xcb1:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2:1.8.12-1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:d941dea148c9a367e49cd9dfebfdde6991508046a85c7d1edd0115781b045c3d",
+      "name": "libxau6:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1:1.0.11-1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:87914ae702df9beb046af806a70a3cda98382edcdbd447b8970dc3c187d6db19",
+      "name": "libxcb-dri3-0:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.17.0-2+b1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:6701872c5cd9e4a37a3224e69cdca2d3e7c4eb609de121377d75dfd765dca482",
+      "name": "libxcb-present0:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.17.0-2+b1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:16d0a3d5331a4e4fd30169fa7b4b39f5b5e479429396aedda6a303e3b00a54a9",
+      "name": "libxcb-randr0:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.17.0-2+b1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:3c849ebc8e51e1dc5c83d19e9574cf25a31b8a9fdb1f67a4bface176d70c5617",
+      "name": "libxcb-render0:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.17.0-2+b1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:b7d0e6eb6a6865456e90a2caff461fa916b70bfc0bac3b60201e5d1ea014bb71",
+      "name": "libxcb-shm0:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.17.0-2+b1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:e3f8b7b56d3eb329d828173236689f4bee3598125d4f89616e445bfba4abfc54",
+      "name": "libxcb-sync1:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.17.0-2+b1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:f5ca056c8151c41d512429ce41d90003478dcb2f80953a0ebf0987c8ab5e20d5",
+      "name": "libxcb-xfixes0:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.17.0-2+b1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:cee2dec01faa23a4f7677ab8181ba96797827a2885534d61c699ab0fd71ae56e",
+      "name": "libxcb1:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.17.0-2+b1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:27ca420ff44d317cf5960746c7b94a741b330cfd0bfab7a40b4b15cf452bd4f9",
+      "name": "libxcomposite1:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1:0.4.6-1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:e235cfe4c6904a20614ae8970e22386b50f05025d35a187f11c1495b960ab36e",
+      "name": "libxdamage1:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1:1.1.6-1+b2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:485a9e904c120a75869554e3911780ebee6c208aa03d4ef87839dcd94ee9999a",
+      "name": "libxdmcp6:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1:1.1.5-1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:0d61b3b3bb939b0923f0b8bb050fccbad88f305d1721c99567735fdf717980ff",
+      "name": "libxext6:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2:1.3.4-1+b3"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:8b93878ed302c86ba61e9407ee57c2535e08bdb10490293a656b3fe38b9d85bc",
+      "name": "libxfixes3:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1:6.0.0-2+b4"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:eb4945339c382a98a9397d93378b7bd94994d6ac6b4a88d70b5ed0431ff563b4",
+      "name": "libxi6:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2:1.8.2-1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:e12233bb684e011361a782f27f69d29bf3ebce48c81f3d5d63d5967e45c5bbbf",
+      "name": "libxkbcommon0:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.7.0-2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:85e373bba31023f04d6b7e92358789d8be3ad88ed986c7b13d9a5f36253640ff",
+      "name": "libxml2:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.12.7+dfsg+really2.9.14-2.1+deb13u3"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:968863c5aa97594ac4dd6304ad1e93f4c2fc1a678d0b9c0ba11e3915d2f1939f",
+      "name": "libxrandr2:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2:1.5.4-1+b3"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:7a9c9ba869f667305253d36d8cd15e46428d421dda8a3df92dcd6587ba2213dd",
+      "name": "libxrender1:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1:0.9.12-1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:ac5c16d4b96f5d13dee2ccd2258b86716c41dd2dc0ba59031ad29642a36ddaba",
+      "name": "libxshmfence1:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.3.3-1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:3db14a391b07ef066fb8339b7518f907404de0497ef1e05ca7e291e1979b7ddd",
+      "name": "libxxhash0:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.8.3-2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:4ecb375871ef96f641d106effcd6dc4add8188a1963af8e7212b98242598f6b9",
+      "name": "libz3-4:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "4.13.3-1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:27a77d46a4467985f50f6ea8282f276817d031bea1a222a2835caa1129278485",
+      "name": "libzstd1:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.5.7+dfsg-1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:9d3a786da736384b829fbcbe6b8dbbdf0b1ca21653fa02c34fd7979916c034ba",
+      "name": "linux-libc-dev",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "6.12.111-1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:cc356665d6a4dd793b3265b918355c106c0c60a7c3da6dd0c007182c71abe273",
+      "name": "login",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1:4.16.0-2+really2.41-5"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:216b800d3530eb9eb24297abfd23b42f15c36103b201ee2a347da43436e606e1",
+      "name": "login.defs",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1:4.17.4-2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:84fa821b8fb708be8b8ad25517d4c41ff5fb6c60fde7ce86b333145653aa67dc",
+      "name": "make",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "4.4.1-2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:d7a649066af5da5a1da17b7ba2d1335b8e83b389890ce51d255f012b3e286364",
+      "name": "mawk",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.3.4.20250131-1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:91e126c0b9cc7d99a9d5606d71234a14e7725dbcbfb611f462f70cbf1c70aeac",
+      "name": "media-types",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "13.0.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:121df0fa21e79968d0ce5e5ac9faed34b470468ba87ee725a59cb34ae6161793",
+      "name": "mesa-libgallium:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "25.0.7-2+deb13u1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:62772d0e01440b1134e964433afbb80a7d7a192e5374918fdc18d9271fdbf28d",
+      "name": "mount",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.41-5"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:3a83acc9bed77cb3d63cba0e97a6961e3a07fae8c9bf665e88205c837950b8a6",
+      "name": "ncurses-base",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "6.5+20250216-2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:6a0df14228fa54c808c7fa07706380e9e37a48c1adc38d9d574d54d031ab8395",
+      "name": "ncurses-bin",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "6.5+20250216-2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:13e7cac4d54841df57fa9a6bad1f94de7dc478d83330a55419dbddc5c78bb7b0",
+      "name": "netbase",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "6.5"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:41e1efc3597415efd248977b3ef81f3646271f5744961920dc552091bb90e0ea",
+      "name": "openssh-client",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1:10.0p1-7+deb13u4"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:e905ff5e7edc10a71479eac91a20d794ed65cce0fee602efd0dcb6edc6b23535",
+      "name": "openssl",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.5.7-1~deb13u3"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:d9913e1682b85013bb06ad10456c837e7fc77213b055f2f6011290fcb03b0c79",
+      "name": "openssl-provider-legacy",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.5.7-1~deb13u3"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:58f99095d39386cf4b6f436b8dc3ca000ab8790c310b9e9e37dccc1e51132abf",
+      "name": "passwd",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1:4.17.4-2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:7fdc5fd40cf0e3522a41e1911a1b7836c12359158b51d190ecad091d6bee0625",
+      "name": "perl",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "5.40.1-6+deb13u1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:3b171962df69073269811afa830f3d121e00a789217b7af255251e5b5d3bc407",
+      "name": "perl-base",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "5.40.1-6+deb13u1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:588e2db2a6131063c303d6bc3cf1d8994143e94049ad8a2c8afd9390a151c52d",
+      "name": "perl-modules-5.40",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "5.40.1-6+deb13u1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:049d8d22756f85fa876f11f463764b8e0b2b37a43f1375c5391cb318178b9f12",
+      "name": "pkg-config:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.8.1-4"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:cc2821fbe2e7c68e4576d7b86bf26434ef55d9afb6a2800ecae85f7b6a29854b",
+      "name": "pkgconf-bin",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.8.1-4"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:ea33392c10a4ab06b24990a0e6fee85278c8efbc3544548372d733b6f1803bd2",
+      "name": "pkgconf:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.8.1-4"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:9486bd77f7c86839553da429143b01528da80ebe345b4c166d02cdffb3067ff1",
+      "name": "procps",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2:4.0.4-9"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:a013909e489ca4916a7c398f30d0717128276aa4dde56be8efa683a82d52b73a",
+      "name": "python-is-python3",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.13.3-1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:79cb43397da8bf2b45351c62e609d7637bb3987ac0e06247b7c673e88cb49c85",
+      "name": "python3",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.13.5-1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:0b519a1b1bad32fd38253f3a14628de4cc2a1477c7324cc9f7f5e2b4a598ba80",
+      "name": "python3-dev",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.13.5-1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:31ed622e5da3b9814bd08b31e246ecdecd740f094337db29ed512559f3bf218e",
+      "name": "python3-minimal",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.13.5-1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:c1004e7272d85aca031378f9a3df27b3cdd2bb4ddf17fee76fa755f69d8d1e45",
+      "name": "python3-pip-whl",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "25.1.1+dfsg-1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:06f1f3276fc1c578dccdfb61be25cd357ac9d343c0bf75a13bb904d9fec201fd",
+      "name": "python3-setuptools-whl",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "78.1.1-0.1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:84ee62c2e3d1b8acf3035940ba27de83c50d39ac714ff8b8799b0b7e35fec9db",
+      "name": "python3-venv",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.13.5-1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:39075a42f8a5e2e886b56cfb8556ee5c79aebf674bcb1711d5033f78de8aa346",
+      "name": "python3.13",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.13.5-2+deb13u5"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:67225edeaebca11489b7863c62bb5616d1a609890b2b81dc483680f6fa4f3f32",
+      "name": "python3.13-dev",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.13.5-2+deb13u5"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:2cfb13d7ecdabf8aab432aa4caf7f7b87e24eb0e6f3aca832dfbbaa01f13b47f",
+      "name": "python3.13-minimal",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.13.5-2+deb13u5"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:6328728abd14fcef9e9912156edd0d42e7ba5b589b3027d0d6c2cfc13144938a",
+      "name": "python3.13-venv",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.13.5-2+deb13u5"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:42b1093b0ffb42762070a1aac1548f8c24ef379d9d597f85f78d1fae5c24747b",
+      "name": "readline-common",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "8.2-6"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:3b52379cfebc9ec0e285311ab24b8427b9b5dcd6603dd8f84c4c5be26aeb46db",
+      "name": "rpcsvc-proto",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.4.3-1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:ef039f21dde3ec2ddb0ab354e3f40ff694ef1d24f34a7b46d2295632d901c570",
+      "name": "sed",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "4.9-2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:6d9c59dfc529d8c25d278635d9db91c7f17747d5504751acad07338092701c92",
+      "name": "sqv",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.3.0-3+b2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:9e16de8736bbe4289c265532d2d47fbc1b16f6de8735f4f97ed9459d53db149f",
+      "name": "sysvinit-utils",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.14-4"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:09af974a382844da42f1eee04733f51c3122940dd39b5b29189397f8b08b656d",
+      "name": "tar",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.35+dfsg-3.1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:efcd52d89a7d91609fdfc7e8f771cea466444906356e2f51561dcf6b5c33c0e1",
+      "name": "tzdata",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2026a-0+deb13u1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:1b50a6d19254432dc69fa5dd6792e905af331a838a944943e1b2a5193d12659b",
+      "name": "util-linux",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.41-5"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:fd1bbaacc1a0ab44e1dd2086333f13be2dd1171171840c906afd71c97597287f",
+      "name": "xkb-data",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.42-1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:8826bc40b7df0f65e352d6ea6446188effef760bbb343d875bad6475513e8c0f",
+      "name": "xz-utils",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "5.8.1-1+deb13u2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:54d39e0c557c3654f8552c17db2b308b76001bccae918b09ff9b43232190c870",
+      "name": "zlib1g-dev:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1:1.3.dfsg+really1.3.1-1+b1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:fc1e3630dd58aee5f9efe3d5a33aad60b265eaf362c37155361b6d1cdd24dc11",
+      "name": "zlib1g:amd64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "dpkg"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1:1.3.dfsg+really1.3.1-1+b1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:8373fab0f85143775da863ed450682cbed6c1a84c56ae065fbb2dfdffb7d1bc6",
+      "name": "agent-client-protocol",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.9.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:180d8c456dd2b30c4a51573a464b6c62d752ad694e8cf76161be12a44374de5e",
+      "name": "aiohappyeyeballs",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.7.1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:7507b8e616fd8a19157193c9ec984a4ef8011f7fbc6e925652607538e605205a",
+      "name": "aiohttp",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.14.3"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:ed9c3947fd5045f9f450b18e1e8142a854b77207f00c961ac4fba3d90055437d",
+      "name": "aiohttp-socks",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.11.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:348151a1508514a1638ef2901a1f8db66b587f614443dd320d6d5433fc172ea0",
+      "name": "aiosignal",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.4.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:ef1c49a3b2a08d5144b7bd9a7ad94f29185f8df1de5a18a375d8f9538ca0a9ab",
+      "name": "aiosqlite",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.22.1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:17419a08cce7105ba97f72f3f933d665765fa49be88b24eb1fa27d61a84d04a5",
+      "name": "annotated-doc",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.0.5"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:3538b43e11fc85f1437c1c35b0623d202e7256b86a728b9c16ae5d47a9e9c4a5",
+      "name": "annotated-types",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.8.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:fc5c706eaa75e4948b7da0ae1f4bb88f567342546eb717a9317d11115493b172",
+      "name": "anthropic",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.87.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:cf937b9a52805d938e2dd6be200c5baa49ff61571e8c2754cfd0405848e5b634",
+      "name": "anyio",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "4.14.2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:b829761cadab061cdec266476d749a43dd62855258d22ba00f520bcee5f5c73c",
+      "name": "asyncpg",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.31.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:fdb0dbf82d7559b457515fa12366947f57ab4b33cddf5eba21ed26418531fbb7",
+      "name": "attrs",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "26.1.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:e0588d12b02cd0ac5cf1e338dd95ebfca00377f3a6e67b7b570469d6464a5bb8",
+      "name": "audioop-lts",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.2.2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:6c7321ee2c96662b466b170c8d94bffe9c33e58cf5954f9d3984989875e35e85",
+      "name": "azure-core",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.41.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:333541d2be94f04e441c21ba043181dfa3a886ab04c9109e19d8caba9299c2d2",
+      "name": "azure-identity",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.25.3"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:597aa3d86bfc8a8b30eea3a8892e46d78561893ba3506e2a66e0e21b77182c89",
+      "name": "base58",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.1.1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:14f463e49309e0f0c492ea6a088a1d76efe48fe3a71034a574a69b87ff198861",
+      "name": "boto3",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.42.89"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:5b965c63136d62731d8f1adae2f6f601035261dda0185a35861f5fb3f0a7bb8f",
+      "name": "botocore",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.42.97"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:072207b8c1c51db5c831cfa2aa6c791852409398aeb3d35ae99afffdbcb73092",
+      "name": "brotlicffi",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.2.0.2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:dc47d3324903593d4890ed136853f4e64b8d0d5504109acfe3e423bf6878b37f",
+      "name": "browser-harness",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.1.13"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:cf3f3447745e3f95195818e349b5eedae762f705a990fa6c206cc7409e8ec7ff",
+      "name": "cdp-use",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.4.5"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:ba4fd869e0ed14cbb61acd34d6e624135286c26c4d7a35628426dca9d294bc60",
+      "name": "certifi",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2026.5.20"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:7f977855303ca6e3314a2d58626a07a49e276dac170c1a06ae7091e284e3e250",
+      "name": "cffi",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.1.1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:4e977f011e29e09320db7e31950c4f3b7aefb4294127189676da1239821031b9",
+      "name": "charset-normalizer",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.5.1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:cedeae109b6939824fbbd5f01425505f2e7762d5a293cfd951065628590539c9",
+      "name": "click",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "8.4.2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:1870c6dcd008a030d878915b4255c17f79c1e245857fb66e5ec18ed96b5b6aea",
+      "name": "croniter",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "6.0.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:3b4bb54ce7d265500ce0cc2ec2158d84e969765da288afe5ad090ab23eab8b38",
+      "name": "cryptography",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "50.0.1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:10856d4198d742272fa2221604f6cbe61816c7e5231d96201fcb5dbea8e4571e",
+      "name": "davey",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.1.6"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:2e4ff9fc714737c5fbe6d77d8bd4bcae8d7b0a11a95a8dfb1c33e9914bb1851a",
+      "name": "defusedxml",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.7.1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:f6893d5828b3c66d954ff6421c2db5ca79c7dde77591e112f21401efef888ec5",
+      "name": "discord-py",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.7.1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:b84f315c246975de989a253c926cd520a1e65425e70fc358967413957824f551",
+      "name": "distro",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.9.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:3aff810e990ce0813678f4a682eb343582d911dc7423ac3d197ff2942254b558",
+      "name": "docstring-parser",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.18.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:2377b6052fa0b72892e56dd6aa099b9bd1a674fa6dfee7ffc8330e44295473aa",
+      "name": "fastapi",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.133.1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:80c06eac745c71fcda5c51f4a289a5cde92db04652717cdea902eb55db0cbf37",
+      "name": "fetch-use",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.4.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:0728a37ccd0bd32e3a1babec3ea79488d704077f1ceefdeda00227f572bbc1f2",
+      "name": "fire",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.7.1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:ad1e78e8dd83e69728c5bebacfeba32148172c6391f750e3eae0cecfdb64aa00",
+      "name": "firecrawl-anydoc",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.2.4"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:8afd712e643893dbf2ec217949c9c633bda733c57c5ad16c07102251b3151ed8",
+      "name": "frozenlist",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.8.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:9ddc92f6b99691e6a8da9fa6ace5cfc789c6f8a36ba74d92c20d0a3b3a7cd810",
+      "name": "google-api-core",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.34.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:6ef1cec320b2f8e559702cfea7df203315388e07ba26ee3bc3657108bfa88627",
+      "name": "google-api-python-client",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.194.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:5b3e97b4bd2446cb4e559d0ff86c0ee95b1e8a6f7791bdd0ba35b1000d332a55",
+      "name": "google-auth",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.55.1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:726947e3c9af7fee7fa90072ff42d000e25a51394df55287fd4ddbdc5fc6a260",
+      "name": "google-auth-httplib2",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.3.1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:cf649cf78d7f29c5aaebdc8bf9006aaf689c5acb9e76dff6fb6d768dff2585ef",
+      "name": "google-auth-oauthlib",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.3.1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:e6848b23b05fc2547974e29d2ed3be9b10f7dafd0716288b24a635fb8f4400e1",
+      "name": "google-cloud-pubsub",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.39.2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:8be9965e42b1a6ac80ee751e3abdea9dfa8e221f09eebe7e90a7a1c5b7b64085",
+      "name": "googleapis-common-protos",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.75.1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:c976eb5d105f66ea7f195749b269d157d5f33324044fd270bab0e601c4d82616",
+      "name": "grpc-google-iam-v1",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.14.5"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:2f7dfacf394b7bccbb9ca797fe7f1ed44678101d78b7c7f22999d3e7709cd59f",
+      "name": "grpcio",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.83.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:cb7a4bf0dd86792c41084c4b49960003e7a7610ff2f9f0bebc9270058f8f02c0",
+      "name": "grpcio-status",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.83.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:affa95d2aed8371ee6042cef733b9b956d75a29702d6c7ad46d57e37401281d5",
+      "name": "h11",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.16.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:5c1f88bdb30a8278e3a09aab7d88514aa4a5b1ce3fdac697e77a512376ea7b18",
+      "name": "hermes-agent",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.0.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:71cd1eacb0a478ef922ad502e8cc455511161e2edbe49df597d2cc650ae9589b",
+      "name": "httpcore",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.0.9"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:a7b2c2a2fa981909f4c7630feaa253cade0755685296e62f0987eb7b15ac16d3",
+      "name": "httpcore2",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.12.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:f90e40620f6a114cae3f1e54940f9aba515dd69acac8c6da3b979ecd1f7636ab",
+      "name": "httplib2",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.32.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:8b44f2db83a1a38625caa9c12d5b169f3b38941174327c039d7d870526a45f19",
+      "name": "httptools",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.8.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:d6acdbdfdeacf33b8c30308f43ecc662faa4ce19af9e0838592a8748c721a759",
+      "name": "httpx",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.28.1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:03d2345d8360bcafe0d7113d5b974081c327ee5a0c094652596b72752b852958",
+      "name": "httpx2",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.12.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:099a58d8941d30b2f8edf95636338af8cc2a28830a6ac4b77a4854a0ee28cb0e",
+      "name": "idna",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.19"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:d05bdfb9c9defc23877f217c0e838b3299e494c75390109ac72627525a16733f",
+      "name": "importlib-metadata",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "8.7.1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:8c798194ef28c8fffa2716a74bba3996b2df0a9f075575e8f6ceab31a5ea124d",
+      "name": "jinja2",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.1.6"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:45366ffef5caf6c99490ec91fba05b8613c8e7d58f81d8777d3a1be7e847b6c1",
+      "name": "jiter",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.16.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:eaf5ca762f1990e69223521c413095e65540101b0dcd93be76427f7a8d881b1f",
+      "name": "jmespath",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.1.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:8c7e8e5b6ab99f699b9cf4d766e0c47843da58e0cc109784c70d0dad39e8a617",
+      "name": "jsonschema",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "4.26.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:0ace3f8073dfba715e71e1b723974cce6014d8cfff8e386d4676aeba54825fe1",
+      "name": "jsonschema-specifications",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2025.9.1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:cc2f4be1128b4591e816a04ad000395ae7a70ac2e9506b7a257763c0d09fd2c5",
+      "name": "markdown",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.10.2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:3864e3e3f24b384231ada7ca169ab0a558a7eb10942ed69bbd47ce24fd197c99",
+      "name": "markdown-it-py",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "4.2.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:a6f94bc3da89a044767de90c3bd2ad65439666cbce4f3a01376eae89c24e7255",
+      "name": "markupsafe",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.0.3"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:06ecafc21cb2acdb38854684dbba10809865e8ce6390e6bdacccd33ae0ed0d1e",
+      "name": "mautrix",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.21.1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:ed7ea1474f8e0a1730ed9f48b0ddf8c5a0b73de4795dc6e78e0925cd2240e002",
+      "name": "mcp",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.0.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:7f74ad12afc521521d99d2df6d1c6741699c0656741c4233af19394e6f396d7b",
+      "name": "mcp-types",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.0.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:e8bc8e9f3705b11cddf6cfe4a65aa62c100fabc39e076e83d902c3414642e567",
+      "name": "mdurl",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.1.2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:286cd81c0a1a140db74d14242adf011b39e0e775e8daff9e921dfc6056ae2c84",
+      "name": "msal",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.38.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:bd24e6cff756ba8614adfbb003ad175e5a9b0dcda7879848b6757ce6c48a0187",
+      "name": "msal-extensions",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.3.1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:a34fc1df535520f686afc08ae66fbd9a0ae68377478e785c502d1516008a4e3a",
+      "name": "multidict",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "6.7.1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:97aa4656a06e2dd8fa2753acdfdb9e20e8e8d077da6579d3e4b26da18497ada4",
+      "name": "nemo-relay",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.10.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:c97a65a81ebc7c0a5fe68587153fdd99eb4069924ef8719f8372c313db683e9b",
+      "name": "oauthlib",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.3.1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:9a2f5362baf6d8025007e587681fdf05413ce2e93c6917ce18b45dd22e53c3f0",
+      "name": "openai",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.24.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:7bdfe5824aa355f410a514b460a4b05a8bd2d52c90cc352aea96cbd37a76bbe0",
+      "name": "opentelemetry-api",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.39.1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:0025a6e187af9782836dc45d3efd022bdec695ed703fb4a4b8e7d5b00eb7a94b",
+      "name": "opentelemetry-exporter-otlp-proto-common",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.39.1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:10dc0223438dbebd4d3fe199688688aa64386e6bfbdef34afa3bd0a2f75e812b",
+      "name": "opentelemetry-exporter-otlp-proto-http",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.39.1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:5bc8b083cc544de4a8ebfb04484930bb8581d2e93d5fd29d2437d8ea7e24ad73",
+      "name": "opentelemetry-proto",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.39.1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:58667dad423f793b622d658263aa7be1de4d945e1a1f14671441cf64ea13e5d2",
+      "name": "opentelemetry-sdk",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.39.1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:f8400cb61b73571dcde74adf82bd2477b71c3a1be976c7f4c8c48a293b59c933",
+      "name": "opentelemetry-semantic-conventions",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.60b1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:9a4cf6639de24e9f3ae22bd6a6d9ab51eb072dd74a6c6cfd365662932a029491",
+      "name": "packaging",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "26.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:1832d468d09041db5fab20442f7e72a33d8d71cf28d6904fbe2c0e315ec8c8ab",
+      "name": "pathspec",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.1.1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:a029dd1d3a9e02b1ae0ca48a0f668af6be60d0822656e6f471f66f1394b50c2f",
+      "name": "pillow",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "12.3.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:290e9a8f85b4cd1d6206cdc9f9a3c0c1e5506eb4d0e9843961fdaefe110d3339",
+      "name": "pillow-heif",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.6.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:b9c44b7508d38a7efd1ef061d04485a16e7d2ba37a65c7123a15f7546a054d4d",
+      "name": "prompt-toolkit",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.0.52"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:e8a625cb55e83a53aee1533efd95e564746080d23118fa9837180dff8ac7eb76",
+      "name": "propcache",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.5.2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:d1bf96b2d9f7a68e8e60d139b3df6a21ad867fcdf4320ac8c3b5c1c556c70256",
+      "name": "proto-plus",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.28.3"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:ff46db050cc76135ea651cbac37a7064d88ca82e02d25068896ed134d5d905ce",
+      "name": "protobuf",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "6.33.6"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:c98179ccbc33fc0fbfd125862923148cd92f757cbd3e1af43dc14e30cb45d1df",
+      "name": "psutil",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "7.2.2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:f517a2d3941b1a5b16384f85d74fe4295b459984ddf49181282062866bf45471",
+      "name": "ptyprocess",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.7.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:ae5d1f2c9cd05cd4e148a45374eefb304da101c7775bf1fd047544afab4f3ea9",
+      "name": "pyasn1",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.6.4"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:0d6e28fa4ee0097c1fe5862adfabed5819a1a7a997af0dbde19c30c0b4a3633e",
+      "name": "pyasn1-modules",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.4.2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:79790d6c97faf91fd8f3941cb07b6d0320fdaf1ebc47d1a11af01fdd41aa6103",
+      "name": "pycparser",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:cdfd8cf2b11a4da2cb5e90bd919bf560ec2964650339bce16cabf3d2b5b7726b",
+      "name": "pycryptodome",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.23.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:50cc378a3735516263a9e963243f2883e3c4c2ed8bf382750e235bf7ed1ec016",
+      "name": "pydantic",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.13.4"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:c9963e80536a3ff4a0b4a36c15c7f8030a91ad9fa2f7256b9c13ddae29221997",
+      "name": "pydantic-core",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.46.4"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:8c244c71cbea2dfa404b93a566898a839349c12705f610e579d206c48c802b0f",
+      "name": "pygments",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.21.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:b94be8f71cf93ee909fb1284645d1a263ebedf5515d32d36f9d4bf2cfcba96e3",
+      "name": "pyjwt",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.13.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:f696d3658a33a44b2d7d759a32d8c5e7bc6008ecc782215ee7866e64c1525781",
+      "name": "pynacl",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.6.2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:c0ddb6f84a0ef6525950e7519df0b16c28c66dcede509beb5fafd4fc9fb6df53",
+      "name": "pyparsing",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.3.2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:a8cab90b37cb1fc6bf0f2e9dd7409c034087dfeb3f30d1637fbd15a70d5b88da",
+      "name": "pypng",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.20220715.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:b8ad9f0b05028fc5f1191ffa56cf81386034d37b06aeeec436e2db917b971801",
+      "name": "python-dateutil",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.9.0.post0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:a2fbeaa1a4cadc3778a54eafb4c55b23f3e4407848b85981bf2ae4d527ea5957",
+      "name": "python-dotenv",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.2.2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:a102aaa527ec18d2dec3340fdc356cddd4a45c433ecfc1b16578fe1752edc899",
+      "name": "python-multipart",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.0.32"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:f4ea89aa663b68ba5538bb86871aa2a8d972ee8af6a26ae2369c1857d445e244",
+      "name": "python-olm",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.2.16"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:a3573cedd550a870b9c3b480788b8a743f4ffa6541d93b0c4f50c52e0f92ee9b",
+      "name": "python-socks",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.8.2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:0f72d6abc3cba63b0b6580da12a7aaa90c6af03da8086dfdd5bb5a5a9ef52652",
+      "name": "python-telegram-bot",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "22.8"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:f473344cab432f3d2db56b8d902a6e1cdcad7e08d4deecb8ee3159729f67983e",
+      "name": "pytz",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2026.3.post1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:a075e04be70d6e638f4551c955c685fa3f60be59392dc01f0752638f20958fbf",
+      "name": "qrcode",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "7.4.2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:9b3eceedc01f380ed6737a3d10351c0363e02bd5480060915580f9456eba4fac",
+      "name": "referencing",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.37.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:e1420f6ea2e3297ce8bb84ac5353b8769a30603775250e764cc40d754d2836f8",
+      "name": "requests",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.33.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:230316b24e3aa018395f5fc2ca765a9684fb5d4e07aef5406ae9974e771ad608",
+      "name": "requests-oauthlib",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.0.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:e8ec8d45936168008bf96d982f527d4914df645fecd3b7c4309b14f6ca98a62d",
+      "name": "resvg-py",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.4.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:ea1c0841f05a922df31cec3bd845cde41ce5ec021b26d5d104bee3d957509148",
+      "name": "rich",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "14.3.3"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:554f51b10301e2e637f74b2a49aecc097e51692e193a7a4a8fce123c21549b46",
+      "name": "rpds-py",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2026.6.3"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:8b679e1567efc47edf19c438ddc3634a1de68b447c285a29173c24c8dcc9def0",
+      "name": "ruamel-yaml",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.18.16"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:018b45d585f63d625b25390c9869853073b4de4746a8ea0e0a3595be260311c5",
+      "name": "s3transfer",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.16.1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:7cadd2e8d3183eabf4eaf81dfaa41761a76be68d6774223933fedd9ff5c757e5",
+      "name": "six",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.17.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:0b1d1be30f351ffef838e8be947092dc052690fe2d436cb31054dbe345ff00b3",
+      "name": "slack-bolt",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.30.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:0fd60a9aa0b961b44ee9f1f9c33585c3b7c662189b0fe61ac22fec1eb89aa2e1",
+      "name": "slack-sdk",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.44.1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:b7aa022f33bcca572a2130799a900b5f99f9683b93cf564062d0dc8966af8afa",
+      "name": "sniffio",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.3.1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:60f6b313a048a61c6211ec0e0a30ff03c7929d94e538692a54644d5f897e4c15",
+      "name": "snowballstemmer",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.1.1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:6b1e91079729305780ff2774d01e7f6d3acb019fa20fef0c59423f77abc0c828",
+      "name": "socksio",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.0.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:07554eec0eda38c76b6fe9cf814732420258d1b3fc7ae008ef5c44c197cf7b1e",
+      "name": "sse-starlette",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.4.8"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:7712b891c0ae3ea180d8d72e593d2a5d211bcaed1c94ceef9686097b847b011d",
+      "name": "starlette",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.3.1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:e809faaea21cb7d38b00c044fd527acf799140aa77277b6e8bfeec43e1ed517e",
+      "name": "tenacity",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "9.1.4"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:ebce93dd77015d7249601a3fb388869ae042a365d1d0e71fb81f6d5a665672a6",
+      "name": "termcolor",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "3.3.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:74bc540520e481537b6fbfc77b518aee5654b5ce44ce6cfa6500e3317711ef5a",
+      "name": "tomli-w",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.2.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:7782236c217f2d33f159335b61849d8332a22ab1dbebc2d33ba952c2aacc01a6",
+      "name": "tornado",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "6.5.8"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:0d11768a89852027867f718b283c08ac8a6e9e5f6472d19dba676d37b9c59150",
+      "name": "tqdm",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "4.70.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:1f231f1b8c9e2f076aa2cc44f783ef10c34149c77bea996e5fb66bcc67cc9eb8",
+      "name": "truststore",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.10.4"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:6a997c85e20eb0faa767e5d8d4f5e429a3baad15730db42d57660ab8b222c21f",
+      "name": "typing-extensions",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "4.16.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:be05a85e2637e587026cb3943d0c7674f246be20d8f4f8c28cc3493435abdf8d",
+      "name": "typing-inspection",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.4.4"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:e5a1997e1479f915e88701388bc798ea7aac46feb3d11574f40d125f0386dc7b",
+      "name": "unpaddedbase64",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.1.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:cafc13cefd6e1dbdb5aa0e8b427b5b854bdffa7c67741368eaabb6b6745c39c2",
+      "name": "uritemplate",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "4.2.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:aa29ac361072aff95d43f50cd6bf39e3408e0149459607ab43e7d99ca70683c7",
+      "name": "urllib3",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "2.7.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:4ff2c0de846876a4a30df9739254a2a861169056472c72bf9705a60ab717ffd9",
+      "name": "uvicorn",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.41.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:4480417be81945254116fd30b3746e99c8458298b2d740e341d1fe324bbae217",
+      "name": "uvloop",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.22.1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:896df11c4aba66e7b401ffc618e67107e20e92f35fa628a56632de32ccf5fec5",
+      "name": "watchfiles",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.2.0"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:1d3fd55a52035e69e52be458df33a6e0ad1c5c6ee072a3ed18d2f2a9a8222dcf",
+      "name": "wcwidth",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "0.8.2"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:6f94b8de18560f504e67d472c5d7325103ee15e512a405558701d2270a971bb0",
+      "name": "websockets",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "15.0.1"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:50ac1d853ef68a7b484da52cffa9fdf4ecf03dfeb239b5b976f9f2630b3c4c95",
+      "name": "yarl",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.24.5"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:7eedca856759bddf2ed493db60288ea19393fbdaab8f22cdf44856d882955677",
+      "name": "youtube-transcript-api",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "1.2.4"
+    },
+    {
+      "bom-ref": "urn:hermes:observed:5754ce17b8ff68a1ee2732d0539138fda385298a046ff690bc36b87612ca971e",
+      "name": "zipp",
+      "properties": [
+        {
+          "name": "hermes:observed-ecosystem",
+          "value": "python-venv"
+        },
+        {
+          "name": "hermes:verified-supplier-provenance",
+          "value": "false"
+        }
+      ],
+      "type": "library",
+      "version": "4.1.0"
+    }
+  ],
+  "metadata": {
+    "component": {
+      "name": "nousresearch/hermes-agent",
+      "properties": [
+        {
+          "name": "hermes:immutable-image",
+          "value": "nousresearch/hermes-agent@sha256:cd9cb455576d27c9b6311de1104494ad7e221b6e68dc77e9ac2a8af661a4dc21"
+        },
+        {
+          "name": "hermes:embedded-source-commit",
+          "value": "297552a9d646119871391d202509822cd86330df"
+        },
+        {
+          "name": "hermes:scope",
+          "value": "dpkg-and-primary-python-venv-only"
+        },
+        {
+          "name": "hermes:complete-sbom-verified",
+          "value": "false"
+        }
+      ],
+      "type": "container",
+      "version": "v0.22.1"
+    }
+  },
+  "specVersion": "1.5",
+  "version": 1
+}
