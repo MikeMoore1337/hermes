@@ -133,6 +133,8 @@ REQUIRED_PATHS = (
     "deploy/hermes-ops-watch.timer",
     "deploy/install-ops-watch.sh",
     "tests/test_ops_watch_collector.py",
+    "tests/test_ops_watch_recovery_transitions.py",
+    "docs/operations/H-02-SAFE-INCIDENT-TEST.md",
     "ops_watch/cli.py",
     "ops_watch/README.md",
     "tests/test_ops_watch.py",
