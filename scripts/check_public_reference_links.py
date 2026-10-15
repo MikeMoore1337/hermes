@@ -91,6 +91,8 @@ def classify(status: object) -> str:
 
 
 def audit(runner: Callable[[str], int] = request_one) -> dict[str, Any]:
+    if len(PROBES) != MAX_PROBES:
+        raise PublicProbeDenied("probe_budget_invalid")
     results = []
     for name in PROBES:
         try:
