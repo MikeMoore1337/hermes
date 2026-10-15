@@ -101,12 +101,12 @@ def _files(raw: object, *, max_files: int) -> dict[str, tuple[str, int]]:
 
 
 def load_manifest(path: Path = MANIFEST) -> dict[str, tuple[str, int]]:
-    if path.is_symlink() or not path.is_file():
-        raise ParityDenied("manifest_missing_or_symlink")
-    info = path.stat(follow_symlinks=False)
-    if not stat.S_ISREG(info.st_mode) or info.st_size > MAX_MANIFEST:
-        raise ParityDenied("manifest_invalid")
     try:
+        if path.is_symlink() or not path.is_file():
+            raise ParityDenied("manifest_missing_or_symlink")
+        info = path.stat(follow_symlinks=False)
+        if not stat.S_ISREG(info.st_mode) or info.st_size > MAX_MANIFEST:
+            raise ParityDenied("manifest_invalid")
         document = _json(path.read_bytes(), limit=MAX_MANIFEST)
     except OSError:
         raise ParityDenied("manifest_unavailable") from None
