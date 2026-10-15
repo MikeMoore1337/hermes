@@ -102,8 +102,17 @@ def get_json(path: str, *, opener: Any = None, token: str | None = None) -> dict
             body = response.read(MAX_BODY_BYTES + 1)
     except urllib.error.HTTPError as exc:
         # No raw URL body, rate-limit metadata, token or other sensitive detail.
-        if exc.code in (403, 429):
-            raise GithubPublicError("public_rate_limited_or_denied") from None
+        if exc.code == 401:
+            raise GithubPublicError("github_unauthorized") from None
+        if exc.code == 403:
+            # 403 may also be primary rate limiting; never guess specific cause.
+            raise GithubPublicError("github_forbidden_or_rate_limited") from None
+        if exc.code == 404:
+            raise GithubPublicError("github_not_found_or_not_authorized") from None
+        if exc.code == 429:
+            raise GithubPublicError("github_rate_limited") from None
+        if 500 <= exc.code <= 599:
+            raise GithubPublicError("github_server_unavailable") from None
         raise GithubPublicError("public_api_http_error") from None
     except (OSError, TimeoutError, urllib.error.URLError) as exc:
         raise GithubPublicError("public_api_network_error") from None
