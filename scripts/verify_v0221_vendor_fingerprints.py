@@ -97,6 +97,7 @@ def validate(raw: bytes) -> tuple[dict[str, Any], dict[str, Any]]:
         path, size, checksum = record["path"], record["size"], record["sha256"]
         if (type(path) is not str or len(path) > 300 or PATH.fullmatch(path) is None
                 or path.split("/")[0] not in VENDOR_COUNTS
+                or any(part in (".", "..") for part in path.split("/"))
                 or type(size) is not int or not 0 <= size <= 5_000_000
                 or type(checksum) is not str or SHA256.fullmatch(checksum) is None
                 or path in files):

@@ -77,6 +77,9 @@ class VendorFileContracts(unittest.TestCase):
         doc["files"][0]["path"] = "../escape.py"
         cases.append(doc)
         doc = record()
+        doc["files"][0]["path"] = "node-26.7.0-linux-x64/../escape.py"
+        cases.append(doc)
+        doc = record()
         doc["files"][0]["sha256"] = "wrong"
         cases.append(doc)
         doc = record()
