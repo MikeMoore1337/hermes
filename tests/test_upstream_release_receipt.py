@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import io
 import json
-import subprocess
 import unittest
 from unittest.mock import Mock, patch
 
