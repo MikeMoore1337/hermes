@@ -80,6 +80,20 @@ class OpsWatchAdvisorAdapterTests(unittest.TestCase):
         self.assertEqual(len(first), 2)
         self.assertIn("ADVISOR_CANDIDATE", {item["analysis"]["decision"] for item in first})
 
+    def test_old_episodes_and_recovery_never_inflate_current_repeats(self) -> None:
+        rows = [
+            self.row(5, "provider_rate_limited", "new"),
+            self.row(4, "provider_rate_limited", "resolved"),
+            self.row(3, "provider_rate_limited", "new"),
+            self.row(2, "provider_rate_limited", "resolved"),
+            self.row(1, "provider_rate_limited", "new"),
+        ]
+        adapted = self.read(rows, provenance="synthetic")
+        self.assertEqual([item["event"]["repeat_count"] for item in adapted],
+                         [1, 0, 1, 0, 1])
+        self.assertTrue(all(not item["event"]["previous_similar"] for item in adapted))
+        self.assertTrue(all(item["analysis"]["decision"] == "RULES_ONLY" for item in adapted))
+
     def test_missing_source_is_rejected_without_creating_database(self) -> None:
         with patch.object(adapter, "inspect", side_effect=InputError("unavailable")):
             with self.assertRaisesRegex(AdvisorAdapterError, "source_unavailable"):
@@ -127,11 +141,16 @@ class OpsWatchAdvisorAdapterTests(unittest.TestCase):
 
         self.assertEqual(database.read_bytes(), before)
         self.assertEqual(len(adapted), 3)
-        self.assertEqual(adapted[0]["analysis"]["decision"], "ADVISOR_CANDIDATE")
-        self.assertEqual(adapted[0]["event"]["repeat_count"], 3)
+
+        self.assertEqual(adapted[0]["event"]["repeat_count"], 1)
+        self.assertFalse(adapted[0]["event"]["previous_similar"])
+        self.assertEqual(adapted[0]["analysis"]["decision"], "RULES_ONLY")
         self.assertEqual(adapted[1]["phase"], "resolved")
+        self.assertEqual(adapted[1]["event"]["repeat_count"], 0)
+        self.assertFalse(adapted[1]["event"]["previous_similar"])
         self.assertEqual(adapted[1]["analysis"]["decision"], "RULES_ONLY")
-        self.assertEqual(adapted[2]["analysis"]["decision"], "ADVISOR_CANDIDATE")
+        self.assertEqual(adapted[2]["event"]["repeat_count"], 1)
+        self.assertEqual(adapted[2]["analysis"]["decision"], "RULES_ONLY")
 
 
 if __name__ == "__main__":

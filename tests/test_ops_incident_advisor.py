@@ -182,5 +182,27 @@ class IncidentAdvisorTests(unittest.TestCase):
         self.assertEqual(kwargs["stderr_limit"], 16 * 1024)
 
 
+class RulesOnlyDisplayTests(unittest.TestCase):
+    def test_single_rules_only_result_displays_real_recommendation(self) -> None:
+        import io
+        from contextlib import redirect_stdout
+        from scripts.ops_incident_advisor import _report
+        output = io.StringIO()
+        with redirect_stdout(output):
+            _report({
+                "status": "rules_only",
+                "scenario": "ops_watch_event_1",
+                "rules": {
+                    "status": "resolved",
+                    "priority": "low",
+                    "recommendation": "Дополнительные действия не требуются",
+                },
+            })
+        value = output.getvalue()
+        self.assertIn("Дополнительные действия не требуются", value)
+        self.assertIn("AI не нужен", value)
+        self.assertNotIn("unknown", value)
+
+
 if __name__ == "__main__":
     unittest.main()

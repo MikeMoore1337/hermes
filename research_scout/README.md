@@ -78,10 +78,18 @@ python3 -m research_scout.review_draft --compare-stdin < drafts.json
 ```
 
 Черновик сохраняет source URL, source kind, DOI/PMID/record id и происхождение
-каждого явно подтверждённого поля. Неподтверждённые `research_question`,
-`study_type`, `population`, `sample_size`, `methods`, `main_results`,
-`limitations` и `effect_size` остаются `UNKNOWN`; secondary source не становится
-primary source. Состояния — `MANUAL_REVIEW`/`HOLD`, `scientific_claims_verified`
+полей, явно предоставленных оператором. **PubMed, Europe PMC и DOI-resolver —
+библиографические указатели, а не проверенный полный текст исследования.**
+Ссылка на сайт издателя сама по себе также не доказывает доступ к полному тексту.
+`primary_source_link` остаётся `UNKNOWN`, пока оператор не предоставит
+`confirmed` с явным `review_basis=operator_reviewed_full_text`, ссылкой на
+страницу издателя и `supporting_excerpt` для каждого поля. Это только
+операторское свидетельство, не независимая автоматическая проверка первоисточника.
+`primary_source_access` сообщает степень проверки. Подлинность фрагмента
+этот офлайн-модуль не подтверждает; `MANUAL_REVIEW` обязателен.
+Неподтверждённые `research_question`, `study_type`, `population`,
+`sample_size`, `methods`, `main_results`, `limitations` и `effect_size`
+остаются `UNKNOWN`; secondary source не становится primary source. Состояния — `MANUAL_REVIEW`/`HOLD`, `scientific_claims_verified`
 всегда `false`, `automatic_publication` всегда `false`.
 
 Сравнение нескольких drafts показывает только явно одинаковый research question

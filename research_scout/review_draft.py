@@ -21,12 +21,14 @@ MAX_INPUT_BYTES = 65_536
 MAX_DRAFTS = 10
 UNKNOWN = "UNKNOWN"
 MANUAL_REVIEW = "MANUAL_REVIEW"
+# A bibliographic index, DOI resolver or publisher landing page is not
+# evidence that the full study text was retrieved and checked.
 SOURCE_KINDS = {
-    "europepmc.org": "primary",
-    "pubmed.ncbi.nlm.nih.gov": "primary",
-    "doi.org": "primary",
-    "bjsm.bmj.com": "primary",
-    "www.acsm.org": "primary",
+    "europepmc.org": "bibliographic_index",
+    "pubmed.ncbi.nlm.nih.gov": "bibliographic_index",
+    "doi.org": "doi_resolver",
+    "bjsm.bmj.com": "publisher_page",
+    "www.acsm.org": "professional_organization",
     "www.sciencedaily.com": "secondary",
     "medicalxpress.com": "secondary",
 }
@@ -101,11 +103,19 @@ def _confirmed(value: Any) -> dict[str, Any]:
         raise ReviewDraftError("confirmed_fields_invalid")
     result: dict[str, Any] = {}
     for field, record in value.items():
-        if type(record) is not dict or set(record) != {"value", "source_url"}:
+        if type(record) is not dict or set(record) != {
+            "value", "source_url", "review_basis", "supporting_excerpt",
+        }:
             raise ReviewDraftError("confirmed_field_provenance_invalid")
         source_url, source_kind = _url(record["source_url"], "confirmed_source_url")
-        if source_kind != "primary":
-            raise ReviewDraftError("confirmed_field_requires_primary_source")
+        # Source domains alone cannot attest article access. Require explicit
+        # operator-provided full-text evidence; do not call this independently
+        # verified research. Metadata index/DOI links must not qualify.
+        if source_kind != "publisher_page" or record["review_basis"] != "operator_reviewed_full_text":
+            raise ReviewDraftError("confirmed_field_requires_full_text_evidence")
+        excerpt = _text(record["supporting_excerpt"], "supporting_excerpt", 900)
+        if PROMPT_INJECTION.search(excerpt):
+            raise ReviewDraftError("supporting_excerpt_suspicious")
         item = record["value"]
         if field == "sample_size":
             if type(item) is not int or not 1 <= item <= 1_000_000_000:
@@ -114,7 +124,12 @@ def _confirmed(value: Any) -> dict[str, Any]:
             item = _text(item, "confirmed_value")
             if PROMPT_INJECTION.search(item):
                 raise ReviewDraftError("confirmed_value_suspicious")
-        result[field] = {"value": item, "source_url": source_url}
+        result[field] = {
+            "value": item,
+            "source_url": source_url,
+            "review_basis": "operator_reviewed_full_text",
+            "supporting_excerpt": excerpt,
+        }
     return result
 
 
@@ -150,6 +165,10 @@ def build_draft(candidate: Any) -> dict[str, Any]:
         return confirmed[name]["value"] if name in confirmed else UNKNOWN
 
     status = MANUAL_REVIEW if candidate["status"] == MANUAL_REVIEW else "HOLD"
+    # Only an explicit manual review record can identify a candidate original
+    # study text; publisher hostname and DOI resolution are not sufficient.
+    reviewed_urls = {record["source_url"] for record in confirmed.values()}
+    reviewed_primary_url = next(iter(reviewed_urls)) if len(reviewed_urls) == 1 else UNKNOWN
     return {
         "schema": SCHEMA,
         "status": status,
@@ -158,7 +177,11 @@ def build_draft(candidate: Any) -> dict[str, Any]:
         "identifiers": identifier,
         "source_link": source_url,
         "source_kind": source_kind,
-        "primary_source_link": source_url if source_kind == "primary" else UNKNOWN,
+        "primary_source_link": reviewed_primary_url,
+        "primary_source_access": (
+            "OPERATOR_REVIEW_ATTESTED_NOT_INDEPENDENTLY_VERIFIED"
+            if reviewed_primary_url != UNKNOWN else "NOT_VERIFIED"
+        ),
         "research_question": field("research_question"),
         "study_type": field("study_type"),
         "population": field("population"),
@@ -188,6 +211,16 @@ def build_draft(candidate: Any) -> dict[str, Any]:
         "automatic_publication": False,
         "provenance": {
             "bibliographic_metadata": source_url,
+            "bibliographic_source_kind": source_kind,
+            "full_text_independently_verified": False,
+            "operator_supplied_full_text_excerpts": {
+                name: {
+                    "source_url": data["source_url"],
+                    "review_basis": data["review_basis"],
+                    "supporting_excerpt": data["supporting_excerpt"],
+                }
+                for name, data in confirmed.items()
+            },
             "confirmed_fields": {
                 name: data["source_url"] for name, data in confirmed.items()
             },

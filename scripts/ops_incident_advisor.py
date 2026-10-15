@@ -217,6 +217,13 @@ def _report(payload: dict[str, object]) -> None:
     print("Ops Incident Advisor")
     print(f"Сценарий: {payload.get('scenario', 'batch')}")
     print(f"Статус: {payload['status']}")
+    if payload["status"] == "rules_only":
+        rules = payload["rules"]
+        print("Решение: достаточно действующих правил Ops Watch; AI не нужен.")
+        print(f"Состояние инцидента: {rules['status']}")
+        print(f"Приоритет: {rules['priority']}")
+        print(f"Рекомендация: {rules['recommendation']}")
+        return
     if payload["status"] != "ok":
         print(f"Причина: {payload.get('reason', 'unknown')}")
         return

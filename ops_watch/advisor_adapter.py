@@ -6,7 +6,6 @@ an explicit local snapshot directory.
 """
 from __future__ import annotations
 
-from collections import Counter
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
@@ -100,8 +99,10 @@ def _row(row: Mapping[str, Any]) -> dict[str, Any]:
 def _analysis_decision(code: str, phase: str, repeat_count: int) -> dict[str, str]:
     if phase == "resolved":
         return {"decision": "RULES_ONLY", "reason": "fixed_recovery_transition"}
+    # Repeat counts greater than one must come from a future trusted
+    # observation counter, never from this transition-only journal.
     if repeat_count > 1:
-        return {"decision": "ADVISOR_CANDIDATE", "reason": "repeated_event_needs_context"}
+        return {"decision": "ADVISOR_CANDIDATE", "reason": "verified_repeat_needs_context"}
     if code in {"outbox_backlog", "outbox_oldest", "drain_failures", "worker_unhealthy"}:
         return {"decision": "ADVISOR_CANDIDATE", "reason": "operator_context_may_help"}
     return {"decision": "RULES_ONLY", "reason": "deterministic_code_and_action"}
@@ -161,9 +162,15 @@ def read_events(
         parsed = [item for item in parsed if item["id"] == event_id]
         if not parsed:
             raise AdvisorAdapterError("event_not_found")
-    counts = Counter(item["code"] for item in parsed)
+    # The journal records transitions, not observations or retries. Counting
+    # matching codes across the last 50 rows would mix recoveries and distinct
+    # episodes and invent a repeat count. One "new" transition represents one
+    # episode; a "resolved" transition is not a new incident.
     return [
-        _adapt(item, repeat_count=counts[item["code"]], provenance=provenance)
+        _adapt(
+            item, repeat_count=1 if item["phase"] == "new" else 0,
+            provenance=provenance,
+        )
         for item in parsed
     ]
 
