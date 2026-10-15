@@ -28,11 +28,15 @@ TITLES: dict[str, str] = {
     "agent_guard_missing": "Отсутствует защита сети Hermes Agent",
     "agent_guard_disabled": "Автозагрузка сетевой защиты отключена",
     "agent_guard_inactive": "Защита сети Hermes Agent неактивна",
+    "alert_sender_missing": "Отсутствует таймер доставки Ops Watch",
+    "alert_sender_disabled": "Отключена автоматическая доставка Ops Watch",
+    "alert_sender_inactive": "Неактивен таймер доставки Ops Watch",
 }
 CRITICAL = frozenset({
     "timer_disabled", "timer_inactive", "discovery_failures", "drain_failures",
     "telegram_polling_down", "backend_unhealthy", "deploy_failed",
     "agent_guard_missing", "agent_guard_inactive",
+    "alert_sender_missing", "alert_sender_disabled", "alert_sender_inactive",
 })
 ACTIONS: dict[str, str] = {
     "snapshot_stale": "Проверить журнал службы мониторинга вручную",
@@ -52,6 +56,9 @@ ACTIONS: dict[str, str] = {
     "agent_guard_missing": "Проверить сетевую защиту до запуска агента",
     "agent_guard_disabled": "Проверить автозагрузку защитной службы",
     "agent_guard_inactive": "Проверить точные правила nftables до запуска агента",
+    "alert_sender_missing": "Проверить установку таймера доставки без автоматического восстановления",
+    "alert_sender_disabled": "Проверить автозапуск доставки без изменения службы новостей",
+    "alert_sender_inactive": "Проверить журнал и состояние отправителя без перезапуска",
 }
 if set(TITLES) != INCIDENT_CODES or set(ACTIONS) != INCIDENT_CODES:
     raise RuntimeError("incident_preview_catalog_incomplete")
