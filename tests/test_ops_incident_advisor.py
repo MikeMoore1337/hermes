@@ -45,6 +45,11 @@ class IncidentAdvisorTests(unittest.TestCase):
         self.assertIn("HTTP_429", prompt)
         self.assertNotIn("Bearer", prompt)
         self.assertNotIn("operator_note", prompt)
+        self.assertIn('"medium"', prompt)
+        self.assertIn('"high"', prompt)
+        self.assertIn("по-русски", prompt)
+        self.assertIn("Не предлагай повторные запросы", prompt)
+        self.assertIn("платный тариф", prompt)
 
     def test_mock_result_is_valid_and_reproducible(self) -> None:
         context = prepare_context(SCENARIOS["telegram_sender_down"])
@@ -86,6 +91,42 @@ class IncidentAdvisorTests(unittest.TestCase):
         result["probable_cause"]["uncertainty"] = "low"
         with self.assertRaisesRegex(AdvisorOutputError, "cause_not_confirmed_by_event"):
             validate_result(result, context)
+
+    def test_real_model_observation_keeps_strict_uncertainty_enum(self) -> None:
+        context = prepare_context(SCENARIOS["provider_http_429"])
+        result = mock_result(context)
+        result["probable_cause"]["uncertainty"] = "High - provider log not observed"
+        with self.assertRaisesRegex(AdvisorInputError, "invalid_uncertainty"):
+            validate_result(result, context)
+
+    def test_english_prose_and_paid_fallback_advice_are_not_accepted(self) -> None:
+        context = prepare_context(SCENARIOS["provider_http_429"])
+        english = mock_result(context)
+        english["what_happened"] = "Provider returned HTTP 429 Too Many Requests."
+        with self.assertRaisesRegex(AdvisorOutputError, "output_russian_required"):
+            validate_result(english, context)
+
+        fallback = mock_result(context)
+        fallback["recommendation"] = (
+            "Использовать альтернативного провайдера и проверить квоту."
+        )
+        with self.assertRaisesRegex(AdvisorOutputError, "paid_or_retry_advice_not_allowed"):
+            validate_result(fallback, context)
+
+        retry = mock_result(context)
+        retry["recommendation"] = (
+            "Implement or verify exponential backoff and retry strategy."
+        )
+        with self.assertRaises(AdvisorOutputError):
+            validate_result(retry, context)
+
+    def test_valid_manual_review_recommendation_remains_accepted(self) -> None:
+        context = prepare_context(SCENARIOS["provider_http_429"])
+        result = mock_result(context)
+        result["recommendation"] = (
+            "Проверить состояние бесплатной квоты без нового запроса и передать оператору."
+        )
+        self.assertEqual(validate_result(result, context)["priority"], "high")
 
     def test_semantic_guard_does_not_require_fixed_mock_wording(self) -> None:
         context = prepare_context(SCENARIOS["provider_http_429"])
