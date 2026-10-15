@@ -120,6 +120,22 @@ class IncidentAdvisorTests(unittest.TestCase):
         with self.assertRaises(AdvisorOutputError):
             validate_result(retry, context)
 
+    def test_real_followup_recommendation_cannot_expand_quota_or_disable_work(self) -> None:
+        context = prepare_context(SCENARIOS["provider_http_429"])
+        for recommendation in (
+            "Рекомендуется вручную проверить лимиты API провайдера и "
+            "при необходимости увеличить квоту или ограничить частоту запросов. "
+            "Временно отключи интенсивные операции до получения подтверждения.",
+            "Увеличить квоту у провайдера.",
+            "Временно отключи интенсивные операции.",
+            "Upgrade quota to resume the service.",
+        ):
+            with self.subTest(recommendation=recommendation):
+                result = mock_result(context)
+                result["recommendation"] = recommendation
+                with self.assertRaises(AdvisorOutputError):
+                    validate_result(result, context)
+
     def test_valid_manual_review_recommendation_remains_accepted(self) -> None:
         context = prepare_context(SCENARIOS["provider_http_429"])
         result = mock_result(context)
