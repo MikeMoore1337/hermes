@@ -75,3 +75,8 @@
 ### Проверка локального образа v0.22.1 на отдельном Windows Docker Desktop (15.10.2026)
 
 [Фактический протокол](../audits/H-01-v0221-offline-docker-run-2026-10-15.md): pinned AMD64 `cd9cb455...` локально обнаружен и изолированно проинспектирован, embedded stamp совпал с release commit; 274 OS + 146 Python записей, inventory SHA256 `f42cbae3102e5d56f7ca64f6239af1425e29ff58366f2674ca9759f272acd48f`. **563/563 offline тестов в Linux PASS**. Полная аттестация исходники-образ, SBOM, нагрузка и фактический hard billing gate не получены: **resident Agent NO-GO**. Production VPS и его службы этой проверкой не изменялись.
+
+
+### Выборочная байтовая сверка шести upstream-файлов в v0.22.1
+
+[Акт](../audits/H-01-v0221-six-source-blobs-2026-10-15.md): шесть файлов ограничений инструментов, учёта расходов, fallback и CLI внутри offline pinned AMD64 образа побайтно совпали с Git blob SHA-1 официального source commit v0.22.1. Две записи `hermes-agent` physical samefile/inode - один каталог dist-info. Повторяемый offline verifier возвращает exit 2 и `resident_agent_allowed=false`, даже при всех MATCH; 583 owner offline тестов PASS. **Это не supplier attestation, не вся source parity или verified SBOM; resident Agent NO-GO**.
