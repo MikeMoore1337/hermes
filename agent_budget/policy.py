@@ -101,7 +101,7 @@ def authorize(
         raise BudgetDenied("role_unknown")
     if type(action) is not str or action not in ALLOWED_OFFLINE_ACTIONS or action not in config["roles"][role]:
         raise BudgetDenied("permission_denied")
-    if kind not in ALLOWED_KINDS:
+    if type(kind) is not str or kind not in ALLOWED_KINDS:
         raise BudgetDenied("execution_kind_denied")
     if type(expected_calls) is not int or not 0 <= expected_calls <= config["model_calls_per_job"]:
         raise BudgetDenied("call_limit_exceeded")
@@ -144,7 +144,13 @@ def verify_metrics(metrics: object) -> dict[str, object]:
     status = metrics["http_status"]
     if status is not None and (type(status) is not int or not 100 <= status <= 599):
         raise BudgetDenied("http_status_invalid")
-    if status in (401, 402, 403, 408, 429) or (status is not None and status >= 500):
+    if status is None:
+        # An omitted HTTP result is not evidence of a successful free request.
+        return {"status": "UNKNOWN_PROVIDER_STATUS",
+                "reason": "provider_result_not_observed"}
+    if status != 200:
+        # A 3xx (potential redirect), 4xx (all client errors), or 5xx
+        # never proves a successful bill-free model call.
         return {"status": "STOP_NO_RETRY", "reason": "provider_error_or_quota"}
     if spent is None:
         return {"status": "UNKNOWN_SPEND", "reason": "provider_cost_not_observed"}
