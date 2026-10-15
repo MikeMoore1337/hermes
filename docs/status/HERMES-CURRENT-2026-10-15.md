@@ -90,3 +90,12 @@
 ### Встроенные runtimes отделены от 353 исходных файлов tools/
 
 [Акт проверки](../audits/H-01-v0221-tools-runtime-layout-2026-10-15.md): в pinned offline v0.22.1 **353/353** Git blob SHA-1 исходных Python файлов `tools/` совпали с upstream commit; 0 missed/extra/different в ограниченной области. Дополнительные **1176** Python файлов находятся в трёх каталогах встроенных Python/Node/npm runtimes и **не** прошли побайтовую аттестацию. Вместе с 1410 файлами из предыдущего акта проверены **1763** исходных Python файла. Полная SBOM/provenance/cost/resource gate не получены; resident AI всё ещё **NO-GO**.
+
+
+### Фактическая установка научного исправления и новые проверки (15.10.2026)
+
+- [Production-акт PR #125](../audits/H-03-pr125-production-rollout-2026-10-15.md): `daily_digest.py` из merge `477ff6c...` установлен на VPS с подтверждённым Git blob SHA-1 и SHA-256, сохранённым rollback и реальным `systemctl start`: service success (15:52:25 МСК), 5 GET, 4 кандидата, `HOLD`, 0 ошибок, автоматическая публикация отключена. Все 5 рабочих таймеров активны.
+- [PR #128](https://github.com/MikeMoore1337/hermes/pull/128): SQLite URI для read-only `read_current` и `inspect` правильно кодирует `?/#` в пути; `inspect` отвергает hardlinks. Исходные дефекты воспроизведены; **только GitHub main, не production**.
+- [PR #129](https://github.com/MikeMoore1337/hermes/pull/129): дополнительная проверка реального календаря и 30-дневного окна для `MANUAL_REVIEW` перед сохранением Science Metadata. Исходные нарушения воспроизведены; **только GitHub main, не production**.
+- [PR #130](https://github.com/MikeMoore1337/hermes/pull/130): необязательный read-only анализ локальных квитанций new/ack/resolved/ack. Он НЕ доказывает естественного происхождения событий или независимой доставки Telegram; **только GitHub main, не production**.
+- 670/670 offline Linux tests PASS после #130. H-02 #3 и H-03 #4 остаются открытыми. Для новых production runtime изменений нужен отдельный owner GO.
