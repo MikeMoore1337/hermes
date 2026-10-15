@@ -15,5 +15,34 @@
   "published_registry_tag": "nousresearch/hermes-agent:v0.21.6",
   "published_tag_linux_amd64_digest": "sha256:32d095e84190ae7266afbb361579e6921f2c633e899f5eacfb88111b9c851a22",
   "published_tag_amd64_match_verified": true,
-  "registry_manifest_inspected_date": "2026-10-14"
+  "registry_manifest_inspected_date": "2026-10-14",
+  "verified_image_source_sample_date": "2026-10-15",
+  "verified_image_source_blobs": {
+    "run_agent.py": "371cfff6b2a5469f0120420a26fe2323b90ca6e4",
+    "tools/approval.py": "6d4402db744d12b88d596372fc8a7e8efdc29998",
+    "gateway/run_turn.py": "671d5e1093c2ce7ec7e31707227c964019eb3fd4",
+    "pyproject.toml": "648a597cad21b14c94782dca09d9d0db3bf54c2a"
+  },
+  "verified_image_source_matches_embedded_count": 4,
+  "observed_oci_attestation_entries": 0,
+  "observed_oci_sbom_published": false,
+  "observed_oci_provenance_published": false,
+  "verified_full_sbom": false,
+  "local_dpkg_package_count": 274,
+  "local_dpkg_inventory_sha256": "f017ae2f917d706553138c6741b6c35b2d68fade9058511c9c9bed1f7d8a3e5f",
+  "last_bounded_text_turn": {
+    "date": "2026-10-15",
+    "status": "pass",
+    "elapsed_seconds": 113.4,
+    "exit_code": 0
+  },
+  "isolated_cpu_stress": {
+    "date": "2026-10-15",
+    "duration_seconds": 45,
+    "samples": 48,
+    "load1_max": 1.61,
+    "mem_available_min_mib": 2059,
+    "swap_used_max_mib": 0,
+    "news_and_ops_timers_healthy": true
+  }
 }
