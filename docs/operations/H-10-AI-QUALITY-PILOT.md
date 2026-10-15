@@ -1,0 +1,73 @@
+# H-10 — офлайн-пилот качества Hermes AI
+
+**Текущий статус:** интерфейс и эталонные случаи подготовлены; реальная LLM — `NOT_RUN`; тариф конкретного Cloudflare аккаунта — `ACCOUNT_FREE_UNVERIFIED`.
+
+## Локальный запуск
+
+Команды не требуют токена и не выполняют сетевых запросов:
+
+```text
+python3 -m scripts.hermes_ai_pilot status
+python3 -m scripts.hermes_ai_pilot cases
+python3 -m scripts.hermes_ai_pilot compare --json
+python3 -m scripts.hermes_ai_pilot prepare-live
+python3 -m scripts.hermes_ai_pilot run --engine mock --case ops:provider_http_429 --case research:whey_gut_brain --json
+```
+
+`compare` запускает весь локальный набор и сохраняет sanitized результаты в `.artifacts/hermes-ai-pilot/results.json`, который не входит в Git. `run --engine mock` использует тот же контракт входа/выхода, но детерминированный ответ из Python. Это проверяет контур и валидаторы, **не качество AI**.
+
+## Эталонный набор
+
+Ops Incident Advisor: `telegram_sender_down`, `systemd_timer_failed`, `notification_queue_stopped`, `provider_http_429`, `github_actions_failed`, `recovery_after_failure`, `multiple_incidents`, `healthy_no_publications`, `insufficient_data`, `contradictory_state`, `unknown_error_code`, `prompt_injection`. Все входы synthetic и содержат только allowlisted факты. Существующие фикстуры `repeated_same_incident` и `invalid_input` сохранены для регрессии прежнего Advisor, но не являются частью этого 12-case пилота.
+
+Research Scout: публичные библиографические записи для обзора растительных продуктов и восстановления, whey/gut-brain, IRONMAN с correction и massage/CRET. В prompt передаются только уже сохранённые metadata и публичная ссылка; ручной эталон хранится отдельно и не выдаётся модели как готовый ответ.
+
+## Что измеряется
+
+Каждый результат хранит provenance, статус, модельный режим, число вызовов и раздельные времена подготовки входа, Docker/Hermes (`NOT_RUN` для in-process интерфейса), ответа провайдера, JSON-валидации, формирования результата и всего процесса. Для наблюдаемого live-ответа дополнительно сохраняются только фактически возвращённые input/output tokens, Neurons, HTTP status и стоимость. Если стоимость не возвращена, она остаётся `COST_NOT_VERIFIED`/`None`, без оценки по прайсу.
+
+Для Ops сравниваются существующие правила с валидированным Advisor-ответом: статус, приоритет, доказательства, безопасные проверки и полезность рекомендации. Для Research сравниваются идентификаторы, дисциплина `UNKNOWN`/`INSUFFICIENT_EVIDENCE`, тип/популяция/выборка/вмешательство/контроль/результаты/ограничения/correction и ручной эталон. На одних библиографических metadata научная точность и экспертное утверждение имеют статус `NOT_ASSESSABLE_FROM_BIBLIOGRAPHIC_METADATA` и `NOT_RUN`.
+
+Итоговая таблица до live-запуска имеет вид:
+
+| Задача | Правила или ручной эталон | Mock | Реальная LLM | Время | Качество |
+| --- | --- | --- | --- | --- | --- |
+| каждый Ops/Research case | READY | `MOCK_ONLY` | `NOT_RUN` | фактически измерено локально | mock не является доказательством качества |
+
+## Финансовый и сетевой ограничитель
+
+В `agent_budget/pilot.py` зафиксированы:
+
+- основной model ID `@cf/openai/gpt-oss-20b`;
+- по одному вызову на случай и не более трёх случаев за один live-запуск;
+- максимум три live-вызова за сутки по локальному UTC-счётчику;
+- ноль автоматических повторов и ноль model fallback;
+- отсутствие фонового и параллельного выполнения;
+- фиксированный HTTPS host/path Cloudflare, запрет redirect и proxy;
+- вход до 16 KiB, выход до 32 KiB, `max_tokens=768`, timeout 45 секунд;
+- обязательный `options.rejectIfBusy=true`;
+- консервативный резерв 1 000 Neurons в account-status attestation;
+- остановка на 401/402/403/429, timeout, недоступности, невалидном JSON, неизвестной схеме или неизвестной стоимости;
+- отсутствие инструментов, публикации, Telegram, приватных данных и side effects.
+
+Токен сам по себе не включает live-режим. Нужны одновременно `--owner-approved`, `HERMES_AI_LIVE_APPROVED=1`, внешний account-status JSON с `WORKERS_FREE`, fixed model, SHA-256 Account ID, остатком квоты и `ai_gateway_unified_billing=false`. Account JSON и секреты не коммитятся.
+
+## Подготовка первого live-сценария
+
+Команда подготовки ничего не вызывает:
+
+```text
+python3 -m scripts.hermes_ai_pilot prepare-live
+```
+
+После отдельного письменного разрешения владельца и независимой проверки Dashboard допускается только один явный case (не `--all`), например:
+
+```text
+python3 -m scripts.hermes_ai_pilot run --engine live --case ops:provider_http_429 --owner-approved --account-status <внешний-файл> --output .artifacts/hermes-ai-pilot/results.json
+```
+
+Перед этим секреты задаются владельцем в его защищённой среде, не через чат и не в Git. В текущем задании эта команда не выполнялась.
+
+## Приёмка и остаток
+
+Реализовано: единый offline/live-контракт, ограничитель вызовов, 12 Ops и 4 Research cases, сохранение sanitized результатов, сравнение с правилами/ручными reference и отрицательные тесты. Не доказано: качество настоящей LLM, фактические Neurons/стоимость, реальный Workers Free, Docker startup/инициализация Hermes для этого нового общего CLI, production readiness, PR/CI и обновление GitHub Issues.

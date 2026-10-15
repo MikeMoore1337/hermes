@@ -1,0 +1,105 @@
+"""Public, sanitized Research Scout cases for the offline AI pilot.
+
+The model receives only bibliographic metadata. The manual reference is kept
+outside the prompt and is an evaluation label, not a source of model facts.
+"""
+from __future__ import annotations
+
+CASES: dict[str, dict[str, object]] = {
+    "plant_recovery": {
+        "candidate": {
+            "source": "EUROPE_PMC",
+            "id": "42797032",
+            "source_url": "https://pubmed.ncbi.nlm.nih.gov/42797032/",
+            "title": "Plant-based foods and recovery after exercise",
+            "doi": None,
+            "pmid": "42797032",
+            "status": "MANUAL_REVIEW",
+            "reason": "metadata_only",
+            "first_publication_date": None,
+            "scientific_claims_verified": False,
+        },
+        "manual_reference": {
+            "source": "H-03-first-science-candidates-2026-10-15",
+            "study_type": "systematic_review",
+            "population": "human intervention studies",
+            "sample_size": "36 interventions; exact participants vary",
+            "intervention": "plant-based products",
+            "control": "heterogeneous controls across studies",
+            "main_results": "subjective soreness findings were heterogeneous; universal functional recovery was not established",
+            "correction_status": "not reported in the prepared review",
+        },
+    },
+    "whey_gut_brain": {
+        "candidate": {
+            "source": "EUROPE_PMC",
+            "id": "42840492",
+            "source_url": "https://pubmed.ncbi.nlm.nih.gov/42840492/",
+            "title": "Whey protein, resistance training and the gut-brain axis",
+            "doi": "10.3389/fcimb.2026.1918695",
+            "pmid": "42840492",
+            "status": "HOLD",
+            "reason": "metadata_only",
+            "first_publication_date": None,
+            "scientific_claims_verified": False,
+        },
+        "manual_reference": {
+            "source": "H-03-first-science-candidates-2026-10-15",
+            "study_type": "narrative_review",
+            "population": "not a single combined clinical trial population",
+            "sample_size": "UNKNOWN",
+            "intervention": "whey and mechanisms discussed in the review",
+            "control": "UNKNOWN",
+            "main_results": "mechanistic discussion; direct clinical benefit of combined whey plus resistance training was not established",
+            "correction_status": "UNKNOWN",
+        },
+    },
+    "ironman_correction": {
+        "candidate": {
+            "source": "EUROPE_PMC",
+            "id": "42771055",
+            "source_url": "https://pubmed.ncbi.nlm.nih.gov/42771055/",
+            "title": "Physical activity in an international IRONMAN prostate cancer registry",
+            "doi": "10.1007/s00520-026-11251-3",
+            "pmid": "42771055",
+            "status": "HOLD",
+            "reason": "metadata_only",
+            "first_publication_date": None,
+            "scientific_claims_verified": False,
+        },
+        "manual_reference": {
+            "source": "H-03-first-science-candidates-2026-10-15",
+            "study_type": "observational registry analysis",
+            "population": "people with prostate cancer in an international IRONMAN registry",
+            "sample_size": "2485",
+            "intervention": "not an assigned intervention",
+            "control": "no randomized control group",
+            "main_results": "reported physical-activity participation; not evidence that a training program improves outcomes in the general population",
+            "correction_status": "correction reported; 50 -> 150 minutes per week, with conclusions reported unchanged",
+        },
+    },
+    "massage_cret": {
+        "candidate": {
+            "source": "EUROPE_PMC",
+            "id": "42733310",
+            "source_url": "https://pubmed.ncbi.nlm.nih.gov/42733310/",
+            "title": "Massage and CRET after exercise recovery",
+            "doi": None,
+            "pmid": "42733310",
+            "status": "HOLD",
+            "reason": "metadata_only",
+            "first_publication_date": None,
+            "scientific_claims_verified": False,
+        },
+        "manual_reference": {
+            "source": "H-03-first-science-candidates-2026-10-15",
+            "study_type": "single-blind randomized crossover study with sham control",
+            "population": "athletes",
+            "sample_size": "25",
+            "intervention": "massage plus active CRET",
+            "control": "massage plus sham CRET",
+            "main_results": "biomarker and ultrasound differences did not establish faster functional recovery",
+            "correction_status": "UNKNOWN",
+        },
+    },
+}

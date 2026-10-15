@@ -111,9 +111,9 @@
       "purpose": "Bounded free-only model calls in separately isolated Agent",
       "documentation": "https://developers.cloudflare.com/workers-ai/platform/pricing/",
       "license": "official_api_terms",
-      "verified_on": "2026-10-14",
+      "verified_on": "2026-10-15",
       "verified_status": "pending",
-      "billing": "free_plan_owner_attested",
+      "billing": "free_plan_unverified",
       "card_requirement": "unknown",
       "credentials": "scoped_file",
       "data_scope": "sanitized_only",
@@ -121,9 +121,11 @@
       "hosts": [
         "api.cloudflare.com"
       ],
-      "owner_approved": true,
+      "owner_approved": false,
       "permissions": [],
       "reasons": [
+        "account_free_unverified",
+        "no_live_request_in_current_pilot",
         "independent_account_billing_check_pending",
         "provenance_and_burnin_gate",
         "no_paid_fallback",

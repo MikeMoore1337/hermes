@@ -44,6 +44,9 @@ class IntegrationRegistryTests(unittest.TestCase):
         self.assertEqual(sum(x["decision"] == "DEFER" for x in entries), 3)
         self.assertEqual(sum(x["decision"] == "REJECT" for x in entries), 1)
         self.assertTrue(all(x["issue"].startswith("https://") for x in entries))
+        cloudflare = next(x for x in entries if x["id"] == "cloudflare-workers-ai")
+        self.assertEqual(cloudflare["billing"], "free_plan_unverified")
+        self.assertEqual(evaluate(cloudflare), "DEFER")
 
     def test_owner_flag_cannot_approve_unreviewed_connector(self):
         item = self.candidate()

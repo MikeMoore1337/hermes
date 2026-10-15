@@ -38,7 +38,7 @@ Second Brain v4 проходит эксплуатационную проверк
 
 ## Cloudflare Workers AI Free
 
-Подготовлен [проверяемый модуль бесплатного провайдера](plugins/cloudflare-workers-ai-free/README.md): строго один допущенный `@cf/openai/gpt-oss-20b`, без платных моделей и автоматического выбора другого тарифа. Установка не включает сеть и не требует ключа, для **реального** запроса необходим отдельный Account ID/API token Workers Free. [Текущий статус и ограничения](docs/architecture/GROQ_FREE_BLOCKER.md).
+Подготовлен [проверяемый модуль бесплатного провайдера](plugins/cloudflare-workers-ai-free/README.md): строго один допущенный `@cf/openai/gpt-oss-20b`, без платных моделей и автоматического выбора другого тарифа. Установка не включает сеть и не требует ключа. Текущий статус конкретного аккаунта — `ACCOUNT_FREE_UNVERIFIED`; [offline-пилот качества и ручной запуск](docs/operations/H-10-AI-QUALITY-PILOT.md) не выполняют живых запросов. [Текущий статус и ограничения](docs/architecture/GROQ_FREE_BLOCKER.md).
 
 - [Результаты локальной проверки Cloudflare и безопасное подключение ключа](docs/audits/H-01-cloudflare-free-preflight-2026-10-14.md)
 

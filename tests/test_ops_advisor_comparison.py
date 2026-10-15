@@ -27,7 +27,7 @@ class AdvisorComparisonTests(unittest.TestCase):
 
     def test_same_bounded_cases_are_compared(self) -> None:
         rows = compare_scenarios()
-        self.assertEqual(len(rows), 10)
+        self.assertEqual(len(rows), 12)
         self.assertEqual({row["ai"]["execution"] for row in rows}, {"NOT_RUN"})
         self.assertTrue(all(row["input_provenance"] == "synthetic" for row in rows))
 

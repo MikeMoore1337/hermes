@@ -624,6 +624,39 @@ SCENARIOS: dict[str, dict[str, object]] = {
             "active_codes": [],
         },
     },
+    "contradictory_state": {
+        "schema": INPUT_SCHEMA,
+        "incident_type": "systemd_timer_failure",
+        "source": "ops_watch",
+        "detected_at": "2026-10-15T12:10:00Z",
+        "service_state": "healthy",
+        "error_code": "SYSTEMD_RESULT_FAILED",
+        "repeat_count": 1,
+        "previous_similar": False,
+        "recovery_state": "active",
+        "technical_metadata": {
+            "component": "hermes-discovery.timer",
+            "environment": "synthetic",
+            "active_codes": ["timer_inactive"],
+            "timer_state": "inactive",
+        },
+    },
+    "unknown_error_code": {
+        "schema": INPUT_SCHEMA,
+        "incident_type": "insufficient_data",
+        "source": "ops_watch",
+        "detected_at": "2026-10-15T12:11:00Z",
+        "service_state": "unknown",
+        "error_code": "UNKNOWN_ERROR_CODE",
+        "repeat_count": 0,
+        "previous_similar": False,
+        "recovery_state": "unknown",
+        "technical_metadata": {
+            "component": "unknown",
+            "environment": "synthetic",
+            "active_codes": [],
+        },
+    },
     "invalid_input": {
         "schema": INPUT_SCHEMA,
         "incident_type": "systemd_timer_failure",
@@ -654,3 +687,19 @@ SCENARIOS: dict[str, dict[str, object]] = {
         },
     },
 }
+
+
+PILOT_OPS_SCENARIOS = (
+    "telegram_sender_down",
+    "systemd_timer_failed",
+    "notification_queue_stopped",
+    "provider_http_429",
+    "github_actions_failed",
+    "recovery_after_failure",
+    "multiple_incidents",
+    "healthy_no_publications",
+    "insufficient_data",
+    "contradictory_state",
+    "unknown_error_code",
+    "prompt_injection",
+)
