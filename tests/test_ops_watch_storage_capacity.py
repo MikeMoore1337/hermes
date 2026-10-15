@@ -69,6 +69,12 @@ class CapacityAuditTests(unittest.TestCase):
         with self.assertRaisesRegex(audit.StorageAuditDenied, "unsafe_directory"):
             self.check()
 
+    def test_hardlinked_database_is_rejected(self):
+        extra = self.root / "linked.db"
+        extra.hardlink_to(self.db)
+        with self.assertRaisesRegex(audit.StorageAuditDenied, "unsafe_database"):
+            self.check()
+
     def test_symlink_database_and_directory_are_rejected(self):
         self.db.rename(self.root / "real.db")
         self.db.symlink_to(self.root / "real.db")
