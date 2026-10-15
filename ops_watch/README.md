@@ -190,3 +190,8 @@ sudo systemctl disable --now hermes-ops-alerts.timer
 ### Ограничение каталогов при отправке
 
 Родительский `/var/lib/hermes-agent` защищён `0700` и принадлежит системному пользователю `hermes-agent`. Служба без дополнительных Linux capabilities не может пройти через этот каталог. Вместо выдачи `CAP_DAC_READ_SEARCH` systemd монтирует только очередь `/var/lib/hermes-agent/ops-watch` в изолированный `/run/hermes-ops-alerts/outbox` с помощью `BindPaths`, закрывая доступ к исходному каталогу с помощью `InaccessiblePaths`. Read-only диагностика в transient sandbox на VPS показала, что очередь доступна через ограниченный путь. Это не открывает полный каталог Hermes, не меняет права production DB и не даёт sender доступ к YFC.
+
+
+### Надёжная проверка восстановления
+
+[Процедура и факт восстановления исходного systemd unit](../docs/operations/H-02-SAFE-INCIDENT-TEST.md): не отключать и не останавливать активные критичные службы ради теста. При связанном unit `systemctl disable` удаляет и системную ссылку; ошибка 15.10.2026 восстановлена по исходному backup symlink. Новый офлайн-регрессионный сценарий проверяет событие `new` -> `resolved`, резервирование, ACK и защиту от повторов, не изменяя production и не выдавая синтетический инцидент за естественный.
