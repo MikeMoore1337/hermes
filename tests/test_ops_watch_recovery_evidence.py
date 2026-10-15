@@ -99,6 +99,21 @@ class RecordedRecoveryEvidenceTests(unittest.TestCase):
         with self.assertRaisesRegex(InputError, "evidence_receipt_invalid"):
             inspect_receipts(self.directory, code=CODE)
 
+    def test_same_telegram_message_id_cannot_prove_both_events(self):
+        self.confirmed_pair()
+        with sqlite3.connect(self.directory / DATABASE) as db:
+            db.execute("UPDATE delivery_receipts SET telegram_message_id=101 WHERE event_id=2")
+        with self.assertRaisesRegex(InputError, "evidence_receipt_invalid"):
+            inspect_receipts(self.directory, code=CODE)
+
+    def test_reversed_event_timestamps_cannot_prove_recovery(self):
+        self.confirmed_pair()
+        with sqlite3.connect(self.directory / DATABASE) as db:
+            db.execute("UPDATE events SET created_at=? WHERE id=2",
+                       ((NOW - timedelta(minutes=1)).isoformat(),))
+        with self.assertRaisesRegex(InputError, "evidence_receipt_invalid"):
+            inspect_receipts(self.directory, code=CODE)
+
     def test_hardlink_rejected_and_existing_history_unchanged(self):
         self.confirmed_pair()
         other = self.directory / "alias.sqlite3"
