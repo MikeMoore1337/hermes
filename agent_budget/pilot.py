@@ -391,15 +391,21 @@ def _research_prompt(draft: Mapping[str, object]) -> str:
     if len(payload.encode("utf-8")) > MAX_INPUT_BYTES:
         raise PilotError("research_input_oversize")
     if abstract_mode:
+        provenance = draft["abstract_source_provenance"]
+        sample = provenance["expected_sample_size"]
+        correction = provenance["expected_correction_status"]
         instruction = (
             "Ты - Research Scout Hermes. Ты получил только проверенные редактором "
             "краткие пересказы фактов из публичного реферата PubMed, НЕ полный текст "
             "исследования. Пиши текстовые поля по-русски. Для каждого заполненного "
             "научного поля приложи field_evidence: точные ID фактов F1-F8 из "
-            "public_abstract_facts; для UNKNOWN ссылки НЕ добавляй. Не выводи "
-            "общий размер выборки из количества 36 исследований: sample_size=UNKNOWN. "
-            "correction_status=UNKNOWN: отсутствие сведений об исправлениях не "
-            "означает, что исправлений нет. Не придумывай дозы, эффект, "
+            "public_abstract_facts; для UNKNOWN ссылки НЕ добавляй. "
+            "Используй sample_size строго " + str(sample) +
+            " и correction_status строго " + str(correction) +
+            " — оба значения проверены по источникам и должны оставаться "
+            "неизменными. Число исследований не равно числу людей. "
+            "Для случая с исправлением обязательно сослаться на F6/F7/F8 "
+            "и не скрывать факт исправления. Не придумывай дозы, эффект, "
             "причинность, полные тексты, DOI, диагнозы или клинические советы. "
             "Не выдавай систематический обзор за отдельное РКИ, а снижение "
             "мышечной болезненности - за доказанное восстановление силы. "
@@ -472,10 +478,18 @@ def validate_research_result(raw: str | Mapping[str, object], draft: Mapping[str
     if not abstract_mode and any(value[field] not in UNKNOWN_VALUES for field in RESEARCH_FIELDS):
         raise PilotError("metadata_only_scientific_claims_denied")
     if abstract_mode:
-        # The public abstract reports study count, not combined participant N.
-        # Its correction/retraction status has not been independently checked.
-        if value["sample_size"] not in UNKNOWN_VALUES or value["correction_status"] not in UNKNOWN_VALUES:
-            raise PilotError("abstract_sample_size_or_correction_unverified")
+        # Only the explicitly verified population N and publisher erratum status
+        # are allowed; a study count must never be used as a sample size.
+        constraints = draft["abstract_source_provenance"]
+        for field, name in (
+            ("sample_size", "expected_sample_size"),
+            ("correction_status", "expected_correction_status"),
+        ):
+            expected = constraints[name]
+            actual = value[field]
+            if ((expected == UNKNOWN and actual not in UNKNOWN_VALUES)
+                    or (expected != UNKNOWN and actual != expected)):
+                raise PilotError("abstract_sample_size_or_correction_unverified")
         links = value["field_evidence"]
         nonempty = {name for name in RESEARCH_FIELDS if value[name] not in UNKNOWN_VALUES}
         allowed_ids = set(draft["public_abstract_facts"])
@@ -486,6 +500,12 @@ def validate_research_result(raw: str | Mapping[str, object], draft: Mapping[str
                     or any(type(token) is not str or token not in allowed_ids for token in cited)
                     or len(set(cited)) != len(cited)):
                 raise PilotError("abstract_ungrounded_fact_id")
+        for field, requirement in (
+            ("sample_size", constraints["sample_size_citations"]),
+            ("correction_status", constraints["correction_citations"]),
+        ):
+            if requirement and not set(requirement).issubset(set(links.get(field, []))):
+                raise PilotError("abstract_required_source_citation_missing")
     identifiers = value["identifiers"]
     if type(identifiers) is not dict or set(identifiers) != {"record_id", "pmid", "doi"}:
         raise PilotError("research_identifiers_invalid")
@@ -506,8 +526,16 @@ def _research_quality(result: Mapping[str, object], draft: Mapping[str, object])
             "source_url_grounded": result["primary_sources"] == [draft["source_link"]],
             "fields_with_allowlisted_citations": len(result["field_evidence"]),
             "total_supported_facts": len(draft["public_abstract_facts"]),
-            "sample_size_not_invented": result["sample_size"] in UNKNOWN_VALUES,
-            "correction_status_not_invented": result["correction_status"] in UNKNOWN_VALUES,
+            "sample_size_grounded": (
+                result["sample_size"] == draft["abstract_source_provenance"]["expected_sample_size"]
+                or (draft["abstract_source_provenance"]["expected_sample_size"] == UNKNOWN
+                    and result["sample_size"] in UNKNOWN_VALUES)
+            ),
+            "correction_status_grounded": (
+                result["correction_status"] == draft["abstract_source_provenance"]["expected_correction_status"]
+                or (draft["abstract_source_provenance"]["expected_correction_status"] == UNKNOWN
+                    and result["correction_status"] in UNKNOWN_VALUES)
+            ),
             "semantic_accuracy": "NEEDS_EXPERT_REVIEW",
             "hallucination_count": "NOT_RELIABLY_COUNTED",
             "full_text_reviewed": False,
