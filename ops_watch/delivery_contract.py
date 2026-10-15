@@ -114,7 +114,12 @@ def claim_one(directory: Path, *, now: datetime) -> dict[str, Any] | None:
                         # Preserve chronological ordering; do not skip an unconfirmed event.
                         return None
                     if attempts >= MAX_ATTEMPTS:
-                        return None
+                        # Retain failed receipt and evidence permanently;
+                        # do not let one exhausted incident suppress all
+                        # subsequent alerts, including its own recovery.
+                        # The sender still reports an unhealthy queue until
+                        # an operator separately resolves the exhausted item.
+                        continue
                 else:
                     attempts = 0
                 token = secrets.token_hex(16)
