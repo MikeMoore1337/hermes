@@ -135,6 +135,22 @@ class DailyIntegrityGateTests(unittest.TestCase):
             with self.assertRaisesRegex(DigestError,"report_article_not_on_hold"):
                 save(report,path)
 
+    def test_invalid_doi_is_refused_before_crossref_or_article_requests(self):
+        def poisoned(topic, *, now):
+            result=finder(topic, now=now)
+            if result["candidates"]:
+                result["candidates"][0]["doi"]="file:///etc/shadow"
+            return result
+        cross=Mock()
+        article_check=Mock()
+        report=prepare(now=NOW,searcher=poisoned,doi_verifier=cross,
+                       integrity_verifier=article_check)
+        cross.assert_not_called()
+        article_check.assert_not_called()
+        self.assertEqual(report["status"],"HOLD")
+        self.assertEqual(report["errors"][0]["reason"],"source_unknown")
+        self.assertEqual(report["requests_attempted"],3)
+
     def test_existing_callers_remain_offline_without_integrity_opt_in(self):
         network=Mock()
         report=prepare(now=NOW,searcher=finder,doi_verifier=crossref)
