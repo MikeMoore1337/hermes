@@ -230,6 +230,32 @@
         "no_publication"
       ],
       "issue": "https://github.com/MikeMoore1337/hermes/issues/4"
+    },
+    {
+      "id": "crossref-public-doi",
+      "kind": "api",
+      "decision": "GO",
+      "purpose": "One bounded public DOI registration cross-check for manual Europe PMC review",
+      "documentation": "https://www.crossref.org/documentation/retrieve-metadata/rest-api/access-and-authentication/",
+      "license": "official_api_terms",
+      "verified_on": "2026-10-15",
+      "verified_status": "checked",
+      "billing": "zero_guaranteed",
+      "card_requirement": "none",
+      "credentials": "none",
+      "data_scope": "public_metadata",
+      "side_effect": "read_only",
+      "hosts": [
+        "api.crossref.org"
+      ],
+      "owner_approved": true,
+      "permissions": [],
+      "reasons": [
+        "vps_https_doi_metadata_match_pass",
+        "one_lookup_per_daily_digest",
+        "no_publication_or_scientific_claims"
+      ],
+      "issue": "https://github.com/MikeMoore1337/hermes/issues/4"
     }
   ]
 }

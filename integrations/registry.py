@@ -45,6 +45,9 @@ APPROVED_GO_CONTRACTS = {
     "github-yfc-public-actions": (
         "api", ("api.github.com",), "read_only", "public_metadata", (), "none",
     ),
+    "crossref-public-doi": (
+        "api", ("api.crossref.org",), "read_only", "public_metadata", (), "none",
+    ),
     "europe-pmc-manual": (
         "api", ("www.ebi.ac.uk",), "read_only", "public_metadata", (), "none",
     ),

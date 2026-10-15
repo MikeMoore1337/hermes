@@ -34,11 +34,12 @@ class IntegrationRegistryTests(unittest.TestCase):
 
     def test_real_registry_is_offline_and_fail_closed(self):
         entries = load()
-        self.assertEqual(len(entries), 9)
+        self.assertEqual(len(entries), 10)
         self.assertEqual(
             {x["id"] for x in entries if x["decision"] == "GO"},
             {"local-evidence-parser", "github-yfc-public-actions",
-             "github-hermes-private-actions", "telegram-ops-watch-owner", "europe-pmc-manual"},
+             "github-hermes-private-actions", "telegram-ops-watch-owner", "europe-pmc-manual",
+             "crossref-public-doi"},
         )
         self.assertEqual(sum(x["decision"] == "DEFER" for x in entries), 3)
         self.assertEqual(sum(x["decision"] == "REJECT" for x in entries), 1)
