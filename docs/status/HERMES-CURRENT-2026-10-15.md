@@ -80,3 +80,8 @@
 ### Выборочная байтовая сверка шести upstream-файлов в v0.22.1
 
 [Акт](../audits/H-01-v0221-six-source-blobs-2026-10-15.md): шесть файлов ограничений инструментов, учёта расходов, fallback и CLI внутри offline pinned AMD64 образа побайтно совпали с Git blob SHA-1 официального source commit v0.22.1. Две записи `hermes-agent` physical samefile/inode - один каталог dist-info. Повторяемый offline verifier возвращает exit 2 и `resident_agent_allowed=false`, даже при всех MATCH; 583 owner offline тестов PASS. **Это не supplier attestation, не вся source parity или verified SBOM; resident Agent NO-GO**.
+
+
+### Проверены байты 1410 core Python файлов в pinned Docker v0.22.1
+
+[Акт H-01](../audits/H-01-v0221-core-python-parity-2026-10-15.md): на отдельном Docker Desktop сверены Git blob SHA-1 и размеры **1410/1410** Python-файлов из `agent/`, `gateway/`, `hermes_cli/`, `hermes_platform/`, `providers/` с официальным исходным деревом commit `297552a9...`; missing/extra/different = **0/0/0** в этой области. Более широкий кодовый охват, но **не** полная source/build/image attestation или SBOM. `tools/` и прочие бинарные компоненты ещё не проверены; постоянный Agent **NO-GO**. Рабочий VPS не изменялся.
