@@ -136,6 +136,15 @@ class CoreSourceParityTests(unittest.TestCase):
             with self.assertRaisesRegex(audit.ParityDenied, "manifest_identity_invalid"):
                 audit.load_manifest(path)
 
+    def test_symlinked_manifest_is_rejected_without_following(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            link = root / "alias.json"
+            link.symlink_to(audit.MANIFEST)
+            with self.assertRaisesRegex(audit.ParityDenied,
+                                        "manifest_missing_or_symlink"):
+                audit.load_manifest(link)
+
     def test_cli_keeps_exit_code_two_even_when_bytes_match(self):
         passing = audit.compare(self.manifest, packet(rows(self.manifest)))
         with patch.object(audit, "observe", return_value=passing):
