@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from scripts.verify_upstream_release_receipt import (
-    RECEIPT_DIGEST, RECEIPT_REF, VERSION_TAG,
+    RECEIPT_DIGEST, RECEIPT_REF, VERSION_TAG, RELEASES,
     ReceiptDenied, check_once, classify, commands, main, read_arches,
 )
 
@@ -37,6 +37,45 @@ def manifest(arches=None):
 
 
 class ReceiptGateContracts(unittest.TestCase):
+    def test_newest_rc5_signed_claim_and_exact_registry_receipt(self):
+        expected="sha256:861c9756ed6c558530c73d5c27860343b00c0d5efd6997a1d8ec6416c8a2b485"
+        arches={
+            "amd64":"sha256:cd9cb455576d27c9b6311de1104494ad7e221b6e68dc77e9ac2a8af661a4dc21",
+            "arm64":"sha256:f24de2fd617c0bef83a8fcec4cda996aaa463705f8097e62ec4fb60eb2618d6b",
+        }
+        self.assertEqual(RELEASES["v0.22.1"]["receipt"],expected)
+        self.assertTrue(RELEASES["v0.22.1"]["claim_tag_signature_verified"])
+        self.assertIsNone(RELEASES["v0.22.1"]["claim_skip_tests"])
+        result=classify(expected,arches,arches,release="v0.22.1")
+        self.assertEqual(result["status"],"MATCHED_BUT_PROVENANCE_UNVERIFIED")
+        self.assertTrue(result["manifest_digest_equal"])
+        self.assertTrue(result["architecture_manifests_equal"])
+        self.assertTrue(result["claim_tag_signature_verified"])
+        self.assertFalse(result["supplier_signature_verified"])
+        self.assertFalse(result["resident_agent_allowed"])
+        self.assertEqual(result["release_commit"],
+            "297552a9d646119871391d202509822cd86330df")
+
+    def test_new_candidate_does_only_three_fixed_registry_reads(self):
+        paths=commands("v0.22.1")
+        self.assertEqual(len(paths),3)
+        self.assertEqual(paths[0][4],"nousresearch/hermes-agent:v0.22.1")
+        self.assertEqual(paths[1][-1],"--raw")
+        self.assertIn(RELEASES["v0.22.1"]["receipt"],paths[2][4])
+        for path in paths:
+            self.assertEqual(path[:4],("docker","buildx","imagetools","inspect"))
+            self.assertNotIn("pull",path)
+            self.assertNotIn("run",path)
+            self.assertNotIn("push",path)
+
+    def test_release_is_strict_allowlist(self):
+        for release in ("latest", ":main", "v0.22.2", "../secret", None, 1, []):
+            with self.subTest(release=repr(release)):
+                with self.assertRaisesRegex(ReceiptDenied,"release_not_allowlisted"):
+                    commands(release)
+                with self.assertRaisesRegex(ReceiptDenied,"release_not_allowlisted"):
+                    classify(CURRENT,CURRENT_ARCHES,RECEIPT_ARCHES,release=release)
+
     def test_real_observed_mismatch_never_permits_agent(self):
         report = classify(CURRENT, CURRENT_ARCHES, RECEIPT_ARCHES)
         self.assertEqual(report["status"], "RELEASE_RECEIPT_MISMATCH")
