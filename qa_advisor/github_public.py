@@ -72,7 +72,7 @@ def _private_token(path: Path) -> str:
 
 def get_json(path: str, *, opener: Any = None, token: str | None = None) -> dict[str, Any]:
     if not re.fullmatch(
-        r"/repos/MikeMoore1337/(?:hermes|your-fitness-coach)/actions/runs\?per_page=3",
+        r"/repos/MikeMoore1337/(?:hermes|your-fitness-coach)/actions/runs\?(?:branch=main&)?per_page=3",
         path,
     ):
         raise GithubPublicError("endpoint_not_allowlisted")
@@ -129,13 +129,17 @@ def get_json(path: str, *, opener: Any = None, token: str | None = None) -> dict
 
 def public_runs(
     repo: str, *, opener: Any = None, token_file: Path = TOKEN_FILE,
+    branch: str | None = None,
 ) -> list[dict[str, Any]]:
     """Whitelist public REST fields before passing into the offline analyzer."""
     if repo not in ALLOWED_REPOS:
         raise GithubPublicError("repository_not_allowlisted")
+    if branch is not None and (repo != PRIVATE_REPO or type(branch) is not str or branch != "main"):
+        raise GithubPublicError("branch_not_allowlisted")
     token = _private_token(token_file) if repo == PRIVATE_REPO else None
+    query = "branch=main&per_page=3" if branch == "main" else "per_page=3"
     data = get_json(
-        f"/repos/{repo}/actions/runs?per_page=3", opener=opener, token=token
+        f"/repos/{repo}/actions/runs?{query}", opener=opener, token=token
     )
     incoming = data.get("workflow_runs")
     if not isinstance(incoming, list) or len(incoming) > MAX_RUNS:
