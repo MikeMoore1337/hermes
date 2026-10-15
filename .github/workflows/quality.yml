@@ -21,5 +21,7 @@ jobs:
         run: python3 scripts/validate_repo.py
       - name: Verify local policy index and canonical target files
         run: python3 scripts/check_policy_index.py
+      - name: Verify local Markdown references (offline)
+        run: python3 scripts/check_markdown_links.py
       - name: Unit tests
         run: python3 -m unittest discover -s tests -v
