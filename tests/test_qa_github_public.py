@@ -164,7 +164,7 @@ class ReadonlyGithubAPITests(unittest.TestCase):
         )
         with self.assertRaises(GithubPublicError) as error:
             public_runs("MikeMoore1337/your-fitness-coach", opener=client)
-        self.assertEqual(str(error.exception), "public_rate_limited_or_denied")
+        self.assertEqual(str(error.exception), "github_forbidden_or_rate_limited")
         self.assertNotIn("SECRET_TOKEN", str(error.exception))
 
     def test_inconsistent_http_200_schema_is_refused(self):
