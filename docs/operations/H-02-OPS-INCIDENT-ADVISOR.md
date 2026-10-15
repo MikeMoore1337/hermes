@@ -145,11 +145,82 @@ owner-approved пилот после подтверждения #62 и сохр�
 
 Приоритет следующих функциональных задач:
 
-1. Подключить только подтверждённый read-only адаптер события Ops Watch к этому
-   контракту, не перенося сборщик и не включая отправку.
+1. Провести owner review/merge PR с read-only адаптером; этот документ не
+   разрешает подключение production snapshot или отправку.
 2. Выполнить один owner-approved `LIVE_FREE_VERIFIED` пилот Cloudflare с теми же
    лимитами и сравнением с правилами.
 3. Добавить измерение реальных операторских решений по нескольким инцидентам;
    не считать синтетические сценарии real-user evidence.
 
 Постоянный Hermes Agent и Issue #33 остаются `OPEN / NO-GO`.
+
+## Read-only адаптер фактических Ops Watch событий
+
+`ops_watch.advisor_adapter` читает только уже существующий локальный snapshot
+`incidents.sqlite3` через `state_store.inspect`. Он не создаёт базу, не пишет
+события, не ACK-ает очередь, не отправляет Telegram и не выбирает production
+каталог автоматически. Каждая запись повторно проверяется по фиксированному
+каталогу `INCIDENT_CODES`, заголовку, действию, фазе, severity и timestamp.
+
+Проверка локальной read-only копии (без модели):
+
+```bash
+python3 -m scripts.ops_incident_advisor \
+  --ops-watch-db ./local-ops-watch-snapshot \
+  --provenance readonly_snapshot \
+  --event-id 123 \
+  --engine offline --json
+```
+
+Восстановленное событие получает `RULES_ONLY`; повторяющееся или контекстно
+сложное событие получает `ADVISOR_CANDIDATE`. Недоступная, неизвестная или
+подменённая запись получает безопасный отказ. `anonymized_copy` и `synthetic`
+разрешены только как явные метки происхождения; они не становятся
+production/real-user evidence.
+
+## Базовые правила и bounded runtime
+
+Для subprocess используется bounded helper из PR #132: stdout ограничен 64 KiB,
+stderr 16 KiB, wall-clock 45 секунд, дерево процесса завершается при timeout,
+а наружу выходит только санитизированный код ошибки. Финальный Advisor output
+остаётся ограничен 32 KiB. Семантический валидатор дополнительно запрещает
+несовместимый с событием status, завышенный priority, `low` uncertainty при
+неподтверждённой причине, неподтверждённые claims о влиянии и диагностические
+действия с restart/deploy/send/delete.
+
+Эти проверки измеряют детерминированные инварианты и происхождение evidence,
+но не качество настоящей модели: `expert_review=NOT_RUN` и
+`llm_quality=NOT_RUN` сохраняются.
+
+## Performance smoke, 15.10.2026
+
+Измерялся внешний wall-clock команды для одного синтетического сценария
+`provider_http_429`; внутренние этапы отдельно пока не инструментированы.
+
+| Прогон | Результат | Время | Model calls |
+| --- | --- | ---: | ---: |
+| Offline matrix, 12 cases | PASS, 10 accepted + 2 rejected | 0.182 s | 0 |
+| Docker cold | `child_timeout` | 45.393 s | unknown |
+| Docker warm 1 | PASS | 35.304 s | 1 |
+| Docker warm 2 | PASS | 34.141 s | 1 |
+| Docker warm 3 | PASS | 34.801 s | 1 |
+
+Успешная медиана трёх warm-прогонов — 34.801 с; cold timeout не является
+успехом и не скрывается. Отдельные стадии `input preparation`, staging/temp
+config, Hermes init, mock provider, response handling и cleanup имеют статус
+`NOT_INSTRUMENTED`; замер Docker-команды включает их суммарно. По этим данным
+ускорение относительно прежнего единичного сэмпла 35.62 с не доказано:
+выборка мала, а cold запуск упёрся в лимит. Это не load test и не production
+SLO.
+
+## Сравнение с детерминированными правилами
+
+```bash
+python3 -m scripts.ops_incident_advisor --compare --engine offline --json
+```
+
+Команда сравнивает 10 валидных synthetic cases; invalid/prompt-injection
+cases в сравнительную матрицу не включаются. При `offline` используется только
+локальный mock path, поэтому строки помечаются `MOCK_ONLY`, а практическая
+ценность AI — `NOT_PROVEN`; live provider и операторская оценка остаются
+`NOT_RUN`.

@@ -18,6 +18,7 @@ from ops_watch.incident_advisor import (
     prepare_context,
     validate_result,
 )
+from scripts.bounded_subprocess import BoundedProcessError
 from scripts.ops_incident_advisor import _stage_files, docker_command, run_event
 
 
@@ -67,6 +68,45 @@ class IncidentAdvisorTests(unittest.TestCase):
         with self.assertRaisesRegex(AdvisorOutputError, "unsafe_output_claim"):
             validate_result(result, context)
 
+    def test_status_and_priority_cannot_contradict_input(self) -> None:
+        context = prepare_context(SCENARIOS["healthy_no_publications"])
+        result = mock_result(context)
+        result["status"] = "active"
+        with self.assertRaisesRegex(AdvisorOutputError, "status_conflicts_with_event"):
+            validate_result(result, context)
+
+        result = mock_result(context)
+        result["priority"] = "critical"
+        with self.assertRaisesRegex(AdvisorOutputError, "priority_overstates_event"):
+            validate_result(result, context)
+
+    def test_unconfirmed_cause_cannot_claim_low_uncertainty(self) -> None:
+        context = prepare_context(SCENARIOS["provider_http_429"])
+        result = mock_result(context)
+        result["probable_cause"]["uncertainty"] = "low"
+        with self.assertRaisesRegex(AdvisorOutputError, "cause_not_confirmed_by_event"):
+            validate_result(result, context)
+
+    def test_semantic_guard_does_not_require_fixed_mock_wording(self) -> None:
+        context = prepare_context(SCENARIOS["provider_http_429"])
+        result = mock_result(context)
+        result["what_happened"] = "Зафиксировано ограничение провайдера."
+        result["impact"] = "Возможна задержка обработки."
+        result["probable_cause"] = {
+            "summary": "Причина по входным данным не установлена.",
+            "uncertainty": "high",
+        }
+        result["checks"] = ["Сверить окно ограничения без нового запроса."]
+        result["recommendation"] = "Проверить сигнал операционно; автоматических действий не делать."
+        self.assertEqual(validate_result(result, context)["status"], "active")
+
+    def test_unsafe_diagnostic_action_is_rejected(self) -> None:
+        context = prepare_context(SCENARIOS["provider_http_429"])
+        result = mock_result(context)
+        result["checks"] = ["Перезапустить провайдер"]
+        with self.assertRaisesRegex(AdvisorOutputError, "unsafe_diagnostic_check"):
+            validate_result(result, context)
+
     def test_offline_engine_runs_the_same_contract_without_claiming_agent_execution(self) -> None:
         result = run_event(
             SCENARIOS["github_actions_failed"],
@@ -108,15 +148,38 @@ class IncidentAdvisorTests(unittest.TestCase):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, command.lower())
 
-    @patch("scripts.ops_incident_advisor.subprocess.run")
+    @patch("scripts.ops_incident_advisor.run_bounded")
     def test_docker_runner_requires_one_mock_request(self, runner) -> None:
         runner.return_value.returncode = 0
-        runner.return_value.stdout = '{}\n__MOCK_REQUESTS__:2\n'
-        runner.return_value.stderr = ""
+        runner.return_value.stdout = b'{}\n__MOCK_REQUESTS__:2\n'
+        runner.return_value.stderr = b""
         with self.assertRaisesRegex(RuntimeError, "model_call_budget_violation"):
             from scripts.ops_incident_advisor import _run_docker
 
             _run_docker(prepare_context(SCENARIOS["provider_http_429"]), "mock-image")
+
+    @patch("scripts.ops_incident_advisor.run_bounded")
+    def test_docker_runner_exposes_only_sanitized_bounded_error(self, runner) -> None:
+        runner.side_effect = BoundedProcessError("output_limit_exceeded")
+        from scripts.ops_incident_advisor import _run_docker
+
+        with self.assertRaisesRegex(RuntimeError, "output_limit_exceeded") as caught:
+            _run_docker(prepare_context(SCENARIOS["provider_http_429"]), "mock-image")
+        self.assertNotIn("SECRET", str(caught.exception))
+
+    @patch("scripts.ops_incident_advisor.run_bounded")
+    def test_docker_runner_passes_stdout_stderr_and_wall_clock_limits(self, runner) -> None:
+        runner.return_value.returncode = 1
+        runner.return_value.stdout = b'{}\n__MOCK_REQUESTS__:1\n'
+        runner.return_value.stderr = b""
+        from scripts.ops_incident_advisor import _run_docker
+
+        with self.assertRaisesRegex(RuntimeError, "agent_process_failed"):
+            _run_docker(prepare_context(SCENARIOS["provider_http_429"]), "mock-image")
+        kwargs = runner.call_args.kwargs
+        self.assertEqual(kwargs["timeout"], 45)
+        self.assertEqual(kwargs["stdout_limit"], 64 * 1024)
+        self.assertEqual(kwargs["stderr_limit"], 16 * 1024)
 
 
 if __name__ == "__main__":

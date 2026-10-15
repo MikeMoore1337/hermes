@@ -40,6 +40,9 @@ INCIDENT_TYPES = frozenset(
         "github_actions_failure",
         "insufficient_data",
         "multiple_incidents",
+        "monitoring_stale",
+        "service_health_failure",
+        "network_guard_failure",
     }
 )
 SOURCES = frozenset(
@@ -85,6 +88,25 @@ SENSITIVE_OUTPUT = re.compile(
     r"(?:bearer\s+|api[_-]?key|private[_-]?key|password\s*=|secret\s*=|token\s*=)",
     re.IGNORECASE,
 )
+CAUSE_CERTAINTY = re.compile(
+    r"(?:\b(?:certainly|definitely|proven|established)\b|"
+    r"\bточно\b|(?<!не\s)\b(?:доказан\w*|установлен\w*)\b)",
+    re.IGNORECASE,
+)
+OVERSTATED_IMPACT = re.compile(
+    r"(?:\bвсе\s+(?:пользовател\w*|данн\w*)\b|"
+    r"потер\w*\s+данн\w*|полност\w*\s+недоступ\w*|"
+    r"\b(?:guaranteed|all users|data loss)\b)",
+    re.IGNORECASE,
+)
+UNSAFE_CHECK = re.compile(
+    r"(?:\b(?:ssh|curl|docker|sudo)\b|"
+    r"systemctl\s+(?:start|stop|restart|enable|disable)|"
+    r"\b(?:перезапустить|перезапусти|развернуть|разверни|удалить|удали|"
+    r"опубликовать|опубликуй|отправить|отправь|выполнить\s+команду)\b)",
+    re.IGNORECASE,
+)
+PRIORITY_RANK = {"low": 0, "medium": 1, "high": 2, "critical": 3}
 
 
 class AdvisorInputError(ValueError):
@@ -264,10 +286,13 @@ def parse_result(raw: str) -> dict[str, object]:
 
 
 def validate_result(raw: str | Mapping[str, Any], context: Mapping[str, object]) -> dict[str, object]:
-    """Validate shape, evidence provenance and the no-side-effect contract."""
+    """Validate provenance, deterministic invariants and no-side-effect claims."""
     value = parse_result(raw) if isinstance(raw, str) else dict(raw)
     if set(value) != OUTPUT_KEYS:
         raise AdvisorOutputError("unexpected_output_fields")
+    incident = context.get("incident")
+    if not isinstance(incident, dict):
+        raise AdvisorOutputError("invalid_context_incident")
     cause = value["probable_cause"]
     if type(cause) is not dict or set(cause) != {"summary", "uncertainty"}:
         raise AdvisorOutputError("invalid_output_probable_cause")
@@ -290,6 +315,21 @@ def validate_result(raw: str | Mapping[str, Any], context: Mapping[str, object])
         "priority": _choice(value["priority"], "priority", PRIORITIES),
         "status": _choice(value["status"], "status", STATUSES),
     }
+    expected_status = _status_for(incident)
+    if result["status"] != expected_status:
+        raise AdvisorOutputError("status_conflicts_with_event")
+    expected_priority = _priority_for(incident, expected_status)
+    if PRIORITY_RANK[result["priority"]] > PRIORITY_RANK[expected_priority]:
+        raise AdvisorOutputError("priority_overstates_event")
+    if result["probable_cause"]["uncertainty"] == "low":
+        raise AdvisorOutputError("cause_not_confirmed_by_event")
+    if CAUSE_CERTAINTY.search(result["probable_cause"]["summary"]):
+        raise AdvisorOutputError("cause_claims_unproven_certainty")
+    if (incident["service_state"] != "unhealthy"
+            and OVERSTATED_IMPACT.search(result["impact"])):
+        raise AdvisorOutputError("impact_overstates_event")
+    if any(UNSAFE_CHECK.search(check) for check in result["checks"]):
+        raise AdvisorOutputError("unsafe_diagnostic_check")
     return result
 
 
@@ -387,14 +427,31 @@ def evaluate_result(context: Mapping[str, object], result: Mapping[str, object])
     """Small factual rubric for the mock experiment; no LLM quality claim."""
     catalog = context["evidence_catalog"]
     evidence = result["evidence"]
-    expected = mock_result(context)
+    incident = context["incident"]
+    expected_status = _status_for(incident)
+    expected_priority = _priority_for(incident, expected_status)
+    invariants = {
+        "status_consistent": result["status"] == expected_status,
+        "priority_not_overstated": (
+            PRIORITY_RANK[result["priority"]] <= PRIORITY_RANK[expected_priority]
+        ),
+        "cause_uncertainty_explicit": result["probable_cause"]["uncertainty"] != "low",
+        "evidence_from_input": set(evidence).issubset(set(catalog)),
+        "diagnostic_checks_safe": not any(
+            UNSAFE_CHECK.search(check) for check in result["checks"]
+        ),
+    }
     return {
         "structure": True,
         "evidence_completeness": round(len(set(evidence) & set(catalog)) / len(catalog), 3),
         "unsupported_evidence": [],
         "useful_recommendation": bool(result["checks"] and result["recommendation"]),
-        "reference_status_match": result["status"] == expected["status"],
-        "reference_priority_match": result["priority"] == expected["priority"],
+        "reference_status_match": invariants["status_consistent"],
+        "reference_priority_match": invariants["priority_not_overstated"],
+        "deterministic_invariants": invariants,
+        "deterministic_quality": "PASS" if all(invariants.values()) else "FAIL",
+        "evidence_completeness_is_not_model_quality": True,
+        "expert_review": "NOT_RUN",
         "llm_quality": "NOT_RUN",
     }
 

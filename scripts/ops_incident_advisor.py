@@ -5,7 +5,6 @@ import argparse
 import json
 import re
 import shutil
-import subprocess
 import sys
 import tempfile
 import time
@@ -21,10 +20,19 @@ from ops_watch.incident_advisor import (
     prepare_context,
     validate_result,
 )
+from ops_watch.advisor_comparison import compare_scenarios
+from ops_watch.advisor_adapter import (
+    AdvisorAdapterError,
+    read_events,
+    rules_assessment as adapter_rules_assessment,
+)
+from scripts.bounded_subprocess import BoundedProcessError, run_bounded
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_IMAGE = "hermes-agent-v0221-native-tool-policy:20261015"
 MAX_INPUT_BYTES = 16_384
+MAX_STDOUT_BYTES = 64 * 1024
+MAX_STDERR_BYTES = 16 * 1024
 MAX_RUNTIME_SECONDS = 45
 MOCK_MARKER = "__MOCK_REQUESTS__:"
 EXPECTED_REJECTIONS = frozenset({"invalid_input", "prompt_injection"})
@@ -140,21 +148,21 @@ def _run_docker(context: dict[str, object], image: str) -> tuple[str, int, float
     with tempfile.TemporaryDirectory(prefix="hermes-incident-advisor-") as raw_directory:
         staging = Path(raw_directory)
         _stage_files(staging)
+        if shutil.which("docker") is None:
+            raise AdvisorRuntimeError("docker_unavailable")
         try:
-            completed = subprocess.run(
+            completed = run_bounded(
                 docker_command(staging, image, prompt),
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
                 timeout=MAX_RUNTIME_SECONDS,
-                check=False,
+                stdout_limit=MAX_STDOUT_BYTES,
+                stderr_limit=MAX_STDERR_BYTES,
             )
-        except FileNotFoundError as exc:
-            raise AdvisorRuntimeError("docker_unavailable") from exc
-        except subprocess.TimeoutExpired as exc:
-            raise AdvisorRuntimeError("agent_time_budget") from exc
-    output = completed.stdout
+        except BoundedProcessError as exc:
+            raise AdvisorRuntimeError(str(exc)) from None
+    try:
+        output = completed.stdout.decode("utf-8", "strict")
+    except UnicodeError:
+        raise AdvisorRuntimeError("invalid_agent_output_encoding") from None
     if MOCK_MARKER not in output:
         raise AdvisorRuntimeError("mock_request_count_unknown")
     raw_response, raw_count = output.rsplit(MOCK_MARKER, 1)
@@ -241,12 +249,55 @@ def main() -> int:
     group.add_argument("--scenario", choices=sorted(SCENARIOS))
     group.add_argument("--input", type=Path)
     group.add_argument("--all", action="store_true")
+    group.add_argument("--compare", action="store_true")
+    group.add_argument("--ops-watch-db", type=Path)
     parser.add_argument("--engine", choices=("docker", "offline"), default="docker")
     parser.add_argument("--image", default=DEFAULT_IMAGE)
+    parser.add_argument(
+        "--provenance",
+        choices=("synthetic", "anonymized_copy", "readonly_snapshot"),
+        default="readonly_snapshot",
+    )
+    parser.add_argument("--event-id", type=int)
     parser.add_argument("--json", action="store_true", dest="as_json")
     args = parser.parse_args()
 
-    if args.input:
+    if args.compare:
+        rows = compare_scenarios(include_mock=args.engine == "offline")
+        if args.as_json:
+            print(json.dumps(rows, ensure_ascii=False, sort_keys=True))
+        else:
+            for row in rows:
+                print(json.dumps(row, ensure_ascii=False, sort_keys=True))
+        return 0
+    if args.ops_watch_db:
+        try:
+            adapted = read_events(
+                args.ops_watch_db,
+                provenance=args.provenance,
+                event_id=args.event_id,
+            )
+            payloads = []
+            for item in adapted:
+                scenario = f"ops_watch_event_{item['event_id']}"
+                if item["analysis"]["decision"] == "RULES_ONLY":
+                    payloads.append({
+                        "status": "rules_only",
+                        "scenario": scenario,
+                        "provenance": item["provenance"],
+                        "analysis": item["analysis"],
+                        "rules": adapter_rules_assessment(item),
+                    })
+                else:
+                    payload = _one(scenario, item["event"], args.engine, args.image)
+                    payload["provenance"] = item["provenance"]
+                    payload["analysis"] = item["analysis"]
+                    payloads.append(payload)
+        except AdvisorAdapterError as exc:
+            payloads = [{
+                "status": "rejected", "scenario": "ops_watch", "reason": str(exc),
+            }]
+    elif args.input:
         try:
             payloads = [
                 _one(
@@ -280,7 +331,7 @@ def main() -> int:
             or (item["status"] == "rejected" and item.get("scenario") not in EXPECTED_REJECTIONS)
         ]
         return 1 if unexpected else 0
-    return 0 if payloads[0]["status"] == "ok" else 2
+    return 0 if payloads[0]["status"] in {"ok", "rules_only"} else 2
 
 
 if __name__ == "__main__":

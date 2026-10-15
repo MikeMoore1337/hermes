@@ -1,0 +1,209 @@
+"""Read-only projection from the existing Ops Watch SQLite event journal.
+
+This module never creates a database, acknowledges an event, changes the
+queue, sends a message, or reads production by default. Callers must provide
+an explicit local snapshot directory.
+"""
+from __future__ import annotations
+
+from collections import Counter
+from collections.abc import Mapping
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+from .core import INCIDENT_CODES, InputError
+from .incident_advisor import INPUT_SCHEMA, prepare_context
+from .incident_preview import ACTIONS, CRITICAL, TITLES
+from .state_store import inspect
+
+ADAPTER_SCHEMA = "hermes-ops-watch-advisor-event-v1"
+MAX_EVENTS = 50
+PROVENANCES = frozenset({"synthetic", "anonymized_copy", "readonly_snapshot"})
+
+# The source journal stores stable incident codes, not free-form root causes.
+CODE_MAPPING: dict[str, tuple[str, str, str, str]] = {
+    "snapshot_stale": ("monitoring_stale", "SNAPSHOT_STALE", "unknown", "ops-monitor"),
+    "timer_disabled": ("systemd_timer_failure", "SYSTEMD_TIMER_DISABLED", "unhealthy", "news-timer"),
+    "timer_inactive": ("systemd_timer_failure", "SYSTEMD_TIMER_INACTIVE", "unhealthy", "news-timer"),
+    "discovery_stalled": ("systemd_timer_failure", "DISCOVERY_STALLED", "degraded", "news-discovery"),
+    "discovery_failures": ("systemd_timer_failure", "SYSTEMD_RESULT_FAILED", "unhealthy", "news-discovery"),
+    "drain_failures": ("notification_queue_stopped", "QUEUE_DRAIN_FAILURE", "degraded", "ops-outbox"),
+    "outbox_backlog": ("notification_queue_stopped", "QUEUE_BACKLOG", "degraded", "ops-outbox"),
+    "outbox_oldest": ("notification_queue_stopped", "QUEUE_AGE_LIMIT", "degraded", "ops-outbox"),
+    "provider_rate_limited": ("provider_rate_limited", "HTTP_429", "degraded", "provider"),
+    "telegram_polling_down": ("service_health_failure", "TELEGRAM_POLLING_DOWN", "unhealthy", "telegram-polling"),
+    "backend_unhealthy": ("service_health_failure", "BACKEND_UNHEALTHY", "unhealthy", "backend"),
+    "worker_unhealthy": ("service_health_failure", "WORKER_UNHEALTHY", "degraded", "worker"),
+    "ci_failed": ("github_actions_failure", "CI_FAILURE", "degraded", "github-actions"),
+    "deploy_failed": ("github_actions_failure", "DEPLOY_FAILURE", "unhealthy", "github-actions"),
+    "agent_guard_missing": ("network_guard_failure", "GUARD_MISSING", "unhealthy", "network-guard"),
+    "agent_guard_disabled": ("network_guard_failure", "GUARD_DISABLED", "degraded", "network-guard"),
+    "agent_guard_inactive": ("network_guard_failure", "GUARD_INACTIVE", "unhealthy", "network-guard"),
+    "alert_sender_missing": ("telegram_sender_failure", "ALERT_SENDER_MISSING", "unhealthy", "alert-sender"),
+    "alert_sender_disabled": ("telegram_sender_failure", "ALERT_SENDER_DISABLED", "unhealthy", "alert-sender"),
+    "alert_sender_inactive": ("telegram_sender_failure", "ALERT_SENDER_INACTIVE", "unhealthy", "alert-sender"),
+    "alert_sender_failed": ("telegram_sender_failure", "TELEGRAM_SEND_TIMEOUT", "unhealthy", "alert-sender"),
+}
+
+
+class AdvisorAdapterError(ValueError):
+    """Sanitized refusal for an unavailable or malformed read-only source."""
+
+
+def _timestamp(value: Any) -> str:
+    if type(value) is not str or len(value) > 40:
+        raise AdvisorAdapterError("event_timestamp_invalid")
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        raise AdvisorAdapterError("event_timestamp_invalid") from None
+    if parsed.tzinfo is None:
+        raise AdvisorAdapterError("event_timestamp_invalid")
+    return parsed.astimezone(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _row(row: Mapping[str, Any]) -> dict[str, Any]:
+    if not isinstance(row, dict) or set(row) != {
+        "id", "fingerprint", "phase", "severity", "title", "action", "created_at",
+    }:
+        raise AdvisorAdapterError("event_record_invalid")
+    event_id = row["id"]
+    if type(event_id) is not int or event_id <= 0:
+        raise AdvisorAdapterError("event_record_invalid")
+    fingerprint = row["fingerprint"]
+    if (type(fingerprint) is not str or not fingerprint.startswith("ops:")
+            or fingerprint[4:] not in INCIDENT_CODES):
+        raise AdvisorAdapterError("unknown_event_code")
+    code = fingerprint[4:]
+    expected_title = TITLES[code]
+    expected_action = ACTIONS[code]
+    phase = row["phase"]
+    expected_severity = (
+        "critical" if code in CRITICAL else "warning"
+    )
+    if phase == "resolved":
+        expected_title = "Восстановлено: " + expected_title
+        expected_action = "Дополнительные действия не требуются"
+        expected_severity = "resolved"
+    if (phase not in {"new", "resolved"} or row["severity"] != expected_severity
+            or row["title"] != expected_title or row["action"] != expected_action):
+        raise AdvisorAdapterError("event_record_invalid")
+    return {
+        "id": event_id,
+        "code": code,
+        "phase": phase,
+        "created_at": _timestamp(row["created_at"]),
+    }
+
+
+def _analysis_decision(code: str, phase: str, repeat_count: int) -> dict[str, str]:
+    if phase == "resolved":
+        return {"decision": "RULES_ONLY", "reason": "fixed_recovery_transition"}
+    if repeat_count > 1:
+        return {"decision": "ADVISOR_CANDIDATE", "reason": "repeated_event_needs_context"}
+    if code in {"outbox_backlog", "outbox_oldest", "drain_failures", "worker_unhealthy"}:
+        return {"decision": "ADVISOR_CANDIDATE", "reason": "operator_context_may_help"}
+    return {"decision": "RULES_ONLY", "reason": "deterministic_code_and_action"}
+
+
+def _adapt(row: dict[str, Any], *, repeat_count: int, provenance: str) -> dict[str, Any]:
+    incident_type, error_code, active_state, component = CODE_MAPPING[row["code"]]
+    recovered = row["phase"] == "resolved"
+    environment = "synthetic" if provenance == "synthetic" else "local"
+    event = {
+        "schema": INPUT_SCHEMA,
+        "incident_type": incident_type,
+        "source": "ops_watch",
+        "detected_at": row["created_at"],
+        "service_state": "healthy" if recovered else active_state,
+        "error_code": "RECOVERY_CONFIRMED" if recovered else error_code,
+        "repeat_count": repeat_count,
+        "previous_similar": repeat_count > 1,
+        "recovery_state": "recovered" if recovered else "active",
+        "technical_metadata": {
+            "component": component,
+            "environment": environment,
+            "active_codes": [] if recovered else [row["code"]],
+        },
+    }
+    # Re-run the strict Advisor input validator at this trust boundary.
+    prepare_context(event)
+    return {
+        "schema": ADAPTER_SCHEMA,
+        "event_id": row["id"],
+        "provenance": provenance,
+        "phase": row["phase"],
+        "event": event,
+        "analysis": _analysis_decision(row["code"], row["phase"], repeat_count),
+    }
+
+
+def read_events(
+    directory: Path, *, provenance: str, max_items: int = MAX_EVENTS,
+    event_id: int | None = None,
+) -> list[dict[str, Any]]:
+    """Read existing event rows through the source module's SQLite read-only API."""
+    if not isinstance(directory, Path) or directory.is_symlink():
+        raise AdvisorAdapterError("source_directory_invalid")
+    if provenance not in PROVENANCES:
+        raise AdvisorAdapterError("event_provenance_invalid")
+    if type(max_items) is not int or not 1 <= max_items <= MAX_EVENTS:
+        raise AdvisorAdapterError("event_limit_invalid")
+    if event_id is not None and (type(event_id) is not int or event_id <= 0):
+        raise AdvisorAdapterError("event_id_invalid")
+    try:
+        rows = inspect(directory, max_items=max_items)
+    except (InputError, OSError, AttributeError):
+        raise AdvisorAdapterError("source_unavailable") from None
+    parsed = [_row(item) for item in rows]
+    if event_id is not None:
+        parsed = [item for item in parsed if item["id"] == event_id]
+        if not parsed:
+            raise AdvisorAdapterError("event_not_found")
+    counts = Counter(item["code"] for item in parsed)
+    return [
+        _adapt(item, repeat_count=counts[item["code"]], provenance=provenance)
+        for item in parsed
+    ]
+
+
+def rules_assessment(adapted: Mapping[str, Any]) -> dict[str, Any]:
+    """Return the deterministic baseline for the same adapted event."""
+    if not isinstance(adapted, dict) or adapted.get("schema") != ADAPTER_SCHEMA:
+        raise AdvisorAdapterError("adapted_event_invalid")
+    event = adapted.get("event")
+    if not isinstance(event, dict):
+        raise AdvisorAdapterError("adapted_event_invalid")
+    code = event["technical_metadata"]["active_codes"]
+    code = code[0] if code else None
+    if adapted["phase"] == "resolved":
+        return {
+            "status": "resolved", "priority": "low",
+            "recommendation": "Дополнительные действия не требуются",
+            "source": "ops_watch_rules",
+        }
+    if code is None or code not in CODE_MAPPING:
+        return {
+            "status": "insufficient_data", "priority": "low",
+            "recommendation": "Сверить последний безопасный сигнал состояния с источником события.",
+            "source": "ops_watch_rules",
+        }
+    if event["service_state"] == "unknown":
+        priority = "low"
+        status = "insufficient_data"
+    elif code in CRITICAL:
+        priority = "critical"
+        status = "active"
+    elif event["service_state"] == "degraded":
+        priority = "high"
+        status = "active"
+    else:
+        priority = "medium"
+        status = "active"
+    return {
+        "status": status,
+        "priority": priority,
+        "recommendation": ACTIONS[code],
+        "source": "ops_watch_rules",
+    }
