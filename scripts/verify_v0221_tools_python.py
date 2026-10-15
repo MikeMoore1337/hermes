@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from . import verify_v0221_core_python as core
+from .bounded_subprocess import BoundedProcessError, run_bounded
 from .verify_v0221_local_image import IMAGE, SOURCE_SHA
 
 MANIFEST = Path(__file__).with_name("v0221_tools_python_manifest.json")
@@ -142,19 +143,21 @@ def commands() -> tuple[list[str], list[str]]:
     return inspect, [*run[:-1], INSPECTOR]
 
 
-def observe(runner: Callable[..., subprocess.CompletedProcess] = subprocess.run,
+def observe(runner: Callable[..., subprocess.CompletedProcess] = run_bounded,
             path: Path = MANIFEST) -> dict[str, Any]:
     wanted = manifest(path)
     inspect, run = commands()
     try:
-        metadata = runner(inspect, check=False, capture_output=True, timeout=10)
+        metadata = runner(inspect, check=False, capture_output=True, timeout=10,
+                          stdout_limit=8192, stderr_limit=16384)
         if metadata.returncode:
             raise core.ParityDenied("image_not_loaded")
         core.image_identity(metadata.stdout)
-        result = runner(run, check=False, capture_output=True, timeout=90)
+        result = runner(run, check=False, capture_output=True, timeout=90,
+                        stdout_limit=MAX_RESPONSE, stderr_limit=16384)
         if result.returncode:
             raise core.ParityDenied("tools_inspector_unavailable")
-    except (OSError, subprocess.TimeoutExpired):
+    except (OSError, subprocess.TimeoutExpired, BoundedProcessError):
         raise core.ParityDenied("local_docker_unavailable") from None
     return parse(wanted, result.stdout)
 

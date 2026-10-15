@@ -12,6 +12,7 @@ import json
 import re
 import subprocess
 from collections import Counter
+from .bounded_subprocess import BoundedProcessError, run_bounded
 from typing import Any, Callable
 
 IMAGE = (
@@ -165,16 +166,18 @@ def parse(image_metadata: bytes, inspector_raw: bytes) -> dict[str, Any]:
     }
 
 
-def observe(runner: Callable[..., subprocess.CompletedProcess] = subprocess.run) -> dict[str, Any]:
+def observe(runner: Callable[..., subprocess.CompletedProcess] = run_bounded) -> dict[str, Any]:
     inspect, container = commands()
     try:
-        first = runner(inspect, check=False, capture_output=True, timeout=10)
+        first = runner(inspect, check=False, capture_output=True, timeout=10,
+                       stdout_limit=8192, stderr_limit=16384)
         if first.returncode != 0:
             raise ImageEvidenceDenied("pinned_image_not_loaded_locally")
-        second = runner(container, check=False, capture_output=True, timeout=30)
+        second = runner(container, check=False, capture_output=True, timeout=30,
+                        stdout_limit=MAX_BYTES, stderr_limit=16384)
         if second.returncode != 0:
             raise ImageEvidenceDenied("offline_inspector_failed")
-    except (OSError, subprocess.TimeoutExpired):
+    except (OSError, subprocess.TimeoutExpired, BoundedProcessError):
         raise ImageEvidenceDenied("local_docker_unavailable") from None
     return parse(first.stdout, second.stdout)
 
