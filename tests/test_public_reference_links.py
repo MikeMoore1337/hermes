@@ -104,6 +104,15 @@ class PublicReferenceTests(unittest.TestCase):
         self.assertNotIn("http", out.getvalue())
         self.assertEqual(json.loads(out.getvalue())["status"], "UNKNOWN")
 
+    def test_probe_budget_enforced_before_network(self):
+        probes = {**audit.PROBES, "new-host": ("example.com", "/")}
+        with patch.object(audit, "PROBES", probes):
+            runner = Mock()
+            with self.assertRaisesRegex(audit.PublicProbeDenied,
+                                        "probe_budget_invalid"):
+                audit.audit(runner=runner)
+            runner.assert_not_called()
+
     def test_no_new_hosts_or_crawling_without_source_change(self):
         self.assertEqual(len(audit.PROBES), audit.MAX_PROBES)
         self.assertEqual({x[0] for x in audit.PROBES.values()},
