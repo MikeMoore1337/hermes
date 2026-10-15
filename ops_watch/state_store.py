@@ -168,7 +168,10 @@ def read_current(directory: Path) -> list[dict[str, str]]:
             info.st_nlink != 1):
         raise InputError("unsafe_outbox_db")
     try:
-        with sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=2) as db:
+        # Percent-encode '?' and '#' in legitimate directory names so they
+        # cannot override the read-only SQLite URI's query/fragment.
+        with sqlite3.connect(path.absolute().as_uri() + "?mode=ro",
+                             uri=True, timeout=2) as db:
             row = db.execute("SELECT findings_json FROM state WHERE id=1").fetchone()
     except sqlite3.Error as exc:
         raise InputError("corrupt_outbox_state") from exc
@@ -189,10 +192,11 @@ def inspect(directory: Path, *, max_items: int = 50) -> list[dict[str, Any]]:
         raise InputError("outbox_unavailable")
     info = db_path.stat(follow_symlinks=False)
     if (stat.S_IMODE(info.st_mode) != 0o600 or info.st_uid != os.geteuid()
-            or not stat.S_ISREG(info.st_mode)):
+            or not stat.S_ISREG(info.st_mode) or info.st_nlink != 1):
         raise InputError("unsafe_outbox_db")
     try:
-        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=2) as db:
+        with sqlite3.connect(db_path.absolute().as_uri() + "?mode=ro",
+                             uri=True, timeout=2) as db:
             rows = db.execute(
                 "SELECT id,fingerprint,phase,severity,title,action,created_at "
                 "FROM events ORDER BY id DESC LIMIT ?", (max_items,)
