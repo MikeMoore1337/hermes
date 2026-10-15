@@ -17,6 +17,7 @@ from typing import Any, Callable
 from .crossref import CrossrefError, review_candidate
 from .article_integrity import ArticleIntegrityError, inspect as inspect_article
 from .europe_pmc import EuropePMCError, ID, run as search
+from .pubmed_fetch import DOI
 
 DIRECTORY = Path("/var/lib/hermes-research-scout")
 FILENAME = "latest-citations.json"
@@ -66,7 +67,8 @@ def _review_item(candidate: object, topic: str) -> dict[str, object]:
     ):
         raise DigestError("candidate_date_invalid")
     doi = candidate.get("doi")
-    if doi is not None and (type(doi) is not str or len(doi) > 256):
+    if doi is not None and (type(doi) is not str or len(doi) > 256
+                            or DOI.fullmatch(doi) is None):
         raise DigestError("candidate_doi_invalid")
     return {
         "topic": topic, "title": title, "identifier": identifier,
