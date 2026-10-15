@@ -7,14 +7,13 @@ No arbitrary URL, article full text, LLM, tokens or auto-publication.
 """
 from __future__ import annotations
 
-import argparse
-import json
 from typing import Any, Callable
 
 from .article_integrity import ArticleIntegrityError, inspect as inspect_article
 from .crossref import CrossrefError, valid_doi, verify as verify_doi
 from .daily_digest import DigestError, TOPIC_IDS, _review_item
 from .europe_pmc import ID
+from .core import PROMPT_INJECTION
 
 NOTICE_CODES = frozenset({
     "CORRECTION_NOTICE", "RETRACTION_OR_WITHDRAWAL_NOTICE",
@@ -52,13 +51,16 @@ def review_missing_doi(
     """At most one core lookup and one DOI lookup for a validated candidate."""
     if topic not in TOPIC_IDS or type(candidate) is not dict:
         raise EnrichmentDenied("candidate_invalid")
-    if candidate.get("status") != "MANUAL_REVIEW" or candidate.get("doi") is not None:
+    if (candidate.get("status") != "MANUAL_REVIEW"
+            or candidate.get("reason") != "metadata_only"
+            or candidate.get("doi") is not None):
         raise EnrichmentDenied("candidate_not_missing_doi")
     try:
         reviewed = _review_item(candidate, topic)
     except DigestError:
         raise EnrichmentDenied("candidate_invalid") from None
-    if reviewed["reason"] != "doi_missing" or reviewed["status"] != "HOLD":
+    if (reviewed["reason"] != "doi_missing" or reviewed["status"] != "HOLD"
+            or PROMPT_INJECTION.search(reviewed["title"])):
         raise EnrichmentDenied("candidate_not_missing_doi")
     identifier = reviewed["identifier"]
     source = "PMC" if identifier.startswith("PMC") else "MED"
@@ -110,25 +112,3 @@ def review_missing_doi(
     return _result(identifier, "MANUAL_REVIEW", "doi_from_core_metadata",
                    calls=2, doi=doi, pmid=raw_pmid, pmcid=raw_pmcid)
 
-
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Offline by default; no arbitrary URL")
-    parser.add_argument("--execute", action="store_true")
-    parser.add_argument("--topic", choices=TOPIC_IDS, required=True)
-    parser.add_argument("--source", choices=("MED", "PMC"), required=True)
-    parser.add_argument("--id", required=True)
-    args = parser.parse_args(argv)
-    if not args.execute:
-        print(json.dumps({"status": "NOT_EXECUTED"}))
-        return 0
-    # CLI never accepts free-form article content or URL. A separate manual
-    # metadata retrieval supplies a validated DOI-less candidate offline.
-    # Intentionally no live invocation from this CLI: don't manufacture one.
-    print(json.dumps({"status": "HOLD", "reason": "candidate_metadata_required",
-                      "scientific_claims_verified": False,
-                      "automatic_publication": False}))
-    return 2
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
