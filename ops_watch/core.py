@@ -13,6 +13,7 @@ INCIDENT_CODES = frozenset({
     "worker_unhealthy", "ci_failed", "deploy_failed",
     "agent_guard_missing", "agent_guard_disabled", "agent_guard_inactive",
     "alert_sender_missing", "alert_sender_disabled", "alert_sender_inactive",
+    "alert_sender_failed",
 })
 
 
@@ -136,6 +137,11 @@ def analyze(snapshot: Mapping[str, Any], *, now: datetime) -> list[dict[str, str
                 found.append(_finding("alert_sender_disabled", "critical"))
             if not timer_running:
                 found.append(_finding("alert_sender_inactive", "critical"))
+
+    if data.get("alerts_service") is not None:
+        service = _mapping(data["alerts_service"], "alerts_service")
+        if _bool(service, "failed"):
+            found.append(_finding("alert_sender_failed", "critical"))
 
     if data.get("yfc") is not None:
         yfc = _mapping(data["yfc"], "yfc")
