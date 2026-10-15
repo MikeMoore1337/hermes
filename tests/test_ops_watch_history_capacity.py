@@ -36,7 +36,7 @@ class RetainedHistoryDoesNotBlockTests(unittest.TestCase):
             confirm_one(self.directory, event_id=first["event_id"],
                         lease_token=first["lease_token"], telegram_message_id=101,
                         now=NOW + timedelta(seconds=1))
-            changes, previews, total = state_store.persist(
+            changes, _, total = state_store.persist(
                 self.directory, [], lambda: [], observed=NOW + timedelta(seconds=2))
         self.assertEqual(changes["resolved"], ["ops:" + CODE])
         self.assertEqual(total, 2)
@@ -54,8 +54,6 @@ class RetainedHistoryDoesNotBlockTests(unittest.TestCase):
                                     observed=NOW + timedelta(seconds=1))
         self.assertEqual(stats(self.directory)["total"], 1)
         self.assertEqual(state_store.read_current(self.directory), raised())
-        self.assertIsNone(claim_one(self.directory, now=NOW).get("phase")
-                          if False else None)
 
     def test_more_than_one_thousand_acked_events_do_not_block_new_alert(self):
         # Bounded synthetic fixture; uses only temporary SQLite.
