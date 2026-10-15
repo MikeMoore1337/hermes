@@ -38,3 +38,26 @@ python -m scripts.verify_v0221_vendor_fingerprints --execute --output docs/sbom/
 - PR #133 теперь зависит от PR #132: для обеих веток используется **один** `scripts/bounded_subprocess.py`, без второго механизма. `verify_v0221_vendor_fingerprints.collect()` больше не использует необязанный `subprocess.run(capture_output=True)` по умолчанию; лимиты `stdout=400000`, `stderr=16384`, отдельно идентификация image (8192 байт) и timeout 10/90 секунд.
 - В реальном Docker Desktop повторно считаны все 1176 vendor Python файлов; канонический SHA256 JSON `29a5d3bc3b84c0ac2d974d6d3369820817a0eb2d551e494b49744fe086cafe08` совпал. LF зафиксирован правилами `.gitattributes` зависимого PR #132.
 - Недоверенный stdout/stderr не попадает в исключения или отчёты; запрет `resident_agent_allowed=false` и ожидаемый код выхода 2 сохранены.
+
+## Воспроизводимая проверка официальных архивов, 15.10.2026
+
+В `scripts/verify_v0221_supplier_archive_parity.py` реализована офлайн-сверка **трёх локально полученных официальных архивов** с точным upstream `pm/lock.json` из коммита `297552a9d646119871391d202509822cd86330df` и семью выбранными файлами pinned Docker. Архивы **не** помещены в репозиторий, **не** извлекаются на хост и их программы **не** исполняются.
+
+| Компонент | Запись pm/lock SHA256 | Проверка поставщика | Побайтовое совпадение внутри image | Лицензия | CVE |
+|---|---|---|---|---|---|
+| Python 3.14.7 + сборка 20260901 | `0ab3305457051cd3e7c031857e005f1bda17c218a1990567dacaaac6dd1d14f0` | astral-sh/python-build-standalone, release 20260901; downloaded archive SHA256 PASS; отдельная подписанная image provenance NO_DATA | `bin/python3.14` и `LICENSE.txt` PASS | текст лицензии PASS; проверка полного состава зависимостей NO_DATA | **POTENTIALLY_AFFECTED**: официальная Python 3.14.8 от 30.09.2026 исправляет CVE-2026-15310, CVE-2026-19672, CVE-2026-15806, CVE-2026-19445, CVE-2026-19553 и CVE-2026-17084 |
+| Node 26.7.0 | `982aa24dd8be4c889c6a8ab337ddff3b0896645b20f4239356e80552c16277ee` | архив nodejs.org SHA256 PASS и официальный `SHASUMS256.txt` с тем же SHA PASS; криптографическую подпись манифеста не проверяли | `bin/node` и `LICENSE` PASS | текст лицензии PASS, полный перечень embedded зависимостей NO_DATA | NO_DATA; присутствует более новый Node 26.12.0 от 14.10.2026, но само по себе это не свидетельствует о CVE |
+| npm 12.0.2 | `5dbb86c71d07a1957f2e90734092dd6a58bdcd9ebc2d8d41ca1c6e6a21d364e1` | npm registry `dist.integrity` SHA512 и `dist.shasum` SHA1: PASS; архив SHA256 PASS | `bin/npm-cli.js`, `package.json`, `LICENSE`: PASS | `Artistic-2.0` по metadata npm registry + `LICENSE` bytes PASS, транситивные лицензии NO_DATA | NO_DATA без полного npm-audit |
+| Debian 13 dpkg (274 entries) | источник base image указан Dockerfile | package names/versions observed; signed APT checks NOT_RUN | побайтовая проверка installed dpkg payload NOT_RUN | NO_DATA | NO_DATA |
+| Python virtualenv (146 metadata entries, 145 unique canonical names) | исходный `uv.lock` существует | пакетный origin по каждой wheel НЕ подтверждён | только observed inventory, пакеты целиком не проверены | NO_DATA | NO_DATA |
+
+Официальные источники:
+- `https://github.com/NousResearch/hermes-agent/blob/297552a9d646119871391d202509822cd86330df/pm/lock.json`
+- `https://github.com/astral-sh/python-build-standalone/releases/tag/20260901`
+- `https://nodejs.org/dist/v26.7.0/SHASUMS256.txt`
+- `https://registry.npmjs.org/npm/12.0.2`
+- `https://www.python.org/downloads/release/python-3148/`
+
+Отдельный Windows Docker Desktop: `python -m scripts.verify_v0221_supplier_archive_parity --execute --archives-dir <локальный_каталог>`. Вывод `SELECTED_VENDOR_RELEASE_BYTES_MATCH`, **7/7 выбранных файлов**, exit 2 intentional, `resident_agent_allowed=false`. Нет новых вызовов модели, production доступа или платных API.
+
+**Критическое ограничение:** факт исправления CVE в 3.14.8 не доказывает, что каждая атака достижима именно в Hermes, но текущая 3.14.7 не имеет этих upstream-исправлений. До анализа воздействия и последующей проверки обновлённого immutable image запуск остаётся **NO-GO**. Не обновлять образ вслепую: смена версии требует новой оценки digest/source parity, сетевой защиты, расходов и нагрузки.
