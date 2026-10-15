@@ -38,3 +38,8 @@ python3 scripts/verify_upstream_release_receipt.py --release v0.22.1 --execute
 Скрипт сохраняет старый режим `v0.21.6` для выявления исторического mismatch и допускает только два фиксированных тега. Всего три read-only обращения к общедоступным Docker Hub метаданным, ни `pull`, ни `run`, ни выдачи нового секрета. Для разрешения постоянного Hermes Agent потребуется отдельное подтверждение SBOM/provenance, бюджета, стабильности и разрешения владельца. Даже идеально совпавшие хеши одного публичного реестра не означают `GO`.
 
 Связанные: [H-01 #33](https://github.com/MikeMoore1337/hermes/issues/33), [H-10 #62](https://github.com/MikeMoore1337/hermes/issues/62).
+
+
+### Проверки исходного коммита отдельно от проверки образа
+
+[CI push #38644080305](https://github.com/NousResearch/hermes-agent/actions/runs/38644080305) для exact SHA `297552a9...` завершился успешно, прошли Python unit tests и часть OS/Dockerfile проверок. Но [стабильный релиз #38646275925](https://github.com/NousResearch/hermes-agent/actions/runs/38646275925) имеет `Full CI pipeline=skipped` и четыре `Run docker integration tests=skipped`; отдельный [Docker push #38644079413](https://github.com/NousResearch/hermes-agent/actions/runs/38644079413) отменён. Таким образом, код имеет подтверждённые upstream проверки, но **это не равнозначно проверке exact released Docker image**. [Разбор заданий](H-01-upstream-release-ci-2026-10-15.md).
