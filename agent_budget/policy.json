@@ -1,0 +1,25 @@
+{
+  "schema": "hermes-role-budget-v1",
+  "runtime_enabled": false,
+  "provider_billing_verified": false,
+  "daily_spend_cap_usd": 0,
+  "model_calls_per_job": 1,
+  "retries_per_job": 0,
+  "timeout_seconds": 205,
+  "roles": {
+    "analyst": [
+      "classify_sanitized_codes"
+    ],
+    "planner": [
+      "plan_from_public_metadata"
+    ],
+    "proposer": [
+      "draft_without_delivery"
+    ]
+  },
+  "allowed_actions": [
+    "classify_sanitized_codes",
+    "plan_from_public_metadata",
+    "draft_without_delivery"
+  ]
+}
