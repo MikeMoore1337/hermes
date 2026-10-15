@@ -154,6 +154,17 @@ class BoundedAgentTurnTests(unittest.TestCase):
         lock.assert_called_once_with()
         inner.assert_called_once_with(tool_test=True)
 
+    def test_p0_release_gate_rejects_before_credential_or_proxy_access(self):
+        self.assertIs(probe.MODEL_PROBE_RELEASE_GATE_APPROVED, False)
+        with patch.object(probe.os, "geteuid", return_value=0), \
+             patch.object(probe, "run_command") as subprocess_runner, \
+             patch.object(probe, "ok") as system_tools:
+            with self.assertRaisesRegex(probe.Rejected,
+                                         "upstream_release_or_billing_gate_closed"):
+                probe.preflight()
+        subprocess_runner.assert_not_called()
+        system_tools.assert_not_called()
+
     def test_nonroot_fails_closed(self):
         with patch.object(probe.os, "geteuid", return_value=1000):
             with self.assertRaisesRegex(probe.Rejected, "root_required"):
