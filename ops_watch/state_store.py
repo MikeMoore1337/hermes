@@ -113,7 +113,23 @@ def persist(
             delta = changes(previous, safe_current)
             previews = render(delta, safe_current)
             event_count = db.execute("SELECT COUNT(*) FROM events").fetchone()[0]
-            if event_count + len(previews) > MAX_EVENTS:
+            # The limit applies to *outstanding* work, not already
+            # acknowledged audit history. A lifetime count of 1000 used to
+            # permanently disable the collector after enough normal
+            # incident/recovery cycles, even with every Telegram ACK saved.
+            receipts_exist = db.execute(
+                "SELECT 1 FROM sqlite_master "
+                "WHERE type='table' AND name='delivery_receipts'"
+            ).fetchone() is not None
+            if receipts_exist:
+                outstanding = db.execute(
+                    "SELECT COUNT(*) FROM events AS e "
+                    "LEFT JOIN delivery_receipts AS r ON r.event_id=e.id "
+                    "WHERE r.event_id IS NULL OR r.status!='acknowledged'"
+                ).fetchone()[0]
+            else:
+                outstanding = event_count
+            if outstanding + len(previews) > MAX_EVENTS:
                 raise InputError("outbox_full")
             when = observed.astimezone(UTC).isoformat()
             for item in previews:

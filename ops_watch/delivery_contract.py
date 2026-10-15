@@ -92,7 +92,9 @@ def claim_one(directory: Path, *, now: datetime) -> dict[str, Any] | None:
                 "SELECT e.id,e.fingerprint,e.phase,e.severity,e.title,"
                 "e.action,e.created_at,d.status,d.lease_until,d.attempts "
                 "FROM events AS e LEFT JOIN delivery_receipts AS d "
-                "ON d.event_id=e.id ORDER BY e.id ASC LIMIT 1001"
+                "ON d.event_id=e.id "
+                "WHERE d.event_id IS NULL OR d.status!='acknowledged' "
+                "ORDER BY e.id ASC LIMIT 1001"
             ).fetchall()
             if len(candidates) > 1000:
                 raise InputError("delivery_queue_oversize")
