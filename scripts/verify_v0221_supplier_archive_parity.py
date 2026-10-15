@@ -169,9 +169,13 @@ def observe(directory: Path, runner: Callable[..., subprocess.CompletedProcess] 
     try:
         inspected = runner(first, capture_output=True, timeout=10,
                            stdout_limit=8192, stderr_limit=16384)
+        if inspected.returncode != 0:
+            raise SupplierEvidenceDenied("pinned_image_not_loaded")
         core.image_identity(inspected.stdout)
         answer = runner(second, capture_output=True, timeout=90,
                         stdout_limit=8192, stderr_limit=16384)
+        if answer.returncode != 0:
+            raise SupplierEvidenceDenied("offline_inspector_failed")
         return evaluate(release, answer.stdout)
     except (OSError, subprocess.TimeoutExpired, BoundedProcessError, core.ParityDenied):
         raise SupplierEvidenceDenied("offline_image_inspection_unavailable") from None

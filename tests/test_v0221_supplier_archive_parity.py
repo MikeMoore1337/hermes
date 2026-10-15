@@ -83,6 +83,20 @@ class SourceArchiveParityContracts(unittest.TestCase):
                 with self.assertRaises(check.SupplierEvidenceDenied):
                     check.evaluate(SEVEN, payload)
 
+    def test_nonzero_docker_commands_deny_even_with_fake_output(self):
+        for failure_at in (1, 2):
+            calls = []
+            def runner(command, **kwargs):
+                calls.append(command)
+                return Mock(
+                    stdout=META if len(calls) == 1 else packet(),
+                    returncode=1 if len(calls) == failure_at else 0,
+                )
+            with self.subTest(failure_at=failure_at):
+                with patch.object(check, "archive_evidence", return_value=SEVEN):
+                    with self.assertRaises(check.SupplierEvidenceDenied):
+                        check.observe(Path("."), runner)
+
     def test_only_pinned_restricted_inspection_is_invoked(self):
         calls = []
         def runner(command, **kwargs):
