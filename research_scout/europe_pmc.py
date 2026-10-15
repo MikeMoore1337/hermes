@@ -130,6 +130,8 @@ def parse(raw: bytes, topic: str, *, now: datetime) -> dict[str, Any]:
         raise EuropePMCError("pmc_json_invalid") from None
     if type(root) is not dict or type(root.get("hitCount")) is not int or root["hitCount"] < 0:
         raise EuropePMCError("pmc_schema_invalid")
+    if any(key in root for key in ("error", "errors", "warningList")):
+        raise EuropePMCError("pmc_api_error")
     block = root.get("resultList")
     rows = block.get("result") if type(block) is dict else None
     if type(rows) is not list or len(rows) > MAX_ITEMS or len(rows) > root["hitCount"]:
@@ -185,6 +187,10 @@ def parse(raw: bytes, topic: str, *, now: datetime) -> dict[str, Any]:
                 else:
                     item["status"], item["reason"] = "MANUAL_REVIEW", "metadata_only"
         results.append(item)
+    dois = [item["doi"].casefold() for item in results if item["doi"] is not None]
+    for item in results:
+        if item["doi"] is not None and dois.count(item["doi"].casefold()) > 1:
+            item["status"], item["reason"] = "HOLD", "duplicate_doi"
     status = ("NO_DATA" if root["hitCount"] == 0 else
               "MANUAL_REVIEW" if any(x["status"] == "MANUAL_REVIEW" for x in results)
               else "HOLD")
