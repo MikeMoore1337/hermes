@@ -121,10 +121,9 @@ class DailyResearchTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as path:
             base=Path(path)
             base.chmod(0o700)
-            minimal={"schema":"hermes-research-metadata-v1",
-                     "automatic_publication":False,
-                     "scientific_claims_verified":False,
-                     "status":"NO_DATA","items":[]}
+            minimal=prepare(now=NOW,searcher=lambda topic,*,now:{
+                "topic":topic,"status":"NO_DATA","candidates":[]
+            })
             save(minimal,base)
             self.assertEqual((base/FILENAME).stat().st_mode & 0o777,0o600)
             self.assertEqual(json.loads((base/FILENAME).read_bytes())["status"],"NO_DATA")
@@ -145,10 +144,12 @@ class DailyResearchTests(unittest.TestCase):
     def test_timezone_and_bounded_result_count(self):
         with self.assertRaisesRegex(DigestError,"timezone_required"):
             prepare(now=datetime(2026,10,15,5))
-        with self.assertRaisesRegex(DigestError,"topic_candidates_invalid"):
-            prepare(now=NOW,searcher=lambda topic,*,now:{
-                "topic":topic,"status":"MANUAL_REVIEW","candidates":[candidate(topic)]*3
-            })
+        denied=prepare(now=NOW,searcher=lambda topic,*,now:{
+            "topic":topic,"status":"MANUAL_REVIEW","candidates":[candidate(topic)]*3
+        })
+        self.assertEqual(denied["status"],"HOLD")
+        self.assertEqual(len(denied["errors"]),3)
+        self.assertTrue(all(e["reason"]=="source_unknown" for e in denied["errors"]))
 
 if __name__=="__main__":
     unittest.main()
