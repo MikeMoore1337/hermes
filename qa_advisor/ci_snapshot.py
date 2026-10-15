@@ -57,7 +57,8 @@ def decide(runs: object, *, trusted_workflow_ids: frozenset[str]) -> dict[str, o
         "repo": PRIVATE_REPO,
         "run_id": latest["run_id"], "head_sha": latest["head_sha"],
         "observed_runs": len(validated),
-        "verified_recovery": state == "SUCCESS",
+        "latest_run_success": state == "SUCCESS",
+        "verified_recovery": False,  # Requires an earlier independently persisted failure.
         "no_automatic_retry": True,
         "no_actions": True,
     }
