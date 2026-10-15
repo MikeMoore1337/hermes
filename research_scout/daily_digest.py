@@ -70,7 +70,7 @@ def _review_item(candidate: object, topic: str) -> dict[str, object]:
     # of an actual publication. Validate the calendar even for HOLD items.
     if date is not None:
         try:
-            date_from_source = date_module.fromisoformat(date)
+            date_module.fromisoformat(date)
         except ValueError:
             raise DigestError("candidate_date_invalid") from None
     doi = candidate.get("doi")
