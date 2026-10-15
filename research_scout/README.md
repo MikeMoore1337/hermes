@@ -63,3 +63,38 @@ CI подтверждает только офлайн-защиту. Актуал
 ### Приёмка дополнительной проверки в ежедневном отчёте
 
 Research Scout безопасно анализирует `commentCorrectionList` максимум у **одного** кандидата за цикл (тот же, чей DOI проверяется через Crossref). Автоматически выявленное исправление, отзыв или неизвестный тип - `HOLD`; остальные публикации **не считаются проверенными** (`NOT_CHECKED`). Ограничение теперь до 5 публичных запросов на запуск; публикаций, платных API и моделей нет. [Правила](../docs/operations/H-03-DAILY-RESEARCH.md).
+
+
+## Structured scientific review draft (offline)
+
+`research_scout.review_draft` готовит bounded черновик из уже полученных
+публичных metadata для ручного экспертного обзора. Он не скачивает статью, не
+выводит метод или эффект из заголовка, не вызывает модель, не пишет в YFC или
+Second Brain и не публикует результат:
+
+```bash
+python3 -m research_scout.review_draft --review-stdin < candidate.json
+python3 -m research_scout.review_draft --compare-stdin < drafts.json
+```
+
+Черновик сохраняет source URL, source kind, DOI/PMID/record id и происхождение
+полей, явно предоставленных оператором. **PubMed, Europe PMC и DOI-resolver —
+библиографические указатели, а не проверенный полный текст исследования.**
+Ссылка на сайт издателя сама по себе также не доказывает доступ к полному тексту.
+`primary_source_link` остаётся `UNKNOWN`, пока оператор не предоставит
+`confirmed` с явным `review_basis=operator_reviewed_full_text`, ссылкой на
+страницу издателя и `supporting_excerpt` для каждого поля. Это только
+операторское свидетельство, не независимая автоматическая проверка первоисточника.
+`primary_source_access` сообщает степень проверки. Подлинность фрагмента
+этот офлайн-модуль не подтверждает; `MANUAL_REVIEW` обязателен.
+Неподтверждённые `research_question`, `study_type`, `population`,
+`sample_size`, `methods`, `main_results`, `limitations` и `effect_size`
+остаются `UNKNOWN`; secondary source не становится primary source. Состояния — `MANUAL_REVIEW`/`HOLD`, `scientific_claims_verified`
+всегда `false`, `automatic_publication` всегда `false`.
+
+Сравнение нескольких drafts показывает только явно одинаковый research question
+и оставляет методологические различия, противоречия, общие выводы и
+meta-analysis на `MANUAL_REVIEW_REQUIRED`/`NOT_ASSESSED_WITHOUT_EXPERT_REVIEW`.
+Офлайн-фикстуры проверяют documented/incomplete/secondary/correction/unknown
+effect/missing sample, попытку сильного claim и comparison без автоматического
+вывода consensus.
