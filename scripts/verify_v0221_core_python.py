@@ -14,6 +14,7 @@ import subprocess
 from pathlib import Path
 from typing import Any, Callable
 
+from .bounded_subprocess import BoundedProcessError, run_bounded
 from .verify_v0221_local_image import IMAGE, SOURCE_SHA
 
 ROOTS = ("agent", "gateway", "hermes_cli", "hermes_platform", "providers")
@@ -185,19 +186,21 @@ def commands() -> tuple[list[str], list[str]]:
     return inspect, run
 
 
-def observe(runner: Callable[..., subprocess.CompletedProcess] = subprocess.run,
+def observe(runner: Callable[..., subprocess.CompletedProcess] = run_bounded,
             manifest_path: Path = MANIFEST) -> dict[str, Any]:
     expected = load_manifest(manifest_path)
     inspect, run = commands()
     try:
-        meta = runner(inspect, check=False, capture_output=True, timeout=10)
+        meta = runner(inspect, check=False, capture_output=True, timeout=10,
+                      stdout_limit=8192, stderr_limit=16384)
         if meta.returncode:
             raise ParityDenied("image_not_loaded")
         image_identity(meta.stdout)
-        container = runner(run, check=False, capture_output=True, timeout=90)
+        container = runner(run, check=False, capture_output=True, timeout=90,
+                           stdout_limit=MAX_REPLY, stderr_limit=16384)
         if container.returncode:
             raise ParityDenied("image_inspector_failed")
-    except (OSError, subprocess.TimeoutExpired):
+    except (OSError, subprocess.TimeoutExpired, BoundedProcessError):
         raise ParityDenied("local_docker_unavailable") from None
     return compare(expected, container.stdout)
 

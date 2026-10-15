@@ -11,6 +11,7 @@ import json
 import re
 import subprocess
 from typing import Any, Callable
+from .bounded_subprocess import BoundedProcessError, run_bounded
 
 from .verify_v0221_local_image import IMAGE, SOURCE_SHA
 
@@ -114,16 +115,18 @@ def parse(metadata: bytes, raw: bytes) -> dict[str, Any]:
     }
 
 
-def observe(runner: Callable[..., subprocess.CompletedProcess] = subprocess.run) -> dict[str, Any]:
+def observe(runner: Callable[..., subprocess.CompletedProcess] = run_bounded) -> dict[str, Any]:
     first, second = commands()
     try:
-        image = runner(first, check=False, capture_output=True, timeout=10)
+        image = runner(first, check=False, capture_output=True, timeout=10,
+                       stdout_limit=8192, stderr_limit=16384)
         if image.returncode:
             raise SampleDenied("image_not_local")
-        inspector = runner(second, check=False, capture_output=True, timeout=30)
+        inspector = runner(second, check=False, capture_output=True, timeout=30,
+                           stdout_limit=4096, stderr_limit=16384)
         if inspector.returncode:
             raise SampleDenied("inspector_failed")
-    except (OSError, subprocess.TimeoutExpired):
+    except (OSError, subprocess.TimeoutExpired, BoundedProcessError):
         raise SampleDenied("docker_unavailable") from None
     return parse(image.stdout, inspector.stdout)
 
