@@ -139,6 +139,7 @@ REQUIRED_PATHS = (
     "docs/operations/H-03-ARTICLE-INTEGRITY.md",
     "research_scout/daily_digest.py",
     "tests/test_research_daily_digest.py",
+    "tests/test_research_daily_integrity.py",
     "tests/test_research_daily_systemd.py",
     "deploy/hermes-research-scout.service",
     "deploy/hermes-research-scout.timer",
