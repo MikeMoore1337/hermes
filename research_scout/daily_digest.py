@@ -153,10 +153,57 @@ def prepare(
 
 
 def save(record: dict[str, object], directory: Path = DIRECTORY) -> None:
-    if (type(record) is not dict or record.get("schema") != SCHEMA
-            or record.get("automatic_publication") is not False
-            or record.get("scientific_claims_verified") is not False):
+    if (type(record) is not dict or set(record) != {
+            "schema", "observed_at", "status", "requests_attempted",
+            "topics", "items", "errors", "scientific_claims_verified",
+            "automatic_publication", "report_requires_manual_review",
+        } or record["schema"] != SCHEMA
+            or record["automatic_publication"] is not False
+            or record["scientific_claims_verified"] is not False
+            or record["report_requires_manual_review"] is not True):
         raise DigestError("report_schema_invalid")
+    if record["status"] not in ("NO_DATA", "MANUAL_REVIEW", "HOLD"):
+        raise DigestError("report_status_invalid")
+    if (record["topics"] != list(TOPIC_IDS)
+            or type(record["requests_attempted"]) is not int
+            or not 3 <= record["requests_attempted"] <= 4):
+        raise DigestError("report_budget_invalid")
+    items, errors = record["items"], record["errors"]
+    if type(items) is not list or len(items) > 6 or type(errors) is not list or len(errors) > 4:
+        raise DigestError("report_entries_invalid")
+    if (type(record["observed_at"]) is not str or
+            len(record["observed_at"]) > 40):
+        raise DigestError("report_time_invalid")
+    try:
+        moment = datetime.fromisoformat(record["observed_at"])
+    except ValueError:
+        raise DigestError("report_time_invalid") from None
+    if moment.tzinfo is None or moment.utcoffset().total_seconds() != 0:
+        raise DigestError("report_time_invalid")
+    for item in items:
+        if type(item) is not dict or set(item) != {
+            "topic", "title", "identifier", "source_url", "doi", "status",
+            "reason", "publication_date", "crossref_doi_status",
+            "scientific_claims_verified",
+        } or item["topic"] not in TOPIC_IDS or item["scientific_claims_verified"] is not False:
+            raise DigestError("report_item_schema_invalid")
+        original = {
+            "source": "EUROPE_PMC", "id": item["identifier"],
+            "source_url": item["source_url"], "title": item["title"],
+            "doi": item["doi"], "status": item["status"],
+            "reason": item["reason"],
+            "first_publication_date": item["publication_date"],
+        }
+        if item["reason"] == "duplicate_across_topics":
+            original["reason"] = "duplicate_doi"
+        _review_item(original, item["topic"])
+        if item["crossref_doi_status"] not in ("NOT_CHECKED", "MATCHED_METADATA_ONLY"):
+            raise DigestError("report_crossref_state_invalid")
+    for error in errors:
+        if (type(error) is not dict or set(error) != {"topic", "reason"}
+                or error["topic"] not in (*TOPIC_IDS, "crossref")
+                or error["reason"] not in ("source_unknown", "doi_registry_unknown")):
+            raise DigestError("report_error_schema_invalid")
     if directory.is_symlink() or not directory.is_dir():
         raise DigestError("directory_missing_or_symlinked")
     info = directory.stat()
