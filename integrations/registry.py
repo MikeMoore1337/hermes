@@ -25,7 +25,7 @@ SECRET_LIKE = re.compile(r"(?:github_pat_|ghp_|gho_|sk-[A-Za-z0-9]{12}|AIza[A-Za
 CREDENTIAL_MODES = frozenset({"none", "scoped_file", "developer_contact",
                               "separate_future_auth", "unscoped_pool"})
 BILLING_MODES = frozenset({"zero_guaranteed", "free_plan_owner_attested",
-                           "unknown", "uncontrolled"})
+                           "free_plan_unverified", "unknown", "uncontrolled"})
 SIDE_EFFECTS = frozenset({"none", "read_only", "owner_notification",
                           "untrusted_execution"})
 SCOPES = frozenset({"none", "public_metadata", "private_repo_metadata",
