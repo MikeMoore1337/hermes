@@ -191,6 +191,17 @@ def send_one(
         directory, event_id=event["event_id"], lease_token=event["lease_token"],
         telegram_message_id=receipt, now=datetime.now(UTC),
     )
+    # Do not falsely clear alert_sender_failed just because one *new*
+    # message was delivered while an older incident is still exhausted.
+    # Keep the service visibly unhealthy for operator review, but preserve
+    # delivery of subsequent healthy events (including recovery).
+    exhausted = stats(directory)["exhausted"]
+    if exhausted:
+        return {
+            "status": "ACCEPTED_WITH_EXHAUSTED",
+            "event_id": event["event_id"],
+            "exhausted": exhausted,
+        }
     return {"status": "ACCEPTED_BY_TELEGRAM", "event_id": event["event_id"]}
 
 
