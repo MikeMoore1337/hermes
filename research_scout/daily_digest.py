@@ -256,7 +256,29 @@ def save(record: dict[str, object], directory: Path = DIRECTORY) -> None:
             original["reason"] = "duplicate_doi"
         if item["reason"] in ("integrity_hold", "integrity_unknown"):
             original["reason"] = "metadata_only"
-        _review_item(original, item["topic"])
+        normalized = _review_item(original, item["topic"])
+        # Checking only the schema is insufficient: untrusted or accidentally
+        # mutated reports must not promote absent DOI / stale / suspicious
+        # citations to MANUAL_REVIEW, or relabel metadata-only HOLD as healthy.
+        # Integrity and cross-topic HOLD reasons are derived by prepare() after
+        # the original Europe PMC check; these are the only special cases.
+        derived_reason = item["reason"]
+        if derived_reason in (
+            "duplicate_across_topics", "integrity_hold", "integrity_unknown",
+        ):
+            if item["status"] != "HOLD":
+                raise DigestError("report_item_status_reason_conflict")
+        elif (item["status"] != normalized["status"]
+              or item["reason"] != normalized["reason"]):
+            raise DigestError("report_item_status_reason_conflict")
+        if item["status"] not in ("HOLD", "MANUAL_REVIEW"):
+            raise DigestError("report_item_status_reason_conflict")
+        if item["reason"] == "duplicate_across_topics" and item["doi"] is None:
+            raise DigestError("report_item_status_reason_conflict")
+        if item["status"] == "MANUAL_REVIEW" and (
+            item["reason"] != "metadata_only" or item["doi"] is None
+        ):
+            raise DigestError("report_item_status_reason_conflict")
         if item["crossref_doi_status"] not in ("NOT_CHECKED", "MATCHED_METADATA_ONLY"):
             raise DigestError("report_crossref_state_invalid")
         state, codes = item["article_notice_state"], item["article_notice_codes"]
@@ -277,6 +299,15 @@ def save(record: dict[str, object], directory: Path = DIRECTORY) -> None:
                 or error["reason"] not in ("source_unknown", "doi_registry_unknown",
                                            "integrity_unavailable")):
             raise DigestError("report_error_schema_invalid")
+    # Reconstruct the packet verdict from the validated constituent records.
+    # Any HOLD or source/registry error must hold the *entire* packet; neither
+    # an empty result nor a mixed one can be presented as MANUAL_REVIEW.
+    actual_status = (
+        "HOLD" if errors or any(item["status"] == "HOLD" for item in items)
+        else "MANUAL_REVIEW" if items else "NO_DATA"
+    )
+    if record["status"] != actual_status:
+        raise DigestError("report_aggregate_status_conflict")
     if directory.is_symlink() or not directory.is_dir():
         raise DigestError("directory_missing_or_symlinked")
     info = directory.stat()
