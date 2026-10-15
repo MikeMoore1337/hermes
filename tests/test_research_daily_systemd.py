@@ -29,12 +29,18 @@ class ResearchSystemdContractTests(unittest.TestCase):
         ):
             self.assertNotIn(forbidden,service)
 
-    def test_calendar_daily_plus_only_initial_activation_no_catchup(self):
+    def test_one_daily_calendar_only_no_activation_or_boot_catchup(self):
         timer=(ROOT/"deploy/hermes-research-scout.timer").read_text()
-        self.assertIn("OnActiveSec=2min",timer)
+        self.assertEqual(timer.count("OnCalendar="),1)
         self.assertIn("OnCalendar=*-*-* 19:30:00",timer)
         self.assertIn("Persistent=false",timer)
-        self.assertNotIn("OnUnitActiveSec=1min",timer)
+        for invalid in ("OnActiveSec=", "OnBootSec=", "OnStartupSec=",
+                        "OnUnitActiveSec=", "OnUnitInactiveSec="):
+            with self.subTest(invalid=invalid):
+                # Ignore comments explaining why these triggers are forbidden.
+                self.assertFalse(any(line.strip().startswith(invalid)
+                                     for line in timer.splitlines()))
+        self.assertNotIn("Persistent=true",timer)
 
     def test_installer_does_not_affect_news_or_ops_units(self):
         installer=(ROOT/"deploy/install-research-scout.sh").read_text()
