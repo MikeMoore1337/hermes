@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .crossref import CrossrefError, review_candidate
-from .europe_pmc import EuropePMCError, TOPICS, run as search
+from .europe_pmc import EuropePMCError, ID, run as search
 
 DIRECTORY = Path("/var/lib/hermes-research-scout")
 FILENAME = "latest-citations.json"
@@ -50,8 +50,20 @@ def _review_item(candidate: object, topic: str) -> dict[str, object]:
     }:
         raise DigestError("candidate_reason_invalid")
     identifier = candidate.get("id")
-    if type(identifier) is not str or len(identifier) > 20:
+    if type(identifier) is not str or ID.fullmatch(identifier) is None:
         raise DigestError("candidate_id_invalid")
+    expected_url = (
+        "https://europepmc.org/articles/" if identifier.startswith("PMC")
+        else "https://europepmc.org/article/MED/"
+    ) + identifier
+    if source_url != expected_url:
+        raise DigestError("candidate_url_invalid")
+    date = candidate.get("first_publication_date")
+    if date is not None and (
+        type(date) is not str or len(date) != 10 or
+        any(ch not in "0123456789-" for ch in date)
+    ):
+        raise DigestError("candidate_date_invalid")
     doi = candidate.get("doi")
     if doi is not None and (type(doi) is not str or len(doi) > 256):
         raise DigestError("candidate_doi_invalid")
@@ -59,7 +71,7 @@ def _review_item(candidate: object, topic: str) -> dict[str, object]:
         "topic": topic, "title": title, "identifier": identifier,
         "source_url": source_url, "doi": doi, "status": status,
         "reason": reason,
-        "publication_date": candidate.get("first_publication_date"),
+        "publication_date": date,
         "crossref_doi_status": "NOT_CHECKED",
         "scientific_claims_verified": False,
     }
