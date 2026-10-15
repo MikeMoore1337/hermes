@@ -70,3 +70,8 @@
 ### Изолированная проверка v0.22.1 вне VPS
 
 [Утверждённый безопасный протокол](../operations/H-01-V0221-OFFLINE-IMAGE.md) позволяет локально проверять immutable AMD64 v0.22.1 на отдельном Docker-хосте: без сети внутри контейнера, root, монтирований, моделей и секретов; только embedded source stamp и агрегированный список OS/Python компонентов. Никакого GO постоянному AI Agent этот тест не выдаёт, даже при совпадении stamp.
+
+
+### Проверка локального образа v0.22.1 на отдельном Windows Docker Desktop (15.10.2026)
+
+[Фактический протокол](../audits/H-01-v0221-offline-docker-run-2026-10-15.md): pinned AMD64 `cd9cb455...` локально обнаружен и изолированно проинспектирован, embedded stamp совпал с release commit; 274 OS + 146 Python записей, inventory SHA256 `f42cbae3102e5d56f7ca64f6239af1425e29ff58366f2674ca9759f272acd48f`. **563/563 offline тестов в Linux PASS**. Полная аттестация исходники-образ, SBOM, нагрузка и фактический hard billing gate не получены: **resident Agent NO-GO**. Production VPS и его службы этой проверкой не изменялись.
