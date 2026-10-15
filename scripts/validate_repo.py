@@ -87,6 +87,7 @@ REQUIRED_PATHS = (
     "scripts/verify_upstream_release_receipt.py",
     "tests/test_upstream_release_receipt.py",
     "docs/audits/H-01-upstream-docker-receipt-drift-2026-10-15.md",
+    "docs/audits/H-01-new-release-v0221-candidate-2026-10-15.md",
     "tests/test_image_local_inventory.py",
     "docs/operations/H-01-LOCAL-IMAGE-INVENTORY.md",
     "docs/audits/H-01-network-guard-vps-2026-10-14.md",
