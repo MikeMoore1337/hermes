@@ -15,7 +15,6 @@ import ssl
 from typing import Any, Callable
 from urllib.parse import quote
 
-from .europe_pmc import EuropePMCError, resolve_public as _resolve_pmc_public
 from .pubmed_fetch import DOI
 
 HOST = "api.crossref.org"
