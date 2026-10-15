@@ -187,6 +187,7 @@ REQUIRED_PATHS = (
     "tests/test_ops_watch_collector.py",
     "tests/test_ops_watch_recovery_transitions.py",
     "tests/test_ops_watch_atomic_projection.py",
+    "tests/test_ops_watch_history_capacity.py",
     "tests/test_ops_alert_sender_self_monitor.py",
     "tests/test_ops_alert_sender_service_monitor.py",
     "docs/operations/H-02-SAFE-INCIDENT-TEST.md",
