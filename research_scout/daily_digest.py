@@ -10,13 +10,13 @@ import json
 import os
 import stat
 import tempfile
-from datetime import UTC, datetime
+from datetime import UTC, date as date_module, datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable
 
 from .crossref import CrossrefError, review_candidate
 from .article_integrity import ArticleIntegrityError, inspect as inspect_article
-from .europe_pmc import EuropePMCError, ID, run as search
+from .europe_pmc import EuropePMCError, ID, MAX_AGE_DAYS, run as search
 from .pubmed_fetch import DOI
 
 DIRECTORY = Path("/var/lib/hermes-research-scout")
@@ -66,6 +66,13 @@ def _review_item(candidate: object, topic: str) -> dict[str, object]:
         any(ch not in "0123456789-" for ch in date)
     ):
         raise DigestError("candidate_date_invalid")
+    # A syntactically plausible date (e.g. 2026-02-30) is not evidence
+    # of an actual publication. Validate the calendar even for HOLD items.
+    if date is not None:
+        try:
+            date_from_source = date_module.fromisoformat(date)
+        except ValueError:
+            raise DigestError("candidate_date_invalid") from None
     doi = candidate.get("doi")
     if doi is not None and (type(doi) is not str or len(doi) > 256
                             or DOI.fullmatch(doi) is None):
@@ -294,6 +301,18 @@ def save(record: dict[str, object], directory: Path = DIRECTORY) -> None:
             item["reason"] != "metadata_only" or item["doi"] is None
         ):
             raise DigestError("report_item_status_reason_conflict")
+        # The producer's Europe PMC window is 30 days, with a one-day
+        # future tolerance. Re-enforce this at the storage boundary so
+        # tampered metadata cannot promote stale or future papers.
+        if item["status"] == "MANUAL_REVIEW":
+            published = item["publication_date"]
+            if published is None:
+                raise DigestError("report_publication_date_unreviewable")
+            published_day = date_module.fromisoformat(published)
+            observed_day = moment.date()
+            if (published_day > observed_day + timedelta(days=1)
+                    or observed_day - published_day > timedelta(days=MAX_AGE_DAYS)):
+                raise DigestError("report_publication_date_unreviewable")
     for error in errors:
         if (type(error) is not dict or set(error) != {"topic", "reason"}
                 or error["topic"] not in (*TOPIC_IDS, "crossref", "article-integrity")
