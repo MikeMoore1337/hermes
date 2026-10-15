@@ -10,6 +10,7 @@ from research_scout.review_draft import (
     MANUAL_REVIEW,
     ReviewDraftError,
     build_draft,
+    build_daily_item_draft,
     compare_drafts,
 )
 
@@ -128,6 +129,53 @@ class ReviewDraftTests(unittest.TestCase):
                     "supporting_excerpt": "Parallel groups.",
                 },
             }))
+
+    def test_actual_daily_item_stays_metadata_only(self) -> None:
+        from research_scout.daily_digest import TOPIC_IDS
+        item = {
+            "topic": next(iter(TOPIC_IDS)),
+            "title": "Plant-Derived Whole Foods and Food-Based Supplements",
+            "identifier": "42797032",
+            "source_url": "https://europepmc.org/article/MED/42797032",
+            "doi": "10.3390/nu18183049",
+            "status": "MANUAL_REVIEW",
+            "reason": "metadata_only",
+            "publication_date": "2026-09-18",
+            "crossref_doi_status": "NOT_CHECKED",
+            "article_notice_state": "NOT_CHECKED",
+            "article_notice_codes": [],
+            "scientific_claims_verified": False,
+        }
+        draft = build_daily_item_draft(item)
+        self.assertEqual(draft["identifiers"]["pmid"], "42797032")
+        self.assertEqual(draft["source_kind"], "bibliographic_index")
+        self.assertEqual(draft["study_type"], "UNKNOWN")
+        self.assertEqual(draft["main_results"], "UNKNOWN")
+        self.assertEqual(draft["correction_status"], "UNKNOWN")
+        self.assertEqual(draft["source_daily_report"]["article_notice_state"], "NOT_CHECKED")
+        self.assertFalse(draft["scientific_claims_verified"])
+        self.assertFalse(draft["automatic_publication"])
+        cli = subprocess.run(
+            [sys.executable, "-m", "research_scout.review_draft", "--daily-item-stdin"],
+            input=json.dumps(item).encode("utf-8"), capture_output=True, check=False,
+        )
+        self.assertEqual(cli.returncode, 0, cli.stderr)
+        self.assertEqual(json.loads(cli.stdout)["status"], "MANUAL_REVIEW")
+
+        item["article_notice_state"] = "REVIEW_REQUIRED"
+        item["article_notice_codes"] = ["CORRECTION_NOTICE"]
+        with self.assertRaisesRegex(ReviewDraftError, "daily_item_notice_not_held"):
+            build_daily_item_draft(item)
+        item["status"] = "HOLD"
+        self.assertEqual(build_daily_item_draft(item)["status"], "HOLD")
+        item["scientific_claims_verified"] = True
+        with self.assertRaisesRegex(ReviewDraftError, "daily_item_contract_invalid"):
+            build_daily_item_draft(item)
+        item["scientific_claims_verified"] = False
+        item["unexpected"] = "injection"
+        with self.assertRaisesRegex(ReviewDraftError, "daily_item_schema_invalid"):
+            build_daily_item_draft(item)
+
 
     def test_cli_is_explicit_and_offline(self) -> None:
         payload = json.dumps(candidate()).encode()
