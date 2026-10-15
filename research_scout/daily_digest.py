@@ -1,6 +1,6 @@
 """H-03: standalone bounded scientific metadata packet, not article publication.
 
-Three exact Europe PMC public queries and at most one Crossref DOI lookup.
+Three exact Europe PMC searches, one Crossref DOI, and at most one article-integrity lookup.
 No LLM, subscriptions, external messages, YFC/Second Brain data or SSH.
 """
 from __future__ import annotations
@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .crossref import CrossrefError, review_candidate
+from .article_integrity import ArticleIntegrityError, inspect as inspect_article
 from .europe_pmc import EuropePMCError, ID, run as search
 
 DIRECTORY = Path("/var/lib/hermes-research-scout")
@@ -73,6 +74,8 @@ def _review_item(candidate: object, topic: str) -> dict[str, object]:
         "reason": reason,
         "publication_date": date,
         "crossref_doi_status": "NOT_CHECKED",
+        "article_notice_state": "NOT_CHECKED",
+        "article_notice_codes": [],
         "scientific_claims_verified": False,
     }
 
@@ -82,6 +85,7 @@ def prepare(
     now: datetime,
     searcher: Callable[..., dict[str, Any]] = search,
     doi_verifier: Callable[..., dict[str, object]] = review_candidate,
+    integrity_verifier: Callable[[str, str], dict[str, object]] | None = None,
 ) -> dict[str, object]:
     if not isinstance(now, datetime) or now.tzinfo is None:
         raise DigestError("timezone_required")
@@ -123,7 +127,53 @@ def prepare(
                     break
         except (CrossrefError, DigestError):
             errors.append({"topic": "crossref", "reason": "doi_registry_unknown"})
-    if len(items) > 6 or calls > 4:
+    # Optional single official Europe PMC integrity check for the SAME item
+    # selected for DOI verification. No extra requests for the other items.
+    # The production entrypoint opts in; older pure offline callers stay offline.
+    if selected_crossref is not None and integrity_verifier is not None:
+        calls += 1
+        identifier = selected_crossref["id"]
+        source = "PMC" if identifier.startswith("PMC") else "MED"
+        current = next((x for x in items if x["identifier"] == identifier), None)
+        if current is None:
+            raise DigestError("integrity_candidate_missing")
+        try:
+            article = integrity_verifier(source, identifier)
+            if (type(article) is not dict
+                    or article.get("article_source") != source
+                    or article.get("article_identifier") != identifier
+                    or article.get("status") not in ("HOLD", "MANUAL_REVIEW")
+                    or article.get("notice_state") not in (
+                        "REVIEW_REQUIRED", "NOT_REPORTED_IN_THIS_METADATA",
+                    ) or article.get("scientific_claims_verified") is not False
+                    or article.get("automatic_publication") is not False):
+                raise DigestError("integrity_response_invalid")
+            codes = article.get("notice_codes")
+            if (type(codes) is not list or len(codes) > 4 or
+                    len(set(map(str, codes))) != len(codes) or
+                    not all(type(code) is str and code in (
+                        "CORRECTION_NOTICE", "RETRACTION_OR_WITHDRAWAL_NOTICE",
+                        "EXPRESSION_OF_CONCERN", "OTHER_OR_UNKNOWN_NOTICE",
+                    ) for code in codes)):
+                raise DigestError("integrity_notice_invalid")
+            if article["notice_state"] == "REVIEW_REQUIRED" and not codes:
+                raise DigestError("integrity_notice_invalid")
+            if article["notice_state"] != "REVIEW_REQUIRED" and codes:
+                raise DigestError("integrity_notice_invalid")
+            current["article_notice_state"] = article["notice_state"]
+            current["article_notice_codes"] = codes
+            if (article.get("doi") != selected_crossref["doi"] or
+                    article["status"] == "HOLD" or
+                    article["notice_state"] == "REVIEW_REQUIRED"):
+                current["status"] = "HOLD"
+                current["reason"] = "integrity_hold"
+        except (ArticleIntegrityError, DigestError):
+            current["status"] = "HOLD"
+            current["reason"] = "integrity_unknown"
+            current["article_notice_state"] = "UNAVAILABLE"
+            errors.append({"topic": "article-integrity",
+                           "reason": "integrity_unavailable"})
+    if len(items) > 6 or calls > 5:
         raise DigestError("resource_budget_exceeded")
     # One DOI across multiple topics remains a single article, not two
     # independent scientific corroborations.
@@ -166,7 +216,7 @@ def save(record: dict[str, object], directory: Path = DIRECTORY) -> None:
         raise DigestError("report_status_invalid")
     if (record["topics"] != list(TOPIC_IDS)
             or type(record["requests_attempted"]) is not int
-            or not 3 <= record["requests_attempted"] <= 4):
+            or not 3 <= record["requests_attempted"] <= 5):
         raise DigestError("report_budget_invalid")
     items, errors = record["items"], record["errors"]
     if type(items) is not list or len(items) > 6 or type(errors) is not list or len(errors) > 4:
@@ -184,6 +234,7 @@ def save(record: dict[str, object], directory: Path = DIRECTORY) -> None:
         if type(item) is not dict or set(item) != {
             "topic", "title", "identifier", "source_url", "doi", "status",
             "reason", "publication_date", "crossref_doi_status",
+            "article_notice_state", "article_notice_codes",
             "scientific_claims_verified",
         } or item["topic"] not in TOPIC_IDS or item["scientific_claims_verified"] is not False:
             raise DigestError("report_item_schema_invalid")
@@ -196,13 +247,28 @@ def save(record: dict[str, object], directory: Path = DIRECTORY) -> None:
         }
         if item["reason"] == "duplicate_across_topics":
             original["reason"] = "duplicate_doi"
+        if item["reason"] in ("integrity_hold", "integrity_unknown"):
+            original["reason"] = "metadata_only"
         _review_item(original, item["topic"])
         if item["crossref_doi_status"] not in ("NOT_CHECKED", "MATCHED_METADATA_ONLY"):
             raise DigestError("report_crossref_state_invalid")
+        state, codes = item["article_notice_state"], item["article_notice_codes"]
+        if (state not in ("NOT_CHECKED", "NOT_REPORTED_IN_THIS_METADATA",
+                          "REVIEW_REQUIRED", "UNAVAILABLE")
+                or type(codes) is not list or len(codes) > 4
+                or any(type(code) is not str or code not in (
+                    "CORRECTION_NOTICE", "RETRACTION_OR_WITHDRAWAL_NOTICE",
+                    "EXPRESSION_OF_CONCERN", "OTHER_OR_UNKNOWN_NOTICE",
+                ) for code in codes)
+                or (state == "REVIEW_REQUIRED") != bool(codes)):
+            raise DigestError("report_article_notice_invalid")
+        if state in ("REVIEW_REQUIRED", "UNAVAILABLE") and item["status"] != "HOLD":
+            raise DigestError("report_article_not_on_hold")
     for error in errors:
         if (type(error) is not dict or set(error) != {"topic", "reason"}
-                or error["topic"] not in (*TOPIC_IDS, "crossref")
-                or error["reason"] not in ("source_unknown", "doi_registry_unknown")):
+                or error["topic"] not in (*TOPIC_IDS, "crossref", "article-integrity")
+                or error["reason"] not in ("source_unknown", "doi_registry_unknown",
+                                           "integrity_unavailable")):
             raise DigestError("report_error_schema_invalid")
     if directory.is_symlink() or not directory.is_dir():
         raise DigestError("directory_missing_or_symlinked")
@@ -248,7 +314,7 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({"status": "NOT_EXECUTED"}))
         return 0
     try:
-        report = prepare(now=datetime.now(UTC))
+        report = prepare(now=datetime.now(UTC), integrity_verifier=inspect_article)
         save(report)
     except (DigestError, OSError):
         print(json.dumps({"status": "UNKNOWN", "reason": "metadata_report_unavailable"}))
@@ -259,6 +325,8 @@ def main(argv: list[str] | None = None) -> int:
         "candidate_count": len(report["items"]),
         "errors": len(report["errors"]),
         "requests_attempted": report["requests_attempted"],
+        "integrity_holds": sum(x["reason"] in ("integrity_hold", "integrity_unknown")
+                               for x in report["items"]),
         "scientific_claims_verified": False,
         "automatic_publication": False,
     }, sort_keys=True))
