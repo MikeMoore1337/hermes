@@ -7,6 +7,7 @@ naturally occurring incident. No network, secrets, systemd or SQLite writes.
 from __future__ import annotations
 
 import argparse
+from contextlib import closing
 import json
 import os
 import re
@@ -53,7 +54,7 @@ def inspect_receipts(directory: Path, *, code: str) -> dict[str, Any]:
             raise InputError("unsafe_outbox_db")
         # SQLite URI delimiters must be percent-encoded for literal paths.
         uri = path.absolute().as_uri() + "?mode=ro"
-        with sqlite3.connect(uri, uri=True, timeout=2) as db:
+        with closing(sqlite3.connect(uri, uri=True, timeout=2)) as db:
             tables = {r[0] for r in db.execute(
                 "SELECT name FROM sqlite_master WHERE type='table'"
             )}
@@ -77,7 +78,7 @@ def inspect_receipts(directory: Path, *, code: str) -> dict[str, Any]:
     if len(rows) > MAX_ROWS:
         raise InputError("evidence_window_exceeded")
 
-    new_ack: tuple[int, int] | None = None
+    new_ack: tuple[int, int, datetime] | None = None
     pair: tuple[int, int, int, int] | None = None
     for row in reversed(rows):
         event = _verified_event(row[:7])
@@ -103,8 +104,11 @@ def inspect_receipts(directory: Path, *, code: str) -> dict[str, Any]:
         if _date(acked_at) < _date(event["created_at"]):
             raise InputError("evidence_receipt_invalid")
         if event["phase"] == "new":
-            new_ack = (event["event_id"], message_id)
+            new_ack = (event["event_id"], message_id, _date(event["created_at"]))
         elif new_ack:
+            if (message_id == new_ack[1]
+                    or _date(event["created_at"]) < new_ack[2]):
+                raise InputError("evidence_receipt_invalid")
             pair = (new_ack[0], event["event_id"], new_ack[1], message_id)
             new_ack = None
     if pair is None:
