@@ -41,6 +41,9 @@ APPROVED_GO_CONTRACTS = {
     "github-yfc-public-actions": (
         "api", ("api.github.com",), "read_only", "public_metadata", (), "none",
     ),
+    "europe-pmc-manual": (
+        "api", ("www.ebi.ac.uk",), "read_only", "public_metadata", (), "none",
+    ),
     "telegram-ops-watch-owner": (
         "api", ("api.telegram.org",), "owner_notification", "private_owner_only",
         ("sendMessage:verified_private_chat",), "scoped_file",
