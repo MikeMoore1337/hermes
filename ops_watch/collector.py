@@ -10,6 +10,7 @@ import fcntl
 import json
 import os
 import subprocess
+import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -136,19 +137,33 @@ def _read_previous(path: Path) -> list[dict[str, Any]]:
 
 
 def _atomic_json(directory: Path, name: str, document: object) -> None:
+    """Replace a derivative snapshot without a stale fixed temporary-file lock.
+
+    A killed collector may leave .tmp behind. Using name+".tmp" with O_EXCL
+    makes every later collector invocation fail indefinitely. SQLite remains
+    authoritative; generate a fresh random 0600 staging file each time.
+    """
+    if name not in {"findings.json", "incident-preview.json"}:
+        raise InputError("invalid_projection_name")
     payload = json.dumps(document, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    temporary = directory / (name + ".tmp")
     destination = directory / name
-    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    fd, temporary_name = tempfile.mkstemp(prefix=f".{name}.", suffix=".tmp", dir=directory)
+    temporary = Path(temporary_name)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as stream:
             stream.write(payload)
             stream.flush()
             os.fsync(stream.fileno())
         os.replace(temporary, destination)
+        # Make the rename durable on a sudden reboot; the SQLite transition
+        # was already committed, so a projection can always be regenerated.
+        directory_fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
     finally:
-        if temporary.exists():
-            temporary.unlink()
+        temporary.unlink(missing_ok=True)
 
 
 def once(source: Path = SOURCE, target: Path = TARGET, observed: datetime | None = None, *, agent_guard: dict[str, bool] | None = None) -> dict[str, Any]:

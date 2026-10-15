@@ -179,6 +179,7 @@ REQUIRED_PATHS = (
     "deploy/install-ops-watch.sh",
     "tests/test_ops_watch_collector.py",
     "tests/test_ops_watch_recovery_transitions.py",
+    "tests/test_ops_watch_atomic_projection.py",
     "docs/operations/H-02-SAFE-INCIDENT-TEST.md",
     "ops_watch/cli.py",
     "ops_watch/README.md",
