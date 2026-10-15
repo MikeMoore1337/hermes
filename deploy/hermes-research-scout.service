@@ -1,0 +1,42 @@
+[Unit]
+Description=Hermes Research Scout: bounded public scientific metadata packet
+Documentation=https://github.com/MikeMoore1337/hermes/issues/4
+After=network-online.target local-fs.target
+Wants=network-online.target
+StartLimitIntervalSec=3600
+StartLimitBurst=3
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/opt/hermes-agent-owner
+StateDirectory=hermes-research-scout
+StateDirectoryMode=0700
+ExecStart=/usr/bin/python3 -m research_scout.daily_digest --execute
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictRealtime=yes
+ProtectHostname=yes
+ProtectClock=yes
+ProtectProc=invisible
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/var/lib/hermes-research-scout
+InaccessiblePaths=/var/lib/hermes /var/lib/hermes-agent /var/lib/hermes-qa-watch /etc/hermes-agent
+MemoryMax=96M
+CPUQuota=10%
+TasksMax=20
+TimeoutStartSec=48s
+UMask=0077
+StandardOutput=journal
+StandardError=journal
