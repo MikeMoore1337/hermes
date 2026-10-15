@@ -118,13 +118,17 @@ class SenderTimerMonitoringTests(unittest.TestCase):
 
     def test_main_wires_real_timer_probe_once_and_never_restarts_it(self):
         with patch.object(collector,"_ops_alert_timer_status",return_value=GOOD) as status:
-            with patch.object(collector,"once",return_value={
-                "status":"ok","changes":{"raised":[],"resolved":[]},
-                "active_codes":[],"queued_incident_events":0,
-            }) as collector_run:
-                self.assertEqual(collector.main(),0)
+            with patch.object(collector,"_ops_alert_service_status",
+                              return_value={"failed":False}) as service:
+                with patch.object(collector,"once",return_value={
+                    "status":"ok","changes":{"raised":[],"resolved":[]},
+                    "active_codes":[],"queued_incident_events":0,
+                }) as collector_run:
+                    self.assertEqual(collector.main(),0)
         status.assert_called_once()
-        collector_run.assert_called_once_with(alerts_timer=GOOD)
+        service.assert_called_once()
+        collector_run.assert_called_once_with(alerts_timer=GOOD,
+                                               alerts_service={"failed":False})
 
 
 if __name__=="__main__":
