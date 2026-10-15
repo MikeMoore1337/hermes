@@ -250,10 +250,12 @@ def build_daily_item_draft(item: Any) -> dict[str, Any]:
     """Project an existing daily metadata item, without inventing scientific results."""
     if type(item) is not dict or set(item) != DAILY_ITEM_KEYS:
         raise ReviewDraftError("daily_item_schema_invalid")
-    if (item["topic"] not in TOPIC_IDS
+    if (type(item["topic"]) is not str or item["topic"] not in TOPIC_IDS
             or item["scientific_claims_verified"] is not False
+            or type(item["crossref_doi_status"]) is not str
             or item["crossref_doi_status"] not in (
                 "NOT_CHECKED", "MATCHED_METADATA_ONLY")
+            or type(item["article_notice_state"]) is not str
             or item["article_notice_state"] not in (
                 "NOT_CHECKED", "NOT_REPORTED_IN_THIS_METADATA",
                 "REVIEW_REQUIRED", "UNAVAILABLE")):
@@ -267,7 +269,7 @@ def build_daily_item_draft(item: Any) -> dict[str, Any]:
     if (item["article_notice_state"] in {"REVIEW_REQUIRED", "UNAVAILABLE"}
             and item["status"] != "HOLD"):
         raise ReviewDraftError("daily_item_notice_not_held")
-    if item["status"] not in {"MANUAL_REVIEW", "HOLD"}:
+    if type(item["status"]) is not str or item["status"] not in {"MANUAL_REVIEW", "HOLD"}:
         raise ReviewDraftError("daily_item_status_invalid")
     identifier = item["identifier"]
     if type(identifier) is not str or not (
