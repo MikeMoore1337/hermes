@@ -6,6 +6,31 @@ outside the prompt and is an evaluation label, not a source of model facts.
 from __future__ import annotations
 
 CASES: dict[str, dict[str, object]] = {
+    "plant_recovery_public_abstract": {
+        "candidate": {
+            "source": "EUROPE_PMC",
+            "id": "42797032",
+            "source_url": "https://pubmed.ncbi.nlm.nih.gov/42797032/",
+            "title": "Plant-Derived Whole Foods and Food-Based Supplements on Post-Exercise Recovery in Physically Active Individuals: A Systematic Review of Human Intervention Trials",
+            "doi": "10.3390/nu18183049",
+            "pmid": "42797032",
+            "status": "MANUAL_REVIEW",
+            "reason": "public_abstract_curated_for_pilot",
+            "first_publication_date": "2026-09-18",
+            "scientific_claims_verified": False,
+        },
+        "public_abstract_case": True,
+        "manual_reference": {
+            "source": "PubMed PMID 42797032; abstract publicly checked",
+            "study_type": "systematic review",
+            "population": "physically active humans aged >=14",
+            "sample_size": "UNKNOWN total participants (36 studies is NOT 36 people)",
+            "intervention": "plant-derived foods",
+            "control": "varied comparisons",
+            "main_results": "some soreness reductions, inconsistent objective recovery, no meta-analysis",
+            "correction_status": "NOT_CHECKED",
+        },
+    },
     "plant_recovery": {
         "candidate": {
             "source": "EUROPE_PMC",

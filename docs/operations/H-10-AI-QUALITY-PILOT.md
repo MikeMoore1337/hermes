@@ -71,3 +71,27 @@ python3 -m scripts.hermes_ai_pilot run --engine live --case ops:provider_http_42
 ## Приёмка и остаток
 
 Реализовано: единый offline/live-контракт, ограничитель вызовов, 12 Ops и 4 Research cases, сохранение sanitized результатов, сравнение с правилами/ручными reference и отрицательные тесты. Не доказано: качество настоящей LLM, фактические Neurons/стоимость, реальный Workers Free, Docker startup/инициализация Hermes для этого нового общего CLI, production readiness, PR/CI и обновление GitHub Issues.
+
+
+## Research Scout: проверка на публичном реферате (16.10.2026)
+
+Добавлен пятый научный сценарий plant_recovery_public_abstract.
+Оригинальный plant_recovery остаётся строго metadata_only: вид исследования,
+выборка и результаты не выводятся из названия.
+
+Новый сценарий содержит 8 вручную сверенных кратких пересказов публичного
+реферата PubMed PMID 42797032 (DOI 10.3390/nu18183049). Это не полный
+текст и не экспертное научное заключение. Каждое научное поле с содержанием
+требует field_evidence с допустимым идентификатором F1-F8.
+Число исследований не превращается в количество участников:
+sample_size=UNKNOWN; correction_status=UNKNOWN пока не проведена проверка.
+
+Происхождение и допустимые идентификаторы проверяются детерминированно;
+семантическая точность ответа остаётся NEEDS_EXPERT_REVIEW.
+Публикации и изменения YFC/Second Brain запрещены.
+
+Offline:
+python3 -m scripts.hermes_ai_pilot run --engine mock --case research:plant_recovery_public_abstract --json
+python3 -m unittest discover -s tests -p test_research_abstract_quality.py
+
+Реальный запрос не выполняется до сброса дневного лимита UTC.

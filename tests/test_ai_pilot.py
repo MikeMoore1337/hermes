@@ -90,11 +90,11 @@ class PilotTests(unittest.TestCase):
         self.assertEqual(current["automatic_retries"], 0)
         self.assertFalse(current["automatic_fallback"])
 
-    def test_case_catalog_has_twelve_ops_and_four_research_cases(self) -> None:
+    def test_case_catalog_has_twelve_ops_and_five_research_cases(self) -> None:
         names = case_names()
-        self.assertEqual(len(names), 16)
+        self.assertEqual(len(names), 17)
         self.assertEqual(len([name for name in names if name.startswith("ops:")]), 12)
-        self.assertEqual(len([name for name in names if name.startswith("research:")]), 4)
+        self.assertEqual(len([name for name in names if name.startswith("research:")]), 5)
         self.assertIn("ops:contradictory_state", names)
         self.assertIn("ops:unknown_error_code", names)
         self.assertIn("ops:prompt_injection", names)
