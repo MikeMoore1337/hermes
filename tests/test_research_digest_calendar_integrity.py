@@ -39,6 +39,14 @@ class ResearchCalendarIntegrityTests(unittest.TestCase):
         record["items"][0]["publication_date"] = "2026-08-01"
         self.rejects(record)
 
+    def test_exact_30_day_boundary_and_one_day_future_tolerance(self):
+        for allowed in ("2026-09-15", "2026-10-16"):
+            with self.subTest(allowed=allowed):
+                record = report(article())
+                record["items"][0]["publication_date"] = allowed
+                save(record, self.directory)
+                self.assertTrue((self.directory / FILENAME).is_file())
+
     def test_manual_review_without_published_date_is_refused(self):
         record = report(article())
         record["items"][0]["publication_date"] = None
