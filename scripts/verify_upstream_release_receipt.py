@@ -25,18 +25,44 @@ MANIFEST_MEDIA_TYPE = "application/vnd.docker.distribution.manifest.list.v2+json
 SHA = re.compile(r"sha256:[0-9a-f]{64}\Z")
 MAX_RESPONSE = 24_576
 
+# Fixed reviewed public release receipts from official annotated tag objects.
+# v0.22.1 rc.5 claim object dabfb2... has verified Git SSH signature.
+# A signed claim/tag is NOT an image attestation or verified complete SBOM.
+RELEASES = {
+    "v0.21.6": {
+        "receipt": RECEIPT_DIGEST,
+        "tag_object": RELEASE_TAG_OBJECT,
+        "claim": RELEASE_CLAIM,
+        "source_commit": RELEASE_COMMIT,
+        "claim_skip_tests": True,
+        "claim_tag_signature_verified": False,
+    },
+    "v0.22.1": {
+        "receipt": "sha256:861c9756ed6c558530c73d5c27860343b00c0d5efd6997a1d8ec6416c8a2b485",
+        "tag_object": "28106ea1a3230177edb30a0a4e8a099d839bbc2f",
+        "claim": "rc.5-v0.22.1",
+        "source_commit": "297552a9d646119871391d202509822cd86330df",
+        "claim_skip_tests": None,  # No such declaration in RC5 claim message.
+        "claim_tag_signature_verified": True,
+    },
+}
+
 
 class ReceiptDenied(ValueError):
     """Only fixed codes; never copy untrusted command output."""
 
 
-def commands() -> tuple[tuple[str, ...], ...]:
+def commands(release: str = "v0.21.6") -> tuple[tuple[str, ...], ...]:
     """Exact allowlist: three read-only registry metadata commands."""
+    if type(release) is not str or release not in RELEASES:
+        raise ReceiptDenied("release_not_allowlisted")
+    version_ref = REPOSITORY + ":" + release
+    receipt_ref = REPOSITORY + "@" + RELEASES[release]["receipt"]
     return (
-        ("docker", "buildx", "imagetools", "inspect", VERSION_TAG,
+        ("docker", "buildx", "imagetools", "inspect", version_ref,
          "--format", "{{json .Manifest.Digest}}"),
-        ("docker", "buildx", "imagetools", "inspect", VERSION_TAG, "--raw"),
-        ("docker", "buildx", "imagetools", "inspect", RECEIPT_REF, "--raw"),
+        ("docker", "buildx", "imagetools", "inspect", version_ref, "--raw"),
+        ("docker", "buildx", "imagetools", "inspect", receipt_ref, "--raw"),
     )
 
 
@@ -82,7 +108,11 @@ def read_arches(raw: object) -> dict[str, str]:
 
 
 def classify(current_digest: str, current: dict[str, str],
-             receipt: dict[str, str]) -> dict[str, object]:
+             receipt: dict[str, str], *,
+             release: str = "v0.21.6") -> dict[str, object]:
+    if type(release) is not str or release not in RELEASES:
+        raise ReceiptDenied("release_not_allowlisted")
+    metadata = RELEASES[release]
     if type(current_digest) is not str or SHA.fullmatch(current_digest) is None:
         raise ReceiptDenied("registry_digest_invalid")
     for arches in (current, receipt):
@@ -90,7 +120,7 @@ def classify(current_digest: str, current: dict[str, str],
                 or any(type(x) is not str or SHA.fullmatch(x) is None
                        for x in arches.values())):
             raise ReceiptDenied("registry_arch_map_invalid")
-    manifest_equal = current_digest == RECEIPT_DIGEST
+    manifest_equal = current_digest == metadata["receipt"]
     arches_equal = current == receipt
     # A third party's unsigned release tag must never be treated as signed
     # source-to-image attestation even if all observed digests match.
@@ -99,17 +129,18 @@ def classify(current_digest: str, current: dict[str, str],
               else "MATCHED_BUT_PROVENANCE_UNVERIFIED")
     return {
         "status": status,
-        "version_tag": VERSION_TAG,
-        "release_tag_object": RELEASE_TAG_OBJECT,
-        "release_claim": RELEASE_CLAIM,
-        "release_commit": RELEASE_COMMIT,
+        "version_tag": REPOSITORY + ":" + release,
+        "release_tag_object": metadata["tag_object"],
+        "release_claim": metadata["claim"],
+        "release_commit": metadata["source_commit"],
         "current_tag_manifest_digest": current_digest,
-        "release_receipt_manifest_digest": RECEIPT_DIGEST,
+        "release_receipt_manifest_digest": metadata["receipt"],
         "manifest_digest_equal": manifest_equal,
         "architecture_manifests_equal": arches_equal,
         "current_architecture_digests": current,
         "receipt_architecture_digests": receipt,
-        "claim_skip_tests": CLAIM_SKIP_TESTS,
+        "claim_skip_tests": metadata["claim_skip_tests"],
+        "claim_tag_signature_verified": metadata["claim_tag_signature_verified"],
         "supplier_signature_verified": False,
         "complete_sbom_verified": False,
         "reproducible_source_build_verified": False,
@@ -118,9 +149,9 @@ def classify(current_digest: str, current: dict[str, str],
 
 
 def check_once(runner: Callable[..., subprocess.CompletedProcess] = subprocess.run,
-               ) -> dict[str, object]:
+               *, release: str = "v0.21.6") -> dict[str, object]:
     outputs: list[bytes] = []
-    for command in commands():
+    for command in commands(release):
         try:
             completed = runner(
                 command, check=False, capture_output=True, timeout=18,
@@ -137,7 +168,8 @@ def check_once(runner: Callable[..., subprocess.CompletedProcess] = subprocess.r
     except (ValueError, UnicodeError):
         raise ReceiptDenied("registry_digest_json_invalid") from None
     return classify(
-        digest, read_arches(outputs[1]), read_arches(outputs[2])
+        digest, read_arches(outputs[1]), read_arches(outputs[2]),
+        release=release
     )
 
 
@@ -146,12 +178,13 @@ def main(argv: list[str] | None = None) -> int:
         description="Read only three exact public Docker release manifest facts"
     )
     parser.add_argument("--execute", action="store_true")
+    parser.add_argument("--release", choices=sorted(RELEASES), default="v0.21.6")
     args = parser.parse_args(argv)
     if not args.execute:
         print(json.dumps({"status": "NOT_EXECUTED"}))
         return 0
     try:
-        result = check_once()
+        result = check_once(release=args.release)
     except ReceiptDenied:
         print(json.dumps({
             "status": "UNKNOWN", "resident_agent_allowed": False,
