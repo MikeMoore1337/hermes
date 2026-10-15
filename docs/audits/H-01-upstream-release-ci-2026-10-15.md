@@ -38,3 +38,12 @@ python3 scripts/verify_upstream_release_ci.py --execute --release v0.22.1
 3. Не включать постоянный AI Agent или сетевую модель до подтверждения подписанного source-to-image, SBOM, нулевого биллинга, стабильности с новостями, выполнения собственных нагрузочных и функциональных тестов.
 
 Связанные: [H-01 #33](https://github.com/MikeMoore1337/hermes/issues/33), [сверка release receipt](H-01-upstream-docker-receipt-drift-2026-10-15.md), [кандидат v0.22.1](H-01-new-release-v0221-candidate-2026-10-15.md).
+
+
+## Уточнение: отдельный CI исходников того же SHA действительно прошёл
+
+Для того же исходного коммита `297552a9d646119871391d202509822cd86330df` был ранее выполнен самостоятельный [CI push run #38644080305](https://github.com/NousResearch/hermes-agent/actions/runs/38644080305), **`conclusion=success`**. В нём шаги `Python tests / Run tests (1/2)`, `Python tests / Run tests (2/2)`, несколько проверок ОС, Dockerfile lint и `Remote terminal backends / SSH + Docker backends` отработали успешно. Поэтому утверждение «этот коммит вообще не тестировался» **было бы неверным**.
+
+Однако параллельный [Docker Build, Test, and Publish push run #38644079413](https://github.com/NousResearch/hermes-agent/actions/runs/38644079413) имеет `conclusion=cancelled` (список jobs в API пуст на момент проверки), а в **том самом** [stable release #38646275925](https://github.com/NousResearch/hermes-agent/actions/runs/38646275925), из которого опубликован образ v0.22.1, четыре шага `Run docker integration tests` отмечены `skipped`. Это разная область доказательств: **тестирование исходного коммита есть, привязки полного интеграционного испытания именно опубликованного образа нет**.
+
+Не закрывать P0 только на основании CI исходников: для допуска нужно независимое тестирование точного immutable image digest, проверка полного набора зависимостей и отдельно биллинга/ресурсов.
