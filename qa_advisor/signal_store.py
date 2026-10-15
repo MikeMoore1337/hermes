@@ -100,7 +100,8 @@ def read(directory: Path = DIR) -> dict[str, Any] | None:
 
 
 def from_ci(result: dict[str, object], *, now: datetime) -> dict[str, object]:
-    if type(result) is not dict or result.get("status") not in STATES:
+    if (type(result) is not dict or type(result.get("status")) is not str
+            or result["status"] not in STATES):
         raise SignalError("ci_result_invalid")
     if not isinstance(now, datetime) or now.tzinfo is None:
         raise SignalError("signal_clock_invalid")
@@ -120,6 +121,10 @@ def store(item: dict[str, object], *, directory: Path = DIR) -> str:
     _dir(directory)
     previous = read(directory)
     if previous is not None:
+        # API UNKNOWN must not erase evidence of an earlier failure or
+        # reset the run-id monotonic gate. Age is checked by the reader.
+        if record["status"] == "UNKNOWN":
+            return "PRESERVED_PREVIOUS_SIGNAL_ON_UNKNOWN"
         old_id, new_id = previous["run_id"], record["run_id"]
         if new_id and old_id and new_id < old_id:
             raise SignalError("run_id_moved_backward")
