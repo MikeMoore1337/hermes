@@ -2,7 +2,8 @@
 Description=Hermes Research Scout: independent daily public metadata search
 
 [Timer]
-OnActiveSec=2min
+# Exactly one calendar slot per day. Do not add an OnActiveSec boot/restart
+# trigger: initial review is performed explicitly by the installer.
 OnCalendar=*-*-* 19:30:00
 RandomizedDelaySec=5min
 AccuracySec=1min
