@@ -38,21 +38,29 @@ The installer does not alter Caddy or DNS. The backend requires an authenticated
 
 ## HTTPS and authentication: hermes.mikemoore.top
 
-1. Owner creates `hermes` DNS in Cloudflare and verifies resolution plus Cloudflare origin routing/port settings.
-2. Generate a unique secret outside the repository (mode 0600 root); hash with `caddy hash-password --password-file`. No secrets or password hashes in PR/CI.
-3. Add a dedicated, checked Caddy site under its existing import (example; never commit a real hash):
+### Verified VPS facts (2026-10-16)
 
-```caddyfile
-hermes.mikemoore.top {
-    basic_auth {
-        hermes $2a$REPLACE_WITH_REAL_BCRYPT_HASH
-    }
-    reverse_proxy 127.0.0.1:9133
-}
-```
+- Caddy v2.11.4 serves Second Brain on the existing HTTPS origin listener :8444; VPS :443 is a separate xray service. Never replace or take :443 from xray, or overwrite the existing brain Caddy snippet.
+- Added separate `/etc/caddy/sites.d/hermes.mikemoore.top.caddy` as an HTTPS virtual host on :8444; it proxies only to 127.0.0.1:9133. Caddy `basic_auth` runs before the proxy; Authorization is stripped before upstream. Another :80 site redirects the hostname to the portless HTTPS URL.
+- Login: `hermes`. A unique random password is stored **only** on the VPS at `/etc/caddy/auth/hermes-control-center.password`, `0600 root:root`. To retrieve it on the authorized server, use `sudo cat /etc/caddy/auth/hermes-control-center.password`. Never paste it into GitHub/CI or command-line arguments.
+- Generated the bcrypt hash by piping password to stdin of `caddy hash-password --algorithm bcrypt --bcrypt-cost 12` via a subprocess, rather than passing it as an argv argument. Caddy 2.11.4 does **not** offer the documented `--password-file` flag.
+- Local origin-only HTTPS verified: unauthenticated `/` and `/api/overview` return 401; authenticated requests return 200; other routes 404. `brain.mikemoore.top` still returns HTTP 303 through Cloudflare. The regular read-only listener is strictly `127.0.0.1:9133`; all seven source units are returned, with resident Agent `blocked`.
+- Current Caddy `tls internal` is **staging only**. This local CA is not a Cloudflare-trusted Origin CA, so public `Full (strict)` cannot be declared operational. Never weaken the SSL/TLS zone mode to `Full` or `Flexible` merely to bypass this problem.
+- An ECDSA P-256 private key was generated **on the VPS**, `0640 root:caddy`, at `/etc/caddy/certs/hermes.mikemoore.top.key`. The public CSR is `/etc/caddy/certs/hermes.mikemoore.top.csr`, includes only SAN `hermes.mikemoore.top`.
 
-4. Before declaring public deployment: `caddy validate`, healthy TLS, unauthenticated **401**, authenticated **200**, no direct remote access to `:9133`, test `brain.mikemoore.top` unchanged.
-5. Only after #33 runtime GO: separately install native dashboard plugin into the approved Hermes profile, configure its built-in Russian locale `ru` and verify auth for all privileged APIs. No resident restart or token config is implied here.
+### Required Cloudflare changes
+
+1. `DNS → Records`: DNS A record `hermes` must point to the actual **origin** IPv4 `111.88.215.204`, proxy status **Proxied** (orange cloud), TTL Auto. Remove an incorrect target using a Cloudflare edge/restricted address and any conflicting AAAA/CNAME for that hostname. At the time of the test, edge request responded with Cloudflare **1034 Edge IP Restricted**, not the origin site.
+2. `Rules → Origin Rules`: add or verify a hostname-specific rule `http.host eq "hermes.mikemoore.top"` with **Destination port = 8444**. This is required because the normal public URL uses 443 at the Cloudflare edge but Caddy on this VPS listens on 8444. Do not affect the existing brain rule.
+3. `SSL/TLS → Origin Server → Create Certificate → Use my private key and CSR`: paste the public CSR from the VPS file and issue a signed **Origin CA** certificate covering `hermes.mikemoore.top`. User supplies only the **signed certificate** to VPS as `/etc/caddy/certs/hermes.mikemoore.top.pem`, not another private key. Never post the private key.
+4. Check certificate SAN and key match before activation. Replace only the new Hermes site `tls internal` with `tls /etc/caddy/certs/hermes.mikemoore.top.pem /etc/caddy/certs/hermes.mikemoore.top.key`. Validate Caddy and reload, preserving the existing brain config. Keep Cloudflare `Full (strict)`.
+5. Verify public HTTPS returns **401 without authentication and 200 after authentication**. Confirm `brain.mikemoore.top` still operates, and no external inbound access to localhost port 9133 is possible. Until then, status is `PUBLIC_NO_GO`.
+
+Docs: https://developers.cloudflare.com/support/troubleshooting/http-status-codes/cloudflare-1xxx-errors/error-1034/ ,
+https://developers.cloudflare.com/rules/origin-rules/ ,
+https://developers.cloudflare.com/ssl/origin-configuration/origin-ca/
+
+Only after resident Agent P0 #33 passes, separately install native Dashboard plugin into an approved isolated Hermes profile. The official Dashboard includes high-privilege APIs and requires independent authorization and runtime security review. No automatic resident restart is part of this deployment.
 
 ## Rollback
 
