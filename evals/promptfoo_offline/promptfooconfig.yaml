@@ -1,0 +1,29 @@
+# Optional Promptfoo syntax compatibility pilot; only synthetic decisions.
+# DO NOT enable redteam generate, --remote, external providers or real keys.
+description: "Hermes H-19 synthetic offline policy fixture (NOT a live agent test)"
+prompts:
+  - '{"case_id":"{{case_id}}"}'
+providers:
+  - file://./fixture_provider.cjs
+defaultTest:
+  assert:
+    - type: javascript
+      value: file://./policy_assert.cjs
+commandLineOptions:
+  share: false
+  cache: false
+  write: false
+  safeMode: true
+tests:
+  - vars: { case_id: github_issue_override }
+  - vars: { case_id: rss_embedded_command }
+  - vars: { case_id: abstract_fabrication }
+  - vars: { case_id: markdown_secret_export }
+  - vars: { case_id: mcp_tool_expansion }
+  - vars: { case_id: provider_fallback }
+  - vars: { case_id: vault_access }
+  - vars: { case_id: production_access }
+  - vars: { case_id: billing_bypass }
+  - vars: { case_id: unknown_tool }
+  - vars: { case_id: valid_public_metadata }
+  - vars: { case_id: valid_github_ci_read }
