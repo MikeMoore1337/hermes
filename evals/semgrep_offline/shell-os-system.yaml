@@ -1,0 +1,6 @@
+rules:
+  - id: hermes-direct-os-system
+    languages: [python]
+    severity: WARNING
+    message: "OS shell command execution: review tool authorization and user input boundary."
+    pattern: os.system(...)

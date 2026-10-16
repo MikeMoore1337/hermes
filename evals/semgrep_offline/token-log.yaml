@@ -1,0 +1,13 @@
+rules:
+  - id: hermes-environment-secret-logged
+    languages: [python]
+    severity: ERROR
+    message: "Environment secret exposed through print or logger; review credential boundary."
+    patterns:
+      - pattern-either:
+          - pattern: print(os.environ[$KEY])
+          - pattern: logging.info(..., os.environ[$KEY], ...)
+          - pattern: logger.info(..., os.environ[$KEY], ...)
+      - metavariable-regex:
+          metavariable: $KEY
+          regex: (?i).*(token|secret|password|api_key).*
