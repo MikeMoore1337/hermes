@@ -44,7 +44,7 @@ class BrokerContractTests(unittest.TestCase):
         )
         for item in payloads:
             with self.subTest(item=item[:50]), self.assertRaises(AuthError):
-                parse_request((item + "\\n").encode())
+                parse_request((item + "\n").encode())
         with self.assertRaises(AuthError):
             parse_request(None)
 
@@ -93,7 +93,7 @@ class BrokerContractTests(unittest.TestCase):
                     # a legitimate request may arrive in more than one recv().
                     packet = (json.dumps({"action":"identify",
                                           "code":"code-token-fragment-123456",
-                                          "verifier":"v"*55}) + "\\n").encode("ascii")
+                                          "verifier":"v"*55}) + "\n").encode("ascii")
                     with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as conn:
                         conn.settimeout(3)
                         conn.connect(path)
