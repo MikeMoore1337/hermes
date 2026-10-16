@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from collections import deque
 import hashlib
 import json
+import logging
 import os
 from pathlib import Path
 import re
@@ -97,11 +98,31 @@ def parse_request(raw: bytes) -> tuple[str, str]:
     return code, verifier
 
 
+def _safe_failure_category(exc: Exception) -> str:
+    """Only bounded reason labels in journal. Never log tokens, codes or URLs."""
+    if isinstance(exc, AuthError):
+        return {
+            "Invalid OAuth token response": "github_token_exchange_denied",
+            "Unexpected token type": "github_token_type_denied",
+            "Unexpected OAuth permissions": "github_scope_denied",
+            "Provider identity invalid": "github_identity_invalid",
+            "Owner ID denied": "wrong_github_account",
+            "Replayed OAuth code": "replayed_code",
+            "Attempt limit": "rate_limit",
+            "Peer not permitted": "untrusted_peer",
+        }.get(str(exc), "auth_rejected")
+    if isinstance(exc, TimeoutError):
+        return "provider_timeout"
+    if isinstance(exc, OSError):
+        return "provider_network_error"
+    return "provider_unavailable"
+
+
 class _Handler(socketserver.BaseRequestHandler):
     def handle(self):
         server = self.server
         try:
-            self.request.settimeout(7)
+            self.request.settimeout(18)
             if not server.peer_allowed(self.request):
                 raise AuthError("Peer not permitted")
             raw = _read_frame(self.request)
@@ -114,7 +135,9 @@ class _Handler(socketserver.BaseRequestHandler):
             if type(user_id) is not int or user_id != server.config.owner_id:
                 raise AuthError("Owner ID denied")
             data = {"ok": True, "id": user_id}
-        except Exception:
+        except Exception as exc:
+            logging.getLogger(__name__).warning(
+                "oauth_broker_rejection category=%s", _safe_failure_category(exc))
             # Never return provider errors, token, identity or code to a denied client.
             data = {"ok": False}
         response = (json.dumps(data, separators=(",", ":")) + "\n").encode("ascii")

@@ -105,7 +105,7 @@ class UnixHttpIntegrationTests(unittest.TestCase):
         self.assertEqual(parsed.netloc, "github.com")
         arguments = parse_qs(parsed.query)
         self.assertEqual(arguments["code_challenge_method"], ["S256"])
-        self.assertNotIn("scope", arguments)
+        self.assertEqual(arguments["scope"], ["read:user"])
         state = arguments["state"][0]
         state_cookie = self.header(headers, "Set-Cookie").split(";", 1)[0]
         self.assertEqual(state_cookie, "hermes_cc_state=" + state)

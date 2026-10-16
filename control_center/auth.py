@@ -130,7 +130,7 @@ class LocalBrokerProvider:
         if len(request) > 2048:
             raise AuthError("Broker request too large")
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
-            client.settimeout(7)
+            client.settimeout(16)
             client.connect(config.broker_socket)
             client.sendall(request)
             data = bytearray()
@@ -173,7 +173,7 @@ class GitHubProvider:
             raise AuthError("Unexpected token type")
         # An existing authorization may include broad scopes; owner login
         # must not accidentally receive repo/org privileges.
-        if token.get("scope", "") not in ("", None):
+        if token.get("scope", "") not in ("", None, "read:user"):
             raise AuthError("Unexpected OAuth permissions")
         identity = _fetch_json(Request(
             USER_URL, headers={
@@ -229,6 +229,7 @@ class OAuthService:
             "state": state,
             "code_challenge": challenge,
             "code_challenge_method": "S256",
+            "scope": "read:user",
             "allow_signup": "false",
         })
         return url, state
