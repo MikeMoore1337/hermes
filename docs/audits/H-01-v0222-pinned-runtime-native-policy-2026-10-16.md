@@ -123,3 +123,18 @@ Source: https://www.python.org/downloads/release/python-3148/
 **Result: offline original GAP OBSERVED; local patch BOUNDED PASS;
 official immutable image resident `NO-GO`.** Never deploy it as resident
 because a synthetic regression suite passed.
+
+## Offline verifier metadata hardening (follow-up 16.10.2026)
+
+The repository-only `verify_v0222_immutable` contract now accepts a source
+stamp match **only** when an explicit commit/source revision field equals the
+full expected 40-character SHA. Previously, merely sharing the first 12 hex
+characters, including a malformed suffix or a non-commit version/tag field,
+could produce `matches_source=true`. The local derivative Docker image ID is
+now required to match `sha256:` plus exactly 64 lowercase hexadecimal digits;
+an invalid ID prevents even the synthetic probe from starting. Unmatched
+identity cannot report `upstream_image_unmodified=true`.
+
+These are synthetic, offline checks, **not renewed attestation** of the already
+observed image or a new Docker/VPS run. The upstream native dispatch gap and
+all remaining P0 NO-GO gates above are unchanged.
