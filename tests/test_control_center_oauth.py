@@ -8,8 +8,9 @@ from pathlib import Path
 import tempfile
 from threading import Thread
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from urllib.parse import parse_qs, urlsplit
+from urllib.request import Request
 
 from http.server import ThreadingHTTPServer
 
@@ -164,6 +165,42 @@ class ProviderTests(unittest.TestCase):
             with self.assertRaises(AuthError):
                 GitHubProvider().identify(CONFIG, "code-token-12345", "v" * 50)
         self.assertEqual(call.call_count, 1)
+
+
+class ProviderJsonBoundaryTests(unittest.TestCase):
+    """No network: GitHub responses must be unambiguous and bounded."""
+
+    def check_payload(self, payload: bytes):
+        from control_center.auth import _fetch_json
+        response = MagicMock()
+        response.status = 200
+        response.read.return_value = payload
+        opener = MagicMock()
+        opener.open.return_value.__enter__.return_value = response
+        with patch("control_center.auth.build_opener", return_value=opener):
+            return _fetch_json(Request("https://github.com/login/oauth/access_token"))
+
+    def test_duplicate_keys_rejected_in_nested_or_top_level_objects(self):
+        for packet in (
+            b'{"access_token":"first","access_token":"second"}',
+            b'{"user":{"id":1,"id":2}}',
+            b'{"id":1,"id":1}',
+        ):
+            with self.subTest(packet=packet[:30]):
+                with self.assertRaises(AuthError):
+                    self.check_payload(packet)
+
+    def test_nonstandard_json_constants_and_non_dict_denied(self):
+        for packet in (b'{"id":NaN}', b'{"id":Infinity}',
+                       b'{"id":-Infinity}', b'[{"id":1}]',
+                       b'{"id":1} trailing', b'\xff'):
+            with self.subTest(packet=packet[:25]):
+                with self.assertRaises(AuthError):
+                    self.check_payload(packet)
+
+    def test_valid_strict_provider_object_is_accepted(self):
+        result = self.check_payload(b'{"id":42142321,"login":"example"}')
+        self.assertEqual(result["id"], 42142321)
 
 
 class RouteTests(unittest.TestCase):
