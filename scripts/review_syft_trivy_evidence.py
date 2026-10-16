@@ -71,6 +71,41 @@ def _utc(value: object) -> datetime:
     return parsed
 
 
+def _syft_image_identity(source: dict) -> bool:
+    """Accept two strictly validated native Syft layouts, never just a mutable tag."""
+    if source.get("type") != "image":
+        raise ScanEvidenceDenied("invalid_syft_target")
+    pinned_digest = IMAGE.partition("@")[2]
+    target = source.get("target")
+    if target is not None:
+        if type(target) is not dict or target.get("userInput") != IMAGE:
+            raise ScanEvidenceDenied("syft_subject_mismatch")
+        if target.get("manifestDigest") != pinned_digest:
+            raise ScanEvidenceDenied("syft_manifest_digest_missing_or_mismatch")
+        return True
+
+    # Syft 1.54.1 native JSON: source.metadata (not source.target).
+    # The local Docker daemon may return a reconstructed manifestDigest
+    # different from the published platform RepoDigest: keep this mismatch
+    # visible, NEVER silently claim source-to-build parity.
+    metadata = source.get("metadata")
+    if type(metadata) is not dict:
+        raise ScanEvidenceDenied("invalid_syft_target")
+    if (source.get("name") != IMAGE.partition("@")[0]
+            or source.get("version") != pinned_digest
+            or metadata.get("userInput") != IMAGE
+            or metadata.get("repoDigests") != [IMAGE]
+            or metadata.get("architecture") != "amd64"
+            or metadata.get("os") != "linux"):
+        raise ScanEvidenceDenied("syft_subject_mismatch")
+    local_digest = metadata.get("manifestDigest")
+    if (type(local_digest) is not str or not local_digest.startswith("sha256:")
+            or HEX.fullmatch(local_digest[7:]) is None
+            or source.get("id") != local_digest[7:]):
+        raise ScanEvidenceDenied("invalid_syft_local_manifest_identity")
+    return local_digest == pinned_digest
+
+
 def assess(manifest: bytes, syft: bytes, trivy: bytes) -> dict:
     info = _json(manifest)
     if set(info) != MANIFEST_KEYS or info["schema"] != SCHEMA:
@@ -98,15 +133,7 @@ def assess(manifest: bytes, syft: bytes, trivy: bytes) -> dict:
         raise ScanEvidenceDenied("invalid_syft_source")
     if desc.get("name") != "syft" or desc.get("version") != info["syft_version"]:
         raise ScanEvidenceDenied("syft_version_mismatch")
-    target = source.get("target")
-    if source.get("type") != "image" or type(target) is not dict:
-        raise ScanEvidenceDenied("invalid_syft_target")
-    if target.get("userInput") != IMAGE:
-        raise ScanEvidenceDenied("syft_subject_mismatch")
-    # Self-reported platform manifest is corroborating metadata, NOT attestation.
-    declared = target.get("manifestDigest")
-    if declared != IMAGE.split("@", 1)[1]:
-        raise ScanEvidenceDenied("syft_manifest_digest_missing_or_mismatch")
+    syft_local_manifest_matches_repo_digest = _syft_image_identity(source)
     artifacts = sbom.get("artifacts")
     if type(artifacts) is not list or not 1 <= len(artifacts) <= 100_000:
         raise ScanEvidenceDenied("syft_packages_unavailable")
@@ -120,11 +147,24 @@ def assess(manifest: bytes, syft: bytes, trivy: bytes) -> dict:
             scan.get("ArtifactName") != IMAGE or
             scan.get("ArtifactType") != "container_image"):
         raise ScanEvidenceDenied("invalid_trivy_subject")
+    trivy_identity = scan.get("Metadata")
+    if trivy_identity is not None:
+        if (type(trivy_identity) is not dict
+                or trivy_identity.get("Reference") != IMAGE
+                or trivy_identity.get("RepoDigests") != [IMAGE]):
+            raise ScanEvidenceDenied("trivy_image_identity_mismatch")
+    trivy_version = scan.get("Trivy")
+    if trivy_version is not None:
+        if (type(trivy_version) is not dict
+                or trivy_version.get("Version") != info["trivy_version"]):
+            raise ScanEvidenceDenied("trivy_version_mismatch")
     results = scan.get("Results")
     if type(results) is not list or not 1 <= len(results) <= 1000:
         raise ScanEvidenceDenied("trivy_results_missing")
     vulnerable = 0
     blocking = 0
+    vulnerability_ids: set[str] = set()
+    severities: dict[str, int] = {}
     for result in results:
         if type(result) is not dict:
             raise ScanEvidenceDenied("invalid_trivy_result")
@@ -132,12 +172,18 @@ def assess(manifest: bytes, syft: bytes, trivy: bytes) -> dict:
         if type(findings) is not list or len(findings) > 10_000:
             raise ScanEvidenceDenied("invalid_trivy_findings")
         for finding in findings:
-            if type(finding) is not dict or not finding.get("VulnerabilityID"):
+            if type(finding) is not dict:
+                raise ScanEvidenceDenied("invalid_trivy_finding")
+            vuln_id = finding.get("VulnerabilityID")
+            if type(vuln_id) is not str or not 1 <= len(vuln_id) <= 128:
                 raise ScanEvidenceDenied("invalid_trivy_finding")
             severity = finding.get("Severity")
-            if severity not in {"UNKNOWN", "LOW", "MEDIUM", "HIGH", "CRITICAL"}:
+            if type(severity) is not str or severity not in {
+                    "UNKNOWN", "LOW", "MEDIUM", "HIGH", "CRITICAL"}:
                 raise ScanEvidenceDenied("invalid_trivy_severity")
             vulnerable += 1
+            vulnerability_ids.add(vuln_id)
+            severities[severity] = severities.get(severity, 0) + 1
             blocking += severity in {"HIGH", "CRITICAL"}
     return {
         "status": "HIGH_CVE_REVIEW" if blocking else "UNATTESTED_REVIEW_REQUIRED",
@@ -145,6 +191,10 @@ def assess(manifest: bytes, syft: bytes, trivy: bytes) -> dict:
         "syft_artifact_count": len(artifacts),
         "trivy_vulnerability_count": vulnerable,
         "trivy_high_critical_count": blocking,
+        "trivy_unique_vulnerability_ids": len(vulnerability_ids),
+        "trivy_severity_counts": dict(sorted(severities.items())),
+        "syft_local_manifest_matches_pinned_repo_digest":
+            syft_local_manifest_matches_repo_digest,
         "scanner_reports_hash_checked": True,
         "vulnerability_database_identity_self_reported": True,
         "source_to_image_provenance_verified": False,

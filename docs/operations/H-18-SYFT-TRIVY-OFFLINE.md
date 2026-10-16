@@ -1,5 +1,15 @@
 # H-18: изолированная сверка Syft/Trivy для immutable v0.22.2
 
+
+> **Обновление 16.10.2026:** после первоначального mock-only PR #194 был
+> выполнен настоящий локальный scan pinned v0.22.2 на отдельном Windows Docker
+> host. Syft и Trivy сформировали независимые отчёты, обнаружены HIGH/CRITICAL
+> findings, но signed provenance и production GO остаются закрыты.
+> [Точный отчёт с хешами и ограничениями](../audits/H-18-v0222-syft-trivy-local-evidence-2026-10-16.md).
+> Слова «не запускался» ниже описывают **состояние первоначального PR #194**,
+> а не актуальный результат нового аудита.
+
+
 Связано: [#185](https://github.com/MikeMoore1337/hermes/issues/185), [P0 #33](https://github.com/MikeMoore1337/hermes/issues/33).
 
 ## Что реально реализовано
