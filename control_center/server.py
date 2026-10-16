@@ -13,6 +13,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 from control_center.snapshot import DEFAULT_OUTPUT
+from control_center.credentials import load_runtime_credentials
 from control_center.auth import (
     AuthConfig, AuthError, OAuthService, ORIGIN,
     SESSION_COOKIE, STATE_COOKIE, STATE_TTL, SESSION_TTL,
@@ -168,7 +169,12 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=9133)
     args = parser.parse_args()
-    config = AuthConfig.from_env()  # fail closed before binding port if incomplete
+    supplied = load_runtime_credentials("web.env")
+    config = AuthConfig.from_env(supplied) if supplied is not None else AuthConfig.from_env()
+    # Credentialed Github mode must explicitly exist in systemd credential directory.
+    if config.mode == "github" and supplied is None:
+        raise AuthError("GitHub auth mode requires systemd LoadCredential")
+
     server = ThreadingHTTPServer(
         ("127.0.0.1", args.port), make_handler(auth_config=config))
     server.serve_forever(poll_interval=0.5)

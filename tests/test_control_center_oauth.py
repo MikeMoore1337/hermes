@@ -54,7 +54,6 @@ class ConfigurationTests(unittest.TestCase):
             "HERMES_CC_AUTH_MODE": "github",
             "HERMES_CC_PUBLIC_ORIGIN": ORIGIN,
             "HERMES_CC_GITHUB_CLIENT_ID": "Ov23abcdefghijk",
-            "HERMES_CC_GITHUB_CLIENT_SECRET": "secret-longer-than-twenty!",
             "HERMES_CC_ALLOWED_GITHUB_ID": "42142321",
             "HERMES_CC_SESSION_SECRET": "random-signature-secret-more-than-32-bytes",
         }
@@ -64,7 +63,8 @@ class ConfigurationTests(unittest.TestCase):
             ("HERMES_CC_ALLOWED_GITHUB_ID", "0"),
             ("HERMES_CC_SESSION_SECRET", "weak"),
             ("HERMES_CC_PUBLIC_ORIGIN", "https://evil.invalid"),
-            ("HERMES_CC_GITHUB_CLIENT_SECRET", ""),
+            ("HERMES_CC_GITHUB_CLIENT_SECRET", "incorrectly-present-in-web-env"),
+            ("HERMES_CC_OAUTH_BROKER_SOCKET", "/tmp/attacker.sock"),
         ):
             with self.subTest(key=key), self.assertRaises(AuthError):
                 AuthConfig.from_env({**values, key: bad})
