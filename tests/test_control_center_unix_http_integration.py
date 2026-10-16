@@ -12,6 +12,7 @@ import json
 import os
 from pathlib import Path
 import socket
+import socketserver
 import tempfile
 from threading import Thread
 import unittest
@@ -40,7 +41,7 @@ class SyntheticProvider:
 
 
 @unittest.skipUnless(
-    hasattr(socket, "SO_PEERCRED") and hasattr(socketserver := __import__("socketserver"), "UnixStreamServer"),
+    hasattr(socket, "SO_PEERCRED") and hasattr(socketserver, "UnixStreamServer"),
     "Linux Unix socket peer credentials required",
 )
 class UnixHttpIntegrationTests(unittest.TestCase):
