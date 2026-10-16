@@ -16,7 +16,9 @@ class MainDeployContractTests(unittest.TestCase):
         bash = shutil.which('bash')
         if not bash:
             self.skipTest('bash unavailable')
-        subprocess.run([bash, '-n', str(ROOT / 'deploy/hermes-main-deploy.sh')], check=True)
+        for name in ('hermes-main-deploy.sh', 'provision-main-deploy.sh'):
+            with self.subTest(script=name):
+                subprocess.run([bash, '-n', str(ROOT / 'deploy' / name)], check=True)
 
     def test_nonroot_offline_validation(self):
         script = (ROOT / "deploy/hermes-main-deploy.sh").read_text(encoding="utf-8")
