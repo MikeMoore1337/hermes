@@ -14,7 +14,8 @@
       "source": "vercel-labs/writing-guidelines",
       "commit": "83e2316b034cf572400513538e4e4da01c4cc742",
       "upstream_path": "command.md",
-      "git_blob_sha": "8452139a442bef9c25abdd19ed9d4b0ef93aab02"
+      "git_blob_sha": "8452139a442bef9c25abdd19ed9d4b0ef93aab02",
+      "newline_policy": "consistent_crlf_text"
     }
   ]
 }
