@@ -60,7 +60,7 @@ test("login design is a preview only, OAuth button disabled",async({page})=>{
  await page.screenshot({path:resolve(folder,"login-1440.png"),fullPage:true});
  await assertNoOverflow(page);
 });
-for(const width of [320,393,768]){
+for(const width of [320,360,393,430,768,1920]){
  test("responsive Atlas and login "+width,async({page})=>{
   await page.setViewportSize({width,height:844});await mock(page);await page.goto("/");
   await expect(page.getByRole("table")).toBeVisible();
@@ -74,6 +74,24 @@ for(const width of [320,393,768]){
   if(width===393)await page.screenshot({path:resolve(folder,"login-393.png"),fullPage:true});
  });
 }
+test("keyboard-only Atlas navigation retains labels and read-only boundaries",async({page})=>{
+ await page.setViewportSize({width:360,height:780});await mock(page);
+ await page.goto("/");
+ await expect(page.locator("html")).toHaveAttribute("lang","ru");
+ const qa=page.locator(".atlas-section-nav").getByRole("button",{name:"QA и CI"});
+ await qa.focus();
+ await expect(qa).toBeFocused();
+ await qa.press("Enter");
+ await expect(page.getByRole("row",{name:/QA Advisor/})).toBeVisible();
+ await expect(page.getByRole("row",{name:/Ops Watch/})).toHaveCount(0);
+ const search=page.getByRole("textbox",{name:"Поиск по службам"});
+ await search.focus();
+ await search.fill("несуществующий-сервис");
+ await expect(page.getByRole("row",{name:/QA Advisor/})).toHaveCount(0);
+ await expect(page.getByText("По текущим условиям служб не найдено.")).toBeVisible();
+ await assertNoOverflow(page);
+});
+
 test("stale data never shown as healthy",async({page})=>{
  await mock(page,{generated_at:"2020-01-01T00:00:00Z"});await page.goto("/");
  await expect(page.getByRole("alert")).toContainText("устаревший");
