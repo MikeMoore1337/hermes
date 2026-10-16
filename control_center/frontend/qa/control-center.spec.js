@@ -21,33 +21,34 @@ async function assertNoOverflow(page){
  expect(out.doc,"Horizontal document overflow").toBeLessThanOrEqual(out.width+1);
  expect(out.body,"Horizontal body overflow").toBeLessThanOrEqual(out.width+1);
 }
-test("C+A console, verified asset and navigation",async({page})=>{
+test("approved C+B Atlas with C+A fonts, working asset and navigation",async({page})=>{
  await page.setViewportSize({width:1440,height:900});await mock(page);
  await page.goto("/");
- await expect(page.getByRole("heading",{name:"Состояние инфраструктуры"})).toBeVisible();
+ await expect(page.getByRole("heading",{name:"Система. Под наблюдением."})).toBeVisible();
  await expect(page.getByRole("row",{name:/Ops Watch/})).toBeVisible();
  await expect(page.getByText("Resident AI Agent: NO-GO",{exact:true})).toBeVisible();
  await expect(page.locator('img[src="/brand.webp"]').first()).toHaveJSProperty("complete",true);
  const imageLoaded=await page.locator('img[src="/brand.webp"]').first().evaluate(x=>x.naturalWidth>0);
  expect(imageLoaded).toBe(true);
  expect((await page.request.get("/favicon.png")).status()).toBe(200);
- await page.screenshot({path:resolve(folder,"console-1440.png"),fullPage:true});
- await page.getByRole("button",{name:"QA и CI"}).click();
+ await page.screenshot({path:resolve(folder,"atlas-1440.png"),fullPage:true});
+ await page.locator(".atlas-section-nav").getByRole("button",{name:"QA и CI"}).click();
  await expect(page.getByRole("row",{name:/QA Advisor/})).toBeVisible();
  await expect(page.getByRole("row",{name:/Ops Watch/})).toHaveCount(0);
- await page.getByRole("button",{name:"Обзор"}).click();
+ await page.locator(".atlas-section-nav").getByRole("button",{name:"Обзор"}).click();
  await page.getByPlaceholder("Поиск по службам…").fill("Research");
  await expect(page.getByRole("row",{name:/Research Scout/})).toBeVisible();
  await expect(page.getByRole("row",{name:/Ops Watch/})).toHaveCount(0);
  await assertNoOverflow(page);
 });
-test("C+B Atlas remains operator-first and truthful",async({page})=>{
+test("approved typography is sans-serif throughout Atlas",async({page})=>{
  await page.setViewportSize({width:1440,height:900});await mock(page);await page.goto("/");
- await page.getByRole("button",{name:"Атлас"}).click();
+ const families=await page.locator(".atlas-hero h1, .atlas-nav button, .atlas-section-nav .nav-link, .stat-tile strong, .registry-panel h2").evaluateAll(els=>els.map(el=>getComputedStyle(el).fontFamily));
+ for(const family of families){expect(family).not.toContain("Georgia");expect(family.toLowerCase()).toContain("sans-serif");}
  await expect(page.getByRole("heading",{name:"Система. Под наблюдением."})).toBeVisible();
  await expect(page.getByRole("table")).toBeVisible();
  await expect(page.getByText("История инцидентов и доставки уведомлений пока не подключена.")).toBeVisible();
- await page.screenshot({path:resolve(folder,"atlas-1440.png"),fullPage:true});
+ await page.screenshot({path:resolve(folder,"atlas-fonts-1440.png"),fullPage:true});
  await assertNoOverflow(page);
 });
 test("login design is a preview only, OAuth button disabled",async({page})=>{
@@ -60,12 +61,12 @@ test("login design is a preview only, OAuth button disabled",async({page})=>{
  await assertNoOverflow(page);
 });
 for(const width of [320,393,768]){
- test("responsive console and login "+width,async({page})=>{
+ test("responsive Atlas and login "+width,async({page})=>{
   await page.setViewportSize({width,height:844});await mock(page);await page.goto("/");
   await expect(page.getByRole("table")).toBeVisible();
   await assertNoOverflow(page);
-  if(width===393)await page.screenshot({path:resolve(folder,"console-393.png"),fullPage:true});
-  await page.getByRole("button",{name:"Атлас"}).click();
+  if(width===393)await page.screenshot({path:resolve(folder,"atlas-393.png"),fullPage:true});
+  await expect(page.getByRole("heading",{name:"Система. Под наблюдением."})).toBeVisible();
   await assertNoOverflow(page);
   await page.goto("/?preview=login");
   await expect(page.getByRole("button",{name:/Войти через GitHub/})).toBeDisabled();
