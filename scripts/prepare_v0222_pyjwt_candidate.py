@@ -68,7 +68,7 @@ def prepare(wheel: Path, output: Path) -> dict:
         shutil.rmtree(temp, ignore_errors=True)
         raise ContextDenied("stage_failed") from None
     return {
-        "schema": "hermes-h18-pyjwt-214-stage-v1",
+        "schema": "hermes-h18-pyjwt-2151-stage-v1",
         "status": "OFFLINE_CONTEXT_PREPARED_NO_GO",
         "files_staged": 3,
         "base_immutable_image": IMAGE,
