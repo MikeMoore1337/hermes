@@ -45,7 +45,7 @@ class HttpTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.path = Path(self.tmp.name) / "overview.json"
-        self.path.write_text(json.dumps({"schema": 1, "mode": "read_only", "services": []}))
+        self.path.write_text(json.dumps({"schema": 1, "mode": "read_only", "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(), "services": []}))
         self.srv = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(self.path))
         self.thread = Thread(target=self.srv.serve_forever, daemon=True)
         self.thread.start()
@@ -82,6 +82,12 @@ class HttpTests(unittest.TestCase):
         code, _, raw = self.request("/api/overview")
         self.assertEqual(code, 503)
         self.assertEqual(json.loads(raw)["error"], "snapshot_unavailable")
+
+    def test_stale_snapshot_returns_503(self):
+        self.path.write_text(json.dumps({"schema": 1, "mode": "read_only",
+                                           "generated_at": "2025-01-01T00:00:00Z",
+                                           "services": []}))
+        self.assertEqual(self.request("/api/overview")[0], 503)
 
     def test_unknown_route_and_wrong_host(self):
         self.assertEqual(self.request("/../../etc/passwd")[0], 404)
