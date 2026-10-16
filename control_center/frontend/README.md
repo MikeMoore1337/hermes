@@ -1,6 +1,6 @@
 # Hermes Control Center - React/Vite frontend
 
-Owner visual target (2026-10-16): graphite/royal-blue operator console C+A, alternative C+B Atlas, and premium winged-H GitHub login page. The current OAuth start screen is explicitly a **preview**, not authentication.
+Owner visual target (2026-10-16): C+B Atlas as the only main dashboard layout, using C+A sans-serif typography, and premium winged-H GitHub login page. The current OAuth start screen is explicitly a **preview**, not authentication.
 
 ## Development
 
@@ -14,7 +14,7 @@ Use `npm run dev` to start Vite. The real backend remains the existing loopback 
 
 `vite.config.js` builds deterministic `../web/index.html`, `../web/app.js`, `../web/style.css` and local brand assets. This design deliberately uses **no Node.js runtime on the VPS**. The Python web server has an exact static allowlist and keeps no-write semantics.
 
-The controls for theme selection, service searching/filtering, refresh and navigation are client-side only. The right-hand status list only reports snapshot-derived facts and labels unsupported incident history as unavailable.
+The controls for service searching/filtering, refresh and navigation are client-side only. The right-hand status list only reports snapshot-derived facts and labels unsupported incident history as unavailable.
 
 The login preview at `/?preview=login` displays a disabled OAuth button. It remains protected by Caddy Basic Auth. GitHub OAuth #180 must be implemented separately with its own numeric owner ID checks and failure tests before public authentication can change. Resident Agent remains P0 NO-GO (#33).
 
