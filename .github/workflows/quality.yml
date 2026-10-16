@@ -23,6 +23,8 @@ jobs:
         run: python3 scripts/check_policy_index.py
       - name: Verify local Markdown references (offline)
         run: python3 scripts/check_markdown_links.py
+      - name: Validate production deploy entrypoint shell syntax
+        run: bash -n deploy/hermes-main-deploy.sh
       - name: Unit tests
         run: python3 -m unittest discover -s tests -v
       - name: H-19 synthetic AI policy fixtures (Node standard library; no LLM)
