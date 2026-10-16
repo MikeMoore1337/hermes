@@ -7,6 +7,7 @@ import json
 import os
 import tempfile
 import unittest
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import patch
 from urllib.error import HTTPError
@@ -37,7 +38,7 @@ def account_status(*, remaining: int = 9_000, gateway: bool = False) -> dict[str
         "model": PRIMARY_MODEL,
         "daily_neurons_remaining": remaining,
         "ai_gateway_unified_billing": gateway,
-        "checked_at": "2026-10-15T12:00:00Z",
+        "checked_at": datetime.now(UTC).isoformat(),
     }
 
 

@@ -60,6 +60,9 @@ MAX_OUTPUT_TOKENS = 768
 TIMEOUT_SECONDS = 45
 FREE_DAILY_NEURONS = 10_000
 QUOTA_RESERVE_NEURONS = 1_000
+# Owner-supplied billing/usage evidence is valid for one short manual session.
+MAX_ACCOUNT_ATTESTATION_AGE_SECONDS = 3_600
+MAX_ACCOUNT_ATTESTATION_FUTURE_SKEW_SECONDS = 60
 UNKNOWN = "UNKNOWN"
 INSUFFICIENT_EVIDENCE = "INSUFFICIENT_EVIDENCE"
 
@@ -143,6 +146,14 @@ def load_account_status(path: Path) -> dict[str, object]:
     if len(raw) > 16_384:
         raise PilotError("account_status_oversize")
     value = _parse_json(raw)
+    return validate_account_status(value)
+
+
+def validate_account_status(value: object) -> dict[str, object]:
+    """Fail closed on paid, stale, malformed or future-dated owner evidence.
+
+    This remains owner attestation, NOT an independent billing API proof.
+    """
     expected = {
         "schema",
         "plan",
@@ -168,7 +179,16 @@ def load_account_status(path: Path) -> dict[str, object]:
         raise PilotError("account_quota_reserve_not_available")
     if value["ai_gateway_unified_billing"] is not False:
         raise PilotError("paid_gateway_not_allowed")
-    _timestamp(value["checked_at"], "checked_at")
+    checked = datetime.fromisoformat(
+        _timestamp(value["checked_at"], "checked_at").replace("Z", "+00:00")
+    )
+    age_seconds = (datetime.now(UTC) - checked).total_seconds()
+    if not (
+        -MAX_ACCOUNT_ATTESTATION_FUTURE_SKEW_SECONDS
+        <= age_seconds
+        <= MAX_ACCOUNT_ATTESTATION_AGE_SECONDS
+    ):
+        raise PilotError("account_status_stale_or_future")
     return value
 
 
@@ -249,7 +269,10 @@ class CloudflareFreeProvider:
     ) -> None:
         if type(token) is not str or TOKEN.fullmatch(token) is None:
             raise PilotError("cloudflare_token_invalid")
-        self.base_url = _validate_base_url(base_url, account_status=account_status)
+        if not isinstance(account_status, Mapping):
+            raise PilotError("account_status_schema_invalid")
+        self.account_status = validate_account_status(dict(account_status))
+        self.base_url = _validate_base_url(base_url, account_status=self.account_status)
         self.token = token
         self.opener = opener or build_opener(ProxyHandler({}), _NoRedirect())
         self.calls = 0
@@ -263,6 +286,9 @@ class CloudflareFreeProvider:
     def complete(self, prompt: str) -> ModelResponse:
         if self.calls >= MAX_CALLS_PER_CASE:
             raise PilotError("model_call_limit_exceeded")
+        # A once-valid Free attestation may expire before dispatch. Never
+        # accept an hour-old plan/quota statement to start a new HTTP call.
+        validate_account_status(self.account_status)
         if type(prompt) is not str or not prompt.strip():
             raise PilotError("prompt_invalid")
         encoded_prompt = prompt.encode("utf-8")
