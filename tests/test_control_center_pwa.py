@@ -1,5 +1,6 @@
 """PWA routes are explicit and never expose private content or SPA fallbacks."""
 import json
+import struct
 import unittest
 from pathlib import Path
 from control_center.server import ASSETS, WEB, CSP
@@ -30,6 +31,30 @@ class PwaRoutesTests(unittest.TestCase):
         for icon in data["icons"]:
             raw=(WEB / icon["src"].lstrip("/")).read_bytes()
             self.assertTrue(raw.startswith(b"\x89PNG\r\n\x1a\n"))
+
+    def test_manifest_icon_dimensions_match_actual_png_header(self):
+        """A forged or mismatched install icon must fail CI before release."""
+        data = json.loads((WEB / "manifest.webmanifest").read_text(encoding="utf8"))
+        declared_paths = set()
+        for icon in data["icons"]:
+            self.assertEqual(icon["type"], "image/png")
+            self.assertEqual(icon["purpose"], "any")
+            self.assertEqual(type(icon["sizes"]), str)
+            self.assertRegex(icon["sizes"], r"^[1-9][0-9]*x[1-9][0-9]*$")
+            width, height = (int(value) for value in icon["sizes"].split("x"))
+            self.assertEqual(width, height)
+            self.assertIn(width, {192, 512})
+            self.assertRegex(icon["src"], r"^/[a-z0-9-]+\.png$")
+            self.assertNotIn(icon["src"], declared_paths)
+            declared_paths.add(icon["src"])
+            blob = (WEB / icon["src"].lstrip("/")).read_bytes()
+            self.assertGreaterEqual(len(blob), 33)
+            self.assertEqual(blob[:8], b"\x89PNG\r\n\x1a\n")
+            self.assertEqual(blob[12:16], b"IHDR")
+            self.assertEqual(struct.unpack(">II", blob[16:24]), (width, height))
+            self.assertEqual(blob[24], 8)  # PNG bit depth
+            self.assertIn(blob[25], (2, 6))  # RGB or RGBA, no indexed palette
+        self.assertEqual(declared_paths, {"/pwa-192.png", "/pwa-512.png"})
 
     def test_privacy_policy_in_sw_is_narrow(self):
         sw=(WEB/"sw.js").read_text(encoding="utf8")
