@@ -152,7 +152,7 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
             if not self._trusted():
                 return self.respond(400, "text/plain", b"Invalid host")
             if config.mode != "github" or self.path != "/auth/logout":
-                return super().do_POST()
+                return self.respond(501, "text/plain", b"Method not implemented")
             if self.headers.get("Origin") != ORIGIN:
                 return self.respond(403, "text/plain", b"Origin denied")
             if self.headers.get("Content-Length", "0") != "0":
