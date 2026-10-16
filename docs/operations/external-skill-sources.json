@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "mode": "read-only-doc-review",
+  "upstream_references": {
+    "nextlevelbuilder/ui-ux-pro-max-skill": "56ea9cf174ed86786187daa9de0e6247cb0747e4",
+    "leonxlnx/taste-skill": "f624f37a8c650b9cc550253104925efe4c8de246",
+    "ibelick/ui-skills": "3434a7633027ec6dccfa80ed1eb5716befd4e766",
+    "vercel-labs/agent-skills": "063bee94c3f4df8453406c830b0a7df0f2860278",
+    "vercel-labs/writing-guidelines": "83e2316b034cf572400513538e4e4da01c4cc742"
+  },
+  "files": [
+    {
+      "local": "docs/references/external-writing-guidelines.md",
+      "source": "vercel-labs/writing-guidelines",
+      "commit": "83e2316b034cf572400513538e4e4da01c4cc742",
+      "upstream_path": "command.md",
+      "git_blob_sha": "8452139a442bef9c25abdd19ed9d4b0ef93aab02"
+    }
+  ]
+}
