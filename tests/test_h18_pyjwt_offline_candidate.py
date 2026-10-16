@@ -1,4 +1,4 @@
-"""H-18 fixed PyJWT 2.14 derivative staging: synthetic, NO Docker/LLM."""
+"""H-18 fixed PyJWT 2.15.1 derivative staging: synthetic, NO Docker/LLM."""
 from __future__ import annotations
 
 from contextlib import redirect_stdout
