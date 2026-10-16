@@ -61,6 +61,14 @@ class BrokerContractTests(unittest.TestCase):
                             "code-token-123456","v"*55)
                     self.assertEqual(result,42142321)
                     self.assertEqual(fake.calls,1)
+                    # Repeated code must never reach provider, even if browser
+                    # starts a fresh state and presents a different verifier.
+                    with patch("control_center.auth.BROKER_SOCKET",path):
+                        with self.assertRaises(AuthError):
+                            LocalBrokerProvider().identify(
+                                AuthConfig(mode="github",broker_socket=path),
+                                "code-token-123456","w"*55)
+                    self.assertEqual(fake.calls,1)
                     with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as conn:
                         conn.connect(path)
                         conn.sendall(b'{"action":"arbitrary","url":"https://evil.example"}\n')
@@ -71,6 +79,22 @@ class BrokerContractTests(unittest.TestCase):
                     broker.shutdown()
                     thread.join(timeout=3)
             self.assertFalse(Path(path).exists())
+
+    def test_code_digests_bounded_pruned_and_no_plaintext_retained(self):
+        from collections import deque
+        broker=object.__new__(IdentityBroker)
+        broker.used_codes=deque()
+        broker.used_digests=set()
+        now=[1000.]
+        broker.clock=lambda:now[0]
+        self.assertTrue(broker.consume_code("synthetic-code-first"))
+        self.assertFalse(broker.consume_code("synthetic-code-first"))
+        self.assertNotIn(b"synthetic-code-first",broker.used_digests)
+        self.assertTrue(broker.consume_code("synthetic-code-second"))
+        now[0]+=3601
+        self.assertTrue(broker.consume_code("synthetic-code-first"))
+        self.assertEqual(len(broker.used_codes),1)
+        self.assertEqual(len(broker.used_digests),1)
 
     def test_rate_limit_bounded(self):
         # No socket or GitHub network needed: test quota via a small object stand-in.

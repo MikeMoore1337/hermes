@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from collections import deque
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -82,6 +83,8 @@ class _Handler(socketserver.BaseRequestHandler):
             code, verifier = parse_request(raw)
             if not server.consume_attempt():
                 raise AuthError("Attempt limit")
+            if not server.consume_code(code):
+                raise AuthError("Replayed OAuth code")
             user_id = server.provider.identify(server.auth_config, code, verifier)
             if type(user_id) is not int or user_id != server.config.owner_id:
                 raise AuthError("Owner ID denied")
@@ -109,6 +112,9 @@ class IdentityBroker(getattr(socketserver, "UnixStreamServer", socketserver.TCPS
         self.allowed_uid = allowed_uid
         self.clock = clock if clock is not None else time.monotonic
         self.attempts = deque()
+        # Only digests, never raw OAuth codes, held for one bounded window.
+        self.used_codes = deque()
+        self.used_digests = set()
         self._owns_socket = False
         path = Path(config.socket_path)
         if path.is_symlink() or path.exists():
@@ -135,6 +141,20 @@ class IdentityBroker(getattr(socketserver, "UnixStreamServer", socketserver.TCPS
         if len(self.attempts) >= MAX_ATTEMPTS:
             return False
         self.attempts.append(now)
+        return True
+
+    def consume_code(self, code: str) -> bool:
+        now = self.clock()
+        while self.used_codes and self.used_codes[0][0] <= now - WINDOW_SECONDS:
+            _, old_digest = self.used_codes.popleft()
+            self.used_digests.discard(old_digest)
+        digest = hashlib.sha256(code.encode("ascii")).digest()
+        if digest in self.used_digests:
+            return False
+        if len(self.used_codes) >= MAX_ATTEMPTS:
+            return False
+        self.used_codes.append((now, digest))
+        self.used_digests.add(digest)
         return True
 
     def server_close(self):
