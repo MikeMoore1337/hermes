@@ -77,16 +77,47 @@ def plan(evidence: dict, *, now: datetime | None = None) -> tuple[str, ...]:
     return tuple("IPAddressAllow=" + x for x in sorted(host_pins))
 
 
+
+MAX_EVIDENCE_BYTES = 150_000
+
+
+def _unique_pairs(pairs: list[tuple[str, object]]) -> dict:
+    """Reject duplicate JSON keys; the last-value-wins default is unsafe."""
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise EgressEvidenceError("Duplicate JSON key")
+        result[key] = value
+    return result
+
+
+def read_evidence(path: Path) -> dict:
+    """No network or secrets; reject symlinks, unbounded files and poison JSON."""
+    try:
+        if path.is_symlink() or not path.is_file():
+            raise EgressEvidenceError("Missing or unsafe evidence file")
+        if not 0 < path.stat().st_size <= MAX_EVIDENCE_BYTES:
+            raise EgressEvidenceError("Invalid evidence file size")
+        with path.open("rb") as stream:
+            raw = stream.read(MAX_EVIDENCE_BYTES + 1)
+        if not 0 < len(raw) <= MAX_EVIDENCE_BYTES:
+            raise EgressEvidenceError("Invalid evidence file size")
+        value = json.loads(raw.decode("utf-8"), object_pairs_hook=_unique_pairs)
+    except (OSError, UnicodeError, ValueError) as exc:
+        raise EgressEvidenceError("Invalid evidence input") from None
+    if type(value) is not dict:
+        raise EgressEvidenceError("Invalid evidence object")
+    return value
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("evidence", type=Path, help="Owner-reviewed local JSON evidence")
     args = parser.parse_args()
-    if args.evidence.stat().st_size > 150_000:
-        parser.error("Oversize evidence")
     try:
-        result = plan(json.loads(args.evidence.read_text(encoding="utf-8")))
-    except (EgressEvidenceError, ValueError) as exc:
-        parser.error(str(exc))
+        result = plan(read_evidence(args.evidence))
+    except EgressEvidenceError:
+        parser.error("invalid_evidence_or_unapproved_egress")
     print("# CANDIDATE ONLY / OWNER REVIEW REQUIRED / NOT A NETWORK ENFORCEMENT PROOF")
     print("# Do not apply to live systemd; first prove isolation, denied hosts and TLS.")
     for entry in result:
