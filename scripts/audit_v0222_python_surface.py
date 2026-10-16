@@ -64,13 +64,15 @@ def _verified_git_filenames(repo: Path) -> list[str]:
         names = [p.decode("utf-8") for p in paths[:-1]]
     except UnicodeError:
         raise SourceAuditDenied("invalid_git_filename_stream") from None
-    if not 100 <= len(names) <= MAX_PY_FILES or len(names) != len(set(names)):
-        raise SourceAuditDenied("incomplete_git_python_inventory")
+    if len(names) != len(set(names)):
+        raise SourceAuditDenied("duplicate_tracked_filename")
     for name in names:
         rel = PurePosixPath(name)
         if (not rel.parts or rel.is_absolute() or ".." in rel.parts
                 or not name.endswith(".py") or chr(92) in name):
             raise SourceAuditDenied("unsafe_git_file_path")
+    if not 100 <= len(names) <= MAX_PY_FILES:
+        raise SourceAuditDenied("incomplete_git_python_inventory")
     return names
 
 

@@ -94,7 +94,7 @@ def verify(token, key, config):
             path = Path(folder)
             calls = [scope.UPSTREAM_COMMIT.encode()+b"\n", b"", b"evil/../secret.py\0"]
             with patch.object(scope, "_git", side_effect=calls):
-                with self.assertRaises(scope.SourceAuditDenied):
+                with self.assertRaisesRegex(scope.SourceAuditDenied, "unsafe_git_file_path"):
                     scope._verified_git_filenames(path)
             # Even if filenames look valid, a 2-file directory is not full v0.22.2.
             calls = [scope.UPSTREAM_COMMIT.encode()+b"\n", b"", b"a.py\0b.py\0"]
