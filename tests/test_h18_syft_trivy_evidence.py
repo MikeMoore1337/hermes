@@ -128,6 +128,26 @@ class ScannerEvidenceTest(unittest.TestCase):
                 with self.assertRaises(review.ScanEvidenceDenied):
                     review.assess(json.dumps(m).encode(), sb, tb)
 
+    def test_falsy_malformed_trivy_findings_are_not_treated_as_zero_cve(self):
+        # A forged scan with Vulnerabilities=null used to pass as zero findings.
+        for malformed in (None, False, 0, "", {}):
+            with self.subTest(value=malformed):
+                info, syft, trivy = payload("CRITICAL")
+                trivy["Results"][0]["Vulnerabilities"] = malformed
+                encoded_scan = json.dumps(trivy, sort_keys=True).encode()
+                info["trivy_sha256"] = hashlib.sha256(encoded_scan).hexdigest()
+                with self.assertRaisesRegex(review.ScanEvidenceDenied, "invalid_trivy_findings"):
+                    review.assess(*encode(info, syft, trivy))
+
+    def test_native_trivy_clean_target_without_vulnerabilities_key_is_supported(self):
+        info, syft, trivy = payload()
+        del trivy["Results"][0]["Vulnerabilities"]
+        encoded_scan = json.dumps(trivy, sort_keys=True).encode()
+        info["trivy_sha256"] = hashlib.sha256(encoded_scan).hexdigest()
+        result = review.assess(*encode(info, syft, trivy))
+        self.assertEqual(result["trivy_vulnerability_count"], 0)
+        self.assertFalse(result["resident_agent_allowed"])
+
     def test_default_noop_and_explicit_inputs(self):
         with patch("sys.stdout", new_callable=io.StringIO) as output:
             self.assertEqual(review.main([]), 0)
