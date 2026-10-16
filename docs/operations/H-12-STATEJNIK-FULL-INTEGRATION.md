@@ -105,6 +105,9 @@ Docker image всё ещё имеет известный H-01 issue #33: Python 
 - При объединении PR допустимо доставить **полный исходный комплект** в
   версионированный release snapshot VPS, но **не устанавливать/активировать
   `SKILL.md` и не запускать контейнер/сетевые или publish scripts**.
+- **H-12 network candidate:** [отдельный отчёт об SSRF/DNS rebinding,
+  pinned TLS и отрицательных тестах](H-12-STATEJNIK-NETWORK-BOUNDARY.md).
+  Он не подключён к upstream runner: реальная сеть остаётся запрещена.
 - Для реального полного запуска следующая стадия: отдельный security review
   `_net.py` (особенно SSRF/DNS fallback и default `allow_private=True`),
   hardened secrets, host/network/billing fences, Wordstat permissions,
