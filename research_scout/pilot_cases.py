@@ -6,6 +6,88 @@ outside the prompt and is an evaluation label, not a source of model facts.
 from __future__ import annotations
 
 CASES: dict[str, dict[str, object]] = {
+    "whey_gut_brain_public_abstract": {
+        "candidate": {
+            "source": "EUROPE_PMC",
+            "id": "42840492",
+            "source_url": "https://pubmed.ncbi.nlm.nih.gov/42840492/",
+            "title": "Microbiota-mediated gut-brain communication following whey protein supplementation and resistance training: current evidence linking gastrointestinal function and cognitive health",
+            "doi": "10.3389/fcimb.2026.1918695",
+            "pmid": "42840492",
+            "status": "HOLD",
+            "reason": "curated_public_abstract_review_pilot",
+            "first_publication_date": None,
+            "scientific_claims_verified": False,
+        },
+        "public_abstract_case": True,
+        "manual_reference": {
+            "source": "PubMed PMID 42840492; independently verified public abstract",
+            "status": "MANUAL_REVIEW_REQUIRED",
+        },
+    },
+    "ironman_correction_public_abstract": {
+        "candidate": {
+            "source": "EUROPE_PMC",
+            "id": "42771055",
+            "source_url": "https://pubmed.ncbi.nlm.nih.gov/42771055/",
+            "title": "Prevalence of meeting aerobic physical activity and resistance training guidelines in advanced prostate cancer: a descriptive study of racial and regional disparities in the IRONMAN registry",
+            "doi": "10.1007/s00520-026-11251-3",
+            "pmid": "42771055",
+            "status": "HOLD",
+            "reason": "curated_public_abstract_review_pilot",
+            "first_publication_date": None,
+            "scientific_claims_verified": False,
+        },
+        "public_abstract_case": True,
+        "manual_reference": {
+            "source": "PubMed PMID 42771055; independently verified public abstract",
+            "status": "MANUAL_REVIEW_REQUIRED",
+        },
+    },
+    "massage_cret_public_abstract": {
+        "candidate": {
+            "source": "EUROPE_PMC",
+            "id": "42733310",
+            "source_url": "https://pubmed.ncbi.nlm.nih.gov/42733310/",
+            "title": "Muscle Massage Adding Capacitive Resistive Electric Transfer Therapy in Active or Sham Condition for Post-Exercise Recovery in Athletes: A Crossover Clinical Trial",
+            "doi": "10.1002/ejsc.70246",
+            "pmid": "42733310",
+            "status": "HOLD",
+            "reason": "curated_public_abstract_review_pilot",
+            "first_publication_date": None,
+            "scientific_claims_verified": False,
+        },
+        "public_abstract_case": True,
+        "manual_reference": {
+            "source": "PubMed PMID 42733310; independently verified public abstract",
+            "status": "MANUAL_REVIEW_REQUIRED",
+        },
+    },
+    "plant_recovery_public_abstract": {
+        "candidate": {
+            "source": "EUROPE_PMC",
+            "id": "42797032",
+            "source_url": "https://pubmed.ncbi.nlm.nih.gov/42797032/",
+            "title": "Plant-Derived Whole Foods and Food-Based Supplements on Post-Exercise Recovery in Physically Active Individuals: A Systematic Review of Human Intervention Trials",
+            "doi": "10.3390/nu18183049",
+            "pmid": "42797032",
+            "status": "MANUAL_REVIEW",
+            "reason": "public_abstract_curated_for_pilot",
+            "first_publication_date": "2026-09-18",
+            "scientific_claims_verified": False,
+        },
+        "public_abstract_case": True,
+        "manual_reference": {
+            "source": "PubMed PMID 42797032; abstract publicly checked",
+            "study_type": "systematic review",
+            "population": "physically active humans aged >=14",
+            "sample_size": "UNKNOWN total participants (36 studies is NOT 36 people)",
+            "intervention": "plant-derived foods",
+            "control": "varied comparisons",
+            "main_results": "some soreness reductions, inconsistent objective recovery, no meta-analysis",
+            "correction_status": "NOT_CHECKED",
+        },
+    },
     "plant_recovery": {
         "candidate": {
             "source": "EUROPE_PMC",

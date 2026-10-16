@@ -40,6 +40,11 @@ from ops_watch.incident_advisor import (
     validate_result,
 )
 from research_scout.pilot_cases import CASES as RESEARCH_CASES
+from research_scout.abstract_quality import (
+    EVIDENCE_BASIS as ABSTRACT_EVIDENCE_BASIS,
+    mock_abstract_result,
+    with_abstract_facts,
+)
 from research_scout.review_draft import ReviewDraftError, build_draft
 
 
@@ -80,6 +85,8 @@ RESEARCH_OUTPUT_KEYS = frozenset({
     "primary_sources",
     "evidence_basis",
 })
+ABSTRACT_RESEARCH_OUTPUT_KEYS = RESEARCH_OUTPUT_KEYS | {"field_evidence"}
+
 UNKNOWN_VALUES = frozenset({UNKNOWN, INSUFFICIENT_EVIDENCE})
 HASH = re.compile(r"[0-9a-f]{64}\Z")
 ACCOUNT_ID = re.compile(r"[0-9a-f]{32}\Z", re.IGNORECASE)
@@ -379,24 +386,63 @@ def _split_case(name: str) -> tuple[str, str]:
 
 
 def _research_prompt(draft: Mapping[str, object]) -> str:
+    abstract_mode = "public_abstract_facts" in draft
     payload = json.dumps(draft, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     if len(payload.encode("utf-8")) > MAX_INPUT_BYTES:
         raise PilotError("research_input_oversize")
+    if abstract_mode:
+        provenance = draft["abstract_source_provenance"]
+        sample = provenance["expected_sample_size"]
+        correction = provenance["expected_correction_status"]
+        instruction = (
+            "Ты - Research Scout Hermes. Ты получил только проверенные редактором "
+            "краткие пересказы фактов из публичного реферата PubMed, НЕ полный текст "
+            "исследования. Пиши текстовые поля по-русски. Для каждого заполненного "
+            "научного поля приложи field_evidence: точные ID фактов F1-F8 из "
+            "public_abstract_facts; для UNKNOWN ссылки НЕ добавляй. "
+            "Используй sample_size строго " + str(sample) +
+            " и correction_status строго " + str(correction) +
+            " — оба значения проверены по источникам и должны оставаться "
+            "неизменными. Число исследований не равно числу людей. "
+            "Для случая с исправлением обязательно сослаться на F6/F7/F8 "
+            "и не скрывать факт исправления. Не придумывай дозы, эффект, "
+            "причинность, полные тексты, DOI, диагнозы или клинические советы. "
+            "Не выдавай систематический обзор за отдельное РКИ, а снижение "
+            "мышечной болезненности - за доказанное восстановление силы. "
+            "Верни ровно один JSON-объект без markdown. status строго "
+            "MANUAL_REVIEW_REQUIRED, uncertainty строго high или medium, "
+            "identifiers в точности из контекста, primary_sources - массив "
+            "из исходной ссылки, evidence_basis строго "
+            "curated_public_abstract_facts_not_full_text. Обязателен объект "
+            "field_evidence со ссылками на факты. Редакционная проверка обязательна."
+        )
+    else:
+        instruction = (
+            "Ты - Research Scout Hermes. Доступны только библиографические "
+            "метаданные, НЕ реферат и НЕ полный текст. Каждое научное поле "
+            "study_type, population, sample_size, intervention, control, "
+            "main_results, subjective_outcomes, objective_outcomes, "
+            "limitations, correction_status и practical_significance "
+            "должно быть ровно UNKNOWN или INSUFFICIENT_EVIDENCE. "
+            "Нельзя выводить метод, выборку или эффект из заголовка. "
+            "Верни строго JSON без markdown; статус INSUFFICIENT_EVIDENCE, "
+            "evidence_basis=bibliographic_metadata_only, неопределённость high."
+        )
     return (
-        "Ты — Research Scout Hermes. Доступны только библиографические metadata, "
-        "а не полный текст статьи. Для каждого неизвестного поля верни UNKNOWN или "
-        "INSUFFICIENT_EVIDENCE. Не выдумывай DOI, PMID, выборку, тип исследования, "
-        "результаты, исправления или практические рекомендации. Верни один JSON без markdown.\n"
-        "BEGIN_BIBLIOGRAPHIC_METADATA\n" + payload +
-        "\nEND_BIBLIOGRAPHIC_METADATA\n"
-        "Обязательные поля: status, study_type, population, sample_size, intervention, "
-        "control, main_results, subjective_outcomes, objective_outcomes, limitations, "
-        "correction_status, practical_significance, uncertainty, identifiers, "
-        "primary_sources, evidence_basis."
+        instruction + "\nBEGIN_RESEARCH_INPUT\n" + payload +
+        "\nEND_RESEARCH_INPUT\n"
+        "Поля JSON: status, study_type, population, sample_size, "
+        "intervention, control, main_results, subjective_outcomes, "
+        "objective_outcomes, limitations, correction_status, "
+        "practical_significance, uncertainty, identifiers {record_id,pmid,doi}, "
+        "primary_sources, evidence_basis"
+        + (", field_evidence" if abstract_mode else "") + "."
     )
 
 
 def _research_mock(draft: Mapping[str, object]) -> dict[str, object]:
+    if "public_abstract_facts" in draft:
+        return mock_abstract_result(draft)
     identifiers = draft["identifiers"]
     return {
         "status": INSUFFICIENT_EVIDENCE,
@@ -410,13 +456,16 @@ def _research_mock(draft: Mapping[str, object]) -> dict[str, object]:
 
 def validate_research_result(raw: str | Mapping[str, object], draft: Mapping[str, object]) -> dict[str, object]:
     value = _parse_json(raw) if isinstance(raw, str) else dict(raw)
-    if type(value) is not dict or set(value) != RESEARCH_OUTPUT_KEYS:
+    abstract_mode = "public_abstract_facts" in draft
+    expected_keys = ABSTRACT_RESEARCH_OUTPUT_KEYS if abstract_mode else RESEARCH_OUTPUT_KEYS
+    if type(value) is not dict or set(value) != expected_keys:
         raise PilotError("research_output_schema_invalid")
     if value["status"] not in {INSUFFICIENT_EVIDENCE, "MANUAL_REVIEW_REQUIRED"}:
         raise PilotError("research_status_invalid")
     if value["uncertainty"] not in {"high", "medium", "low"}:
         raise PilotError("research_uncertainty_invalid")
-    if value["evidence_basis"] != "bibliographic_metadata_only":
+    expected_basis = ABSTRACT_EVIDENCE_BASIS if abstract_mode else "bibliographic_metadata_only"
+    if value["evidence_basis"] != expected_basis:
         raise PilotError("research_evidence_basis_invalid")
     for field in RESEARCH_FIELDS:
         item = value[field]
@@ -426,6 +475,42 @@ def validate_research_result(raw: str | Mapping[str, object], draft: Mapping[str
             raise PilotError(f"research_{field}_invalid")
         if UNSAFE_RESEARCH_OUTPUT.search(item):
             raise PilotError("research_unsafe_output")
+    if not abstract_mode and any(value[field] not in UNKNOWN_VALUES for field in RESEARCH_FIELDS):
+        raise PilotError("metadata_only_scientific_claims_denied")
+    if abstract_mode:
+        # Only the explicitly verified population N and publisher erratum status
+        # are allowed; a study count must never be used as a sample size.
+        constraints = draft["abstract_source_provenance"]
+        for field, name in (
+            ("sample_size", "expected_sample_size"),
+            ("correction_status", "expected_correction_status"),
+        ):
+            expected = constraints[name]
+            actual = value[field]
+            if ((expected == UNKNOWN and actual not in UNKNOWN_VALUES)
+                    or (expected != UNKNOWN and actual != expected)):
+                raise PilotError("abstract_sample_size_or_correction_unverified")
+        links = value["field_evidence"]
+        nonempty = {name for name in RESEARCH_FIELDS if value[name] not in UNKNOWN_VALUES}
+        allowed_ids = set(draft["public_abstract_facts"])
+        if type(links) is not dict or set(links) != nonempty:
+            raise PilotError("abstract_field_evidence_invalid")
+        for field, cited in links.items():
+            if (type(cited) is not list or not 1 <= len(cited) <= 8
+                    or any(type(token) is not str or token not in allowed_ids for token in cited)
+                    or len(set(cited)) != len(cited)):
+                raise PilotError("abstract_ungrounded_fact_id")
+            # A valid F ID attached to the wrong scientific field is *not*
+            # acceptable provenance (e.g. a lactate marker used for strength).
+            permitted = set(constraints["field_fact_allowlist"].get(field, []))
+            if not permitted or not set(cited).issubset(permitted):
+                raise PilotError("abstract_fact_field_mismatch")
+        for field, requirement in (
+            ("sample_size", constraints["sample_size_citations"]),
+            ("correction_status", constraints["correction_citations"]),
+        ):
+            if requirement and not set(requirement).issubset(set(links.get(field, []))):
+                raise PilotError("abstract_required_source_citation_missing")
     identifiers = value["identifiers"]
     if type(identifiers) is not dict or set(identifiers) != {"record_id", "pmid", "doi"}:
         raise PilotError("research_identifiers_invalid")
@@ -440,6 +525,27 @@ def validate_research_result(raw: str | Mapping[str, object], draft: Mapping[str
 
 def _research_quality(result: Mapping[str, object], draft: Mapping[str, object]) -> dict[str, object]:
     unknown_discipline = all(result[field] in UNKNOWN_VALUES for field in RESEARCH_FIELDS)
+    if "public_abstract_facts" in draft:
+        return {
+            "identifiers_match": result["identifiers"] == draft["identifiers"],
+            "source_url_grounded": result["primary_sources"] == [draft["source_link"]],
+            "fields_with_allowlisted_citations": len(result["field_evidence"]),
+            "total_supported_facts": len(draft["public_abstract_facts"]),
+            "sample_size_grounded": (
+                result["sample_size"] == draft["abstract_source_provenance"]["expected_sample_size"]
+                or (draft["abstract_source_provenance"]["expected_sample_size"] == UNKNOWN
+                    and result["sample_size"] in UNKNOWN_VALUES)
+            ),
+            "correction_status_grounded": (
+                result["correction_status"] == draft["abstract_source_provenance"]["expected_correction_status"]
+                or (draft["abstract_source_provenance"]["expected_correction_status"] == UNKNOWN
+                    and result["correction_status"] in UNKNOWN_VALUES)
+            ),
+            "semantic_accuracy": "NEEDS_EXPERT_REVIEW",
+            "hallucination_count": "NOT_RELIABLY_COUNTED",
+            "full_text_reviewed": False,
+            "expert_review": "NOT_RUN",
+        }
     return {
         "identifiers_match": result["identifiers"] == draft["identifiers"],
         "primary_sources_grounded": result["primary_sources"] == [draft["source_link"]],
@@ -491,8 +597,17 @@ def _prepared_case(name: str) -> tuple[str, str, str, dict[str, object], str, Ca
         return task, case_id, "synthetic", context, build_prompt(context), lambda: json.dumps(
             mock_result(context), ensure_ascii=False, sort_keys=True
         )
-    draft = build_draft(RESEARCH_CASES[case_id]["candidate"])
-    return task, case_id, "public_bibliographic_metadata", draft, _research_prompt(draft), lambda: json.dumps(
+    item = RESEARCH_CASES[case_id]
+    draft = build_draft(item["candidate"])
+    if item.get("public_abstract_case") is True:
+        try:
+            draft = with_abstract_facts(draft)
+        except ValueError:
+            raise PilotError("public_abstract_source_mismatch") from None
+        provenance = "curated_public_abstract_paraphrases"
+    else:
+        provenance = "public_bibliographic_metadata"
+    return task, case_id, provenance, draft, _research_prompt(draft), lambda: json.dumps(
         _research_mock(draft), ensure_ascii=False, sort_keys=True
     )
 
@@ -524,14 +639,22 @@ def _blocked_after_response(
     preparation: float,
     validation: float,
     process: float,
+    validated_result: Mapping[str, object],
+    validated_quality: Mapping[str, object],
 ) -> dict[str, object]:
+    # Cost data can be absent on a successful model response. Preserve the
+    # validated operator-visible result for scientific assessment while refusing
+    # any further live case in this pilot run.
     return {
         "schema": RESULT_SCHEMA,
         "case": name,
         "task": task,
         "provenance": provenance,
         "status": "BLOCKED",
-        "model_execution": "LIVE_OBSERVED_FAILURE",
+        "model_execution": "LIVE_OBSERVED_COST_NOT_VERIFIED",
+        "validation_status": "PASS",
+        "model_result": dict(validated_result),
+        "quality": dict(validated_quality),
         "reason": reason,
         "model_calls": 1,
         "metrics": {
@@ -626,6 +749,8 @@ def _run_case(name: str, *, engine: str, provider: LocalMockProvider | Cloudflar
             preparation=preparation,
             validation=validation,
             process=time.perf_counter() - started,
+            validated_result=result,
+            validated_quality=quality,
         )
     if engine == "live" and response.provider_cost_usd != 0:
         return _blocked_after_response(
@@ -637,6 +762,8 @@ def _run_case(name: str, *, engine: str, provider: LocalMockProvider | Cloudflar
             preparation=preparation,
             validation=validation,
             process=time.perf_counter() - started,
+            validated_result=result,
+            validated_quality=quality,
         )
     formation_started = time.perf_counter()
     record = {
