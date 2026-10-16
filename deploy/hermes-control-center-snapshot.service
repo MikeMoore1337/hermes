@@ -5,6 +5,7 @@ Description=Hermes Control Center sanitized read-only systemd snapshot
 Type=oneshot
 User=root
 Group=root
+SupplementaryGroups=hermes-control
 WorkingDirectory=/opt/hermes-control-center/current
 ExecStart=/usr/bin/python3 -m control_center.snapshot
 NoNewPrivileges=true
