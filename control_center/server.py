@@ -1,7 +1,6 @@
-"""Local-only, unprivileged HTTP server serving static UI and sanitized snapshots.
+"""Sandboxed loopback UI: exact static asset allowlist and sanitized snapshots.
 
-Authentication is deliberately not implemented here: an authenticated HTTPS reverse
-proxy is required before any public exposure. The listener is fixed to loopback.
+All public authentication remains with Caddy until owner-only OAuth passes its own gate.
 """
 from __future__ import annotations
 
@@ -19,6 +18,9 @@ ASSETS = {
     "/": ("index.html", "text/html; charset=utf-8"),
     "/app.js": ("app.js", "text/javascript; charset=utf-8"),
     "/style.css": ("style.css", "text/css; charset=utf-8"),
+    "/brand.webp": ("brand.webp", "image/webp"),
+    "/favicon.png": ("favicon.png", "image/png"),
+    "/apple-touch-icon.png": ("apple-touch-icon.png", "image/png"),
 }
 CSP = ("default-src 'none'; script-src 'self'; style-src 'self'; "
        "connect-src 'self'; img-src 'self' data:; base-uri 'none'; "
@@ -31,7 +33,7 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT):
         sys_version = ""
 
         def log_message(self, fmt, *args):
-            # Do not log URLs or headers: security events are handled by the proxy.
+            # Never log callback codes, URLs, user-controlled query strings or credentials.
             return
 
         def respond(self, status, content_type, payload):
@@ -69,6 +71,9 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT):
                 except (OSError, ValueError, TypeError, AttributeError):
                     return self.respond(503, "application/json", b'{"error":"snapshot_unavailable"}')
                 return self.respond(200, "application/json; charset=utf-8", raw)
+            # A single staging-only preview of the future OAuth page; still behind Basic Auth.
+            if path == "/?preview=login":
+                path = "/"
             if path in ASSETS:
                 name, mime = ASSETS[path]
                 try:
@@ -77,6 +82,7 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT):
                     return self.respond(503, "text/plain", b"Static asset unavailable")
                 return self.respond(200, mime, raw)
             return self.respond(404, "text/plain", b"Not found")
+
     return Handler
 
 
@@ -84,9 +90,9 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=9133)
     args = parser.parse_args()
-    # Hard-coded loopback is a security boundary; no --host / 0.0.0.0 option.
-    srv = ThreadingHTTPServer(("127.0.0.1", args.port), make_handler())
-    srv.serve_forever(poll_interval=0.5)
+    # Loopback-only; never expose this app directly over the public network.
+    server = ThreadingHTTPServer(("127.0.0.1", args.port), make_handler())
+    server.serve_forever(poll_interval=0.5)
 
 
 if __name__ == "__main__":
