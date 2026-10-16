@@ -79,3 +79,26 @@ test("stale data never shown as healthy",async({page})=>{
  await expect(page.getByRole("alert")).toContainText("устаревший");
  await expect(page.getByRole("row",{name:/Ops Watch/})).toHaveCount(0);
 });
+
+test("GitHub mode shows real owner login and gates the protected API",async({page})=>{
+ let overviewRequests=0;
+ await page.route("**/api/auth/session",route=>route.fulfill({
+  status:200,contentType:"application/json",
+  body:JSON.stringify({mode:"github",authenticated:false})}));
+ await page.route("**/api/overview",route=>{overviewRequests+=1;return route.abort();});
+ await page.goto("/");
+ await expect(page.getByRole("heading",{name:"Вход в систему"})).toBeVisible();
+ const signIn=page.getByRole("link",{name:/Войти через GitHub/});
+ await expect(signIn).toHaveAttribute("href","/auth/github/start");
+ await expect(signIn).toBeEnabled();
+ await expect(page.getByRole("table")).toHaveCount(0);
+ expect(overviewRequests).toBe(0);
+});
+
+test("session probe errors fail closed without showing protected dashboard",async({page})=>{
+ await page.route("**/api/auth/session",route=>route.fulfill({status:503,body:"unavailable"}));
+ await page.goto("/");
+ await expect(page.getByText(/Проверка состояния авторизации не удалась/)).toBeVisible();
+ await expect(page.getByRole("button",{name:/Войти через GitHub/})).toBeDisabled();
+ await expect(page.getByRole("table")).toHaveCount(0);
+});
