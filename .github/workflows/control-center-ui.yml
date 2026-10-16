@@ -6,6 +6,8 @@ on:
       - "control_center/**"
       - "tests/test_control_center*.py"
       - "tests/test_control_center_pwa.py"
+      - "tests/test_h15_oauth_egress_evidence.py"
+      - "scripts/h15_oauth_egress_evidence.py"
       - ".github/workflows/control-center-ui.yml"
   push:
     branches: [main]
@@ -13,6 +15,8 @@ on:
       - "control_center/**"
       - "tests/test_control_center*.py"
       - "tests/test_control_center_pwa.py"
+      - "tests/test_h15_oauth_egress_evidence.py"
+      - "scripts/h15_oauth_egress_evidence.py"
       - ".github/workflows/control-center-ui.yml"
 
 permissions:
@@ -51,6 +55,8 @@ jobs:
         run: python3 -m unittest tests.test_control_center tests.test_control_center_assets tests.test_control_center_oauth tests.test_control_center_broker tests.test_control_center_credentials -v
       - name: PWA manifest, SW and offline privacy tests
         run: python3 -m unittest tests.test_control_center_pwa -v
+      - name: GitHub egress pin attestation negative tests
+        run: python3 -m unittest tests.test_h15_oauth_egress_evidence -v
       - name: Install Chromium for frontend end-to-end regression
         working-directory: control_center/frontend
         run: npx playwright install --with-deps chromium
