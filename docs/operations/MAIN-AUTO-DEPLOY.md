@@ -17,7 +17,7 @@ GitHub Actions `.github/workflows/production-deploy.yml` срабатывает 
 
 ## Первый запуск на уже утверждённом VPS
 
-Оператор устанавливает проверенный `deploy/hermes-main-deploy.sh` как `/usr/local/sbin/hermes-main-deploy`, root:root, `0750`, **не через копирование из произвольного PR**. Авторизуется только отдельный SSH-ключ с `restrict,command="..."` без port/agent/X11 forwarding, без интерактивного shell и без произвольного `sudo`. На данном сервере пароль, токены и личные данные не нужны.
+Оператор из **проверенного checkout точного PR HEAD** переносит обе подписанные своим ревью процедуры на VPS, затем в привилегированном SSH-сеансе выполняет `bash deploy/provision-main-deploy.sh < /path/to/restricted-deploy-key.pub`. Одноразовый установщик создаёт пользователя `hermes-deploy`, устанавливает root-owned `/usr/local/sbin/hermes-main-deploy` (`0750`), ограниченное `sudoers` и SSH-ключ с `restrict,command="..."`; проверяет отказ для чужой команды. Нельзя выполнять установщик из недоверенного архива или передавать закрытый ключ на сервер. GitHub Actions Secrets и проверка реального входа отдельным ключом требуются после установки.
 
 На GitHub в Repository Settings → Secrets and variables → Actions создаются четыре закрытых секрета:
 
