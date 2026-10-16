@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 
 from .bounded_subprocess import BoundedProcessError, run_bounded
 from .verify_v0221_native_tool_policy import INSPECTOR, _packet, validate as validate_patch_pair
@@ -73,10 +74,16 @@ def stamp_details(raw: bytes) -> dict[str, object]:
     if type(payload) is not dict or set(payload) != {"fields", "keys", "python"}:
         return {"status": "STAMP_SCHEMA_INVALID", "matches_source": False}
     fields = payload["fields"]
-    if type(fields) is not dict or type(payload["python"]) is not str:
+    keys = payload["keys"]
+    if (type(fields) is not dict or type(payload["python"]) is not str
+            or type(keys) is not list or len(keys) > 128
+            or any(type(key) is not str for key in keys)):
         return {"status": "STAMP_SCHEMA_INVALID", "matches_source": False}
-    values = [value for value in fields.values() if type(value) is str]
-    match = EXPECTED_SOURCE in values or any(value.startswith(EXPECTED_SOURCE[:12]) for value in values)
+    # A shared prefix, version/tag value, or malformed suffix cannot establish
+    # even a stamp-level match to the exact pinned upstream source commit.
+    commit_fields = ("commit", "source_commit", "git_commit", "git_sha",
+                     "source_sha", "revision")
+    match = any(fields.get(key) == EXPECTED_SOURCE for key in commit_fields)
     return {
         "status": "STAMP_MATCHED_IMAGE_UNATTESTED" if match else "STAMP_SOURCE_NOT_MATCHED",
         "matches_source": match,
@@ -117,7 +124,7 @@ def evaluate(identity: bool, stamp: dict[str, object], tools: dict[str, object])
         "exact_image_verified": identity,
         "stamp": stamp,
         "native_scope": tools,
-        "upstream_image_unmodified": True,
+        "upstream_image_unmodified": identity,
         "source_to_image_attested": False,
         "complete_sbom_and_cve_closed": False,
         "cloudflare_cost_verified": False,
@@ -173,7 +180,7 @@ def compare_patched() -> dict[str, object]:
             image_id, arch = image.stdout.decode("ascii").strip().split("|")
         except (ValueError, UnicodeError):
             return {"status": "DERIVATIVE_ID_INVALID", "resident_agent_allowed": False}
-        if not image_id.startswith("sha256:") or arch != "amd64":
+        if re.fullmatch(r"sha256:[0-9a-f]{64}", image_id) is None or arch != "amd64":
             return {"status": "DERIVATIVE_ID_INVALID", "resident_agent_allowed": False}
         original = run_bounded(original_run, timeout=90,
                                stdout_limit=80000, stderr_limit=16384)
