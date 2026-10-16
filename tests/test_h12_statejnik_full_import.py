@@ -47,7 +47,7 @@ class FullSourceIntegrationTests(unittest.TestCase):
             self.assertFalse(catalog[flag])
 
     def test_default_cli_never_uses_docker(self):
-        with patch("statejnik_integration.runner.subprocess.run") as invocation:
+        with patch("statejnik_integration.runner.run_bounded") as invocation:
             self.assertEqual(runner.main([]), 0)
         invocation.assert_not_called()
 
@@ -107,7 +107,7 @@ class FullSourceIntegrationTests(unittest.TestCase):
             with (
                 patch("statejnik_integration.runner.verify",
                       side_effect=provenance.ProvenanceDenied("synthetic_corruption")),
-                patch("statejnik_integration.runner.subprocess.run") as docker,
+                patch("statejnik_integration.runner.run_bounded") as docker,
             ):
                 with self.assertRaisesRegex(runner.StatejnikDenied,
                                             "offline_admission_denied"):
@@ -118,15 +118,27 @@ class FullSourceIntegrationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             runner.initialize_workspace(Path(folder))
             completed = type("Completed", (), {"returncode": 0})()
-            with patch("statejnik_integration.runner.subprocess.run",
+            with patch("statejnik_integration.runner.run_bounded",
                        return_value=completed) as docker:
                 self.assertEqual(runner.run("status", Path(folder), []), 0)
             self.assertEqual(docker.call_count, 1)
             keyword = docker.call_args.kwargs
             self.assertEqual(keyword["timeout"], 120)
-            self.assertFalse(keyword["check"])
+            self.assertEqual(keyword["stdout_limit"], 65_536)
+            self.assertEqual(keyword["stderr_limit"], 16_384)
             self.assertEqual(set(keyword["env"]), {"PATH"})
-            self.assertTrue(keyword["capture_output"])
+
+    def test_bounded_flood_failure_denied_without_secret_leak(self):
+        from scripts.bounded_subprocess import BoundedProcessError
+        with tempfile.TemporaryDirectory() as folder:
+            runner.initialize_workspace(Path(folder))
+            with patch("statejnik_integration.runner.run_bounded",
+                       side_effect=BoundedProcessError("output_limit_exceeded")) as docker:
+                with self.assertRaisesRegex(runner.StatejnikDenied,
+                                            "offline_sandbox_unavailable") as denied:
+                    runner.run("status", Path(folder), [])
+                docker.assert_called_once()
+                self.assertNotIn("private", str(denied.exception))
 
     def test_manifest_tamper_rejected_without_echoing_content(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -146,7 +158,7 @@ class FullSourceIntegrationTests(unittest.TestCase):
                 provenance.verify(root)
 
     def test_no_credentials_or_live_provider_calls_on_source_import(self):
-        with patch("statejnik_integration.runner.subprocess.run") as docker:
+        with patch("statejnik_integration.runner.run_bounded") as docker:
             data = runner.catalog()
             self.assertFalse(data["network_enabled"])
             self.assertFalse(data["automatic_publication_enabled"])

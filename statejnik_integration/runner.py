@@ -9,8 +9,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import subprocess
 from pathlib import Path
+
+from scripts.bounded_subprocess import BoundedProcessError, run_bounded
 
 from .provenance import ROOT, ProvenanceDenied, verify
 
@@ -108,14 +109,17 @@ def run(tool: str, workspace: Path, arguments: list[str]) -> int:
     # Shell-free and no host env/credentials forwarded. Execution timeout is
     # a bound on the single process; no retry or network fallback exists.
     try:
-        completed = subprocess.run(command, check=False, timeout=120,
-                                   env={"PATH": os.environ.get("PATH", "")},
-                                   capture_output=True, text=True)
-    except (subprocess.TimeoutExpired, OSError):
+        # Read streams while the process runs, with strict byte limits. The
+        # previous capture_output=True buffered arbitrary amounts of private
+        # workspace text into host memory, even when not printed afterwards.
+        result = run_bounded(
+            command, timeout=120, stdout_limit=65_536, stderr_limit=16_384,
+            env={"PATH": os.environ.get("PATH", "")},
+        )
+    except (BoundedProcessError, OSError):
         raise StatejnikDenied("offline_sandbox_unavailable") from None
-    # Vendor output may include user-authored work text. Never copy it into
-    # public CI logs or the Hermes status stream.
-    return int(completed.returncode)
+    # Vendor output, even on success, is never returned or logged.
+    return int(result.returncode)
 
 
 def initialize_workspace(workspace: Path) -> None:
