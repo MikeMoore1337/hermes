@@ -39,6 +39,30 @@ class H13Tests(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertIn("MEDICAL_ABSOLUTE_CLAIM", codes(text))
 
+    def test_russian_gender_and_plural_medical_absolutes_flagged(self):
+        # Russian declensions and a common cure/permitted-risk variant were
+        # missed by the original masculine-only template.
+        flagged = (
+            "Добавка полностью безопасна.",
+            "Средство полностью безопасно.",
+            "Эти упражнения полностью безопасны.",
+            "Средство полностью безопасен.",
+            "Препарат гарантированно вылечит.",
+            "Методы не имеют побочных эффектов.",
+        )
+        for text in flagged:
+            with self.subTest(text=text):
+                self.assertEqual(codes(text), ["MEDICAL_ABSOLUTE_CLAIM"])
+        clean = (
+            "Безопасность этих подходов пока не исследована.",
+            "Результат может зависеть от особенностей пациента.",
+            "Работы содержат ограничения и требуют оценки.",
+            "Оценка побочных эффектов не выполнена.",
+        )
+        for text in clean:
+            with self.subTest(text=text):
+                self.assertNotIn("MEDICAL_ABSOLUTE_CLAIM", codes(text))
+
     def test_legal_assertion_requires_lawyer(self):
         out = review(sample("Штраф составит определённую сумму."))
         self.assertIn("LEGAL_ASSERTION", [x["code"] for x in out["findings"]])

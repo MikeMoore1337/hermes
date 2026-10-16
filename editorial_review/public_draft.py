@@ -12,7 +12,11 @@ RESULT = "hermes-h13-review-candidates-v1"
 SOURCE_ID = re.compile(r"S[1-9][0-9]{0,2}")
 CITATION = re.compile(r"\[ref:(S[1-9][0-9]{0,2})\]")
 QUANTITY = re.compile(r"(?<!\w)\d+(?:[.,]\d+)?\s*%")
-MEDICAL = re.compile(r"\b(?:гарантированно\s+лечит|полностью\s+безопасен|не\s+имеет\s+побочных\s+эффектов)\b", re.I)
+MEDICAL = re.compile(
+    r"\b(?:гарантированно\s+(?:лечит|вылечит)"
+    r"|полностью\s+безопас(?:ен|на|но|ны)"
+    r"|не\s+(?:имеет|имеют)\s+побочных\s+эффектов)\b", re.I
+)
 LEGAL = re.compile(r"\b(?:нарушает\s+закон|штраф\s+составит|полностью\s+соответствует\s+закону)\b", re.I)
 
 class EditorialReviewError(ValueError):
