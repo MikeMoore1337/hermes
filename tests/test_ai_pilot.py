@@ -332,6 +332,23 @@ class PilotLedgerTests(unittest.TestCase):
                     )
             self.assertEqual(provider.calls, 0)
 
+    def test_utc_rollover_stops_old_day_reservation_before_http(self) -> None:
+        provider = _NoCostProvider()
+        with tempfile.TemporaryDirectory() as folder:
+            account, state, output = self._live_paths(folder)
+            yesterday = (datetime.now(UTC).date() - timedelta(days=1)).isoformat()
+            with (
+                patch.dict(os.environ, {"HERMES_AI_LIVE_APPROVED": "1"}, clear=True),
+                patch("agent_budget.pilot._load_state", return_value={"date": yesterday, "calls": 0}),
+                patch("agent_budget.pilot.CloudflareFreeProvider.from_environment", return_value=provider),
+            ):
+                with self.assertRaisesRegex(PilotError, "pilot_utc_day_changed"):
+                    run_pilot(
+                        engine="live", cases=["ops:provider_http_429"],
+                        owner_approved=True, account_status=account, state=state, output=output,
+                    )
+            self.assertEqual(provider.calls, 0)
+
     def test_prior_valid_day_resets_only_after_utc_rollover(self) -> None:
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "state.json"

@@ -182,11 +182,15 @@ def validate_account_status(value: object) -> dict[str, object]:
     checked = datetime.fromisoformat(
         _timestamp(value["checked_at"], "checked_at").replace("Z", "+00:00")
     )
-    age_seconds = (datetime.now(UTC) - checked).total_seconds()
-    if not (
-        -MAX_ACCOUNT_ATTESTATION_FUTURE_SKEW_SECONDS
-        <= age_seconds
-        <= MAX_ACCOUNT_ATTESTATION_AGE_SECONDS
+    now = datetime.now(UTC)
+    age_seconds = (now - checked).total_seconds()
+    if (
+        checked.date() != now.date()
+        or not (
+            -MAX_ACCOUNT_ATTESTATION_FUTURE_SKEW_SECONDS
+            <= age_seconds
+            <= MAX_ACCOUNT_ATTESTATION_AGE_SECONDS
+        )
     ):
         raise PilotError("account_status_stale_or_future")
     return value
@@ -817,7 +821,8 @@ def _run_case(name: str, *, engine: str, provider: LocalMockProvider | Cloudflar
 
 
 def _load_state(path: Path) -> dict[str, object]:
-    today = datetime.now(UTC).date().isoformat()
+    today_date = datetime.now(UTC).date()
+    today = today_date.isoformat()
     if path.is_symlink():
         raise PilotError("pilot_state_symlink")
     if not path.exists():
@@ -944,6 +949,10 @@ def run_pilot(
         records: list[dict[str, object]] = []
         for name in cases:
             if state_value is not None and state_path is not None:
+                # A UTC rollover during this run invalidates its reservation
+                # window. A fresh run must acquire a new daily state.
+                if datetime.now(UTC).date().isoformat() != state_value["date"]:
+                    raise PilotError("pilot_utc_day_changed")
                 # Reserve before any possible provider request. Crash, timeout,
                 # 429 or an interrupted process must never refund a call.
                 state_value["calls"] = int(state_value["calls"]) + 1

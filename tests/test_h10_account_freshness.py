@@ -56,6 +56,15 @@ class AccountFreshnessTests(unittest.TestCase):
                 with self.assertRaisesRegex(PilotError, "account_status_stale_or_future"):
                     load_account_status(path)
 
+    def test_previous_utc_day_quota_attestation_is_denied_even_if_fresh(self):
+        # A quota snapshot from before midnight is not the new day's quota.
+        past = datetime(2026, 10, 16, 23, 55, tzinfo=UTC)
+        next_day = datetime(2026, 10, 17, 0, 10, tzinfo=UTC)
+        with patch("agent_budget.pilot.datetime", wraps=datetime) as clock:
+            clock.now.return_value = next_day
+            with self.assertRaisesRegex(PilotError, "account_status_stale_or_future"):
+                validate_account_status(attestation(past))
+
     def test_missing_timezone_is_not_account_proof(self):
         row = attestation(datetime.now(UTC))
         row["checked_at"] = datetime.now(UTC).replace(tzinfo=None).isoformat()
