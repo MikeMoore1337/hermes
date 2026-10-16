@@ -13,6 +13,7 @@ from pathlib import Path
 
 from scripts.bounded_subprocess import BoundedProcessError, run_bounded
 
+from .offline_gap import OfflineGapDenied, admit as admit_site_gap
 from .provenance import ROOT, ProvenanceDenied, verify
 
 IMAGE = ("nousresearch/hermes-agent@sha256:"
@@ -30,6 +31,7 @@ OFFLINE_TOOLS = frozenset({
 SOURCE_TOOLS = frozenset({"site", "keywords", "fetch-source"})
 PUBLISH_TOOLS = frozenset({"publish"})
 ALL_TOOLS = OFFLINE_TOOLS | SOURCE_TOOLS | PUBLISH_TOOLS
+HERMES_OFFLINE_TOOLS = frozenset({"site-gap"})
 TOOL_CLASSES = {
     **dict.fromkeys(OFFLINE_TOOLS, "OFFLINE_MANUAL"),
     **dict.fromkeys(SOURCE_TOOLS, "NETWORK_REQUIRES_SEPARATE_GO"),
@@ -48,6 +50,9 @@ def catalog() -> dict[str, object]:
         "features": dict(sorted(TOOL_CLASSES.items())),
         "registered_entrypoints": len(ALL_TOOLS),
         "upstream_helper_modules": 5,
+        "hermes_offline_additions": ["site-gap"],
+        "synthetic_site_gap_enabled": True,
+        "verified_wordstat_volume_enabled": False,
         "network_enabled": False,
         "paid_providers_enabled": False,
         "automatic_publication_enabled": False,
@@ -58,7 +63,7 @@ def catalog() -> dict[str, object]:
 
 def docker_command(tool: str, workspace: Path, arguments: list[str]) -> list[str]:
     """Build an argv-only Docker command; does not start any subprocess."""
-    if type(tool) is not str or tool not in OFFLINE_TOOLS:
+    if type(tool) is not str or tool not in (OFFLINE_TOOLS | HERMES_OFFLINE_TOOLS):
         raise StatejnikDenied("tool_requires_separate_permission")
     if type(arguments) is not list or len(arguments) > 32 or any(
         type(arg) is not str or len(arg) > 512 or "\x00" in arg for arg in arguments
@@ -77,12 +82,20 @@ def docker_command(tool: str, workspace: Path, arguments: list[str]) -> list[str
     except OSError:
         raise StatejnikDenied("workspace_not_admitted") from None
     scripts = ROOT / "skills" / "statejnik" / "scripts"
-    if not (scripts / f"{tool}.py").is_file():
+    actual_script = "site" if tool == "site-gap" else tool
+    if not (scripts / f"{actual_script}.py").is_file():
         raise StatejnikDenied("script_missing")
     vendor = str(ROOT.resolve())
     workdir = str(workspace.resolve())
     if "," in vendor or "," in workdir or "\n" in vendor or "\n" in workdir:
         raise StatejnikDenied("unsafe_mount_path")
+    if tool == "site-gap":
+        if arguments:
+            raise StatejnikDenied("site_gap_arguments_denied")
+        try:
+            arguments = admit_site_gap(workspace)
+        except OfflineGapDenied:
+            raise StatejnikDenied("site_gap_input_denied") from None
     return [
         "docker", "run", "--rm", "--pull=never", "--platform", "linux/amd64",
         "--network", "none", "--read-only", "--cap-drop", "ALL",
@@ -95,7 +108,7 @@ def docker_command(tool: str, workspace: Path, arguments: list[str]) -> list[str
         "--workdir", "/work", "--env", "HOME=/tmp",
         "--env", "PYTHONDONTWRITEBYTECODE=1",
         "--entrypoint", PYTHON, IMAGE, "-B",
-        f"/statejnik/skills/statejnik/scripts/{tool}.py", *arguments,
+        f"/statejnik/skills/statejnik/scripts/{actual_script}.py", *arguments,
     ]
 
 
@@ -142,7 +155,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Hermes-approved statejnik offline gate")
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--init-workspace", action="store_true")
-    parser.add_argument("--tool", choices=sorted(ALL_TOOLS))
+    parser.add_argument("--tool", choices=sorted(ALL_TOOLS | HERMES_OFFLINE_TOOLS))
     parser.add_argument("--workspace", type=Path)
     parser.add_argument("tool_args", nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
