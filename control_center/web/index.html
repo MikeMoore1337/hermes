@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#0c151c">
+  <title>Hermes Control Center - центр управления</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar" aria-label="Основная навигация">
+    <div class="identity">
+      <div class="mark" aria-hidden="true">H</div>
+      <div><strong>HERMES</strong><span>CONTROL CENTER</span></div>
+    </div>
+    <div class="sidebar-section">РАБОЧЕЕ ПРОСТРАНСТВО</div>
+    <nav id="navigation" aria-label="Разделы">
+      <button class="nav-item selected" data-view="all" aria-current="page"><span>◈</span>Обзор</button>
+      <button class="nav-item" data-view="ops"><span>⌁</span>Наблюдение</button>
+      <button class="nav-item" data-view="research"><span>◇</span>Исследования</button>
+      <button class="nav-item" data-view="qa"><span>▤</span>QA и CI</button>
+      <button class="nav-item" data-view="agent"><span>◎</span>AI Agent</button>
+    </nav>
+    <div class="side-bottom">
+      <span class="read-only"><span class="tiny-dot" aria-hidden="true"></span>Режим только для чтения</span>
+      <a target="_blank" rel="noopener noreferrer" href="https://github.com/MikeMoore1337/hermes/issues">Задачи в GitHub ↗</a>
+      <div class="muted small">Версия панели 0.1.0</div>
+    </div>
+  </aside>
+  <div class="workspace">
+    <header class="topbar">
+      <div class="breadcrumbs">Hermes <span>/</span> <strong id="breadcrumb">Обзор</strong></div>
+      <div class="right-top"><span class="env-tag">PRODUCTION · READ ONLY</span><span id="last-updated" class="muted small">Нет свежего снимка</span></div>
+    </header>
+    <main id="main-content">
+      <section class="intro">
+        <div class="eyebrow">СИСТЕМА ПОД КОНТРОЛЕМ</div>
+        <h1 id="view-title">Обзор Hermes</h1>
+        <p id="view-description">Состояние агентов, автоматизаций и инфраструктуры из проверяемого снимка systemd.</p>
+        <div class="action-row">
+          <button id="refresh" class="refresh-button" type="button">↻ &nbsp; Обновить данные</button>
+          <a class="link-button" target="_blank" rel="noopener noreferrer" href="https://github.com/MikeMoore1337/hermes/issues/33">Условия допуска AI Agent ↗</a>
+        </div>
+      </section>
+      <section class="stats" id="stats" aria-label="Общие показатели">
+        <div class="stat"><span>Работают</span><strong id="working">-</strong><small>активные службы и таймеры</small></div>
+        <div class="stat"><span>Требуют внимания</span><strong id="attention">-</strong><small>сбои и неизвестные состояния</small></div>
+        <div class="stat"><span>Проверено компонентов</span><strong id="checked">-</strong><small>фиксированный список источников</small></div>
+        <div class="stat policy"><span>Постоянный AI Agent</span><strong>NO-GO</strong><small>до прохождения P0-проверок</small></div>
+      </section>
+      <section class="content-grid">
+        <div class="panel main-panel">
+          <div class="panel-head"><div><h2>Компоненты</h2><p>Живые состояния по разрешённым системным единицам</p></div><span class="label-chip" id="count-chip">Нет данных</span></div>
+          <div id="service-list" class="service-list" aria-live="polite"><p class="placeholder">Загрузка состояния…</p></div>
+        </div>
+        <aside class="panel notes-panel">
+          <div class="panel-head"><div><h2>Эксплуатационный допуск</h2><p>Границы управления</p></div></div>
+          <div class="policy-bar"><span>●</span> AI Agent не разрешён к постоянному запуску</div>
+          <p>Контроль происхождения образа, безопасности инструментов, уязвимостей и бюджетных ограничений остаётся обязательным.</p>
+          <a href="https://github.com/MikeMoore1337/hermes/issues/33" target="_blank" rel="noopener noreferrer">Открыть контрольную задачу ↗</a>
+          <div class="divider"></div>
+          <h3>Откуда поступают данные</h3>
+          <p>Наблюдение использует снимок статусов systemd. Содержимое приватных журналов, токены и персональные сведения не собираются.</p>
+          <h3>Ограничения версии</h3>
+          <p>Перезапуск служб, запуск моделей, изменение расписаний и подтверждение публикаций недоступны.</p>
+        </aside>
+      </section>
+      <div role="status" id="feedback" class="feedback" aria-live="polite"></div>
+    </main>
+    <footer>HERMES CONTROL CENTER <span>·</span> Безопасная панель наблюдения <span>·</span> Данные без доступа к секретам</footer>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,27 @@
+[Unit]
+Description=Hermes Control Center sanitized read-only systemd snapshot
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/opt/hermes-control-center/current
+ExecStart=/usr/bin/python3 -m control_center.snapshot
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/hermes-control-center
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+PrivateDevices=true
+RestrictSUIDSGID=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX
+IPAddressDeny=any
+UMask=0027
+MemoryMax=80M
+CPUQuota=20%
+TasksMax=16

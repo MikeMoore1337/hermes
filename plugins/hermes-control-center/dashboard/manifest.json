@@ -1,0 +1,11 @@
+{
+  "name": "hermes-control-center",
+  "label": "Центр управления",
+  "icon": "LayoutDashboard",
+  "version": "0.1.0",
+  "tab": {
+    "path": "/control-center",
+    "position": "after:status"
+  },
+  "entry": "dist/index.js"
+}
