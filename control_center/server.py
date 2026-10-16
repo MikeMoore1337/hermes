@@ -29,9 +29,15 @@ ASSETS = {
     "/brand.webp": ("brand.webp", "image/webp"),
     "/favicon.png": ("favicon.png", "image/png"),
     "/apple-touch-icon.png": ("apple-touch-icon.png", "image/png"),
+    "/pwa-192.png": ("pwa-192.png", "image/png"),
+    "/pwa-512.png": ("pwa-512.png", "image/png"),
+    "/manifest.webmanifest": ("manifest.webmanifest", "application/manifest+json"),
+    "/sw.js": ("sw.js", "text/javascript; charset=utf-8"),
+    "/offline.html": ("offline.html", "text/html; charset=utf-8"),
 }
 CSP = ("default-src 'none'; script-src 'self'; style-src 'self'; "
-       "connect-src 'self'; img-src 'self' data:; base-uri 'none'; "
+       "connect-src 'self'; img-src 'self' data:; manifest-src 'self'; "
+       "worker-src 'self'; base-uri 'none'; "
        "frame-ancestors 'none'; form-action 'none'")
 
 
