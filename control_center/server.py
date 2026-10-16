@@ -118,9 +118,19 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
                                         (("Set-Cookie", clear),))
                 try:
                     args = parse_qs(parsed.query, keep_blank_values=True, strict_parsing=True,
-                                    max_num_fields=4)
-                    if set(args) != {"code", "state"} or any(len(v) != 1 for v in args.values()):
-                        raise AuthError("Invalid callback parameters")
+                                    max_num_fields=8)
+                    # GitHub can return a provider error instead of an auth code.
+                    # A callback is valid only with one code and one state, but
+                    # incidental additional query fields do not weaken PKCE,
+                    # same-browser state binding or the owner identity check.
+                    if "error" in args:
+                        raise AuthError("GitHub declined authorization")
+                    if "code" not in args:
+                        raise AuthError("OAuth callback missing code")
+                    if "state" not in args:
+                        raise AuthError("OAuth callback missing state")
+                    if len(args["code"]) != 1 or len(args["state"]) != 1:
+                        raise AuthError("Duplicate callback code or state")
                     session = oauth.finish(
                         code=args["code"][0], state=args["state"][0],
                         cookie_state=self._cookie(STATE_COOKIE))
@@ -129,6 +139,10 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
                     # authorization code, state, cookie, or provider response.
                     category = {
                         "Invalid callback parameters": "invalid_parameters",
+                        "GitHub declined authorization": "github_declined",
+                        "OAuth callback missing code": "missing_code",
+                        "OAuth callback missing state": "missing_state",
+                        "Duplicate callback code or state": "duplicate_code_or_state",
                         "Cross-browser OAuth state": "state_cookie_mismatch",
                         "Used or expired OAuth state": "state_missing_or_expired",
                         "OAuth provider identity lookup failed": "broker_denied",
