@@ -61,6 +61,18 @@ class ArticleIntegrityTests(unittest.TestCase):
         self.assertEqual(r["notice_state"],article.ABSENT)
         self.assertFalse(r["authoritative_notice_clearance"])
 
+    def test_explicit_null_notice_container_cannot_promote_to_manual_review(self):
+        document = json.loads(packet())
+        document["result"]["commentCorrectionList"] = None
+        with self.assertRaisesRegex(
+            article.ArticleIntegrityError, "article_notice_schema_invalid"
+        ):
+            article.parse(json.dumps(document).encode(), source="MED", identifier=PMID)
+        # Missing key is allowed as incomplete metadata, never notice clearance.
+        missing = article.parse(packet(), source="MED", identifier=PMID)
+        self.assertEqual(missing["notice_state"], article.ABSENT)
+        self.assertFalse(missing["authoritative_notice_clearance"])
+
     def test_missing_pmc_doi_is_hold_even_if_record_exists(self):
         r=article.parse(packet(source="PMC",identifier=PMCID,pmid=None,
                                pmcid=PMCID,doi=None),
