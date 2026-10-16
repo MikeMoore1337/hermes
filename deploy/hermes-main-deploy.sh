@@ -76,7 +76,11 @@ done
 # The uploaded source is untrusted until validated. NEVER execute its Python as root.
 # systemd-run creates an ephemeral non-root user with a separate network namespace,
 # no privilege escalation, read-only host filesystem, and explicit resource limits.
+# Git tar paths inherit the root process umask 077 on extraction. Without
+# normalizing file/dir *read* bits, DynamicUser cannot open validation scripts.
+# Source remains root-owned and non-writable by the transient sandbox user.
 chmod 0755 "$work" "$work/src"
+chmod -R a+rX,go-w "$work/src"
 isolated_python() {
   systemd-run --wait --collect --pipe --quiet \
     -p DynamicUser=yes -p "WorkingDirectory=$work/src" \
