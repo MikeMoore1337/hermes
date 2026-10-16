@@ -12,10 +12,10 @@ import json
 from .bounded_subprocess import BoundedProcessError, run_bounded
 from .verify_v0222_immutable import IMAGE, image_identity
 
-SCHEMA = "hermes-h12-network-none-os-negative-v1"
+SCHEMA = "hermes-h12-network-none-os-negative-v2"
 REQUIRED = frozenset({
     "nonroot", "no_effective_caps", "only_loopback_interface",
-    "no_ipv4_default_route", "no_ipv6_default_route",
+    "no_ipv4_default_route", "no_usable_ipv6_default_route",
     "metadata_ipv4_denied", "private_ipv4_denied",
     "documentation_ipv4_denied", "documentation_ipv6_denied",
 })
@@ -39,15 +39,40 @@ def only_loopback():
     return names == {"lo"}
 
 def no_v4_default():
-    lines = read("/proc/net/route").splitlines()[1:]
-    return all(len(cols) > 1 and cols[1] != "00000000"
-               for line in lines if (cols := line.split()))
+    try:
+        rows = Path("/proc/net/route").read_text(encoding="ascii").splitlines()
+    except (OSError, UnicodeError):
+        return False
+    if not rows or rows[0].split()[:2] != ["Iface", "Destination"]:
+        return False
+    for row in rows[1:]:
+        cols = row.split()
+        if (len(cols) < 8 or len(cols[1]) != 8
+                or any(c not in "0123456789abcdefABCDEF" for c in cols[1])):
+            return False
+        if cols[1] == "00000000":
+            return False
+    return True
 
-def no_v6_default():
-    lines = read("/proc/net/ipv6_route").splitlines()
-    return all(len(cols) >= 2 and
-               not (cols[0] == "0" * 32 and cols[1] == "00000000")
-               for line in lines if (cols := line.split()))
+def no_usable_v6_default():
+    try:
+        rows = Path("/proc/net/ipv6_route").read_text(encoding="ascii").splitlines()
+    except (OSError, UnicodeError):
+        return False
+    for row in rows:
+        cols = row.split()
+        if (len(cols) < 10 or len(cols[0]) != 32 or len(cols[1]) != 2
+                or len(cols[8]) != 8
+                or any(c not in "0123456789abcdefABCDEF"
+                       for c in cols[0] + cols[1] + cols[8])):
+            return False
+        # Linux network-none often installs ::/0 with RTF_REJECT=0x200.
+        # A REJECT route is NOT a usable default route. Any default
+        # route without this explicit reject bit fails closed.
+        if cols[0] == "0" * 32 and cols[1] == "00":
+            if not int(cols[8], 16) & 0x200:
+                return False
+    return True
 
 DENIED = {errno.ENETUNREACH, errno.EHOSTUNREACH, errno.ENETDOWN,
           errno.EADDRNOTAVAIL, errno.EAFNOSUPPORT}
@@ -72,13 +97,13 @@ checks = {
     "no_effective_caps": len(caps) == 1 and int(caps[0], 16) == 0,
     "only_loopback_interface": only_loopback(),
     "no_ipv4_default_route": no_v4_default(),
-    "no_ipv6_default_route": no_v6_default(),
+    "no_usable_ipv6_default_route": no_usable_v6_default(),
     "metadata_ipv4_denied": socket_denied(socket.AF_INET, "169.254.169.254"),
     "private_ipv4_denied": socket_denied(socket.AF_INET, "10.0.0.1"),
     "documentation_ipv4_denied": socket_denied(socket.AF_INET, "192.0.2.1"),
     "documentation_ipv6_denied": socket_denied(socket.AF_INET6, "2001:db8::1"),
 }
-print(json.dumps({"schema": "hermes-h12-network-none-os-negative-v1",
+print(json.dumps({"schema": "hermes-h12-network-none-os-negative-v2",
                   "checks": checks}, sort_keys=True))
 """
 
