@@ -1,14 +1,19 @@
 """Negative-network protocol tests use *only* simulated DNS/TLS/HTTP."""
 from __future__ import annotations
 
+import os
+import signal
 import socket
+import time
 import unittest
+from contextlib import nullcontext
 from unittest.mock import patch
 
 from statejnik_integration import network_boundary as net
 
 ALLOWED = frozenset({"news.example.org", "research.example.org"})
 PUBLIC = "93.184.216.34"
+REAL_WALL_BUDGET = net._wall_budget
 
 
 def resolution(*addresses: str):
@@ -61,6 +66,12 @@ class NetworkBoundaryTests(unittest.TestCase):
     def setUp(self):
         FakeConnection.instances = []
         FakeConnection.responses = []
+        # Protocol fake tests are portable to Windows, where a live
+        # POSIX-only process timer would correctly refuse network.
+        mocked_budget = patch.object(net, "_wall_budget",
+                                     side_effect=lambda _seconds: nullcontext())
+        mocked_budget.start()
+        self.addCleanup(mocked_budget.stop)
 
     def test_default_denies_without_even_resolving_dns(self):
         with patch.object(net.socket, "getaddrinfo") as resolver:
