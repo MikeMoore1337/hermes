@@ -32,6 +32,8 @@ ASSETS = {
     "/apple-touch-icon.png": ("apple-touch-icon.png", "image/png"),
     "/pwa-192.png": ("pwa-192.png", "image/png"),
     "/pwa-512.png": ("pwa-512.png", "image/png"),
+    "/pwa-maskable-192.png": ("pwa-maskable-192.png", "image/png"),
+    "/pwa-maskable-512.png": ("pwa-maskable-512.png", "image/png"),
     "/manifest.webmanifest": ("manifest.webmanifest", "application/manifest+json"),
     "/sw.js": ("sw.js", "text/javascript; charset=utf-8"),
     "/offline.html": ("offline.html", "text/html; charset=utf-8"),

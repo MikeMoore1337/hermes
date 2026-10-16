@@ -57,6 +57,10 @@ test("login design is a preview only, OAuth button disabled",async({page})=>{
  await expect(page.getByRole("heading",{name:"Вход в систему"})).toBeVisible();
  await expect(page.getByRole("button",{name:/Войти через GitHub/})).toBeDisabled();
  await expect(page.getByText(/OAuth не включён/)).toBeVisible();
+ const logo=page.locator(".login-hero-mark");
+ await expect(logo).toHaveJSProperty("naturalWidth",1096);
+ expect(await logo.evaluate(el=>getComputedStyle(el).mixBlendMode)).toBe("normal");
+ expect(await logo.evaluate(el=>{const c=document.createElement("canvas");c.width=c.height=1;const ctx=c.getContext("2d");ctx.drawImage(el,0,0);return ctx.getImageData(0,0,1,1).data[3];})).toBe(0);
  await page.screenshot({path:resolve(folder,"login-1440.png"),fullPage:true});
  await assertNoOverflow(page);
 });
