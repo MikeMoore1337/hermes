@@ -1,0 +1,6 @@
+rules:
+  - id: hermes-jwt-verify-disabled
+    languages: [python]
+    severity: ERROR
+    message: "JWT signature verification disabled; never trust unauthenticated token claims."
+    pattern: 'jwt.decode(..., options={"verify_signature": False}, ...)'
