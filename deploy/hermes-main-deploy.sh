@@ -73,11 +73,70 @@ cd "$work/src"
 for m in ops_watch qa_advisor research_scout scripts agent_budget editorial_review knowledge_quality content_research marketing plugins control_center; do
   [[ -d "$m" ]] || die "missing module $m"
 done
-timeout 35s python3 scripts/validate_repo.py
-timeout 35s python3 scripts/check_policy_index.py
-timeout 35s python3 scripts/check_markdown_links.py
-timeout 180s python3 -m unittest discover -s tests -q > "$work/tests.log" 2>&1 || { tail -25 "$work/tests.log" >&2; die "tests failed"; }
-grep -q '^OK$' "$work/tests.log" || die "unit test status missing"
+# The uploaded source is untrusted until validated. NEVER execute its Python as root.
+# systemd-run creates an ephemeral non-root user with a separate network namespace,
+# no privilege escalation, read-only host filesystem, and explicit resource limits.
+chmod 0755 "$work" "$work/src"
+isolated_python() {
+  systemd-run --wait --collect --pipe --quiet \
+    -p DynamicUser=yes -p "WorkingDirectory=$work/src" \
+    -p PrivateNetwork=yes -p NoNewPrivileges=yes \
+    -p ProtectSystem=strict -p ProtectHome=yes -p PrivateTmp=yes \
+    -p PrivateDevices=yes -p MemoryMax=1G -p TasksMax=128 \
+    -p RuntimeMaxSec=180 -E PYTHONDONTWRITEBYTECODE=1 \
+    /usr/bin/python3 "$@"
+}
+isolated_python scripts/validate_repo.py || die "repo validation failed"
+isolated_python scripts/check_policy_index.py || die "policy check failed"
+isolated_python scripts/check_markdown_links.py || die "markdown links failed"
+isolated_python -m unittest discover -s tests -q > "$work/tests.log" 2>&1 || { tail -25 "$work/tests.log" >&2; die "non-root offline tests failed"; }
+grep -q '^OK
+grep '^Ran [0-9]* tests' "$work/tests.log" | tail -1
+systemctl is-active --quiet hermes-agent-sandbox.service && die "resident agent unexpectedly active"
+systemctl is-active --quiet hermes-cloudflare-proxy.service && die "proxy unexpectedly active"
+for u in hermes-ops-watch.service hermes-ops-alerts.service hermes-qa-watch.service hermes-research-scout.service; do
+  for attempt in 1 2 3 4 5; do
+    systemctl is-active --quiet "$u" || break
+    sleep 3
+  done
+  systemctl is-active --quiet "$u" && die "service busy: $u"
+done
+[[ ! -e "$release" && ! -e "$ui_release" ]] || die "release path already exists"
+mv -T -- "$work/src" "$release"
+release_created=yes
+mkdir -m 0700 "$backup"
+for m in ops_watch qa_advisor research_scout scripts agent_budget editorial_review knowledge_quality content_research marketing plugins; do
+  cp -a -- "$release/$m" "$base/.incoming-$short-$m"
+  if [[ -d "$base/$m" ]]; then mv -T -- "$base/$m" "$backup/$m"; fi
+  updated="$m $updated"
+  mv -T -- "$base/.incoming-$short-$m" "$base/$m"
+done
+mkdir -m 0755 "$ui_release"
+ui_created=yes
+cp -a -- "$release/control_center" "$ui_release/"
+chown -R root:root "$ui_release"
+chmod -R a+rX,go-w "$ui_release"
+runuser -u hermes-control -- env PYTHONPATH="$ui_release" python3 -c 'import control_center.server'
+ui_old=$(readlink -f "$ui/current")
+ln -s -- "$ui_release" "$ui/.incoming-$short"
+mv -Tf -- "$ui/.incoming-$short" "$ui/current"
+ui_switched=yes
+systemctl restart hermes-control-center.service
+sleep 2
+systemctl is-active --quiet hermes-control-center.service || die "UI service not active"
+curl -fsS --max-time 8 http://127.0.0.1:9133/healthz >/dev/null || die "health check failed"
+for u in hermes-discovery.timer hermes-ops-watch.timer hermes-ops-alerts.timer hermes-qa-watch.timer hermes-research-scout.timer hermes-control-center-snapshot.timer; do
+  systemctl is-active --quiet "$u" || die "timer unhealthy: $u"
+done
+systemctl is-active --quiet hermes-agent-sandbox.service && die "resident agent unexpectedly enabled"
+systemctl is-active --quiet hermes-cloudflare-proxy.service && die "proxy unexpectedly enabled"
+printf '%s\n' "$sha" > "$work/last-success.sha"
+install -m 0600 "$work/last-success.sha" "$state"
+printf 'SHA=%s\nARCHIVE_SHA256=%s\nPREVIOUS_UI=%s\nBACKUP=%s\nRESIDENT_ACTIVATED=no\n' "$sha" "$digest" "$ui_old" "$backup" > "$release/.deployment-receipt.txt"
+chmod -R a-w "$release"
+committed=yes
+echo "PRODUCTION_DEPLOYED=$sha"
+ "$work/tests.log" || die "unit test status missing"
 grep '^Ran [0-9]* tests' "$work/tests.log" | tail -1
 systemctl is-active --quiet hermes-agent-sandbox.service && die "resident agent unexpectedly active"
 systemctl is-active --quiet hermes-cloudflare-proxy.service && die "proxy unexpectedly active"
