@@ -1,5 +1,12 @@
 # H-01 #33 - новый upstream Hermes v0.22.2: кандидат, не допуск к запуску
 
+> **Позднейшая отдельная проверка того же дня:** pinned Docker-образ был
+> загружен и проверен в изолированном Windows Docker Desktop. На исходном
+> официальном v0.22.2 подтверждён native tool-scope gap; локальная derivative
+> с ограниченным патчем дала bounded synthetic PASS. Читайте
+> [последующий аудиторский акт](H-01-v0222-pinned-runtime-native-policy-2026-10-16.md).
+> Ни один результат не разрешает resident Agent или production runtime.
+
 Дата проверки: 16.10.2026. Контур: отдельный Windows ПК, **только read-only
 GitHub/Git metadata и Docker Hub manifest metadata**, без загрузки Docker image,
 контейнера, моделей или изменений VPS.
