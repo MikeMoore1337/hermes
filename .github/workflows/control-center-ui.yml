@@ -45,11 +45,11 @@ jobs:
       - name: Production dependency vulnerability gate
         working-directory: control_center/frontend
         run: npm audit --omit=dev --audit-level=high
-      - name: Python allowlist/API regression tests
-        run: python3 -m unittest tests.test_control_center tests.test_control_center_assets -v
+      - name: Python allowlist/API/OAuth security regression tests
+        run: python3 -m unittest tests.test_control_center tests.test_control_center_assets tests.test_control_center_oauth -v
       - name: Install Chromium for frontend end-to-end regression
         working-directory: control_center/frontend
         run: npx playwright install --with-deps chromium
-      - name: Browser checks (C+A, C+B, login, 320-768px)
+      - name: Browser checks (approved Atlas, protected GitHub login, mobile)
         working-directory: control_center/frontend
         run: npm run test:e2e

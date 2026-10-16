@@ -29,7 +29,7 @@ function Nav({view,onView,mode}){
  </button>)}
  </nav>;
 }
-function Header({view,setView}){
+function Header({view,setView,authMode,onLogout}){
  return <header className="site-header atlas-header">
    <Brand/>
    <div className="brand-divider" aria-hidden="true"/>
@@ -39,6 +39,7 @@ function Header({view,setView}){
    </div>
    <div className="header-tools">
     <InfoBadge tone="outline"><LockKeyhole size={13}/> Только чтение</InfoBadge>
+    {authMode==="github"&&<button type="button" className="owner-button" onClick={onLogout}><LogIn size={15} aria-hidden="true"/> Выйти</button>}
    </div>
  </header>;
 }
@@ -115,7 +116,7 @@ function SignalPanel({snapshot,error}){
   </section>
  </aside>;
 }
-function OperatorApp(){
+function OperatorApp({authMode,onLogout}){
  const [view,setView]=useState("all");
  const [snapshot,setSnapshot]=useState(null),[error,setError]=useState(""),[busy,setBusy]=useState(false);
  const [search,setSearch]=useState(""),[filter,setFilter]=useState("all");
@@ -145,7 +146,7 @@ function OperatorApp(){
  const stats=counts(snapshot?.services||[]);
  const now=snapshot?formatTime(snapshot.generated_at):"Нет данных";
  return <div className="shell theme-atlas">
-  <Header view={view} setView={setView}/>
+  <Header view={view} setView={setView} authMode={authMode} onLogout={onLogout}/>
   <div className="body-layout">
    <main className="dashboard-main">
     <section className="atlas-hero"><div className="eyebrow">ОПЕРАЦИОННЫЙ КОНТУР H-15</div>
@@ -174,7 +175,7 @@ function OperatorApp(){
   <footer className="footer">HERMES CONTROL CENTER <span>•</span> Сведения о systemd, не о результатах задач <span>•</span> <a href={ISSUE33} target="_blank" rel="noopener noreferrer">Политика допуска</a></footer>
  </div>;
 }
-function LoginPreview({onBack}){
+function LoginPreview({onBack,active=false,unavailable=false}){
  return <div className="login-root">
   <header className="login-header"><Brand/><span>ОПЕРАЦИОННЫЙ КОНТУР H-15</span></header>
   <main className="login-content">
@@ -185,21 +186,48 @@ function LoginPreview({onBack}){
     <p>Единая система контроля, наблюдения и защиты.<br/>Для владельца. Конфиденциально.</p>
     <blockquote>«Наблюдение, контроль, уверенность.»</blockquote>
    </section>
-   <section className="login-form" aria-label="Предпросмотр экрана входа">
-    <InfoBadge tone="outline">ПРЕДПРОСМОТР · OAuth не включён</InfoBadge>
+   <section className="login-form" aria-label={active?"Вход через GitHub":"Предпросмотр экрана входа"}>
+    <InfoBadge tone="outline">{active?"GITHUB OAUTH · ТОЛЬКО ВЛАДЕЛЕЦ":unavailable?"ВХОД НЕДОСТУПЕН":"ПРЕДПРОСМОТР · OAuth не включён"}</InfoBadge>
     <h2>Вход в систему</h2><p className="login-form-subtitle">Для доступа к Hermes Control Center потребуется подтверждение владельца через GitHub.</p>
-    <button type="button" className="github-action" disabled><Github size={24}/> Войти через GitHub <ArrowRight size={19}/></button>
-    <p className="login-notice">Авторизация пока не подключена. Действующая панель защищена Basic Auth.</p>
+    {active?<a className="github-action" href="/auth/github/start"><Github size={24}/> Войти через GitHub <ArrowRight size={19}/></a>:<button type="button" className="github-action" disabled><Github size={24}/> Войти через GitHub <ArrowRight size={19}/></button>}
+    <p className="login-notice">{active?"Доступ предоставляется только разрешённому GitHub ID. Никаких прав записи.":unavailable?"Проверка состояния авторизации не удалась. Доступ закрыт.":"Авторизация пока не подключена. Действующая панель защищена Basic Auth."}</p>
     <div className="login-features"><span><LockKeyhole size={20}/> Только владелец</span><span><ShieldCheck size={20}/> Защищённый сеанс</span><span><Eye size={20}/> Только чтение</span></div>
     <div className="login-policy"><LockKeyhole size={22}/><div><strong>Resident AI Agent: NO-GO</strong><p>Запуск не разрешён до прохождения проверки безопасности.</p></div></div>
-    <button className="back-dashboard" type="button" onClick={onBack}>← Вернуться к предварительному просмотру дашборда</button>
+    {!active&&!unavailable&&<button className="back-dashboard" type="button" onClick={onBack}>← Вернуться к предварительному просмотру дашборда</button>}
    </section>
   </main>
-  <footer className="login-footer">HERMES CONTROL CENTER · Дизайн-предпросмотр <a target="_blank" rel="noopener noreferrer" href={ISSUE33}>Политика доступа ↗</a></footer>
+  <footer className="login-footer">HERMES CONTROL CENTER · Только для владельца <a target="_blank" rel="noopener noreferrer" href={ISSUE33}>Политика доступа ↗</a></footer>
  </div>;
 }
 function App(){
- const [preview,setPreview]=useState(new URLSearchParams(location.search).get("preview")==="login");
- return preview?<LoginPreview onBack={()=>setPreview(false)}/>:<OperatorApp/>;
+ const preview=new URLSearchParams(location.search).get("preview")==="login";
+ const [auth,setAuth]=useState(null);
+ useEffect(()=>{
+  let active=true;
+  fetch("/api/auth/session",{cache:"no-store",credentials:"same-origin"})
+   .then(async response=>{
+     if(!response.ok)throw new Error("auth unavailable");
+     const body=await response.json();
+     if(!["proxy","github"].includes(body.mode)||typeof body.authenticated!=="boolean"){
+       throw new Error("bad auth response");
+     }
+     return body;
+   })
+   .then(result=>{if(active)setAuth(result);})
+   .catch(()=>{if(active)setAuth({mode:"unavailable",authenticated:false});});
+  return ()=>{active=false;};
+ },[]);
+ const logout=useCallback(async()=>{
+  try{
+   const result=await fetch("/auth/logout",{method:"POST",credentials:"same-origin",
+     cache:"no-store",headers:{"Content-Type":"text/plain"}});
+   if(result.status===204)setAuth({mode:"github",authenticated:false});
+  }catch(_){/* remain on protected screen; expiry will deny future APIs */}
+ },[]);
+ if(!auth)return <div className="auth-wait" role="status">Проверка доступа к Hermes Control Center…</div>;
+ if(auth.mode==="unavailable")return <LoginPreview unavailable/>;
+ if(auth.mode==="github"&&!auth.authenticated)return <LoginPreview active/>;
+ if(preview)return <LoginPreview onBack={()=>window.location.assign("/")}/>;
+ return <OperatorApp authMode={auth.mode} onLogout={logout}/>;
 }
 createRoot(document.getElementById("root")).render(<App/>);
