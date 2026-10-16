@@ -82,7 +82,7 @@ class SessionTests(unittest.TestCase):
         self.assertEqual(urlsplit(url).netloc, "github.com")
         query = parse_qs(urlsplit(url).query)
         self.assertEqual(query["code_challenge_method"], ["S256"])
-        self.assertNotIn("scope", query)
+        self.assertEqual(query["scope"], ["read:user"])
         self.assertEqual(query["redirect_uri"], [ORIGIN + "/auth/github/callback"])
         return self.auth.finish(code="code-token-12345", state=state, cookie_state=state)
 
@@ -149,7 +149,7 @@ class ProviderTests(unittest.TestCase):
                 body = request.data.decode()
                 self.assertIn("code_verifier=", body)
                 self.assertIn("redirect_uri=https%3A%2F%2Fhermes.mikemoore.top", body)
-                return {"access_token": "gho_fake_token_not_sent", "token_type": "bearer", "scope": ""}
+                return {"access_token": "gho_fake_token_not_sent", "token_type": "bearer", "scope": "read:user"}
             self.assertEqual(request.full_url, "https://api.github.com/user")
             self.assertTrue(request.get_header("Authorization").startswith("Bearer "))
             return {"id": CONFIG.owner_id}
@@ -157,6 +157,18 @@ class ProviderTests(unittest.TestCase):
             self.assertEqual(GitHubProvider().identify(CONFIG, "code-token-12345", "v" * 50),
                              CONFIG.owner_id)
         self.assertEqual(len(seen), 2)
+
+    def test_only_read_user_scope_or_no_scope_is_accepted(self):
+        for granted in ("read:user", "", None):
+            with self.subTest(granted=granted):
+                with patch("control_center.auth._fetch_json", side_effect=[
+                    {"access_token": "gho_scoped_test_token", "token_type": "bearer",
+                     "scope": granted}, {"id": CONFIG.owner_id},
+                ]) as fetch:
+                    self.assertEqual(
+                        GitHubProvider().identify(CONFIG, "synthetic-oauth-code", "v" * 50),
+                        CONFIG.owner_id)
+                    self.assertEqual(fetch.call_count, 2)
 
     def test_broad_scope_is_rejected_before_identity_lookup(self):
         with patch("control_center.auth._fetch_json",
