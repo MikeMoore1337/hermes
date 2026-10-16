@@ -1,6 +1,7 @@
-"""Sandboxed loopback UI: exact static asset allowlist and sanitized snapshots.
+"""Sandboxed loopback UI with exact static allowlist and optional owner-only OAuth.
 
-All public authentication remains with Caddy until owner-only OAuth passes its own gate.
+Default proxy mode remains protected by Caddy Basic Auth. GitHub mode is an
+opt-in separate production change and fails closed without all owner secrets.
 """
 from __future__ import annotations
 
@@ -9,8 +10,14 @@ import datetime as dt
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 from control_center.snapshot import DEFAULT_OUTPUT
+from control_center.auth import (
+    AuthConfig, AuthError, OAuthService, ORIGIN,
+    SESSION_COOKIE, STATE_COOKIE, STATE_TTL, SESSION_TTL,
+    cookie_header, parse_cookie,
+)
 
 WEB = Path(__file__).with_name("web")
 HOSTS = {"127.0.0.1:9133", "localhost:9133", "hermes.mikemoore.top"}
@@ -27,16 +34,23 @@ CSP = ("default-src 'none'; script-src 'self'; style-src 'self'; "
        "frame-ancestors 'none'; form-action 'none'")
 
 
-def make_handler(snapshot_path: Path = DEFAULT_OUTPUT):
+def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
+                 auth_config: AuthConfig | None = None, oauth_service: OAuthService | None = None):
+    config = auth_config if auth_config is not None else AuthConfig.from_env()
+    oauth = oauth_service if oauth_service is not None else (
+        OAuthService(config) if config.mode == "github" else None)
+    if config.mode == "github" and oauth is None:
+        raise AuthError("OAuth mode without service")
+
     class Handler(BaseHTTPRequestHandler):
         server_version = "HermesControlCenter"
         sys_version = ""
 
         def log_message(self, fmt, *args):
-            # Never log callback codes, URLs, user-controlled query strings or credentials.
+            # Never log callback paths (OAuth codes/states), cookies, or provider tokens.
             return
 
-        def respond(self, status, content_type, payload):
+        def respond(self, status, content_type, payload, headers=()):
             self.send_response(status)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(payload)))
@@ -45,20 +59,74 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT):
             self.send_header("X-Frame-Options", "DENY")
             self.send_header("Referrer-Policy", "no-referrer")
             self.send_header("Content-Security-Policy", CSP)
+            for name, value in headers:
+                self.send_header(name, value)
             self.end_headers()
             if self.command != "HEAD":
                 self.wfile.write(payload)
 
+        def redirect(self, url, cookies=()):
+            headers = [("Location", url)]
+            headers.extend(("Set-Cookie", item) for item in cookies)
+            return self.respond(303, "text/plain; charset=utf-8", b"", headers)
+
+        def _trusted(self):
+            return self.headers.get("Host", "") in HOSTS
+
+        def _cookie(self, name):
+            return parse_cookie(self.headers.get("Cookie"), name)
+
         def do_HEAD(self):
+            path = urlsplit(self.path).path
+            if path in ("/auth/github/start", "/auth/github/callback", "/auth/logout"):
+                return self.respond(405, "text/plain", b"Method not allowed")
             self.do_GET()
 
         def do_GET(self):
-            if self.headers.get("Host", "") not in HOSTS:
+            if not self._trusted():
                 return self.respond(400, "text/plain", b"Invalid host")
-            path = self.path
-            if path == "/healthz":
+            parsed = urlsplit(self.path)
+            path = parsed.path
+            if path == "/healthz" and not parsed.query:
                 return self.respond(200, "text/plain", b"ok")
+            if path == "/api/auth/session" and not parsed.query:
+                is_authenticated = config.mode == "proxy" or oauth.authenticated(
+                    self._cookie(SESSION_COOKIE))
+                data = json.dumps({"mode": config.mode, "authenticated": is_authenticated},
+                                  separators=(",", ":")).encode()
+                return self.respond(200, "application/json; charset=utf-8", data)
+            if config.mode == "github" and path == "/auth/github/start" and not parsed.query:
+                try:
+                    location, state = oauth.begin()
+                except AuthError:
+                    return self.respond(429, "text/plain", b"Sign-in temporarily unavailable")
+                return self.redirect(location, (
+                    cookie_header(STATE_COOKIE, state, STATE_TTL, "/auth/github"),))
+            if config.mode == "github" and path == "/auth/github/callback":
+                clear = cookie_header(STATE_COOKIE, "", 0, "/auth/github")
+                if len(self.path) > 1500 or parsed.fragment:
+                    return self.respond(403, "text/plain", b"Sign-in denied",
+                                        (("Set-Cookie", clear),))
+                try:
+                    args = parse_qs(parsed.query, keep_blank_values=True, strict_parsing=True,
+                                    max_num_fields=4)
+                    if set(args) != {"code", "state"} or any(len(v) != 1 for v in args.values()):
+                        raise AuthError("Invalid callback parameters")
+                    session = oauth.finish(
+                        code=args["code"][0], state=args["state"][0],
+                        cookie_state=self._cookie(STATE_COOKIE))
+                except (AuthError, ValueError):
+                    return self.respond(403, "text/plain", b"Sign-in denied",
+                                        (("Set-Cookie", clear),))
+                return self.redirect("/", (clear, cookie_header(SESSION_COOKIE, session,
+                                                                 SESSION_TTL)))
+            if parsed.query not in ("", "preview=login" if path == "/" else ""):
+                return self.respond(404, "text/plain", b"Not found")
             if path in ("/api/overview", "/control-center/api/overview"):
+                if config.mode == "github" and not oauth.authenticated(
+                        self._cookie(SESSION_COOKIE)):
+                    return self.respond(401, "application/json",
+                                        b'{"error":"authentication_required"}')
                 try:
                     raw = snapshot_path.read_bytes()
                     data = json.loads(raw)
@@ -71,9 +139,6 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT):
                 except (OSError, ValueError, TypeError, AttributeError):
                     return self.respond(503, "application/json", b'{"error":"snapshot_unavailable"}')
                 return self.respond(200, "application/json; charset=utf-8", raw)
-            # A single staging-only preview of the future OAuth page; still behind Basic Auth.
-            if path == "/?preview=login":
-                path = "/"
             if path in ASSETS:
                 name, mime = ASSETS[path]
                 try:
@@ -83,6 +148,19 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT):
                 return self.respond(200, mime, raw)
             return self.respond(404, "text/plain", b"Not found")
 
+        def do_POST(self):
+            if not self._trusted():
+                return self.respond(400, "text/plain", b"Invalid host")
+            if config.mode != "github" or self.path != "/auth/logout":
+                return super().do_POST()
+            if self.headers.get("Origin") != ORIGIN:
+                return self.respond(403, "text/plain", b"Origin denied")
+            if self.headers.get("Content-Length", "0") != "0":
+                return self.respond(400, "text/plain", b"Invalid body")
+            oauth.revoke(self._cookie(SESSION_COOKIE))
+            return self.respond(204, "text/plain", b"", (
+                ("Set-Cookie", cookie_header(SESSION_COOKIE, "", 0)),))
+
     return Handler
 
 
@@ -90,8 +168,9 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=9133)
     args = parser.parse_args()
-    # Loopback-only; never expose this app directly over the public network.
-    server = ThreadingHTTPServer(("127.0.0.1", args.port), make_handler())
+    config = AuthConfig.from_env()  # fail closed before binding port if incomplete
+    server = ThreadingHTTPServer(
+        ("127.0.0.1", args.port), make_handler(auth_config=config))
     server.serve_forever(poll_interval=0.5)
 
 
