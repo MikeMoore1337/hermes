@@ -1,0 +1,10 @@
+rules:
+  - id: hermes-requests-verify-false
+    languages: [python]
+    severity: WARNING
+    message: "HTTP request with TLS certificate validation disabled. Review trust boundary."
+    pattern-either:
+      - pattern: requests.get(..., verify=False, ...)
+      - pattern: requests.post(..., verify=False, ...)
+      - pattern: requests.request(..., verify=False, ...)
+      - pattern: httpx.Client(..., verify=False, ...)

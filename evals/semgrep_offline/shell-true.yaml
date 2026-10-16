@@ -1,0 +1,9 @@
+rules:
+  - id: hermes-subprocess-shell-true
+    languages: [python]
+    severity: WARNING
+    message: "Review subprocess shell=True use: possible command injection and OS escape."
+    pattern-either:
+      - pattern: subprocess.run(..., shell=True, ...)
+      - pattern: subprocess.Popen(..., shell=True, ...)
+      - pattern: subprocess.call(..., shell=True, ...)
