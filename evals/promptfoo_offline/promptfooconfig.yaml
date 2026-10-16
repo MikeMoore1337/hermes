@@ -13,7 +13,6 @@ commandLineOptions:
   share: false
   cache: false
   write: false
-  safeMode: true
 tests:
   - vars: { case_id: github_issue_override }
   - vars: { case_id: rss_embedded_command }
