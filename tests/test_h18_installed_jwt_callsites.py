@@ -66,6 +66,20 @@ class ImageJWTSourceTests(unittest.TestCase):
         self.assertEqual(r["callsites"][0]["review_reason"], "UNVERIFIED_DECODE")
         self.assertTrue(r["callsites"][0]["verified_signature_disabled_literal"])
 
+    def test_positional_algorithm_allowlist_and_options_are_audited(self):
+        # Old AST review ignored the third and fourth PyJWT.decode arguments.
+        mixed = self.sample(code='import jwt\njwt.decode("x", key, ["HS256", "RS256"])\n')
+        self.assertTrue(mixed["callsites"][0]["mixed_algorithms_literal"])
+        self.assertEqual(
+            mixed["callsites"][0]["review_reason"], "MIXED_HS_ASYMMETRIC_LITERAL"
+        )
+        unsigned = self.sample(
+            code='import jwt\njwt.decode("x", key, ["RS256"], {"verify_signature": False})\n'
+        )
+        self.assertTrue(unsigned["callsites"][0]["verified_signature_disabled_literal"])
+        self.assertEqual(unsigned["callsites"][0]["review_reason"], "UNVERIFIED_DECODE")
+        self.assertFalse(unsigned["resident_agent_allowed"])
+
     def test_dynamic_kwargs_are_conservatively_flagged(self):
         r = self.sample(code='import jwt\njwt.decode("x", key, **decode_kwargs)\n')
         self.assertEqual(r["callsites"][0]["review_reason"], "DYNAMIC_KWARGS")

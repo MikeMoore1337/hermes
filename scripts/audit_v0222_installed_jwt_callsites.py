@@ -94,10 +94,15 @@ def _literal(value: ast.AST) -> Any:
 
 def _classification(call: ast.Call) -> tuple[str, bool, bool]:
     keywords = {kw.arg: kw.value for kw in call.keywords if kw.arg is not None}
-    opts = _literal(keywords["options"]) if "options" in keywords else None
+    # PyJWT.decode(jwt, key, algorithms=None, options=None, ...).
+    # Positional arguments must be classified too: ignoring them can hide
+    # HS/asymmetric mixing or an explicit verify_signature=False.
+    opts_node = keywords.get("options", call.args[3] if len(call.args) > 3 else None)
+    opts = _literal(opts_node) if opts_node is not None else None
     if type(opts) is dict and opts.get("verify_signature") is False:
         return "UNVERIFIED_DECODE", False, True
-    algo = _literal(keywords["algorithms"]) if "algorithms" in keywords else None
+    algo_node = keywords.get("algorithms", call.args[2] if len(call.args) > 2 else None)
+    algo = _literal(algo_node) if algo_node is not None else None
     literal = type(algo) in (tuple, list) and all(type(v) is str for v in algo)
     mixed = bool(literal and set(algo) & {"HS256", "HS384", "HS512"}
                  and set(algo) & {"RS256", "RS384", "RS512", "ES256", "ES384", "ES512", "PS256"})
