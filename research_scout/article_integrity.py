@@ -141,6 +141,10 @@ def parse(raw: bytes, *, source: str, identifier: str) -> dict[str, object]:
         or not pmcid.startswith("PMC")
     ):
         raise ArticleIntegrityError("article_related_pmcid_invalid")
+    # Omission is unverified metadata. Explicit null is a malformed notice
+    # container, not evidence that this article has no integrity warnings.
+    if "commentCorrectionList" in result and result["commentCorrectionList"] is None:
+        raise ArticleIntegrityError("article_notice_schema_invalid")
     categories = _notice_codes(result.get("commentCorrectionList"))
     status = "HOLD" if categories or doi is None else "MANUAL_REVIEW"
     return {
