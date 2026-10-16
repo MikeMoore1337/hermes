@@ -29,21 +29,16 @@ function Nav({view,onView,mode}){
  </button>)}
  </nav>;
 }
-function Header({mode,setMode,view,setView,setPreview}){
- return <header className={"site-header"+(mode==="atlas"?" atlas-header":"")}>
+function Header({view,setView}){
+ return <header className="site-header atlas-header">
    <Brand/>
    <div className="brand-divider" aria-hidden="true"/>
    <span className="header-subtitle">Центр наблюдения и управления <small>AI · АВТОМАТИЗАЦИЯ · КОНТРОЛЬ · БЕЗОПАСНОСТЬ</small></span>
-   {mode==="atlas"&&<div className="atlas-nav" role="navigation" aria-label="Основные разделы">
+   <div className="atlas-nav" role="navigation" aria-label="Основные разделы">
      {nav.slice(0,4).map(k=><button key={k} className={view===k?"selected":""} onClick={()=>setView(k)}>{groups[k].name}</button>)}
-   </div>}
+   </div>
    <div className="header-tools">
-    <div className="view-switch" aria-label="Вид дашборда" role="group">
-     <button type="button" aria-pressed={mode==="console"} onClick={()=>setMode("console")}>Консоль</button>
-     <button type="button" aria-pressed={mode==="atlas"} onClick={()=>setMode("atlas")}>Атлас</button>
-    </div>
     <InfoBadge tone="outline"><LockKeyhole size={13}/> Только чтение</InfoBadge>
-    <button type="button" className="owner-button" onClick={()=>setPreview(true)} title="Предпросмотр страницы GitHub-входа"><Eye size={15}/> Вход</button>
    </div>
  </header>;
 }
@@ -120,8 +115,8 @@ function SignalPanel({snapshot,error}){
   </section>
  </aside>;
 }
-function OperatorApp({setPreview}){
- const [mode,setMode]=useState("console"),[view,setView]=useState("all");
+function OperatorApp(){
+ const [view,setView]=useState("all");
  const [snapshot,setSnapshot]=useState(null),[error,setError]=useState(""),[busy,setBusy]=useState(false);
  const [search,setSearch]=useState(""),[filter,setFilter]=useState("all");
  const reload=useCallback(async()=>{
@@ -149,32 +144,22 @@ function OperatorApp({setPreview}){
  },[]);
  const stats=counts(snapshot?.services||[]);
  const now=snapshot?formatTime(snapshot.generated_at):"Нет данных";
- return <div className={"shell theme-"+mode}>
-  <Header mode={mode} setMode={setMode} view={view} setView={setView} setPreview={setPreview}/>
+ return <div className="shell theme-atlas">
+  <Header view={view} setView={setView}/>
   <div className="body-layout">
-   {mode==="console"&&<aside className="left-rail">
-    <span className="eyebrow rail-caption">РАБОЧАЯ ОБЛАСТЬ</span>
-    <Nav view={view} onView={setView}/>
-    <div className="rail-footer"><span>HERMES CONTROL CENTER</span><small>v{UI_VERSION} · READ ONLY</small></div>
-   </aside>}
    <main className="dashboard-main">
-    {mode==="atlas"?
-      <section className="atlas-hero"><div className="eyebrow">ОПЕРАЦИОННЫЙ КОНТУР H-15</div>
+    <section className="atlas-hero"><div className="eyebrow">ОПЕРАЦИОННЫЙ КОНТУР H-15</div>
        <h1>Система. Под наблюдением.</h1><p>Инвентаризация, контроль состояния и изоляция компонентов.
        <br/>Только проверенные данные systemd.</p>
        <div className="hero-meta">HERMES CONTROL CENTER / H-15 <span>РЕЖИМ: ТОЛЬКО ЧТЕНИЕ</span></div>
-      </section>:
-      <section className="console-intro"><span className="eyebrow">СВОДКА / SYSTEM HEALTH</span>
-       <div className="intro-row"><div><h1>Состояние инфраструктуры</h1><p>Наблюдение за службами и агентными контурами Hermes.</p></div>
-        <button className="refresh-button" type="button" disabled={busy} onClick={reload}><RefreshCw size={16} className={busy?"spin":""}/> Обновить</button></div>
-      </section>}
+    </section>
     <section className="stats-bar" aria-label="Показатели">
      <StatTile title="АКТИВНЫЕ СЛУЖБЫ" value={snapshot?stats.active+" / "+stats.total:"—"} sub="Активные системные единицы" icon={Server}/>
      <StatTile title="ТРЕБУЮТ ВНИМАНИЯ" value={snapshot?String(stats.attention).padStart(2,"0"):"—"} sub="Сбой или неизвестное состояние" icon={AlertTriangle} tone="warn"/>
      <StatTile title="ПОСЛЕДНИЙ СНИМОК" value={snapshot?"Получен":"Нет данных"} sub={now} icon={Database}/>
      <StatTile title="РЕЖИМ ДОСТУПА" value="Только чтение" sub="Команды управления отключены" icon={LockKeyhole}/>
     </section>
-    {mode==="atlas"&&<div className="atlas-section-nav"><Nav view={view} onView={setView}/><button className="refresh-button" onClick={reload} disabled={busy}><RefreshCw size={15} className={busy?"spin":""}/> Обновить</button></div>}
+    <div className="atlas-section-nav"><Nav view={view} onView={setView}/><button className="refresh-button" onClick={reload} disabled={busy}><RefreshCw size={15} className={busy?"spin":""}/> Обновить</button></div>
     {error&&<div className="inline-error" role="alert"><AlertTriangle size={17}/>{error}</div>}
     <div className="operator-grid">
      <div className="center-area"><Registry snapshot={snapshot} view={view} search={search} setSearch={setSearch} filter={filter} setFilter={setFilter}/>
@@ -215,6 +200,6 @@ function LoginPreview({onBack}){
 }
 function App(){
  const [preview,setPreview]=useState(new URLSearchParams(location.search).get("preview")==="login");
- return preview?<LoginPreview onBack={()=>setPreview(false)}/>:<OperatorApp setPreview={setPreview}/>;
+ return preview?<LoginPreview onBack={()=>setPreview(false)}/>:<OperatorApp/>;
 }
 createRoot(document.getElementById("root")).render(<App/>);
