@@ -22,6 +22,13 @@ def packet(*, override=None, shell=True):
     }).encode()
 
 
+def packet_missing(check_name: str) -> bytes:
+    """Remove a required key structurally, independent of frozenset JSON order."""
+    value = json.loads(packet())
+    del value["checks"][check_name]
+    return json.dumps(value).encode()
+
+
 class OSIsolationContracts(unittest.TestCase):
     def test_no_real_docker_without_explicit_opt_in(self):
         with patch.object(check, "observe") as observe:
@@ -51,9 +58,9 @@ class OSIsolationContracts(unittest.TestCase):
             b'{"schema":"a","schema":"b","checks":{},"shell_spawn_possible":false}',
             packet(override={"unknown": True}),
             packet(override={"nonroot": "true"}),
-            packet().replace(b'"nonroot": true,', b""),
             packet().replace(b'"shell_spawn_possible": true',
                              b'"shell_spawn_possible": 1'),
+            *(packet_missing(name) for name in sorted(check.REQUIRED)),
         ]
         for raw in samples:
             with self.subTest(size=len(raw)):
