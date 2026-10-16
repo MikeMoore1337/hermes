@@ -283,6 +283,50 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(self.req("GET", "/api/overview",
                                   {"Host": "evil.invalid"})[0], 400)
 
+    def test_callback_accepts_bounded_additional_provider_metadata(self):
+        st, headers, _ = self.req("GET", "/auth/github/start")
+        self.assertEqual(st, 303)
+        state = parse_qs(urlsplit(dict(headers)["Location"]).query)["state"][0]
+        callback = ("/auth/github/callback?code=code-token-12345&state=" +
+                    state + "&installation_id=123&setup_action=install")
+        self.assertEqual(self.req("GET", callback, {
+            "Cookie": STATE_COOKIE + "=" + state,
+        })[0], 303)
+        self.assertEqual(self.provider.calls, 1)
+
+    def test_github_denial_is_categorized_without_logging_query_values(self):
+        marker = "sensitive-error-description-MUST-NOT-LOG"
+        st, headers, _ = self.req("GET", "/auth/github/start")
+        self.assertEqual(st, 303)
+        state = parse_qs(urlsplit(dict(headers)["Location"]).query)["state"][0]
+        with self.assertLogs("control_center.server", level="WARNING") as logs:
+            denied = self.req(
+                "GET", "/auth/github/callback?error=access_denied&state=" +
+                state + "&error_description=" + marker)
+        self.assertEqual(denied[0], 403)
+        self.assertIn("oauth_callback_rejection category=github_declined",
+                      "\\n".join(logs.output))
+        self.assertNotIn(marker, "\\n".join(logs.output))
+        self.assertNotIn(state, "\\n".join(logs.output))
+        self.assertEqual(self.provider.calls, 0)
+
+    def test_missing_and_duplicate_required_callback_fields(self):
+        st, headers, _ = self.req("GET", "/auth/github/start")
+        self.assertEqual(st, 303)
+        state = parse_qs(urlsplit(dict(headers)["Location"]).query)["state"][0]
+        for url, category in (
+            ("/auth/github/callback?state=" + state, "missing_code"),
+            ("/auth/github/callback?code=code-token-12345", "missing_state"),
+            ("/auth/github/callback?code=code-token-12345&code=other-token-12345&state=" +
+             state, "duplicate_code_or_state"),
+        ):
+            with self.subTest(category=category):
+                with self.assertLogs("control_center.server", level="WARNING") as logs:
+                    res = self.req("GET", url, {"Cookie": STATE_COOKIE + "=" + state})
+                self.assertEqual(res[0], 403)
+                self.assertIn("category=" + category, "\\n".join(logs.output))
+        self.assertEqual(self.provider.calls, 0)
+
     def test_denied_user_and_wrong_state(self):
         st, h, _ = self.req("GET", "/auth/github/start")
         state = parse_qs(urlsplit(dict(h)["Location"]).query)["state"][0]
