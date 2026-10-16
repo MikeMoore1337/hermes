@@ -84,6 +84,19 @@ class _NoRedirect(HTTPRedirectHandler):
         raise AuthError("Provider redirect blocked")
 
 
+def _strict_provider_pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise AuthError("Duplicate provider JSON key")
+        result[key] = value
+    return result
+
+
+def _reject_provider_constant(_value: str) -> None:
+    raise AuthError("Nonstandard provider JSON constant")
+
+
 def _fetch_json(request: Request) -> dict:
     opener = build_opener(ProxyHandler({}), _NoRedirect, HTTPSHandler(context=ssl.create_default_context()))
     with opener.open(request, timeout=5) as response:
@@ -92,8 +105,14 @@ def _fetch_json(request: Request) -> dict:
         body = response.read(16385)
         if len(body) > 16384:
             raise AuthError("Provider response too large")
-    result = json.loads(body)
-    if not isinstance(result, dict):
+    # OAuth tokens/identity IDs must never be parsed with JSON's permissive
+    # last-key-wins behavior; ambiguous provider responses fail closed.
+    try:
+        result = json.loads(body, object_pairs_hook=_strict_provider_pairs,
+                            parse_constant=_reject_provider_constant)
+    except (UnicodeError, json.JSONDecodeError, RecursionError):
+        raise AuthError("Malformed provider response") from None
+    if type(result) is not dict:
         raise AuthError("Malformed provider response")
     return result
 
