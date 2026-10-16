@@ -168,7 +168,9 @@ def assess(manifest: bytes, syft: bytes, trivy: bytes) -> dict:
     for result in results:
         if type(result) is not dict:
             raise ScanEvidenceDenied("invalid_trivy_result")
-        findings = result.get("Vulnerabilities") or []
+        # A missing key can be native Trivy output for a clean target.
+        # Explicit null, false, empty object or string is corrupted evidence.
+        findings = result["Vulnerabilities"] if "Vulnerabilities" in result else []
         if type(findings) is not list or len(findings) > 10_000:
             raise ScanEvidenceDenied("invalid_trivy_findings")
         for finding in findings:
