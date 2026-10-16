@@ -41,8 +41,15 @@
   exact allowlist и DNS. Перескок на `localhost`, cloud metadata,
   чужой домен, несогласованный порт или частный DNS = DENY.
 - Только GET, без cookies, credential headers, POST, публикации и
-  произвольного пользовательского Host. Ответ только 200, не более 1 MiB;
-  ошибка не включает URL, токен или тело ответа.
+  произвольного пользовательского Host. Клиент явно запрашивает
+  `Accept-Encoding: identity` и `Connection: close`. **До чтения тела**
+  обязательный Content-Type `text/html` либо `application/xhtml+xml`,
+  отклонение gzip/br/другого сжатия, attachment, неизвестных и
+  неоднозначных Transfer-Encoding, одновременно заданных
+  Content-Length + Transfer-Encoding, некорректного либо превышающего
+  1 MiB Content-Length. Чтение ограничено 1 MiB+1 даже при отсутствии
+  заголовка длины или при chunked. Ответ только HTTP 200; ошибка не
+  включает URL, токен или тело ответа.
 - Ни одна existing `runner` / native Hermes service / timer
   **не импортирует и не вызывает** этот транспорт. Вендорские 12 CLI
   сохранены, а `site`, `keywords`, `fetch-source`, `publish`
