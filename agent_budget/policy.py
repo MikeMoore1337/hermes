@@ -144,6 +144,10 @@ def verify_metrics(metrics: object) -> dict[str, object]:
     status = metrics["http_status"]
     if status is not None and (type(status) is not int or not 100 <= status <= 599):
         raise BudgetDenied("http_status_invalid")
+    if status is not None and metrics["attempts"] != 1:
+        # A self-reported HTTP response without any attempted request cannot
+        # prove a real zero-cost operation, even with a forged 200 and $0.
+        raise BudgetDenied("http_attempts_inconsistent")
     if status is None:
         # An omitted HTTP result is not evidence of a successful free request.
         return {"status": "UNKNOWN_PROVIDER_STATUS",

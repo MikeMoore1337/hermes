@@ -169,6 +169,23 @@ class BudgetGateTests(unittest.TestCase):
         with self.assertRaisesRegex(BudgetDenied, "attempts_invalid"):
             verify_metrics({**data, "attempts": 2})
 
+    def test_provider_status_requires_an_observed_request_attempt(self):
+        metrics = {
+            "duration_seconds": 0.0, "attempts": 0,
+            "input_tokens": None, "output_tokens": None,
+            "provider_neurons": None, "provider_cost_usd": 0.0,
+            "http_status": 200,
+        }
+        for status in (200, 401, 402, 429, 500):
+            with self.subTest(status=status):
+                with self.assertRaisesRegex(BudgetDenied, "http_attempts_inconsistent"):
+                    verify_metrics({**metrics, "http_status": status})
+        # No request and no HTTP status is inconclusive, never free proof.
+        self.assertEqual(
+            verify_metrics({**metrics, "http_status": None})["status"],
+            "UNKNOWN_PROVIDER_STATUS",
+        )
+
     def test_no_duplicate_policy_keys_symlink_or_secret_dump(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
