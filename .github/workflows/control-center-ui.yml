@@ -5,12 +5,16 @@ on:
     paths:
       - "control_center/**"
       - "tests/test_control_center*.py"
+      - "tests/test_h15_oauth_egress_evidence.py"
+      - "scripts/h15_oauth_egress_evidence.py"
       - ".github/workflows/control-center-ui.yml"
   push:
     branches: [main]
     paths:
       - "control_center/**"
       - "tests/test_control_center*.py"
+      - "tests/test_h15_oauth_egress_evidence.py"
+      - "scripts/h15_oauth_egress_evidence.py"
       - ".github/workflows/control-center-ui.yml"
 
 permissions:
@@ -47,6 +51,8 @@ jobs:
         run: npm audit --omit=dev --audit-level=high
       - name: Python allowlist/API/OAuth security regression tests
         run: python3 -m unittest tests.test_control_center tests.test_control_center_assets tests.test_control_center_oauth tests.test_control_center_broker tests.test_control_center_credentials -v
+      - name: GitHub egress pin attestation negative tests
+        run: python3 -m unittest tests.test_h15_oauth_egress_evidence -v
       - name: Install Chromium for frontend end-to-end regression
         working-directory: control_center/frontend
         run: npx playwright install --with-deps chromium
