@@ -9,6 +9,10 @@ from outside, POST, secrets or automatic publication.
 from __future__ import annotations
 
 import http.client
+import os
+import signal
+import threading
+from contextlib import contextmanager
 import ipaddress
 import re
 import socket
@@ -18,6 +22,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 MAX_RESPONSE_BYTES = 1_048_576
+MAX_WALL_SECONDS = 15
 MAX_REDIRECTS = 3
 MAX_DNS_ANSWERS = 16
 USER_AGENT = "Hermes-Statejnik-ReadOnly/0.1"
@@ -161,6 +166,44 @@ def _admit_html_response_headers(response: http.client.HTTPResponse) -> None:
         raise NetworkDenied("content_disposition_denied")
 
 
+@contextmanager
+def _wall_budget(seconds: float):
+    """POSIX single-thread process deadline. No changes to existing alarms.
+
+    This is a defense-in-depth for a future *isolated* worker, not an
+    authorization for live egress in a multithreaded service. Always deny
+    platforms/situations where a process-wide alarm cannot be owned safely.
+    """
+    if (type(seconds) not in (int, float) or not 0 < seconds <= 30
+            or os.name != "posix" or not hasattr(signal, "setitimer")
+            or not hasattr(signal, "ITIMER_REAL")
+            or threading.current_thread() is not threading.main_thread()
+            or threading.active_count() != 1):
+        raise NetworkDenied("wall_budget_unavailable")
+    try:
+        previous = signal.getsignal(signal.SIGALRM)
+        timer = signal.getitimer(signal.ITIMER_REAL)
+    except (OSError, ValueError, AttributeError):
+        raise NetworkDenied("wall_budget_unavailable") from None
+    if previous not in (signal.SIG_DFL, signal.SIG_IGN) or timer[0] or timer[1]:
+        raise NetworkDenied("wall_budget_busy")
+
+    def deadline_expired(_number, _frame):
+        raise NetworkDenied("wall_budget_exceeded")
+
+    try:
+        signal.signal(signal.SIGALRM, deadline_expired)
+        try:
+            signal.setitimer(signal.ITIMER_REAL, seconds)
+        except (OSError, ValueError):
+            raise NetworkDenied("wall_budget_unavailable") from None
+        yield
+    finally:
+        # Never leave an alarm handler/timer installed by this candidate.
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
+
+
 class _PinnedHttps(http.client.HTTPSConnection):
     def __init__(self, hostname: str, pinned_ip: str, *, timeout: float):
         super().__init__(hostname, 443, timeout=timeout,
@@ -193,6 +236,17 @@ def fetch_public_html(
     """
     if authorized is not True:
         raise NetworkDenied("network_not_enabled")
+    with _wall_budget(MAX_WALL_SECONDS):
+        return _fetch_under_budget(
+            url, allowed_hosts=allowed_hosts, resolver=resolver,
+            connection_factory=connection_factory,
+        )
+
+
+def _fetch_under_budget(
+    url: str, *, allowed_hosts: frozenset[str],
+    resolver: Callable, connection_factory: Callable | None,
+) -> tuple[int, bytes]:
     location = url
     visited: set[str] = set()
     for hop in range(MAX_REDIRECTS + 1):
