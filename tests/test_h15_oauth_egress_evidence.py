@@ -1,8 +1,10 @@
 """No-network evidence tests: broad, stale, wrong host, private IP all denied."""
 from datetime import datetime, timezone, timedelta
+import tempfile
 import unittest
+from pathlib import Path
 
-from scripts.h15_oauth_egress_evidence import plan, EgressEvidenceError
+from scripts.h15_oauth_egress_evidence import plan, read_evidence, EgressEvidenceError
 
 NOW = datetime(2026, 10, 16, 19, 0, tzinfo=timezone.utc)
 
@@ -50,6 +52,32 @@ class EvidenceTests(unittest.TestCase):
                 d = valid()
                 change(d)
                 plan(d, now=NOW)
+
+    def test_local_evidence_file_guards_and_duplicate_keys(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            candidate = root / "evidence.json"
+            candidate.write_text('{"source":"first","source":"second"}', encoding="utf8")
+            with self.assertRaises(EgressEvidenceError):
+                read_evidence(candidate)
+            candidate.write_text("null", encoding="utf8")
+            with self.assertRaises(EgressEvidenceError):
+                read_evidence(candidate)
+            candidate.write_text("{" + ("x" * 150_001) + "}", encoding="utf8")
+            with self.assertRaises(EgressEvidenceError):
+                read_evidence(candidate)
+            candidate.write_text('{"source":"https://api.github.com/meta"}', encoding="utf8")
+            self.assertEqual(read_evidence(candidate)["source"], "https://api.github.com/meta")
+            with self.assertRaises(EgressEvidenceError):
+                read_evidence(root / "nonexistent.json")
+            link = root / "shortcut.json"
+            try:
+                link.symlink_to(candidate)
+            except (OSError, NotImplementedError):
+                pass
+            else:
+                with self.assertRaises(EgressEvidenceError):
+                    read_evidence(link)
 
     def test_future_observation_denied(self):
         with self.assertRaises(EgressEvidenceError):
