@@ -22,7 +22,7 @@ are already enforced on actual v4 live retrievals. No private vault was read.
 | Freshness | No real stale guarantee established by this assessment | Checked date and source update older than 30 days => HOLD | Need separately specified API semantics |
 | Revoked permissions | Safe Write/retrieval capabilities have separate boundaries | Source access=revoked => HOLD | API auth/revocation is owned by #6, NOT IMPLEMENTED |
 | Contradictory facts | Cannot infer a semantic truth checker from v4 README | Synthetic YES/NO for same demo topic/predicate => HOLD on both | Does not provide semantic NLP checking |
-| Orphaned links | Obsidian wikilinks validation documented | Unknown fact links => HOLD | Real vault link integrity NOT VERIFIED |
+| Orphaned/low-trust links | Obsidian wikilinks validation documented | Unknown fact links => HOLD; an existing linked HOLD/UNKNOWN fact also downgrades the referring fact transitively | Real vault link integrity and semantic dependency NOT VERIFIED |
 | Inaccessible/expired API | Separate owner gate under #6 | No API or filesystem access implemented | BLOCKED |
 | Unknown or missing scientific meaning | No self-generated facts allowed | UNKNOWN without provenance, never invent evidence | Offline check only |
 
@@ -55,6 +55,10 @@ This is **not** a policy engine to be connected to the actual Second Brain
 without approval. No network, new dependency, secret or model. The tests
 include stale, revoked, contradictory, orphaned, insufficient provenance,
 missing source, forged origin, private path and overflow conditions.
+A linked synthetic fact is not automatically trusted just because its ID exists:
+linked HOLD propagates HOLD; linked UNKNOWN yields UNKNOWN unless a stronger
+HOLD condition is present. Propagation is bounded by the fixture's 100-fact
+limit, including cycles. This is not a real-world dependency/causality proof.
 
 ## Follow-up / owner gate
 

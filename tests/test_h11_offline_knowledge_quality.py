@@ -106,6 +106,70 @@ class H11OfflineTests(unittest.TestCase):
         with self.assertRaises(KnowledgeAuditError):
             audit_fixture(data, as_of="2026-10-16")
 
+    def test_existing_link_to_revoked_source_forces_hold(self):
+        data = good()
+        child = copy.deepcopy(data["facts"][0])
+        child["id"] = "F-b"
+        child["source_ids"] = ["SRC-b"]
+        data["sources"].append({"id": "SRC-b", "updated_on": "2026-10-14",
+                                "access": "revoked", "origin": "synthetic_only"})
+        data["facts"][0]["links"] = ["F-b"]
+        data["facts"].append(child)
+        rows = {r["fact_id"]: r for r in audit_fixture(data, as_of="2026-10-16")["facts"]}
+        self.assertEqual(rows["F-b"]["status"], "HOLD")
+        self.assertEqual(rows["F-a"]["status"], "HOLD")
+        self.assertIn("LINKED_FACT_HOLD", rows["F-a"]["reason_codes"])
+
+    def test_existing_link_to_unknown_provenance_is_unknown(self):
+        data = good()
+        child = copy.deepcopy(data["facts"][0])
+        child["id"] = "F-b"
+        child["source_ids"] = []
+        data["facts"][0]["links"] = ["F-b"]
+        data["facts"].append(child)
+        rows = {r["fact_id"]: r for r in audit_fixture(data, as_of="2026-10-16")["facts"]}
+        self.assertEqual(rows["F-b"]["status"], "UNKNOWN")
+        self.assertEqual(rows["F-a"]["status"], "UNKNOWN")
+        self.assertIn("LINKED_FACT_UNKNOWN", rows["F-a"]["reason_codes"])
+
+    def test_linked_hold_is_transitive_and_never_exposes_values(self):
+        data = good()
+        parent = data["facts"][0]
+        middle = copy.deepcopy(parent)
+        leaf = copy.deepcopy(parent)
+        middle["id"], middle["links"] = "F-b", ["F-c"]
+        leaf["id"], leaf["checked_on"] = "F-c", "2026-01-01"
+        parent["links"] = ["F-b"]
+        data["facts"].extend([middle, leaf])
+        result = audit_fixture(data, as_of="2026-10-16")
+        rows = {r["fact_id"]: r for r in result["facts"]}
+        self.assertEqual(result["summary"]["HOLD"], 3)
+        self.assertIn("LINKED_FACT_HOLD", rows["F-b"]["reason_codes"])
+        self.assertIn("LINKED_FACT_HOLD", rows["F-a"]["reason_codes"])
+        self.assertNotIn("value", str(result))
+
+    def test_link_to_valid_synthetic_fact_stays_ready(self):
+        data = good()
+        child = copy.deepcopy(data["facts"][0])
+        child["id"] = "F-b"
+        data["facts"][0]["links"] = ["F-b"]
+        data["facts"].append(child)
+        result = audit_fixture(data, as_of="2026-10-16")
+        self.assertEqual(result["summary"], {"READY": 2, "UNKNOWN": 0, "HOLD": 0})
+
+    def test_cycle_with_one_stale_fact_holds_both(self):
+        data = good()
+        child = copy.deepcopy(data["facts"][0])
+        child["id"] = "F-b"
+        child["checked_on"] = "2026-01-01"
+        child["links"] = ["F-a"]
+        data["facts"][0]["links"] = ["F-b"]
+        data["facts"].append(child)
+        result = audit_fixture(data, as_of="2026-10-16")
+        self.assertEqual(result["summary"]["HOLD"], 2)
+        self.assertTrue(all("LINKED_FACT_HOLD" in item["reason_codes"]
+                            for item in result["facts"]))
+
     def test_cli_read_only_roundtrip_and_rejection(self):
         cmd = [sys.executable, "-m", "knowledge_quality.offline_audit", "--as-of", "2026-10-16"]
         result = subprocess.run(cmd, input=json.dumps(good()).encode("utf-8"), capture_output=True)

@@ -94,6 +94,31 @@ def audit_fixture(data: Any, *, as_of: str, stale_days: int = 30) -> dict[str, A
             reasons.add("CONTRADICTION")
         status = "HOLD" if reasons - {"INSUFFICIENT_PROVENANCE"} else "UNKNOWN" if reasons else "READY"
         output.append({"fact_id": key, "status": status, "reason_codes": sorted(reasons)})
+    # A present link is not evidence that its target is usable. Conservatively
+    # propagate the target's synthetic quality status through linked facts.
+    # No raw values or source content enter the output.
+    by_id = {row["fact_id"]: row for row in output}
+    linked_codes = {"LINKED_FACT_HOLD", "LINKED_FACT_UNKNOWN"}
+    for _ in range(len(output)):
+        changed = False
+        for row in output:
+            reasons = set(row["reason_codes"]) - linked_codes
+            linked_statuses = {
+                by_id[target]["status"]
+                for target in facts[row["fact_id"]]["links"]
+                if target in by_id
+            }
+            if "HOLD" in linked_statuses:
+                reasons.add("LINKED_FACT_HOLD")
+            elif "UNKNOWN" in linked_statuses:
+                reasons.add("LINKED_FACT_UNKNOWN")
+            status = "HOLD" if reasons - {"INSUFFICIENT_PROVENANCE", "LINKED_FACT_UNKNOWN"} else "UNKNOWN" if reasons else "READY"
+            if status != row["status"] or sorted(reasons) != row["reason_codes"]:
+                row["status"] = status
+                row["reason_codes"] = sorted(reasons)
+                changed = True
+        if not changed:
+            break
     return {"schema": RESULT_SCHEMA, "mode": "SYNTHETIC_ONLY", "integration_verified": False,
             "vault_accessed": False, "model_called": False, "facts": output,
             "summary": {s: sum(x["status"] == s for x in output) for s in ("READY", "UNKNOWN", "HOLD")}}
