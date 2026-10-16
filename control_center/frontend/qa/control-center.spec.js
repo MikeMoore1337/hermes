@@ -102,3 +102,24 @@ test("session probe errors fail closed without showing protected dashboard",asyn
  await expect(page.getByRole("button",{name:/Войти через GitHub/})).toBeDisabled();
  await expect(page.getByRole("table")).toHaveCount(0);
 });
+
+test("owner GitHub session can log out and loses snapshot view",async({page})=>{
+ await page.route("**/api/auth/session",route=>route.fulfill({
+  status:200,contentType:"application/json",
+  body:JSON.stringify({mode:"github",authenticated:true})}));
+ await mock(page);
+ let logoutCalled=0;
+ await page.route("**/auth/logout",route=>{
+  logoutCalled++;
+  expect(route.request().method()).toBe("POST");
+  return route.fulfill({status:204,body:""});
+ });
+ await page.goto("/");
+ await expect(page.getByRole("heading",{name:"Система. Под наблюдением."})).toBeVisible();
+ await expect(page.getByRole("table")).toBeVisible();
+ await page.getByRole("button",{name:"Выйти"}).click();
+ await expect(page.getByRole("heading",{name:"Вход в систему"})).toBeVisible();
+ await expect(page.getByRole("link",{name:/Войти через GitHub/})).toHaveAttribute("href","/auth/github/start");
+ await expect(page.getByRole("table")).toHaveCount(0);
+ expect(logoutCalled).toBe(1);
+});
