@@ -4,12 +4,20 @@ This test is deliberately static: the live VPS isolated systemd checks are valid
 separately, and no network, SSH, secrets or production calls occur in CI.
 """
 from pathlib import Path
+import shutil
+import subprocess
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class MainDeployContractTests(unittest.TestCase):
+    def test_shell_syntax(self):
+        bash = shutil.which('bash')
+        if not bash:
+            self.skipTest('bash unavailable')
+        subprocess.run([bash, '-n', str(ROOT / 'deploy/hermes-main-deploy.sh')], check=True)
+
     def test_nonroot_offline_validation(self):
         script = (ROOT / "deploy/hermes-main-deploy.sh").read_text(encoding="utf-8")
         for fragment in (
