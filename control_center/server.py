@@ -6,6 +6,7 @@ proxy is required before any public exposure. The listener is fixed to loopback.
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
@@ -59,8 +60,12 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT):
                 try:
                     raw = snapshot_path.read_bytes()
                     data = json.loads(raw)
-                    if data.get("schema") != 1:
+                    if data.get("schema") != 1 or data.get("mode") != "read_only":
                         raise ValueError("invalid schema")
+                    generated = dt.datetime.fromisoformat(data["generated_at"].replace("Z", "+00:00"))
+                    age = (dt.datetime.now(dt.timezone.utc) - generated).total_seconds()
+                    if not -120 <= age <= 180:
+                        raise ValueError("stale or future snapshot")
                 except (OSError, ValueError, TypeError, AttributeError):
                     return self.respond(503, "application/json", b'{"error":"snapshot_unavailable"}')
                 return self.respond(200, "application/json; charset=utf-8", raw)
