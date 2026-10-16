@@ -18,8 +18,33 @@ The official image is unmodified. All tool and model calls use synthetic stubs.
   `commit` matched official source; Python interpreter **3.14.7**.
 - **Important:** an image-embedded stamp can be set by an image builder.
   Therefore source-to-build-to-image provenance remains **UNATTESTED**, even
-  though this commit value matched. Signature, transparency log, CI builder
-  attestation and full third-party dependency provenance remain **NO_DATA**.
+  though this commit value matched. Final and RC claim tag signatures
+  are explicitly **unsigned**; transparency log, CI builder attestation
+  and full third-party dependency provenance remain **NO_DATA**.
+
+## 16.10.2026 - официальный release receipt: digest совпал, подписи нет
+
+Публичный GitHub Git API для annotated tag object
+`7b77e29eedd85a8497ce2821448dac7964dc46f6` (`v0.22.2`)
+возвращает JSON message со `schema=1`, `version=0.22.2`,
+`commit=d923a5eb487a17c0a68801bba9ef0f56c81040a8` и
+`dockerManifestDigest=sha256:36099926da316742423544e055d4734777105ffe6341873af5459b957d0c2919`.
+Этот index digest **совпадает** с независимо наблюдаемым
+`docker buildx imagetools inspect nousresearch/hermes-agent:v0.22.2`.
+Внутри index AMD64 manifest совпал с реально загруженным
+`sha256:a11574b7fe8e1631d7d88d556677dac693bc058abf558cdeb899155688c1bf05`.
+
+Но у final tag **`verification.verified=false`, `reason=unsigned`**.
+Его `claimTagObject=412daddc13b53e7f193189267cb92e5f5d1ab07e`
+(`rc.2-v0.22.2`) тоже имеет **`verified=false`, `reason=unsigned`**
+по GitHub API; в claim перечислены lanes `docker`, `docker-tests`,
+`smoke`, `windows`, `windows-store`, но это декларация, а не
+независимая аттестация фактического выполнения тестов или source-to-build.
+
+**Вердикт:** `RELEASE_RECEIPT_DIGEST_MATCHED_BUT_UNSIGNED`,
+`SOURCE_TO_BUILD_PROVENANCE_UNVERIFIED`, `resident_agent_allowed=false`.
+Отсутствие проверяемой подписи не доказывает компрометацию, но не позволяет
+заявить независимую криптографическую цепочку до опубликованного Docker image.
 
 ## Real image, synthetic tool policy
 
