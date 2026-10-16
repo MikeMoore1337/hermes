@@ -13,8 +13,8 @@ from pathlib import Path
 import shutil
 import tempfile
 
-WHEEL = "pyjwt-2.14.0-py3-none-any.whl"
-WHEEL_SHA256 = "ad0cef71c756a56e74863c2919cf0985f72decbcfcb550ee2f422e7c62b5eedc"
+WHEEL = "pyjwt-2.15.1-py3-none-any.whl"
+WHEEL_SHA256 = "42d59d631f7768a1028a64c7ff581a9bf7519804daf91fc5b6c56e30eec5e193"
 PATCH = "hermes-v0.22.1-native-tool-policy.patch"
 PATCH_SHA256 = "e7157fd4831b32670d418a5eec675a8cab8318a49e5c1df94e33da7e9d3a2016"
 IMAGE = ("nousresearch/hermes-agent@sha256:"
