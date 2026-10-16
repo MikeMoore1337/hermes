@@ -9,6 +9,7 @@ import argparse
 import datetime as dt
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import logging
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
@@ -123,7 +124,20 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
                     session = oauth.finish(
                         code=args["code"][0], state=args["state"][0],
                         cookie_state=self._cookie(STATE_COOKIE))
-                except (AuthError, ValueError):
+                except (AuthError, ValueError) as exc:
+                    # Only fixed labels are logged: never the callback URL,
+                    # authorization code, state, cookie, or provider response.
+                    category = {
+                        "Invalid callback parameters": "invalid_parameters",
+                        "Cross-browser OAuth state": "state_cookie_mismatch",
+                        "Used or expired OAuth state": "state_missing_or_expired",
+                        "OAuth provider identity lookup failed": "broker_denied",
+                        "Owner ID denied": "owner_denied",
+                        "Invalid OAuth state": "state_invalid",
+                        "Invalid OAuth code": "code_invalid",
+                    }.get(str(exc), "callback_invalid")
+                    logging.getLogger(__name__).warning(
+                        "oauth_callback_rejection category=%s", category)
                     return self.respond(403, "text/plain", b"Sign-in denied",
                                         (("Set-Cookie", clear),))
                 return self.redirect("/", (clear, cookie_header(SESSION_COOKIE, session,
