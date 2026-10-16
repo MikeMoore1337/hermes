@@ -5,6 +5,7 @@ import {ShieldCheck,LockKeyhole,Activity,RefreshCw,Search,Github,ArrowRight,
   CircleHelp,ShieldAlert,Eye,Signal,Check,LogIn,ArrowUpRight} from "lucide-react";
 import {groups,statuses,validSnapshot,counts,filterServices} from "./health.js";
 import "./style.css";
+import {registerPwa} from "./register-pwa.js";
 
 const ISSUE33="https://github.com/MikeMoore1337/hermes/issues/33";
 const ISSUE163="https://github.com/MikeMoore1337/hermes/issues/163";
@@ -231,3 +232,4 @@ function App(){
  return <OperatorApp authMode={auth.mode} onLogout={logout}/>;
 }
 createRoot(document.getElementById("root")).render(<App/>);
+void registerPwa();

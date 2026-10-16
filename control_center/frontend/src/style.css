@@ -106,3 +106,9 @@
 .theme-atlas .atlas-nav button {font-weight:590}
 .login-root .login-story h1,.login-root .login-form h2 {font-weight:720;letter-spacing:-1px}
 .login-root .login-story blockquote {font-weight:400;font-style:italic}
+
+/* Installed PWA safe areas; same approved Atlas visual system. */
+@media (display-mode: standalone) {
+  .site-header,.login-header {padding-top:max(12px, env(safe-area-inset-top));}
+  .footer,.login-footer {padding-bottom:max(16px, env(safe-area-inset-bottom));}
+}
