@@ -1,0 +1,51 @@
+# STAGING TEMPLATE: do not enable without owner GO and per-host egress IP allowlist.
+[Unit]
+Description=Hermes Control Center dedicated GitHub OAuth identity broker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hermes-oauth
+Group=hermes-control
+UMask=0007
+WorkingDirectory=/opt/hermes-control-center/current
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+LoadCredential=broker.env:/etc/hermes-control-center/oauth/broker.env
+ExecStart=/usr/bin/python3 -m control_center.oauth_broker
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=5
+RuntimeDirectory=hermes-oauth
+RuntimeDirectoryMode=0750
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+# Explicit default deny. Additional /32 IPv4 and /128 IPv6 must be placed
+# in a reviewed drop-in, matching GitHub's current documented published ranges.
+# No general proxy, no dynamic DNS-only allowlist, no 0.0.0.0/0.
+IPAddressDeny=any
+IPAddressAllow=localhost
+MemoryMax=64M
+TasksMax=16
+LimitNOFILE=256
+
+[Install]
+WantedBy=multi-user.target

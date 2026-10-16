@@ -14,6 +14,7 @@ import json
 import os
 import re
 import secrets
+import socket
 import ssl
 from threading import Lock
 import time
@@ -28,6 +29,7 @@ TOKEN_URL = "https://github.com/login/oauth/access_token"
 USER_URL = "https://api.github.com/user"
 STATE_COOKIE = "hermes_cc_state"
 SESSION_COOKIE = "hermes_cc_session"
+BROKER_SOCKET = "/run/hermes-oauth/broker.sock"
 STATE_TTL = 600
 SESSION_TTL = 43200
 MAX_PENDING = 24
@@ -46,6 +48,7 @@ class AuthConfig:
     client_secret: str = ""
     owner_id: int = 0
     session_secret: bytes = b""
+    broker_socket: str = BROKER_SOCKET
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> "AuthConfig":
@@ -60,17 +63,20 @@ class AuthConfig:
         client_secret = env.get("HERMES_CC_GITHUB_CLIENT_SECRET", "")
         owner = env.get("HERMES_CC_ALLOWED_GITHUB_ID", "")
         secret = env.get("HERMES_CC_SESSION_SECRET", "")
+        broker = env.get("HERMES_CC_OAUTH_BROKER_SOCKET", BROKER_SOCKET)
         if origin != ORIGIN:
             raise AuthError("Invalid canonical public origin")
         if not re.fullmatch(r"[A-Za-z0-9_-]{10,100}", client_id):
             raise AuthError("Missing or malformed OAuth client ID")
-        if not 20 <= len(client_secret) <= 256 or any(ord(c) < 33 for c in client_secret):
-            raise AuthError("Missing or malformed OAuth client secret")
+        if client_secret:
+            raise AuthError("OAuth client secret must only be loaded by isolated broker")
+        if broker != BROKER_SOCKET:
+            raise AuthError("Unexpected OAuth broker socket")
         if not owner.isdecimal() or not 1 <= len(owner) <= 18 or int(owner) <= 0:
             raise AuthError("Invalid allowed numeric owner ID")
         if len(secret.encode("utf-8")) < 32 or len(secret) > 1024:
             raise AuthError("Weak session signing secret")
-        return cls(mode, origin, client_id, client_secret, int(owner), secret.encode("utf-8"))
+        return cls(mode, origin, client_id, "", int(owner), secret.encode("utf-8"), broker)
 
 
 class _NoRedirect(HTTPRedirectHandler):
@@ -90,6 +96,40 @@ def _fetch_json(request: Request) -> dict:
     if not isinstance(result, dict):
         raise AuthError("Malformed provider response")
     return result
+
+
+class LocalBrokerProvider:
+    """Only outbound transport used by the web server: exact Unix socket."""
+
+    def identify(self, config: AuthConfig, code: str, verifier: str) -> int:
+        if config.broker_socket != BROKER_SOCKET:
+            raise AuthError("Broker socket denied")
+        request = json.dumps(
+            {"action": "identify", "code": code, "verifier": verifier},
+            separators=(",", ":"),
+        ).encode("ascii") + b"\n"
+        if len(request) > 2048:
+            raise AuthError("Broker request too large")
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+            client.settimeout(7)
+            client.connect(config.broker_socket)
+            client.sendall(request)
+            data = bytearray()
+            while b"\n" not in data and len(data) < 129:
+                block = client.recv(129-len(data))
+                if not block:
+                    break
+                data.extend(block)
+        if len(data) > 128 or data.count(b"\n") != 1 or not data.endswith(b"\n"):
+            raise AuthError("Broker response malformed")
+        try:
+            parsed = json.loads(data)
+        except (ValueError, UnicodeError) as exc:
+            raise AuthError("Broker response invalid") from exc
+        uid = parsed.get("id") if isinstance(parsed, dict) and parsed.get("ok") is True else None
+        if type(uid) is not int or uid <= 0:
+            raise AuthError("Broker identity denied")
+        return uid
 
 
 class GitHubProvider:
@@ -144,7 +184,7 @@ class OAuthService:
         if config.mode != "github":
             raise AuthError("OAuth service cannot run in proxy mode")
         self.config = config
-        self.provider = provider if provider is not None else GitHubProvider()
+        self.provider = provider if provider is not None else LocalBrokerProvider()
         self.clock = clock if clock is not None else time.time
         self._pending: dict[str, tuple[str, float]] = {}
         self._sessions: dict[str, float] = {}
