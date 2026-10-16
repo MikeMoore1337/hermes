@@ -1,0 +1,55 @@
+name: Hermes Control Center UI
+
+on:
+  pull_request:
+    paths:
+      - "control_center/**"
+      - "tests/test_control_center*.py"
+      - ".github/workflows/control-center-ui.yml"
+  push:
+    branches: [main]
+    paths:
+      - "control_center/**"
+      - "tests/test_control_center*.py"
+      - ".github/workflows/control-center-ui.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  ui-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout without persistent credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Set up Node 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: control_center/frontend/package-lock.json
+      - name: Install pinned build dependencies without lifecycle scripts
+        working-directory: control_center/frontend
+        run: npm ci --ignore-scripts --no-fund --no-audit
+      - name: Verify JS, snapshot transforms and build
+        working-directory: control_center/frontend
+        run: |
+          npm run check
+          npm run test
+          npm run build
+      - name: Compiled bundle matches committed source
+        run: git diff --exit-code -- control_center/web
+      - name: Production dependency vulnerability gate
+        working-directory: control_center/frontend
+        run: npm audit --omit=dev --audit-level=high
+      - name: Python allowlist/API regression tests
+        run: python3 -m unittest tests.test_control_center tests.test_control_center_assets -v
+      - name: Install Chromium for frontend end-to-end regression
+        working-directory: control_center/frontend
+        run: npx playwright install --with-deps chromium
+      - name: Browser checks (C+A, C+B, login, 320-768px)
+        working-directory: control_center/frontend
+        run: npm run test:e2e

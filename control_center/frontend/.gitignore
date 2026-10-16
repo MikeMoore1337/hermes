@@ -1,0 +1,6 @@
+node_modules/
+.vite/
+.artifacts/
+playwright-report/
+test-results/
+npm-debug.log*
