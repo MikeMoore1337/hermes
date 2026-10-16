@@ -86,7 +86,10 @@ wall-time при медленной передаче, отсутствие DNS/S
 
 ## Следующие gate до активации
 
-1. Выделенная egress-сеть с allowlist **на уровне firewall/proxy**, без
+1. [Read-only аудит фактических ограничений сети на VPS](../audits/H-12-EGRESS-PRODUCTION-NO-GO-2026-10-16.md):
+   `PrivateNetwork=no`, нет `NetworkNamespacePath` и `IPAddressDeny`
+   для отключённого resident service; **OS egress GO отсутствует**.
+   Выделенная egress-сеть с allowlist **на уровне firewall/proxy**, без
    возможности обхода или приватного/metadata egress, ограниченные
    DNS и TLS, доказанные live negative tests. Один Python URL validator
    сам по себе недостаточен для full P0 GO.
