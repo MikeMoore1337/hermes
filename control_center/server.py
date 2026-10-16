@@ -34,6 +34,7 @@ ASSETS = {
     "/manifest.webmanifest": ("manifest.webmanifest", "application/manifest+json"),
     "/sw.js": ("sw.js", "text/javascript; charset=utf-8"),
     "/offline.html": ("offline.html", "text/html; charset=utf-8"),
+    "/third-party-notices.txt": ("third-party-notices.txt", "text/plain; charset=utf-8"),
 }
 CSP = ("default-src 'none'; script-src 'self'; style-src 'self'; "
        "connect-src 'self'; img-src 'self' data:; manifest-src 'self'; "
