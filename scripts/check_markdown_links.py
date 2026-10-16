@@ -87,6 +87,15 @@ def check(root: Path) -> list[str]:
         for number, line in _lines(text):
             for match in LINK.finditer(line):
                 raw = match.group(1).strip("<>")
+                # Statejnik's licensed, byte-identical upstream source uses
+                # the literal prose example "[X](url)" at this exact location.
+                # Exempt only that illustrative placeholder, never arbitrary
+                # links in vendored or first-party Markdown.
+                if (
+                    relative == "third_party/statejnik/skills/statejnik/references/checklists/seo-geo.md"
+                    and number == 77 and match.group(0) == "[X](url)"
+                ):
+                    continue
                 # Remote link validation is separate and must not run in CI.
                 url = urlsplit(raw)
                 if url.scheme.lower() in ("http", "https", "mailto") or url.netloc:

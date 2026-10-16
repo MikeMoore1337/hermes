@@ -1,1 +1,3 @@
 docs/sbom/*.json text eol=lf
+# Preserve exact byte-for-byte owner-licensed upstream source (including CRLF).
+third_party/statejnik/** -text

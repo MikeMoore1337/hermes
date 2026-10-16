@@ -78,6 +78,19 @@ class OfflineMarkdownLinksTests(unittest.TestCase):
         self.write("[target](../README.md#пример-раздела)")
         self.assertEqual(audit.check(self.root), [])
 
+    def test_exact_vendored_prose_placeholder_does_not_hide_real_missing_links(self):
+        folder = (self.root / "third_party" / "statejnik" / "skills" /
+                  "statejnik" / "references" / "checklists")
+        folder.mkdir(parents=True)
+        doc = folder / "seo-geo.md"
+        doc.write_text("\n" * 76 + "[X](url)\n", encoding="utf-8")
+        self.assertEqual(audit.check(self.root), [])
+        doc.write_text("\n" * 77 + "[X](url)\n", encoding="utf-8")
+        self.assertEqual(len(audit.check(self.root)), 1)
+        self.assertIn("missing_local_target", audit.check(self.root)[0])
+        doc.write_text("\\n" * 76 + "[X](missing.md)\\n", encoding="utf-8")
+        self.assertEqual(len(audit.check(self.root)), 1)
+
     def test_large_document_capped(self):
         self.write("a" * (audit.MAX_MARKDOWN_BYTES + 1))
         self.assertIn("markdown_oversize", audit.check(self.root)[0])
