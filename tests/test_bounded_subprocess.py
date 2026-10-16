@@ -7,6 +7,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from scripts.bounded_subprocess import BoundedProcessError, run_bounded
@@ -79,6 +80,21 @@ class BoundedSubprocessTests(unittest.TestCase):
             with self.subTest(limit=value):
                 with self.assertRaisesRegex(BoundedProcessError, "invalid_subprocess_budget"):
                     run_bounded([sys.executable], timeout=1, stdout_limit=value)
+
+    def test_explicit_environment_never_inherits_secret(self):
+        with mock.patch.dict(os.environ, {"HERMES_SECRET_TEST": "NEVER_IN_CHILD"}):
+            result = spawn(
+                "import os;print(os.getenv('HERMES_SECRET_TEST','ABSENT'))",
+                env={"PATH": os.environ.get("PATH", "")},
+            )
+        self.assertEqual(result.stdout.strip(), b"ABSENT")
+
+    def test_invalid_explicit_environment_fails_closed(self):
+        for env in ({"=BAD": "x"}, {"A": "unsafe\x00"}, {"A": 4}, {"A": "x" * 9000}, []):
+            with self.subTest(env=str(env)[:20]), self.assertRaisesRegex(
+                BoundedProcessError, "invalid_subprocess_budget"
+            ):
+                spawn("print('x')", env=env)
 
     def test_child_process_tree_terminated_when_parent_times_out(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -51,7 +51,8 @@ def _stop_tree(proc: subprocess.Popen[bytes]) -> None:
 
 def run_bounded(
     args: list[str], *, timeout: float, stdout_limit: int,
-    stderr_limit: int = STDERR_LIMIT, **_unused: Any,
+    stderr_limit: int = STDERR_LIMIT, env: dict[str, str] | None = None,
+    **_unused: Any,
 ) -> subprocess.CompletedProcess[bytes]:
     """Read stdout/stderr concurrently under strict byte and wall-time budgets.
 
@@ -62,7 +63,12 @@ def run_bounded(
             or any(type(a) is not str or not a for a in args)
             or type(timeout) not in (int, float) or not 0 < timeout <= 180
             or type(stdout_limit) is not int or not 0 < stdout_limit <= 1_000_000
-            or type(stderr_limit) is not int or not 0 < stderr_limit <= 65_536):
+            or type(stderr_limit) is not int or not 0 < stderr_limit <= 65_536
+            or (env is not None and (type(env) is not dict
+                or len(env) > 32 or any(type(k) is not str
+                    or not k or "=" in k or "\x00" in k
+                    or type(v) is not str or "\x00" in v
+                    or len(v) > 8192 for k, v in env.items())))):
         raise BoundedProcessError("invalid_subprocess_budget")
     flags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
     try:
@@ -70,6 +76,7 @@ def run_bounded(
             args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
             stderr=subprocess.PIPE, shell=False, close_fds=True,
             start_new_session=(os.name != "nt"), creationflags=flags,
+            env=env,
         )
     except OSError:
         raise BoundedProcessError("child_start_failed") from None
