@@ -18,14 +18,17 @@ def resolution(*addresses: str):
 
 
 class FakeResponse:
-    def __init__(self, status=200, body=b"<html>ok</html>", location=None):
+    def __init__(self, status=200, body=b"<html>ok</html>", location=None,
+                 headers=None):
         self.status = status
         self.body = body
         self.location = location
+        self.headers = {"Content-Type": "text/html; charset=utf-8"}
+        self.headers.update(headers or {})
         self.calls = []
 
     def getheader(self, name):
-        return self.location if name == "Location" else None
+        return self.location if name == "Location" else self.headers.get(name)
 
     def read(self, limit):
         self.calls.append(limit)
@@ -139,7 +142,10 @@ class NetworkBoundaryTests(unittest.TestCase):
         method, path, headers = conn.calls[0]
         self.assertEqual((method, path), ("GET", "/page"))
         self.assertEqual(headers["Host"], "news.example.org")
-        self.assertEqual(set(headers), {"Host", "User-Agent", "Accept"})
+        self.assertEqual(set(headers), {"Host", "User-Agent", "Accept",
+                                        "Accept-Encoding", "Connection"})
+        self.assertEqual(headers["Accept-Encoding"], "identity")
+        self.assertEqual(headers["Connection"], "close")
         self.assertEqual(answer.calls, [net.MAX_RESPONSE_BYTES + 1])
 
     def test_actual_pinned_https_socket_uses_ip_and_hostname_for_tls(self):
@@ -226,6 +232,78 @@ class NetworkBoundaryTests(unittest.TestCase):
                 authorized=True, resolver=lambda *a, **k: resolution(PUBLIC),
                 connection_factory=FakeConnection)
         self.assertNotIn("SECRET", str(err.exception))
+
+    def test_content_type_missing_binary_json_and_overlong_denied_before_read(self):
+        for content_type in (None, "application/json", "image/svg+xml",
+                             "application/octet-stream", "x" * 129):
+            answer = FakeResponse(headers={"Content-Type": content_type},
+                                  body=b"PRIVATE_DOCUMENT")
+            FakeConnection.responses = [answer]
+            with self.subTest(content_type=content_type), self.assertRaisesRegex(
+                net.NetworkDenied, "content_type_denied"
+            ):
+                net.fetch_public_html(
+                    "https://news.example.org/", allowed_hosts=ALLOWED,
+                    authorized=True, resolver=lambda *a, **k: resolution(PUBLIC),
+                    connection_factory=FakeConnection)
+            self.assertEqual(answer.calls, [])
+            self.assertTrue(FakeConnection.instances[-1].closed)
+
+    def test_compression_and_attachment_denied_before_body(self):
+        for headers, reason in (
+            ({"Content-Encoding": "gzip"}, "content_encoding_denied"),
+            ({"Content-Encoding": "br"}, "content_encoding_denied"),
+            ({"Content-Encoding": "gzip, identity"}, "content_encoding_denied"),
+            ({"Content-Disposition": "attachment; filename=a.html"},
+             "content_disposition_denied"),
+        ):
+            answer = FakeResponse(headers=headers, body=b"PRIVATE_CONTENT")
+            FakeConnection.responses = [answer]
+            with self.subTest(headers=headers), self.assertRaisesRegex(
+                net.NetworkDenied, reason
+            ):
+                net.fetch_public_html(
+                    "https://news.example.org/", allowed_hosts=ALLOWED,
+                    authorized=True, resolver=lambda *a, **k: resolution(PUBLIC),
+                    connection_factory=FakeConnection)
+            self.assertEqual(answer.calls, [])
+
+    def test_invalid_oversize_and_ambiguous_content_length_denied(self):
+        for headers, reason in (
+            ({"Content-Length": str(net.MAX_RESPONSE_BYTES + 1)},
+             "content_length_denied"),
+            ({"Content-Length": "-1"}, "content_length_denied"),
+            ({"Content-Length": "123, 456"}, "content_length_denied"),
+            ({"Content-Length": "0xABC"}, "content_length_denied"),
+            ({"Content-Length": "9" * 32}, "content_length_denied"),
+            ({"Transfer-Encoding": "gzip"}, "transfer_encoding_denied"),
+            ({"Transfer-Encoding": "chunked", "Content-Length": "12"},
+             "transfer_encoding_denied"),
+        ):
+            answer = FakeResponse(headers=headers, body=b"PRIVATE_CONTENT")
+            FakeConnection.responses = [answer]
+            with self.subTest(headers=headers), self.assertRaisesRegex(
+                net.NetworkDenied, reason
+            ):
+                net.fetch_public_html(
+                    "https://news.example.org/", allowed_hosts=ALLOWED,
+                    authorized=True, resolver=lambda *a, **k: resolution(PUBLIC),
+                    connection_factory=FakeConnection)
+            self.assertEqual(answer.calls, [])
+
+    def test_normal_identity_and_chunked_html_have_bounded_read(self):
+        for headers in (
+            {"Content-Type": "application/xhtml+xml",
+             "Content-Encoding": "identity", "Content-Length": "4"},
+            {"Transfer-Encoding": "chunked"},
+        ):
+            answer = FakeResponse(body=b"<x/>", headers=headers)
+            FakeConnection.responses = [answer]
+            self.assertEqual(net.fetch_public_html(
+                "https://news.example.org/", allowed_hosts=ALLOWED,
+                authorized=True, resolver=lambda *a, **k: resolution(PUBLIC),
+                connection_factory=FakeConnection), (200, b"<x/>"))
+            self.assertEqual(answer.calls, [net.MAX_RESPONSE_BYTES + 1])
 
     def test_status_error_and_loop_denied(self):
         FakeConnection.responses = [FakeResponse(500, b"SECRET")]

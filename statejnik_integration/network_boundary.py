@@ -129,6 +129,38 @@ def pinned_addresses(hostname: str, resolver: Callable = socket.getaddrinfo) -> 
     return tuple(sorted(addresses))
 
 
+def _admit_html_response_headers(response: http.client.HTTPResponse) -> None:
+    """Deny non-HTML, compressed and ambiguous bodies before any body read."""
+    ctype = response.getheader("Content-Type")
+    if (type(ctype) is not str or not 1 <= len(ctype) <= 128
+            or ctype.split(";", 1)[0].strip().lower()
+            not in ("text/html", "application/xhtml+xml")):
+        raise NetworkDenied("content_type_denied")
+    encoding = response.getheader("Content-Encoding")
+    if encoding is not None and (
+        type(encoding) is not str or encoding.strip().lower() != "identity"
+    ):
+        raise NetworkDenied("content_encoding_denied")
+    length = response.getheader("Content-Length")
+    transfer = response.getheader("Transfer-Encoding")
+    if transfer is not None and (
+        type(transfer) is not str or transfer.strip().lower() != "chunked"
+        or length is not None
+    ):
+        raise NetworkDenied("transfer_encoding_denied")
+    if length is not None:
+        if (type(length) is not str or not length.isascii()
+                or not length.isdecimal() or len(length) > 10
+                or int(length) > MAX_RESPONSE_BYTES):
+            raise NetworkDenied("content_length_denied")
+    disposition = response.getheader("Content-Disposition")
+    if disposition is not None and (
+        type(disposition) is not str or
+        disposition.strip().lower().startswith("attachment")
+    ):
+        raise NetworkDenied("content_disposition_denied")
+
+
 class _PinnedHttps(http.client.HTTPSConnection):
     def __init__(self, hostname: str, pinned_ip: str, *, timeout: float):
         super().__init__(hostname, 443, timeout=timeout,
@@ -175,7 +207,9 @@ def fetch_public_html(
             conn = factory(current.hostname, addresses[0], timeout=8)
             conn.request("GET", current.path,
                          headers={"Host": current.hostname, "User-Agent": USER_AGENT,
-                                  "Accept": "text/html,application/xhtml+xml"})
+                                  "Accept": "text/html,application/xhtml+xml",
+                                  "Accept-Encoding": "identity",
+                                  "Connection": "close"})
             response = conn.getresponse()
             status = response.status
             if status in (301, 302, 303, 307, 308):
@@ -189,6 +223,7 @@ def fetch_public_html(
                 continue
             if status != 200:
                 raise NetworkDenied("upstream_status_denied")
+            _admit_html_response_headers(response)
             body = response.read(MAX_RESPONSE_BYTES + 1)
             if len(body) > MAX_RESPONSE_BYTES:
                 raise NetworkDenied("response_too_large")
