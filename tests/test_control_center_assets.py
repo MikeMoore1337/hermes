@@ -47,6 +47,18 @@ class StaticContracts(unittest.TestCase):
             self.assertEqual(headers["Cache-Control"], "no-store")
             self.assertIn("default-src 'none'", headers["Content-Security-Policy"])
 
+    def test_third_party_licence_notices_are_exact_local_assets(self):
+        status, headers, body = self.get("/third-party-notices.txt")
+        self.assertEqual(status, 200)
+        self.assertEqual(headers["Content-Type"], "text/plain; charset=utf-8")
+        self.assertEqual(headers["Cache-Control"], "no-store")
+        self.assertIn(b"lucide-react 0.468.0", body)
+        self.assertIn(b"react-dom 19.2.0", body)
+        self.assertIn(b"ISC License", body)
+        self.assertIn(b"MIT License", body)
+        # No arbitrary query strings, package files or directories.
+        self.assertEqual(self.get("/third-party-notices.txt?utm=1")[0], 404)
+
     def test_login_preview_has_same_static_shell(self):
         a = self.get("/")
         b = self.get("/?preview=login")
