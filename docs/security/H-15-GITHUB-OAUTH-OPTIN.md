@@ -77,3 +77,11 @@ No live OAuth requests in tests; provider is injected using a fake numeric ID. N
 5. Verify owner login, API auth denial/allowance, logout, session expiry, Second Brain unaffected, systemd sandbox still isolated and resident Agent #33 still **NO-GO**. On any failure restore prior Caddy site and `proxy` mode as one rollback unit.
 
 **Gate:** No OAuth production activation based solely on passing offline tests. Owner must supply the dedicated App configuration and explicitly approve the live cutover after evidence.
+
+## Important additional gate: outbound OAuth network policy
+
+The **currently installed** `hermes-control-center.service` runs with `IPAddressDeny=any` and `IPAddressAllow=localhost`. This is intentional and MUST NOT be silently relaxed. In GitHub mode the web process cannot exchange the authorization code or retrieve `api.github.com/user` under that policy: code readiness is **not** deployment readiness.
+
+Before any live GitHub OAuth rollout, create a separately reviewed **least-privilege egress path** for only `github.com` and `api.github.com` using a trusted pinned intermediary/proxy or equivalent enforceable network controls, with explicit DNS/TLS hostname verification, audit of dependencies and no new LLM, billing or general internet access. Prove denied access to other destinations and preserve existing Caddy, Xray, Second Brain and snapshot timer isolation. Only then authorize an *isolated* owner-browser test. No broad `IPAddressAllow=any` override is permitted.
+
+Additionally, make sure the GitHub callback URL is omitted from all reverse-proxy access logs (including query parameters), because authorization codes and state are sensitive. The provider's official OAuth authorization guide now documents PKCE S256 for GitHub.com; GitHub Enterprise Server feature parity is not assumed: https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps
