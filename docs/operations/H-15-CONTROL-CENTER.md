@@ -105,3 +105,24 @@ curl -fsS -H 'Host: hermes.mikemoore.top' http://127.0.0.1:9133/healthz
 ```
 
 These steps affect only the read-only web service. Do not change Caddy or disable Ops Watch, Research, QA, news, incident delivery or the network guard for a UI rollback.
+
+
+## Approved UI rollout: 2026-10-16 (supersedes earlier staging notes)
+
+**OWNER ACCEPTANCE:** All composition, navigation, colors and layout from **C+B (Operations Atlas)**, with **C+A sans-serif typography** for headings, metrics, navigation and branded login. No competing mode selector. Approved winged-H raster branding and self-hosted favicon included.
+
+- [PR #200](https://github.com/MikeMoore1337/hermes/pull/200) merged as `1f516566f8fb9c66ade391c863dbee373fabfc44`. Final [UI CI #38929284336](https://github.com/MikeMoore1337/hermes/actions/runs/38929284336) and [repo CI #38929284303](https://github.com/MikeMoore1337/hermes/actions/runs/38929284303) passed.
+- On VPS, immutable-ish release directory `/opt/hermes-control-center/releases/h15-ui-1f516566` is selected by `/opt/hermes-control-center/current`; previous known-good release `/opt/hermes-control-center/releases/20261016T090626Z` retained for rollback. Bundle archive SHA-256: `bf6bb096e58f5d6b7a3b6eb7a75b5b8b29945e1cc18df47f0873190a16f306e4`; on-server `deploy-receipt.json` records seven file hashes.
+- Operator service and snapshot timer remain active, as does Caddy. HTTPS public smoke check **401 without Basic Auth**, **200 with authorized Basic Auth** for both HTML and `GET /api/overview`; Second Brain still returns HTTPS **303**. Loopback app remains bound to `127.0.0.1:9133`. All seven allowed components visible; resident agent state remains `blocked`.
+- Staged isolated read-only release on alternate local port passed exact asset allowlist, CSP, Host, stale API, unknown-path, HEAD/POST and no-write checks before switching; post-deploy E2E and rollback gates passed.
+- Runtime serves static built React 19/Vite 7 assets; **Node.js and npm are not installed or executed as web server on VPS**.
+- `/?preview=login` is a **visual-only** login preview under existing Basic Auth: its GitHub login control is deliberately disabled. GitHub OAuth is **not active**; separate security issue [#180](https://github.com/MikeMoore1337/hermes/issues/180) remains open. Do not remove Basic Auth until owner-only OAuth succeeds with a separate OAuth app and denial/rollback tests.
+- AI resident runtime security gate [#33](https://github.com/MikeMoore1337/hermes/issues/33) remains **NO-GO**. Neither approval of the design nor deployment of the static UI authorizes privileged agent start.
+
+### Rollback: UI release only
+
+If the new UI or its local API regresses, restore the previous release symlink atomically, restart **only** `hermes-control-center.service`, then check localhost API, public authentication, and `brain.mikemoore.top`. Never restart the autonomous Agent, alter :443/xray, modify Cloudflare rules or remove snapshot timer during an ordinary UI rollback. See `deploy/install-control-center.sh` for sandboxing assumptions. Keep the bundled receipt for audit.
+
+### External security confirmation
+
+Cloudflare Origin CA certificate was installed successfully and the public TLS handshake verifies at the Cloudflare edge. **HTTP 401 alone does not prove Cloudflare's configured SSL mode**: explicit verification of a hostname-specific `Full (strict)` rule or equivalent zone-level mode remains a separate owner-facing security gate if not previously verified.
