@@ -6,18 +6,18 @@ LABEL org.opencontainers.image.title="Hermes v0.22.2 local security derivative (
       hermes.derivative.approved="false" \
       hermes.derivative.resident-agent-allowed="false" \
       hermes.base.commit="d923a5eb487a17c0a68801bba9ef0f56c81040a8" \
-      hermes.pyjwt.wheel.sha256="ad0cef71c756a56e74863c2919cf0985f72decbcfcb550ee2f422e7c62b5eedc"
+      hermes.pyjwt.wheel.sha256="42d59d631f7768a1028a64c7ff581a9bf7519804daf91fc5b6c56e30eec5e193"
 
 WORKDIR /opt/hermes
-COPY pyjwt-2.14.0-py3-none-any.whl /tmp/pyjwt-2.14.0-py3-none-any.whl
+COPY pyjwt-2.15.1-py3-none-any.whl /tmp/pyjwt-2.15.1-py3-none-any.whl
 COPY hermes-v0.22.1-native-tool-policy.patch /tmp/tool-policy.patch
 
 # Verify the exact wheel and install it without accessing a registry.
-RUN echo "ad0cef71c756a56e74863c2919cf0985f72decbcfcb550ee2f422e7c62b5eedc  /tmp/pyjwt-2.14.0-py3-none-any.whl" | sha256sum -c - \
+RUN echo "42d59d631f7768a1028a64c7ff581a9bf7519804daf91fc5b6c56e30eec5e193  /tmp/pyjwt-2.15.1-py3-none-any.whl" | sha256sum -c - \
     && /opt/hermes/.venv/bin/python3 -m ensurepip --upgrade \
-    && /opt/hermes/.venv/bin/python3 -m pip install --no-index --no-deps --no-cache-dir --force-reinstall /tmp/pyjwt-2.14.0-py3-none-any.whl \
+    && /opt/hermes/.venv/bin/python3 -m pip install --no-index --no-deps --no-cache-dir --force-reinstall /tmp/pyjwt-2.15.1-py3-none-any.whl \
     && /opt/hermes/.venv/bin/python3 -m pip show PyJWT \
-    && rm /tmp/pyjwt-2.14.0-py3-none-any.whl
+    && rm /tmp/pyjwt-2.15.1-py3-none-any.whl
 
 # Reviewed synthetic-native guard patch; it is not full OS/MCP runtime enforcement.
 RUN sed -i 's/\r$//' /tmp/tool-policy.patch \
@@ -27,5 +27,5 @@ RUN sed -i 's/\r$//' /tmp/tool-policy.patch \
 
 # Ensure subsequent resolution does not silently re-pin vulnerable PyJWT 2.13.
 RUN grep -Fq 'PyJWT[crypto]==2.13.0' pyproject.toml \
-    && sed -i 's/PyJWT\[crypto\]==2\.13\.0/PyJWT[crypto]==2.14.0/' pyproject.toml \
-    && grep -Fq 'PyJWT[crypto]==2.14.0' pyproject.toml
+    && sed -i 's/PyJWT\[crypto\]==2\.13\.0/PyJWT[crypto]==2.15.1/' pyproject.toml \
+    && grep -Fq 'PyJWT[crypto]==2.15.1' pyproject.toml
