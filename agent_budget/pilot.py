@@ -822,10 +822,28 @@ def _load_state(path: Path) -> dict[str, object]:
         raise PilotError("pilot_state_symlink")
     if not path.exists():
         return {"date": today, "calls": 0}
-    value = _parse_json(path.read_bytes())
+    try:
+        if not path.is_file() or path.stat().st_size > 4_096:
+            raise PilotError("pilot_state_invalid")
+        value = _parse_json(path.read_bytes())
+    except OSError:
+        raise PilotError("pilot_state_unavailable") from None
     if type(value) is not dict or set(value) != {"date", "calls"}:
         raise PilotError("pilot_state_invalid")
-    if value["date"] != today or type(value["calls"]) is not int or value["calls"] < 0:
+    date_value, calls = value["date"], value["calls"]
+    if (
+        type(date_value) is not str or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_value)
+        or type(calls) is not int or calls < 0 or calls > MAX_DAILY_LOCAL_CALLS
+    ):
+        raise PilotError("pilot_state_invalid")
+    try:
+        state_date = datetime.fromisoformat(date_value).date()
+    except ValueError:
+        raise PilotError("pilot_state_invalid") from None
+    current_date = datetime.now(UTC).date()
+    if state_date > current_date:
+        raise PilotError("pilot_state_future_date")
+    if state_date < current_date:
         return {"date": today, "calls": 0}
     return value
 
@@ -839,7 +857,16 @@ def _write_json_atomic(path: Path, value: object) -> None:
         with os.fdopen(handle, "w", encoding="utf-8", newline="\n") as stream:
             json.dump(value, stream, ensure_ascii=False, sort_keys=True)
             stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
         os.replace(temporary, path)
+        if os.name == "posix":
+            # Durable directory entry on Linux after atomic rename.
+            directory_fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
     except OSError:
         try:
             os.unlink(temporary)
@@ -903,25 +930,28 @@ def run_pilot(
         attestation = load_account_status(account_status)
         provider_factory: Callable[[], LocalMockProvider | CloudflareFreeProvider] = lambda: CloudflareFreeProvider.from_environment(attestation)
         state_path = state or Path(".artifacts/hermes-ai-pilot/state.json")
-        state_value = _load_state(state_path)
-        if int(state_value["calls"]) + len(cases) > MAX_DAILY_LOCAL_CALLS:
-            raise PilotError("local_daily_call_limit_exceeded")
     else:
         provider_factory = LocalMockProvider
         state_path = None
-        state_value = None
 
     output_path = output or Path(".artifacts/hermes-ai-pilot/results.json")
     with _run_lock(state_path or output_path):
+        # The state MUST be read after acquiring the lock. A concurrent run
+        # can spend the final slots while another process waits for it.
+        state_value = _load_state(state_path) if engine == "live" and state_path else None
+        if state_value is not None and int(state_value["calls"]) + len(cases) > MAX_DAILY_LOCAL_CALLS:
+            raise PilotError("local_daily_call_limit_exceeded")
         records: list[dict[str, object]] = []
         for name in cases:
+            if state_value is not None and state_path is not None:
+                # Reserve before any possible provider request. Crash, timeout,
+                # 429 or an interrupted process must never refund a call.
+                state_value["calls"] = int(state_value["calls"]) + 1
+                _write_json_atomic(state_path, state_value)
             record = _run_case(name, engine=engine, provider=provider_factory())
             records.append(record)
-            if engine == "live" and state_path is not None and state_value is not None:
-                state_value["calls"] = int(state_value["calls"]) + int(record.get("model_calls", 0))
-                _write_json_atomic(state_path, state_value)
-                if int(record.get("model_calls", 0)) > 0 and record.get("status") != "PASS":
-                    break
+            if engine == "live" and record.get("status") != "PASS":
+                break
         if output is not None or engine == "live":
             _save_results(output_path, records)
         return records

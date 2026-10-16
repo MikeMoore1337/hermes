@@ -7,7 +7,8 @@ import json
 import os
 import tempfile
 import unittest
-from datetime import UTC, datetime
+from contextlib import contextmanager
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 from urllib.error import HTTPError
@@ -21,6 +22,7 @@ from agent_budget.pilot import (
     PilotError,
     case_names,
     load_account_status,
+    _load_state,
     run_pilot,
     status,
 )
@@ -199,6 +201,146 @@ class PilotTests(unittest.TestCase):
         self.assertTrue(records[0]["quality"]["deterministic_invariants"]["evidence_from_input"])
         self.assertEqual(fake.calls, 1)
         self.assertEqual(len(records), 1)
+
+
+class PilotLedgerTests(unittest.TestCase):
+    """The local per-day ceiling must survive contention and interruption."""
+
+    def _live_paths(self, folder: str) -> tuple[Path, Path, Path]:
+        root = Path(folder)
+        account_path = root / "account.json"
+        account_path.write_text(json.dumps(account_status()), encoding="utf-8")
+        return account_path, root / "state.json", root / "output.json"
+
+    def test_state_is_read_inside_lock_after_competing_process_finishes(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            account, state, output = self._live_paths(folder)
+            state.write_text(json.dumps({
+                "date": datetime.now(UTC).date().isoformat(), "calls": 0,
+            }), encoding="utf-8")
+
+            @contextmanager
+            def another_process_spends_quota(_: Path):
+                state.write_text(json.dumps({
+                    "date": datetime.now(UTC).date().isoformat(), "calls": 3,
+                }), encoding="utf-8")
+                yield
+
+            provider = _NoCostProvider()
+            with (
+                patch.dict(os.environ, {"HERMES_AI_LIVE_APPROVED": "1"}, clear=True),
+                patch("agent_budget.pilot._run_lock", new=another_process_spends_quota),
+                patch("agent_budget.pilot.CloudflareFreeProvider.from_environment", return_value=provider),
+            ):
+                with self.assertRaisesRegex(PilotError, "local_daily_call_limit_exceeded"):
+                    run_pilot(
+                        engine="live", cases=["ops:provider_http_429"],
+                        owner_approved=True, account_status=account, state=state, output=output,
+                    )
+            self.assertEqual(provider.calls, 0)
+
+    def test_interrupt_before_response_keeps_prepaid_slot(self) -> None:
+        class Crashing:
+            calls = 0
+
+            def complete(self, _: str) -> ModelResponse:
+                self.calls += 1
+                raise RuntimeError("synthetic_interruption")
+
+        with tempfile.TemporaryDirectory() as folder:
+            account, state, output = self._live_paths(folder)
+            provider = Crashing()
+            with (
+                patch.dict(os.environ, {"HERMES_AI_LIVE_APPROVED": "1"}, clear=True),
+                patch("agent_budget.pilot.CloudflareFreeProvider.from_environment", return_value=provider),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "synthetic_interruption"):
+                    run_pilot(
+                        engine="live", cases=["ops:provider_http_429"],
+                        owner_approved=True, account_status=account, state=state, output=output,
+                    )
+            self.assertEqual(provider.calls, 1)
+            self.assertEqual(json.loads(state.read_text(encoding="utf-8"))["calls"], 1)
+
+    def test_slot_is_on_disk_before_provider_invocation(self) -> None:
+        class Observing:
+            calls = 0
+
+            def __init__(self, state: Path) -> None:
+                self.state = state
+
+            def complete(self, _: str) -> ModelResponse:
+                self.calls += 1
+                self_state = json.loads(self.state.read_text(encoding="utf-8"))
+                if self_state["calls"] != 1:
+                    raise AssertionError("local_budget_was_not_reserved")
+                return ModelResponse(
+                    content=json.dumps(mock_result(prepare_context(SCENARIOS["provider_http_429"]))),
+                    http_status=200, attempts=1, duration_seconds=0.001,
+                )
+
+        with tempfile.TemporaryDirectory() as folder:
+            account, state, output = self._live_paths(folder)
+            provider = Observing(state)
+            with (
+                patch.dict(os.environ, {"HERMES_AI_LIVE_APPROVED": "1"}, clear=True),
+                patch("agent_budget.pilot.CloudflareFreeProvider.from_environment", return_value=provider),
+            ):
+                result = run_pilot(
+                    engine="live", cases=["ops:provider_http_429", "research:whey_gut_brain"],
+                    owner_approved=True, account_status=account, state=state, output=output,
+                )
+            self.assertEqual(provider.calls, 1)
+            self.assertEqual(len(result), 1)
+            self.assertEqual(result[0]["reason"], "COST_NOT_VERIFIED")
+            self.assertEqual(json.loads(state.read_text(encoding="utf-8"))["calls"], 1)
+
+    def test_tampered_or_corrupted_ledger_never_refunds_calls(self) -> None:
+        today = datetime.now(UTC).date()
+        invalid = [
+            {"date": today.isoformat(), "calls": -1},
+            {"date": today.isoformat(), "calls": 4},
+            {"date": today.isoformat(), "calls": 1.5},
+            {"date": (today + timedelta(days=1)).isoformat(), "calls": 1},
+            {"date": "not-a-day", "calls": 1},
+            {"date": today.isoformat(), "calls": True},
+        ]
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "state.json"
+            for payload in invalid:
+                with self.subTest(payload=payload):
+                    path.write_text(json.dumps(payload), encoding="utf-8")
+                    with self.assertRaises(PilotError):
+                        _load_state(path)
+            path.write_text("not json", encoding="utf-8")
+            with self.assertRaises(PilotError):
+                _load_state(path)
+
+    def test_failed_durable_reservation_denies_before_network(self) -> None:
+        provider = _NoCostProvider()
+        with tempfile.TemporaryDirectory() as folder:
+            account, state, output = self._live_paths(folder)
+            with (
+                patch.dict(os.environ, {"HERMES_AI_LIVE_APPROVED": "1"}, clear=True),
+                patch("agent_budget.pilot.CloudflareFreeProvider.from_environment", return_value=provider),
+                patch("agent_budget.pilot.os.fsync", side_effect=OSError("synthetic_disk_failure")),
+            ):
+                with self.assertRaisesRegex(PilotError, "pilot_output_unavailable"):
+                    run_pilot(
+                        engine="live", cases=["ops:provider_http_429"],
+                        owner_approved=True, account_status=account, state=state, output=output,
+                    )
+            self.assertEqual(provider.calls, 0)
+
+    def test_prior_valid_day_resets_only_after_utc_rollover(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "state.json"
+            path.write_text(json.dumps({
+                "date": (datetime.now(UTC).date() - timedelta(days=1)).isoformat(),
+                "calls": 3,
+            }), encoding="utf-8")
+            current = _load_state(path)
+            self.assertEqual(current, {"date": datetime.now(UTC).date().isoformat(), "calls": 0})
 
 
 if __name__ == "__main__":
