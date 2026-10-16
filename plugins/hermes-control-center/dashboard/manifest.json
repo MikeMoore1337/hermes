@@ -1,11 +1,13 @@
 {
   "name": "hermes-control-center",
   "label": "Центр управления",
-  "icon": "LayoutDashboard",
-  "version": "0.1.0",
+  "icon": "Activity",
+  "version": "0.1.1",
   "tab": {
     "path": "/control-center",
-    "position": "after:status"
+    "position": "after:skills"
   },
-  "entry": "dist/index.js"
+  "entry": "dist/index.js",
+  "api": "plugin_api.py",
+  "description": "Русскоязычная панель безопасного наблюдения за службами Hermes"
 }
