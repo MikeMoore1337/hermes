@@ -53,13 +53,38 @@ class BrokerConfig:
         return cls(client_id, secret, int(owner), path)
 
 
+def _strict_json_pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    data = {}
+    for key, value in pairs:
+        if key in data:
+            raise AuthError("Duplicate broker request field")
+        data[key] = value
+    return data
+
+
+def _deny_json_constant(_value: str) -> None:
+    raise AuthError("Nonstandard broker JSON value")
+
+
+def _read_frame(stream) -> bytes:
+    """Read a bounded LF-terminated Unix stream frame, even if fragmented."""
+    packet = bytearray()
+    while b"\n" not in packet and len(packet) <= MAX_REQUEST:
+        part = stream.recv(MAX_REQUEST + 1 - len(packet))
+        if not part:
+            break
+        packet.extend(part)
+    return bytes(packet)
+
+
 def parse_request(raw: bytes) -> tuple[str, str]:
-    if len(raw) > MAX_REQUEST or not raw.endswith(b"\n") or raw.count(b"\n") != 1:
+    if type(raw) is not bytes or len(raw) > MAX_REQUEST or not raw.endswith(b"\n") or raw.count(b"\n") != 1:
         raise AuthError("Malformed broker frame")
     try:
-        data = json.loads(raw[:-1])
-    except (UnicodeError, ValueError) as exc:
-        raise AuthError("Invalid broker request") from exc
+        data = json.loads(raw[:-1], object_pairs_hook=_strict_json_pairs,
+                          parse_constant=_deny_json_constant)
+    except (UnicodeError, ValueError, RecursionError):
+        raise AuthError("Invalid broker request") from None
     if not isinstance(data, dict) or set(data) != {"action", "code", "verifier"}:
         raise AuthError("Unknown broker operation")
     if data["action"] != "identify":
@@ -79,7 +104,7 @@ class _Handler(socketserver.BaseRequestHandler):
             self.request.settimeout(7)
             if not server.peer_allowed(self.request):
                 raise AuthError("Peer not permitted")
-            raw = self.request.recv(MAX_REQUEST + 1)
+            raw = _read_frame(self.request)
             code, verifier = parse_request(raw)
             if not server.consume_attempt():
                 raise AuthError("Attempt limit")
