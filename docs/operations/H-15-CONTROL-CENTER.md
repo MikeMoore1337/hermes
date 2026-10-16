@@ -76,3 +76,32 @@ The previous `tls internal` staging description above is superseded by this rele
 - Cloudflare DNS and origin port routing now work: public HTTPS returns 401 for unauthenticated requests, not the previous Cloudflare 1034. The public TLS handshake passed. Existing Second Brain continues returning HTTP 303.
 - Final gates remain: verify authenticated 200 via the public URL after certificate activation; confirm a Cloudflare hostname-specific Configuration Rule enforces SSL `Full (strict)` for Hermes, or an equivalent verified zone-wide setting. An HTTP 401 by itself cannot establish the Cloudflare SSL mode.
 - Until both final gates are verified, retain Issue #163 as open. Do not activate the resident agent (#33 still NO-GO).
+
+
+## Approved React/Vite release - 2026-10-16
+
+**Delivery: PASS for visual-only read-only UI. GitHub OAuth remains NOT ENABLED.**
+
+- Owner-approved design: **C+B Atlas structure/navigation, C+A sans-serif typography** (including branded login preview). Competing C+A console toggle removed.
+- Source: [merged PR #200](https://github.com/MikeMoore1337/hermes/pull/200), merge commit `1f516566f8fb9c66ade391c863dbee373fabfc44`, verified PR HEAD `0bf0453674f66f755ce171262d5421322f1ff254`. UI [CI #38929284336](https://github.com/MikeMoore1337/hermes/actions/runs/38929284336), baseline [CI #38929284303](https://github.com/MikeMoore1337/hermes/actions/runs/38929284303) both success. Local verification: Node 3/3, Python HTTP 13/13, Chromium 7/7, no production npm audit findings.
+- Build: React/Vite **compiled on Windows before delivery**, only 7 static/backend files deployed via a fixed-path allowlisted ZIP. No Node or build tooling installed on VPS. Historical snapshots/research/alert data and service definitions not replaced.
+- SHA-256 of transferred ZIP: `bf6bb096e58f5d6b7a3b6eb7a75b5b8b29945e1cc18df47f0873190a16f306e4`. ZIP checked against exact seven-file allowlist, symlink and path traversal rejected, each file hashed in `deploy-receipt.json`. Release directory: `/opt/hermes-control-center/releases/h15-ui-1f516566`; symlink `/opt/hermes-control-center/current` switched atomically.
+- Previous release kept as `/opt/hermes-control-center/releases/20261016T090626Z`; no Caddy config change, no SSL certificate or Basic Auth credential change, no changes to Second Brain or other Hermes timers.
+- Staged preview tested as `hermes-control` on loopback port 9134: HTML, CSS/JS, brand WebP, both PNG icons, read-only JSON, invalid Host, unknown routes, HEAD and unsupported POST. **Note:** the Python stdlib default unsupported POST returns HTTP 501 (not a write capability); this exceptional stdlib-generated response lacks the custom CSP header, unlike supported routes. Consider hardening it separately if warranted.
+- Production smoke after atomic switch: unauthenticated `GET /` and `GET /api/overview` over public HTTPS returned 401; Basic-Auth authenticated `GET /` and `GET /api/overview` returned 200; JSON mode `read_only`, seven systemd entries, resident Agent `blocked`. `127.0.0.1:9133` loopback-only. `caddy`, `hermes-control-center.service`, snapshot and Ops/QA/Research/News timers active; `brain.mikemoore.top` HTTP 303 with TLS verify 0. No service journal errors observed in first postdeploy checks.
+- Design test evidence committed in `docs/ux/evidence/h15-react-vite/`. Screenshots are **fixture-based**, not actual production telemetry. Current login remains hidden behind Basic Auth and `/?preview=login` is visual preview **with disabled OAuth button**. GitHub OAuth task [#180](https://github.com/MikeMoore1337/hermes/issues/180) requires a separate OAuth App, owner-only identity verification, tests and independent security acceptance before Caddy authentication change.
+- Runtime P0 [#33](https://github.com/MikeMoore1337/hermes/issues/33) remains NO-GO, and public SSL Full (strict) rule confirmation remains a separate gate; TLS 0 and 200 alone do not prove its Cloudflare configuration.
+
+### Targeted rollback to previous visual-only release
+
+On the authorized VPS, after confirming the former release exists, run:
+
+```sh
+test -d /opt/hermes-control-center/releases/20261016T090626Z
+ln -s /opt/hermes-control-center/releases/20261016T090626Z /opt/hermes-control-center/current.rollback
+mv -Tf /opt/hermes-control-center/current.rollback /opt/hermes-control-center/current
+systemctl restart hermes-control-center.service
+curl -fsS -H 'Host: hermes.mikemoore.top' http://127.0.0.1:9133/healthz
+```
+
+These steps affect only the read-only web service. Do not change Caddy or disable Ops Watch, Research, QA, news, incident delivery or the network guard for a UI rollback.
