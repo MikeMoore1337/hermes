@@ -54,6 +54,13 @@ firewall: его правила и сетевые include отдельно не 
 выходным прокси или OS-filter allowlist. DNS hostname allowlist
 в одном Python-модуле не заменяет блокировку IP на уровне ОС.
 
+## Добавленные OS-негативные тесты в отдельном Docker-контуре
+
+[Проверка 9/9 deny на immutable Docker с `--network none`](H-12-NETWORK-NONE-NEGATIVE-EVIDENCE-2026-10-16.md)
+подтвердила отказ IPv4/IPv6/private/metadata **без исходящей сети**.
+Это доказательство только networkless контура, не выборочного
+allowlist и не реальных firewall-правил production VPS.
+
 ## Acceptance gate перед реальной сетью
 
 1. Отдельная непроизводственная network namespace/изоляция
