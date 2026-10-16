@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import socket
 import tempfile
+import time
 from threading import Thread
 import unittest
 from unittest.mock import patch
@@ -33,6 +34,19 @@ class BrokerContractTests(unittest.TestCase):
                 parse_request((json.dumps({**correct,**update})+"\n").encode())
         for raw in (b"{}", b"x"*2050, b"{\"action\":\"identify\"}\n\n"):
             with self.assertRaises(AuthError):parse_request(raw)
+
+    def test_parser_rejects_duplicate_json_keys_and_nonstandard_values(self):
+        verifier = "v" * 55
+        payloads = (
+            '{"action":"identify","action":"admin","code":"code-token-123456","verifier":"' + verifier + '"}',
+            '{"action":"identify","code":"code-token-123456","verifier":"' + verifier + '","nested":{"x":1,"x":2}}',
+            '{"action":"identify","code":"code-token-123456","verifier":"' + verifier + '","extra":NaN}',
+        )
+        for item in payloads:
+            with self.subTest(item=item[:50]), self.assertRaises(AuthError):
+                parse_request((item + "\\n").encode())
+        with self.assertRaises(AuthError):
+            parse_request(None)
 
     def test_broker_configuration_rejects_untrusted_origin(self):
         cfg={"HERMES_OAUTH_CLIENT_ID":"Ov23abcdefghijk",
@@ -75,6 +89,20 @@ class BrokerContractTests(unittest.TestCase):
                         response=conn.recv(200)
                     self.assertEqual(json.loads(response),{"ok":False})
                     self.assertEqual(fake.calls,1)
+                    # Unix streams do not preserve application message boundaries:
+                    # a legitimate request may arrive in more than one recv().
+                    packet = (json.dumps({"action":"identify",
+                                          "code":"code-token-fragment-123456",
+                                          "verifier":"v"*55}) + "\\n").encode("ascii")
+                    with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as conn:
+                        conn.settimeout(3)
+                        conn.connect(path)
+                        conn.sendall(packet[:8])
+                        time.sleep(0.02)
+                        conn.sendall(packet[8:])
+                        response=conn.recv(200)
+                    self.assertEqual(json.loads(response),{"ok":True,"id":42142321})
+                    self.assertEqual(fake.calls,2)
                 finally:
                     broker.shutdown()
                     thread.join(timeout=3)
