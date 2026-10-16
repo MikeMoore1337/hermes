@@ -82,3 +82,27 @@
  .service-cell{gap:7px}
  .service-table .no-results{width:100%}
 }
+
+
+/* Approved design: C+B Atlas geometry/nav with C+A professional sans-serif
+   across its dashboards, headings, numeric metrics and branded login. */
+.theme-atlas,
+.theme-atlas .atlas-nav button,
+.theme-atlas .atlas-hero h1,
+.theme-atlas .tile-content strong,
+.theme-atlas .panel-head h2,
+.theme-atlas .atlas-section-nav .nav-link,
+.theme-atlas .brand-text strong,
+.login-root .brand-text strong,
+.login-root .login-story h1,
+.login-root .login-form h2,
+.login-root .login-story blockquote {
+  font-family: Inter, "Segoe UI", Arial, sans-serif;
+}
+.theme-atlas .atlas-hero h1 {font-weight:750;letter-spacing:-1.4px}
+.theme-atlas .panel-head h2 {font-weight:680}
+.theme-atlas .tile-content strong {font-weight:750}
+.theme-atlas .atlas-section-nav .nav-link {font-weight:560}
+.theme-atlas .atlas-nav button {font-weight:590}
+.login-root .login-story h1,.login-root .login-form h2 {font-weight:720;letter-spacing:-1px}
+.login-root .login-story blockquote {font-weight:400;font-style:italic}
