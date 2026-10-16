@@ -1,0 +1,126 @@
+--- a/model_tools.py
++++ b/model_tools.py
+@@ -756 +756 @@ def _apply_request_middleware(
+-    """tool_request middleware: returns (args, original_args, trace); fail-open."""
++    """tool_request middleware: returns (args, original_args, trace); fail-closed."""
+@@ -761,3 +761,2 @@ def _apply_request_middleware(
+-    except Exception as _mw_err:
+-        logger.debug("tool_request middleware error: %s", _mw_err)
+-        return function_args, dict(function_args), trace
++    except Exception:
++        raise PermissionError("Tool request policy unavailable.") from None
+@@ -785,2 +784,3 @@ def _pre_dispatch_guards(function_name: str, function_args: dict[str, Any], skip
+-        except Exception as _hook_err:
+-            logger.debug("pre_tool_call hook error: %s", _hook_err)
++        except Exception:
++            return function_args, (tool_error("Tool policy hook failed."), "plugin_error",
++                                   "Tool policy hook failed.")
+@@ -797,4 +797,3 @@ def _pre_dispatch_guards(function_name: str, function_args: dict[str, Any], skip
+-    except Exception as _edit_approval_err:
+-        logger.debug("ACP edit approval guard error: %s", _edit_approval_err)
+-        if function_name in {"write_file", "patch"}:
+-            return function_args, (tool_error("Edit approval denied: approval guard failed"), "edit_approval_error", None)
++    except Exception:
++        return function_args, (tool_error("Edit approval unavailable."), "edit_approval_error",
++                               "Edit approval unavailable.")
+@@ -803,0 +803,21 @@ def _pre_dispatch_guards(function_name: str, function_args: dict[str, Any], skip
++def _tool_scope_error(
++    function_name: str,
++    enabled_toolsets: Optional[list[str]],
++    disabled_toolsets: Optional[list[str]],
++) -> Optional[str]:
++    """Return a fixed denial when the current session does not grant the tool."""
++    if enabled_toolsets is None and disabled_toolsets in (None, []):
++        return None
++    if (enabled_toolsets is not None and not isinstance(enabled_toolsets, list)) or (
++        disabled_toolsets is not None and not isinstance(disabled_toolsets, list)
++    ):
++        return "Tool policy unavailable; call denied."
++    try:
++        allowed = _select_tool_names(enabled_toolsets, disabled_toolsets, quiet_mode=True)
++    except Exception:
++        return "Tool policy unavailable; call denied."
++    if function_name not in allowed:
++        return "Tool is not available in this session."
++    return None
++
++
+@@ -824 +844,3 @@ def _execute_tool(function_name: str, function_args: dict[str, Any], original_ar
+-                  *, user_task: Optional[str], enabled_tools: Optional[list[str]], skip_tool_execution_middleware: bool) -> Any:
++                  *, user_task: Optional[str], enabled_tools: Optional[list[str]],
++                  enabled_toolsets: Optional[list[str]], disabled_toolsets: Optional[list[str]],
++                  skip_tool_execution_middleware: bool) -> Any:
+@@ -836,0 +859,23 @@ def _execute_tool(function_name: str, function_args: dict[str, Any], original_ar
++        scope_name = "manage_connections" if is_connector_name(function_name) else function_name
++        scope_error = _tool_scope_error(scope_name, enabled_toolsets, disabled_toolsets)
++        if scope_error is not None:
++            return tool_error(scope_error)
++        if function_name == "execute_code" and not (
++                enabled_toolsets is None and disabled_toolsets in (None, [])):
++            try:
++                scoped_tools = set(_select_tool_names(
++                    enabled_toolsets, disabled_toolsets, quiet_mode=True,
++                ))
++            except Exception:
++                return tool_error("Tool policy unavailable; call denied.")
++            dispatch_kwargs["enabled_tools"] = [
++                name for name in (dispatch_kwargs.get("enabled_tools") or [])
++                if name in scoped_tools
++            ]
++        if next_args != function_args:
++            try:
++                _, blocked = _pre_dispatch_guards(function_name, next_args, True, ids, [])
++            except Exception:
++                return tool_error("Tool policy unavailable; call denied.")
++            if blocked is not None:
++                return blocked[0]
+@@ -887 +932 @@ def handle_function_call(
+-    bridge catalog to this session's grant (None = unrestricted).
++    bridge and native dispatch to this session's grant (None = unrestricted).
+@@ -927,4 +972,7 @@ def handle_function_call(
+-    if function_name == "manage_connections" or is_connector_name(function_name):
+-        if "manage_connections" not in _select_tool_names(enabled_toolsets, disabled_toolsets, quiet_mode=True):
+-            return _emit(tool_error("Connectors are not available in this session."))
+-        if is_connector_name(function_name) and parse_connector_name(function_name) is None:
++    connector_name = is_connector_name(function_name)
++    if function_name == "manage_connections" or connector_name:
++        connector_scope_error = _tool_scope_error("manage_connections", enabled_toolsets, disabled_toolsets)
++        if connector_scope_error is not None:
++            return _emit(tool_error("Connectors are not available in this session."),
++                         status="blocked", error_type="tool_scope", error_message=connector_scope_error)
++        if connector_name and parse_connector_name(function_name) is None:
+@@ -932,0 +981,6 @@ def handle_function_call(
++    if not connector_name:
++        scope_error = _tool_scope_error(function_name, enabled_toolsets, disabled_toolsets)
++        if scope_error is not None:
++            return _emit(tool_error(scope_error), status="blocked", error_type="tool_scope",
++                         error_message=scope_error)
++
+@@ -935 +989,5 @@ def handle_function_call(
+-        function_args, original_args, trace = _apply_request_middleware(function_name, function_args, ids, trace)
++        try:
++            function_args, original_args, trace = _apply_request_middleware(function_name, function_args, ids, trace)
++        except Exception:
++            return _emit(tool_error("Tool request policy unavailable."), status="blocked",
++                         error_type="middleware_error", error_message="Tool request policy unavailable.")
+@@ -945,0 +1004,5 @@ def handle_function_call(
++        scope_error = _tool_scope_error(function_name, enabled_toolsets, disabled_toolsets)
++        if scope_error is not None:
++            return _emit(tool_error(scope_error), status="blocked", error_type="tool_scope",
++                         error_message=scope_error)
++
+@@ -957 +1020,3 @@ def handle_function_call(
+-                               enabled_tools=enabled_tools, skip_tool_execution_middleware=skip_tool_execution_middleware)
++                               enabled_tools=enabled_tools, enabled_toolsets=enabled_toolsets,
++                               disabled_toolsets=disabled_toolsets,
++                               skip_tool_execution_middleware=skip_tool_execution_middleware)
+--- a/agent/tool_executor.py
++++ b/agent/tool_executor.py
+@@ -685 +685 @@ def _pre_tool_block(agent, ref: _ToolCallRef):
+-        return None, ref.args
++        return "Tool policy hook failed.", ref.args
+--- a/hermes_cli/middleware.py
++++ b/hermes_cli/middleware.py
+@@ -207,0 +208,2 @@ def _run_execution_chain(kind: str, terminal_call: Callable[[Any], Any], **kwarg
++            if kind == TOOL_EXECUTION_MIDDLEWARE:
++                raise PermissionError("Tool execution policy unavailable.") from None
