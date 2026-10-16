@@ -58,3 +58,23 @@ test('no external providers, tokens or processes referenced by the fixture provi
   const provider = fs.readFileSync(path.join(__dirname, 'fixture_provider.cjs'), 'utf8');
   assert.doesNotMatch(provider, /fetch\s*\(|https?:\/\/|child_process|process\.env|require\(['"](?:axios|openai|@anthropic-ai)/);
 });
+
+test('pinned CLI pilot config has only fixture IO and documented network denial', () => {
+  const config = fs.readFileSync(path.join(__dirname, 'promptfooconfig.yaml'), 'utf8');
+  assert.match(config, /providers:\s*\n\s*- file:\/\/\.\/fixture_provider\.cjs/);
+  assert.match(config, /value: file:\/\/\.\/policy_assert\.cjs/);
+  assert.match(config, /share: false/);
+  assert.match(config, /cache: false/);
+  assert.match(config, /write: false/);
+  const activeConfig = config.split('\n').filter((line) => !line.trim().startsWith('#')).join('\n');
+  assert.doesNotMatch(activeConfig, /safeMode:|https?:\/\/|--remote|apiKey:/);
+  const evidence = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'docs', 'operations', 'H-19-PROMPTFOO-REAL-CLI-EVIDENCE.md'),
+    'utf8',
+  );
+  assert.match(evidence, /12 passed/);
+  assert.match(evidence, /--network none/);
+  assert.match(evidence, /--pull=never/);
+  assert.match(evidence, /--no-share/);
+  assert.match(evidence, /sha256:3808c02188df5263689e500eaaaee403c5d0dd8c14e611a2c54729afa4e8f18c/);
+});
