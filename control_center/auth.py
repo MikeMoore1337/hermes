@@ -18,7 +18,7 @@ import ssl
 from threading import Lock
 import time
 from urllib.parse import urlencode
-from urllib.request import HTTPSHandler, HTTPRedirectHandler, Request, build_opener
+from urllib.request import HTTPSHandler, HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
 
 ORIGIN = "https://hermes.mikemoore.top"
@@ -79,7 +79,7 @@ class _NoRedirect(HTTPRedirectHandler):
 
 
 def _fetch_json(request: Request) -> dict:
-    opener = build_opener(_NoRedirect, HTTPSHandler(context=ssl.create_default_context()))
+    opener = build_opener(ProxyHandler({}), _NoRedirect, HTTPSHandler(context=ssl.create_default_context()))
     with opener.open(request, timeout=5) as response:
         if response.status != 200:
             raise AuthError("Provider status failure")
@@ -179,7 +179,7 @@ class OAuthService:
             raise AuthError("Invalid OAuth code")
         if not re.fullmatch(r"[A-Za-z0-9_-]{40,128}", state or ""):
             raise AuthError("Invalid OAuth state")
-        if not hmac.compare_digest(state, cookie_state or ""):
+        if not isinstance(cookie_state, str) or not cookie_state.isascii() or not hmac.compare_digest(state, cookie_state):
             raise AuthError("Cross-browser OAuth state")
         with self._lock:
             now = self.clock()
@@ -243,8 +243,11 @@ def cookie_header(name: str, value: str, max_age: int, path: str = "/") -> str:
 def parse_cookie(raw: str | None, name: str) -> str:
     if not raw or len(raw) > 4096:
         return ""
+    matches = []
     for item in raw.split(";"):
         key, sep, value = item.strip().partition("=")
         if sep and key == name:
-            return value
-    return ""
+            matches.append(value)
+    # Reject duplicated cookies: user agents and proxies can disagree
+    # over first-vs-last precedence, including after cookie tossing.
+    return matches[0] if len(matches) == 1 else ""
