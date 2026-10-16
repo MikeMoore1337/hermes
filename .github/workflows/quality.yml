@@ -25,3 +25,5 @@ jobs:
         run: python3 scripts/check_markdown_links.py
       - name: Unit tests
         run: python3 -m unittest discover -s tests -v
+      - name: H-19 synthetic AI policy fixtures (Node standard library; no LLM)
+        run: node --test evals/promptfoo_offline/policy.test.cjs
