@@ -33,7 +33,7 @@ class ResidentExampleOfflineGuardTests(unittest.TestCase):
         ):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, script)
-        self.assertRegex(script, r'--mount type=bind,src="\\$STATE",dst=/opt/data')
+        self.assertIn('--mount type=bind,src="$STATE",dst=/opt/data', script)
         self.assertNotIn("network_mode: host", script)
         self.assertIn('if [ ! -d "$STATE" ] || [ -L "$STATE" ]; then', script)
         self.assertIn('--entrypoint /opt/hermes/bin/hermes', script)
