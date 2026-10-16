@@ -19,6 +19,28 @@ A task is complete only when its acceptance checks actually pass and the report 
 - Hermes new runtime is a separate future deployment with a separate OS identity, storage, secrets, allowlisted tools and networking. Do not add broad capabilities to the hardened YFC news worker.
 - Upstream Hermes version/revision must be fixed and verified before runtime installation. Never blindly execute external SKILL.md or scripts.
 
+## Delivery by default after passed gates (owner instruction 2026-10-16)
+
+Do not leave eligible Hermes PRs accumulating. In an explicitly authorized Hermes
+workstream, finish the full GitHub Flow: verify exact HEAD + required CI, inspect
+diff and blocking review comments, merge a clean PR, then deliver the **approved**
+runtime changes to the appropriate environment and verify them. Record release
+SHA, installed files, observed service health, rollback and any non-delivered
+parts in the PR/Issue. If a change is documentation or an offline helper with no
+live consumer, mark deployment as **repository/release snapshot only**; do not
+pretend it is an active service. Keep the local Windows checkout safely updated.
+
+This is a standing **workflow preference**, NOT permission for autonomous CI
+auto-merge, arbitrary production commands or bypassing hard approval gates.
+Never merge with a failed/pending required check, unreviewed blocking findings,
+unresolved conflicts or changed exact HEAD. High-risk production mutations,
+new providers, external secrets, charges, third-party messages/publications,
+private data, destructive actions, and enabling resident Hermes still require
+the distinct approvals/security GO described below. If the merge is safe but
+runtime activation is blocked, merge only the approved safe code, document
+RUNTIME_NO_GO, and continue with non-blocked tasks. Do not enable a
+resident Agent just because a PR or release CI is green.
+
 ## Hard approval gates
 
 Explicit approval is required for: new model/provider or potential charges, external credentials, production runtime/service/network modifications, publication or messages to third parties, private/personal data access, destructive changes, changing Git permissions, and visual UI changes.
