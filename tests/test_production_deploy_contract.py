@@ -28,6 +28,7 @@ class MainDeployContractTests(unittest.TestCase):
             'git get-tar-commit-id',
             'tarfile.open(',
             '".." in p.parts',
+            'chmod -R a+rX,go-w "$work/src"',
             'DynamicUser=yes',
             'PrivateNetwork=yes',
             'ProtectSystem=strict',
