@@ -25,6 +25,8 @@ ui_release="$ui/releases/main-$sha"
 updated=""
 ui_old=""
 ui_switched=no
+release_created=no
+ui_created=no
 committed=no
 cleanup() {
   result=$?
@@ -38,6 +40,8 @@ cleanup() {
       mv -Tf -- "$ui/.rollback-$short" "$ui/current"
       systemctl restart hermes-control-center.service || true
     fi
+    if [[ "$ui_created" == yes ]]; then rm -rf -- "$ui_release"; fi
+    if [[ "$release_created" == yes ]]; then rm -rf -- "$release"; fi
   fi
   rm -rf -- "$work"
   exit "$result"
@@ -86,6 +90,7 @@ for u in hermes-ops-watch.service hermes-ops-alerts.service hermes-qa-watch.serv
 done
 [[ ! -e "$release" && ! -e "$ui_release" ]] || die "release path already exists"
 mv -T -- "$work/src" "$release"
+release_created=yes
 mkdir -m 0700 "$backup"
 for m in ops_watch qa_advisor research_scout scripts agent_budget editorial_review knowledge_quality content_research marketing plugins; do
   cp -a -- "$release/$m" "$base/.incoming-$short-$m"
@@ -94,6 +99,7 @@ for m in ops_watch qa_advisor research_scout scripts agent_budget editorial_revi
   mv -T -- "$base/.incoming-$short-$m" "$base/$m"
 done
 mkdir -m 0755 "$ui_release"
+ui_created=yes
 cp -a -- "$release/control_center" "$ui_release/"
 chown -R root:root "$ui_release"
 chmod -R a+rX,go-w "$ui_release"
