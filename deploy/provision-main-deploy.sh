@@ -36,8 +36,12 @@ entry='restrict,command="sudo -n /usr/local/sbin/hermes-main-deploy" '
 if ! grep -Fqx "$entry$pubkey" "$auth"; then
   printf '%s%s\n' "$entry" "$pubkey" >> "$auth"
 fi
-if runuser -u "$user" -- env SSH_ORIGINAL_COMMAND='not-an-approved-deploy' sudo -n /usr/local/sbin/hermes-main-deploy >/dev/null 2>&1; then
+if result="$(runuser -u "$user" -- env SSH_ORIGINAL_COMMAND='not-an-approved-deploy' sudo -n /usr/local/sbin/hermes-main-deploy 2>&1)"; then
   echo "Unexpectedly accepted an invalid deploy command" >&2
+  exit 1
+fi
+if [[ "$result" != *'HERMES_DEPLOY_FAILED: invalid command'* ]]; then
+  echo "Failed to verify sudo environment forwarding and command refusal" >&2
   exit 1
 fi
 echo "HERMES_RESTRICTED_DEPLOY_ACCOUNT_CONFIGURED=yes"
