@@ -8,7 +8,7 @@ Read `docs/architecture/OWNERSHIP.md`, `docs/security/THREAT_MODEL.md`, and the 
 
 ## GitHub Flow
 
-New repository uses `main`. For future changes: Issue -> short-lived branch -> PR -> relevant CI -> reviewed merge. No direct pushes or force pushes to main after initial bootstrap. Branch protection is required where supported; never claim it is enforced until verified. No auto-merge, auto-deploy or automatic continuation to the next Issue.
+New repository uses `main`. For future changes: Issue -> short-lived branch -> PR -> relevant CI -> reviewed merge. No direct pushes or force pushes to main after initial bootstrap. Branch protection is required where supported; never claim it is enforced until verified. No auto-merge or automatic continuation to the next Issue. Production auto-deploy after successful exact-SHA CI is authorized only as specified below.
 
 A task is complete only when its acceptance checks actually pass and the report distinguishes implemented, verified, blocked, not started, and production delivered.
 
@@ -30,8 +30,7 @@ parts in the PR/Issue. If a change is documentation or an offline helper with no
 live consumer, mark deployment as **repository/release snapshot only**; do not
 pretend it is an active service. Keep the local Windows checkout safely updated.
 
-This is a standing **workflow preference**, NOT permission for autonomous CI
-auto-merge, arbitrary production commands or bypassing hard approval gates.
+This is a standing workflow preference and, as of 2026-10-17, explicit owner permission for **bounded main-to-production auto-deploy** of previously approved active consumers. It is NOT permission for CI auto-merge, arbitrary production commands or bypassing hard approval gates.
 Never merge with a failed/pending required check, unreviewed blocking findings,
 unresolved conflicts or changed exact HEAD. High-risk production mutations,
 new providers, external secrets, charges, third-party messages/publications,
@@ -40,6 +39,14 @@ the distinct approvals/security GO described below. If the merge is safe but
 runtime activation is blocked, merge only the approved safe code, document
 RUNTIME_NO_GO, and continue with non-blocked tasks. Do not enable a
 resident Agent just because a PR or release CI is green.
+
+## Main-to-production delivery rule (owner approval 2026-10-17)
+
+Each merge or push to `main` must be delivered to Hermes production promptly **after successful CI at that exact commit**. A failed or pending required test is never an authorization to deploy. A later `main` SHA supersedes earlier queued releases. Never claim a deploy completed without observing the production receipt, active service health and rollback evidence.
+
+The automation is limited to source/release snapshots and updates of **already approved active** Hermes Ops Watch, QA Advisor, Research Scout, Control Center and offline helpers. It must preserve existing news services and timers. No automatic new service activation, no AI Agent/resident gateway, Cloudflare proxy, OAuth broker, external credentials, unapproved network/model permissions, payment or publication. Those remain gated even if corresponding code is in `main`.
+
+Use the least-privileged SSH forced-command transport in `.github/workflows/production-deploy.yml` and `deploy/hermes-main-deploy.sh`: immutable exact-SHA archive, verified checksum and embedded commit SHA, on-VPS offline tests, atomic consumer update, health checks, rollback and a deployment receipt. Record and investigate red deployments rather than treating green CI as proof of production success. See [Issue #238](https://github.com/MikeMoore1337/hermes/issues/238).
 
 ## Hard approval gates
 
@@ -67,7 +74,7 @@ external skill, agent runtime, controller, permission or additional CI gate.
 
 Prefer Python standard library or existing stable libraries and upstream-native features; justify new dependencies. Tests must read top-down, with concrete scenario, expected/actual outcomes and sanitized failure evidence. Verify negative permission tests, restart/idempotency, resource ceilings and regression impact when the feature calls for them.
 
-CI should remain cheap and deterministic. Use normal GitHub Actions without a second controller, custom task lifecycle DB or automatic deployments. Do not import full `ai-cofounder`/other third-party frameworks merely to copy their workflow.
+CI should remain cheap and deterministic. Use normal GitHub Actions without a second controller or custom task lifecycle DB. The narrowly scoped and reviewed main-to-production workflow described above is allowed. Do not import full `ai-cofounder`/other third-party frameworks merely to copy their workflow.
 
 ## Communication
 
