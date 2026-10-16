@@ -80,6 +80,45 @@ class IsolatedEgressTests(unittest.TestCase):
             with self.subTest(case=case[:35]), self.assertRaises(iso.EgressProbeDenied):
                 iso.evaluate(case)
 
+    def test_missing_unreadable_or_malformed_kernel_route_files_denied(self):
+        # Exercise *the exact inline code* that the isolated Docker executes.
+        # A missing /proc entry must never mean "no default route".
+        defs = iso.PROBE.split("\nstatus = read(", 1)[0]
+        scope = {}
+        exec(defs, scope)
+        with patch.object(scope["Path"], "read_text",
+                          side_effect=OSError("missing proc")):
+            self.assertFalse(scope["no_v4_default"]())
+            self.assertFalse(scope["no_usable_v6_default"]())
+        with patch.object(scope["Path"], "read_text",
+                          return_value="MALFORMED"):
+            self.assertFalse(scope["no_v4_default"]())
+            self.assertFalse(scope["no_usable_v6_default"]())
+
+    def test_kernel_default_route_ipv4_ipv6_denied(self):
+        defs = iso.PROBE.split("\nstatus = read(", 1)[0]
+        scope = {}
+        exec(defs, scope)
+        ipv4 = ("Iface Destination Gateway Flags RefCnt Use Metric Mask MTU Window IRTT\n"
+                "eth0 00000000 0101A8C0 0003 0 0 0 00000000 0 0 0\n")
+        ipv6 = ("0" * 32 + " 00 " + "0" * 32 +
+                " 00 " + "0" * 32 + " ffffffff 00000001 00000000 00000001 lo\n")
+        with patch.object(scope["Path"], "read_text", return_value=ipv4):
+            self.assertFalse(scope["no_v4_default"]())
+        with patch.object(scope["Path"], "read_text", return_value=ipv6):
+            self.assertFalse(scope["no_usable_v6_default"]())
+
+    def test_readable_empty_routing_table_requires_valid_proof(self):
+        defs = iso.PROBE.split("\nstatus = read(", 1)[0]
+        scope = {}
+        exec(defs, scope)
+        ipv4 = "Iface Destination Gateway Flags RefCnt Use Metric Mask MTU Window IRTT\n"
+        with patch.object(scope["Path"], "read_text", return_value=ipv4):
+            self.assertTrue(scope["no_v4_default"]())
+        with patch.object(scope["Path"], "read_text", return_value=""):
+            # An empty *readable* IPv6 route file legitimately means no IPv6 route.
+            self.assertTrue(scope["no_usable_v6_default"]())
+
     def test_failed_digest_or_docker_process_produces_no_go(self):
         cases = (
             (b"invalid-image-identity", packet()),
