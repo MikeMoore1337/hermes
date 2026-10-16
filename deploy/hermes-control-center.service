@@ -1,0 +1,36 @@
+[Unit]
+Description=Hermes Control Center read-only loopback UI
+After=network.target
+Wants=hermes-control-center-snapshot.timer
+
+[Service]
+Type=simple
+User=hermes-control
+Group=hermes-control
+WorkingDirectory=/opt/hermes-control-center/current
+ExecStart=/usr/bin/python3 -m control_center.server
+Restart=on-failure
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+IPAddressDeny=any
+IPAddressAllow=localhost
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0027
+MemoryMax=100M
+CPUQuota=25%
+TasksMax=24
+
+[Install]
+WantedBy=multi-user.target
