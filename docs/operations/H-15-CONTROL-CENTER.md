@@ -65,3 +65,14 @@ Only after resident Agent P0 #33 passes, separately install native Dashboard plu
 ## Rollback
 
 Stop/disable only `hermes-control-center.service` and `hermes-control-center-snapshot.timer`. Remove only this optional Caddy route if present; validate and reload Caddy. Do not touch existing YFC news or Hermes Ops/QA/Research units.
+
+
+## Verified release update - 2026-10-16
+
+The previous `tls internal` staging description above is superseded by this release update:
+
+- Owner supplied a Cloudflare Origin CA certificate matching the existing VPS-generated CSR and private key. The certificate is valid until 2041-10-12, has the exact SAN `hermes.mikemoore.top`, and is now live in Caddy for the Hermes-only origin site.
+- Caddy configuration validation and reload passed. The live origin presents the installed Origin CA certificate, with matching SHA-256 fingerprint. Service status and the local-only backend remain healthy.
+- Cloudflare DNS and origin port routing now work: public HTTPS returns 401 for unauthenticated requests, not the previous Cloudflare 1034. The public TLS handshake passed. Existing Second Brain continues returning HTTP 303.
+- Final gates remain: verify authenticated 200 via the public URL after certificate activation; confirm a Cloudflare hostname-specific Configuration Rule enforces SSL `Full (strict)` for Hermes, or an equivalent verified zone-wide setting. An HTTP 401 by itself cannot establish the Cloudflare SSL mode.
+- Until both final gates are verified, retain Issue #163 as open. Do not activate the resident agent (#33 still NO-GO).
