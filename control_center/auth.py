@@ -19,6 +19,7 @@ import ssl
 from threading import Lock
 import time
 from urllib.parse import urlencode
+from urllib.error import HTTPError
 from urllib.request import HTTPSHandler, HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
 
@@ -38,6 +39,15 @@ MAX_SESSIONS = 128
 
 class AuthError(ValueError):
     """Internal fail-closed OAuth rejection. Never return details to clients."""
+
+
+class ProviderHTTPError(AuthError):
+    """Provider HTTP rejection with only a fixed endpoint class and status."""
+
+    def __init__(self, stage: str, status: int):
+        super().__init__("Provider HTTP rejection")
+        self.stage = stage
+        self.status = status
 
 
 @dataclass(frozen=True)
@@ -99,12 +109,20 @@ def _reject_provider_constant(_value: str) -> None:
 
 def _fetch_json(request: Request) -> dict:
     opener = build_opener(ProxyHandler({}), _NoRedirect, HTTPSHandler(context=ssl.create_default_context()))
-    with opener.open(request, timeout=5) as response:
-        if response.status != 200:
-            raise AuthError("Provider status failure")
-        body = response.read(16385)
-        if len(body) > 16384:
-            raise AuthError("Provider response too large")
+    try:
+        with opener.open(request, timeout=5) as response:
+            if response.status != 200:
+                raise AuthError("Provider status failure")
+            body = response.read(16385)
+            if len(body) > 16384:
+                raise AuthError("Provider response too large")
+    except HTTPError as exc:
+        # HTTPError inherits OSError. Report a bounded HTTP category rather
+        # than falsely labeling GitHub 401/403 as a network failure. Neither
+        # provider response bodies nor URL/query values reach the journal.
+        stage = "token" if request.full_url == TOKEN_URL else (
+            "identity" if request.full_url == USER_URL else "unknown")
+        raise ProviderHTTPError(stage, exc.code) from None
     # OAuth tokens/identity IDs must never be parsed with JSON's permissive
     # last-key-wins behavior; ambiguous provider responses fail closed.
     try:
