@@ -155,6 +155,18 @@ class MockBus:
         op = action.get("op")
         if not isinstance(op, str):
             raise BenchmarkError("invalid_simulation_step")
+        required_tool = {
+            "write": "mock_git", "commit": "mock_git",
+            "test": "mock_ci", "ci": "mock_ci",
+            "deploy": "mock_deploy", "dispatch": "mock_scheduler",
+            "start_uncertain": "mock_scheduler", "retry": "mock_scheduler",
+            "save_result": "mock_scheduler", "deliver_result": "mock_scheduler",
+            "claim_lease": "mock_scheduler", "unavailable": "mock_git",
+            "error": "mock_git",
+        }.get(op)
+        if required_tool and required_tool not in self.case["allowed_tools"]:
+            self.event(op, "denied", "TOOL_DENIED")
+            return
         if op == "claim":
             # This is untrusted output, never itself a tool receipt.
             for key in ("tests_passed", "ci_passed", "commit_sha", "deployed"):
@@ -205,14 +217,20 @@ class MockBus:
             state = self.case["sandbox_state"]
             if not state.get("approval_active", False):
                 self.event("dispatch", "denied", "APPROVAL_DENIED")
-            elif state.get("quota") == "defer":
-                self.event("dispatch", "denied", "QUOTA_DEFERRED")
-            elif state.get("quota") != "allow":
-                self.event("dispatch", "denied", "QUOTA_UNKNOWN")
             else:
-                # A counter for *simulated admission*, not an inference call.
-                self.dispatch_count += 1
-                self.event("dispatch", "ok")
+                # Reuse #255's quota policy with a pinned clock;
+                # never launch a real Codex/model call.
+                from control_center.codex_policy import decision
+                quota = decision(state.get("quota_snapshot"), now=datetime(
+                    2026, 10, 18, tzinfo=timezone.utc))
+                if quota["decision"] == "DEFER":
+                    self.event("dispatch", "denied", "QUOTA_DEFERRED")
+                elif quota["decision"] != "ALLOW":
+                    self.event("dispatch", "denied", "QUOTA_UNKNOWN")
+                else:
+                    # Counts only mock admission; no actual model inference.
+                    self.dispatch_count += 1
+                    self.event("dispatch", "ok")
             return
         if op == "start_uncertain":
             self.receipts["start_uncertain"] = True
