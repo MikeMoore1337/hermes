@@ -1,6 +1,70 @@
 # H-01: проект безопасного независимого Hermes Agent
 
-## Обновление 17.10.2026 - H-01 #33
+## Текущая приёмка H-01 на 17.10.2026 (после PR #266)
+
+**Состояние на момент read-only проверки VPS 17.10.2026 ~20:53 MSK**, canonical deployment SHA
+`6b8365704b625a427e575c3ee2b1be8b72e52a4e`. Это отдельный снимок
+фактического состояния, а не обещание, что оно останется неизменным.
+
+- Активен **ограниченный event-driven Ops AI**, не unrestricted gateway.
+  `hermes-h01-ops-agent.timer` enabled/active, `hermes-cloudflare-proxy.service`
+  enabled/active, network guard active; `hermes-agent-sandbox.service` disabled/inactive.
+  One-shot service в норме становится `inactive` после успешного завершения.
+- Точная базовая версия: NousResearch v0.22.2 AMD64
+  `sha256:a11574b7fe8e1631d7d88d556677dac693bc058abf558cdeb899155688c1bf05`;
+  локальная производная с исправлением native dispatch и без разрешения на
+  unrestricted agent. Это **не** upstream-attested derivative.
+- Модель - только Workers Free `@cf/openai/gpt-oss-20b` с подтверждённым
+  владельцем Free account, cost `NOT_MEASURED`. Только проверенный
+  `ADVISOR_CANDIDATE`, максимум один записанный до вызова AI-call в UTC-сутки;
+  ноль автоматических retries, tools/MCP/shell/browser, публикаций и paid fallback.
+  Обычный порог нагрузки `load1 <= 1.30` не повышен.
+- CLI zero-native-tool real Workers AI response `OK`, exit 0, 140.97s:
+  [#33, акт 17.10](../audits/H-01-limited-resident-v0222-2026-10-17.md).
+  Первые production one-shot cycles: `NO_ADVISOR_CANDIDATE`, 0 model calls.
+  Полезный реальный анализ инцидента не наблюдался: `NOT_VERIFIED`.
+- **Новый фактический дефект:** журнал systemd за 17.10 фиксирует успешный
+  precheck в 19:43, успешный `NO_ADVISOR_CANDIDATE` в 20:00 и отказ таймера
+  в 20:33:47 MSK с `Result=start-limit-hit`. Старые
+  `OnActiveSec=15min` / `OnUnitInactiveSec=30min` допускали третью
+  попытку внутри `StartLimitBurst=2` за `StartLimitIntervalSec=3600`.
+  Source timer исправлен на 35/35 минут, без ослабления start limits и дневной
+  квоты. **До отдельного одобренного применения установленного systemd unit
+  production остаётся на прежнем таймере**. Не сбрасывать failures/journals
+  и не перезапускать приёмку #33 автоматически.
+- 24-часовую стабильность проверяет **только #33** 18.10.2026 16:44 UTC.
+  При имеющемся `start-limit-hit` вердикт стабильности **не PASS**; нужны
+  подтверждённые последующие запуски, исправление и оценка окна приёмки.
+
+### Матрица доказательной приёмки Issue #2
+
+| Критерий | Статус | Доказательства на 17.10.2026 | Осталось |
+| --- | --- | --- | --- |
+| Размещение и ресурсы | PARTIAL | Утверждённый Hermes VPS, 3915 MiB RAM, фактическая установка v0.22.2 по #33; bounded Docker | Полный 24h load/recovery #33 |
+| Независимая OS identity | PARTIAL | Docker runtime nonroot UID 10000, no host Docker socket mount; wrapper systemd `User=root` | Отдельно зафиксировать границу привилегированного host launcher и негативные проверки |
+| Изоляция storage/secrets | PARTIAL | Restricted `/etc/hermes-agent/h01-image.env`, `/var/lib/hermes-h01`, read-only Ops state и отделённый Cloudflare secret, ограничения в unit и launcher | Повторить production-negative scope/mount tests в рамках #33 |
+| Runtime и закреплённые версии | PASS | [Акт установки v0.22.2](../audits/H-01-limited-resident-v0222-2026-10-17.md), точные базовый OCI digest и derived image ID | Полный provenance/SBOM перенесён в #185/#199 |
+| Границы инструментов и сети | PARTIAL | `-t bot_room`, patched native dispatch synthetic deny, internal bridge, nft guard, no fallback | Нет доказательства unrestricted MCP/OS boundary; не включать |
+| Zero-tool и model smoke | PASS | Реальный VPS CLI v0.22.2/Workers Free exit 0, 140.97s; отдельные offline mock turns #260/#261 | Полезный production incident cycle ещё не наблюдался |
+| CPU/RAM и таймауты | PARTIAL | Docker `--memory 640m --cpus 0.30`, oneshot `TimeoutStartSec=220`, `load1 <= 1.30` | 24h peak и enforcement/восстановление #33 |
+| Перезапуск и восстановление | BLOCKED | Reboot guard/network ранее PASS (14.10); 17.10 systemd `start-limit-hit` на активном one-shot | Применить timer fix без потери истории; доказать восстановление по #33 |
+| Rollback | PARTIAL | Остановка timer/service/proxy без удаления квот и state описана ниже и в операционных инструкциях | Реальный rollback именно ограниченного H-01 не проверен; согласовать в #33 |
+| Независимость от YFC | PASS | Отдельный Hermes VPS/контур, YFC news/Second Brain credentials не подключены по #33, другие Hermes timers активны | Мониторить регрессии в 24h |
+| CI и production CD | PASS | [Quality CI #39053006896](https://github.com/MikeMoore1337/hermes/actions/runs/39053006896), [UI #39053006855](https://github.com/MikeMoore1337/hermes/actions/runs/39053006855), [CD #39053067822](https://github.com/MikeMoore1337/hermes/actions/runs/39053067822); VPS canonical SHA совпал | Новый source fix требует собственного exact-SHA CI/CD; источник != applied unit |
+| 24-часовая стабильность | DEFERRED | [#33](https://github.com/MikeMoore1337/hermes/issues/33), контроль 18.10.2026 16:44 UTC | Фактическая оценка журналов/нагрузки и принятие/отказ |
+| Статусы и наблюдаемость | PARTIAL | [PR #266](https://github.com/MikeMoore1337/hermes/pull/266) разделяет limited H-01 и unrestricted NO-GO; журнал systemd выявил failure | Показать и подтвердить recovery, useful_cycle по реальному incident |
+
+**Вердикт родителя #2: PARTIAL, оставить OPEN.** Узкие runtime-права
+сохраняются. Закрытие возможно лишь после принятия #33, устранения
+`start-limit-hit` и отдельной сверки критериев. Важно: deferred #185/#199
+не становятся функциональными блокерами и не считаются выполненными.
+
+Последующие разделы описывают прежние этапы и гипотезы; их даты сохраняются,
+но они **не** заменяют данный текущий снимок.
+
+---
+
+## Исторический срез подготовки 17.10.2026 (до включения ограниченного H-01)
 
 Целевой upstream для нового контура - **v0.22.2**, Linux/AMD64 `nousresearch/hermes-agent@sha256:a11574b7fe8e1631d7d88d556677dac693bc058abf558cdeb899155688c1bf05`. Старый v0.21.6 используется только как историческое доказательство smoke от 11.10.2026. `deploy/smoke.sh` проверяет официальный v0.22.2 без сети/модели. `deploy/run-agent-sandbox.sh` и `deploy/smoke-cloudflare-agent.sh` теперь не могут молча использовать старый либо непатченный образ: нужен операторский полный local image ID производного v0.22.2 с применённым патчем native-tool dispatch. Патч, метки образа и статические проверки - **не** подтверждение полноценной runtime isolation.
 

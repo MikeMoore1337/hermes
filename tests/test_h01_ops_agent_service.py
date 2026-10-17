@@ -107,6 +107,33 @@ class H01OpsContractTests(unittest.TestCase):
             saved = json.loads((state / "state.json").read_text(encoding="utf-8"))
             self.assertEqual(saved["last_status"], "agent_result_unverified")
 
+    def test_install_smoke_and_timer_cannot_exhaust_hourly_start_limit(self):
+        """The real 2026-10-17 third start was blocked by a 2/hour systemd gate."""
+        import re
+
+        root = Path(__file__).resolve().parents[1]
+        unit = (root / "deploy/hermes-h01-ops-agent.service").read_text(encoding="utf-8")
+        timer = (root / "deploy/hermes-h01-ops-agent.timer").read_text(encoding="utf-8")
+
+        def seconds(key, content, suffix=""):
+            match = re.search(rf"^{key}=(\d+){suffix}$", content, re.MULTILINE)
+            self.assertIsNotNone(match, key)
+            return int(match.group(1))
+
+        window = seconds("StartLimitIntervalSec", unit)
+        burst = seconds("StartLimitBurst", unit)
+        initial = seconds("OnActiveSec", timer, "min") * 60
+        repeat = seconds("OnUnitInactiveSec", timer, "min") * 60
+
+        self.assertEqual((window, burst), (3600, 2))
+        # An installer may run the one-shot once just before enabling the timer.
+        starts = [0, initial]
+        for _ in range(6):
+            starts.append(starts[-1] + repeat)
+        for index, end in enumerate(starts):
+            in_window = sum(0 <= end - start < window for start in starts[:index + 1])
+            self.assertLessEqual(in_window, burst, f"run at {end}s exceeds start limit")
+
     def test_unit_and_timer_never_run_scheduled_shell_as_model(self):
         root = Path(__file__).resolve().parents[1]
         unit = (root / "deploy/hermes-h01-ops-agent.service").read_text(encoding="utf-8")
@@ -115,8 +142,10 @@ class H01OpsContractTests(unittest.TestCase):
         self.assertIn("Restart=no", unit)
         self.assertIn("TimeoutStartSec=220", unit)
         self.assertIn("ExecStart=/usr/bin/python3 -m scripts.h01_ops_agent_service", unit)
-        self.assertIn("OnUnitInactiveSec=30min", timer)
-        self.assertIn("OnActiveSec=15min", timer)
+        self.assertIn("StartLimitIntervalSec=3600", unit)
+        self.assertIn("StartLimitBurst=2", unit)
+        self.assertIn("OnUnitInactiveSec=35min", timer)
+        self.assertIn("OnActiveSec=35min", timer)
         self.assertNotIn("OnBootSec=", timer)
         self.assertIn("Persistent=false", timer)
         self.assertNotIn("ExecStart=/bin/sh", unit)
