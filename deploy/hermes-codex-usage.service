@@ -1,0 +1,33 @@
+[Unit]
+Description=Hermes read-only Codex subscription quota probe
+Documentation=https://github.com/MikeMoore1337/hermes/issues/255
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=hermes-codex
+Group=hermes-control
+WorkingDirectory=/opt/hermes-control-center/current
+Environment=CODEX_HOME=/var/lib/hermes-codex-usage/auth
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 -m control_center.codex_usage --output /var/lib/hermes-codex-usage/usage.json --timeout 15
+StateDirectory=hermes-codex-usage
+StateDirectoryMode=0750
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0077
+TimeoutStartSec=35
+MemoryMax=256M
+CPUQuota=35%
+TasksMax=32
