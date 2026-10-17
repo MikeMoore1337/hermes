@@ -17,8 +17,8 @@ from control_center.snapshot import DEFAULT_OUTPUT
 from control_center.codex_usage import DEFAULT_OUTPUT as CODEX_OUTPUT, read_snapshot, UsageError
 from control_center.codex_history import read as read_codex_history
 from control_center.codex_policy import decision as codex_decision
-from codex_scheduler.core import DEFAULT_DB as SCHEDULER_DB
-from codex_scheduler.status import read_status as read_scheduler_status, StatusUnavailable
+from control_center.codex_scheduler import DEFAULT_DB as SCHEDULER_DB
+from control_center.codex_scheduler_status import read_status as read_scheduler_status, StatusUnavailable
 from control_center.credentials import load_runtime_credentials
 from control_center.auth import (
     AuthConfig, AuthError, OAuthService, ORIGIN,
