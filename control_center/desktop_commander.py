@@ -22,7 +22,8 @@ SCHEMA = 1
 SOURCE = "desktop_commander_remote_mcp"
 DEFAULT_OUTPUT = Path("/var/lib/hermes-desktop-commander/status.json")
 TTL_SECONDS = 900
-MAX_BYTES = 16384
+MAX_BYTES = 16384  # Remote MCP, snapshots and bounded tool content
+MAX_LOCAL_MCP_BYTES = 2 * 1024 * 1024  # Raw local tools/list envelope; names only returned
 # Installed by the separately approved owner bootstrap under a dedicated OS identity.
 # Never perform an implicit npm download or upgrade from a recurring service.
 REMOTE_COMMAND = ("/var/lib/hermes-desktop-commander/node_modules/.bin/mcp-remote",
@@ -199,11 +200,20 @@ def query_mcp(command=REMOTE_COMMAND, timeout=25):
                                 text=True, encoding="utf-8", bufsize=1)
     except OSError as exc:
         raise CommanderError("client_not_installed") from exc
-    events = Queue()
+    line_limit = MAX_LOCAL_MCP_BYTES if local else MAX_BYTES
+    events = Queue(maxsize=32)
     def reader():
         try:
-            for line in proc.stdout:
-                events.put(line[:MAX_BYTES + 1])
+            # readline(size) caps a *single* untrusted MCP line before parsing.
+            # Do not truncate a valid >16KiB local tools/list response: that
+            # corrupts its JSON envelope. Remote MCP keeps the old 16KiB cap.
+            while True:
+                line = proc.stdout.readline(line_limit + 1)
+                if not line:
+                    break
+                events.put(line)
+                if len(line.encode("utf-8")) > line_limit:
+                    break
         finally:
             events.put(None)
     Thread(target=reader, daemon=True).start()
@@ -244,8 +254,8 @@ def query_mcp(command=REMOTE_COMMAND, timeout=25):
                 raise CommanderError(f"local_{stage}_timeout:{hint}") from exc
             if line is None:
                 raise CommanderError("client_stopped")
-            if len(line.encode("utf-8")) > MAX_BYTES:
-                raise CommanderError("response_too_large")
+            if len(line.encode("utf-8")) > line_limit:
+                raise CommanderError("local_response_too_large" if local else "response_too_large")
             try:
                 event = json.loads(line)
             except ValueError:
