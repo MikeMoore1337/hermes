@@ -51,7 +51,7 @@ class OfficialAdapterTests(TestCase):
         self.assertTrue(okay)
         self.assertRegex(reference, "^sha256:[0-9a-f]{64}$")
         argv = popen.call_args.args[0]
-        self.assertEqual(argv[:3], [str(self.binary), "exec", "--json"])
+        self.assertEqual(argv[:5], [str(self.binary), "--ask-for-approval", "never", "exec", "--json"])
         self.assertEqual(argv[argv.index("--sandbox") + 1], "read-only")
         self.assertEqual(argv[argv.index("--model") + 1], "mock-model")
         self.assertNotIn("shell", popen.call_args.kwargs)
