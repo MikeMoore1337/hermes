@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 from queue import Queue, Empty
 import re
+import sys
 import subprocess
 import tempfile
 from threading import Thread
@@ -26,7 +27,8 @@ MAX_BYTES = 16384
 # Never perform an implicit npm download or upgrade from a recurring service.
 REMOTE_COMMAND = ("/var/lib/hermes-desktop-commander/node_modules/.bin/mcp-remote",
                   "https://mcp.desktopcommander.app/mcp")
-LOCAL_COMMAND = ("/var/lib/hermes-desktop-commander/node_modules/.bin/desktop-commander",)
+LOCAL_COMMAND = ("/var/lib/hermes-desktop-commander/node_modules/.bin/desktop-commander",
+                 "--no-onboarding")
 STATUSES = frozenset({"monitored", "exhausted", "unknown", "auth_required",
                       "unavailable", "not_configured", "stale"})
 DEVICE_STATES = frozenset({"online", "offline", "unknown"})
@@ -189,9 +191,11 @@ def query_mcp(command=REMOTE_COMMAND, timeout=25):
     """MCP stdio RPC using a fixed argv; only metadata tools may be called."""
     if command not in (REMOTE_COMMAND, LOCAL_COMMAND) or not 1 <= timeout <= 60:
         raise ValueError("unsupported MCP command")
+    local = command == LOCAL_COMMAND
     try:
         proc = subprocess.Popen(list(command), stdin=subprocess.PIPE,
-                                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE if local else subprocess.DEVNULL,
                                 text=True, encoding="utf-8", bufsize=1)
     except OSError as exc:
         raise CommanderError("client_not_installed") from exc
@@ -203,6 +207,22 @@ def query_mcp(command=REMOTE_COMMAND, timeout=25):
         finally:
             events.put(None)
     Thread(target=reader, daemon=True).start()
+    # Only bounded, generic classes of local startup failures may reach the operator.
+    # Raw stderr may contain filesystem paths, secrets or arbitrary provider data.
+    stderr_hints = set()
+    if local:
+        def read_stderr():
+            for line in proc.stderr:
+                message = line[:256].lower()
+                if "eacces" in message or "permission denied" in message:
+                    stderr_hints.add("permissions")
+                elif "cannot find module" in message or "module_not_found" in message:
+                    stderr_hints.add("missing_module")
+                elif "ebadengine" in message or "unsupported engine" in message:
+                    stderr_hints.add("node_version")
+                elif "error" in message or "fatal" in message:
+                    stderr_hints.add("startup_error")
+        Thread(target=read_stderr, daemon=True).start()
     deadline = time.monotonic() + timeout
     def send(packet):
         if proc.poll() is not None:
@@ -217,7 +237,11 @@ def query_mcp(command=REMOTE_COMMAND, timeout=25):
             try:
                 line = events.get(timeout=max(0.001, deadline - time.monotonic()))
             except Empty as exc:
-                raise CommanderError("mcp_timeout") from exc
+                if not local:
+                    raise CommanderError("mcp_timeout") from exc
+                stage = "initialize" if identifier == 1 else "tools_list"
+                hint = sorted(stderr_hints)[0] if stderr_hints else "no_classified_stderr"
+                raise CommanderError(f"local_{stage}_timeout:{hint}") from exc
             if line is None:
                 raise CommanderError("client_stopped")
             if len(line.encode("utf-8")) > MAX_BYTES:
@@ -253,13 +277,18 @@ def query_mcp(command=REMOTE_COMMAND, timeout=25):
         devices = _tool_text(receive(3))
         return normalize(who, devices)
     finally:
+        try:
+            if proc.stdin:
+                proc.stdin.close()
+        except OSError:
+            pass
         if proc.poll() is None:
             proc.terminate()
         try:
-            proc.communicate(timeout=2)
+            proc.wait(timeout=2)
         except subprocess.TimeoutExpired:
             proc.kill()
-            proc.communicate()
+            proc.wait(timeout=2)
 
 
 def device_gate(snapshot, name, *, authorized=False, execution_verified=False):
@@ -287,7 +316,14 @@ def main():
     if args.remote == args.probe_local:
         parser.error("choose exactly one of --remote or --probe-local")
     if args.probe_local:
-        print(json.dumps(query_mcp(LOCAL_COMMAND), ensure_ascii=False))
+        try:
+            # Local start may be slower on a cold filesystem; remote collector
+            # retains its fixed 25-second per-poll timeout and separate budget.
+            data = query_mcp(LOCAL_COMMAND, timeout=60)
+        except CommanderError as exc:
+            print(f"LOCAL_MCP_PROBE=FAILED reason={exc}", file=sys.stderr)
+            raise SystemExit(2) from None
+        print(json.dumps(data, ensure_ascii=False))
     else:
         # Explicit local-only enabling gate: no implicit login or collection on import.
         if os.environ.get("HERMES_DC_OWNER_AUTHORIZED") != "1":
