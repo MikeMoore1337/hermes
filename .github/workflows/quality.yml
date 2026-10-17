@@ -25,6 +25,8 @@ jobs:
         run: python3 scripts/check_markdown_links.py
       - name: Unit tests
         run: python3 -m unittest discover -s tests -v
+      - name: H-19 synthetic AI policy fixtures (Node standard library; no LLM)
+        run: node --test evals/promptfoo_offline/policy.test.cjs
       - name: H-23 offline agent benchmark (16 pinned scenarios; no LLM)
         shell: bash
         run: |
