@@ -13,6 +13,8 @@ class PwaRoutesTests(unittest.TestCase):
             "/offline.html": "text/html; charset=utf-8",
             "/pwa-192.png": "image/png",
             "/pwa-512.png": "image/png",
+            "/pwa-maskable-192.png": "image/png",
+            "/pwa-maskable-512.png": "image/png",
         }.items():
             self.assertEqual(ASSETS[route][1], mime)
             self.assertTrue((WEB / ASSETS[route][0]).is_file())
@@ -38,7 +40,7 @@ class PwaRoutesTests(unittest.TestCase):
         declared_paths = set()
         for icon in data["icons"]:
             self.assertEqual(icon["type"], "image/png")
-            self.assertEqual(icon["purpose"], "any")
+            self.assertIn(icon["purpose"], {"any", "maskable"})
             self.assertEqual(type(icon["sizes"]), str)
             self.assertRegex(icon["sizes"], r"^[1-9][0-9]*x[1-9][0-9]*$")
             width, height = (int(value) for value in icon["sizes"].split("x"))
@@ -54,7 +56,11 @@ class PwaRoutesTests(unittest.TestCase):
             self.assertEqual(struct.unpack(">II", blob[16:24]), (width, height))
             self.assertEqual(blob[24], 8)  # PNG bit depth
             self.assertIn(blob[25], (2, 6))  # RGB or RGBA, no indexed palette
-        self.assertEqual(declared_paths, {"/pwa-192.png", "/pwa-512.png"})
+        self.assertEqual(declared_paths, {"/pwa-192.png", "/pwa-512.png",
+                                          "/pwa-maskable-192.png", "/pwa-maskable-512.png"})
+        self.assertEqual({(icon["sizes"], icon["purpose"]) for icon in data["icons"]},
+                         {("192x192", "any"), ("512x512", "any"),
+                          ("192x192", "maskable"), ("512x512", "maskable")})
 
     def test_privacy_policy_in_sw_is_narrow(self):
         sw=(WEB/"sw.js").read_text(encoding="utf8")

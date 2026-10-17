@@ -14,7 +14,12 @@ test("installable local manifest, approved logo icons and restricted worker", as
   expect(result.manifest.name).toBe("Hermes Control Center");
   expect(result.manifest.display).toBe("standalone");
   expect(result.manifest.start_url).toBe("/");
-  expect(result.manifest.icons.map(x=>x.sizes)).toEqual(["192x192","512x512"]);
+  expect(result.manifest.icons.map(x=>[x.src,x.sizes,x.purpose])).toEqual([
+    ["/pwa-192.png","192x192","any"],
+    ["/pwa-512.png","512x512","any"],
+    ["/pwa-maskable-192.png","192x192","maskable"],
+    ["/pwa-maskable-512.png","512x512","maskable"]
+  ]);
   expect(result.scope).toBe("http://127.0.0.1:9133/");
   expect(result.sw).toContain("/sw.js");
   for(const icon of result.manifest.icons){

@@ -19,3 +19,7 @@ The controls for service searching/filtering, refresh and navigation are client-
 The login preview at `/?preview=login` displays a disabled OAuth button. It remains protected by Caddy Basic Auth. GitHub OAuth #180 must be implemented separately with its own numeric owner ID checks and failure tests before public authentication can change. Resident Agent remains P0 NO-GO (#33).
 
 No deploy or replacement of Basic Auth is part of this work until separate security and visual acceptance.
+
+## Approved HD branding (2026-10-17)
+
+The login and header use a local transparent high-resolution `brand.webp` (1096 × 595 RGBA WebP). Opaque background rectangles and screen blending are disallowed. The PWA uses 192/512 PNG icons, maskable 192/512 PNG icons with safe padding, the Apple touch icon and favicon. Public assets must match `control_center/web/` after Vite build. No external asset/CDN requests. The OAuth, service worker, read-only API and sandbox security boundaries are unchanged.
