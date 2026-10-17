@@ -29,7 +29,7 @@ from ops_watch.advisor_adapter import (
 from scripts.bounded_subprocess import BoundedProcessError, run_bounded
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_IMAGE = "hermes-agent-v0221-native-tool-policy:20261015"
+DEFAULT_IMAGE = "hermes-v0222-native-policy-candidate:20261016"
 MAX_INPUT_BYTES = 16_384
 MAX_STDOUT_BYTES = 64 * 1024
 MAX_STDERR_BYTES = 16 * 1024
