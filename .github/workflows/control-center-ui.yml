@@ -54,19 +54,6 @@ jobs:
           npm run check
           npm run test
           npm run build
-      - name: Temporary H15 deterministic built asset handoff
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import base64
-          for label, path in (("app", "control_center/web/app.js"),
-                              ("css", "control_center/web/style.css")):
-              encoded = base64.b64encode(Path(path).read_bytes()).decode('ascii')
-              print(f'H15_ASSET_BEGIN {label} {len(encoded)}')
-              for offset in range(0, len(encoded), 900):
-                  print('H15_ASSET', label, offset // 900, encoded[offset:offset+900])
-              print(f'H15_ASSET_END {label}')
-          PY
       - name: Compiled bundle matches committed source
         run: git diff --exit-code -- control_center/web
       - name: Production dependency vulnerability gate
@@ -86,3 +73,11 @@ jobs:
       - name: Browser checks (approved Atlas, protected GitHub login, mobile)
         working-directory: control_center/frontend
         run: npm run test:e2e
+      - name: Attach H-15 scheduler visual evidence for owner review
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: h15-codex-scheduler-screenshots
+          path: docs/ux/evidence/h15-codex-scheduler/scheduler-*.png
+          if-no-files-found: ignore
+          retention-days: 7
