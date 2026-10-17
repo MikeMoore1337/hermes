@@ -144,6 +144,22 @@ class AnalyticsTests(unittest.TestCase):
         self.assertIsNone(result["tokens"]["total"])
         self.assertEqual(result["quality"], "unknown")
 
+    def test_cached_tokens_cannot_exceed_input(self):
+        self.write(usage(10, 2, 99), usage(30, 7, 9))
+        collect(self.home, self.db, now=self.now)
+        result = self.inspect()
+        self.assertEqual(result["tokens"]["total"], 37)
+        self.assertGreaterEqual(result["invalid_events"], 1)
+        self.assertEqual(result["metric_quality"]["tokens"], "partial")
+
+    def test_session_directory_symlink_is_denied(self):
+        outside = Path(self.tmp.name) / "other_sessions"
+        outside.mkdir()
+        (self.home / "sessions").rename(self.home / "real_sessions")
+        (self.home / "sessions").symlink_to(outside, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, "sessions_symlink_denied"):
+            collect(self.home, self.db, now=self.now)
+
     def test_project_only_allowlisted_metadata(self):
         self.assertEqual(project_from_cwd("/work/your-fitness-coach"), "Your Fitness Coach")
         self.assertEqual(project_from_cwd("/home/John/unrelated"), "unattributed")
