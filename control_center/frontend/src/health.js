@@ -8,7 +8,8 @@ all:{name:"Обзор",description:"Общее состояние инфраст
 ops:{name:"Наблюдение",description:"Ops Watch, отправитель и сетевая защита"},
 research:{name:"Исследования",description:"Расписание Research Scout"},
 qa:{name:"QA и CI",description:"Наблюдение за проверками качества"},
-agent:{name:"AI Agent",description:"Политика допуска постоянного агента"}});
+agent:{name:"AI Agent",description:"Политика допуска постоянного агента"},
+codex:{name:"Лимиты AI",description:"Доступные квоты Codex"}});
 export const groupUnits=Object.freeze({ops:["news","ops","alerts","network"],research:["research"],qa:["qa"],agent:["agent"]});
 export function validSnapshot(d,now=Date.now()){
  if(!d||d.schema!==1||d.mode!=="read_only"||!Array.isArray(d.services))return false;

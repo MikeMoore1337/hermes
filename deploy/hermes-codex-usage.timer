@@ -1,0 +1,12 @@
+[Unit]
+Description=Refresh Codex usage for Hermes Control Center without inference
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=30s
+RandomizedDelaySec=10s
+Unit=hermes-codex-usage.service
+
+[Install]
+WantedBy=timers.target

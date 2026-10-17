@@ -6,11 +6,12 @@ import {ShieldCheck,LockKeyhole,Activity,RefreshCw,Search,Github,ArrowRight,
 import {groups,statuses,validSnapshot,counts,filterServices} from "./health.js";
 import "./style.css";
 import {registerPwa} from "./register-pwa.js";
+import CodexPanel from "./CodexPanel.jsx";
 
 const ISSUE33="https://github.com/MikeMoore1337/hermes/issues/33";
 const ISSUE163="https://github.com/MikeMoore1337/hermes/issues/163";
 const UI_VERSION="0.2.0";
-const nav=["all","ops","research","qa","agent"];
+const nav=["all","ops","research","qa","agent","codex"];
 const icons={news:Radio,ops:Activity,alerts:Signal,qa:ShieldCheck,
   research:Search,network:ShieldCheck,agent:LockKeyhole};
 const formatTime=t=>{const d=new Date(t);return Number.isFinite(d.getTime())?d.toLocaleString("ru-RU",{day:"2-digit",month:"long",hour:"2-digit",minute:"2-digit"}):"нет данных";};
@@ -36,7 +37,7 @@ function Header({view,setView,authMode,onLogout}){
    <div className="brand-divider" aria-hidden="true"/>
    <span className="header-subtitle">Центр наблюдения и управления <small>AI · АВТОМАТИЗАЦИЯ · КОНТРОЛЬ · БЕЗОПАСНОСТЬ</small></span>
    <div className="atlas-nav" role="navigation" aria-label="Основные разделы">
-     {nav.slice(0,4).map(k=><button key={k} className={view===k?"selected":""} onClick={()=>setView(k)}>{groups[k].name}</button>)}
+     {nav.slice(0,5).map(k=><button key={k} className={view===k?"selected":""} onClick={()=>setView(k)}>{groups[k].name}</button>)}
    </div>
    <div className="header-tools">
     <InfoBadge tone="outline"><LockKeyhole size={13}/> Только чтение</InfoBadge>
@@ -215,10 +216,10 @@ function OperatorApp({authMode,onLogout}){
     <div className="atlas-section-nav"><Nav view={view} onView={setView}/><button className="refresh-button" onClick={reload} disabled={busy}><RefreshCw size={15} className={busy?"spin":""}/> Обновить</button></div>
     {error&&<div className="inline-error" role="alert"><AlertTriangle size={17}/>{error}</div>}
     <div className="operator-grid">
-     <div className="center-area">{view==="research"&&<ResearchPanel research={snapshot?.research}/> }<Registry snapshot={snapshot} view={view} search={search} setSearch={setSearch} filter={filter} setFilter={setFilter}/>
-      <section className="context-panel"><div><span className="eyebrow">ИСТОЧНИК</span><strong>systemd · защищённый снимок</strong><p>Разрешённый список 7 компонентов, без приватных журналов и токенов.</p></div>
+     <div className="center-area">{view==="codex"?<CodexPanel/>:<>{view==="research"&&<ResearchPanel research={snapshot?.research}/>}<Registry snapshot={snapshot} view={view} search={search} setSearch={setSearch} filter={filter} setFilter={setFilter}/>{view==="all"&&<CodexPanel compact/>}</>}
+      {view!=="codex"&&<section className="context-panel"><div><span className="eyebrow">ИСТОЧНИК</span><strong>systemd · защищённый снимок</strong><p>Разрешённый список 7 компонентов, без приватных журналов и токенов.</p></div>
        <div><span className="eyebrow">РЕЖИМ</span><strong>Read-only</strong><p>Обновление интерфейса раз в минуту.</p></div>
-       <a href={ISSUE163} target="_blank" rel="noopener noreferrer">Задача разработки <ExternalLink size={14}/></a></section>
+       <a href={ISSUE163} target="_blank" rel="noopener noreferrer">Задача разработки <ExternalLink size={14}/></a></section>}
      </div>
      <SignalPanel snapshot={snapshot} error={error}/>
     </div>
