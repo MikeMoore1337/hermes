@@ -307,6 +307,13 @@ def main() -> int:
     except UsageError:
         result = error_snapshot("unavailable")
     save_snapshot(result, args.output)
+    # The existing five-minute one-shot collector is the only history writer.
+    # History errors cannot mask a valid live snapshot or damage old records.
+    try:
+        from control_center.codex_history import record
+        record(result, args.output.with_name("history.sqlite3"))
+    except (OSError, ValueError, __import__("sqlite3").Error):
+        print("codex_history_unavailable")
     return 0 if result["status"] not in ("auth_required", "unavailable") else 1
 
 
