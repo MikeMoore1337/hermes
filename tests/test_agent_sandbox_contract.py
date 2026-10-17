@@ -29,7 +29,9 @@ class SandboxContractTests(unittest.TestCase):
                 self.assertIn(expected, self.launch)
 
     def test_immutable_image_no_automatic_pull(self) -> None:
-        self.assertIn("nousresearch/hermes-agent@sha256:", self.launch)
+        self.assertIn("require_patched_agent_image", self.launch)
+        self.assertIn("require-patched-agent-image.sh", self.launch)
+        self.assertNotIn("sha256:32d095e84190ae", self.launch)
         self.assertNotIn("hermes-agent:latest", self.launch)
         self.assertNotIn("docker pull", self.launch)
 
