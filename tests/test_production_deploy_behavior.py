@@ -113,7 +113,7 @@ if a[:2] == ["is-active", "--quiet"]:
         n = int(p.read_text()) + 1 if p.exists() else 1
         p.write_text(str(n))
         sys.exit(3 if int(os.environ["MOCK_STOP_AT"]) and n >= int(os.environ["MOCK_STOP_AT"]) else 0)
-    sys.exit(3 if name in ("hermes-agent-sandbox.service", "hermes-cloudflare-proxy.service") else 0)
+    sys.exit(3 if name.endswith(".service") else 0)
 if a == ["restart", "hermes-control-center.service"]:
     p = pathlib.Path(os.environ["MOCK_RESTART_COUNT"])
     n = int(p.read_text()) + 1 if p.exists() else 1
