@@ -131,6 +131,20 @@ class OwnerReportTests(unittest.TestCase):
             target.write_text(json.dumps(packet()), encoding="utf-8")
             self.assertEqual(read_owner_view(target)["availability"], "AVAILABLE")
 
+    def test_snapshot_import_without_pythonpath_from_other_working_directory(self):
+        # Production startup had a different import path than the preflight
+        # runuser check with explicit PYTHONPATH. Reproduce missing cwd imports.
+        import subprocess
+        import sys
+        source = Path(__file__).resolve().parents[1] / "control_center" / "snapshot.py"
+        with tempfile.TemporaryDirectory() as temp:
+            result = subprocess.run(
+                [sys.executable, "-I", "-c",
+                 "import runpy;runpy.run_path(" + repr(str(source)) + ", run_name='import_only')"],
+                cwd=temp, capture_output=True, text=True, timeout=10,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_existing_snapshot_collector_adds_read_only_reports(self):
         def fake_systemctl(argv, **kwargs):
             return type("Proc", (), {"returncode": 0, "stdout": "LoadState=loaded\nActiveState=active\n"})()
