@@ -188,7 +188,7 @@ def docker_command(path: Path, image: str, prompt: str) -> list[str]:
 def model_once(image: str, context: dict[str, object]) -> dict[str, object]:
     prompt = build_prompt(context)
     try:
-        with tempfile.TemporaryDirectory(prefix="h01-ops-") as raw:
+        with tempfile.TemporaryDirectory(prefix="fixture-", dir=STATE) as raw:
             path = Path(raw)
             stage_fixture(path)
             proc = run_bounded(
