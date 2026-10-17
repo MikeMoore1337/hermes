@@ -144,16 +144,23 @@ def read(path: Path = DEFAULT_HISTORY, *, now: datetime | None = None,
     try:
         with sqlite3.connect(uri, uri=True, timeout=2) as db:
             rows = db.execute("SELECT record_json FROM samples WHERE observed_at>=? "
-                              "ORDER BY observed_at DESC,id DESC LIMIT ?", (since, limit)).fetchall()
+                              "ORDER BY observed_at DESC,id DESC LIMIT ?", (since, MAX_SAMPLES)).fetchall()
             changes = db.execute("SELECT observed_at,previous_status,current_status "
                                  "FROM transitions WHERE observed_at>=? "
                                  "ORDER BY observed_at DESC,id DESC LIMIT 50", (since,)).fetchall()
             recent = db.execute("SELECT observed_at FROM samples WHERE status IN "
                                 "('available','low','limited','exhausted') "
                                 "ORDER BY observed_at DESC,id DESC LIMIT 1").fetchone()
+        samples = list(reversed([json.loads(item[0]) for item in rows]))
+        # Representative samples across the requested interval, not only the
+        # newest 500. State transitions are returned separately and unabridged
+        # up to their documented endpoint bound.
+        if len(samples) > limit:
+            samples = [samples[round(i * (len(samples) - 1) / (limit - 1))]
+                       for i in range(limit)] if limit > 1 else samples[-1:]
         return {
             "schema": 1,
-            "samples": list(reversed([json.loads(item[0]) for item in rows])),
+            "samples": samples,
             "transitions": [{"observed_at": at, "previous": previous, "current": current}
                             for at, previous, current in changes],
             "last_successful_at": recent[0] if recent else None,
