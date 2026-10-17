@@ -82,6 +82,10 @@ memory:
   user_profile_enabled: false
 """
     (directory / "config.yaml").write_text(config, encoding="utf-8")
+    # TemporaryDirectory creates 0700; nonroot Linux container UID 10000
+    # cannot traverse that bind mount unless we explicitly allow traversal.
+    # Only synthetic config and source are staged, never credentials.
+    directory.chmod(0o755)
 
 
 def docker_command(staging: Path, image: str, prompt: str) -> list[str]:
