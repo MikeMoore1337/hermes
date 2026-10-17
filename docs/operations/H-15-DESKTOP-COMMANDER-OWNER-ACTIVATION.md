@@ -13,7 +13,7 @@
     sudo bash deploy/h15-desktop-commander-setup.sh prepare
     sudo bash deploy/h15-desktop-commander-setup.sh local
 
-prepare создаёт изолированного пользователя hermes-desktop, устанавливает Node-пакеты @wonderwhy-er/desktop-commander@0.2.52 и mcp-remote@0.13.5 в его собственный каталог без запуска npm от root. Устанавливает unit templates, но не включает службу. Нужны Node.js >= 18 и npm. Системные пакеты, H-01, Caddy, Second Brain, YFC и Codex не изменяет.
+prepare создаёт изолированного пользователя hermes-desktop, устанавливает Node-пакеты @wonderwhy-er/desktop-commander@0.2.52 и mcp-remote@0.13.5 в его собственный каталог без запуска npm от root. Устанавливает unit templates, но не включает службу. Нужны Node.js >= 22.12.0 и npm. Установщик проверяет фактическую версию под `hermes-desktop`, а npm запускается с `--engine-strict`, чтобы несовместимые зависимости не устанавливались с предупреждениями. Если системный Node.js старше, отдельно обновить ветку 22.x из официального репозитория NodeSource, предварительно просмотрев `apt-get -s install nodejs`. Системные пакеты, H-01, Caddy, Second Brain, YFC и Codex не изменяет.
 
 local вызывает только initialize и tools/list. Список инструментов НЕ означает право их фактического выполнения агентом. Ожидается LOCAL_MCP_TOOLS_LIST=PASS.
 
