@@ -147,7 +147,7 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
                         "Duplicate callback code or state": "duplicate_code_or_state",
                         "Cross-browser OAuth state": "state_cookie_mismatch",
                         "Used or expired OAuth state": "state_missing_or_expired",
-                        "OAuth provider identity lookup failed": "broker_denied",
+                        "OAuth provider identity lookup failed": "github_provider_denied",
                         "Owner ID denied": "owner_denied",
                         "Invalid OAuth state": "state_invalid",
                         "Invalid OAuth code": "code_invalid",
@@ -208,9 +208,15 @@ def main():
     args = parser.parse_args()
     supplied = load_runtime_credentials("web.env")
     config = AuthConfig.from_env(supplied) if supplied is not None else AuthConfig.from_env()
-    # Credentialed Github mode must explicitly exist in systemd credential directory.
-    if config.mode == "github" and supplied is None:
-        raise AuthError("GitHub auth mode requires systemd LoadCredential")
+    if config.mode == "github":
+        if supplied is None:
+            raise AuthError("GitHub auth mode requires systemd LoadCredential")
+        # Both files are provided by systemd; never inject the GitHub secret
+        # into the web process command line or environment.
+        identity = load_runtime_credentials("broker.env")
+        if identity is None:
+            raise AuthError("Direct GitHub OAuth requires identity credential")
+        config = AuthConfig.from_direct_credentials(supplied, identity)
 
     server = ThreadingHTTPServer(
         ("127.0.0.1", args.port), make_handler(auth_config=config))
