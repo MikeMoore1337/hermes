@@ -17,6 +17,8 @@ from control_center.snapshot import DEFAULT_OUTPUT
 from control_center.codex_usage import DEFAULT_OUTPUT as CODEX_OUTPUT, read_snapshot, UsageError
 from control_center.codex_history import read as read_codex_history
 from control_center.codex_policy import decision as codex_decision
+from codex_scheduler.core import DEFAULT_DB as SCHEDULER_DB
+from codex_scheduler.status import read_status as read_scheduler_status, StatusUnavailable
 from control_center.credentials import load_runtime_credentials
 from control_center.auth import (
     AuthConfig, AuthError, OAuthService, ORIGIN,
@@ -50,6 +52,7 @@ CSP = ("default-src 'none'; script-src 'self'; style-src 'self'; "
 
 def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
                  codex_path: Path = CODEX_OUTPUT,
+                 scheduler_path: Path = SCHEDULER_DB,
                  auth_config: AuthConfig | None = None, oauth_service: OAuthService | None = None):
     config = auth_config if auth_config is not None else AuthConfig.from_env()
     oauth = oauth_service if oauth_service is not None else (
@@ -208,6 +211,24 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
                         data = None
                     if path.endswith("/policy"):
                         data = codex_decision(data, threshold_percent=option)
+                return self.respond(200, "application/json; charset=utf-8",
+                                    json.dumps(data, separators=(",", ":")).encode())
+            if path in ("/api/codex/tasks", "/control-center/api/codex/tasks"):
+                if parsed.query:
+                    return self.respond(404, "text/plain", b"Not found")
+                if config.mode == "github" and not oauth.authenticated(
+                        self._cookie(SESSION_COOKIE)):
+                    return self.respond(401, "application/json",
+                                        b'{"error":"authentication_required"}')
+                try:
+                    try:
+                        quota = read_snapshot(codex_path)
+                    except UsageError:
+                        quota = None
+                    data = read_scheduler_status(scheduler_path, quota_snapshot=quota)
+                except StatusUnavailable:
+                    return self.respond(503, "application/json",
+                                        b'{"error":"scheduler_unavailable"}')
                 return self.respond(200, "application/json; charset=utf-8",
                                     json.dumps(data, separators=(",", ":")).encode())
             if path in ("/api/overview", "/control-center/api/overview"):
