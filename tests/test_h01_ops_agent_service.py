@@ -9,6 +9,8 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from ops_watch.incident_advisor import SCENARIOS
+from ops_watch import advisor_adapter
+from ops_watch.incident_preview import TITLES, ACTIONS, resolved_title, resolved_action
 from scripts import h01_ops_agent_service as agent
 
 
@@ -73,6 +75,28 @@ class H01OpsContractTests(unittest.TestCase):
                 outcome = agent.run()
             self.assertEqual(outcome["status"], "NO_ADVISOR_CANDIDATE")
             provider.assert_not_called()
+
+    def test_codex_quota_transitions_are_rules_only_not_model_requests(self):
+        rows = [
+            {"id": 8, "fingerprint": "ops:codex_exhausted", "phase": "new",
+             "severity": "warning", "title": TITLES["codex_exhausted"],
+             "action": ACTIONS["codex_exhausted"],
+             "created_at": "2026-10-17T21:12:15Z"},
+            {"id": 9, "fingerprint": "ops:codex_exhausted", "phase": "resolved",
+             "severity": "resolved", "title": resolved_title("codex_exhausted"),
+             "action": resolved_action("codex_exhausted"),
+             "created_at": "2026-10-17T21:25:26Z"},
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(agent, "STATE", Path(tmp) / "agent"), \
+                 patch.object(agent, "verify_host"), \
+                 patch.object(agent, "verify_credentials"), \
+                 patch.object(agent, "safe_image", return_value="sha256:" + "a" * 64), \
+                 patch.object(advisor_adapter, "inspect", return_value=rows), \
+                 patch.object(agent, "model_once") as model:
+                result = agent.run()
+        self.assertEqual(result["status"], "NO_ADVISOR_CANDIDATE")
+        model.assert_not_called()
 
     def test_event_is_reserved_before_call_and_never_repeated(self):
         with tempfile.TemporaryDirectory() as tmp:

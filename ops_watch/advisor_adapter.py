@@ -13,7 +13,7 @@ from typing import Any
 
 from .core import INCIDENT_CODES, InputError
 from .incident_advisor import INPUT_SCHEMA, prepare_context
-from .incident_preview import ACTIONS, CRITICAL, TITLES
+from .incident_preview import ACTIONS, CRITICAL, TITLES, resolved_action, resolved_title
 from .state_store import inspect
 
 ADAPTER_SCHEMA = "hermes-ops-watch-advisor-event-v1"
@@ -43,7 +43,16 @@ CODE_MAPPING: dict[str, tuple[str, str, str, str]] = {
     "alert_sender_disabled": ("telegram_sender_failure", "ALERT_SENDER_DISABLED", "unhealthy", "alert-sender"),
     "alert_sender_inactive": ("telegram_sender_failure", "ALERT_SENDER_INACTIVE", "unhealthy", "alert-sender"),
     "alert_sender_failed": ("telegram_sender_failure", "TELEGRAM_SEND_TIMEOUT", "unhealthy", "alert-sender"),
+    # Subscription telemetry is an Ops Watch signal, not a request to invoke H-01.
+    "codex_low": ("provider_rate_limited", "CODEX_QUOTA_LOW", "degraded", "codex-usage"),
+    "codex_exhausted": ("provider_rate_limited", "CODEX_QUOTA_EXHAUSTED", "degraded", "codex-usage"),
+    "codex_auth_required": ("monitoring_stale", "CODEX_AUTH_REQUIRED", "unknown", "codex-usage"),
+    "codex_stale": ("monitoring_stale", "CODEX_QUOTA_STALE", "unknown", "codex-usage"),
 }
+
+# New stable Ops codes must never crash the active H-01 timer during projection.
+if set(CODE_MAPPING) != INCIDENT_CODES:
+    raise RuntimeError("advisor_code_mapping_incomplete")
 
 
 class AdvisorAdapterError(ValueError):
@@ -82,8 +91,8 @@ def _row(row: Mapping[str, Any]) -> dict[str, Any]:
         "critical" if code in CRITICAL else "warning"
     )
     if phase == "resolved":
-        expected_title = "Восстановлено: " + expected_title
-        expected_action = "Дополнительные действия не требуются"
+        expected_title = resolved_title(code)
+        expected_action = resolved_action(code)
         expected_severity = "resolved"
     if (phase not in {"new", "resolved"} or row["severity"] != expected_severity
             or row["title"] != expected_title or row["action"] != expected_action):

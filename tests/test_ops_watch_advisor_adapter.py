@@ -16,7 +16,7 @@ from ops_watch.advisor_adapter import (
     rules_assessment,
 )
 from ops_watch.core import InputError
-from ops_watch.incident_preview import ACTIONS, CRITICAL, TITLES
+from ops_watch.incident_preview import ACTIONS, CRITICAL, TITLES, resolved_action, resolved_title
 from ops_watch.state_store import persist
 
 NOW = datetime(2026, 10, 15, 12, tzinfo=UTC)
@@ -37,8 +37,8 @@ class OpsWatchAdvisorAdapterTests(unittest.TestCase):
             "severity": "resolved" if resolved else (
                 "critical" if code in CRITICAL else "warning"
             ),
-            "title": ("Восстановлено: " if resolved else "") + TITLES[code],
-            "action": "Дополнительные действия не требуются" if resolved else ACTIONS[code],
+            "title": resolved_title(code) if resolved else TITLES[code],
+            "action": resolved_action(code) if resolved else ACTIONS[code],
             "created_at": NOW.isoformat(),
         }
 
@@ -71,6 +71,39 @@ class OpsWatchAdvisorAdapterTests(unittest.TestCase):
         self.assertEqual(recovered["event"]["service_state"], "healthy")
         self.assertEqual(recovered["analysis"]["decision"], "RULES_ONLY")
         self.assertEqual(rules_assessment(recovered)["status"], "resolved")
+
+    def test_all_ops_codes_are_mapped_before_h01_claims_any_event(self) -> None:
+        from ops_watch.core import INCIDENT_CODES
+        self.assertEqual(set(adapter.CODE_MAPPING), INCIDENT_CODES)
+        for code in sorted(INCIDENT_CODES):
+            for phase in ("new", "resolved"):
+                with self.subTest(code=code, phase=phase):
+                    item = self.read(
+                        [self.row(10, code, phase)], provenance="readonly_snapshot",
+                    )[0]
+                    expected = ("ADVISOR_CANDIDATE"
+                                if phase == "new" and code in {
+                                    "drain_failures", "outbox_backlog",
+                                    "outbox_oldest", "worker_unhealthy"
+                                } else "RULES_ONLY")
+                    self.assertEqual(item["analysis"]["decision"], expected)
+                    self.assertEqual(item["event"]["technical_metadata"]["component"],
+                                     adapter.CODE_MAPPING[code][3])
+                    self.assertEqual(item["event"]["recovery_state"],
+                                     "recovered" if phase == "resolved" else "active")
+
+    def test_codex_quota_exhausted_and_recovery_never_trigger_model(self) -> None:
+        rows = [
+            self.row(3, "codex_exhausted", "resolved"),
+            self.row(2, "codex_exhausted", "new"),
+            self.row(1, "codex_low", "new"),
+        ]
+        adapted = self.read(rows, provenance="readonly_snapshot")
+        self.assertEqual([x["analysis"]["decision"] for x in adapted],
+                         ["RULES_ONLY"] * len(rows))
+        self.assertEqual(adapted[1]["event"]["error_code"], "CODEX_QUOTA_EXHAUSTED")
+        self.assertEqual(adapted[0]["event"]["error_code"], "RECOVERY_CONFIRMED")
+        self.assertTrue(resolved_title("codex_exhausted").startswith("Снят сигнал:"))
 
     def test_multiple_events_and_repeat_reads_are_bounded(self) -> None:
         rows = [self.row(2, "outbox_backlog"), self.row(1, "provider_rate_limited")]
