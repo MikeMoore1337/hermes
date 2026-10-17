@@ -9,8 +9,8 @@ import unittest
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-from codex_scheduler import Approval, Scheduler
-from codex_scheduler.status import read_status, StatusUnavailable
+from control_center.codex_scheduler import Approval, Scheduler
+from control_center.codex_scheduler_status import read_status, StatusUnavailable
 from control_center.auth import AuthConfig
 from control_center.codex_usage import normalize, save_snapshot
 from control_center.server import make_handler
