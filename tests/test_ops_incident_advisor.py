@@ -194,6 +194,8 @@ class IncidentAdvisorTests(unittest.TestCase):
                 docker_command(Path(directory), "hermes-agent-v0221-native-tool-policy:20261015", "prompt")
             )
             config = (Path(directory) / "config.yaml").read_text(encoding="utf-8")
+            # Necessary on Linux: Docker bind mount is accessed by UID 10000.
+            self.assertEqual(Path(directory).stat().st_mode & 0o777, 0o755)
         self.assertIn("api_max_retries: 1", config)
         self.assertIn("-t bot_room", command)
         self.assertNotIn('-t ""', command)
