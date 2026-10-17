@@ -28,7 +28,8 @@ UNITS = (
     ("qa", "QA Advisor", "hermes-qa-watch.timer", "schedule"),
     ("research", "Research Scout", "hermes-research-scout.timer", "schedule"),
     ("network", "Защита сети", "hermes-cloudflare-network-guard.service", "service"),
-    ("agent", "Постоянный AI Agent", "hermes-agent-sandbox.service", "restricted"),
+    ("agent_bounded", "H-01 Ops AI (ограниченный)", "hermes-h01-ops-agent.timer", "schedule"),
+    ("agent", "Полный AI Agent (без допуска)", "hermes-agent-sandbox.service", "restricted"),
 )
 ALLOWED = {"active", "inactive", "failed", "unknown", "blocked", "unexpected_active"}
 
@@ -61,6 +62,10 @@ def collect(runner=subprocess.run, now=None) -> dict:
             state = "unexpected_active" if state == "active" else "blocked"
         services.append({"id": ident, "name": label, "unit": unit,
                          "kind": kind, "state": state})
+    bounded_state = next(x["state"] for x in services if x["id"] == "agent_bounded")
+    policy = ("Ограниченный H-01 Ops AI: расписание активно. " if bounded_state == "active"
+              else "Ограниченный H-01 Ops AI: расписание не подтверждено. ")
+    policy += "Полный AI Agent не допущен; успешность полезного цикла не доказана."
     return {
         "schema": 1,
         "generated_at": time.isoformat().replace("+00:00", "Z"),
@@ -68,7 +73,9 @@ def collect(runner=subprocess.run, now=None) -> dict:
         "mode": "read_only",
         "services": services,
         "research": read_owner_view(),
-        "agent_policy": "NO-GO: эксплуатационный допуск постоянного агента не подтверждён",
+        "agent_policy": policy,
+        "agent_runtime": {"scope": "bounded_event_driven", "scheduler_state": bounded_state,
+                          "last_useful_cycle": "unknown", "full_agent_allowed": False},
     }
 
 
