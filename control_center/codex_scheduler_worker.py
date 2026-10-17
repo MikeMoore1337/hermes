@@ -10,13 +10,15 @@ import argparse
 import hashlib
 import json
 import os
+import shutil
+import time
 from pathlib import Path
 import sqlite3
 import stat
 import sys
 
 from .codex_scheduler import (
-    Approval, DEFAULT_DB, Scheduler, QuotaWorker, ValidationError,
+    Approval, DEFAULT_DB, Scheduler, QuotaWorker, ValidationError, _utc,
 )
 from .codex_scheduler_executor import OfficialCodexExecutor
 from .codex_usage import DEFAULT_OUTPUT, read_snapshot
@@ -126,6 +128,24 @@ def _bind_manifest(scheduler: Scheduler, approval: Approval,
     scheduler.submit(task)
 
 
+
+def host_ready() -> bool:
+    """Read-only resource admission; preserve #33's memory and load headroom."""
+    try:
+        fields = {}
+        for line in Path("/proc/meminfo").read_text(encoding="ascii").splitlines():
+            parts = line.split()
+            if len(parts) >= 2 and parts[0].endswith(":"):
+                fields[parts[0][:-1]] = int(parts[1])
+        available_mib = fields["MemAvailable"] // 1024
+        used_swap_mib = max(0, fields["SwapTotal"] - fields["SwapFree"]) // 1024
+        disk_free_mib = shutil.disk_usage(STATE_DIR).free // (1024 * 1024)
+        return (available_mib >= 1056 and used_swap_mib <= 1024
+                and os.getloadavg()[0] <= 1.5 and disk_free_mib >= 5120)
+    except (OSError, KeyError, ValueError):
+        return False
+
+
 def _artifact_directory() -> Path:
     ARTIFACT_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
     if ARTIFACT_DIR.is_symlink() or ARTIFACT_DIR.stat().st_mode & 0o077:
@@ -141,6 +161,8 @@ def run_once(config_path: Path, *, uid: int = 0, run: bool = False) -> dict:
     # Both --run and independently administered enabled=true are mandatory.
     if not conf["enabled"]:
         return {"mode": "disabled"}
+    if not host_ready():
+        return {"mode": "deferred", "reason": "host_capacity"}
     root_paths = {name: Path(value) for name, value in conf["repository_roots"].items()}
     if any(not root.is_dir() for root in root_paths.values()):
         raise ValidationError("repository_missing")
@@ -162,6 +184,8 @@ def run_once(config_path: Path, *, uid: int = 0, run: bool = False) -> dict:
                 raise ValidationError("grant_manifest_changed")
     instructions = {}
     for approval, task, prompt, digest in manifests:
+        if _utc(approval.expires_at) <= time.time() or _utc(task["expires_at"]) <= time.time():
+            continue
         _bind_manifest(scheduler, approval, task, digest)
         instructions[approval.approval_id] = prompt
     # Recover ambiguous prior execution, but never replay it automatically.
