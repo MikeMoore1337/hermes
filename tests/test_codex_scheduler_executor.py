@@ -63,6 +63,34 @@ class OfficialAdapterTests(TestCase):
                          b"Review approved synthetic issue.")
 
     @patch("control_center.codex_scheduler_executor.subprocess.Popen")
+    def test_successful_jsonl_is_durable_before_receipt(self, popen):
+        process = MagicMock()
+        process.returncode = 0
+
+        def simulate(*, input, timeout):
+            output = popen.call_args.kwargs["stdout"]
+            output.write(b'{"type":"item.completed","summary":"synthetic"}\n')
+            output.flush()
+
+        process.communicate.side_effect = simulate
+        popen.return_value = process
+        artifacts = Path(self.temp.name) / "artifacts"
+        artifacts.mkdir(mode=0o700)
+        adapter = OfficialCodexExecutor(
+            repo_roots={"MikeMoore1337/hermes": self.repo},
+            approved_instructions={"approved-task-1234": "Review synthetic only."},
+            codex_home=self.home, binary=self.binary,
+            enabled=True, artifact_dir=artifacts)
+        jid = "12345678-1111-2222-3333-123456789abc"
+        success, receipt = adapter.execute({**self.job, "job_id": jid})
+        self.assertTrue(success)
+        self.assertTrue(receipt.startswith("artifact:" + jid + ":"))
+        stored = list(artifacts.glob("*.jsonl"))
+        self.assertEqual(len(stored), 1)
+        self.assertIn(b"synthetic", stored[0].read_bytes())
+        self.assertEqual(stored[0].stat().st_mode & 0o777, 0o600)
+
+    @patch("control_center.codex_scheduler_executor.subprocess.Popen")
     def test_unapproved_plan_and_unknown_operations_refused(self, popen):
         malformed = {**self.job, "approval_id": "unknown-approval-01"}
         with self.assertRaises(ValidationError):
