@@ -240,7 +240,9 @@ def main() -> int:
     args = parser.parse_args()
     try:
         result = run_once(args.config, run=args.run)
-        if args.run:
+        # Disabled mode must be safe before systemd StateDirectory exists.
+        # In particular, `--run` with enabled=false must not write to /var/lib.
+        if args.run and result["mode"] != "disabled":
             publish_worker_status(result["mode"])
         print(json.dumps(result, sort_keys=True))
         return 0

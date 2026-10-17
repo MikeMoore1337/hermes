@@ -86,6 +86,21 @@ class WorkerRuntimeTests(unittest.TestCase):
         self.assertEqual(self.invoke(True), {"mode": "disabled"})
         self.assertFalse(self.db.exists())
 
+    def test_disabled_cli_run_does_not_touch_missing_state_directory(self):
+        from contextlib import redirect_stdout
+        import io
+        output = io.StringIO()
+        with patch.object(worker.sys, "argv",
+                          ["codex_scheduler_worker", "--config", str(self.conf), "--run"]), \
+             patch.object(worker, "run_once", return_value={"mode": "disabled"}) as execute, \
+             patch.object(worker, "publish_worker_status") as heartbeat, \
+             redirect_stdout(output):
+            self.assertEqual(worker.main(), 0)
+        execute.assert_called_once_with(self.conf, run=True)
+        heartbeat.assert_not_called()
+        self.assertEqual(json.loads(output.getvalue()), {"mode": "disabled"})
+        self.assertFalse(self.db.exists())
+
     def test_live_gate_with_missing_quota_never_runs_model(self):
         self.grant()
         self.config["enabled"] = True
