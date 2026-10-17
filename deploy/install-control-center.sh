@@ -17,6 +17,9 @@ stamp=$(date -u +%Y%m%dT%H%M%SZ)
 release="/opt/hermes-control-center/releases/$stamp"
 install -d -o root -g root -m 0755 "$release/control_center/web"
 install -m 0644 "$source_dir/control_center/"*.py "$release/control_center/"
+# The snapshot collector imports the strictly offline Research Scout report view.
+cp -a "$source_dir/research_scout" "$release/research_scout"
+find "$release/research_scout" -type f -name '*.py' -exec chmod 0644 {} +
 install -m 0644 "$source_dir/control_center/web/"* "$release/control_center/web/"
 ln -s "$release" "/opt/hermes-control-center/current.new"
 mv -Tf "/opt/hermes-control-center/current.new" "/opt/hermes-control-center/current"

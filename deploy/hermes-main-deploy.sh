@@ -171,6 +171,8 @@ done
 mkdir -m 0755 "$ui_release"
 ui_created=yes
 cp -a -- "$release/control_center" "$ui_release/"
+# H-03 owner review consumes the existing read-only Research Scout packet.
+cp -a -- "$release/research_scout" "$ui_release/"
 chown -R root:root "$ui_release"
 chmod -R a+rX,go-w "$ui_release"
 runuser -u hermes-control -- env PYTHONPATH="$ui_release" python3 -c 'import control_center.server'

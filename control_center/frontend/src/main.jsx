@@ -90,6 +90,57 @@ function Registry({snapshot,view,search,setSearch,filter,setFilter}){
   <p className="registry-disclaimer">Активный таймер означает, что он запущен в systemd, но не доказывает успешность последнего задания.</p>
  </section>;
 }
+function ResearchPanel({research}){
+ const reports=research?.curated_reports||[];
+ const packets=research?.items||[];
+ const availability=research?.availability||"UNAVAILABLE";
+ return <section className="registry-panel research-panel" aria-label="Исследования Research Scout">
+  <div className="panel-head"><div><span className="eyebrow">H-03 / RESEARCH SCOUT</span>
+   <h2>Научные исследования</h2>
+   <p>Первоисточники, статус проверок и осторожные обзоры без автопубликации.</p></div>
+   <InfoBadge tone="muted">Только чтение</InfoBadge></div>
+  <div className="science-overview">
+   <div><small>ПОСЛЕДНИЙ СБОР</small><strong>{availability==="AVAILABLE"?(research.status||"UNKNOWN"):"Нет данных"}</strong>
+    <span>{research?.observed_at?formatTime(research.observed_at):"Пакет недоступен"}</span></div>
+   <div><small>КАНДИДАТЫ</small><strong>{availability==="AVAILABLE"?packets.length:"—"}</strong>
+    <span>Метаданные Europe PMC / Crossref</span></div>
+   <div><small>РУЧНАЯ НАУЧНАЯ ОЦЕНКА</small><strong>Не завершена</strong>
+    <span>Нет подтверждения эксперта</span></div>
+  </div>
+  <h3 className="science-title">Текущие публикации</h3>
+  <p className="science-hint">Отсутствующий DOI в поисковой записи не доказывает, что его нет у статьи. HOLD никогда не означает «проверено».</p>
+  {availability==="AVAILABLE"&&packets.length?<div className="science-list">
+   {packets.map((item,i)=><div key={item.identifier+"-"+i} className="science-item">
+    <div><strong>{item.title}</strong><small>PMID/PMCID {item.identifier} · {item.publication_date||"Дата неизвестна"} · {item.doi||"DOI не получен"}</small></div>
+    <div><span className="science-status">{item.status}</span><small>{item.article_notice_state}</small></div>
+    <a href={item.source_url} target="_blank" rel="noopener noreferrer" aria-label={"Источник "+item.identifier}><ExternalLink size={17}/></a>
+   </div>)}
+  </div>:<p className="science-hint">Актуальный локальный пакет недоступен либо новых кандидатов нет.</p>}
+  <h3 className="science-title">Разобранные первоисточники</h3>
+  <p className="science-hint">Четыре разбора по проверенным публичным рефератам. Это не экспертиза полного текста, не доказательство эффективности и не рекомендации.</p>
+  <div className="science-cards">{reports.map(r=><details className="science-card" key={r.pmid}>
+   <summary><div><strong>{r.title}</strong><small>{r.journal} · {r.publication_date} · PMID {r.pmid}</small></div>
+    <span className="science-status">{r.status==="HOLD"?"HOLD / исправление":"Ручная проверка"}</span><ChevronDown size={17}/></summary>
+   <div className="science-detail">
+    <p><b>Вопрос:</b> {r.question}</p><p><b>Дизайн:</b> {r.design}</p>
+    <p><b>Выборка:</b> {r.sample_size}</p><p><b>Сравнение:</b> {r.comparison}</p>
+    <p><b>Главный результат:</b> {r.finding}</p>
+    <p><b>Подтверждено публичным рефератом:</b> {r.confirmed}</p>
+    <p><b>Не доказано:</b> {r.unconfirmed}</p><p><b>Ограничения:</b> {r.limits}</p>
+    <p><b>Практический смысл:</b> {r.application}</p>
+    <p><b>Размер эффекта:</b> {r.effect_size}; <b>статистическая неопределённость:</b> {r.statistical_uncertainty}</p>
+    <p><b>Исправления:</b> {r.correction_status}</p>
+    <p><b>Научная проверка:</b> {r.review_status}; проверено по реферату {r.checked_at}; полный текст не рецензирован.</p>
+    <div className="science-links"><a href={r.url} target="_blank" rel="noopener noreferrer">PubMed <ExternalLink size={13}/></a>
+     <a href={"https://doi.org/"+r.doi} target="_blank" rel="noopener noreferrer">DOI <ExternalLink size={13}/></a>
+     {r.correction_url&&<a href={r.correction_url} target="_blank" rel="noopener noreferrer">Исправление издателя <ExternalLink size={13}/></a>}</div>
+    <details><summary className="science-evidence">Подтверждающие факты F1-F8</summary>
+     {r.evidence.map(e=><p key={e.id}><b>{e.id}</b>: {e.abstract_paraphrase} <a href={e.url} target="_blank" rel="noopener noreferrer">Источник ↗</a></p>)}
+    </details>
+   </div>
+  </details>)}</div>
+ </section>;
+}
 function SignalPanel({snapshot,error}){
  const problems=(snapshot?.services||[]).filter(s=>["failed","unknown","unexpected_active"].includes(s.state));
  return <aside className="side-stack">
@@ -164,7 +215,7 @@ function OperatorApp({authMode,onLogout}){
     <div className="atlas-section-nav"><Nav view={view} onView={setView}/><button className="refresh-button" onClick={reload} disabled={busy}><RefreshCw size={15} className={busy?"spin":""}/> Обновить</button></div>
     {error&&<div className="inline-error" role="alert"><AlertTriangle size={17}/>{error}</div>}
     <div className="operator-grid">
-     <div className="center-area"><Registry snapshot={snapshot} view={view} search={search} setSearch={setSearch} filter={filter} setFilter={setFilter}/>
+     <div className="center-area">{view==="research"&&<ResearchPanel research={snapshot?.research}/> }<Registry snapshot={snapshot} view={view} search={search} setSearch={setSearch} filter={filter} setFilter={setFilter}/>
       <section className="context-panel"><div><span className="eyebrow">ИСТОЧНИК</span><strong>systemd · защищённый снимок</strong><p>Разрешённый список 7 компонентов, без приватных журналов и токенов.</p></div>
        <div><span className="eyebrow">РЕЖИМ</span><strong>Read-only</strong><p>Обновление интерфейса раз в минуту.</p></div>
        <a href={ISSUE163} target="_blank" rel="noopener noreferrer">Задача разработки <ExternalLink size={14}/></a></section>
