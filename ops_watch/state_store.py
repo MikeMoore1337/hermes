@@ -132,7 +132,7 @@ def persist(
             if outstanding + len(previews) > MAX_EVENTS:
                 raise InputError("outbox_full")
             when = observed.astimezone(UTC).isoformat()
-            emitted = 0
+            emitted_previews = []
             for item in previews:
                 if item["code"] in CODEX_CODES:
                     recent = db.execute(
@@ -148,7 +148,7 @@ def persist(
                         if 0 <= seconds < 1800:
                             # Prevent repeated alerts from flapping across timer runs.
                             continue
-                emitted += 1
+                emitted_previews.append(item)
                 db.execute(
                     "INSERT INTO events "
                     "(fingerprint,phase,severity,title,action,created_at) "
@@ -163,7 +163,7 @@ def persist(
                 raise InputError("current_state_oversize")
             db.execute("UPDATE state SET findings_json=? WHERE id=1", (current_json,))
             db.commit()
-            return delta, previews, event_count + emitted
+            return delta, emitted_previews, event_count + len(emitted_previews)
     except sqlite3.Error as exc:
         raise InputError("outbox_unavailable") from exc
 
