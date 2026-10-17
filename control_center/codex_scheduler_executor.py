@@ -52,10 +52,19 @@ class OfficialCodexExecutor:
             raise ValidationError("execution_scope_invalid")
         sandbox = "workspace-write" if "patch" in ops or "prepare_pr" in ops else "read-only"
         # No job JSON field is ever executed as a program or shell fragment.
+        # Production CD uses immutable git-archive releases (no .git directory).
+        # A read-only Codex canary may inspect those trusted sources; writes
+        # still require a real Git checkout rather than bypassing the CLI gate.
+        is_git_checkout = (root / ".git").exists()
+        if sandbox != "read-only" and not is_git_checkout:
+            raise ValidationError("writable_git_checkout_required")
         argv = [str(self.binary), "--ask-for-approval", "never",
                 "exec", "--json", "--sandbox", sandbox,
                 "--model", job["model"],
-                "--config", "model_reasoning_effort=" + job["effort"], "-"]
+                "--config", "model_reasoning_effort=" + job["effort"]]
+        if not is_git_checkout:
+            argv.append("--skip-git-repo-check")
+        argv.append("-")
         env = {"PATH": "/usr/local/bin:/usr/bin:/bin", "HOME": str(self.home),
                "CODEX_HOME": str(self.home), "LANG": "C.UTF-8"}
         def resources():
