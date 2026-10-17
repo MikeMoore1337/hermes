@@ -59,6 +59,8 @@ def _stage_files(directory: Path) -> None:
     package.mkdir()
     for name in ("__init__.py", "core.py", "incident_advisor.py", "mock_provider.py"):
         shutil.copyfile(ROOT / "ops_watch" / name, package / name)
+    # Empty CLI -t falls back to all default tools in v0.22.2.
+    # Explicitly choose its empty bot_room toolset; mock rejects nonempty tools.
     config = """model:
   provider: custom
   default: ops-incident-mock-v1
@@ -97,7 +99,7 @@ def docker_command(staging: Path, image: str, prompt: str) -> list[str]:
         "server=$!; sleep 0.2; "
         "/opt/hermes/.venv/bin/hermes --ignore-rules "
         "--in /tmp/hermes-home -z \"$1\" --provider custom "
-        "-m ops-incident-mock-v1 --reasoning none -t \"\"; "
+        "-m ops-incident-mock-v1 --reasoning none -t bot_room; "
         "rc=$?; count=0; "
         "if [ -f /tmp/mock-count ]; then count=$(cat /tmp/mock-count); fi; "
         "printf '\\n__MOCK_REQUESTS__:%s\\n' \"$count\"; "
