@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import json
+import time
 from pathlib import Path
 import sqlite3
 from urllib.parse import quote
@@ -52,6 +54,18 @@ def read_status(db: Path = DEFAULT_DB, *, quota_snapshot: dict | None = None) ->
     def utc(value):
         return (datetime.fromtimestamp(value, timezone.utc).isoformat(timespec="seconds")
                 .replace("+00:00", "Z") if value is not None else None)
+    # A recent worker heartbeat is advisory state, not task authorization.
+    marker = target.parent / "worker-status.json"
+    try:
+        if marker.is_file() and not marker.is_symlink() and marker.stat().st_size <= 256:
+            state = json.loads(marker.read_text(encoding="ascii"))
+            seen = state.get("checked_at") if isinstance(state, dict) else None
+            if (isinstance(state, dict) and state.get("schema") == 1
+                    and state.get("active") is True and type(seen) is int
+                    and -120 <= time.time() - seen <= 900):
+                base["execution_enabled"] = True
+    except (OSError, ValueError, UnicodeError):
+        pass
     base["queue_state"] = "available"
     base["recovery_errors"] = recovery
     base["last_successful_at"] = utc(last)
