@@ -32,6 +32,10 @@ TITLES: dict[str, str] = {
     "alert_sender_disabled": "Отключена автоматическая доставка Ops Watch",
     "alert_sender_inactive": "Неактивен таймер доставки Ops Watch",
     "alert_sender_failed": "Ошибка службы отправки уведомлений Ops Watch",
+    "codex_low": "Codex: осталось не более 20% квоты",
+    "codex_exhausted": "Codex: квота ограничена или исчерпана",
+    "codex_auth_required": "Codex: требуется повторный вход",
+    "codex_stale": "Codex: нет подтверждённых свежих данных о квоте",
 }
 CRITICAL = frozenset({
     "timer_disabled", "timer_inactive", "discovery_failures", "drain_failures",
@@ -62,7 +66,24 @@ ACTIONS: dict[str, str] = {
     "alert_sender_disabled": "Проверить автозапуск доставки без изменения службы новостей",
     "alert_sender_inactive": "Проверить журнал и состояние отправителя без перезапуска",
     "alert_sender_failed": "Проверить результат последнего запуска Telegram-отправителя",
+    "codex_low": "Просмотреть свежие окна квоты в Hermes Control Center",
+    "codex_exhausted": "Отложить новые задания Codex до подтверждённого восстановления",
+    "codex_auth_required": "Проверить официальную авторизацию Codex на VPS",
+    "codex_stale": "Проверить таймер опроса и сеть, не запускать новые задания Codex",
 }
+CODEX_CODES = frozenset({"codex_low", "codex_exhausted", "codex_auth_required", "codex_stale"})
+
+
+def resolved_title(code: str) -> str:
+    # Clearing a specific quota alarm does not necessarily mean recovery.
+    return ("Снят сигнал: " if code in CODEX_CODES else "Восстановлено: ") + TITLES[code]
+
+
+def resolved_action(code: str) -> str:
+    return ("Проверить актуальный статус Codex в Control Center"
+            if code in CODEX_CODES else "Дополнительные действия не требуются")
+
+
 if set(TITLES) != INCIDENT_CODES or set(ACTIONS) != INCIDENT_CODES:
     raise RuntimeError("incident_preview_catalog_incomplete")
 
@@ -113,7 +134,7 @@ def render(delta: Mapping[str, Any], current: list[Mapping[str, Any]]) -> list[d
     for code in resolved:
         messages.append({
             "code": code, "phase": "resolved", "severity": "resolved",
-            "title": "Восстановлено: " + TITLES[code],
-            "action": "Дополнительные действия не требуются",
+            "title": resolved_title(code),
+            "action": resolved_action(code),
         })
     return messages

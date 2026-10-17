@@ -14,6 +14,7 @@ INCIDENT_CODES = frozenset({
     "agent_guard_missing", "agent_guard_disabled", "agent_guard_inactive",
     "alert_sender_missing", "alert_sender_disabled", "alert_sender_inactive",
     "alert_sender_failed",
+    "codex_low", "codex_exhausted", "codex_auth_required", "codex_stale",
 })
 
 
@@ -164,6 +165,26 @@ def analyze(snapshot: Mapping[str, Any], *, now: datetime) -> list[dict[str, str
             found.append(_finding("ci_failed", "warning"))
         if _state(actions, "deploy", options) == "failure":
             found.append(_finding("deploy_failed", "critical"))
+    # Optional isolated Codex account telemetry, never a reset-time prediction.
+    if data.get("codex") is not None:
+        codex = _mapping(data["codex"], "codex")
+        state = _state(codex, "status", frozenset({
+            "available", "low", "limited", "exhausted", "unknown", "stale",
+            "auth_required", "unavailable", "not_configured",
+        }))
+        allowance = codex.get("ordinary_usage_allowed")
+        if allowance is not None and type(allowance) is not bool:
+            raise InputError("invalid_codex_allowance")
+        if state == "auth_required":
+            found.append(_finding("codex_auth_required", "warning"))
+        elif state in ("stale", "unavailable", "unknown") or (
+            state == "available" and allowance is not True
+        ):
+            found.append(_finding("codex_stale", "warning"))
+        elif state in ("exhausted", "limited") or allowance is False:
+            found.append(_finding("codex_exhausted", "warning"))
+        elif state == "low":
+            found.append(_finding("codex_low", "warning"))
     return found
 
 

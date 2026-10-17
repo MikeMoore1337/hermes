@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import fcntl
 import json
+import math
 import os
 import subprocess
 import tempfile
@@ -22,6 +23,7 @@ from qa_advisor.signal_store import SignalError, observed_status
 SOURCE = Path("/var/lib/hermes/state.json")
 TARGET = Path("/var/lib/hermes-agent/ops-watch")
 SCHEMA = "hermes-ops-snapshot-v1"
+CODEX_OUTPUT = Path("/var/lib/hermes-codex-usage/usage.json")
 
 
 def _state(name: str, command: str) -> bool:
@@ -187,6 +189,55 @@ def normalized(news_health: dict[str, Any], observed: datetime, *, timer_enabled
     return result
 
 
+def _codex_telemetry(path: Path = CODEX_OUTPUT, *, observed: datetime | None = None) -> dict[str, Any] | None:
+    """Read an optional sanitized local file, independent of Control Center runtime."""
+    if not path.exists() and not path.is_symlink():
+        return None
+    unavailable = {"status": "unavailable", "ordinary_usage_allowed": None}
+    try:
+        if path.is_symlink() or not path.is_file() or path.stat().st_size > 65536:
+            return unavailable
+        data = json.loads(path.read_bytes())
+        if (not isinstance(data, dict) or data.get("schema") != 1
+                or data.get("source") != "codex-app-server"
+                or data.get("status") not in (
+                    "available", "low", "limited", "exhausted", "unknown",
+                    "auth_required", "unavailable",
+                )):
+            return unavailable
+        stamp = datetime.fromisoformat(data["observed_at"].replace("Z", "+00:00"))
+        now = observed or datetime.now(UTC)
+        if stamp.tzinfo is None or not -120 <= (now.astimezone(UTC) - stamp.astimezone(UTC)).total_seconds() <= 600:
+            return {"status": "stale", "ordinary_usage_allowed": None}
+        allowed = data.get("ordinary_usage_allowed")
+        if allowed is not None and type(allowed) is not bool:
+            return unavailable
+        status = data["status"]
+        if status in ("available", "low", "limited", "exhausted"):
+            groups = data.get("limits")
+            if not isinstance(groups, list) or not 1 <= len(groups) <= 24:
+                return unavailable
+            for group in groups:
+                if not isinstance(group, dict) or group.get("status") not in ("available", "low", "exhausted"):
+                    return unavailable
+                windows = group.get("windows")
+                if not isinstance(windows, list) or not 1 <= len(windows) <= 2:
+                    return unavailable
+                for window in windows:
+                    if not isinstance(window, dict):
+                        return unavailable
+                    value = window.get("remaining_percent")
+                    if type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value <= 100:
+                        return unavailable
+                    if value == 0 and status not in ("exhausted", "limited"):
+                        return unavailable
+                if group["status"] == "exhausted" and status not in ("exhausted", "limited"):
+                    return unavailable
+        return {"status": status, "ordinary_usage_allowed": allowed}
+    except (OSError, ValueError, TypeError, KeyError, OverflowError):
+        return unavailable
+
+
 def _read_state(path: Path) -> dict[str, Any]:
     if path.is_symlink() or not path.is_file():
         raise InputError("missing_news_health")
@@ -264,6 +315,7 @@ def once(source: Path = SOURCE, target: Path = TARGET, observed: datetime | None
             alerts_timer=alerts_timer,
             alerts_service=alerts_service,
         )
+        snapshot["codex"] = _codex_telemetry(observed=now)
         findings = analyze(snapshot, now=now)
         # Separate QA reader never has Telegram credentials or access to the
         # news source. Missing/stale/denied API observations must not falsely
@@ -273,6 +325,16 @@ def once(source: Path = SOURCE, target: Path = TARGET, observed: datetime | None
         except (SignalError, OSError):
             ci = None
         previous = read_current(target)
+        # Missing/error/auth/stale data cannot resolve a confirmed quota alarm.
+        codex_unknown = snapshot["codex"] is None or snapshot["codex"]["status"] in (
+            "stale", "unavailable", "auth_required", "unknown", "not_configured",
+        )
+        if codex_unknown:
+            active = {item["code"] for item in findings}
+            for item in previous:
+                if item["code"] in ("codex_low", "codex_exhausted") and item["code"] not in active:
+                    findings.append({"code": item["code"], "severity": "warning",
+                                     "fingerprint": item["fingerprint"]})
         was_ci_failed = any(item["code"] == "ci_failed" for item in previous)
         if ci == "FAILURE" or (ci is None and was_ci_failed):
             findings.append({

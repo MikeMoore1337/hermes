@@ -162,7 +162,10 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
                                         (("Set-Cookie", clear),))
                 return self.redirect("/", (clear, cookie_header(SESSION_COOKIE, session,
                                                                  SESSION_TTL)))
-            if parsed.query not in ("", "preview=login" if path == "/" else ""):
+            if parsed.query and path not in (
+                "/api/providers/codex/policy", "/control-center/api/providers/codex/policy",
+                "/api/providers/codex/history", "/control-center/api/providers/codex/history",
+            ) and not (path == "/" and parsed.query == "preview=login"):
                 return self.respond(404, "text/plain", b"Not found")
             if path in (
                 "/api/providers/codex", "/control-center/api/providers/codex",
@@ -173,9 +176,25 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
                         self._cookie(SESSION_COOKIE)):
                     return self.respond(401, "application/json",
                                         b'{"error":"authentication_required"}')
+                if path.endswith("/history") or path.endswith("/policy"):
+                    try:
+                        args = parse_qs(parsed.query, strict_parsing=True, max_num_fields=1)
+                        key = "days" if path.endswith("/history") else "threshold"
+                        if set(args) - {key} or len(args.get(key, [])) > 1:
+                            raise ValueError("invalid_parameter")
+                        raw = args.get(key, [])
+                        if raw and (not raw[0].isascii() or not raw[0].isdigit() or len(raw[0]) > 2):
+                            raise ValueError("invalid_parameter")
+                        option = int(raw[0]) if raw else (7 if key == "days" else 20)
+                        if not (1 <= option <= 30 if key == "days" else 0 <= option <= 50):
+                            raise ValueError("invalid_parameter")
+                    except ValueError:
+                        return self.respond(400, "application/json", b'{"error":"invalid_parameter"}')
+                elif parsed.query:
+                    return self.respond(404, "text/plain", b"Not found")
                 if path.endswith("/history"):
                     try:
-                        data = read_codex_history(codex_path.with_name("history.sqlite3"))
+                        data = read_codex_history(codex_path.with_name("history.sqlite3"), days=option)
                     except (OSError, ValueError):
                         return self.respond(503, "application/json",
                                             b'{"error":"codex_history_unavailable"}')
@@ -188,7 +207,7 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
                                                 b'{"error":"codex_snapshot_invalid"}')
                         data = None
                     if path.endswith("/policy"):
-                        data = codex_decision(data)
+                        data = codex_decision(data, threshold_percent=option)
                 return self.respond(200, "application/json; charset=utf-8",
                                     json.dumps(data, separators=(",", ":")).encode())
             if path in ("/api/overview", "/control-center/api/overview"):

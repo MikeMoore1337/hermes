@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from .core import INCIDENT_CODES, InputError
-from .incident_preview import ACTIONS, CRITICAL, TITLES
+from .incident_preview import ACTIONS, CRITICAL, TITLES, resolved_action, resolved_title
 from .state_store import _connection
 
 MAX_ATTEMPTS = 5
@@ -54,8 +54,8 @@ def _verified_event(row: tuple[Any, ...]) -> dict[str, Any]:
     code = fingerprint[4:]
     if code not in INCIDENT_CODES or phase not in ("new", "resolved"):
         raise InputError("delivery_event_invalid")
-    expected_title = TITLES[code] if phase == "new" else "Восстановлено: " + TITLES[code]
-    expected_action = ACTIONS[code] if phase == "new" else "Дополнительные действия не требуются"
+    expected_title = TITLES[code] if phase == "new" else resolved_title(code)
+    expected_action = ACTIONS[code] if phase == "new" else resolved_action(code)
     expected_severity = (
         ("critical" if code in CRITICAL else "warning")
         if phase == "new" else "resolved"
