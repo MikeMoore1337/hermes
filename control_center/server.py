@@ -22,6 +22,7 @@ from control_center.codex_scheduler_status import read_status as read_scheduler_
 from control_center.desktop_commander import (DEFAULT_OUTPUT as DC_OUTPUT,
                                               read_snapshot as read_desktop_commander,
                                               CommanderError)
+from control_center.desktop_commander_history import read as read_desktop_history, HistoryError
 from control_center.credentials import load_runtime_credentials
 from control_center.auth import (
     AuthConfig, AuthError, OAuthService, ORIGIN,
@@ -174,6 +175,8 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
             if parsed.query and path not in (
                 "/api/providers/codex/policy", "/control-center/api/providers/codex/policy",
                 "/api/providers/codex/history", "/control-center/api/providers/codex/history",
+                "/api/providers/desktop-commander/history",
+                "/control-center/api/providers/desktop-commander/history",
             ) and not (path == "/" and parsed.query == "preview=login"):
                 return self.respond(404, "text/plain", b"Not found")
             if path in (
@@ -217,6 +220,34 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
                         data = None
                     if path.endswith("/policy"):
                         data = codex_decision(data, threshold_percent=option)
+                return self.respond(200, "application/json; charset=utf-8",
+                                    json.dumps(data, separators=(",", ":")).encode())
+            if path in ("/api/providers/desktop-commander/history",
+                        "/control-center/api/providers/desktop-commander/history"):
+                if config.mode == "github" and not oauth.authenticated(
+                        self._cookie(SESSION_COOKIE)):
+                    return self.respond(401, "application/json",
+                                        b'{"error":"authentication_required"}')
+                try:
+                    args = parse_qs(parsed.query, keep_blank_values=True,
+                                    strict_parsing=True, max_num_fields=2) if parsed.query else {}
+                    if set(args) - {"days"} or len(args.get("days", [])) > 1:
+                        raise ValueError("invalid_days")
+                    raw_days = args.get("days", ["7"])[0]
+                    if not raw_days.isascii() or not raw_days.isdigit() or len(raw_days) > 2:
+                        raise ValueError("invalid_days")
+                    days = int(raw_days)
+                    if not 1 <= days <= 30:
+                        raise ValueError("invalid_days")
+                except ValueError:
+                    return self.respond(400, "application/json",
+                                        b'{"error":"invalid_parameter"}')
+                try:
+                    data = read_desktop_history(
+                        desktop_commander_path.with_name("history.sqlite3"), days=days)
+                except HistoryError:
+                    return self.respond(503, "application/json",
+                                        b'{"error":"desktop_commander_history_unavailable"}')
                 return self.respond(200, "application/json; charset=utf-8",
                                     json.dumps(data, separators=(",", ":")).encode())
             if path in ("/api/providers/desktop-commander",

@@ -294,6 +294,8 @@ def main():
         except CommanderError:
             data = empty("unavailable")
         save_snapshot(data, args.output)
+        from control_center.desktop_commander_history import append
+        append(data, args.output.with_name("history.sqlite3"))
 
 
 if __name__ == "__main__":

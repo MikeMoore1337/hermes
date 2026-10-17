@@ -18,6 +18,15 @@ Control Center serves read-only /api/providers/desktop-commander and a separate
 client-side widget. The endpoint reads only /var/lib/hermes-desktop-commander/status.json.
 Data have a 15-minute TTL and exact schema; unexpected fields, credentials,
 device IDs, raw upstream responses and email are prohibited.
+The separate read-only /api/providers/desktop-commander/history?days=1|7|30
+returns at most 500 actual observation points from a 30-day SQLite journal.
+Its durable rows contain only timestamp, quota percentage, aggregate online/offline
+counts and status - no device names, IDs, OAuth data or raw provider payloads.
+Retention: 30 days / at most 3,000 observations, bounded downsampling over
+the entire requested period. Missing history is explicit, corrupt history 503.
+The Control Center widget provides selectable 24h/7d/30d quota graph, no
+synthetic reset prediction. Collector writes status.json first, then history.sqlite3;
+there is NO duplicate remote provider request for history.
 Existing GitHub owner OAuth and proxy protection apply. Web server NEVER
 contacts Remote MCP and retains its existing network deny-all sandbox.
 
@@ -67,7 +76,7 @@ services unchanged. --probe-local performs tools/list only; no execution.
 
 ## Tests / delivery / rollback
 
-    python3 -m unittest tests.test_desktop_commander -v
+    python3 -m unittest tests.test_desktop_commander tests.test_desktop_commander_history -v
     python3 -m unittest tests.test_control_center tests.test_control_center_assets -v
     node --check control_center/frontend/public/desktop-commander.js
 
