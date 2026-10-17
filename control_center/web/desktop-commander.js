@@ -41,7 +41,27 @@
   details.rel = "noopener noreferrer";
   details.textContent = "Кабинет Usage ↗";
   actions.append(refresh, details);
-  panel.append(head, description, content, actions);
+  const history = document.createElement("details");
+  history.className = "dc-history";
+  const historySummary = document.createElement("summary");
+  historySummary.textContent = "Динамика Desktop Commander";
+  const historyControls = document.createElement("div");
+  historyControls.className = "dc-history-controls";
+  const historyPeriod = document.createElement("select");
+  historyPeriod.setAttribute("aria-label", "Период истории Desktop Commander");
+  [[1, "24 часа"], [7, "7 дней"], [30, "30 дней"]].forEach(([value, label]) => {
+    const option = document.createElement("option");
+    option.value = String(value);
+    option.textContent = label;
+    if (value === 7) option.selected = true;
+    historyPeriod.append(option);
+  });
+  historyControls.append(historyPeriod);
+  const chart = document.createElement("div");
+  chart.className = "dc-chart";
+  chart.setAttribute("aria-live", "polite");
+  history.append(historySummary, historyControls, chart);
+  panel.append(head, description, content, history, actions);
   wrap.append(toggle, panel);
   document.body.append(wrap);
   let pending = false;
@@ -109,6 +129,56 @@
       refresh.disabled = false;
     }
   }
+  function chartRender(data) {
+    chart.replaceChildren();
+    const raw = data && Array.isArray(data.points) ? data.points : [];
+    const points = raw.filter(p => Number.isInteger(p.remaining_percent)
+      && p.remaining_percent >= 0 && p.remaining_percent <= 100
+      && !Number.isNaN(Date.parse(p.at)));
+    if (!points.length) {
+      chart.append(elt("p", "Для выбранного периода измерений квоты нет.", "dc-hint"));
+      return;
+    }
+    const minTime = Date.parse(points[0].at);
+    const maxTime = Date.parse(points[points.length - 1].at);
+    const ns = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(ns, "svg");
+    svg.setAttribute("viewBox", "0 0 320 110");
+    svg.setAttribute("role", "img");
+    svg.setAttribute("aria-label", "Наблюдавшийся остаток квоты Desktop Commander");
+    const line = document.createElementNS(ns, "polyline");
+    line.setAttribute("fill", "none");
+    line.setAttribute("stroke", "#7cbdff");
+    line.setAttribute("stroke-width", "2");
+    line.setAttribute("stroke-linejoin", "round");
+    line.setAttribute("points", points.map((p, index) => {
+      const t = Date.parse(p.at);
+      const x = 8 + (maxTime > minTime ? (t - minTime) / (maxTime - minTime) : 0.5) * 304;
+      const y = 10 + (100 - p.remaining_percent) * 0.9;
+      return x.toFixed(2) + "," + y.toFixed(2);
+    }).join(" "));
+    svg.append(line);
+    chart.append(svg);
+    chart.append(elt("p", points.length + " измерений квоты · последнее: " +
+      points[points.length - 1].remaining_percent + "%", "dc-hint"));
+    const latest = raw[raw.length - 1];
+    if (latest) chart.append(elt("p",
+      "Последнее наблюдение устройств: онлайн " + latest.online +
+      ", офлайн " + latest.offline, "dc-hint"));
+  }
+  async function historyLoad() {
+    chart.replaceChildren(elt("p", "Загрузка истории…", "dc-hint"));
+    try {
+      const response = await fetch("/api/providers/desktop-commander/history?days=" +
+        historyPeriod.value, {cache: "no-store", credentials: "same-origin"});
+      if (!response.ok) throw new Error("unavailable");
+      chartRender(await response.json());
+    } catch (_) {
+      chart.replaceChildren(elt("p", "История пока недоступна.", "dc-error"));
+    }
+  }
+  history.addEventListener("toggle", () => { if (history.open) historyLoad(); });
+  historyPeriod.addEventListener("change", () => { if (history.open) historyLoad(); });
   function setOpen(open) {
     panel.hidden = !open;
     toggle.setAttribute("aria-expanded", String(open));
