@@ -67,7 +67,7 @@ if [[ -r "$state" && "$(cat "$state")" == "$sha" && \
       "$(readlink -f "$ui/current")" == "$ui/releases/main-$sha" ]] && \
       grep -Fxq "SHA=$sha" "$base/releases/main-$sha/.deployment-receipt.txt" && \
       systemctl is-active --quiet hermes-control-center.service && \
-      [[ "$(curl -fsS --max-time 5 --noproxy '*' http://127.0.0.1:9133/healthz 2>/dev/null)" == ok ]]; then
+      [[ "$(curl -fsS --max-time 5 --noproxy '*' --max-redirs 0 --write-out '%{http_code}' http://127.0.0.1:9133/healthz 2>/dev/null)" == ok200 ]]; then
   echo "ALREADY_DEPLOYED=$sha"
   exit 0
 fi
