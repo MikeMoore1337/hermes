@@ -5,6 +5,7 @@ operation, not something a task payload or quota snapshot can provide.
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
@@ -119,7 +120,8 @@ class Scheduler:
         self.owner_identity = owner_identity
         self.clock = clock
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self):
         if self.db.is_symlink() or self.db.parent.is_symlink():
             raise ValidationError("database_symlink")
         self.db.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -130,7 +132,10 @@ class Scheduler:
         conn.execute("PRAGMA synchronous=FULL")
         if os.name == "posix":
             os.chmod(self.db, 0o600)
-        return conn
+        try:
+            yield conn
+        finally:
+            conn.close()
 
     def initialize(self) -> None:
         with self._connect() as c:
