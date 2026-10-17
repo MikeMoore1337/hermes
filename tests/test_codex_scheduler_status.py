@@ -20,6 +20,13 @@ REPO = "MikeMoore1337/hermes"
 RESOURCES = {"max_runtime_seconds": 30, "max_memory_mb": 256, "max_output_bytes": 4096}
 
 
+def _decode(raw):
+    try:
+        return json.loads(raw)
+    except ValueError:
+        return {}
+
+
 class NoOAuth:
     def authenticated(self, value):
         return False
@@ -60,9 +67,9 @@ class QueueStatusTests(unittest.TestCase):
                       headers={"Host": "hermes.mikemoore.top"}, method=method)
         try:
             with urlopen(req, timeout=3) as response:
-                return response.status, json.loads(response.read() or "{}")
+                return response.status, _decode(response.read())
         except HTTPError as error:
-            return error.code, json.loads(error.read() or "{}")
+            return error.code, _decode(error.read())
 
     def test_missing_db_not_mistaken_for_live_worker(self):
         base = read_status(self.db)
