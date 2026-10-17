@@ -7,6 +7,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from .incident_advisor import mock_result, prepare_context
 
+# Hermes v0.22.2 can send a large system prompt even with zero native tools.
+MAX_BOUNDED_REQUEST_BYTES = 256 * 1024
+
 
 def _reply(handler: BaseHTTPRequestHandler, status: int, payload: dict[str, object]) -> None:
     body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
@@ -77,7 +80,7 @@ class _Handler(BaseHTTPRequestHandler):
             return
         try:
             length = int(self.headers.get("Content-Length", "0"))
-            if not 0 < length <= 32_768:
+            if not 0 < length <= MAX_BOUNDED_REQUEST_BYTES:
                 raise ValueError
             payload = json.loads(self.rfile.read(length))
             messages = payload.get("messages")
