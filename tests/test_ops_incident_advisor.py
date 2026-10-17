@@ -184,6 +184,8 @@ class IncidentAdvisorTests(unittest.TestCase):
             )
             config = (Path(directory) / "config.yaml").read_text(encoding="utf-8")
         self.assertIn("api_max_retries: 1", config)
+        self.assertIn("-t bot_room", command)
+        self.assertNotIn('-t ""', command)
         self.assertIn("auto_recovery_cycles: 0", config)
         self.assertIn("enabled: false", config)
         for expected in (
