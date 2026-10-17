@@ -156,6 +156,16 @@ class HistoryTests(unittest.TestCase):
         record(quota(when=NOW+timedelta(days=31)), self.db)
         self.assertEqual(len(read(self.db, now=NOW+timedelta(days=31))["samples"]), 1)
 
+    def test_long_history_samples_cover_entire_requested_month(self):
+        for hour in range(600):
+            record(quota(primary=30 if hour % 2 else 31,
+                         when=NOW+timedelta(hours=hour)), self.db)
+        data = read(self.db, now=NOW+timedelta(hours=600), days=30)
+        self.assertEqual(len(data["samples"]), 500)
+        self.assertEqual(data["samples"][0]["observed_at"], "2026-10-17T12:00:00Z")
+        self.assertEqual(data["samples"][-1]["observed_at"],
+                         (NOW+timedelta(hours=599)).isoformat(timespec="seconds").replace("+00:00", "Z"))
+
     def test_invalid_history_not_silently_accepted(self):
         self.db.write_bytes(b"not-sqlite")
         with self.assertRaises(ValueError):
@@ -226,6 +236,20 @@ class HistoryHttpTests(unittest.TestCase):
         self.assertEqual(headers["Cache-Control"], "no-store")
         self.assertEqual(json.loads(payload)["schema"], 1)
         self.assertEqual(len(json.loads(payload)["samples"]), 1)
+
+    def test_history_days_and_policy_threshold_validation(self):
+        self.start()
+        for endpoint in ("history?days=1", "history?days=30",
+                         "policy?threshold=0", "policy?threshold=50"):
+            with self.subTest(endpoint=endpoint):
+                self.assertEqual(self.get(endpoint)[0], 200)
+        for endpoint in ("history?days=0", "history?days=31",
+                         "history?days=x", "history?days=7&threshold=2",
+                         "policy?threshold=-1", "policy?threshold=51",
+                         "policy?threshold=20&threshold=30",
+                         "policy?days=7"):
+            with self.subTest(endpoint=endpoint):
+                self.assertEqual(self.get(endpoint)[0], 400)
 
     def test_invalid_snapshot_policy_fails_closed(self):
         self.codex.write_text("invalid json")
