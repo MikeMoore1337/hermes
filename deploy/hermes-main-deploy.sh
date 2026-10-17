@@ -175,7 +175,9 @@ cp -a -- "$release/control_center" "$ui_release/"
 cp -a -- "$release/research_scout" "$ui_release/"
 chown -R root:root "$ui_release"
 chmod -R a+rX,go-w "$ui_release"
-runuser -u hermes-control -- env PYTHONPATH="$ui_release" python3 -c 'import control_center.server'
+# Verify imports exactly as the UI service starts: cwd-based python -m,
+# without the PYTHONPATH override which previously concealed missing siblings.
+runuser -u hermes-control -- sh -c 'cd "$1" && /usr/bin/python3 -c "import control_center.server; import research_scout.report_view"' sh "$ui_release"
 ui_old=$(readlink -f "$ui/current")
 ln -s -- "$ui_release" "$ui/.incoming-$short"
 mv -Tf -- "$ui/.incoming-$short" "$ui/current"

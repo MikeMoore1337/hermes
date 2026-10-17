@@ -8,6 +8,15 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
+import sys
+
+# The UI is deployed as an immutable release behind an atomic 'current'
+# symlink. Explicitly resolve the sibling research package against THIS code
+# release: systemd's python -m startup must not depend on inherited PYTHONPATH
+# or a current working directory that might resolve differently at restart.
+_RELEASE_ROOT = str(Path(__file__).resolve().parent.parent)
+if _RELEASE_ROOT not in sys.path:
+    sys.path.insert(0, _RELEASE_ROOT)
 
 from research_scout.report_view import read_owner_view
 
