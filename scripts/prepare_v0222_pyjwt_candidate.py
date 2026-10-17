@@ -21,6 +21,7 @@ IMAGE = ("nousresearch/hermes-agent@sha256:"
          "a11574b7fe8e1631d7d88d556677dac693bc058abf558cdeb899155688c1bf05")
 ROOT = Path(__file__).resolve().parents[1]
 DOCKERFILE = ROOT / "docker/v0222-pyjwt-fixed-candidate/Dockerfile"
+RESTRICTED_DOCKERFILE = ROOT / "docker/v0222-restricted-runtime-candidate/Dockerfile"
 PATCHFILE = ROOT / "patches/upstream" / PATCH
 MAX_WHEEL = 80_000
 MAX_DOCKERFILE = 8_192
@@ -42,12 +43,17 @@ def _verified_bytes(path: Path, *, maximum: int, digest: str | None = None) -> b
     return blob
 
 
-def prepare(wheel: Path, output: Path) -> dict:
+def prepare(wheel: Path, output: Path, *, recipe: str = "pyjwt") -> dict:
+    if recipe not in {"pyjwt", "restricted"}:
+        raise ContextDenied("unknown_candidate_recipe")
     if wheel.name != WHEEL:
         raise ContextDenied("unexpected_wheel_filename")
     source_wheel = _verified_bytes(wheel, maximum=MAX_WHEEL, digest=WHEEL_SHA256)
     patch = _verified_bytes(PATCHFILE, maximum=MAX_PATCH, digest=PATCH_SHA256)
-    dockerfile = _verified_bytes(DOCKERFILE, maximum=MAX_DOCKERFILE)
+    dockerfile = _verified_bytes(
+        DOCKERFILE if recipe == "pyjwt" else RESTRICTED_DOCKERFILE,
+        maximum=MAX_DOCKERFILE,
+    )
     if (b"FROM " + IMAGE.encode()) not in dockerfile or WHEEL_SHA256.encode() not in dockerfile:
         raise ContextDenied("unrecognized_immutable_build_recipe")
     if output.exists() or output.is_symlink() or not output.parent.is_dir():
@@ -71,6 +77,7 @@ def prepare(wheel: Path, output: Path) -> dict:
         "schema": "hermes-h18-pyjwt-2151-stage-v1",
         "status": "OFFLINE_CONTEXT_PREPARED_NO_GO",
         "files_staged": 3,
+        "candidate_recipe": recipe,
         "base_immutable_image": IMAGE,
         "pyjwt_wheel_sha256_matches_pypi": True,
         "native_guard_patch_sha256_verified": True,
@@ -81,8 +88,9 @@ def prepare(wheel: Path, output: Path) -> dict:
 
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description="Prepare locked PyJWT 2.14 offline build context")
+    parser = argparse.ArgumentParser(description="Prepare locked PyJWT 2.15.1 offline build context")
     parser.add_argument("--execute", action="store_true")
+    parser.add_argument("--recipe", choices=("pyjwt", "restricted"), default="pyjwt")
     parser.add_argument("--wheel", type=Path)
     parser.add_argument("--output-dir", type=Path)
     args = parser.parse_args(argv)
@@ -92,7 +100,7 @@ def main(argv=None) -> int:
     try:
         if args.wheel is None or args.output_dir is None:
             raise ContextDenied("missing_inputs")
-        report = prepare(args.wheel, args.output_dir)
+        report = prepare(args.wheel, args.output_dir, recipe=args.recipe)
     except (ContextDenied, OSError):
         report = {"status": "INCONCLUSIVE", "resident_agent_allowed": False,
                   "error_code": "unverified_wheel_or_build_context"}
