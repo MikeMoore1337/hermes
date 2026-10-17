@@ -4,6 +4,54 @@ set -Eeuo pipefail
 export PATH=/usr/sbin:/usr/bin:/bin
 umask 077
 die() { echo "HERMES_DEPLOY_FAILED: $*" >&2; exit 1; }
+# Observe the kernel's monotonic uptime; curl attempts and sleeps share one deadline.
+# Never extend the readiness budget by starting another full timeout near its end.
+health_monotonic_ms() {
+  local uptime whole fraction
+  IFS=' ' read -r uptime _ < /proc/uptime || die "monotonic clock unavailable"
+  [[ "$uptime" =~ ^[0-9]+\.[0-9]+$ ]] || die "invalid monotonic clock"
+  whole="${uptime%%.*}"
+  fraction="${uptime#*.}000"
+  echo "$((10#$whole * 1000 + 10#${fraction:0:3}))"
+}
+wait_for_control_center_health() {
+  local deadline remaining budget wait_ms max_time http_code reason=not_ready
+  local response_file="$work/health-response"
+  deadline=$(( $(health_monotonic_ms) + 20000 ))
+  while :; do
+    systemctl is-active --quiet hermes-control-center.service ||
+      die "UI service stopped during readiness"
+    remaining=$(( deadline - $(health_monotonic_ms) ))
+    (( remaining > 0 )) || die "health readiness timed out: $reason"
+    budget=$(( remaining < 3000 ? remaining : 3000 ))
+    printf -v max_time '%d.%03d' "$((budget / 1000))" "$((budget % 1000))"
+    : > "$response_file"
+    if http_code=$(curl -sS --noproxy '*' --max-time "$max_time" \
+      --connect-timeout "$max_time" --max-redirs 0 \
+      --output "$response_file" --write-out '%{http_code}' \
+      http://127.0.0.1:9133/healthz 2>/dev/null); then
+      if [[ "$http_code" == 200 ]] && grep -q '[^[:space:]]' "$response_file"; then
+        systemctl is-active --quiet hermes-control-center.service ||
+          die "UI service stopped during readiness"
+        return 0
+      fi
+      if [[ "$http_code" == 200 ]]; then
+        reason=empty_health_response
+      else
+        reason="HTTP_${http_code:-unknown}"
+      fi
+    else
+      reason=transport_error
+    fi
+    systemctl is-active --quiet hermes-control-center.service ||
+      die "UI service stopped during readiness"
+    remaining=$(( deadline - $(health_monotonic_ms) ))
+    (( remaining > 0 )) || die "health readiness timed out: $reason"
+    wait_ms=$(( remaining < 250 ? remaining : 250 ))
+    printf -v max_time '%d.%03d' "$((wait_ms / 1000))" "$((wait_ms % 1000))"
+    sleep "$max_time"
+  done
+}
 read -r verb sha digest extra <<< "$SSH_ORIGINAL_COMMAND"
 [[ "$verb" == deploy && -z "$extra" && "$sha" =~ ^[a-f0-9]{40}$ && "$digest" =~ ^[a-f0-9]{64}$ ]] || die "invalid command"
 [[ "$EUID" == 0 ]] || die "root only"
@@ -14,7 +62,12 @@ state=/var/lib/hermes-main-deploy/last-success.sha
 mkdir -p /var/lib/hermes-main-deploy "$base/releases" "$ui/releases"
 exec 9>/run/lock/hermes-main-deploy.lock
 flock -n 9 || die "another deploy is running"
-if [[ -r "$state" && "$(cat "$state")" == "$sha" ]] && systemctl is-active --quiet hermes-control-center.service && curl -fsS --max-time 5 http://127.0.0.1:9133/healthz >/dev/null; then
+if [[ -r "$state" && "$(cat "$state")" == "$sha" && \
+      -r "$base/releases/main-$sha/.deployment-receipt.txt" && \
+      "$(readlink -f "$ui/current")" == "$ui/releases/main-$sha" ]] && \
+      grep -Fxq "SHA=$sha" "$base/releases/main-$sha/.deployment-receipt.txt" && \
+      systemctl is-active --quiet hermes-control-center.service && \
+      [[ "$(curl -fsS --max-time 5 --noproxy '*' --max-redirs 0 --write-out '%{http_code}' http://127.0.0.1:9133/healthz 2>/dev/null)" == ok200 ]]; then
   echo "ALREADY_DEPLOYED=$sha"
   exit 0
 fi
@@ -126,17 +179,15 @@ ln -s -- "$ui_release" "$ui/.incoming-$short"
 mv -Tf -- "$ui/.incoming-$short" "$ui/current"
 ui_switched=yes
 systemctl restart hermes-control-center.service
-sleep 2
-systemctl is-active --quiet hermes-control-center.service || die "UI service not active"
-curl -fsS --max-time 8 http://127.0.0.1:9133/healthz >/dev/null || die "health check failed"
+wait_for_control_center_health
 for u in hermes-discovery.timer hermes-ops-watch.timer hermes-ops-alerts.timer hermes-qa-watch.timer hermes-research-scout.timer hermes-control-center-snapshot.timer; do
   systemctl is-active --quiet "$u" || die "timer unhealthy: $u"
 done
 systemctl is-active --quiet hermes-agent-sandbox.service && die "resident agent unexpectedly enabled"
 systemctl is-active --quiet hermes-cloudflare-proxy.service && die "proxy unexpectedly enabled"
-printf '%s\n' "$sha" > "$work/last-success.sha"
-install -m 0600 "$work/last-success.sha" "$state"
 printf 'SHA=%s\nARCHIVE_SHA256=%s\nPREVIOUS_UI=%s\nBACKUP=%s\nRESIDENT_ACTIVATED=no\n' "$sha" "$digest" "$ui_old" "$backup" > "$release/.deployment-receipt.txt"
 chmod -R a-w "$release"
+printf '%s\n' "$sha" > "$work/last-success.sha"
+install -m 0600 "$work/last-success.sha" "$state"
 committed=yes
 echo "PRODUCTION_DEPLOYED=$sha"
