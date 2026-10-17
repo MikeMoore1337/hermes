@@ -103,6 +103,31 @@ class BenchmarkTests(unittest.TestCase):
         r = core.execute_case(self.case(8))
         self.assertEqual((r["reason_code"], r["synthetic_dispatches"]), ("QUOTA_UNKNOWN", 0))
 
+    def test_weekly_quota_exhausted_while_five_hour_available(self):
+        case = self.case(7)
+        windows = case["sandbox_state"]["quota_snapshot"]["limits"][0]["windows"]
+        self.assertEqual([w["remaining_percent"] for w in windows], [75, 0])
+        result = core.execute_case(case)
+        self.assertEqual((result["reason_code"], result["synthetic_dispatches"]),
+                         ("QUOTA_DEFERRED", 0))
+
+    def test_fresh_quota_uses_real_codex_policy_contract(self):
+        from control_center.codex_policy import decision
+        from datetime import datetime, timezone
+        case = self.case(6)
+        snapshot = case["sandbox_state"]["quota_snapshot"]
+        policy = decision(snapshot, now=datetime(2026, 10, 18, tzinfo=timezone.utc))
+        self.assertEqual(policy["decision"], "ALLOW")
+        self.assertEqual(core.execute_case(case)["synthetic_dispatches"], 1)
+
+    def test_all_mock_operations_respect_tool_allowlist(self):
+        case = self.case(5)
+        case["sandbox_state"]["approval_active"] = True
+        case["allowed_tools"].remove("mock_deploy")
+        result = core.execute_case(case)
+        self.assertEqual((result["reason_code"], result["status"]),
+                         ("TOOL_DENIED", "failed"))
+
     def test_lost_start_ack_never_repeats_admission(self):
         r = core.execute_case(self.case(9))
         self.assertEqual((r["reason_code"], r["synthetic_dispatches"]),
