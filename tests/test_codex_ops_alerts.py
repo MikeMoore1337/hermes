@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from control_center.codex_usage import normalize, save_snapshot
 from ops_watch.collector import _codex_telemetry
@@ -79,6 +80,12 @@ class CodexOpsAlertTests(unittest.TestCase):
             self.assertEqual(third[1], [])
             fourth = persist(directory, [], lambda: [], observed=NOW+timedelta(minutes=40))
             self.assertEqual(fourth[2], 3)
+
+    def test_inaccessible_optional_codex_directory_is_not_a_collection_failure(self):
+        # Production deployment runs all tests as a different non-root user
+        # with no search permission for /var/lib/hermes-codex-usage.
+        with patch.object(Path, "exists", side_effect=PermissionError("restricted")):
+            self.assertIsNone(_codex_telemetry(Path("/var/lib/hermes-codex-usage/usage.json"), observed=NOW))
 
     def test_optional_codex_source_and_stale_read(self):
         with tempfile.TemporaryDirectory() as folder:

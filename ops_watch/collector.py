@@ -191,8 +191,17 @@ def normalized(news_health: dict[str, Any], observed: datetime, *, timer_enabled
 
 def _codex_telemetry(path: Path = CODEX_OUTPUT, *, observed: datetime | None = None) -> dict[str, Any] | None:
     """Read an optional sanitized local file, independent of Control Center runtime."""
-    if not path.exists() and not path.is_symlink():
+    # The source is optional. An isolated offline test or service with no
+    # access to the private Codex directory must not fail collection merely
+    # while checking whether that directory exists. Prior active alarms are
+    # preserved when telemetry is absent (see once()).
+    try:
+        if not path.exists() and not path.is_symlink():
+            return None
+    except PermissionError:
         return None
+    except OSError:
+        return {"status": "unavailable", "ordinary_usage_allowed": None}
     unavailable = {"status": "unavailable", "ordinary_usage_allowed": None}
     try:
         if path.is_symlink() or not path.is_file() or path.stat().st_size > 65536:
