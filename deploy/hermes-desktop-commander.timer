@@ -1,0 +1,12 @@
+[Unit]
+Description=Refresh authorized Desktop Commander metadata (no device commands)
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=15min
+AccuracySec=60s
+RandomizedDelaySec=30s
+Unit=hermes-desktop-commander.service
+
+[Install]
+WantedBy=timers.target

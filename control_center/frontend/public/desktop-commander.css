@@ -1,0 +1,25 @@
+/* Independent additive read-only widget; no changes to React Atlas layout. */
+#dc-monitor {position:fixed;right:18px;bottom:18px;z-index:60;font-family:inherit;color:#e7ebf4}
+#dc-monitor button {cursor:pointer;font:inherit}
+#dc-monitor button:focus-visible,#dc-monitor a:focus-visible {outline:2px solid #70abff;outline-offset:3px}
+#dc-monitor .dc-toggle {border:1px solid #40679a;border-radius:999px;background:#183654;color:#f0f6ff;padding:11px 17px;box-shadow:0 8px 36px #0008;font-weight:600}
+#dc-monitor .dc-panel {position:absolute;bottom:54px;right:0;width:min(382px,calc(100vw - 30px));box-sizing:border-box;max-height:calc(100dvh - 110px);overflow-y:auto;border:1px solid #314257;background:#111c2a;border-radius:17px;box-shadow:0 14px 50px #000b;padding:19px;line-height:1.5}
+#dc-monitor .dc-panel[hidden] {display:none}
+#dc-monitor .dc-head,#dc-monitor .dc-actions,#dc-monitor .dc-devices li {display:flex;align-items:center;justify-content:space-between;gap:12px}
+#dc-monitor .dc-head h2 {font-size:17px;margin:0;font-weight:650;color:#f4f6fc}
+#dc-monitor .dc-close,#dc-monitor .dc-actions button {border:1px solid #42536b;border-radius:8px;padding:6px 10px;color:#d7e4f5;background:#1b2939}
+#dc-monitor .dc-hint,#dc-monitor .dc-time {font-size:12px;color:#aebacc;margin:10px 0}
+#dc-monitor .dc-state {display:inline-flex;border-radius:7px;padding:4px 9px;font-size:13px;font-weight:600;background:#283950;color:#cad8ee}
+#dc-monitor .dc-exhausted {background:#4a3033;color:#ffe0dd}
+#dc-monitor .dc-monitored {background:#224637;color:#b9f7d7}
+#dc-monitor .dc-metric {font-weight:600;font-size:14px;color:#e8efff}
+#dc-monitor .dc-devices {list-style:none;padding:0;margin:12px 0;border-top:1px solid #344252}
+#dc-monitor .dc-devices li {padding:9px 0;border-bottom:1px solid #344252;font-size:13px}
+#dc-monitor .dc-devices strong {overflow-wrap:anywhere;font-weight:550}
+#dc-monitor .dc-device-state {white-space:nowrap;font-size:12px;color:#a9b9ca}
+#dc-monitor .dc-online {color:#91e7b0}
+#dc-monitor .dc-offline {color:#f3b9ac}
+#dc-monitor .dc-actions {margin-top:15px}
+#dc-monitor .dc-actions a {font-size:12px;color:#8ebfff;text-decoration:underline}
+#dc-monitor .dc-error {color:#ffb7b7;font-size:13px}
+@media(max-width:480px){#dc-monitor{right:12px;bottom:12px}#dc-monitor .dc-panel{right:0;width:calc(100vw - 24px)}}
