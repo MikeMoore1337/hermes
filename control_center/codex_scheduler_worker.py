@@ -16,6 +16,7 @@ from pathlib import Path
 import sqlite3
 import stat
 import sys
+import tempfile
 
 from .codex_scheduler import (
     Approval, DEFAULT_DB, Scheduler, QuotaWorker, ValidationError, _utc,
@@ -205,6 +206,33 @@ def run_once(config_path: Path, *, uid: int = 0, run: bool = False) -> dict:
             "reason": outcome.get("reason"), "job_id": outcome.get("job_id")}
 
 
+
+def publish_worker_status(mode: str) -> None:
+    """Recent advisory heartbeat only; never contains prompts or credentials."""
+    STATE_DIR.mkdir(parents=True, exist_ok=True, mode=0o750)
+    if STATE_DIR.is_symlink():
+        raise ValidationError("scheduler_state_symlink")
+    data = {"schema": 1, "active": mode in ("tick", "idle"),
+            "checked_at": int(time.time())}
+    temp_name = None
+    try:
+        with tempfile.NamedTemporaryFile("w", encoding="ascii", dir=STATE_DIR,
+                                         prefix=".worker-state-", delete=False) as f:
+            temp_name = f.name
+            json.dump(data, f, separators=(",", ":"))
+            f.flush()
+            os.fchmod(f.fileno(), 0o640)
+            os.fsync(f.fileno())
+        os.replace(temp_name, STATE_DIR / "worker-status.json")
+        directory_fd = os.open(STATE_DIR, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    finally:
+        if temp_name and os.path.exists(temp_name):
+            os.unlink(temp_name)
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="H-15 restricted Codex task tick")
     parser.add_argument("--config", type=Path, required=True)
@@ -212,6 +240,8 @@ def main() -> int:
     args = parser.parse_args()
     try:
         result = run_once(args.config, run=args.run)
+        if args.run:
+            publish_worker_status(result["mode"])
         print(json.dumps(result, sort_keys=True))
         return 0
     except (ValidationError, sqlite3.Error, OSError, KeyError, TypeError):
