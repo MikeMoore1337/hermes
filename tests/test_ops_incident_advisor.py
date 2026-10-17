@@ -176,6 +176,17 @@ class IncidentAdvisorTests(unittest.TestCase):
         self.assertEqual(result["model_calls"], 0)
         self.assertIn("NOT_RUN", result["agent_path"])
 
+    def test_v0222_mock_keeps_bounded_envelope_and_strict_no_tools(self) -> None:
+        from ops_watch.mock_provider import MAX_BOUNDED_REQUEST_BYTES
+
+        self.assertEqual(MAX_BOUNDED_REQUEST_BYTES, 256 * 1024)
+        provider = (Path(__file__).resolve().parents[1] / "ops_watch/mock_provider.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('or payload.get("tools")', provider)
+        self.assertIn("self.server.request_count > 1", provider)
+        self.assertIn("MAX_BOUNDED_REQUEST_BYTES", provider)
+
     def test_docker_command_is_loopback_only_and_bounded(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             _stage_files(Path(directory))
