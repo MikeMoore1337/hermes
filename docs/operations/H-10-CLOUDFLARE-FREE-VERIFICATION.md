@@ -65,3 +65,46 @@
 Поэтому `agent_budget/policy.json` оставлен неизменным (`runtime_enabled=false`, `provider_billing_verified=false`, `daily_spend_cap_usd=0`). Старый model probe жёстко запрещён исходным кодом до отдельного reviewed GO. Этот документ не собирает API-ключи, не делает платных/бесплатных model вызовов и не активирует службы.
 
 **Приёмка:** независимое подтверждение account plan Free + точного аккаунта/модели/отсутствия AI Gateway billing, затем source/image and resource gates, отдельное согласование пользователя. См. [H-10 #62](https://github.com/MikeMoore1337/hermes/issues/62) и [H-01 #33](https://github.com/MikeMoore1337/hermes/issues/33).
+
+
+## Ревизия 17.10.2026: дополнительная защита offline-пилота (#62)
+
+Проверены [актуальные условия Workers AI](https://developers.cloudflare.com/workers-ai/platform/pricing/)
+(документация обновлена 15.10.2026): Free - 10 000 Neurons/UTC-сутки,
+без платного перерасхода на Workers Free; Paid может тарифицировать перерасход.
+[Код 3036/HTTP 429](https://developers.cloudflare.com/workers-ai/platform/errors/)
+означает исчерпание бесплатной квоты, а 3040/HTTP 429 - нехватку мощностей.
+Ни один из этих ответов не должен вызывать повторный запрос.
+
+- При старте ограниченного живого пилота снимок остатка Neurons должен
+  покрывать **все** уже использованные локальные слоты текущих UTC-суток и
+  все запланированные новые вызовы, консервативно по 1000 Neurons на слот.
+  Это локальная предосторожность, **не** измерение фактических Neurons,
+  не гарантированный верхний предел потребления конкретного запроса и
+  не замена server-side hard stop Workers Free.
+- При HTTP-отказах и сетевых таймаутах H-10 сохраняет число попыток
+  и прошедшее время; статус HTTP сохраняется только когда действительно
+  получен. Отсутствующий статус, токены, Neurons и цена остаются
+  `NOT_REPORTED`, а не нулевыми. Содержимое ответа и токены не логируются.
+- Ролевые разрешения дополнительно закреплены в исполняемом коде:
+  analyst -> classify_sanitized_codes,
+  planner -> plan_from_public_metadata,
+  proposer -> draft_without_delivery. Правка одного JSON не может
+  переназначить разрешённое действие другой роли.
+
+**Граница доказательства:** проверка касается `agent_budget.pilot`,
+`agent_budget.policy` и их синтетических тестов. Прямой сетевой путь
+upstream/native Hermes Agent через зарегистрированный профиль
+`workers-ai` не объявляется защищённым этой локальной проверкой:
+сквозной dispatch и OS/native/MCP-enforcement проверяются отдельно в
+[#33](https://github.com/MikeMoore1337/hermes/issues/33). До него постоянный
+агент должен оставаться отключённым. Отсутствует независимый свежий
+доступ к биллингу конкретного аккаунта; `provider_billing_verified=false`
+и `runtime_enabled=false` не изменялись.
+
+Официальный [Cloudflare API List Subscriptions](https://developers.cloudflare.com/api/resources/accounts/subresources/subscriptions/methods/get/)
+допускает read-only запрос с **Billing Read** (Billing Write не нужен).
+Но выдача подписок сама по себе может быть недостаточной для подтверждения
+продуктового плана **Workers Free** и состояния AI Gateway: проверка
+в Cloudflare Dashboard конкретного Account ID всё равно обязательна.
+Не вводить секреты в отчёт и не подключать платёжные средства.
