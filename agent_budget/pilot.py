@@ -996,8 +996,12 @@ def run_pilot(
 
 
 def status() -> dict[str, object]:
+    # ADR-0002 is the standing owner attestation, NOT a live provider quota
+    # measurement or blanket runtime approval. Avoid re-requesting screenshots.
     return {
-        "account_status": "ACCOUNT_FREE_UNVERIFIED",
+        "account_status": "OWNER_CONFIRMED_WORKERS_FREE",
+        "provider_cost_observation": "NOT_MEASURED",
+        "live_quota_status": "FRESH_ATTESTATION_REQUIRED",
         "primary_model": PRIMARY_MODEL,
         "daily_free_allocation_neurons": FREE_DAILY_NEURONS,
         "live_default": False,
@@ -1012,8 +1016,10 @@ def status() -> dict[str, object]:
 
 def prepare_live_instructions() -> str:
     return (
-        "Живой пилот не выполнен. Владелец должен отдельно подтвердить Workers Free "
-        "в Cloudflare Dashboard, отсутствие AI Gateway Unified Billing и остаток квоты, "
-        "создать локальный account-status JSON без токена, затем явно задать "
-        "HERMES_AI_LIVE_APPROVED=1 и передать --owner-approved. Токен не вводится в чат."
+        "Workers Free подтверждён владельцем по ADR-0002; повторные скриншоты "
+        "без изменения аккаунта или тарифа не нужны. Для нового live-вызова "
+        "необходим свежий account-status JSON с остатком Neurons и UTC-временем, "
+        "без токена; также должны выполняться действующие лимиты и явное разрешение "
+        "HERMES_AI_LIVE_APPROVED=1 и --owner-approved. Стоимость прошлых вызовов "
+        "NOT_MEASURED. Токен не вводится в чат."
     )
