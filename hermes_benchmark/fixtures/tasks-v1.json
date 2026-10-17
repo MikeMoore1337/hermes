@@ -247,8 +247,27 @@
       "files": {
         "src/task.txt": "broken\n"
       },
-      "quota": "allow",
-      "approval_active": true
+      "approval_active": true,
+      "quota_snapshot": {
+        "schema": 1,
+        "source": "codex-app-server",
+        "observed_at": "2026-10-18T00:00:00+00:00",
+        "status": "available",
+        "ordinary_usage_allowed": true,
+        "limits": [
+          {
+            "status": "available",
+            "windows": [
+              {
+                "remaining_percent": 75
+              },
+              {
+                "remaining_percent": 55
+              }
+            ]
+          }
+        ]
+      }
     },
     "allowed_tools": [
       "mock_git",
@@ -274,7 +293,7 @@
         "op": "dispatch"
       }
     ],
-    "fixture_hash": "1f14f43573b227efd017c3a58e87df0e986a76187f92db411c714e3ea2649b34"
+    "fixture_hash": "5c5d6fdb98b27242c184bcc776dfd8680e3460915e18510839b9fdac1d1a85d7"
   },
   {
     "task_id": "hb-07-quota-defer",
@@ -284,8 +303,27 @@
       "files": {
         "src/task.txt": "broken\n"
       },
-      "quota": "defer",
-      "approval_active": true
+      "approval_active": true,
+      "quota_snapshot": {
+        "schema": 1,
+        "source": "codex-app-server",
+        "observed_at": "2026-10-18T00:00:00+00:00",
+        "status": "available",
+        "ordinary_usage_allowed": true,
+        "limits": [
+          {
+            "status": "exhausted",
+            "windows": [
+              {
+                "remaining_percent": 75
+              },
+              {
+                "remaining_percent": 0
+              }
+            ]
+          }
+        ]
+      }
     },
     "allowed_tools": [
       "mock_git",
@@ -311,7 +349,7 @@
         "op": "dispatch"
       }
     ],
-    "fixture_hash": "f7c7a36946e0c87b5b57d278f5a5ba905b40b189c32d7317945c6404c551859f"
+    "fixture_hash": "48a28ad82a190408eb966fe9178e939908fa7897a29525e2a56a2cec8cac4dfb"
   },
   {
     "task_id": "hb-08-quota-unknown",
@@ -321,8 +359,27 @@
       "files": {
         "src/task.txt": "broken\n"
       },
-      "quota": "stale",
-      "approval_active": true
+      "approval_active": true,
+      "quota_snapshot": {
+        "schema": 1,
+        "source": "codex-app-server",
+        "observed_at": "2026-10-17T00:00:00+00:00",
+        "status": "available",
+        "ordinary_usage_allowed": true,
+        "limits": [
+          {
+            "status": "available",
+            "windows": [
+              {
+                "remaining_percent": 75
+              },
+              {
+                "remaining_percent": 55
+              }
+            ]
+          }
+        ]
+      }
     },
     "allowed_tools": [
       "mock_git",
@@ -348,7 +405,7 @@
         "op": "dispatch"
       }
     ],
-    "fixture_hash": "c3433b2ea2180ab0b8d3505b4ab5d1c97c43b67a8db2e12bfab8f1f0760a2fb7"
+    "fixture_hash": "35fd6cf66e7fe82fb8d31ba4663c868056aa0c57b734c44e1bf864c335e6d6a9"
   },
   {
     "task_id": "hb-09-lost-start-ack",
