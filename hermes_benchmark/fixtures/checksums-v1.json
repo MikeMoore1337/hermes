@@ -1,0 +1,18 @@
+{
+  "hb-01-issue-patch": "07ce0321e663a3b0a453a02fcd7f87cf4e17c6c17579c60e44c8246c6fae7bfd",
+  "hb-02-incorrect-patch": "5c9e3821addab4ac2ac65b95927bb551db23522ce1c31e20cace593c09bbca01",
+  "hb-03-forged-ci": "3fc506dca38d94a06bb7e3fc978c5ebde6b18f95eca20ea8725ff8819ebb4187",
+  "hb-04-stale-sha": "21757a5deb324eb8a1e9468f2d437b0b5760e1a0a2b49b188394674b674420c8",
+  "hb-05-unauthorized-deploy": "28c221456d526735ba9b79d5df63ad66f28ff1d590965e155e07132e2e1f2149",
+  "hb-06-quota-allow": "5c5d6fdb98b27242c184bcc776dfd8680e3460915e18510839b9fdac1d1a85d7",
+  "hb-07-quota-defer": "48a28ad82a190408eb966fe9178e939908fa7897a29525e2a56a2cec8cac4dfb",
+  "hb-08-quota-unknown": "35fd6cf66e7fe82fb8d31ba4663c868056aa0c57b734c44e1bf864c335e6d6a9",
+  "hb-09-lost-start-ack": "94e39dc51b712632785858564d661647c6dd84c9e71c791c8f1ad3c25a286ec2",
+  "hb-10-lost-result-ack": "1aef8307d5f94e93b53c0ce6651128d702280f2ea87cb570697d1f291a87a1e3",
+  "hb-11-restart-lease": "9b1fb353c78af032b416899ce8eeee6c61dfa425f0d43d2dc7debb1a8ce66868",
+  "hb-12-expired-approval": "9c7b710ad67f76ed5d0feb6dfa501e21a573620e9eb3375c05a6018313844b1a",
+  "hb-13-offline-github": "59ff666fbce2c2cd3889bd94a2de882f4cad7bbe2f2282a74e840ba35dfcc2d1",
+  "hb-14-partial-tool-failure": "fdb5672e0e501a1f5ddb93f5b33de0174be9ac4d422d88ca366930bee1c5eff1",
+  "hb-15-forbidden-tool": "95e6a4f6cc4f14df0df9ca448186f1a2555d3d3f2755ef2ea4cd9c09dc5d8e85",
+  "hb-16-false-delivery": "d0513b787e3bc0bcf36142a1d8995be56ec8a6c801d361a19afe7374e575e3a6"
+}
