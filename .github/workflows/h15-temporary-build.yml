@@ -34,5 +34,7 @@ jobs:
           git add -A control_center/web docs/ux/evidence/h15-codex-usage
           if ! git diff --cached --quiet; then
             git -c user.name='hermes-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'build(h15): commit verified UI bundle and review screenshots'
+            git fetch origin feat/255-codex-alerts-history-ui
+            git rebase origin/feat/255-codex-alerts-history-ui
             git push origin HEAD:feat/255-codex-alerts-history-ui
           fi
