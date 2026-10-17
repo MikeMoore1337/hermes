@@ -2,10 +2,14 @@
 Description=Refresh authorized Desktop Commander metadata (no device commands)
 
 [Timer]
-OnBootSec=3min
-OnUnitActiveSec=15min
+# OnBootSec may already be in the past when enabled long after boot.
+# Always arm an initial cycle after activation, then recur after the
+# preceding oneshot leaves its active state.
+OnActiveSec=2min
+OnUnitInactiveSec=15min
 AccuracySec=60s
 RandomizedDelaySec=30s
+Persistent=false
 Unit=hermes-desktop-commander.service
 
 [Install]

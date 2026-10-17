@@ -49,6 +49,16 @@ local вызывает только initialize и tools/list. Локальный
     sudo bash deploy/h15-desktop-commander-setup.sh status
     systemctl list-timers --all hermes-desktop-commander.timer
 
+Критерий реальной активации: `NEXT` не равен `-`, `TELEMETRY_NEXT` не пустой и имеет значение в будущем. Таймер использует `OnActiveSec=2min` для первого опроса после включения/перезапуска и `OnUnitInactiveSec=15min` для регулярного опроса после успешного/неуспешного завершения oneshot-сервиса (задержка `AccuracySec=60s` + `RandomizedDelaySec=30s`). Предыдущий вариант `OnBootSec=3min` + `OnUnitActiveSec=15min` фактически привёл к `NEXT=-` при включении после продолжительной работы VPS, поэтому заменён.
+
+После первого запланированного запуска (примерно через 2-4 минуты) проверить статус и фактическое увеличение истории:
+
+    sudo systemctl status hermes-desktop-commander.timer --no-pager
+    sudo systemctl status hermes-desktop-commander.service --no-pager
+    sudo bash deploy/h15-desktop-commander-setup.sh verify
+
+`verify` добавляет свою запись в историю, поэтому для строгого подтверждения автоопроса следует посмотреть `HISTORY_POINTS` до ручного повторного `verify` через read-only Python или сверить `LastTriggerUSec` в таймере. Ошибку `NEXT=-` считать блокирующей приёмку, даже если `is-enabled=enabled`.
+
 verify делает ТОЛЬКО реальный who_am_i/list_devices и записывает очищенный статус/SQLite-историю; выводит status, процент, число устройств и точек истории. Статус exhausted допустим для read-only мониторинга и запрещает cloud execution. enable требует свежий настоящий снимок, включает только telemetry timer на 15 минут, без команд на устройствах. При unavailable/stale/unknown включение невозможно.
 
 Проверить виджет «Устройства» на https://hermes.mikemoore.top/ после первого опроса.
