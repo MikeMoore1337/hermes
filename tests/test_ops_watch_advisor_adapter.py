@@ -81,7 +81,12 @@ class OpsWatchAdvisorAdapterTests(unittest.TestCase):
                     item = self.read(
                         [self.row(10, code, phase)], provenance="readonly_snapshot",
                     )[0]
-                    self.assertEqual(item["analysis"]["decision"], "RULES_ONLY")
+                    expected = ("ADVISOR_CANDIDATE"
+                                if phase == "new" and code in {
+                                    "drain_failures", "outbox_backlog",
+                                    "outbox_oldest", "worker_unhealthy"
+                                } else "RULES_ONLY")
+                    self.assertEqual(item["analysis"]["decision"], expected)
                     self.assertEqual(item["event"]["technical_metadata"]["component"],
                                      adapter.CODE_MAPPING[code][3])
                     self.assertEqual(item["event"]["recovery_state"],
