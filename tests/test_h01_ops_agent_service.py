@@ -103,7 +103,7 @@ class H01OpsContractTests(unittest.TestCase):
         timer = (root / "deploy/hermes-h01-ops-agent.timer").read_text(encoding="utf-8")
         self.assertIn("Type=oneshot", unit)
         self.assertIn("Restart=no", unit)
-        self.assertIn("RuntimeMaxSec=230", unit)
+        self.assertIn("TimeoutStartSec=220", unit)
         self.assertIn("ExecStart=/usr/bin/python3 -m scripts.h01_ops_agent_service", unit)
         self.assertIn("OnUnitInactiveSec=30min", timer)
         self.assertIn("Persistent=false", timer)
