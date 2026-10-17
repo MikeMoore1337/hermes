@@ -74,8 +74,8 @@ class WorkerRuntimeTests(unittest.TestCase):
         return path
 
     def invoke(self, run):
-        with patch.object(worker, "DEFAULT_DB", self.db), \\
-             patch.object(worker, "ARTIFACT_DIR", self.artifacts), \\
+        with patch.object(worker, "DEFAULT_DB", self.db), \
+             patch.object(worker, "ARTIFACT_DIR", self.artifacts), \
              patch.object(worker, "DEFAULT_OUTPUT", self.quota):
             return worker.run_once(self.conf, uid=self.uid, run=run)
 
