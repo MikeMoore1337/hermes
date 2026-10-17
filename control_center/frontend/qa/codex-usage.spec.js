@@ -8,6 +8,19 @@ const services=[{id:"ops",name:"Ops Watch",unit:"hermes-ops-watch.timer",kind:"s
 function setup(page,status="low"){
  page.route("**/api/overview",route=>route.fulfill({status:200,contentType:"application/json",
   body:JSON.stringify({schema:1,mode:"read_only",generated_at:new Date().toISOString(),services})}));
+ page.route("**/api/codex/tasks",route=>route.fulfill({status:200,contentType:"application/json",
+  body:JSON.stringify({schema:1,mode:"read_only",queue_state:"available",
+   execution_enabled:false,
+   counts:{queued:2,deferred:1,running:0,blocked:1,completed:3},
+   last_successful_at:new Date(Date.now()-3600000).toISOString(),recovery_errors:1,
+   jobs:[{job_id:"synthetic-job-001",status:"deferred",
+    created_at:new Date(Date.now()-7200000).toISOString(),
+    updated_at:new Date().toISOString(),
+    wait_reason:"quota_exhausted",manual_review:false},
+    {job_id:"synthetic-job-002",status:"blocked",
+     created_at:new Date(Date.now()-3600000).toISOString(),
+     updated_at:new Date().toISOString(),
+     wait_reason:"recovery_manual_review",manual_review:true}]})}));
  page.route("**/api/providers/codex/history?*",route=>{
   const now=Date.now();
   const samples=[20,35,55,70].map((remaining,i)=>({
@@ -85,3 +98,23 @@ test("Codex history period and threshold controls remain read-only",async({page}
  await expect(page.getByText("Порог предупреждения · 35% остатка")).toBeVisible();
  await expect(page.getByText(/не изменяет серверный порог Ops Watch/i)).toBeVisible();
 });
+
+for(const width of [393,1440]){
+ test("H-15 scheduler synthetic queue read-only evidence "+width,async({page})=>{
+  await page.setViewportSize({width,height:900});
+  setup(page);
+  await page.goto("/");
+  await page.locator(".atlas-section-nav").getByRole("button",{name:"Лимиты AI"}).click();
+  const queue=page.getByRole("region",{name:"Очередь заданий Codex"});
+  await expect(queue).toBeVisible();
+  await expect(queue.getByText("Автозапуск выключен")).toBeVisible();
+  await expect(queue.getByText("Ожидают квоту")).toBeVisible();
+  await expect(queue.getByText("Требуется ручная проверка",{exact:false})).toBeVisible();
+  await expect(queue.getByText("quota_exhausted")).toBeVisible();
+  await expect(queue.getByRole("button")).toHaveCount(0);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1)).toBe(false);
+  const screenshot=resolve("../../docs/ux/evidence/h15-codex-scheduler");
+  mkdirSync(screenshot,{recursive:true});
+  await page.screenshot({path:resolve(screenshot,"scheduler-"+width+".png"),fullPage:true});
+ });
+}
