@@ -39,6 +39,8 @@ ASSETS = {
     "/style.css": ("style.css", "text/css; charset=utf-8"),
     "/desktop-commander.js": ("desktop-commander.js", "text/javascript; charset=utf-8"),
     "/desktop-commander.css": ("desktop-commander.css", "text/css; charset=utf-8"),
+    "/ai-analytics.js": ("ai-analytics.js", "text/javascript; charset=utf-8"),
+    "/ai-analytics.css": ("ai-analytics.css", "text/css; charset=utf-8"),
     "/brand.webp": ("brand.webp", "image/webp"),
     "/favicon.png": ("favicon.png", "image/png"),
     "/apple-touch-icon.png": ("apple-touch-icon.png", "image/png"),
@@ -332,7 +334,9 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
                         # Additive same-origin widget; never modify the Vite bundle at runtime.
                         raw = raw.replace(b"</head>", (
                             b'<link rel="stylesheet" href="/desktop-commander.css">'
-                            b'<script src="/desktop-commander.js" defer></script></head>'))
+                            b'<script src="/desktop-commander.js" defer></script>'
+                            b'<link rel="stylesheet" href="/ai-analytics.css">'
+                            b'<script src="/ai-analytics.js" defer></script></head>'))
                 except OSError:
                     return self.respond(503, "text/plain", b"Static asset unavailable")
                 return self.respond(200, mime, raw)
