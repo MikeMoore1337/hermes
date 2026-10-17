@@ -6,6 +6,35 @@ This repository holds **owner-specific configuration, integrations, tests, docum
 
 Read `docs/architecture/OWNERSHIP.md`, `docs/security/THREAT_MODEL.md`, and the relevant current Issue before work. Follow `docs/roadmap/ROADMAP.md` only for approved scope and dependencies. Check factual runtime status instead of inferring it from plans.
 
+## Standing owner decisions: do not reopen settled gates (2026-10-17)
+
+**Mandatory for all contributors, ChatGPT and Codex:** read
+[ADR-0002](docs/decisions/ADR-0002-workers-free-and-delivery-first.md)
+before H-10 #62, H-01 #33, or v0.22.2/H-18 work. It records a newer,
+explicit owner decision and supersedes *older requests for repeat proof or
+blanket pre-development audit gates*, not the factual audit records.
+
+- Cloudflare Workers Free **is owner-confirmed** by dashboard screenshots
+  (Workers Free / Active, no saved payment method, no configured named AI
+  Gateway) and the existing [Issue #62 evidence](https://github.com/MikeMoore1337/hermes/issues/62#issuecomment-6201988952).
+  Never re-request the same screenshots without evidence of account/plan
+  change; a scoped API token's 403 on billing endpoints does not contradict
+  the screenshots. This is owner attestation, **not measured $0 or a signed
+  account-ID match**. Preserve Free-only model/no paid fallback, per-live-call
+  quota/attestation freshness and honest `NOT_MEASURED` telemetry.
+- **Delivery-first v0.22.2:** prioritize completing features, targeted tests,
+  PR/CI/merge, and deployment of *already approved* components. Full CVE,
+  dependency, SBOM, provenance and broader security audits (#185/#199) are a
+  **follow-up phase**, not a reason to stop coding or wait for upstream fixes.
+  Record known risks and address direct functional defects and minimum
+  run-time constraints pragmatically; do not continuously relitigate audit
+  blockers in every task.
+- This reprioritization is **not** standing permission to activate a new
+  resident Hermes runtime, broad tool/OS/MCP access, paid services, secret
+  sharing or third-party effects. Those changes still require scoped approval;
+  preserve existing cost limits, separation from YFC/Second Brain, smoke
+  checks and rollback. Do not equate a dormant-code release with resident GO.
+
 ## GitHub Flow
 
 New repository uses `main`. For future changes: Issue -> short-lived branch -> PR -> relevant CI -> reviewed merge. No direct pushes or force pushes to main after initial bootstrap. Branch protection is required where supported; never claim it is enforced until verified. No auto-merge or automatic continuation to the next Issue. Auto-deploy is permitted only for already-approved active consumers after exact-main-SHA CI; until the production workflow is operational, perform the delivery immediately after each green merge.
