@@ -43,6 +43,17 @@ class ActivationTests(unittest.TestCase):
         self.assertIn("version=$(as_identity node -p 'process.versions.node')", src)
         self.assertIn("require_supported_node", src)
 
+    def test_systemd_and_manual_oauth_storage_match(self):
+        service = (ROOT / "deploy" / "hermes-desktop-commander.service").read_text()
+        setup = SCRIPT.read_text()
+        expected = "/var/lib/hermes-desktop-commander/.mcp-auth"
+        self.assertIn(f"Environment=MCP_REMOTE_CONFIG_DIR={expected}", service)
+        self.assertIn('MCP_REMOTE_CONFIG_DIR="$STATE/.mcp-auth"', setup)
+        self.assertIn("Environment=HOME=/var/lib/hermes-desktop-commander", service)
+        self.assertIn("User=hermes-desktop", service)
+        self.assertIn("NoNewPrivileges=true", service)
+        self.assertNotIn("ExecStartPre=", service)
+
     def test_pinned_and_no_npx_network_at_service_start(self):
         src = COLLECTOR.read_text()
         self.assertIn("node_modules/.bin/mcp-remote", src)
