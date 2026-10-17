@@ -109,7 +109,7 @@ for(const width of [393,1440]){
   await expect(queue).toBeVisible();
   await expect(queue.getByText("Автозапуск выключен")).toBeVisible();
   await expect(queue.getByText("Ожидают квоту")).toBeVisible();
-  await expect(queue.getByText("Требуется ручная проверка",{exact:false})).toBeVisible();
+  await expect(queue.getByText(/требуется ручная проверка/i)).toBeVisible();
   await expect(queue.getByText("quota_exhausted")).toBeVisible();
   await expect(queue.getByRole("button")).toHaveCount(0);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1)).toBe(false);
