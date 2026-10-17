@@ -87,7 +87,8 @@ export default function CodexPanel({compact=false}){
  const [expanded,setExpanded]=useState(!compact);
  const [days,setDays]=useState(7);
  const [threshold,setThreshold]=useState(()=>{
-  try {const n=Number(window.localStorage.getItem("hermes.codex.warningPercent"));
+  try {const saved=window.localStorage.getItem("hermes.codex.warningPercent");
+   const n=saved===null?20:Number(saved);
    return Number.isInteger(n)&&n>=0&&n<=50?n:20;}catch(_){return 20;}
  });
  const [history,setHistory]=useState(null);
