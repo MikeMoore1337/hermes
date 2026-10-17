@@ -92,15 +92,55 @@ requires independent task authorization. Callers must re-check policy and
 task rights immediately before starting a **new** Codex job. Do not terminate
 running jobs based only on a later quota change.
 
-**Not yet wired:** the project has no general Codex task queue. No arbitrary
-jobs are created, queued or resumed. The existing H-01 bounded operations
-timer remains independent; connecting its dispatch or a future scheduler
-requires a narrowly defined owner-approved integration. The existing Ops Watch
-outbox accepts only its predefined incident catalog, so this PR does not
-activate new Telegram alerts or change existing incident delivery rules.
-The React quota history chart, local threshold control and new notification
-types likewise still require their own UI review and runtime integration.
-Treat these as open acceptance requirements, not completed production features.
+## H-15 V3: read-only UI and existing Ops Watch sender
+
+The existing Control Center Codex panel reads sanitized history from
+`GET /api/providers/codex/history?days=1|7|30` and an advisory decision
+from `GET /api/providers/codex/policy?threshold=0..50`. Invalid or duplicate
+parameters return HTTP 400. The server downsamples bounded observations over
+the *entire* requested interval (up to 500 chart points) and separately returns
+up to 50 recent status transitions. Empty/missing history is visible as empty;
+no synthetic quota, reset prediction, or inference call is made.
+
+The owner UI offers 24h / 7d / 30d periods, an SVG graph of the minimum
+remaining percentage across the observed quota windows, recent transitions,
+and a local 0..50% warning-threshold preview (20% default). The local value is
+stored only in the browser and passed to the read-only policy endpoint; it is
+**not a production scheduler setting and does not change the server-side
+Telegram alarm threshold**, which remains 20%. A quota policy ALLOW is never
+a task authorization. Graph lines stop at gaps larger than one hour and when
+the provider data is missing, rather than inventing smooth recovery.
+
+The existing Ops Watch collector reads only
+`/var/lib/hermes-codex-usage/usage.json`; it launches no Codex process and
+has no Codex credentials. The optional local read validates schema/source,
+observation freshness (10m), each window and status. Once present, four fixed
+incident types use the **existing** Ops Watch SQLite journal and the already
+approved Telegram sender: `codex_low`, `codex_exhausted`,
+`codex_auth_required`, `codex_stale`. The sender uses fixed catalog text,
+one-event lease and transport ACK. State transitions are persisted with a
+30-minute per-code/per-phase cooldown across restarts, preventing flapping
+spam. Absence, authentication failure and stale/unavailable telemetry **do
+not resolve a previously active low/exhausted alarm**. A closed Codex alarm
+says "Снят сигнал" rather than falsely claiming subscription recovery.
+No extra Telegram bot, queue, timer, token or network endpoint is introduced.
+
+**Scheduler boundary:** the project still has no generic Codex job queue or
+dispatcher. No arbitrary tasks are enqueued or resumed. Future launchers may
+use `control_center.codex_policy.may_dispatch()` only after independent
+owner authorization and a new rate-limits observation, just before launch.
+No existing H-01 service is dispatched or restarted based on Codex quotas.
+Automatic resumption is explicitly not claimed until such a job scheduler
+actually exists, is permissioned and passes its own deployment review.
+
+UI evidence (fixtures, not production telemetry) is generated as
+`docs/ux/evidence/h15-codex-usage/codex-393.png` and `codex-1440.png`.
+The owner must review these screenshots before a PR with UI changes is
+merged, per Issue #255. Production Ops Watch/Telegram behavior must be
+separately verified on the VPS after the authorized exact-SHA deployment.
+
+This feature never buys API tokens, spends reset credits, rotates accounts,
+uses Cloudflare Workers quota as Codex allowance or calls inference.
 
 This feature never buys API tokens, spends reset credits, rotates accounts,
 uses Cloudflare Workers quota as Codex allowance or calls inference.
