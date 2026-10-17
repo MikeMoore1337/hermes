@@ -4,6 +4,7 @@ from http.server import ThreadingHTTPServer
 import json
 from pathlib import Path
 import tempfile
+import time
 from threading import Thread
 import unittest
 from urllib.error import HTTPError
@@ -101,6 +102,19 @@ class QueueStatusTests(unittest.TestCase):
             self.assertNotIn(secret, dump)
         self.assertEqual(self.request("/api/codex/tasks?key=1")[0], 404)
         self.assertEqual(self.request("/api/codex/tasks", method="POST")[0], 501)
+
+    def test_worker_status_requires_fresh_sanitized_heartbeat(self):
+        self.queue.initialize()
+        marker = self.db.parent / "worker-status.json"
+        marker.write_text(json.dumps({"schema": 1, "active": True,
+                                      "checked_at": int(time.time())}))
+        self.assertTrue(read_status(self.db)["execution_enabled"])
+        marker.write_text(json.dumps({"schema": 1, "active": True,
+                                      "checked_at": int(time.time()) - 1000}))
+        self.assertFalse(read_status(self.db)["execution_enabled"])
+        marker.write_text(json.dumps({"schema": 1, "active": False,
+                                      "checked_at": int(time.time())}))
+        self.assertFalse(read_status(self.db)["execution_enabled"])
 
     def test_denied_without_github_session(self):
         self.start(github=True)
