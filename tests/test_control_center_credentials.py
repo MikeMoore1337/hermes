@@ -5,7 +5,7 @@ import tempfile
 import unittest
 
 from control_center.credentials import load_runtime_credentials
-from control_center.auth import AuthConfig
+from control_center.auth import AuthConfig, AuthError, GitHubProvider, OAuthService
 from control_center.oauth_broker import BrokerConfig
 
 BROKER={
@@ -52,6 +52,30 @@ class CredentialTests(unittest.TestCase):
         self.assertEqual(web.client_id,broker.client_id)
         self.assertTrue(broker.client_secret)
         self.assertNotIn("HERMES_OAUTH_CLIENT_SECRET",self.read("web.env"))
+
+    def test_direct_oauth_uses_both_separate_credentials(self):
+        self.emit("web.env", WEB)
+        self.emit("broker.env", BROKER)
+        web = self.read("web.env")
+        identity = self.read("broker.env")
+        config = AuthConfig.from_direct_credentials(web, identity)
+        self.assertTrue(config.client_secret)
+        self.assertEqual(config.owner_id, 42142321)
+        self.assertIsInstance(OAuthService(config).provider, GitHubProvider)
+        self.assertNotIn("HERMES_OAUTH_CLIENT_SECRET", web)
+
+    def test_direct_oauth_rejects_mismatch_and_missing_secret(self):
+        for changed in (
+            {**BROKER, "HERMES_OAUTH_CLIENT_ID": "Ov23mismatch12345"},
+            {**BROKER, "HERMES_OAUTH_ALLOWED_GITHUB_ID": "123456"},
+            {**BROKER, "HERMES_OAUTH_CLIENT_SECRET": ""},
+            {**BROKER, "HERMES_OAUTH_SOCKET": "/tmp/invalid.sock"},
+        ):
+            with self.subTest(changed=set(changed.items()) - set(BROKER.items())):
+                with self.assertRaises(AuthError):
+                    AuthConfig.from_direct_credentials(WEB, changed)
+        with self.assertRaises(AuthError):
+            AuthConfig.from_direct_credentials(WEB, {})
 
     def test_reject_unknown_duplicates_oversize_and_shell_lines(self):
         for source in [
