@@ -53,6 +53,16 @@ class H01OpsContractTests(unittest.TestCase):
             with self.assertRaisesRegex(agent.H01Denied, "image_config_unavailable"):
                 agent.safe_image(cfg)
 
+    def test_resource_preflight_is_a_skip_not_a_failed_service(self):
+        import io
+        from contextlib import redirect_stdout
+        with patch.object(agent, "run", side_effect=agent.H01Denied("load_above_operating_limit")):
+            output = io.StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(agent.main(), 0)
+        payload = json.loads(output.getvalue())
+        self.assertEqual(payload["status"], "SKIPPED_PRECHECK")
+
     def test_no_event_never_calls_provider(self):
         with tempfile.TemporaryDirectory() as tmp:
             with patch.object(agent, "STATE", Path(tmp) / "agent"), \
@@ -106,6 +116,8 @@ class H01OpsContractTests(unittest.TestCase):
         self.assertIn("TimeoutStartSec=220", unit)
         self.assertIn("ExecStart=/usr/bin/python3 -m scripts.h01_ops_agent_service", unit)
         self.assertIn("OnUnitInactiveSec=30min", timer)
+        self.assertIn("OnActiveSec=15min", timer)
+        self.assertNotIn("OnBootSec=", timer)
         self.assertIn("Persistent=false", timer)
         self.assertNotIn("ExecStart=/bin/sh", unit)
 
