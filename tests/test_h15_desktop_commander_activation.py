@@ -20,6 +20,29 @@ class ActivationTests(unittest.TestCase):
         self.assertIn("TIMER_ACTIVATED=NO", src)
         self.assertNotIn("systemctl enable --now hermes-agent", src)
         self.assertNotIn("rm -rf", src)
+
+    def test_node_version_gate(self):
+        src = SCRIPT.read_text()
+        # Execute the real shell version validator, without root or system changes.
+        definitions = src.split('require_root\ncase "$MODE" in')[0]
+        for version, accepted in (
+            ("18.19.1", False), ("20.19.0", False),
+            ("22.11.9", False), ("22.12.0", True),
+            ("22.16.0", True), ("24.0.0", True),
+            ("garbage", False),
+        ):
+            with self.subTest(version=version):
+                proc = subprocess.run(
+                    ["bash", "-c", definitions + '\nvalidate_node_version "$1"', "bash", version],
+                    capture_output=True, text=True,
+                )
+                self.assertEqual(proc.returncode == 0, accepted, proc.stderr)
+    def test_npm_engine_strict_and_unprivileged_check(self):
+        src = SCRIPT.read_text()
+        self.assertIn('as_identity npm --prefix "$STATE" install --engine-strict', src)
+        self.assertIn("version=$(as_identity node -p 'process.versions.node')", src)
+        self.assertIn("require_supported_node", src)
+
     def test_pinned_and_no_npx_network_at_service_start(self):
         src = COLLECTOR.read_text()
         self.assertIn("node_modules/.bin/mcp-remote", src)

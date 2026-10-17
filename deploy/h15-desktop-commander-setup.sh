@@ -23,11 +23,33 @@ as_identity() {
   runuser -u "$USER_NAME" -- env HOME="$STATE" \
     MCP_REMOTE_CONFIG_DIR="$STATE/.mcp-auth" PYTHONPATH="$RELEASE" "$@"
 }
+validate_node_version() {
+  local version="${1:-}" major minor
+  if [[ ! "$version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+    echo "Unable to parse Node.js version: $version" >&2
+    return 2
+  fi
+  major="${BASH_REMATCH[1]}"
+  minor="${BASH_REMATCH[2]}"
+  if (( major < 22 || (major == 22 && minor < 12) )); then
+    echo "Desktop Commander requires Node.js >=22.12.0 (detected v$version)." >&2
+    return 2
+  fi
+}
+require_supported_node() {
+  local version
+  version=$(as_identity node -p 'process.versions.node') || {
+    echo "Node.js is not executable by hermes-desktop." >&2
+    return 2
+  }
+  validate_node_version "$version"
+}
 require_setup() {
   require_release
   if ! id "$USER_NAME" >/dev/null 2>&1 || [[ ! -x "$LOCAL_BIN" ]] || [[ ! -x "$REMOTE_BIN" ]]; then
     echo 'Run prepare first.' >&2; exit 2
   fi
+  require_supported_node
 }
 prepare() {
   require_release
@@ -47,13 +69,9 @@ prepare() {
   if ! command -v node >/dev/null || ! command -v npm >/dev/null; then
     echo 'Node and npm are missing; no global changes made.' >&2; exit 2
   fi
-  local major
-  major=$(node -p 'Number(process.versions.node.split(".")[0])')
-  if [[ ! "$major" =~ ^[0-9]+$ ]] || ((major < 18)); then
-    echo 'Pinned Desktop Commander needs Node 18+.' >&2; exit 2
-  fi
+  require_supported_node
   # Download both pinned clients under a non-root user, never at service startup.
-  as_identity npm --prefix "$STATE" install --no-save --ignore-scripts \
+  as_identity npm --prefix "$STATE" install --engine-strict --no-save --ignore-scripts \
     --no-audit --no-fund --no-update-notifier \
     '@wonderwhy-er/desktop-commander@0.2.52' 'mcp-remote@0.13.5'
   if [[ ! -x "$LOCAL_BIN" || ! -x "$REMOTE_BIN" ]]; then
