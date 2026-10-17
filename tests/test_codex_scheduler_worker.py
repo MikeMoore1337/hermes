@@ -76,7 +76,8 @@ class WorkerRuntimeTests(unittest.TestCase):
     def invoke(self, run):
         with patch.object(worker, "DEFAULT_DB", self.db), \
              patch.object(worker, "ARTIFACT_DIR", self.artifacts), \
-             patch.object(worker, "DEFAULT_OUTPUT", self.quota):
+             patch.object(worker, "DEFAULT_OUTPUT", self.quota), \
+             patch.object(worker, "host_ready", return_value=True):
             return worker.run_once(self.conf, uid=self.uid, run=run)
 
     def test_off_by_default_even_with_approved_grant(self):
@@ -100,6 +101,19 @@ class WorkerRuntimeTests(unittest.TestCase):
         self.assertEqual(self.invoke(True)["decision"], "UNKNOWN")
         with journal._connect() as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0], 1)
+
+    def test_host_pressure_defers_without_claiming(self):
+        self.grant()
+        self.config["enabled"] = True
+        self.write_config()
+        with patch.object(worker, "host_ready", return_value=False):
+            result = self.invoke(False)
+            self.assertEqual(result["mode"], "preflight")
+        with patch.object(worker, "host_ready", return_value=False), \
+             patch.object(worker, "DEFAULT_DB", self.db):
+            result = worker.run_once(self.conf, uid=self.uid, run=True)
+        self.assertEqual(result, {"mode": "deferred", "reason": "host_capacity"})
+        self.assertFalse(self.db.exists())
 
     def test_manifest_change_cannot_change_immutable_authorization(self):
         path = self.grant()
