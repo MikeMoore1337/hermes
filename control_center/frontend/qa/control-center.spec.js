@@ -64,7 +64,7 @@ test("login design is a preview only, OAuth button disabled",async({page})=>{
  await page.screenshot({path:resolve(folder,"login-1440.png"),fullPage:true});
  await assertNoOverflow(page);
 });
-for(const width of [320,360,393,430,768,1920]){
+for(const width of [320,360,393,430,750,768,1920]){
  test("responsive Atlas and login "+width,async({page})=>{
   await page.setViewportSize({width,height:844});await mock(page);await page.goto("/");
   await expect(page.getByRole("table")).toBeVisible();
@@ -74,6 +74,22 @@ for(const width of [320,360,393,430,768,1920]){
   await assertNoOverflow(page);
   await page.goto("/?preview=login");
   await expect(page.getByRole("button",{name:/Войти через GitHub/})).toBeDisabled();
+  if(width<=750){
+   const positions=await page.evaluate(()=>{
+    const story=document.querySelector(".login-story").getBoundingClientRect();
+    const logo=document.querySelector(".login-hero-mark").getBoundingClientRect();
+    const caption=document.querySelector(".login-overline").getBoundingClientRect();
+    return {sectionCenter:(story.left+story.right)/2,
+      logoCenter:(logo.left+logo.right)/2,
+      captionCenter:(caption.left+caption.right)/2,
+      logoBottom:logo.bottom,captionTop:caption.top,
+      captionAlign:getComputedStyle(document.querySelector(".login-overline")).textAlign};
+   });
+   expect(Math.abs(positions.logoCenter-positions.sectionCenter),"Logo must be centered").toBeLessThanOrEqual(1);
+   expect(Math.abs(positions.captionCenter-positions.sectionCenter),"Caption block must be centered").toBeLessThanOrEqual(1);
+   expect(positions.captionAlign).toBe("center");
+   expect(positions.captionTop-positions.logoBottom,"Caption must sit clear below the wings").toBeGreaterThanOrEqual(16);
+  }
   await assertNoOverflow(page);
   if(width===393)await page.screenshot({path:resolve(folder,"login-393.png"),fullPage:true});
  });

@@ -107,6 +107,23 @@
 .login-root .login-story h1,.login-root .login-form h2 {font-weight:720;letter-spacing:-1px}
 .login-root .login-story blockquote {font-weight:400;font-style:italic}
 
+/* Mobile login: keep the HD mark and its caption centered and separate. */
+@media (max-width:750px) {
+  .login-story .login-hero-mark {
+    width:min(330px, 100%);
+    max-width:100%;
+    margin:0 auto;
+  }
+  .login-story .login-overline {
+    margin:24px auto 18px !important;
+    text-align:center;
+    font-size:clamp(9px, 2.3vw, 11px) !important;
+    letter-spacing:1.6px;
+    line-height:1.6;
+    overflow-wrap:anywhere;
+  }
+}
+
 /* Installed PWA safe areas; same approved Atlas visual system. */
 @media (display-mode: standalone) {
   .site-header,.login-header {padding-top:max(12px, env(safe-area-inset-top));}
