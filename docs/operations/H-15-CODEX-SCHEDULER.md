@@ -12,12 +12,12 @@ the fail-closed gate. All returned windows must allow ordinary usage and
 have remaining quota above the low threshold. Reset time is not evidence of
 recovery.
 
-- codex_scheduler/core.py: SQLite journal, owner grant records, atomic claim,
+- control_center/codex_scheduler.py: SQLite journal, owner grant records, atomic claim,
   lease/fencing, cancellation, manual-review latch and idempotent receipt.
 - QuotaWorker: serial, injected quota reader and executor; no timer.
-- executor.py: official Codex CLI exec adapter; disabled by default, accepts
+- control_center/codex_scheduler_executor.py: official Codex CLI exec adapter; disabled by default, accepts
   trusted out-of-band approval ID to immutable plan mapping only.
-- status.py: bounded, sanitized, read-only projection.
+- control_center/codex_scheduler_status.py: bounded, sanitized, read-only projection.
 - GET /api/codex/tasks: existing owner-only GitHub OAuth/proxy protection,
   returns not_configured if queue has not been initialized.
 
