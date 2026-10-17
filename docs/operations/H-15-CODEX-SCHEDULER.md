@@ -1,6 +1,6 @@
 # H-15 Codex Task Scheduler (#271): operator and recovery contract
 
-Status: source and synthetic MVP; **production live worker NOT ENABLED**.
+Status: production source release delivered by #274; opt-in worker follow-up #277. **Production live worker NOT YET ENABLED**.
 Dependencies: #255 quota monitor/policy; #2/#33 H-01 burn-in; #272 analytics;
 #273 offline benchmark. Nothing here restarts or reconfigures H-01.
 
@@ -14,7 +14,7 @@ recovery.
 
 - control_center/codex_scheduler.py: SQLite journal, owner grant records, atomic claim,
   lease/fencing, cancellation, manual-review latch and idempotent receipt.
-- QuotaWorker: serial, injected quota reader and executor; no timer.
+- QuotaWorker: serial, injected quota reader and executor. The optional timer is separate and not automatically installed by CD.
 - control_center/codex_scheduler_executor.py: official Codex CLI exec adapter; disabled by default, accepts
   trusted out-of-band approval ID to immutable plan mapping only.
 - control_center/codex_scheduler_status.py: bounded, sanitized, read-only projection.
@@ -99,13 +99,16 @@ job remains blocked forever and must not automatically retry. Cancel of an
 unstarted task is immediate. Cancel of a running task records a request, not
 an assertion that the inference process has actually stopped.
 
-Only the official CLI adapter is provided: fixed argv, stdin from trusted
+Only the official CLI adapter is provided: fixed argv (global approval flags precede `exec`), stdin from trusted
 approval-to-plan map, selected repo root, isolated CODEX_HOME, timeout,
 CPU/memory/output bounds, own process group and NO shell. No prompt/response
-content is surfaced in the API. A successful SHA-256 receipt is a digest,
-**not** replayable full model output. Verified grant issuance, dedicated
-artifact persistence, live termination coordination and independently
-observed CLI flags remain prerequisites for live unattended use.
+content is surfaced in the API. The opt-in worker persists successful bounded JSONL output to a private
+artifact directory (mode 0700, files 0600), fsyncs it before recording an
+opaque artifact reference in SQLite, and can re-ACK the existing result without
+another inference. The adapter's legacy digest-only mode is only for offline
+unit tests. Verified root-owned grant manifests bind the full immutable
+instruction digest. Operator-observed exact CLI version and one-shot canary
+remain prerequisites for claiming live production operation.
 
 ## Diagnostics, retention, rollback
 
@@ -140,3 +143,136 @@ termination/reconciliation before declaring the rollback complete.
 
 Boundaries: #255 observation/policy; #271 admission/queue; #272 usage metrics,
 not authorization; #273 verifier; #2/#33 independent agent acceptance.
+
+## Optional worker implementation and explicit activation (#277)
+
+The existing CI/CD installs the source and Control Center only. It does **not**
+install or enable new systemd units, permissions, repositories, or a real job.
+This is intentional: the restricted production deployment key accepts only
+`deploy SHA archive_digest`; it cannot execute arbitrary shell commands.
+Do not change that boundary or put a generic privileged SSH key in GitHub Actions.
+
+- Entrypoint: `python3 -m control_center.codex_scheduler_worker --config /etc/hermes-codex-scheduler/runtime.json --run`.
+- Each tick reads the **existing** quota snapshot produced by #255. It checks all
+  windows; unknown, missing, expired, auth_required, low or exhausted snapshots
+  never dispatch inference. No reset-clock guessing or paid API fallback.
+- No resident Python daemon: one bounded systemd oneshot every approximately
+  five minutes. The unit invokes a single task at most and another invocation
+  cannot overlap the same service. SQLite fencing prevents competing workers.
+- The service requires **both** `--run` and root-owned config
+  `"enabled":true`. The example config is deliberately disabled.
+- Each permission is an operator-created, root-owned JSON manifest in
+  `/etc/hermes-codex-scheduler/grants`. Each manifest binds the exact
+  permission scope, single task, instruction text and immutable SHA-256. The
+  scheduler remembers the complete manifest hash; modifying the instruction
+  after it was first admitted blocks further ticks.
+- Root ownership here is a local operator/owner trust boundary, **not** proof
+  of a remote cryptographic owner signature. Only the authorized owner/operator
+  may place manifest files; do not expose a remote write endpoint.
+- Queue journal is local to `/var/lib/hermes-codex-scheduler/jobs.sqlite3`;
+  group `hermes-control` can read its SQLite records, but cannot write them.
+  Output resides under a private `artifacts/` directory; no private Codex
+  conversations, JSONL or CODEX_HOME tokens reach the Control Center UI.
+
+### Activation gates on production VPS
+
+1. Complete or preserve H-01 #33's protected 24-hour acceptance. **Do not run
+   `systemctl daemon-reload`, restart H-01, change the H-01 timer, or disturb
+   its journals during the restricted acceptance window.** Schedule the
+   independent service installation afterward. Source deployment through
+   established CD is allowed and does not enable this unit.
+2. Confirm deployed exact main SHA via canonical deploy receipt and `/healthz`.
+   Verify current host RAM/swap/load headroom and active #33 services before any
+   new process; if headroom is insufficient, remain disabled.
+3. Through a separate authorized root-capable VPS console or a deliberately
+   provisioned narrowly scoped installation channel (not the existing forced
+   deploy SSH key), verify the new release's `deploy/hermes-codex-scheduler.*`
+   files and install them under `/etc/systemd/system/` as root:root 0644.
+   The unit reuses existing `hermes-codex` OS identity and
+   `hermes-control` group. It has a 768MiB cgroup memory ceiling, 45% CPU
+   quota, and no privileges or writable source directories.
+4. Under root, create `/etc/hermes-codex-scheduler/grants` owned by
+   root:hermes-control and mode 0750, and `runtime.json` owned by
+   root:hermes-control and mode 0640. Copy the disabled example, replace
+   paths with the **observed** real resolved Codex executable, isolated
+   ChatGPT-subscribed CODEX_HOME from #255, exact reviewed repository root,
+   selected available model. Never commit this private config or task prompts.
+   The executable path must resolve to a regular file; a symlink npm shim
+   itself does not satisfy the current adapter check.
+5. Perform `codex --version`, `codex exec --help` and non-inference
+   authentication/quota preflight as `hermes-codex` against its existing
+   isolated home. **Do not reauthenticate into a second account** or use
+   `OPENAI_API_KEY`. Confirm flags accepted by this exact installed CLI.
+6. Run `python3 -m control_center.codex_scheduler_worker --config ...`
+   (without `--run`) for manifest preflight: no database mutation or model
+   inference. With `"enabled":false`, `--run` must report `disabled`.
+7. For the owner-authorized initial live canary, create exactly **one**
+   root-owned grant manifest with an expiry no longer than one hour, operation
+   `inspect`, `low` effort, `max_runtime_seconds:120`,
+   `max_memory_mb:256`, `max_output_bytes:8192`, a unique idempotency key,
+   and instruction limited to read-only inspection of the reviewed Hermes
+   repository. Make the request expiry at or before grant expiry. Do not
+   include shell scripts, destructive actions, publishing, or PR writes.
+8. First validate and test a synthetic quota-deferred tick. After explicit
+   `"enabled":true` and a fresh ALLOW snapshot, permit a **single**
+   observable live canary and verify one attempt, exit status, artifact
+   existence, result ACK idempotency, resource usage and unchanged H-01.
+   No blind retry if startup/outcome is uncertain. Quota may remain exhausted
+   (DEFER), in which case **no real canary occurred**.
+9. Only after the one-shot success and resource checks, `systemd-analyze
+   verify` the two units; `daemon-reload` and `enable --now` the new timer
+   in the separately approved post-#33 window. Observe several ticks, restart
+   and deferred recovery; manually check installed unit, exact source and
+   result receipt. If any gate fails, keep the timer disabled.
+
+### Example local grant manifest shape (not authorization)
+
+All timestamps and unique IDs are assigned when the actual owner approves the
+specific job. This **template is not a permission** and must not be put into
+`grants/` unchanged. Model must match the observed local CLI and root-owned
+runtime config; the request and approval must use identical scope and limits.
+
+```json
+{
+  "schema": 1,
+  "approval": {
+    "approval_id": "owner-canary-unique-001", "initiator": "MikeMoore1337",
+    "repository": "MikeMoore1337/hermes", "allowed_operations": ["inspect"],
+    "model": "SELECTED_AVAILABLE_CODEX_MODEL", "effort": "low",
+    "resource_limits": {
+      "max_runtime_seconds": 120, "max_memory_mb": 256,
+      "max_output_bytes": 8192
+    },
+    "expires_at": "REPLACE_WITH_UTC_EXPIRY"
+  },
+  "task": {
+    "schema_version": 1, "requested_at": "REPLACE_WITH_UTC_REQUEST_TIME",
+    "expires_at": "REPLACE_WITH_UTC_EXPIRY", "initiator": "MikeMoore1337",
+    "approval_id": "owner-canary-unique-001",
+    "repository": "MikeMoore1337/hermes", "allowed_operations": ["inspect"],
+    "model": "SELECTED_AVAILABLE_CODEX_MODEL", "effort": "low",
+    "resource_limits": {
+      "max_runtime_seconds": 120, "max_memory_mb": 256,
+      "max_output_bytes": 8192
+    },
+    "idempotency_key": "owner-canary-task-unique-001"
+  },
+  "instruction": "Inspect the Hermes repository read-only; summarize one small module; do not modify files, publish, call external tools, or execute a second task."
+}
+```
+
+### Shutdown / rollback
+
+Use a separately authorized root console, not general-purpose CI privileges:
+`systemctl disable --now hermes-codex-scheduler.timer`; check whether the
+oneshot service/child process is still active, and if so stop and reconcile it
+without deleting its SQLite/WAL or artifact evidence. Do not auto-retry any
+job in `blocked/manual_review`. Set config `enabled=false` and review
+process termination before releasing the safety latch. Retain prior approved
+source, deployment receipt, and artifact evidence for rollback. H-01 #33 and
+#255 quota service/timer are independent and must not be modified.
+
+A green CI, merged source, or `PRODUCTION_DEPLOYED=SHA` **does not establish**
+that the scheduler timer is installed/enabled or that a real Codex inference
+occurred. Record actual on-host `systemctl`, journal, artifact and quota
+observations before closing #271.
