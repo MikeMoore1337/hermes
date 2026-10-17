@@ -89,7 +89,10 @@ class _NoCostProvider:
 class PilotTests(unittest.TestCase):
     def test_status_is_closed_until_account_proof_and_owner_approval(self) -> None:
         current = status()
-        self.assertEqual(current["account_status"], "ACCOUNT_FREE_UNVERIFIED")
+        self.assertEqual(current["account_status"], "OWNER_CONFIRMED_WORKERS_FREE")
+        self.assertEqual(current["provider_cost_observation"], "NOT_MEASURED")
+        self.assertEqual(current["live_quota_status"], "FRESH_ATTESTATION_REQUIRED")
+        self.assertFalse(current["live_default"])
         self.assertEqual(current["automatic_retries"], 0)
         self.assertFalse(current["automatic_fallback"])
 
