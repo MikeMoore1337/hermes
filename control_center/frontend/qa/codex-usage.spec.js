@@ -80,7 +80,8 @@ test("Codex history period and threshold controls remain read-only",async({page}
  await expect(page.getByText("История квот")).toBeVisible();
  await page.getByRole("button",{name:"30 дн."}).click();
  await expect(page.getByRole("button",{name:"30 дн."})).toHaveAttribute("aria-pressed","true");
- await page.locator("#codex-warning-threshold").fill("35");
+ await page.locator("#codex-warning-threshold").focus();
+ for(let i=0;i<3;i++)await page.keyboard.press("ArrowRight");
  await expect(page.getByText("Порог предупреждения · 35% остатка")).toBeVisible();
  await expect(page.getByText(/не изменяет серверный порог Ops Watch/i)).toBeVisible();
 });
