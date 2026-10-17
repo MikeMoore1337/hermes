@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "enabled": false,
+  "owner": "MikeMoore1337",
+  "models": ["gpt-5-codex"],
+  "repository_roots": {
+    "MikeMoore1337/hermes": "/opt/hermes-agent-owner/releases/main-REVIEWED_SHA"
+  },
+  "codex_binary": "/usr/local/bin/codex",
+  "codex_home": "/var/lib/hermes-codex-usage/auth",
+  "grants_directory": "/etc/hermes-codex-scheduler/grants"
+}

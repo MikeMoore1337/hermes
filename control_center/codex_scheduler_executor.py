@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
+import shutil
 from pathlib import Path
 import resource
 import signal
@@ -21,12 +23,13 @@ class OfficialCodexExecutor:
     def __init__(self, *, repo_roots: dict[str, Path],
                  approved_instructions: dict[str, str],
                  codex_home: Path, binary: Path,
-                 enabled: bool = False):
+                 enabled: bool = False, artifact_dir: Path | None = None):
         self.roots = dict(repo_roots)
         self.instructions = dict(approved_instructions)
         self.home = Path(codex_home)
         self.binary = Path(binary)
         self.enabled = enabled
+        self.artifact_dir = Path(artifact_dir) if artifact_dir is not None else None
 
     def execute(self, job: dict) -> tuple[bool, str | None]:
         if self.enabled is not True:
@@ -49,8 +52,8 @@ class OfficialCodexExecutor:
             raise ValidationError("execution_scope_invalid")
         sandbox = "workspace-write" if "patch" in ops or "prepare_pr" in ops else "read-only"
         # No job JSON field is ever executed as a program or shell fragment.
-        argv = [str(self.binary), "exec", "--json",
-                "--sandbox", sandbox, "--ask-for-approval", "never",
+        argv = [str(self.binary), "--ask-for-approval", "never",
+                "exec", "--json", "--sandbox", sandbox,
                 "--model", job["model"],
                 "--config", "model_reasoning_effort=" + job["effort"], "-"]
         env = {"PATH": "/usr/local/bin:/usr/bin:/bin", "HOME": str(self.home),
@@ -79,5 +82,42 @@ class OfficialCodexExecutor:
                 raise RuntimeError("codex_output_limit")
             output.seek(0)
             digest = hashlib.sha256(output.read()).hexdigest()
-            # Digest/exit status are evidence, not a replayable model response.
-            return proc.returncode == 0, "sha256:" + digest
+            if proc.returncode != 0:
+                return False, None
+            if self.artifact_dir is None:
+                # Compatibility with offline fake-executor tests only.
+                return True, "sha256:" + digest
+            # Persist before the queue commits succeeded. A crash here is
+            # intentionally uncertain and must never cause a second inference.
+            jid = job.get("job_id")
+            if not isinstance(jid, str) or not re.fullmatch(r"[a-zA-Z0-9-]{1,64}", jid):
+                raise ValidationError("artifact_job_id_invalid")
+            directory = self.artifact_dir
+            if not directory.is_dir() or directory.is_symlink():
+                raise ValidationError("artifact_directory_missing")
+            if directory.stat().st_mode & 0o077:
+                raise ValidationError("artifact_directory_permissions")
+            name = jid + "-" + digest + ".jsonl"
+            target = directory / name
+            if target.exists() or target.is_symlink():
+                raise ValidationError("artifact_already_exists")
+            tmp_name = None
+            try:
+                with tempfile.NamedTemporaryFile(dir=directory, prefix=".artifact-",
+                                                 delete=False) as result:
+                    tmp_name = result.name
+                    os.chmod(tmp_name, 0o600)
+                    output.seek(0)
+                    shutil.copyfileobj(output, result)
+                    result.flush()
+                    os.fsync(result.fileno())
+                os.replace(tmp_name, target)
+                dir_fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+                try:
+                    os.fsync(dir_fd)
+                finally:
+                    os.close(dir_fd)
+            finally:
+                if tmp_name and os.path.exists(tmp_name):
+                    os.unlink(tmp_name)
+            return True, "artifact:" + jid + ":" + digest

@@ -1,0 +1,35 @@
+[Unit]
+Description=Hermes authorized serial Codex Task Scheduler (#271)
+Documentation=https://github.com/MikeMoore1337/hermes/issues/271
+Wants=network-online.target
+After=network-online.target hermes-codex-usage.service
+ConditionPathExists=/etc/hermes-codex-scheduler/runtime.json
+
+[Service]
+Type=oneshot
+User=hermes-codex
+Group=hermes-control
+WorkingDirectory=/opt/hermes-control-center/current
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=CODEX_HOME=/var/lib/hermes-codex-usage/auth
+ExecStart=/usr/bin/python3 -m control_center.codex_scheduler_worker --config /etc/hermes-codex-scheduler/runtime.json --run
+StateDirectory=hermes-codex-scheduler
+StateDirectoryMode=0750
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/hermes-codex-scheduler /var/lib/hermes-codex-usage/auth
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+CPUQuota=45%
+MemoryMax=768M
+TasksMax=64
+TimeoutStartSec=3700

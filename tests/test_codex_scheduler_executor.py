@@ -51,7 +51,7 @@ class OfficialAdapterTests(TestCase):
         self.assertTrue(okay)
         self.assertRegex(reference, "^sha256:[0-9a-f]{64}$")
         argv = popen.call_args.args[0]
-        self.assertEqual(argv[:3], [str(self.binary), "exec", "--json"])
+        self.assertEqual(argv[:5], [str(self.binary), "--ask-for-approval", "never", "exec", "--json"])
         self.assertEqual(argv[argv.index("--sandbox") + 1], "read-only")
         self.assertEqual(argv[argv.index("--model") + 1], "mock-model")
         self.assertNotIn("shell", popen.call_args.kwargs)
@@ -61,6 +61,34 @@ class OfficialAdapterTests(TestCase):
         self.assertNotIn("OPENAI_API_KEY", popen.call_args.kwargs["env"])
         self.assertEqual(process.communicate.call_args.kwargs["input"],
                          b"Review approved synthetic issue.")
+
+    @patch("control_center.codex_scheduler_executor.subprocess.Popen")
+    def test_successful_jsonl_is_durable_before_receipt(self, popen):
+        process = MagicMock()
+        process.returncode = 0
+
+        def simulate(*, input, timeout):
+            output = popen.call_args.kwargs["stdout"]
+            output.write(b'{"type":"item.completed","summary":"synthetic"}\n')
+            output.flush()
+
+        process.communicate.side_effect = simulate
+        popen.return_value = process
+        artifacts = Path(self.temp.name) / "artifacts"
+        artifacts.mkdir(mode=0o700)
+        adapter = OfficialCodexExecutor(
+            repo_roots={"MikeMoore1337/hermes": self.repo},
+            approved_instructions={"approved-task-1234": "Review synthetic only."},
+            codex_home=self.home, binary=self.binary,
+            enabled=True, artifact_dir=artifacts)
+        jid = "12345678-1111-2222-3333-123456789abc"
+        success, receipt = adapter.execute({**self.job, "job_id": jid})
+        self.assertTrue(success)
+        self.assertTrue(receipt.startswith("artifact:" + jid + ":"))
+        stored = list(artifacts.glob("*.jsonl"))
+        self.assertEqual(len(stored), 1)
+        self.assertIn(b"synthetic", stored[0].read_bytes())
+        self.assertEqual(stored[0].stat().st_mode & 0o777, 0o600)
 
     @patch("control_center.codex_scheduler_executor.subprocess.Popen")
     def test_unapproved_plan_and_unknown_operations_refused(self, popen):

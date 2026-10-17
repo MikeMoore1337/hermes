@@ -1,0 +1,13 @@
+[Unit]
+Description=Recheck previously authorized Codex jobs without polling the model
+
+[Timer]
+OnBootSec=3min
+OnUnitInactiveSec=5min
+AccuracySec=30s
+RandomizedDelaySec=10s
+Persistent=false
+Unit=hermes-codex-scheduler.service
+
+[Install]
+WantedBy=timers.target
