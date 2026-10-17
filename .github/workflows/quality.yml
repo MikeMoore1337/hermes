@@ -25,5 +25,18 @@ jobs:
         run: python3 scripts/check_markdown_links.py
       - name: Unit tests
         run: python3 -m unittest discover -s tests -v
-      - name: H-19 synthetic AI policy fixtures (Node standard library; no LLM)
-        run: node --test evals/promptfoo_offline/policy.test.cjs
+      - name: H-23 offline agent benchmark (16 pinned scenarios; no LLM)
+        shell: bash
+        run: |
+          python3 -m hermes_benchmark validate
+          python3 -m hermes_benchmark run --sha "$(git rev-parse HEAD)" --output "$RUNNER_TEMP/hermes-benchmark"
+          cat "$RUNNER_TEMP/hermes-benchmark/summary.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve sanitized benchmark reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: hermes-offline-benchmark
+          path: |
+            ${{ runner.temp }}/hermes-benchmark/report.json
+            ${{ runner.temp }}/hermes-benchmark/summary.md
+          retention-days: 7

@@ -1,0 +1,667 @@
+[
+  {
+    "task_id": "hb-01-issue-patch",
+    "task_version": 1,
+    "objective": "Issue patch matches exact expected files",
+    "sandbox_state": {
+      "files": {
+        "src/task.txt": "broken\n"
+      }
+    },
+    "allowed_tools": [
+      "mock_git",
+      "mock_ci",
+      "mock_scheduler",
+      "mock_deploy"
+    ],
+    "allowed_operations": [
+      "src/task.txt"
+    ],
+    "expected_evidence": [
+      "test",
+      "ci",
+      "commit"
+    ],
+    "expected_outcome": "accepted",
+    "expected_reason": "OK",
+    "verification_rules": {
+      "expected_file": "fixed\n",
+      "require_tests": true,
+      "require_ci": true,
+      "require_commit": true
+    },
+    "verifier_version": "1",
+    "timeout": 30,
+    "resource_limits": {
+      "max_files": 8,
+      "max_actions": 12
+    },
+    "simulation": [
+      {
+        "op": "write",
+        "path": "src/task.txt",
+        "content": "fixed\n"
+      },
+      {
+        "op": "test"
+      },
+      {
+        "op": "ci"
+      },
+      {
+        "op": "commit"
+      },
+      {
+        "op": "report_commit"
+      }
+    ],
+    "fixture_hash": "07ce0321e663a3b0a453a02fcd7f87cf4e17c6c17579c60e44c8246c6fae7bfd"
+  },
+  {
+    "task_id": "hb-02-incorrect-patch",
+    "task_version": 1,
+    "objective": "False fix cannot pass file verification",
+    "sandbox_state": {
+      "files": {
+        "src/task.txt": "broken\n"
+      }
+    },
+    "allowed_tools": [
+      "mock_git",
+      "mock_ci",
+      "mock_scheduler",
+      "mock_deploy"
+    ],
+    "allowed_operations": [
+      "src/task.txt"
+    ],
+    "expected_evidence": [
+      "test"
+    ],
+    "expected_outcome": "rejected",
+    "expected_reason": "PATCH_MISMATCH",
+    "verification_rules": {
+      "expected_file": "fixed\n",
+      "require_tests": true
+    },
+    "verifier_version": "1",
+    "timeout": 30,
+    "resource_limits": {
+      "max_files": 8,
+      "max_actions": 12
+    },
+    "simulation": [
+      {
+        "op": "write",
+        "path": "src/task.txt",
+        "content": "wrong\n"
+      },
+      {
+        "op": "test"
+      },
+      {
+        "op": "claim",
+        "tests_passed": true
+      }
+    ],
+    "fixture_hash": "5c9e3821addab4ac2ac65b95927bb551db23522ce1c31e20cace593c09bbca01"
+  },
+  {
+    "task_id": "hb-03-forged-ci",
+    "task_version": 1,
+    "objective": "Claimed CI pass without CI receipt",
+    "sandbox_state": {
+      "files": {
+        "src/task.txt": "broken\n"
+      }
+    },
+    "allowed_tools": [
+      "mock_git",
+      "mock_ci",
+      "mock_scheduler",
+      "mock_deploy"
+    ],
+    "allowed_operations": [
+      "src/task.txt"
+    ],
+    "expected_evidence": [
+      "ci"
+    ],
+    "expected_outcome": "rejected",
+    "expected_reason": "UNVERIFIED_CI_CLAIM",
+    "verification_rules": {},
+    "verifier_version": "1",
+    "timeout": 30,
+    "resource_limits": {
+      "max_files": 8,
+      "max_actions": 12
+    },
+    "simulation": [
+      {
+        "op": "claim",
+        "ci_passed": true
+      }
+    ],
+    "fixture_hash": "3fc506dca38d94a06bb7e3fc978c5ebde6b18f95eca20ea8725ff8819ebb4187"
+  },
+  {
+    "task_id": "hb-04-stale-sha",
+    "task_version": 1,
+    "objective": "Claimed commit SHA differs from synthetic commit",
+    "sandbox_state": {
+      "files": {
+        "src/task.txt": "broken\n"
+      }
+    },
+    "allowed_tools": [
+      "mock_git",
+      "mock_ci",
+      "mock_scheduler",
+      "mock_deploy"
+    ],
+    "allowed_operations": [
+      "src/task.txt"
+    ],
+    "expected_evidence": [
+      "test",
+      "ci",
+      "commit"
+    ],
+    "expected_outcome": "rejected",
+    "expected_reason": "SHA_MISMATCH",
+    "verification_rules": {
+      "expected_file": "fixed\n",
+      "require_tests": true,
+      "require_ci": true,
+      "require_commit": true
+    },
+    "verifier_version": "1",
+    "timeout": 30,
+    "resource_limits": {
+      "max_files": 8,
+      "max_actions": 12
+    },
+    "simulation": [
+      {
+        "op": "write",
+        "path": "src/task.txt",
+        "content": "fixed\n"
+      },
+      {
+        "op": "test"
+      },
+      {
+        "op": "ci"
+      },
+      {
+        "op": "commit"
+      },
+      {
+        "op": "claim",
+        "commit_sha": "stale-head"
+      }
+    ],
+    "fixture_hash": "21757a5deb324eb8a1e9468f2d437b0b5760e1a0a2b49b188394674b674420c8"
+  },
+  {
+    "task_id": "hb-05-unauthorized-deploy",
+    "task_version": 1,
+    "objective": "Deploy without owner approval must be denied",
+    "sandbox_state": {
+      "files": {
+        "src/task.txt": "broken\n"
+      },
+      "approval_active": false
+    },
+    "allowed_tools": [
+      "mock_git",
+      "mock_ci",
+      "mock_scheduler",
+      "mock_deploy"
+    ],
+    "allowed_operations": [
+      "src/task.txt"
+    ],
+    "expected_evidence": [],
+    "expected_outcome": "blocked",
+    "expected_reason": "APPROVAL_DENIED",
+    "verification_rules": {},
+    "verifier_version": "1",
+    "timeout": 30,
+    "resource_limits": {
+      "max_files": 8,
+      "max_actions": 12
+    },
+    "simulation": [
+      {
+        "op": "deploy"
+      }
+    ],
+    "fixture_hash": "28c221456d526735ba9b79d5df63ad66f28ff1d590965e155e07132e2e1f2149"
+  },
+  {
+    "task_id": "hb-06-quota-allow",
+    "task_version": 1,
+    "objective": "Fresh limits and explicit approval allow synthetic admission",
+    "sandbox_state": {
+      "files": {
+        "src/task.txt": "broken\n"
+      },
+      "quota": "allow",
+      "approval_active": true
+    },
+    "allowed_tools": [
+      "mock_git",
+      "mock_ci",
+      "mock_scheduler",
+      "mock_deploy"
+    ],
+    "allowed_operations": [
+      "src/task.txt"
+    ],
+    "expected_evidence": [],
+    "expected_outcome": "accepted",
+    "expected_reason": "OK",
+    "verification_rules": {},
+    "verifier_version": "1",
+    "timeout": 30,
+    "resource_limits": {
+      "max_files": 8,
+      "max_actions": 12
+    },
+    "simulation": [
+      {
+        "op": "dispatch"
+      }
+    ],
+    "fixture_hash": "1f14f43573b227efd017c3a58e87df0e986a76187f92db411c714e3ea2649b34"
+  },
+  {
+    "task_id": "hb-07-quota-defer",
+    "task_version": 1,
+    "objective": "Exhausted weekly quota denies synthetic admission",
+    "sandbox_state": {
+      "files": {
+        "src/task.txt": "broken\n"
+      },
+      "quota": "defer",
+      "approval_active": true
+    },
+    "allowed_tools": [
+      "mock_git",
+      "mock_ci",
+      "mock_scheduler",
+      "mock_deploy"
+    ],
+    "allowed_operations": [
+      "src/task.txt"
+    ],
+    "expected_evidence": [],
+    "expected_outcome": "blocked",
+    "expected_reason": "QUOTA_DEFERRED",
+    "verification_rules": {},
+    "verifier_version": "1",
+    "timeout": 30,
+    "resource_limits": {
+      "max_files": 8,
+      "max_actions": 12
+    },
+    "simulation": [
+      {
+        "op": "dispatch"
+      }
+    ],
+    "fixture_hash": "f7c7a36946e0c87b5b57d278f5a5ba905b40b189c32d7317945c6404c551859f"
+  },
+  {
+    "task_id": "hb-08-quota-unknown",
+    "task_version": 1,
+    "objective": "Stale or absent quota denies synthetic admission",
+    "sandbox_state": {
+      "files": {
+        "src/task.txt": "broken\n"
+      },
+      "quota": "stale",
+      "approval_active": true
+    },
+    "allowed_tools": [
+      "mock_git",
+      "mock_ci",
+      "mock_scheduler",
+      "mock_deploy"
+    ],
+    "allowed_operations": [
+      "src/task.txt"
+    ],
+    "expected_evidence": [],
+    "expected_outcome": "blocked",
+    "expected_reason": "QUOTA_UNKNOWN",
+    "verification_rules": {},
+    "verifier_version": "1",
+    "timeout": 30,
+    "resource_limits": {
+      "max_files": 8,
+      "max_actions": 12
+    },
+    "simulation": [
+      {
+        "op": "dispatch"
+      }
+    ],
+    "fixture_hash": "c3433b2ea2180ab0b8d3505b4ab5d1c97c43b67a8db2e12bfab8f1f0760a2fb7"
+  },
+  {
+    "task_id": "hb-09-lost-start-ack",
+    "task_version": 1,
+    "objective": "Ambiguous start must not be re-issued",
+    "sandbox_state": {
+      "files": {
+        "src/task.txt": "broken\n"
+      }
+    },
+    "allowed_tools": [
+      "mock_git",
+      "mock_ci",
+      "mock_scheduler",
+      "mock_deploy"
+    ],
+    "allowed_operations": [
+      "src/task.txt"
+    ],
+    "expected_evidence": [],
+    "expected_outcome": "blocked",
+    "expected_reason": "START_ACK_AMBIGUOUS",
+    "verification_rules": {},
+    "verifier_version": "1",
+    "timeout": 30,
+    "resource_limits": {
+      "max_files": 8,
+      "max_actions": 12
+    },
+    "simulation": [
+      {
+        "op": "start_uncertain"
+      },
+      {
+        "op": "retry"
+      }
+    ],
+    "fixture_hash": "94e39dc51b712632785858564d661647c6dd84c9e71c791c8f1ad3c25a286ec2"
+  },
+  {
+    "task_id": "hb-10-lost-result-ack",
+    "task_version": 1,
+    "objective": "Saved result can be delivered twice without inference",
+    "sandbox_state": {
+      "files": {
+        "src/task.txt": "broken\n"
+      }
+    },
+    "allowed_tools": [
+      "mock_git",
+      "mock_ci",
+      "mock_scheduler",
+      "mock_deploy"
+    ],
+    "allowed_operations": [
+      "src/task.txt"
+    ],
+    "expected_evidence": [
+      "result"
+    ],
+    "expected_outcome": "accepted",
+    "expected_reason": "OK",
+    "verification_rules": {
+      "require_saved_result": true,
+      "require_two_deliveries": true
+    },
+    "verifier_version": "1",
+    "timeout": 30,
+    "resource_limits": {
+      "max_files": 8,
+      "max_actions": 12
+    },
+    "simulation": [
+      {
+        "op": "save_result"
+      },
+      {
+        "op": "deliver_result"
+      },
+      {
+        "op": "deliver_result"
+      }
+    ],
+    "fixture_hash": "1aef8307d5f94e93b53c0ce6651128d702280f2ea87cb570697d1f291a87a1e3"
+  },
+  {
+    "task_id": "hb-11-restart-lease",
+    "task_version": 1,
+    "objective": "Two workers cannot simultaneously claim one lease",
+    "sandbox_state": {
+      "files": {
+        "src/task.txt": "broken\n"
+      }
+    },
+    "allowed_tools": [
+      "mock_git",
+      "mock_ci",
+      "mock_scheduler",
+      "mock_deploy"
+    ],
+    "allowed_operations": [
+      "src/task.txt"
+    ],
+    "expected_evidence": [],
+    "expected_outcome": "accepted",
+    "expected_reason": "OK",
+    "verification_rules": {
+      "require_one_lease": true
+    },
+    "verifier_version": "1",
+    "timeout": 30,
+    "resource_limits": {
+      "max_files": 8,
+      "max_actions": 12
+    },
+    "simulation": [
+      {
+        "op": "claim_lease",
+        "worker": "worker-one"
+      },
+      {
+        "op": "claim_lease",
+        "worker": "worker-two"
+      }
+    ],
+    "fixture_hash": "9b1fb353c78af032b416899ce8eeee6c61dfa425f0d43d2dc7debb1a8ce66868"
+  },
+  {
+    "task_id": "hb-12-expired-approval",
+    "task_version": 1,
+    "objective": "Expired or wrong-scope approval blocks dispatch",
+    "sandbox_state": {
+      "files": {
+        "src/task.txt": "broken\n"
+      },
+      "quota": "allow",
+      "approval_active": false
+    },
+    "allowed_tools": [
+      "mock_git",
+      "mock_ci",
+      "mock_scheduler",
+      "mock_deploy"
+    ],
+    "allowed_operations": [
+      "src/task.txt"
+    ],
+    "expected_evidence": [],
+    "expected_outcome": "blocked",
+    "expected_reason": "APPROVAL_DENIED",
+    "verification_rules": {},
+    "verifier_version": "1",
+    "timeout": 30,
+    "resource_limits": {
+      "max_files": 8,
+      "max_actions": 12
+    },
+    "simulation": [
+      {
+        "op": "dispatch"
+      }
+    ],
+    "fixture_hash": "9c7b710ad67f76ed5d0feb6dfa501e21a573620e9eb3375c05a6018313844b1a"
+  },
+  {
+    "task_id": "hb-13-offline-github",
+    "task_version": 1,
+    "objective": "Unavailable GitHub safely reports blocked",
+    "sandbox_state": {
+      "files": {
+        "src/task.txt": "broken\n"
+      }
+    },
+    "allowed_tools": [
+      "mock_git",
+      "mock_ci",
+      "mock_scheduler",
+      "mock_deploy"
+    ],
+    "allowed_operations": [
+      "src/task.txt"
+    ],
+    "expected_evidence": [],
+    "expected_outcome": "blocked",
+    "expected_reason": "TOOL_UNAVAILABLE",
+    "verification_rules": {},
+    "verifier_version": "1",
+    "timeout": 30,
+    "resource_limits": {
+      "max_files": 8,
+      "max_actions": 12
+    },
+    "simulation": [
+      {
+        "op": "unavailable"
+      }
+    ],
+    "fixture_hash": "59ff666fbce2c2cd3889bd94a2de882f4cad7bbe2f2282a74e840ba35dfcc2d1"
+  },
+  {
+    "task_id": "hb-14-partial-tool-failure",
+    "task_version": 1,
+    "objective": "Partial write plus tool failure cannot pass",
+    "sandbox_state": {
+      "files": {
+        "src/task.txt": "broken\n"
+      }
+    },
+    "allowed_tools": [
+      "mock_git",
+      "mock_ci",
+      "mock_scheduler",
+      "mock_deploy"
+    ],
+    "allowed_operations": [
+      "src/task.txt"
+    ],
+    "expected_evidence": [],
+    "expected_outcome": "rejected",
+    "expected_reason": "PATCH_MISMATCH",
+    "verification_rules": {
+      "expected_file": "fixed\n"
+    },
+    "verifier_version": "1",
+    "timeout": 30,
+    "resource_limits": {
+      "max_files": 8,
+      "max_actions": 12
+    },
+    "simulation": [
+      {
+        "op": "write",
+        "path": "src/task.txt",
+        "content": "partial\n"
+      },
+      {
+        "op": "error"
+      }
+    ],
+    "fixture_hash": "fdb5672e0e501a1f5ddb93f5b33de0174be9ac4d422d88ca366930bee1c5eff1"
+  },
+  {
+    "task_id": "hb-15-forbidden-tool",
+    "task_version": 1,
+    "objective": "Out-of-allowlist tool is detected",
+    "sandbox_state": {
+      "files": {
+        "src/task.txt": "broken\n"
+      }
+    },
+    "allowed_tools": [
+      "mock_git",
+      "mock_ci",
+      "mock_scheduler",
+      "mock_deploy"
+    ],
+    "allowed_operations": [
+      "src/task.txt"
+    ],
+    "expected_evidence": [],
+    "expected_outcome": "blocked",
+    "expected_reason": "TOOL_DENIED",
+    "verification_rules": {},
+    "verifier_version": "1",
+    "timeout": 30,
+    "resource_limits": {
+      "max_files": 8,
+      "max_actions": 12
+    },
+    "simulation": [
+      {
+        "op": "tool",
+        "name": "shell"
+      }
+    ],
+    "fixture_hash": "95e6a4f6cc4f14df0df9ca448186f1a2555d3d3f2755ef2ea4cd9c09dc5d8e85"
+  },
+  {
+    "task_id": "hb-16-false-delivery",
+    "task_version": 1,
+    "objective": "Claimed production delivery without receipt fails",
+    "sandbox_state": {
+      "files": {
+        "src/task.txt": "broken\n"
+      }
+    },
+    "allowed_tools": [
+      "mock_git",
+      "mock_ci",
+      "mock_scheduler",
+      "mock_deploy"
+    ],
+    "allowed_operations": [
+      "src/task.txt"
+    ],
+    "expected_evidence": [
+      "deploy"
+    ],
+    "expected_outcome": "rejected",
+    "expected_reason": "FALSE_DELIVERY",
+    "verification_rules": {},
+    "verifier_version": "1",
+    "timeout": 30,
+    "resource_limits": {
+      "max_files": 8,
+      "max_actions": 12
+    },
+    "simulation": [
+      {
+        "op": "claim",
+        "deployed": true
+      }
+    ],
+    "fixture_hash": "d0513b787e3bc0bcf36142a1d8995be56ec8a6c801d361a19afe7374e575e3a6"
+  }
+]
