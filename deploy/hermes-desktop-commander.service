@@ -10,6 +10,7 @@ User=hermes-desktop
 Group=hermes-control
 WorkingDirectory=/opt/hermes-control-center/current
 Environment=HOME=/var/lib/hermes-desktop-commander
+Environment=MCP_REMOTE_CONFIG_DIR=/var/lib/hermes-desktop-commander/.mcp-auth
 Environment=HERMES_DC_OWNER_AUTHORIZED=1
 Environment=PYTHONUNBUFFERED=1
 ExecStart=/usr/bin/python3 -m control_center.desktop_commander --remote --output /var/lib/hermes-desktop-commander/status.json

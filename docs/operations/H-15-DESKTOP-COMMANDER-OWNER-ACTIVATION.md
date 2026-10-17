@@ -34,8 +34,20 @@ local вызывает только initialize и tools/list. Локальный
 После успешного OAuth:
 
     sudo bash deploy/h15-desktop-commander-setup.sh verify
+
+Если новая версия unit-файла пришла после ручной авторизации, заново выполнить `prepare` из текущего успешно доставленного release: это синхронизирует unit, передаст в systemd тот же `MCP_REMOTE_CONFIG_DIR=/var/lib/hermes-desktop-commander/.mcp-auth`, что использовали `auth` и `verify`, и **не** включает таймер. Уже полученную OAuth-сессию не удалять.
+
+Перед активацией таймера обязательно проверить реальный запуск именно из systemd:
+
+    sudo bash deploy/h15-desktop-commander-setup.sh prepare
+    sudo systemctl start hermes-desktop-commander.service
+    sudo bash deploy/h15-desktop-commander-setup.sh status
+
+Продолжать, только если статус после systemd-вызова — `monitored` или `exhausted` и команда `systemctl start` завершилась успешно. Если статус `unavailable`, таймер не включать, зафиксировать диагностические коды, не публиковать OAuth-секреты.
+
     sudo bash deploy/h15-desktop-commander-setup.sh enable
     sudo bash deploy/h15-desktop-commander-setup.sh status
+    systemctl list-timers --all hermes-desktop-commander.timer
 
 verify делает ТОЛЬКО реальный who_am_i/list_devices и записывает очищенный статус/SQLite-историю; выводит status, процент, число устройств и точек истории. Статус exhausted допустим для read-only мониторинга и запрещает cloud execution. enable требует свежий настоящий снимок, включает только telemetry timer на 15 минут, без команд на устройствах. При unavailable/stale/unknown включение невозможно.
 
