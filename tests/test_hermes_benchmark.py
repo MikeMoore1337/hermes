@@ -185,6 +185,14 @@ class BenchmarkTests(unittest.TestCase):
             self.assertIsNone(row["model"])
             self.assertIsNone(row["effort"])
 
+    def test_bounded_actions_and_elapsed_timeout_fail_closed(self):
+        case = self.case(6)
+        case["resource_limits"]["max_actions"] = 0
+        self.assertEqual(core.execute_case(case)["status"], "infra_failure")
+        case = self.case(6)
+        case["timeout"] = 0
+        self.assertEqual(core.execute_case(case)["status"], "infra_failure")
+
     def test_unknown_synthetic_operation_is_infra_failure(self):
         case = self.case(6)
         case["simulation"] = [{"op": "something-not-implemented"}]
