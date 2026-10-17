@@ -1,0 +1,33 @@
+[Unit]
+Description=Hermes read-only Desktop Commander Remote MCP telemetry
+Documentation=https://github.com/MikeMoore1337/hermes/issues/275
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=hermes-desktop
+Group=hermes-control
+WorkingDirectory=/opt/hermes-control-center/current
+Environment=HOME=/var/lib/hermes-desktop-commander
+Environment=HERMES_DC_OWNER_AUTHORIZED=1
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 -m control_center.desktop_commander --remote --output /var/lib/hermes-desktop-commander/status.json
+StateDirectory=hermes-desktop-commander
+StateDirectoryMode=0750
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0027
+TimeoutStartSec=55
+MemoryMax=256M
+CPUQuota=35%
+TasksMax=32

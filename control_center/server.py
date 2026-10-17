@@ -19,6 +19,9 @@ from control_center.codex_history import read as read_codex_history
 from control_center.codex_policy import decision as codex_decision
 from control_center.codex_scheduler import DEFAULT_DB as SCHEDULER_DB
 from control_center.codex_scheduler_status import read_status as read_scheduler_status, StatusUnavailable
+from control_center.desktop_commander import (DEFAULT_OUTPUT as DC_OUTPUT,
+                                              read_snapshot as read_desktop_commander,
+                                              CommanderError)
 from control_center.credentials import load_runtime_credentials
 from control_center.auth import (
     AuthConfig, AuthError, OAuthService, ORIGIN,
@@ -32,6 +35,8 @@ ASSETS = {
     "/": ("index.html", "text/html; charset=utf-8"),
     "/app.js": ("app.js", "text/javascript; charset=utf-8"),
     "/style.css": ("style.css", "text/css; charset=utf-8"),
+    "/desktop-commander.js": ("desktop-commander.js", "text/javascript; charset=utf-8"),
+    "/desktop-commander.css": ("desktop-commander.css", "text/css; charset=utf-8"),
     "/brand.webp": ("brand.webp", "image/webp"),
     "/favicon.png": ("favicon.png", "image/png"),
     "/apple-touch-icon.png": ("apple-touch-icon.png", "image/png"),
@@ -53,6 +58,7 @@ CSP = ("default-src 'none'; script-src 'self'; style-src 'self'; "
 def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
                  codex_path: Path = CODEX_OUTPUT,
                  scheduler_path: Path = SCHEDULER_DB,
+                 desktop_commander_path: Path = DC_OUTPUT,
                  auth_config: AuthConfig | None = None, oauth_service: OAuthService | None = None):
     config = auth_config if auth_config is not None else AuthConfig.from_env()
     oauth = oauth_service if oauth_service is not None else (
@@ -213,6 +219,19 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
                         data = codex_decision(data, threshold_percent=option)
                 return self.respond(200, "application/json; charset=utf-8",
                                     json.dumps(data, separators=(",", ":")).encode())
+            if path in ("/api/providers/desktop-commander",
+                        "/control-center/api/providers/desktop-commander"):
+                if config.mode == "github" and not oauth.authenticated(
+                        self._cookie(SESSION_COOKIE)):
+                    return self.respond(401, "application/json",
+                                        b'{"error":"authentication_required"}')
+                try:
+                    data = read_desktop_commander(desktop_commander_path)
+                except CommanderError:
+                    return self.respond(503, "application/json",
+                                        b'{"error":"desktop_commander_snapshot_invalid"}')
+                return self.respond(200, "application/json; charset=utf-8",
+                                    json.dumps(data, separators=(",", ":")).encode())
             if path in ("/api/codex/tasks", "/control-center/api/codex/tasks"):
                 if parsed.query:
                     return self.respond(404, "text/plain", b"Not found")
@@ -252,6 +271,11 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
                 name, mime = ASSETS[path]
                 try:
                     raw = (WEB / name).read_bytes()
+                    if name == "index.html":
+                        # Additive same-origin widget; never modify the Vite bundle at runtime.
+                        raw = raw.replace(b"</head>", (
+                            b'<link rel="stylesheet" href="/desktop-commander.css">'
+                            b'<script src="/desktop-commander.js" defer></script></head>'))
                 except OSError:
                     return self.respond(503, "text/plain", b"Static asset unavailable")
                 return self.respond(200, mime, raw)
