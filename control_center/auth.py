@@ -11,6 +11,7 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import os
 import re
 import secrets
@@ -87,6 +88,28 @@ class AuthConfig:
         if len(secret.encode("utf-8")) < 32 or len(secret) > 1024:
             raise AuthError("Weak session signing secret")
         return cls(mode, origin, client_id, "", int(owner), secret.encode("utf-8"), broker)
+
+    @classmethod
+    def from_direct_credentials(cls, web: dict[str, str], identity: dict[str, str]) -> "AuthConfig":
+        """Build direct OAuth from two existing systemd credentials, never from argv."""
+        config = cls.from_env(web)
+        if config.mode != "github":
+            raise AuthError("Direct OAuth requires explicit GitHub auth mode")
+        if set(identity) != {
+            "HERMES_OAUTH_CLIENT_ID", "HERMES_OAUTH_CLIENT_SECRET",
+            "HERMES_OAUTH_ALLOWED_GITHUB_ID", "HERMES_OAUTH_SOCKET",
+        }:
+            raise AuthError("Invalid GitHub identity credentials")
+        if identity["HERMES_OAUTH_CLIENT_ID"] != config.client_id or (
+                identity["HERMES_OAUTH_ALLOWED_GITHUB_ID"] != str(config.owner_id)):
+            raise AuthError("OAuth credentials identity mismatch")
+        if identity["HERMES_OAUTH_SOCKET"] != BROKER_SOCKET:
+            raise AuthError("Invalid legacy credential socket field")
+        credential = identity["HERMES_OAUTH_CLIENT_SECRET"]
+        if not 20 <= len(credential) <= 256 or any(ord(char) < 33 for char in credential):
+            raise AuthError("Invalid GitHub client secret")
+        return cls(config.mode, config.public_origin, config.client_id,
+                   credential, config.owner_id, config.session_secret, config.broker_socket)
 
 
 class _NoRedirect(HTTPRedirectHandler):
@@ -221,7 +244,10 @@ class OAuthService:
         if config.mode != "github":
             raise AuthError("OAuth service cannot run in proxy mode")
         self.config = config
-        self.provider = provider if provider is not None else LocalBrokerProvider()
+        # Production: direct HTTPS, identical in principle to Second Brain.
+        # The legacy broker fallback stays only for isolated compatibility tests.
+        self.provider = provider if provider is not None else (
+            GitHubProvider() if config.client_secret else LocalBrokerProvider())
         self.clock = clock if clock is not None else time.time
         self._pending: dict[str, tuple[str, float]] = {}
         self._sessions: dict[str, float] = {}
@@ -268,8 +294,22 @@ class OAuthService:
             verifier = value[0]
         try:
             user_id = self.provider.identify(self.config, code, verifier)
-        except Exception as exc:
-            raise AuthError("OAuth provider identity lookup failed") from exc
+        except ProviderHTTPError as exc:
+            stage = exc.stage if exc.stage in ("token", "identity") else "unknown"
+            status = exc.status if exc.status in (
+                400, 401, 403, 404, 408, 422, 429, 500, 502, 503, 504) else 0
+            logging.getLogger(__name__).warning(
+                "github_direct_rejection stage=%s status=%s", stage,
+                status if status else "other")
+            raise AuthError("OAuth provider identity lookup failed") from None
+        except (OSError, TimeoutError):
+            logging.getLogger(__name__).warning(
+                "github_direct_rejection stage=transport status=unavailable")
+            raise AuthError("OAuth provider identity lookup failed") from None
+        except Exception:
+            logging.getLogger(__name__).warning(
+                "github_direct_rejection stage=validation status=rejected")
+            raise AuthError("OAuth provider identity lookup failed") from None
         if type(user_id) is not int or user_id != self.config.owner_id:
             raise AuthError("Owner ID denied")
         token = secrets.token_urlsafe(32)
