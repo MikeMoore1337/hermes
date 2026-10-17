@@ -73,6 +73,19 @@ jobs:
       - name: Browser checks (approved Atlas, protected GitHub login, mobile)
         working-directory: control_center/frontend
         run: npm run test:e2e
+      - name: Temporary H15 image evidence handoff
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64
+          for ident in ("393", "1440"):
+              path = Path(f'docs/ux/evidence/h15-codex-scheduler/scheduler-{ident}.png')
+              data = base64.b64encode(path.read_bytes()).decode('ascii')
+              print(f'H15_PNG_BEGIN {ident} {len(data)}')
+              for i in range(0, len(data), 900):
+                  print('H15_PNG', ident, i // 900, data[i:i+900])
+              print(f'H15_PNG_END {ident}')
+          PY
       - name: Attach H-15 scheduler visual evidence for owner review
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
