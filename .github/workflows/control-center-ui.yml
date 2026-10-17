@@ -54,6 +54,19 @@ jobs:
           npm run check
           npm run test
           npm run build
+      - name: Temporary H15 deterministic built asset handoff
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64
+          for label, path in (("app", "control_center/web/app.js"),
+                              ("css", "control_center/web/style.css")):
+              encoded = base64.b64encode(Path(path).read_bytes()).decode('ascii')
+              print(f'H15_ASSET_BEGIN {label} {len(encoded)}')
+              for offset in range(0, len(encoded), 900):
+                  print('H15_ASSET', label, offset // 900, encoded[offset:offset+900])
+              print(f'H15_ASSET_END {label}')
+          PY
       - name: Compiled bundle matches committed source
         run: git diff --exit-code -- control_center/web
       - name: Production dependency vulnerability gate
