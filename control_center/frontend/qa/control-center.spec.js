@@ -10,11 +10,12 @@ const services=[
 {id:"qa",name:"QA Advisor",unit:"hermes-qa-watch.timer",state:"active",kind:"schedule"},
 {id:"research",name:"Research Scout",unit:"hermes-research-scout.timer",state:"active",kind:"schedule"},
 {id:"network",name:"Защита сети",unit:"hermes-cloudflare-network-guard.service",state:"active",kind:"service"},
-{id:"agent",name:"Постоянный AI Agent",unit:"hermes-agent-sandbox.service",state:"blocked",kind:"restricted"}];
+{id:"agent_bounded",name:"H-01 Ops AI (ограниченный)",unit:"hermes-h01-ops-agent.timer",state:"active",kind:"schedule"},
+{id:"agent",name:"Полный AI Agent (без допуска)",unit:"hermes-agent-sandbox.service",state:"blocked",kind:"restricted"}];
 function mock(page,extras={}){
  return page.route("**/api/overview", route=>route.fulfill({status:200,
    contentType:"application/json",
-   body:JSON.stringify({schema:1,mode:"read_only",generated_at:new Date().toISOString(),services,...extras})}));
+   body:JSON.stringify({schema:1,mode:"read_only",generated_at:new Date().toISOString(),services,agent_policy:"Ограниченный H-01 Ops AI: расписание активно. Полный AI Agent не допущен; успешность полезного цикла не доказана.",...extras})}));
 }
 async function assertNoOverflow(page){
  const out=await page.evaluate(()=>({width:innerWidth,doc:document.documentElement.scrollWidth,body:document.body.scrollWidth}));
@@ -37,7 +38,7 @@ test("approved C+B Atlas with C+A fonts, working asset and navigation",async({pa
  await page.goto("/");
  await expect(page.getByRole("heading",{name:"Система. Под наблюдением."})).toBeVisible();
  await expect(page.getByRole("row",{name:/Ops Watch/})).toBeVisible();
- await expect(page.getByText("Resident AI Agent: NO-GO",{exact:true})).toBeVisible();
+ await expect(page.getByText("H-01 Ops AI / полный агент",{exact:true})).toBeVisible();
  await expect(page.locator('img[src="/brand.webp"]').first()).toHaveJSProperty("complete",true);
  const imageLoaded=await page.locator('img[src="/brand.webp"]').first().evaluate(x=>x.naturalWidth>0);
  expect(imageLoaded).toBe(true);

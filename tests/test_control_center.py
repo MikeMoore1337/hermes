@@ -24,6 +24,9 @@ class SnapshotTests(unittest.TestCase):
         self.assertEqual(snapshot["mode"], "read_only")
         self.assertEqual(snapshot["generated_at"], "2026-10-16T00:00:00Z")
         self.assertEqual(snapshot["services"][-1]["state"], "unexpected_active")
+        self.assertEqual(snapshot["services"][-2]["id"], "agent_bounded")
+        self.assertEqual(snapshot["agent_runtime"]["scheduler_state"], "active")
+        self.assertEqual(snapshot["agent_runtime"]["last_useful_cycle"], "unknown")
         for argv, kwargs in calls:
             self.assertEqual(argv[:4], ["systemctl", "show", "--no-pager", "--property=ActiveState"])
             self.assertIn(argv[-1], {unit for _, _, unit, _ in UNITS})
@@ -34,6 +37,26 @@ class SnapshotTests(unittest.TestCase):
         def run(argv, **kwargs):
             return type("P", (), {"returncode": 0, "stdout": "LoadState=loaded\nActiveState=inactive\n"})()
         self.assertEqual(collect(run)["services"][-1]["state"], "blocked")
+
+    def test_bounded_timer_does_not_prove_success(self):
+        def run(argv, **kwargs):
+            state = "active" if argv[-1] == "hermes-h01-ops-agent.timer" else "inactive"
+            return type("P", (), {"returncode": 0,
+                                  "stdout": f"LoadState=loaded\nActiveState={state}\n"})()
+        result = collect(run)
+        self.assertEqual(result["services"][-2]["state"], "active")
+        self.assertEqual(result["services"][-1]["state"], "blocked")
+        self.assertEqual(result["agent_runtime"]["last_useful_cycle"], "unknown")
+        self.assertIn("не доказана", result["agent_policy"])
+
+    def test_missing_h01_timer_no_false_active(self):
+        def run(argv, **kwargs):
+            state = "not-found" if argv[-1] == "hermes-h01-ops-agent.timer" else "loaded"
+            return type("P", (), {"returncode": 0,
+                                  "stdout": f"LoadState={state}\nActiveState=inactive\n"})()
+        result = collect(run)
+        self.assertEqual(result["agent_runtime"]["scheduler_state"], "unknown")
+        self.assertIn("не подтверждено", result["agent_policy"])
 
     def test_missing_unit_unknown(self):
         def run(argv, **kwargs):

@@ -13,7 +13,7 @@ const ISSUE163="https://github.com/MikeMoore1337/hermes/issues/163";
 const UI_VERSION="0.2.0";
 const nav=["all","ops","research","qa","agent","codex"];
 const icons={news:Radio,ops:Activity,alerts:Signal,qa:ShieldCheck,
-  research:Search,network:ShieldCheck,agent:LockKeyhole};
+  research:Search,network:ShieldCheck,agent_bounded:Activity,agent:LockKeyhole};
 const formatTime=t=>{const d=new Date(t);return Number.isFinite(d.getTime())?d.toLocaleString("ru-RU",{day:"2-digit",month:"long",hour:"2-digit",minute:"2-digit"}):"нет данных";};
 
 function Brand({large=false}){
@@ -155,14 +155,14 @@ function SignalPanel({snapshot,error}){
      <small>ТРЕБУЕТ ПРОВЕРКИ</small><strong>{s.name}</strong><p>{statuses[s.state]?.label||"Нет данных"}</p>
     </div></div>)}
     <div className="signal-item"><span className="timeline-point amber"/><div>
-     <small>ПОЛИТИКА ДОПУСКА</small><strong>Resident AI Agent: NO-GO</strong><p>Постоянный агент не разрешён к запуску.</p></div></div>
+     <small>ПОЛИТИКА ДОПУСКА</small><strong>H-01 Ops AI / полный агент</strong><p>{snapshot?.agent_policy||"Нет данных о политике AI Agent."}</p></div></div>
    </div>
    <p className="signal-disclaimer">История инцидентов и доставки уведомлений пока не подключена. События не моделируются.</p>
   </section>
   <section className="right-panel security-panel">
    <div className="side-heading"><span className="eyebrow">ПОЛИТИКА БЕЗОПАСНОСТИ</span><ShieldCheck size={19} aria-hidden="true"/></div>
-   <div className="policy-state"><LockKeyhole size={27} aria-hidden="true"/><div><strong>Resident AI Agent заблокирован</strong>
-    <p>До прохождения обязательных проверок безопасности (#33).</p></div></div>
+   <div className="policy-state"><LockKeyhole size={27} aria-hidden="true"/><div><strong>Полный AI Agent не допущен</strong>
+    <p>Ограниченный H-01 разрешён отдельно. Активный таймер не доказывает успешность анализа (#33).</p></div></div>
    <dl className="permission-list"><div><dt>Чтение снимка</dt><dd>Разрешено</dd></div><div><dt>Запуск служб</dt><dd className="denied">Запрещён</dd></div>
     <div><dt>Изменение конфигурации</dt><dd className="denied">Недоступно</dd></div><div><dt>Доступ к секретам</dt><dd className="denied">Закрыт</dd></div></dl>
    <a href={ISSUE33} target="_blank" rel="noopener noreferrer" className="policy-link">Условия допуска <ArrowUpRight size={14}/></a>
@@ -208,7 +208,7 @@ function OperatorApp({authMode,onLogout}){
        <div className="hero-meta">HERMES CONTROL CENTER / H-15 <span>РЕЖИМ: ТОЛЬКО ЧТЕНИЕ</span></div>
     </section>
     <section className="stats-bar" aria-label="Показатели">
-     <StatTile title="АКТИВНЫЕ СЛУЖБЫ" value={snapshot?stats.active+" / "+stats.total:"—"} sub="Активные системные единицы" icon={Server}/>
+     <StatTile title="АКТИВНЫЕ ЕДИНИЦЫ" value={snapshot?stats.active+" / "+stats.total:"—"} sub="Активные системные единицы" icon={Server}/>
      <StatTile title="ТРЕБУЮТ ВНИМАНИЯ" value={snapshot?String(stats.attention).padStart(2,"0"):"—"} sub="Сбой или неизвестное состояние" icon={AlertTriangle} tone="warn"/>
      <StatTile title="ПОСЛЕДНИЙ СНИМОК" value={snapshot?"Получен":"Нет данных"} sub={now} icon={Database}/>
      <StatTile title="РЕЖИМ ДОСТУПА" value="Только чтение" sub="Команды управления отключены" icon={LockKeyhole}/>
@@ -217,7 +217,7 @@ function OperatorApp({authMode,onLogout}){
     {error&&<div className="inline-error" role="alert"><AlertTriangle size={17}/>{error}</div>}
     <div className="operator-grid">
      <div className="center-area">{view==="codex"?<CodexPanel/>:<>{view==="research"&&<ResearchPanel research={snapshot?.research}/>}<Registry snapshot={snapshot} view={view} search={search} setSearch={setSearch} filter={filter} setFilter={setFilter}/>{view==="all"&&<CodexPanel compact/>}</>}
-      {view!=="codex"&&<section className="context-panel"><div><span className="eyebrow">ИСТОЧНИК</span><strong>systemd · защищённый снимок</strong><p>Разрешённый список 7 компонентов, без приватных журналов и токенов.</p></div>
+      {view!=="codex"&&<section className="context-panel"><div><span className="eyebrow">ИСТОЧНИК</span><strong>systemd · защищённый снимок</strong><p>Разрешённый список {snapshot?.services?.length||"—"} компонентов, без приватных журналов и токенов.</p></div>
        <div><span className="eyebrow">РЕЖИМ</span><strong>Read-only</strong><p>Обновление интерфейса раз в минуту.</p></div>
        <a href={ISSUE163} target="_blank" rel="noopener noreferrer">Задача разработки <ExternalLink size={14}/></a></section>}
      </div>
@@ -245,7 +245,7 @@ function LoginPreview({onBack,active=false,unavailable=false}){
     {active?<a className="github-action" href="/auth/github/start"><Github size={24}/> Войти через GitHub <ArrowRight size={19}/></a>:<button type="button" className="github-action" disabled><Github size={24}/> Войти через GitHub <ArrowRight size={19}/></button>}
     <p className="login-notice">{active?"Доступ предоставляется только разрешённому GitHub ID. Никаких прав записи.":unavailable?"Проверка состояния авторизации не удалась. Доступ закрыт.":"Авторизация пока не подключена. Действующая панель защищена Basic Auth."}</p>
     <div className="login-features"><span><LockKeyhole size={20}/> Только владелец</span><span><ShieldCheck size={20}/> Защищённый сеанс</span><span><Eye size={20}/> Только чтение</span></div>
-    <div className="login-policy"><LockKeyhole size={22}/><div><strong>Resident AI Agent: NO-GO</strong><p>Запуск не разрешён до прохождения проверки безопасности.</p></div></div>
+    <div className="login-policy"><LockKeyhole size={22}/><div><strong>Доступ к AI ограничен</strong><p>Полный AI Agent не допущен, H-01 работает только в утверждённых пределах.</p></div></div>
     {!active&&!unavailable&&<button className="back-dashboard" type="button" onClick={onBack}>← Вернуться к предварительному просмотру дашборда</button>}
    </section>
   </main>

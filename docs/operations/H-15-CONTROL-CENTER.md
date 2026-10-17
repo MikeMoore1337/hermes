@@ -1,3 +1,35 @@
+# Hermes Control Center - актуальная эксплуатация (17.10.2026)
+
+Production: https://hermes.mikemoore.top. Issue #163, parent #67. Принятый дизайн Operations Atlas (C+B, шрифты C+A) на React/Vite, локальные HD-ассеты, адаптивный русский интерфейс, PWA. Вход работает через owner-only GitHub OAuth (#180); Basic Auth и постоянный OAuth broker - только исторические этапы.
+
+## Архитектура
+
+- Backend: control_center/server.py, loopback 127.0.0.1:9133. Внешний TLS: Cloudflare -> отдельный виртуальный хост Caddy -> loopback. Не изменять порт 443/xray, общие настройки Cloudflare и Second Brain.
+- Read-only защищённые API: /api/overview, /api/providers/codex. Без owner-сессии HTTP 401. Авторизация: /api/auth/session, /auth/github/start, /auth/github/callback, POST /auth/logout. Cookie защищённые; ответы API не кэшируются.
+- Снимок: control_center/snapshot.py, systemd-allowlist, research_scout.report_view. Active timer - факт расписания, не успешного business job. Просроченный снимок (>3 минут) отвергается.
+- AI #33: отдельно разрешён ограниченный event-driven H-01 Ops AI (hermes-h01-ops-agent.timer, oneshot service). Полный hermes-agent-sandbox.service не допущен. Окончание 24-часовой проверки #33 ожидается отдельно. Не заявлять успешный полезный цикл без доказательств.
+- Codex #255: независимый VPS Codex CLI с ChatGPT OAuth, hermes-codex-usage.timer, очищенный снимок квот и виджет. Квоты Codex не смешивать с Workers AI Free и не восстанавливать программно.
+- Research Scout #4: только существующий сохранённый отчёт; HOLD/MANUAL_REVIEW и исправления статей не являются подтверждением эффективности.
+- PWA: manifest.webmanifest, sw.js, PNG 192/512, maskable, Apple Touch Icon, offline.html. Никогда не помещать защищённые API или OAuth cookies в офлайн-кэш.
+- Cloudflare Full (strict): успешный публичный HTTPS НЕ доказывает режим. Подтверждение правил возможно только через авторизованную конфигурацию Cloudflare.
+
+## Безопасная read-only проверка
+
+    readlink -f /opt/hermes-control-center/current
+    cat /var/lib/hermes-main-deploy/last-success.sha
+    systemctl is-active hermes-control-center.service hermes-control-center-snapshot.timer hermes-codex-usage.timer hermes-h01-ops-agent.timer
+    curl -fsS http://127.0.0.1:9133/healthz
+    curl -I https://hermes.mikemoore.top/
+    curl -I https://brain.mikemoore.top/
+
+Изменения оформляются в PR с Python/Node/Chromium Playwright тестами и проверкой CI, затем применяются ограниченным exact-SHA CD с rollback. Не менять production вручную ради UI-тестирования. Авторизацию владельца уже приняли; не требовать повторного логина без изменения OAuth.
+
+## Исторический протокол (16.10.2026 и ранее, НЕ текущий runbook)
+
+Сохранённые ниже сведения о Basic Auth, Cloudflare 1034, прежнем отключённом GitHub OAuth и временном NO-GO относятся к прошлым релизам. Не использовать их как инструкции по эксплуатации актуального production.
+
+---
+
 # Hermes Control Center - русскоязычный read-only MVP
 
 ## Scope
