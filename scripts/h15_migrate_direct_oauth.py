@@ -13,6 +13,7 @@ import sys
 
 from control_center.auth import AuthConfig
 from control_center.credentials import load_runtime_credentials
+from control_center.oauth_broker import BrokerConfig
 
 CREDENTIALS = Path("/etc/hermes-control-center/oauth")
 DROPIN = Path("/etc/systemd/system/hermes-control-center.service.d/20-github-auth.conf")
@@ -67,7 +68,10 @@ def _credentials_checked() -> None:
     identity = load_runtime_credentials("broker.env", env)
     if web is None or identity is None:
         raise ValueError("Missing OAuth credentials")
-    AuthConfig.from_direct_credentials(web, identity)
+    config = AuthConfig.from_env(web)
+    broker = BrokerConfig.from_env(identity)
+    if config.mode != "github" or config.client_id != broker.client_id or config.owner_id != broker.owner_id:
+        raise ValueError("OAuth credential mismatch")
 
 def _run(mode: str) -> None:
     if sys.platform != "linux" or os.geteuid() != 0:
