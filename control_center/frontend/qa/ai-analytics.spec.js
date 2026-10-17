@@ -32,8 +32,8 @@ for(const width of [393,1440]){
   await expect(panel).toBeVisible();
   await expect(panel.locator("[data-summary]").getByText("1 900",{exact:true})).toBeVisible();
   await expect(panel.getByText("Нет данных",{exact:true}).first()).toBeVisible();
-  await expect(panel.getByText("Hermes",{exact:true})).toBeVisible();
-  await expect(panel.getByText("gpt-5.3-codex",{exact:true})).toBeVisible();
+  await expect(panel.locator("[data-breakdown]").getByText("Hermes",{exact:true})).toBeVisible();
+  await expect(panel.locator("[data-breakdown]").getByText("gpt-5.3-codex",{exact:true})).toBeVisible();
   expect(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1)).toBe(false);
   mkdirSync(output,{recursive:true});
   await page.screenshot({path:resolve(output,"analytics-"+width+".png"),fullPage:true});
