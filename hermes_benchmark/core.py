@@ -347,8 +347,13 @@ def execute_case(case: dict[str, Any]) -> dict[str, Any]:
     try:
         with tempfile.TemporaryDirectory(prefix="hermes-benchmark-") as name:
             bus = MockBus(case, Path(name))
-            for step in case["simulation"]:
+            for index, step in enumerate(case["simulation"]):
+                if (index >= case["resource_limits"]["max_actions"]
+                        or time.monotonic() - start >= case["timeout"]):
+                    raise BenchmarkError("synthetic_execution_limit")
                 bus.step(step)
+                if time.monotonic() - start >= case["timeout"]:
+                    raise BenchmarkError("synthetic_execution_timeout")
             observed = verify(case, bus)
         matched = (observed["observed_outcome"] == case["expected_outcome"] and
                    observed["reason_code"] == case["expected_reason"])
