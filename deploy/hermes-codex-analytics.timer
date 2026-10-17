@@ -1,0 +1,13 @@
+[Unit]
+Description=Optional Hermes Codex usage analytics scan (#272, DISABLED by default)
+Documentation=https://github.com/MikeMoore1337/hermes/issues/272
+
+[Timer]
+OnBootSec=10min
+OnUnitInactiveSec=5min
+RandomizedDelaySec=1min
+Unit=hermes-codex-analytics.service
+Persistent=false
+
+[Install]
+WantedBy=timers.target

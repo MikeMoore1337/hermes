@@ -6,6 +6,7 @@ on:
       - "control_center/**"
       - "tests/test_control_center*.py"
       - "tests/test_codex_usage.py"
+      - "tests/test_codex_analytics*.py"
       - "tests/test_codex_policy_history.py"
       - "tests/test_control_center_pwa.py"
       - "tests/test_h15_oauth_egress_evidence.py"
@@ -52,6 +53,7 @@ jobs:
         working-directory: control_center/frontend
         run: |
           npm run check
+          node --check public/ai-analytics.js
           npm run test
           npm run build
       - name: Compiled bundle matches committed source
@@ -60,7 +62,7 @@ jobs:
         working-directory: control_center/frontend
         run: npm audit --omit=dev --audit-level=high
       - name: Python allowlist/API/OAuth security regression tests
-        run: python3 -m unittest tests.test_codex_usage tests.test_codex_policy_history tests.test_control_center tests.test_control_center_assets tests.test_control_center_oauth tests.test_control_center_broker tests.test_control_center_credentials tests.test_control_center_unix_http_integration -v
+        run: python3 -m unittest tests.test_codex_usage tests.test_codex_analytics tests.test_codex_analytics_api tests.test_codex_policy_history tests.test_control_center tests.test_control_center_assets tests.test_control_center_oauth tests.test_control_center_broker tests.test_control_center_credentials tests.test_control_center_unix_http_integration -v
       - name: PWA manifest, SW and offline privacy tests
         run: python3 -m unittest tests.test_control_center_pwa -v
       - name: GitHub egress pin attestation negative tests
@@ -79,5 +81,14 @@ jobs:
         with:
           name: h15-codex-scheduler-screenshots
           path: docs/ux/evidence/h15-codex-scheduler/scheduler-*.png
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Attach #272 Atlas analytics desktop/mobile visual evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: h15-ai-usage-analytics-screenshots
+          path: docs/ux/evidence/h15-ai-analytics/analytics-*.png
           if-no-files-found: ignore
           retention-days: 7

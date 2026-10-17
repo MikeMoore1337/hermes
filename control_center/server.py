@@ -16,6 +16,7 @@ from urllib.parse import parse_qs, urlsplit
 from control_center.snapshot import DEFAULT_OUTPUT
 from control_center.codex_usage import DEFAULT_OUTPUT as CODEX_OUTPUT, read_snapshot, UsageError
 from control_center.codex_history import read as read_codex_history
+from control_center.codex_analytics import DEFAULT_DB as ANALYTICS_DB, read as read_codex_analytics
 from control_center.codex_policy import decision as codex_decision
 from control_center.codex_scheduler import DEFAULT_DB as SCHEDULER_DB
 from control_center.codex_scheduler_status import read_status as read_scheduler_status, StatusUnavailable
@@ -38,6 +39,8 @@ ASSETS = {
     "/style.css": ("style.css", "text/css; charset=utf-8"),
     "/desktop-commander.js": ("desktop-commander.js", "text/javascript; charset=utf-8"),
     "/desktop-commander.css": ("desktop-commander.css", "text/css; charset=utf-8"),
+    "/ai-analytics.js": ("ai-analytics.js", "text/javascript; charset=utf-8"),
+    "/ai-analytics.css": ("ai-analytics.css", "text/css; charset=utf-8"),
     "/brand.webp": ("brand.webp", "image/webp"),
     "/favicon.png": ("favicon.png", "image/png"),
     "/apple-touch-icon.png": ("apple-touch-icon.png", "image/png"),
@@ -59,6 +62,7 @@ CSP = ("default-src 'none'; script-src 'self'; style-src 'self'; "
 def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
                  codex_path: Path = CODEX_OUTPUT,
                  scheduler_path: Path = SCHEDULER_DB,
+                 analytics_path: Path = ANALYTICS_DB,
                  desktop_commander_path: Path = DC_OUTPUT,
                  auth_config: AuthConfig | None = None, oauth_service: OAuthService | None = None):
     config = auth_config if auth_config is not None else AuthConfig.from_env()
@@ -174,11 +178,35 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
                                                                  SESSION_TTL)))
             if parsed.query and path not in (
                 "/api/providers/codex/policy", "/control-center/api/providers/codex/policy",
+                "/api/analytics/codex", "/control-center/api/analytics/codex",
                 "/api/providers/codex/history", "/control-center/api/providers/codex/history",
                 "/api/providers/desktop-commander/history",
                 "/control-center/api/providers/desktop-commander/history",
             ) and not (path == "/" and parsed.query == "preview=login"):
                 return self.respond(404, "text/plain", b"Not found")
+            if path in ("/api/analytics/codex", "/control-center/api/analytics/codex"):
+                if config.mode == "github" and not oauth.authenticated(
+                        self._cookie(SESSION_COOKIE)):
+                    return self.respond(401, "application/json",
+                                        b'{"error":"authentication_required"}')
+                try:
+                    args = parse_qs(parsed.query, strict_parsing=True,
+                                    max_num_fields=1) if parsed.query else {}
+                    if set(args) - {"period"} or len(args.get("period", [])) > 1:
+                        raise ValueError("invalid_parameter")
+                    period = args.get("period", ["7d"])[0]
+                    if period not in ("24h", "7d", "30d", "all"):
+                        raise ValueError("invalid_parameter")
+                except ValueError:
+                    return self.respond(400, "application/json",
+                                        b'{"error":"invalid_parameter"}')
+                try:
+                    data = read_codex_analytics(analytics_path, period=period)
+                except (OSError, ValueError):
+                    return self.respond(503, "application/json",
+                                        b'{"error":"analytics_unavailable"}')
+                return self.respond(200, "application/json; charset=utf-8",
+                                    json.dumps(data, separators=(",", ":")).encode())
             if path in (
                 "/api/providers/codex", "/control-center/api/providers/codex",
                 "/api/providers/codex/policy", "/control-center/api/providers/codex/policy",
@@ -306,7 +334,9 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
                         # Additive same-origin widget; never modify the Vite bundle at runtime.
                         raw = raw.replace(b"</head>", (
                             b'<link rel="stylesheet" href="/desktop-commander.css">'
-                            b'<script src="/desktop-commander.js" defer></script></head>'))
+                            b'<script src="/desktop-commander.js" defer></script>'
+                            b'<link rel="stylesheet" href="/ai-analytics.css">'
+                            b'<script src="/ai-analytics.js" defer></script></head>'))
                 except OSError:
                     return self.respond(503, "text/plain", b"Static asset unavailable")
                 return self.respond(200, mime, raw)

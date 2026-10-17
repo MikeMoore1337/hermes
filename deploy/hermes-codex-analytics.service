@@ -1,0 +1,31 @@
+[Unit]
+Description=Hermes metadata-only Codex AI Usage Analytics (#272)
+Documentation=https://github.com/MikeMoore1337/hermes/issues/272
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=hermes-codex
+Group=hermes-control
+WorkingDirectory=/opt/hermes-control-center/current
+Environment=CODEX_HOME=/var/lib/hermes-codex-usage/auth
+ExecStart=/usr/bin/python3 -m control_center.codex_analytics --codex-home /var/lib/hermes-codex-usage/auth --database /var/lib/hermes-codex-usage/analytics.sqlite3
+StateDirectory=hermes-codex-usage
+StateDirectoryMode=0750
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0027
+TimeoutStartSec=30
+MemoryMax=128M
+CPUQuota=25%
+TasksMax=8
