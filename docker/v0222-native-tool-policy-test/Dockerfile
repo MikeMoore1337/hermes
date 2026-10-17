@@ -1,4 +1,8 @@
 FROM nousresearch/hermes-agent@sha256:a11574b7fe8e1631d7d88d556677dac693bc058abf558cdeb899155688c1bf05
+# Label documents patch application, NOT approval to activate a resident agent.
+LABEL hermes.base.commit="d923a5eb487a17c0a68801bba9ef0f56c81040a8" \
+      hermes.native.tool.policy="bounded-v0222" \
+      hermes.derivative.resident-agent-allowed="false"
 
 WORKDIR /opt/hermes
 COPY patches/upstream/hermes-v0.22.1-native-tool-policy.patch /tmp/hermes-v0222-tool-policy-candidate.patch

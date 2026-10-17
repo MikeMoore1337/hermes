@@ -3,7 +3,10 @@
 set -euo pipefail
 ROOT=/opt/hermes-agent-owner
 STATE=/var/lib/hermes-agent
-IMAGE='nousresearch/hermes-agent@sha256:32d095e84190ae7266afbb361579e6921f2c633e899f5eacfb88111b9c851a22'
+# Live one-shot is blocked unless an inspected patched v0.22.2 image is supplied.
+# shellcheck source=deploy/require-patched-agent-image.sh
+source "$ROOT/deploy/require-patched-agent-image.sh"
+require_patched_agent_image
 if [ "$(id -u)" -ne 0 ]; then echo "root required" >&2; exit 1; fi
 test "$(stat -c %a "$STATE/.env")" = 600
 test "$(stat -c %U "$STATE/.env")" = hermes-agent

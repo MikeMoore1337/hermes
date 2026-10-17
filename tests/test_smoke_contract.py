@@ -17,7 +17,7 @@ class SmokeContractTests(unittest.TestCase):
         cls.script = (ROOT / "deploy" / "smoke.sh").read_text(encoding="utf-8")
 
     def test_explicit_immutable_amd64_docker_digest(self) -> None:
-        self.assertIn("nousresearch/hermes-agent@sha256:32d095e84190ae", self.script)
+        self.assertIn("nousresearch/hermes-agent@sha256:a11574b7fe8e", self.script)
         self.assertIn("--platform linux/amd64", self.script)
 
     def test_process_level_isolation(self) -> None:

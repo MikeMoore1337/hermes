@@ -15,9 +15,8 @@ EXAMPLE = ROOT / "deploy" / "hermes-agent-sandbox.service.example"
 class ResidentExampleOfflineGuardTests(unittest.TestCase):
     def test_launcher_stays_pinned_networkless_and_unprivileged(self):
         script = LAUNCHER.read_text(encoding="utf-8")
-        self.assertRegex(
-            script, r"IMAGE='nousresearch/hermes-agent@sha256:[0-9a-f]{64}'"
-        )
+        self.assertIn("require_patched_agent_image", script)
+        self.assertNotIn("sha256:32d095e84190ae", script)
         for required in (
             "--pull=never", "--network none", "--read-only",
             "--cap-drop ALL", "--security-opt no-new-privileges",

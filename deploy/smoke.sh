@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# One-shot, no-provider, no-network smoke. Never starts a daemon or publishes.
+# One-shot, no-provider, no-network CLI-only smoke of official v0.22.2. Never starts a daemon or publishes.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-IMAGE="nousresearch/hermes-agent@sha256:32d095e84190ae7266afbb361579e6921f2c633e899f5eacfb88111b9c851a22"
+IMAGE="nousresearch/hermes-agent@sha256:a11574b7fe8e1631d7d88d556677dac693bc058abf558cdeb899155688c1bf05"
 python3 "$ROOT/scripts/host_capacity.py" --reserve-mib 128 --margin-mib 32
 command -v docker >/dev/null
 # Pull is deliberately a separate, operator-controlled step.

@@ -2,10 +2,13 @@
 # No-provider, no-network preview. This script is not a production gateway.
 set -euo pipefail
 
-IMAGE='nousresearch/hermes-agent@sha256:32d095e84190ae7266afbb361579e6921f2c633e899f5eacfb88111b9c851a22'
+# No default image: only an operator-selected, inspected patched derivative.
 NAME='hermes-agent-sandbox'
 STATE='/var/lib/hermes-agent'
 ROOT='/opt/hermes-agent-owner'
+# shellcheck source=deploy/require-patched-agent-image.sh
+source "$ROOT/deploy/require-patched-agent-image.sh"
+require_patched_agent_image
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "Docker launcher requires reviewed administrator context" >&2
