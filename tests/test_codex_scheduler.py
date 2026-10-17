@@ -7,7 +7,7 @@ from pathlib import Path
 import unittest
 
 from control_center.codex_usage import normalize, error_snapshot
-from codex_scheduler import Approval, Scheduler, QuotaWorker, ValidationError, ConflictError
+from control_center.codex_scheduler import Approval, Scheduler, QuotaWorker, ValidationError, ConflictError
 
 BASE = datetime(2026, 10, 17, 15, 0, tzinfo=timezone.utc)
 REPO = "MikeMoore1337/hermes"
