@@ -1,5 +1,7 @@
 # Развёртывание и ограниченный smoke
 
+**Актуализация #33 (17.10.2026):** CLI-only smoke использует официальный v0.22.2 `nousresearch/hermes-agent@sha256:a11574b7fe8e1631d7d88d556677dac693bc058abf558cdeb899155688c1bf05`. Рабочие launcher и Cloudflare one-shot намеренно не используют официальный образ без патча: требуют `HERMES_AGENT_RUNTIME_IMAGE=sha256:<полный локальный image ID>` и метки фиксированного v0.22.2 + native-tool patch. Пока проверенный образ не подготовлен/перенесён и не дано отдельное разрешение, запуск отказывает. Активация service запрещена; исторические сведения о v0.21.6 ниже не являются инструкцией по её запуску.
+
 **Production news Hermes остаётся в YFC и продолжает работать.**
 Новый Hermes Agent **ещё не служба**. Единственное разрешённое выполнение здесь - краткий smoke CLI внутри изолированного контейнера без сети, модели, ключей и публикации. Это не включает Hermes gateway и не даёт автономность.
 
@@ -25,7 +27,7 @@
 ```bash
 # Отдельно под контролем оператора: образ больше 1 GiB сжатым.
 docker pull --platform linux/amd64 \
-  nousresearch/hermes-agent@sha256:32d095e84190ae7266afbb361579e6921f2c633e899f5eacfb88111b9c851a22
+  nousresearch/hermes-agent@sha256:a11574b7fe8e1631d7d88d556677dac693bc058abf558cdeb899155688c1bf05
 
 bash deploy/smoke.sh
 ```
