@@ -140,6 +140,59 @@ class SessionTests(unittest.TestCase):
             "hermes_cc_session=attacker; hermes_cc_session=also-attacker", SESSION_COOKIE)))
 
 
+class DirectOAuthFlowTests(unittest.TestCase):
+    def test_direct_provider_completes_pkce_owner_flow_without_broker(self):
+        secret = "synthetic-credential-never-sent-to-real-github"
+        config = AuthConfig.from_direct_credentials({
+            "HERMES_CC_AUTH_MODE": "github",
+            "HERMES_CC_PUBLIC_ORIGIN": ORIGIN,
+            "HERMES_CC_GITHUB_CLIENT_ID": "Ov23abcdefghijk",
+            "HERMES_CC_ALLOWED_GITHUB_ID": "42142321",
+            "HERMES_CC_SESSION_SECRET": "synthetic-session-key-longer-than-32-characters",
+            "HERMES_CC_OAUTH_BROKER_SOCKET": "/run/hermes-oauth/broker.sock",
+        }, {
+            "HERMES_OAUTH_CLIENT_ID": "Ov23abcdefghijk",
+            "HERMES_OAUTH_CLIENT_SECRET": secret,
+            "HERMES_OAUTH_ALLOWED_GITHUB_ID": "42142321",
+            "HERMES_OAUTH_SOCKET": "/run/hermes-oauth/broker.sock",
+        })
+        oauth = OAuthService(config)
+        self.assertIsInstance(oauth.provider, GitHubProvider)
+        url, state = oauth.begin()
+        query = parse_qs(urlsplit(url).query)
+        self.assertEqual(query["code_challenge_method"], ["S256"])
+        requests = []
+        def fake_fetch(request):
+            requests.append(request)
+            if len(requests) == 1:
+                self.assertEqual(request.full_url, "https://github.com/login/oauth/access_token")
+                self.assertIn("code_verifier=", request.data.decode())
+                self.assertIn("client_secret=", request.data.decode())
+                return {"access_token": "fake-access-token", "token_type": "bearer", "scope": "read:user"}
+            self.assertEqual(request.full_url, "https://api.github.com/user")
+            return {"id": 42142321}
+        with patch("control_center.auth._fetch_json", side_effect=fake_fetch):
+            session = oauth.finish(code="valid-code-12345", state=state, cookie_state=state)
+        self.assertEqual(len(requests), 2)
+        self.assertTrue(oauth.authenticated(session))
+        oauth.revoke(session)
+        self.assertFalse(oauth.authenticated(session))
+
+    def test_direct_http_denial_is_sanitized(self):
+        from control_center.auth import ProviderHTTPError
+        oauth = OAuthService(AuthConfig(
+            mode="github", client_id="Ov23abcdefghijk", client_secret="synthetic-long-secret",
+            owner_id=42142321, session_secret=b"synthetic-session-key-over-32-bytes"))
+        _, state = oauth.begin()
+        with patch("control_center.auth._fetch_json", side_effect=ProviderHTTPError("token", 401)):
+            with self.assertLogs("control_center.auth", level="WARNING") as logs:
+                with self.assertRaises(AuthError):
+                    oauth.finish(code="valid-code-12345", state=state, cookie_state=state)
+        self.assertIn("github_direct_rejection stage=token status=401", "\n".join(logs.output))
+        self.assertNotIn("valid-code-12345", "\n".join(logs.output))
+        self.assertNotIn(state, "\n".join(logs.output))
+
+
 class ProviderTests(unittest.TestCase):
     def test_github_code_exchange_uses_s256_verifier_and_minimal_scope(self):
         seen = []
