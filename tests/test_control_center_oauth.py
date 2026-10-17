@@ -9,13 +9,14 @@ import tempfile
 from threading import Thread
 import unittest
 from unittest.mock import MagicMock, patch
+from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlsplit
 from urllib.request import Request
 
 from http.server import ThreadingHTTPServer
 
 from control_center.auth import (
-    AuthConfig, AuthError, GitHubProvider, OAuthService, ORIGIN,
+    AuthConfig, AuthError, GitHubProvider, OAuthService, ORIGIN, ProviderHTTPError,
     STATE_COOKIE, SESSION_COOKIE, MAX_PENDING, SESSION_TTL, STATE_TTL,
     parse_cookie,
 )
@@ -177,6 +178,36 @@ class ProviderTests(unittest.TestCase):
             with self.assertRaises(AuthError):
                 GitHubProvider().identify(CONFIG, "code-token-12345", "v" * 50)
         self.assertEqual(call.call_count, 1)
+
+
+class ProviderHttpDiagnosticTests(unittest.TestCase):
+    """HTTP provider refusals must not masquerade as transport failure."""
+
+    def test_fixed_stage_http_category_and_no_sensitive_error_content(self):
+        from control_center.auth import _fetch_json
+        from control_center.oauth_broker import _safe_failure_category
+
+        for url, stage in (
+            ("https://github.com/login/oauth/access_token", "token"),
+            ("https://api.github.com/user", "identity"),
+        ):
+            for status, expected in ((401, "401"), (403, "403"), (418, "other")):
+                with self.subTest(stage=stage, status=status):
+                    sensitive = "secret-oauth-code-not-for-logs"
+                    opener = MagicMock()
+                    opener.open.side_effect = HTTPError(
+                        url, status, sensitive, {}, None)
+                    with patch("control_center.auth.build_opener", return_value=opener):
+                        with self.assertRaises(ProviderHTTPError) as result:
+                            _fetch_json(Request(url))
+                    exc = result.exception
+                    self.assertEqual(exc.stage, stage)
+                    self.assertEqual(exc.status, status)
+                    self.assertEqual(
+                        _safe_failure_category(exc),
+                        f"github_{stage}_http_{expected}")
+                    self.assertNotIn(sensitive, str(exc))
+                    self.assertNotIn(url, str(exc))
 
 
 class ProviderJsonBoundaryTests(unittest.TestCase):
