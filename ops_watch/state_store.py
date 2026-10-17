@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .core import INCIDENT_CODES, InputError, changes
-from .incident_preview import render
+from .incident_preview import CODEX_CODES, render
 
 DATABASE = "incidents.sqlite3"
 MAX_EVENTS = 1000
@@ -132,7 +132,23 @@ def persist(
             if outstanding + len(previews) > MAX_EVENTS:
                 raise InputError("outbox_full")
             when = observed.astimezone(UTC).isoformat()
+            emitted = 0
             for item in previews:
+                if item["code"] in CODEX_CODES:
+                    recent = db.execute(
+                        "SELECT created_at FROM events WHERE fingerprint=? AND phase=? "
+                        "ORDER BY id DESC LIMIT 1",
+                        ("ops:" + item["code"], item["phase"]),
+                    ).fetchone()
+                    if recent is not None:
+                        try:
+                            seconds = (observed.astimezone(UTC) - datetime.fromisoformat(recent[0])).total_seconds()
+                        except (TypeError, ValueError):
+                            raise InputError("invalid_codex_cooldown_state")
+                        if 0 <= seconds < 1800:
+                            # Prevent repeated alerts from flapping across timer runs.
+                            continue
+                emitted += 1
                 db.execute(
                     "INSERT INTO events "
                     "(fingerprint,phase,severity,title,action,created_at) "
@@ -147,7 +163,7 @@ def persist(
                 raise InputError("current_state_oversize")
             db.execute("UPDATE state SET findings_json=? WHERE id=1", (current_json,))
             db.commit()
-            return delta, previews, event_count + len(previews)
+            return delta, previews, event_count + emitted
     except sqlite3.Error as exc:
         raise InputError("outbox_unavailable") from exc
 
