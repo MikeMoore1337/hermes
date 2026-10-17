@@ -113,12 +113,14 @@ class Executor(Protocol):
 class Scheduler:
     def __init__(self, db: Path, *, repositories: set[str],
                  models: set[str], owner_identity: str = "MikeMoore1337",
-                 clock: Callable[[], float] = time.time):
+                 clock: Callable[[], float] = time.time,
+                 group_readable: bool = False):
         self.db = Path(db)
         self.repositories = frozenset(repositories)
         self.models = frozenset(models)
         self.owner_identity = owner_identity
         self.clock = clock
+        self.group_readable = group_readable
 
     @contextmanager
     def _connect(self):
@@ -131,7 +133,7 @@ class Scheduler:
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=FULL")
         if os.name == "posix":
-            os.chmod(self.db, 0o600)
+            os.chmod(self.db, 0o640 if self.group_readable else 0o600)
         try:
             yield conn
         finally:
