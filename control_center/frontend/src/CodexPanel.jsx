@@ -80,6 +80,48 @@ function WindowMeter({bucket,muted=false,threshold=20}){
   <small><Clock3 size={13}/> {bucket.resets_at==null?"Время обновления неизвестно":"Обновление "+formatMoment(bucket.resets_at)}</small>
  </div>;
 }
+
+const taskStateLabels={queued:"В очереди",deferred:"Ожидают квоту",
+ running:"В работе",blocked:"Нужна проверка",completed:"Завершены"};
+function SchedulerQueue({revision}){
+ const [queue,setQueue]=useState(null);
+ const [error,setError]=useState(false);
+ useEffect(()=>{
+  let active=true;
+  fetch("/api/codex/tasks",{cache:"no-store",credentials:"same-origin"})
+   .then(r=>{if(!r.ok)throw Error("unavailable");return r.json();})
+   .then(data=>{if(active){setQueue(data?.schema===1&&data?.mode==="read_only"?data:null);setError(false);}})
+   .catch(()=>{if(active){setQueue(null);setError(true);}});
+  return()=>{active=false;};
+ },[revision]);
+ const counts=queue?.counts;
+ const formatCount=k=>Number.isInteger(counts?.[k])&&counts[k]>=0?counts[k]:0;
+ const items=Array.isArray(queue?.jobs)?queue.jobs.slice(0,8):[];
+ return <section className="codex-task-queue" aria-label="Очередь заданий Codex">
+  <div className="codex-history-head"><div>
+   <strong>Очередь заданий Codex</strong>
+   <small>Только просмотр · отдельные разрешения владельца обязательны</small>
+  </div><span className="codex-chip">{queue?.execution_enabled?"Активен":"Автозапуск выключен"}</span></div>
+  {error?<p className="codex-message" role="status">Не удалось прочитать очередь. Новые задания этим экраном не запускаются.</p>:
+   !queue||queue.queue_state==="not_configured"?
+   <p className="codex-message">Очередь ещё не активирована на сервере. Codex Usage Monitor работает отдельно.</p>:
+   <><div className="codex-task-counts">
+    {Object.entries(taskStateLabels).map(([key,label])=><div className="codex-task-count" key={key}>
+     <strong>{formatCount(key)}</strong><span>{label}</span>
+    </div>)}
+   </div>
+   <div className="codex-panel-meta"><span>Последний успешный запуск: {formatObserved(queue.last_successful_at)}</span>
+    {queue.recovery_errors>0&&<span>Ошибок восстановления: {queue.recovery_errors} · требуется ручная проверка</span>}
+   </div>
+   {items.length>0?<ul className="codex-task-jobs">{items.map(job=><li key={job.job_id}>
+    <span><strong>{taskStateLabels[job.status]||job.status}</strong>
+     <small>{formatObserved(job.created_at)} · обновлено {formatObserved(job.updated_at)}</small>
+     {job.wait_reason&&<small>Причина: {job.wait_reason}</small>}
+    </span>{job.manual_review&&<AlertTriangle size={17} aria-label="Требуется ручное вмешательство"/>}
+   </li>)}</ul>:<p className="codex-message">В очереди пока нет заданий.</p>}
+   </>}
+ </section>;
+}
 export default function CodexPanel({compact=false}){
  const [snapshot,setSnapshot]=useState(null);
  const [error,setError]=useState("");
@@ -178,6 +220,7 @@ export default function CodexPanel({compact=false}){
       <time>{formatObserved(e.observed_at)}</time><span>{statusLabels[e.previous]||"Нет данных"} → {statusLabels[e.current]||"Нет данных"}</span>
      </li>)}</ul></details>}
    </div>
+   <SchedulerQueue revision={revision}/>
    <div className="codex-settings">
     <div><label htmlFor="codex-warning-threshold">Порог предупреждения · {threshold}% остатка</label>
      <small>Локальная оценка доступности. Не изменяет серверный порог Ops Watch.</small></div>
