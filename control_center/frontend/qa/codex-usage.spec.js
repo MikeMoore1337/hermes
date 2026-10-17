@@ -108,7 +108,7 @@ for(const width of [393,1440]){
   const queue=page.getByRole("region",{name:"Очередь заданий Codex"});
   await expect(queue).toBeVisible();
   await expect(queue.getByText("Автозапуск выключен")).toBeVisible();
-  await expect(queue.getByText("Ожидают квоту")).toBeVisible();
+  await expect(queue.getByText("Ожидают квоту").first()).toBeVisible();
   await expect(queue.getByText(/требуется ручная проверка/i)).toBeVisible();
   await expect(queue.getByText("quota_exhausted")).toBeVisible();
   await expect(queue.getByRole("button")).toHaveCount(0);
