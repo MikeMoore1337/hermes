@@ -22,8 +22,11 @@ SOURCE = "desktop_commander_remote_mcp"
 DEFAULT_OUTPUT = Path("/var/lib/hermes-desktop-commander/status.json")
 TTL_SECONDS = 900
 MAX_BYTES = 16384
-REMOTE_COMMAND = ("npx", "-y", "mcp-remote@0.13.5", "https://mcp.desktopcommander.app/mcp")
-LOCAL_COMMAND = ("npx", "-y", "@wonderwhy-er/desktop-commander@0.2.52")
+# Installed by the separately approved owner bootstrap under a dedicated OS identity.
+# Never perform an implicit npm download or upgrade from a recurring service.
+REMOTE_COMMAND = ("/var/lib/hermes-desktop-commander/node_modules/.bin/mcp-remote",
+                  "https://mcp.desktopcommander.app/mcp")
+LOCAL_COMMAND = ("/var/lib/hermes-desktop-commander/node_modules/.bin/desktop-commander",)
 STATUSES = frozenset({"monitored", "exhausted", "unknown", "auth_required",
                       "unavailable", "not_configured", "stale"})
 DEVICE_STATES = frozenset({"online", "offline", "unknown"})
