@@ -295,7 +295,10 @@ def main() -> int:
         record = run()
         passed = record["status"] in {"PASS", "NO_ADVISOR_CANDIDATE", "EVENT_ALREADY_HANDLED", "DAILY_CALL_LIMIT_REACHED"}
     except (H01Denied, AdvisorAdapterError, AdvisorInputError, OSError, BlockingIOError) as exc:
-        record, passed = {"status": "BLOCKED", "reason": str(exc) if isinstance(exc, H01Denied) else "source_or_lock_unavailable"}, False
+        reason = str(exc) if isinstance(exc, H01Denied) else "source_or_lock_unavailable"
+        transient = reason in {"load_above_operating_limit", "news_job_active", "insufficient_memory_headroom", "insufficient_disk_headroom", "required_service_unavailable", "network_guard_unverified"}
+        record = {"status": "SKIPPED_PRECHECK" if transient else "BLOCKED", "reason": reason}
+        passed = transient
     # Validated, sanitized JSON only. Never log credentials, raw model text or HTTP bodies.
     print(json.dumps({"observed_at": utc_now(), **record}, ensure_ascii=False, sort_keys=True))
     return 0 if passed else 2

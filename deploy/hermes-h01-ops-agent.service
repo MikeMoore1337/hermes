@@ -15,7 +15,6 @@ Group=root
 WorkingDirectory=/opt/hermes-agent-owner
 ExecStart=/usr/bin/python3 -m scripts.h01_ops_agent_service
 Restart=no
-RuntimeMaxSec=230
 TimeoutStartSec=220
 NoNewPrivileges=yes
 ProtectSystem=strict

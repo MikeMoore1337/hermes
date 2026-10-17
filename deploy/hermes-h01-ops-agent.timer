@@ -3,7 +3,7 @@ Description=Hermes H-01 Ops AI analysis when verified incidents need context
 Documentation=https://github.com/MikeMoore1337/hermes/issues/33
 
 [Timer]
-OnBootSec=15min
+OnActiveSec=15min
 OnUnitInactiveSec=30min
 RandomizedDelaySec=3min
 Persistent=false
