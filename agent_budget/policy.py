@@ -14,6 +14,11 @@ from typing import Any
 CONTRACT = Path(__file__).with_name("policy.json")
 IDENTIFIER = re.compile(r"[a-z][a-z0-9_]{1,39}\Z")
 PERMITTED_ROLES = ("analyst", "planner", "proposer")
+ROLE_ACTIONS = {
+    "analyst": frozenset({"classify_sanitized_codes"}),
+    "planner": frozenset({"plan_from_public_metadata"}),
+    "proposer": frozenset({"draft_without_delivery"}),
+}
 ALLOWED_OFFLINE_ACTIONS = frozenset({
     "classify_sanitized_codes",
     "plan_from_public_metadata",
@@ -59,7 +64,7 @@ def validate(data: object) -> dict[str, Any]:
     for role, operations in roles.items():
         if type(operations) is not list or len(operations) > 3 or len(set(map(str, operations))) != len(operations):
             raise BudgetDenied("invalid_role_permissions")
-        if not all(type(op) is str and op in ALLOWED_OFFLINE_ACTIONS for op in operations):
+        if not all(type(op) is str and op in ROLE_ACTIONS[role] for op in operations):
             raise BudgetDenied("role_permission_denied")
     actions = data["allowed_actions"]
     if type(actions) is not list or len(set(map(str, actions))) != len(actions):

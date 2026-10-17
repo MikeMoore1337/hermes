@@ -102,7 +102,16 @@ UNSAFE_RESEARCH_OUTPUT = re.compile(
 
 
 class PilotError(ValueError):
-    """Sanitized refusal; never contains a token or provider response body."""
+    """Sanitized refusal with optional measured HTTP metadata, never a body."""
+
+    def __init__(
+        self, reason: str, *, http_status: int | None = None,
+        attempts: int = 0, duration_seconds: float | None = None,
+    ) -> None:
+        super().__init__(reason)
+        self.http_status = http_status
+        self.attempts = attempts
+        self.duration_seconds = duration_seconds
 
 
 def _reject_duplicate_fields(pairs: list[tuple[str, object]]) -> dict[str, object]:
@@ -331,11 +340,13 @@ class CloudflareFreeProvider:
             method="POST",
         )
         started = time.perf_counter()
+        response_status: int | None = None
         try:
             with self.opener.open(request, timeout=TIMEOUT_SECONDS) as response:
                 status = getattr(response, "status", None)
                 if type(status) is not int:
                     raise PilotError("provider_status_unobserved")
+                response_status = status
                 raw = response.read(MAX_OUTPUT_BYTES + 1)
             duration = round(time.perf_counter() - started, 6)
             if status != 200:
@@ -365,15 +376,20 @@ class CloudflareFreeProvider:
                 provider_cost_usd=_money(usage.get("cost_usd")),
             )
         except HTTPError as exc:
-            raise PilotError(f"provider_http_{exc.code}") from None
+            raise PilotError(f"provider_http_{exc.code}", http_status=exc.code,
+                             attempts=1, duration_seconds=round(time.perf_counter() - started, 6)) from None
         except URLError:
-            raise PilotError("provider_unavailable") from None
+            raise PilotError("provider_unavailable", attempts=1,
+                             duration_seconds=round(time.perf_counter() - started, 6)) from None
         except TimeoutError:
-            raise PilotError("provider_timeout") from None
-        except PilotError:
-            raise
+            raise PilotError("provider_timeout", attempts=1,
+                             duration_seconds=round(time.perf_counter() - started, 6)) from None
+        except PilotError as exc:
+            raise PilotError(str(exc), http_status=response_status, attempts=1,
+                             duration_seconds=round(time.perf_counter() - started, 6)) from None
         except (OSError, ValueError):
-            raise PilotError("provider_unavailable") from None
+            raise PilotError("provider_unavailable", attempts=1,
+                             duration_seconds=round(time.perf_counter() - started, 6)) from None
 
 
 def _counter(data: Mapping[str, object], *names: str) -> int | None:
@@ -732,10 +748,16 @@ def _run_case(name: str, *, engine: str, provider: LocalMockProvider | Cloudflar
                 "input_preparation_seconds": round(preparation, 6),
                 "docker_startup_seconds": "NOT_RUN",
                 "hermes_initialization_seconds": "NOT_RUN",
-                "provider_response_seconds": "NOT_OBSERVED",
+                "provider_response_seconds": (
+                    exc.duration_seconds if exc.duration_seconds is not None else "NOT_REPORTED"
+                ),
                 "process_elapsed_seconds": round(time.perf_counter() - started, 6),
-                "attempts": getattr(provider, "calls", 0),
-                "http_status": "NOT_OBSERVED",
+                "attempts": exc.attempts,
+                "http_status": exc.http_status if exc.http_status is not None else "NOT_REPORTED",
+                "input_tokens": "NOT_REPORTED",
+                "output_tokens": "NOT_REPORTED",
+                "provider_neurons": "NOT_REPORTED",
+                "provider_cost_usd": "NOT_REPORTED",
             },
         }
     validation_started = time.perf_counter()
@@ -946,6 +968,13 @@ def run_pilot(
         state_value = _load_state(state_path) if engine == "live" and state_path else None
         if state_value is not None and int(state_value["calls"]) + len(cases) > MAX_DAILY_LOCAL_CALLS:
             raise PilotError("local_daily_call_limit_exceeded")
+        if state_value is not None and (
+            int(attestation["daily_neurons_remaining"])
+            < (int(state_value["calls"]) + len(cases)) * QUOTA_RESERVE_NEURONS
+        ):
+            # A fresh quota snapshot must cover every reserved call even if
+            # preceding calls failed or its response omitted usage metrics.
+            raise PilotError("local_neuron_reserve_exceeded")
         records: list[dict[str, object]] = []
         for name in cases:
             if state_value is not None and state_path is not None:
