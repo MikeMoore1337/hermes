@@ -155,7 +155,8 @@ def _process(db, record, session, observed, position, name, model, effort, proje
     if not isinstance(total, dict):
         return model, effort, project, 0
     current = [_count(total.get(key)) for key in FIELDS]
-    if current[0] is None or current[1] is None:
+    if current[0] is None or current[1] is None or (
+            current[2] is not None and current[2] > current[0]):
         return model, effort, project, 1
     previous = db.execute("SELECT input_tokens,output_tokens,cached_input_tokens "
                           "FROM counters WHERE session_id=?", (session,)).fetchone()
@@ -188,6 +189,8 @@ def collect(home: Path, database: Path = DEFAULT_DB, *, now=None):
     now = now or datetime.now(timezone.utc)
     if home.is_symlink() or database.is_symlink():
         raise ValueError("symlink_denied")
+    if (home / "sessions").is_symlink():
+        raise ValueError("sessions_symlink_denied")
     if not (home / "sessions").is_dir():
         raise ValueError("codex_sessions_unavailable")
     database.parent.mkdir(parents=True, exist_ok=True)
@@ -305,6 +308,10 @@ def read(database: Path = DEFAULT_DB, *, period="7d", now=None):
              "api_equivalent_usd": None, "actual_spend_usd": None,
              "price_version": "2026-10-18-v1", "pricing_coverage": None,
              "models": [], "projects": [], "tasks": [],
+             "metric_quality": {"tokens": "unknown", "sessions": "unknown",
+                                "duration": "unknown", "projects": "unknown",
+                                "tasks": "unknown", "api_equivalent": "unknown",
+                                "actual_spend": "unknown"},
              "daily": [], "invalid_events": None, "incomplete_files": None,
              "notes": ["No verified local Codex usage telemetry available"]}
     if database.is_symlink() or not database.is_file():
@@ -326,7 +333,7 @@ def read(database: Path = DEFAULT_DB, *, period="7d", now=None):
     if not scan or not rows:
         if scan:
             empty.update(observed_at=scan[0], invalid_events=scan[1],
-                         incomplete_files=scan[2], sessions=0, completed_turns=0)
+                         incomplete_files=scan[2])
             empty["notes"] = ["No observed events in this period; not evidence of idle time"]
         return empty
     sessions, by_model, by_project, daily, intervals, active = set(), {}, {}, {}, [], {}
@@ -380,6 +387,17 @@ def read(database: Path = DEFAULT_DB, *, period="7d", now=None):
                  projects=sorted(by_project.values(), key=lambda x: -x["input"])[:30],
                  daily=sorted(daily.values())[-90:], invalid_events=scan[1],
                  incomplete_files=scan[2],
+                 metric_quality={
+                     "tokens": "partial" if scan[1] or scan[2] or not cache_complete
+                               else "verified",
+                     "sessions": "partial" if scan[1] or scan[2] else "verified",
+                     "duration": "estimated" if intervals else "unknown",
+                     "projects": "estimated" if any(
+                         name != "unattributed" for name in by_project) else "unknown",
+                     "tasks": "unknown",
+                     "api_equivalent": "estimated" if priced else "unknown",
+                     "actual_spend": "unknown",
+                 },
                  notes=["Real subscription charges unknown",
                         "Task attribution unavailable without verified session-to-job link",
                         "Duration is a union of observed completed Codex turns, not idle time"])
