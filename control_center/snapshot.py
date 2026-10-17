@@ -9,6 +9,8 @@ from pathlib import Path
 import subprocess
 import tempfile
 
+from research_scout.report_view import read_owner_view
+
 DEFAULT_OUTPUT = Path("/var/lib/hermes-control-center/overview.json")
 UNITS = (
     ("news", "Новости YFC", "hermes-discovery.timer", "schedule"),
@@ -56,6 +58,7 @@ def collect(runner=subprocess.run, now=None) -> dict:
         "source": "systemd read-only snapshot",
         "mode": "read_only",
         "services": services,
+        "research": read_owner_view(),
         "agent_policy": "NO-GO: эксплуатационный допуск постоянного агента не подтверждён",
     }
 
