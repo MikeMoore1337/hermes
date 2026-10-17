@@ -8,7 +8,7 @@
 
 | Источник | Данные | Качество и ограничения |
 | --- | --- | --- |
-| Официальные локальные Codex rollout JSONL, \`sessions/YYYY/MM/DD/rollout-*.jsonl\` | \`session_meta.cwd\` (только псевдоним каталога), \`turn_context.model/effort\`, \`event_msg.token_count.info.total_token_usage\`, \`task_started/task_complete\` | Локальные структурированные метаданные, без текстов; формат не стабильный публичный программный API |
+| Официальные локальные Codex rollout JSONL, `sessions/YYYY/MM/DD/rollout-*.jsonl` | `session_meta.cwd` (только псевдоним каталога), `turn_context.model/effort`, `event_msg.token_count.info.total_token_usage`, `task_started/task_complete` | Локальные структурированные метаданные, без текстов; формат не стабильный публичный программный API |
 | Codex app-server #255 | Только квота подписки | Не используется как источник потраченных токенов |
 | Scheduler #271 | Состояния заданий/lease | Не используется для приписывания токенов без точной связи session/job |
 | OpenAI API pricing | Отдельный фиксированный прайс-лист на 18.10.2026 | Модели вне списка дают unknown/partial, никакого вывода о реальных списаниях |
@@ -27,55 +27,55 @@ Codex. Нельзя объявлять collector active или real telemetry ve
 
 ## Архитектура и алгоритм
 
-Сборщик \`python3 -m control_center.codex_analytics --codex-home ...\`
-разрешён **только** под \`hermes-codex\` с его отдельным CODEX_HOME.
+Сборщик `python3 -m control_center.codex_analytics --codex-home ...`
+разрешён **только** под `hermes-codex` с его отдельным CODEX_HOME.
 Нет серверных POST/write API. Не читайте профиль владельца/Windows PC.
-Сканируются только фиксированные уровни \`sessions/YYYY/MM/DD\`, ограниченное
+Сканируются только фиксированные уровни `sessions/YYYY/MM/DD`, ограниченное
 число файлов, не более 64 MiB на файл и 8 MiB за проход; symlink запрещены.
-Большие записи prompt/response пропускаются без \`json.loads\`, тело не хранится.
+Большие записи prompt/response пропускаются без `json.loads`, тело не хранится.
 Сохраняются только идентификаторы сессий/файлов, безопасные модели/effort,
 псевдонимы проектов и метрики. Абсолютные пути, credentials, prompt/response
 и аргументы инструментов не попадают в SQLite/API. Служба не запускает Codex.
 
-Версия схемы SQLite/API \`1\`:
-- \`files\`: курсор байтового чтения и inode; завершённые строки и bounded backfill;
-- \`counters\`: последний **кумулятивный** total usage для каждой сессии;
-- \`events\`: уникальные \`relative_rollout_path:byte_offset\`, временные события и
+Версия схемы SQLite/API `1`:
+- `files`: курсор байтового чтения и inode; завершённые строки и bounded backfill;
+- `counters`: последний **кумулятивный** total usage для каждой сессии;
+- `events`: уникальные `relative_rollout_path:byte_offset`, временные события и
   строго рассчитанные приращения; повторы snapshots с тем же cumulative не добавляют
-  расход, \`last_token_usage\` не складывается;
-- \`scans\`: состояние последнего прохода и признаки неполноты.
+  расход, `last_token_usage` не складывается;
+- `scans`: состояние последнего прохода и признаки неполноты.
 
-SQLite сохраняет транзакцию атомарно. Дубликаты/рестарт безопасны за счёт курсора,
-уникальности event id и монотонности cumulative counters. При неожиданном сбросе
+SQLite сохраняет транзакцию атомарно. Поля `metric_quality` различают подтверждённые токены, расчетное время/стоимость, эвристическую атрибуцию проектов и недоступные сведения о задачах/реальных списаниях. Дубликаты/рестарт безопасны за счёт курсора,
+уникальности event id и монотонности cumulative counters. Кешированные токены не могут превышать входные; такие некорректные данные отклоняются. При неожиданном сбросе
 кумулятивного счётчика прирост не выводится из предположений, событие отмечается
 неполным. При изменении inode тот же session id не пересчитывается автоматически.
 Незавершённая строка читается на следующем проходе. История максимум 90 дней,
-100000 событий, файл БД ограничен 128 MiB. \`all\` = доступная удерживаемая история,
+100000 событий, файл БД ограничен 128 MiB. `all` = доступная удерживаемая история,
 а не срок жизни аккаунта.
 
-Привязка к проекту по точному имени basename \`cwd\` (Hermes, Your Fitness Coach,
+Привязка к проекту по точному имени basename `cwd` (Hermes, Your Fitness Coach,
 Second Brain) - **эвристика, не подтверждённый Git remote**. Все другие случаи:
-\`unattributed\`. Атрибуция конкретному заданию Scheduler/skill/tool пока
-\`unknown\`; JSONL tool call args и output не индексируются. Поля \`effort\`
-доступны только при наличии \`turn_context\`.
+`unattributed`. Атрибуция конкретному заданию Scheduler/skill/tool пока
+`unknown`; JSONL tool call args и output не индексируются. Поля `effort`
+доступны только при наличии `turn_context`.
 
 Время активности: объединение неперекрывающихся интервалов между подтверждёнными
-\`task_started/task_complete\`; не учитывает незаконченные пары. Счётчик
-\`completed_turns\` обозначает только завершённые циклы Codex, не job succeeded.
+`task_started/task_complete`; не учитывает незаконченные пары. Счётчик
+`completed_turns` обозначает только завершённые циклы Codex, не job succeeded.
 Из-за пробелов в телеметрии duration может быть частичной. Нет событий != простой.
 
-Суммы токенов: \`input_tokens\` включает cached input. Отдельно показывается кеш,
-если значение действительно передано; \`total=input+output\`. Для расчёта цены
-\`(input-cached)*input_price+cached*cached_price+output*output_price\` / 1 000 000.
-Версия цен \`2026-10-18-v1\`: только \`gpt-5.2-codex\` и \`gpt-5.3-codex\`,
+Суммы токенов: `input_tokens` включает cached input. Отдельно показывается кеш,
+если значение действительно передано; `total=input+output`. Для расчёта цены
+`(input-cached)*input_price+cached*cached_price+output*output_price` / 1 000 000.
+Версия цен `2026-10-18-v1`: только `gpt-5.2-codex` и `gpt-5.3-codex`,
 USD/1M input=1.75, cached=0.175, output=14.00 (стандартные API цены).
 Coverage = доля observed usage событий с полной структурой и подходящей ценой.
 Это **API-equivalent**, а не подтверждённые расходы подписки ChatGPT.
-\`actual_spend_usd=null\` без поставщика фактических списаний; сравнение с
+`actual_spend_usd=null` без поставщика фактических списаний; сравнение с
 Cloudflare Workers AI принципиально не выполняется. Нестандартные региональные
 условия и контекстно-зависимые тарифы требуют расширения прайс-листа.
 
-GET \`/api/analytics/codex?period=24h|7d|30d|all\`:
+GET `/api/analytics/codex?period=24h|7d|30d|all`:
 owner-only через действующий GitHub OAuth (или существующий доверенный proxy mode),
 Cache-Control: no-store, только whitelist; пустое состояние не заменяется нулями.
 Реактивная панель в Atlas открывается из существующей навигации как отдельный
@@ -84,18 +84,18 @@ read-only раздел и работает с реальным API. График
 
 ## Проверка, эксплуатационный допуск, rollback
 
-Офлайн: \`python3 -m unittest tests.test_codex_analytics tests.test_codex_analytics_api -v\`;
+Офлайн: `python3 -m unittest tests.test_codex_analytics tests.test_codex_analytics_api -v`;
 общие quality/UI CI и Playwright 393/1440 desktop/mobile, без inference.
 
 После визуального аппрува UI и успешного merge требуется отдельное эксплуатационное
 разрешение на **новый** oneshot timer/права чтения rollout sessions. На VPS:
-проверить точный SHA, версию Codex CLI, наличие \`sessions\`, owner/mode файлов,
+проверить точный SHA, версию Codex CLI, наличие `sessions`, owner/mode файлов,
 доступную память/нагрузку, неизменность H-01 #33 и существующего quota collector.
 Только затем создать отдельный системный timer, без root доступа к чужим
 профилям. Отдельно проверить read-only endpoint и источник реальных событий;
 успешный CD не является доказательством активного сборщика.
 
-Rollback: остановить/выключить **только** новый \`hermes-codex-analytics.timer\`,
+Rollback: остановить/выключить **только** новый `hermes-codex-analytics.timer`,
 сохранить SQLite/cursors как forensic evidence, вернуть проверенный предыдущий
 release SHA штатной процедурой. Не останавливать quota monitor #255,
 scheduler #271 или H-01 #33; не удалять их history/journals.
