@@ -1,0 +1,35 @@
+[Unit]
+Description=Hermes v0.22.2 bounded read-only Ops Incident Agent (#33)
+Documentation=https://github.com/MikeMoore1337/hermes/issues/33
+Wants=network-online.target
+Requires=docker.service hermes-cloudflare-network-guard.service hermes-cloudflare-proxy.service
+After=network-online.target docker.service hermes-cloudflare-network-guard.service hermes-cloudflare-proxy.service
+AssertPathExists=/etc/hermes-agent/h01-image.env
+StartLimitIntervalSec=3600
+StartLimitBurst=2
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/opt/hermes-agent-owner
+ExecStart=/usr/bin/python3 -m scripts.h01_ops_agent_service
+Restart=no
+RuntimeMaxSec=230
+TimeoutStartSec=220
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+ReadOnlyPaths=/var/lib/hermes-agent/ops-watch /var/lib/hermes-agent/.env /etc/hermes-agent/h01-image.env
+ReadWritePaths=/var/lib/hermes-h01 /run /var/run
+MemoryMax=192M
+CPUQuota=25%
+TasksMax=35
+UMask=0077
+StandardOutput=journal
+StandardError=journal
