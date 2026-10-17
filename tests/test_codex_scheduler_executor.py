@@ -53,6 +53,8 @@ class OfficialAdapterTests(TestCase):
         argv = popen.call_args.args[0]
         self.assertEqual(argv[:5], [str(self.binary), "--ask-for-approval", "never", "exec", "--json"])
         self.assertEqual(argv[argv.index("--sandbox") + 1], "read-only")
+        self.assertIn("--skip-git-repo-check", argv)  # Immutable CD tar archive has no .git
+        self.assertEqual(argv[-1], "-")
         self.assertEqual(argv[argv.index("--model") + 1], "mock-model")
         self.assertNotIn("shell", popen.call_args.kwargs)
         self.assertEqual(popen.call_args.kwargs["cwd"], self.repo)
@@ -61,6 +63,21 @@ class OfficialAdapterTests(TestCase):
         self.assertNotIn("OPENAI_API_KEY", popen.call_args.kwargs["env"])
         self.assertEqual(process.communicate.call_args.kwargs["input"],
                          b"Review approved synthetic issue.")
+
+    @patch("control_center.codex_scheduler_executor.subprocess.Popen")
+    def test_patch_requires_a_real_git_checkout(self, popen):
+        writable = {**self.job, "allowed_operations": ["patch"]}
+        with self.assertRaisesRegex(ValidationError, "writable_git_checkout_required"):
+            self.adapter(enabled=True).execute(writable)
+        popen.assert_not_called()
+        (self.repo / ".git").mkdir()
+        process = MagicMock()
+        process.returncode = 0
+        popen.return_value = process
+        self.adapter(enabled=True).execute(writable)
+        argv = popen.call_args.args[0]
+        self.assertEqual(argv[argv.index("--sandbox") + 1], "workspace-write")
+        self.assertNotIn("--skip-git-repo-check", argv)
 
     @patch("control_center.codex_scheduler_executor.subprocess.Popen")
     def test_successful_jsonl_is_durable_before_receipt(self, popen):
