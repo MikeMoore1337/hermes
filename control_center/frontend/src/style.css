@@ -107,6 +107,15 @@
 .login-root .login-story h1,.login-root .login-form h2 {font-weight:720;letter-spacing:-1px}
 .login-root .login-story blockquote {font-weight:400;font-style:italic}
 
+/* Desktop login: center the wordmark to the same image box, below its wings. */
+@media (min-width:751px) {
+  .login-story .login-overline {
+    width:min(100%, 550px);
+    margin:40px 0 18px -15px !important;
+    text-align:center;
+  }
+}
+
 /* Mobile login: keep the HD mark and its caption centered and separate. */
 @media (max-width:750px) {
   .login-story .login-hero-mark {

@@ -21,6 +21,17 @@ async function assertNoOverflow(page){
  expect(out.doc,"Horizontal document overflow").toBeLessThanOrEqual(out.width+1);
  expect(out.body,"Horizontal body overflow").toBeLessThanOrEqual(out.width+1);
 }
+async function assertDesktopCaption(page){
+ const r=await page.evaluate(()=>{
+  const logo=document.querySelector(".login-hero-mark").getBoundingClientRect();
+  const caption=document.querySelector(".login-overline").getBoundingClientRect();
+  return {logoCenter:(logo.left+logo.right)/2, captionCenter:(caption.left+caption.right)/2,
+   gap:caption.top-logo.bottom, align:getComputedStyle(document.querySelector(".login-overline")).textAlign};
+ });
+ expect(Math.abs(r.logoCenter-r.captionCenter),"Desktop wordmark centered relative to winged H").toBeLessThanOrEqual(1);
+ expect(r.gap,"Desktop caption below winged H image").toBeGreaterThanOrEqual(16);
+ expect(r.align).toBe("center");
+}
 test("approved C+B Atlas with C+A fonts, working asset and navigation",async({page})=>{
  await page.setViewportSize({width:1440,height:900});await mock(page);
  await page.goto("/");
@@ -61,6 +72,7 @@ test("login design is a preview only, OAuth button disabled",async({page})=>{
  await expect(logo).toHaveJSProperty("naturalWidth",1096);
  expect(await logo.evaluate(el=>getComputedStyle(el).mixBlendMode)).toBe("normal");
  expect(await logo.evaluate(el=>{const c=document.createElement("canvas");c.width=c.height=1;const ctx=c.getContext("2d");ctx.drawImage(el,0,0);return ctx.getImageData(0,0,1,1).data[3];})).toBe(0);
+  await assertDesktopCaption(page);
  await page.screenshot({path:resolve(folder,"login-1440.png"),fullPage:true});
  await assertNoOverflow(page);
 });
@@ -90,6 +102,7 @@ for(const width of [320,360,393,430,750,768,1920]){
    expect(positions.captionAlign).toBe("center");
    expect(positions.captionTop-positions.logoBottom,"Caption must sit clear below the wings").toBeGreaterThanOrEqual(16);
   }
+   if(width>=768)await assertDesktopCaption(page);
   await assertNoOverflow(page);
   if(width===393)await page.screenshot({path:resolve(folder,"login-393.png"),fullPage:true});
  });
