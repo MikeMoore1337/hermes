@@ -44,7 +44,7 @@
   const history = document.createElement("details");
   history.className = "dc-history";
   const historySummary = document.createElement("summary");
-  historySummary.textContent = "История квоты и устройств";
+  historySummary.textContent = "Динамика Desktop Commander";
   const historyControls = document.createElement("div");
   historyControls.className = "dc-history-controls";
   const historyPeriod = document.createElement("select");
