@@ -54,6 +54,25 @@ class ActivationTests(unittest.TestCase):
         self.assertIn("NoNewPrivileges=true", service)
         self.assertNotIn("ExecStartPre=", service)
 
+    def test_timer_has_future_initial_and_repeating_oneshot_schedule(self):
+        timer = (ROOT / "deploy" / "hermes-desktop-commander.timer").read_text()
+        self.assertIn("OnActiveSec=2min", timer)
+        self.assertIn("OnUnitInactiveSec=15min", timer)
+        self.assertIn("Unit=hermes-desktop-commander.service", timer)
+        self.assertNotIn("OnBootSec=", "\n".join(
+            line for line in timer.splitlines() if not line.lstrip().startswith("#")))
+        self.assertNotIn("OnUnitActiveSec=", timer)
+
+    def test_enable_rearms_existing_timer_and_rejects_missing_next_run(self):
+        src = SCRIPT.read_text()
+        enable_src = src.split("enable() {", 1)[1].split("\nstatus() {", 1)[0]
+        self.assertIn("systemctl enable --now hermes-desktop-commander.timer", enable_src)
+        self.assertIn("systemctl restart hermes-desktop-commander.timer", enable_src)
+        self.assertIn("NextElapseUSecMonotonic", enable_src)
+        self.assertIn("TELEMETRY_TIMER=FAILED_NO_NEXT_RUN", enable_src)
+        self.assertIn("TELEMETRY_NEXT=", enable_src)
+        self.assertIn("REMOTE_COMMAND_EXECUTION=NOT_AUTHORIZED", enable_src)
+
     def test_pinned_and_no_npx_network_at_service_start(self):
         src = COLLECTOR.read_text()
         self.assertIn("node_modules/.bin/mcp-remote", src)

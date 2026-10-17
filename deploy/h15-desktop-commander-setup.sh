@@ -125,8 +125,19 @@ if s["status"] not in ("monitored", "exhausted"):
     raise SystemExit("Refuse timer activation without a fresh real metadata sample")
 '
   systemctl enable --now hermes-desktop-commander.timer
+  # A pre-existing enabled timer may have already elapsed its OnBootSec
+  # trigger and remain active without any next event. Re-arm the schedule.
+  systemctl restart hermes-desktop-commander.timer
+  local next active
+  active=$(systemctl show --value -p ActiveState hermes-desktop-commander.timer)
+  next=$(systemctl show --value -p NextElapseUSecMonotonic hermes-desktop-commander.timer)
+  if [[ "$active" != active || -z "$next" || "$next" == n/a || "$next" == 0 ]]; then
+    echo "TELEMETRY_TIMER=FAILED_NO_NEXT_RUN" >&2
+    return 1
+  fi
   systemctl is-enabled hermes-desktop-commander.timer
   echo TELEMETRY_TIMER=ENABLED
+  echo TELEMETRY_NEXT="$next"
   echo REMOTE_COMMAND_EXECUTION=NOT_AUTHORIZED
 }
 status() {
