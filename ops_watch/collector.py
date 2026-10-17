@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from ops_watch.core import InputError, analyze, changes
+from control_center.codex_usage import DEFAULT_OUTPUT as CODEX_OUTPUT, UsageError, read_snapshot
 from ops_watch.state_store import persist, read_current
 from qa_advisor.signal_store import SignalError, observed_status
 
@@ -187,6 +188,18 @@ def normalized(news_health: dict[str, Any], observed: datetime, *, timer_enabled
     return result
 
 
+def _codex_telemetry(path: Path = CODEX_OUTPUT, *, observed: datetime | None = None) -> dict[str, Any] | None:
+    """Optional local-only snapshot; no Codex inference process or network."""
+    if not path.exists() and not path.is_symlink():
+        return None
+    try:
+        snapshot = read_snapshot(path, now=observed)
+    except UsageError:
+        return {"status": "unavailable", "ordinary_usage_allowed": None}
+    return {"status": snapshot["status"],
+            "ordinary_usage_allowed": snapshot["ordinary_usage_allowed"]}
+
+
 def _read_state(path: Path) -> dict[str, Any]:
     if path.is_symlink() or not path.is_file():
         raise InputError("missing_news_health")
@@ -264,6 +277,7 @@ def once(source: Path = SOURCE, target: Path = TARGET, observed: datetime | None
             alerts_timer=alerts_timer,
             alerts_service=alerts_service,
         )
+        snapshot["codex"] = _codex_telemetry(observed=now)
         findings = analyze(snapshot, now=now)
         # Separate QA reader never has Telegram credentials or access to the
         # news source. Missing/stale/denied API observations must not falsely
@@ -273,6 +287,16 @@ def once(source: Path = SOURCE, target: Path = TARGET, observed: datetime | None
         except (SignalError, OSError):
             ci = None
         previous = read_current(target)
+        # Missing/error/auth/stale data cannot resolve a confirmed quota alarm.
+        codex_unknown = snapshot["codex"] is None or snapshot["codex"]["status"] in (
+            "stale", "unavailable", "auth_required", "unknown", "not_configured",
+        )
+        if codex_unknown:
+            active = {item["code"] for item in findings}
+            for item in previous:
+                if item["code"] in ("codex_low", "codex_exhausted") and item["code"] not in active:
+                    findings.append({"code": item["code"], "severity": "warning",
+                                     "fingerprint": item["fingerprint"]})
         was_ci_failed = any(item["code"] == "ci_failed" for item in previous)
         if ci == "FAILURE" or (ci is None and was_ci_failed):
             findings.append({
