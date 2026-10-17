@@ -30,7 +30,7 @@ for(const width of [393,1440]){
   await page.getByRole("button",{name:"AI Usage Analytics"}).click();
   const panel=page.getByRole("region",{name:"AI Usage Analytics"});
   await expect(panel).toBeVisible();
-  await expect(panel.getByText("1 900",{exact:true})).toBeVisible();
+  await expect(panel.locator("[data-summary]").getByText("1 900",{exact:true})).toBeVisible();
   await expect(panel.getByText("Нет данных",{exact:true}).first()).toBeVisible();
   await expect(panel.getByText("Hermes",{exact:true})).toBeVisible();
   await expect(panel.getByText("gpt-5.3-codex",{exact:true})).toBeVisible();
@@ -56,7 +56,7 @@ test("Period and read-only filters do not execute Codex",async({page})=>{
  await page.getByRole("button",{name:"AI Usage Analytics"}).click();
  const panel=page.getByRole("region",{name:"AI Usage Analytics"});
  await panel.getByLabel("Период").selectOption("24h");
- await expect(panel.getByText("1 900",{exact:true})).toBeVisible();
+ await expect(panel.locator("[data-summary]").getByText("1 900",{exact:true})).toBeVisible();
  await panel.getByLabel("Модель").selectOption("gpt-5.3-codex");
  await panel.getByLabel("Показатель").selectOption("cycles");
  await expect(panel.getByText("Наблюдаемая активность")).toBeVisible();
