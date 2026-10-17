@@ -19,7 +19,7 @@ import socketserver
 import struct
 import time
 
-from control_center.auth import AuthConfig, AuthError, GitHubProvider
+from control_center.auth import AuthConfig, AuthError, GitHubProvider, ProviderHTTPError
 from control_center.credentials import load_runtime_credentials
 
 BROKER_SOCKET = "/run/hermes-oauth/broker.sock"
@@ -100,6 +100,12 @@ def parse_request(raw: bytes) -> tuple[str, str]:
 
 def _safe_failure_category(exc: Exception) -> str:
     """Only bounded reason labels in journal. Never log tokens, codes or URLs."""
+    if isinstance(exc, ProviderHTTPError):
+        stage = exc.stage if exc.stage in ("token", "identity") else "unknown"
+        status = (str(exc.status) if exc.status in
+                  (400, 401, 403, 404, 408, 422, 429, 500, 502, 503, 504)
+                  else "other")
+        return f"github_{stage}_http_{status}"
     if isinstance(exc, AuthError):
         return {
             "Invalid OAuth token response": "github_token_exchange_denied",
