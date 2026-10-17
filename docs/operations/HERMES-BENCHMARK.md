@@ -10,7 +10,7 @@ Task fixture -> isolated built-in MockBus -> sandbox files / mock receipts / ins
 - Each case runs in a fresh TemporaryDirectory. The mock executor only performs a fixed number of built-in actions; it does not execute arbitrary commands or scripts from JSON, call subprocess or initiate network requests.
 - The executor's success claims are **untrusted**, distinct from the MockBus ledger and receipts. The verifier inspects actual temporary files, file-change scope, tests/CI mock receipts, synthetic commit SHA, deployment approval, scheduler mock state, tool denials, lease claims and dispatch counts.
 - No external OS-enforced network isolation is proven: the synthetic executor is in-process and **must never be changed to run arbitrary agent code**. A future live canary needs a separate full-process OS/network sandbox and proof of enforcement.
-- Promptfoo #186 tests policy/attacks. Scheduler #271 owns durable job execution, Usage Analytics #272 owns measured consumption, Usage Monitor #255 owns quota freshness, and H-01 #33 owns resident operation. Benchmark does not duplicate or activate them.
+- Promptfoo #186 tests policy/attacks. Scheduler #271 owns durable job execution, Usage Analytics #272 owns measured consumption, Usage Monitor #255 owns quota freshness and its existing control_center.codex_policy.decision() is reused with a fixed UTC clock in synthetic quota tests (5h available/7d exhausted and stale telemetry). H-01 #33 owns resident operation. Benchmark does not duplicate or activate them.
 
 ## Versioned task contract
 
