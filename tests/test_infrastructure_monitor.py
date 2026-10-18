@@ -87,6 +87,21 @@ class CollectorTests(unittest.TestCase):
             self.assertEqual(state["status"], "stale")
             self.assertEqual(state["metrics"]["cpu_used_percent"], 50)
 
+    def test_offline_has_real_last_observation_not_fake_zero(self):
+        with tempfile.TemporaryDirectory() as root:
+            stamp = dt.datetime.now(dt.timezone.utc) - dt.timedelta(minutes=20)
+            Path(root, "hermes.json").write_text(json.dumps(fixture(now=stamp)))
+            item = hosts(Path(root))["hosts"][0]
+            self.assertEqual(item["status"], "offline")
+            self.assertEqual(item["metrics"]["cpu_used_percent"], 50)
+
+    def test_reject_out_of_bounds_inodes(self):
+        with tempfile.TemporaryDirectory() as root:
+            sample = fixture()
+            sample["metrics"]["inode_used_percent"] = 120
+            Path(root, "hermes.json").write_text(json.dumps(sample))
+            self.assertEqual(hosts(Path(root))["hosts"][0]["status"], "unknown")
+
     def test_missing_bad_spoof_future_and_oversized(self):
         with tempfile.TemporaryDirectory() as root:
             p = Path(root, "yfc.json")
