@@ -106,6 +106,52 @@ read/execute to LocalService via language-neutral SIDs. It registers a disabled
 two-minute intervals (the agent itself retries indefinitely while running).
 It does not store a Windows password or use SYSTEM for agent execution.
 
+### Windows interrupted Prepare recovery (PowerShell 5.1 native quotes)
+
+The initial installer compared `websockets.__version__` to `"16.0"` through
+`python -c`; PowerShell 5.1 removed the inner double quotes when invoking
+a native executable, so the assertion falsely compared a string to float
+`16.0` and aborted. In that old release, the private JSON and SSH key had
+already been copied to ProgramData **before the ACL hardening step**.
+Fix: the installer now uses a version assertion that requires no embedded
+native double quotes, applies protected ACLs **before** secrets are copied,
+and provides an explicit conservative `Repair` for an interrupted stage.
+
+**If the old prepare already failed**, as owner in elevated PowerShell,
+**immediately** restrict the staged private files even before installing
+the repaired release:
+
+```powershell
+$state = Join-Path $env:ProgramData 'HermesDevicePresence'
+if (Test-Path -LiteralPath $state) {
+    & icacls.exe $state /inheritance:r `
+        /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' `
+                 '*S-1-5-19:(OI)(CI)RX' /T
+    if ($LASTEXITCODE -ne 0) { throw 'PRIVATE_ACL_FAILED' }
+}
+```
+
+Use the corrected installer from an **immutable, verified new main SHA**,
+never the first release with the quoting bug. Existing staged files are not
+re-enrolled, reset or sent to GitHub. After a machine-wide Python has been
+installed in `$env:ProgramFiles`, run:
+
+```powershell
+$script = Join-Path $HOME '.hermes-device\h15-device-fabric-windows-autostart.ps1'
+& $script -Mode Repair -MachinePython 'C:\Program Files\Python314\python.exe'
+& $script -Mode Status
+```
+
+`Repair` refuses to overwrite a registered task, rejects symlinked staging,
+checks private staged config/key/host file/source hashes against the working
+originals, recreates only the isolated venv with the new interpreter, and
+registers a task **disabled by default**. A mismatch requires manual review,
+not `Remove-Item -Recurse` of the working source or revocation of the live
+registration. A user-profile Python executable is now refused by preflight
+(`MACHINE_WIDE_PYTHON_REQUIRED`) because LocalService must start before
+interactive logon. Never call `Enable` before `WINDOWS_PERSISTENCE=PREPARED`
+and credential ACL verification.
+
 Stop the interactive `--watch` Windows process before activation, then:
 
 ```powershell
