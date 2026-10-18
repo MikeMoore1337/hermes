@@ -280,7 +280,8 @@ def validate(raw: Any, *, expected_mode: str) -> dict[str, Any]:
         "spoofed_read_wire_after_denial", "spoofed_read_prompt_calls",
     )
     if any(type(raw[k]) is not bool for k in bools) or any(
-            type(raw[k]) is not int or not 0 <= raw[k] <= 2 for k in ints):
+            type(raw[k]) is not int or not 0 <= raw[k] <= (3 if k == "registered_tools" else 2)
+            for k in ints):
         raise ReceiptInvalid("http_mcp_types_invalid")
     if not raw["sdk_available"]:
         if any(raw[k] for k in bools if k != "sdk_available") or any(raw[k] != 0 for k in ints):
