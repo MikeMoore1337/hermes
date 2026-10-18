@@ -138,7 +138,8 @@ class ResourceAlertTests(unittest.TestCase):
                  patch("ops_watch.collector.infrastructure_observe",
                        side_effect=[status("high"), status("unknown"), status("normal")]), \
                  patch("ops_watch.collector._codex_telemetry", return_value=None):
-                kwargs = {"agent_guard": {"loaded": True, "enabled": True, "active": True}}
+                kwargs = {"agent_guard": {"loaded": True, "enabled": True, "active": True},
+                          "infrastructure_dir": folder}
                 first = once(folder / "news", folder, NOW, **kwargs)
                 second = once(folder / "news", folder, NOW + timedelta(minutes=1), **kwargs)
                 third = once(folder / "news", folder, NOW + timedelta(minutes=3), **kwargs)
@@ -146,6 +147,34 @@ class ResourceAlertTests(unittest.TestCase):
             self.assertEqual(second["changes"]["resolved"], [])
             self.assertEqual(third["changes"]["resolved"], ["ops:infra_hermes_cpu_high"])
             self.assertEqual(first["queued_incident_events"], 1)
+
+    def test_infrastructure_is_explicitly_opt_in_for_offline_collector(self):
+        with tempfile.TemporaryDirectory() as folder:
+            target = Path(folder)
+            target.chmod(0o700)
+            health = base({"hermes": {"status": "offline"},
+                           "yfc": {"status": "offline"}})["news"]
+            with patch("ops_watch.collector._state", return_value=True), \
+                 patch("ops_watch.collector._read_state", return_value=health), \
+                 patch("ops_watch.collector.infrastructure_observe") as observer, \
+                 patch("ops_watch.collector._codex_telemetry", return_value=None):
+                result = once(target / "news", target, NOW, agent_guard={
+                    "loaded": True, "enabled": True, "active": True})
+            observer.assert_not_called()
+            self.assertEqual(result["changes"]["raised"], [])
+
+    def test_explicit_infrastructure_source_triggers_correct_host_alarm(self):
+        with tempfile.TemporaryDirectory() as folder:
+            target = Path(folder)
+            target.chmod(0o700)
+            sample(target, "yfc", percents=(30, 95, 30))
+            health = base({})["news"]
+            with patch("ops_watch.collector._state", return_value=True), \
+                 patch("ops_watch.collector._read_state", return_value=health), \
+                 patch("ops_watch.collector._codex_telemetry", return_value=None):
+                result = once(target / "news", target, NOW, infrastructure_dir=target,
+                              agent_guard={"loaded": True, "enabled": True, "active": True})
+            self.assertEqual(result["changes"]["raised"], ["ops:infra_yfc_ram_high"])
 
     def test_untrusted_host_or_level_rejected(self):
         cases = [

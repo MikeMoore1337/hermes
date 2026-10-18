@@ -128,7 +128,8 @@ class SenderTimerMonitoringTests(unittest.TestCase):
         status.assert_called_once()
         service.assert_called_once()
         collector_run.assert_called_once_with(alerts_timer=GOOD,
-                                               alerts_service={"failed":False})
+                                               alerts_service={"failed":False},
+                                               infrastructure_dir=collector.INFRASTRUCTURE_ROOT)
 
 
 if __name__=="__main__":
