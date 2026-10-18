@@ -123,7 +123,7 @@ class ExecveSeccompProbeTests(unittest.TestCase):
 
     def test_security_probe_does_not_write_or_call_network(self):
         text = seccomp.PROBE
-        self.assertIn("PR", "PR")  # smoke: the pinned BPF source is parsed below
+        self.assertIn("libc.prctl(38, 1", text)  # NO_NEW_PRIVS before seccomp\n        self.assertIn("libc.prctl(22, 2", text)  # SECCOMP_MODE_FILTER
         self.assertIn("0x40000000", text)  # reject x32 ABI bypass
         self.assertIn("0xC000003E", text)  # fixed x86-64 AUDIT_ARCH
         self.assertIn("0x00050001", text)  # EPERM return
