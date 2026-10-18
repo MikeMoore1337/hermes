@@ -17,6 +17,7 @@ from typing import Callable
 
 from .fixed_plan import fixed_plan
 from .protocol import AdmissionDenied
+from .owner_spend_lock import assert_owner_real_execution_allowed
 
 
 class LocalBoundedExecutor:
@@ -73,6 +74,10 @@ class LocalBoundedExecutor:
 
     def __call__(self, job: dict) -> dict:
         self._preflight()
+        # Explicit owner NO-SPEND decision. Neither enabled=True, a signed
+        # job, a forged owner gate nor environment variables may unlock this.
+        # Keep this check outside _preflight: tests sometimes mock _preflight.
+        assert_owner_real_execution_allowed()
         plan = fixed_plan(
             job, toolkit_root=self.toolkit_root,
             python_binary=self.python_binary, evidence_root=self.evidence_root,
