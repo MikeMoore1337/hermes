@@ -441,3 +441,68 @@ to replace/backup the installed units, then `smoke github`, verify a fresh
 `enable github` for its 10-minute timer. Do not run install/smoke/enable
 for Cloudflare until its own approved root-only token and account ID are
 independently provisioned. Keep #295 OPEN until all source and UI proofs pass.
+
+
+## Stage 7 - optional owner-only Cloudflare Analytics Read investigation (#295)
+
+UI: independent cards now say **Сервис / квоты** instead of asserting every
+listed provider's quota meter is connected. The Cloudflare card explicitly
+distinguishes daily Free allowance, delayed Billing Read records which may
+omit free consumption, and separately permissioned **Analytics Read**
+(advisory sampled usage, NOT authoritative remaining Neurons). Both static
+production JS copies and responsive Playwright acceptance are kept in sync.
+
+Owner granted an isolated read-only account analytics credential for a
+bounded research preflight. This does **not** authorize broad Billing Read,
+plan upgrades, inference, an autonomous service/timer or use as a #271 quota
+admission gate. Cloudflare GraphQL returns adaptive analytics and must not
+be used as a current billing total. Official references:
+- https://developers.cloudflare.com/analytics/graphql-api/
+- https://developers.cloudflare.com/analytics/graphql-api/sampling/
+- https://developers.cloudflare.com/analytics/graphql-api/getting-started/authentication/api-token-auth/
+- https://developers.cloudflare.com/analytics/graphql-api/features/discovery/introspection/
+- https://developers.cloudflare.com/workers-ai/platform/pricing/
+- https://github.com/cloudflare/skills/blob/main/skills/cloudflare/references/graphql-api/patterns.md
+
+**Credential owner step** - in Cloudflare dashboard create a *separate*
+custom API token named `Hermes Analytics Read` with only
+`Account > Account Analytics > Read`, restricted to the one Hermes
+Cloudflare account (not all accounts/zones). Consider an expiry and an
+egress-IP restriction where the VPS source IP is stable. Do not reuse
+Workers AI model-inference tokens or legacy/global API keys.
+
+**No credentials should be sent via chat, GitHub, CI, CLI arguments or
+committed to the repo.** The root console must independently provision two
+distinct regular files, root-owned 0600, non-symlink and single-hardlink:
+- `/etc/hermes/cloudflare-analytics-read.token` - bearer token only.
+- `/etc/hermes/cloudflare-analytics-read.env` - exactly one line:
+  `CLOUDFLARE_ANALYTICS_ACCOUNT_ID=<verified-32hex-account-id>`.
+
+On the Hermes VPS **after** confirming the released exact SHA and after
+independent credential provisioning, run:
+
+```bash
+active="$(readlink -f /opt/hermes-control-center/current)"
+[[ "$active" =~ ^/opt/hermes-control-center/releases/main-([0-9a-f]{40})$ ]] || exit 1
+sha="${BASH_REMATCH[1]}"
+cd "/opt/hermes-agent-owner/releases/main-$sha" || exit 1
+/usr/bin/python3 -m scripts.h15_cloudflare_analytics_probe
+```
+
+The one-shot tool performs **one** size/timeout-bounded POST *GraphQL query*
+to the account-scoped **read-only** Analytics API, for the **previous
+completed UTC day**, requesting only the aggregate `sum.totalNeurons`
+from `aiInferenceAdaptiveGroups`. It outputs only fixed result codes
+and, if validated, `PREVIOUS_UTC_DAY_NEURONS_ADAPTIVE_ESTIMATE` plus
+`QUOTA_REMAINING=UNKNOWN` / `BILLABLE_USAGE=NOT_VERIFIED`. If the
+account has no reported groups, this is `no_confirmed_samples`, not zero.
+If GraphQL denies the dataset, account or plan, the tool fails closed
+without printing raw errors. No snapshot is persisted, no timer is installed,
+and the public registry/Card stays UNKNOWN for the Free remaining budget.
+
+Review the one-shot result for schema/permission availability, samples,
+sampling uncertainty, historical lag and coverage before considering a
+**separate** opted-in informational analytics collector. Cloudflare Billing
+V1 and V2 remain independent sources with different grants and latency.
+#295 must stay OPEN until the real owner-provisioned Cloudflare access and
+fresh on-host query have been independently verified.
