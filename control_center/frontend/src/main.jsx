@@ -199,9 +199,10 @@ function OperatorApp({authMode,onLogout}){
  const stats=counts(snapshot?.services||[]);
  const now=snapshot?formatTime(snapshot.generated_at):"Нет данных";
  return <div className="shell theme-atlas">
+  <a href="#main-content" className="skip-link">Перейти к основному содержимому</a>
   <Header view={view} setView={setView} authMode={authMode} onLogout={onLogout}/>
   <div className="body-layout">
-   <main className="dashboard-main">
+   <main id="main-content" tabIndex={-1} className="dashboard-main">
     <section className="atlas-hero"><div className="eyebrow">ОПЕРАЦИОННЫЙ КОНТУР H-15</div>
        <h1>Система. Под наблюдением.</h1><p>Инвентаризация, контроль состояния и изоляция компонентов.
        <br/>Только проверенные данные systemd.</p>
