@@ -117,6 +117,35 @@ chmod 700 "$HOME/.hermes-device" && chmod 600 linux-vps.json
 
 Both use a TLS-verified wss://localhost inside a reconnecting outbound SSH forward. The `--once-seconds` probe returns `DEVICE_AGENT_HEARTBEAT=PASS` **only after a confirmed welcome and heartbeat reply**. When ready to watch presence continuously, replace `--once-seconds 15` with `--watch`, keeping the process running interactively. This stage does not install Windows Task Scheduler tasks or remote Linux systemd autorun.
 
+### Debian/Ubuntu: Python 3.14 venv recovery on the second VPS
+
+On the second Linux VPS, the owner observed `python3 -m venv` failing
+because Python 3.14 shipped without `ensurepip`. An incomplete `.venv/bin/python`
+may still run, but `pip` and the pinned `websockets==16.0` runtime are absent.
+The device config, authenticated host key, portable source package and SSH keys
+remain intact; do not delete or recreate them.
+
+Explicit owner action (no global pip installation):
+
+```bash
+set -e
+BASE="$HOME/.hermes-device"
+test -f "$BASE/linux-vps.json"
+apt-get update
+apt-get install -y --no-install-recommends python3.14-venv
+python3 -m venv --clear "$BASE/.venv"
+"$BASE/.venv/bin/python" -m pip install --only-binary=:all: --no-deps 'websockets==16.0'
+"$BASE/.venv/bin/python" -c 'import websockets; assert websockets.__version__ == "16.0"; print("WEBSOCKETS=READY")'
+```
+
+After repair rerun the **same** 15-second Linux device-agent smoke from
+section 3, preserving `linux-vps.json` and its SSH private key. If the
+distro's python3.14-venv package cannot be installed, stop and inspect the
+distribution repositories rather than bypassing Python environment isolation.
+A missing runtime dependency must fail closed with
+`DEVICE_AGENT_DEPENDENCY=WEBSOCKETS_16_REQUIRED` (in the updated source), not
+attempt network access and not print secrets.
+
 ## 4. Owner live acceptance
 
 While both remote agent processes run under `--watch`, on Hermes VPS:

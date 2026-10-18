@@ -11,7 +11,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from device_fabric.device_agent import InvalidAgentConfig, load_config
+from device_fabric.device_agent import (AgentDependencyUnavailable, InvalidAgentConfig,
+                                        load_config, require_websockets)
 from device_fabric.owner_enrollment import enroll
 from device_fabric.presence import DeviceRegistry
 from device_fabric.ssh_tunnel import ssh_arguments
@@ -57,6 +58,19 @@ class RealDeviceOnboardingTests(unittest.TestCase):
         self.assertTrue(self.db.authenticated("linux-vps", c2["token"]))
         self.assertEqual(self.db.get_device_status("windows-pc")["status"], "revoked")
         self.assertNotIn(c1["token"], str(self.db.list_devices()))
+
+    def test_missing_optional_websockets_dependency_fails_cleanly(self):
+        # The error must be detected before SSH starts or the device token is used.
+        with patch("device_fabric.device_agent.connect", None):
+            with self.assertRaisesRegex(AgentDependencyUnavailable, "websockets_16_required"):
+                require_websockets()
+
+    def test_wrong_websockets_version_is_rejected(self):
+        from types import SimpleNamespace
+        with patch("device_fabric.device_agent.connect", object()), \
+                patch.dict("sys.modules", {"websockets": SimpleNamespace(__version__="15.0")}):
+            with self.assertRaises(AgentDependencyUnavailable):
+                require_websockets()
 
     def test_bundle_created_only_once_and_no_stdout_secret(self):
         with contextlib.redirect_stdout(io.StringIO()) as capture:

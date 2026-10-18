@@ -15,12 +15,27 @@ import ssl
 import sys
 
 from device_fabric.presence import NAME
-from device_fabric.read_only_agent import observe
+from device_fabric.read_only_agent import observe, connect
 from device_fabric.ssh_tunnel import ssh_arguments, keep_tunnel_open
 
 
 class InvalidAgentConfig(ValueError):
     pass
+
+
+class AgentDependencyUnavailable(RuntimeError):
+    pass
+
+
+def require_websockets() -> None:
+    """Fail before establishing SSH; no raw traceback or repeated reconnect."""
+    try:
+        import websockets
+        if connect is not None and websockets.__version__ == "16.0":
+            return
+    except ImportError:
+        pass
+    raise AgentDependencyUnavailable("websockets_16_required")
 
 
 def load_config(path: Path) -> dict[str, str]:
@@ -157,12 +172,16 @@ def main() -> None:
         parser.error("--once-seconds must be between 0.5 and 120")
     try:
         config = load_config(args.config)
+        require_websockets()
         tunnel_argv = ssh_arguments(
             remote_host=args.ssh_host, remote_user=args.ssh_user,
             ssh_key=args.ssh_key, known_hosts=args.known_hosts,
             local_port=int(config['endpoint'].rsplit(':', 1)[1]), ssh_bin=args.ssh_bin)
         result = asyncio.run(_main_async(config, seconds=args.once_seconds,
                                         tunnel_argv=tunnel_argv))
+    except AgentDependencyUnavailable:
+        print("DEVICE_AGENT_DEPENDENCY=WEBSOCKETS_16_REQUIRED", file=sys.stderr)
+        result = 5
     except (InvalidAgentConfig, ValueError) as exc:
         # Error code strings are sanitized, never interpolate config.
         print(f"DEVICE_AGENT_CONFIG={exc}", file=sys.stderr)
