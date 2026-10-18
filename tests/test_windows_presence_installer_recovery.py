@@ -50,6 +50,22 @@ class WindowsBootstrapSafetyTests(unittest.TestCase):
         self.assertLess(code.index("function Protect-PrivateState"),
                         code.index("switch ($Mode)"))
 
+    def test_task_exec_uses_supported_ssh_executable_alias(self):
+        code = SCRIPT.read_text()
+        self.assertIn("function Get-PresenceTaskArguments", code)
+        self.assertIn("Get-PresenceTaskArguments 'ssh.exe'", code)
+        self.assertIn("'FixTask'", code)
+        self.assertIn("TASK_MUST_BE_DISABLED", code)
+        self.assertIn("TASK_ARGUMENTS_UNEXPECTED", code)
+        self.assertIn("TASK_ACTION_NOT_VALIDATED", code)
+        self.assertIn("TASK_FIX_POSTCONDITION_FAILED", code)
+        self.assertIn("AUTOSTART=NOT_ENABLED", code)
+        # Existing shipped device_agent and ssh_tunnel enforce these options.
+        client = (SCRIPT.parents[1] / "device_fabric/device_agent.py").read_text()
+        tunnel = (SCRIPT.parents[1] / "device_fabric/ssh_tunnel.py").read_text()
+        self.assertIn("choices=('ssh', 'ssh.exe')", client)
+        self.assertIn('ssh_bin not in ("ssh", "ssh.exe")', tunnel)
+
     def test_background_principal_and_boot_trigger_unchanged(self):
         code = SCRIPT.read_text()
         self.assertIn("-AtStartup", code)

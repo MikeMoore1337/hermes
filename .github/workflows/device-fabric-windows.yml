@@ -136,3 +136,33 @@ jobs:
               if ($sid -notin $aclDetails) { throw 'EXPECTED_FILE_GRANT_MISSING' }
           }
           Write-Output 'WINDOWS_PRIVATE_ACL_REPAIR=PASS'
+
+      - name: Check installed task command matches shipped Windows agent SSH allowlist
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $path = (Resolve-Path 'deploy/h15-device-fabric-windows-autostart.ps1').Path
+          $tokens = $null
+          $errors = $null
+          $ast = [System.Management.Automation.Language.Parser]::ParseFile(
+              $path, [ref]$tokens, [ref]$errors
+          )
+          $fn = $ast.Find({
+              param($node)
+              $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+              $node.Name -eq 'Get-PresenceTaskArguments'
+          }, $true)
+          if (-not $fn) { throw 'SSH_TASK_ARGUMENT_FUNCTION_MISSING' }
+          $state = Join-Path $env:ProgramData 'HermesDevicePresence'
+          . ([scriptblock]::Create($fn.Extent.Text))
+          $command = Get-PresenceTaskArguments 'ssh.exe'
+          if (-not $command.EndsWith('--ssh-bin ssh.exe')) {
+              throw 'SSH_TASK_BINARY_NOT_ALLOWED'
+          }
+          if (-not $command.Contains('--watch') -or
+              -not $command.Contains('--config') -or
+              -not $command.Contains('--known-hosts')) {
+              throw 'SSH_TASK_REQUIRED_ARGUMENTS_MISSING'
+          }
+          Write-Output 'WINDOWS_SSH_ARGS_WHITELIST=PASS'
+          exit 0

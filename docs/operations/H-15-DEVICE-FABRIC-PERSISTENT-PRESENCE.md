@@ -157,6 +157,35 @@ by LocalService at startup. Unexpected Python directories (such as Temp or
 Downloads), mismatched Python versions and reparse points are refused. Never call `Enable` before `WINDOWS_PERSISTENCE=PREPARED`
 and credential ACL verification.
 
+### Windows prepared-task SSH binary migration (no re-enrollment)
+
+The October 18 pilot prepared a disabled Windows scheduled task using an
+absolute `--ssh-bin C:\\Windows\\System32\\OpenSSH\\ssh.exe` value. The
+already-enrolled `device_agent.py` and `ssh_tunnel.py` explicitly accept only
+`ssh` or `ssh.exe`, so enabling that task would fail before establishing SSH.
+
+After downloading the exact reviewed installer containing `FixTask`, from
+elevated PowerShell **while the task remains Disabled**:
+
+```powershell
+$script = Join-Path $HOME '.hermes-device\\h15-device-fabric-windows-autostart.ps1'
+& $script -Mode FixTask
+& $script -Mode Status
+```
+
+The migration checks there is exactly one task action, the known
+`LOCAL SERVICE` principal, correct private ProgramData Python/working directory,
+and exact old or new read-only SSH arguments. It replaces only the approved
+`--ssh-bin` spelling; it does not touch the credentials, SSH host key, or
+enrollment and does not enable the task. Expected result:
+`WINDOWS_TASK_SSH_ARGS=FIXED` and `AUTOSTART=NOT_ENABLED`.
+The `Enable` command now refuses mismatched task actions.
+
+The literal `ssh.exe` is resolved using Windows' normal system PATH.
+If the task fails to establish a tunnel as LocalService, verify OpenSSH
+discovery and its local account key permissions before altering privileges.
+Do not switch to SYSTEM, weaken ACLs or bypass TLS verification.
+
 Stop the interactive `--watch` Windows process before activation, then:
 
 ```powershell
