@@ -21,11 +21,27 @@ from scripts.verify_v0222_immutable import (
     patched_commands, image_identity, stamp_details,
 )
 
-SCHEMA = "h19-native-evidence-v1"
+SCHEMA = "h19-native-evidence-v2"
 SANDBOX_CHECK = r"""
 import json
 import os
 import socket
+import subprocess
+
+# Harmless, bounded shell exec. Uses no real Hermes tool API, no filesystem
+# output, no network, and no production context. Presence != executability.
+try:
+    shell = subprocess.run(
+        ["/bin/sh", "-c", "printf H19_BOUNDED_SHELL_OS_PROBE"],
+        capture_output=True, timeout=3, cwd="/", env={"PATH": "/usr/bin:/bin"},
+        check=False)
+    shell_result = ("EXECUTED" if shell.returncode == 0 and
+                    shell.stdout == b"H19_BOUNDED_SHELL_OS_PROBE"
+                    else "UNVERIFIED")
+except (FileNotFoundError, PermissionError):
+    shell_result = "BLOCKED"
+except (subprocess.TimeoutExpired, OSError):
+    shell_result = "UNVERIFIED"
 
 outside = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 outside.settimeout(1)
@@ -55,6 +71,7 @@ print(json.dumps({
     "runtime_path_write_denied": write_denied,
     "docker_socket_absent": not os.path.exists("/var/run/docker.sock"),
     "shell_binary_present": os.path.exists("/bin/sh"),
+    "shell_os_probe_result": shell_result,
     "credentials_injected": any(k in os.environ for k in (
         "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GITHUB_TOKEN",
         "GH_TOKEN", "CLOUDFLARE_API_TOKEN", "CODEX_HOME")),
@@ -91,7 +108,8 @@ def capture(runner=run_bounded) -> dict:
     check = validate(original.stdout, derivative.stdout)
     raw_original = _packet(original.stdout)
     raw_patched = _packet(derivative.stdout)
-    assert set(raw_patched["cases"]) == REQUIRED_CASES
+    if set(raw_patched["cases"]) != REQUIRED_CASES:
+        raise NativePolicyDenied("NATIVE_CASE_MATRIX_INCOMPLETE")
     # The original may reach synthetic executors, never actual shell/model.
     os_cmd = list(original_cmd)
     os_cmd[-1] = SANDBOX_CHECK
@@ -102,9 +120,11 @@ def capture(runner=run_bounded) -> dict:
         os_data = {}
     os_required = ("nonroot", "network_egress_probe_denied",
                    "runtime_path_write_denied", "docker_socket_absent")
+    shell_result = os_data.get("shell_os_probe_result") if type(os_data) is dict else None
     os_pass = (type(os_data) is dict and all(os_data.get(k) is True for k in os_required)
                and os_data.get("credentials_injected") is False
-               and type(os_data.get("shell_binary_present")) is bool)
+               and type(os_data.get("shell_binary_present")) is bool
+               and shell_result in ("EXECUTED", "BLOCKED"))
     runtime_pass = check["status"] == "PATCHED_NATIVE_TOOL_POLICY_BOUNDED_PASS"
     case_rows = []
     for name in sorted(REQUIRED_CASES):
@@ -130,11 +150,17 @@ def capture(runner=run_bounded) -> dict:
         if name == "subagent_scope":
             case_pass = (case_pass and second.get("terminal_in_child") is False
                          and second.get("terminal_in_disabled") is True)
+        details = ("modified_approval_seen", "nested_terminal_allowed",
+                   "nested_web_search_allowed", "restricted_executor_reached",
+                   "allowed_executor_reached", "terminal_in_child",
+                   "terminal_in_disabled")
         case_rows.append({
             "scenario_id": "h19-native-" + name,
             "source": "pinned_v0222_python_dispatch",
             "original_stub_executor_reached": first["executor_reached"],
             "patched_stub_executor_reached": second["executor_reached"],
+            "original_details": {k: first[k] for k in details if k in first},
+            "patched_details": {k: second[k] for k in details if k in second},
             "expected_tool_behavior": "DENY" if deny else "BOUNDED_ALLOW",
             "verification_status": "PASS" if case_pass else "FAIL",
             "evidence_ref": "docker:" + iid,
@@ -154,11 +180,10 @@ def capture(runner=run_bounded) -> dict:
         "checks": case_rows,
         "os_probe_status": "PASS" if os_pass else "FAIL",
         "os_probe": {k: os_data.get(k) if type(os_data) is dict else None
-                     for k in (*os_required, "credentials_injected", "shell_binary_present")},
-        "shell_execution_denied_by_os": False if (
-            type(os_data) is dict and os_data.get("shell_binary_present") is True
-        ) else None,
-        "shell_execution_denial_verified": False,
+                     for k in (*os_required, "credentials_injected", "shell_binary_present",
+                               "shell_os_probe_result")},
+        "shell_execution_denied_by_os": shell_result == "BLOCKED",
+        "shell_execution_denial_verified": shell_result == "BLOCKED",
         "mcp_external_effect_denial_verified": False,
         "full_runtime_permission_enforcement_verified": False,
         "real_model_evaluation": "NOT_RUN",
