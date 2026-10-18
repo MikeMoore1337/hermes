@@ -128,7 +128,8 @@ class RealStdioMCPTests(unittest.TestCase):
 
     def test_sdk_and_trust_gate_are_really_invoked(self):
         source = mcp.PROBE
-        self.assertIn("from mcp.server.fastmcp import FastMCP", source)
+        self.assertIn("from mcp.server import MCPServer", source)
+        self.assertIn("from mcp_types import ToolAnnotations", source)
         self.assertIn("register_mcp_servers", source)
         self.assertIn("model_tools.handle_function_call", source)
         self.assertIn("request_elicitation_consent", source)
