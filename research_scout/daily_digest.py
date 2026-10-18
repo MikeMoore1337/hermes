@@ -178,10 +178,13 @@ def prepare(
                     missing["status"] = "HOLD"
                     missing["reason"] = (
                         "integrity_hold" if codes else "doi_enriched_review_required")
-                    selected_crossref = {
-                        "source": "EUROPE_PMC", "status": "MANUAL_REVIEW",
-                        "id": identifier, "doi": known,
-                    }
+                    # An already-reported correction/retraction is HOLD:
+                    # no need to spend the remaining Crossref DOI lookup.
+                    if not codes:
+                        selected_crossref = {
+                            "source": "EUROPE_PMC", "status": "MANUAL_REVIEW",
+                            "id": identifier, "doi": known,
+                        }
                 elif codes:
                     missing["reason"] = "integrity_hold"
             except (ArticleIntegrityError, DigestError):
