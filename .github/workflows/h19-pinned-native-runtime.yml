@@ -10,6 +10,8 @@ on:
       - scripts/h19_execve_seccomp_probe.py
       - scripts/h19_native_effect_canary.py
       - scripts/h19_real_stdio_mcp.py
+      - scripts/h19_agent_fake_model_e2e.py
+      - tests/test_h19_agent_fake_model_e2e.py
       - tests/test_h19_real_stdio_mcp.py
       - tests/test_h19_native_effect_canary.py
       - tests/test_h19_execve_seccomp_probe.py
@@ -80,6 +82,12 @@ jobs:
           set -euo pipefail
           python3 -m scripts.h19_real_stdio_mcp --execute --compare-patched --out "$RUNNER_TEMP/h19-real-mcp-permissions.json"
           python3 -c 'import json,os; r=json.load(open(os.path.join(os.environ["RUNNER_TEMP"],"h19-real-mcp-permissions.json"))); print("MCP scoped policy:",r["status"],"external MCP:",r["external_mcp_effects_verified"],"H-01:",r["resident_agent_allowed"])' >> "$GITHUB_STEP_SUMMARY"
+      - name: H-19 full CLI agent cycle with scripted loopback fake LLM and genuine MCP
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m scripts.h19_agent_fake_model_e2e --execute --out "$RUNNER_TEMP/h19-agent-fake-llm.json"
+          python3 -c 'import json,os; r=json.load(open(os.path.join(os.environ["RUNNER_TEMP"],"h19-agent-fake-llm.json"))); print("Hermes full CLI loop:",r["status"],"cloud billed:",r["provider_billing"],"resident allowed:",r["resident_agent_allowed"])' >> "$GITHUB_STEP_SUMMARY"
       - name: Preserve sanitized, no-prompt native evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -92,5 +100,6 @@ jobs:
             ${{ runner.temp }}/h19-native-effects.json
             ${{ runner.temp }}/h19-real-mcp-stdio.json
             ${{ runner.temp }}/h19-real-mcp-permissions.json
+            ${{ runner.temp }}/h19-agent-fake-llm.json
           if-no-files-found: warn
           retention-days: 7
