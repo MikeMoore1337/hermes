@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from ops_watch.core import InputError, analyze, changes
+from ops_watch.infrastructure_alerts import observe as infrastructure_observe
 from ops_watch.state_store import persist, read_current
 from qa_advisor.signal_store import SignalError, observed_status
 
@@ -325,6 +326,7 @@ def once(source: Path = SOURCE, target: Path = TARGET, observed: datetime | None
             alerts_service=alerts_service,
         )
         snapshot["codex"] = _codex_telemetry(observed=now)
+        snapshot["infrastructure"] = infrastructure_observe(now=now)
         findings = analyze(snapshot, now=now)
         # Separate QA reader never has Telegram credentials or access to the
         # news source. Missing/stale/denied API observations must not falsely
@@ -344,6 +346,22 @@ def once(source: Path = SOURCE, target: Path = TARGET, observed: datetime | None
                 if item["code"] in ("codex_low", "codex_exhausted") and item["code"] not in active:
                     findings.append({"code": item["code"], "severity": "warning",
                                      "fingerprint": item["fingerprint"]})
+        # A single low sample, a gap, or a disappearing telemetry source must
+        # NOT clear a previously confirmed resource alarm. Clearing requires
+        # three distinct recent values <=80% (hysteresis vs >=90% raise).
+        active_codes = {item["code"] for item in findings}
+        for item in previous:
+            code = item["code"]
+            if code.startswith("infra_") and code.endswith(("_cpu_high", "_ram_high", "_disk_high")):
+                host = "hermes" if code.startswith("infra_hermes_") else "yfc"
+                metric = code.rsplit("_", 2)[-2]
+                source = snapshot["infrastructure"][host]
+                levels = source.get("levels", {})
+                if levels.get(metric) != "normal" and code not in active_codes:
+                    findings.append({"code": code, "severity": (
+                        "critical" if metric == "disk" else "warning"),
+                        "fingerprint": "ops:" + code})
+                    active_codes.add(code)
         was_ci_failed = any(item["code"] == "ci_failed" for item in previous)
         if ci == "FAILURE" or (ci is None and was_ci_failed):
             findings.append({
