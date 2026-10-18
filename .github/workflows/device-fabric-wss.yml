@@ -1,0 +1,35 @@
+name: Hermes Device Fabric WSS pilot
+
+on:
+  pull_request:
+    paths:
+      - 'device_fabric/**'
+      - 'tests/test_device_fabric_presence.py'
+      - '.github/workflows/device-fabric-wss.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'device_fabric/**'
+      - 'tests/test_device_fabric_presence.py'
+      - '.github/workflows/device-fabric-wss.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  wss-loopback:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Create isolated WSS test environment
+        run: |
+          python3 -m venv "$RUNNER_TEMP/hermes-device-fabric"
+          "$RUNNER_TEMP/hermes-device-fabric/bin/python" -m pip install --disable-pip-version-check --no-input websockets==16.0
+      - name: Execute actual TLS WebSocket loopback integration tests
+        run: |
+          "$RUNNER_TEMP/hermes-device-fabric/bin/python" -c "import websockets; assert websockets.__version__ == '16.0'"
+          "$RUNNER_TEMP/hermes-device-fabric/bin/python" -m unittest discover -s tests -p 'test_device_fabric_presence.py' -v
