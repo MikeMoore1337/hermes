@@ -1,6 +1,8 @@
 /* #295 - neutral 1px rails, mobile-first service-level isolation. */
 .quota295-panel{display:grid;gap:18px;min-width:0;color:var(--white,#f2f6ff);padding:20px;border:1px solid var(--line-dim,#1a314c);border-radius:8px;background:var(--surface,#0b1625)}
 .quota295-panel[hidden]{display:none!important}
+/* The existing floating DC device panel duplicates its quota card and overlaps 320px. */
+.quota295-active .dc-toggle,.quota295-active .dc-panel{display:none!important}
 .quota295-active .center-area>:not(.quota295-panel){display:none!important}
 .quota295-head{display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:14px}
 .quota295-head h2{font-size:23px;font-weight:650;margin:8px 0}
