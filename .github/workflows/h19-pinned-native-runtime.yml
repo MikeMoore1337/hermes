@@ -7,6 +7,8 @@ on:
     paths:
       - scripts/h19_v0222_native_evidence.py
       - scripts/h19_native_report_verify.py
+      - scripts/h19_execve_seccomp_probe.py
+      - tests/test_h19_execve_seccomp_probe.py
       - tests/test_h19_v0222_native_evidence.py
       - .github/workflows/h19-pinned-native-runtime.yml
 
@@ -50,6 +52,12 @@ jobs:
           set -euo pipefail
           python3 -m scripts.h19_native_report_verify "$RUNNER_TEMP/h19-native-report.json" --out "$RUNNER_TEMP/h19-native-readback.json"
           python3 -c 'import json,os; r=json.load(open(os.path.join(os.environ["RUNNER_TEMP"],"h19-native-readback.json"))); print("Native readback:",r["verification_status"],"OS shell:",r["shell_os_probe_result"],"full enforcement:",r["full_permission_enforcement"])' >> "$GITHUB_STEP_SUMMARY"
+      - name: H-19 real Linux kernel process-local execve deny experiment
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m scripts.h19_execve_seccomp_probe --execute --out "$RUNNER_TEMP/h19-execve-seccomp.json"
+          python3 -c 'import json,os; r=json.load(open(os.path.join(os.environ["RUNNER_TEMP"],"h19-execve-seccomp.json"))); print("Seccomp process-local:",r["status"],"H-01 OS:",r["full_agent_os_enforcement"],"LLM:",r["live_model"])' >> "$GITHUB_STEP_SUMMARY"
       - name: Preserve sanitized, no-prompt native evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -58,5 +66,6 @@ jobs:
           path: |
             ${{ runner.temp }}/h19-native-report.json
             ${{ runner.temp }}/h19-native-readback.json
+            ${{ runner.temp }}/h19-execve-seccomp.json
           if-no-files-found: warn
           retention-days: 7
