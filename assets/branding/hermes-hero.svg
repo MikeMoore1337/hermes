@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="420" viewBox="0 0 1280 420" role="img" aria-labelledby="title desc">
+  <title id="title">Hermes Agent — independent operations layer</title>
+  <desc id="desc">Dark navy banner with cyan and violet accents. Hermes wordmark on the left, a connected hexagonal agent network on the right.</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#080F23"/>
+      <stop offset="54%" stop-color="#111B36"/>
+      <stop offset="100%" stop-color="#10122E"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#49E4DE"/>
+      <stop offset="100%" stop-color="#A08BFF"/>
+    </linearGradient>
+    <linearGradient id="plate" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1C3152"/>
+      <stop offset="100%" stop-color="#11182E"/>
+    </linearGradient>
+    <radialGradient id="glow">
+      <stop offset="0%" stop-color="#4B8FF8" stop-opacity=".24"/>
+      <stop offset="100%" stop-color="#4B8FF8" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="grid" width="36" height="36" patternUnits="userSpaceOnUse">
+      <path d="M 36 0 H 0 V 36" fill="none" stroke="#8CB5EF" stroke-opacity=".055" stroke-width="1"/>
+    </pattern>
+    <filter id="softglow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="11"/>
+    </filter>
+  </defs>
+  <rect width="1280" height="420" rx="22" fill="url(#background)"/>
+  <rect width="1280" height="420" rx="22" fill="url(#grid)"/>
+  <ellipse cx="1025" cy="185" rx="320" ry="270" fill="url(#glow)"/>
+  <path d="M0 370 L540 370" stroke="#46DCD8" stroke-opacity=".23" stroke-width="1"/>
+  <path d="M0 378 L372 378" stroke="#A58DFF" stroke-opacity=".18" stroke-width="1"/>
+  <path d="M74 56 H130" stroke="#4AE3DD" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="143" cy="56" r="3" fill="#A990FF"/>
+  <text x="74" y="91" fill="#92A6C7" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" letter-spacing="3.3" font-weight="600">INDEPENDENT AGENT OPERATIONS</text>
+  <text x="70" y="204" fill="#F7FAFF" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="92" letter-spacing="6" font-weight="800">HERMES</text>
+  <rect x="76" y="223" width="78" height="5" rx="2.5" fill="url(#accent)"/>
+  <text x="72" y="293" fill="#69E9E3" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="50" letter-spacing="13" font-weight="700">AGENT</text>
+  <text x="75" y="344" fill="#B6C4DC" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="17" letter-spacing=".8">Observe  /  Research  /  Verify  /  Control</text>
+  <g fill="none" stroke="#87A9EF" stroke-opacity=".12">
+    <circle cx="1012" cy="204" r="166"/>
+    <circle cx="1012" cy="204" r="132" stroke-dasharray="5 10"/>
+    <circle cx="1012" cy="204" r="108"/>
+  </g>
+  <g stroke-linecap="round" fill="none">
+    <path d="M1012 204 L857 95 M1012 204 L1178 105 M1012 204 L1183 302 M1012 204 L840 314" stroke="#799DE6" stroke-opacity=".48" stroke-width="1.5"/>
+    <path d="M857 95 Q1012 22 1178 105 M840 314 Q1007 388 1183 302" stroke="#42D9D6" stroke-opacity=".22" stroke-dasharray="4 8"/>
+  </g>
+  <path d="M1012 86 L1114 145 L1114 263 L1012 322 L910 263 L910 145 Z" fill="#469FE4" fill-opacity=".13" filter="url(#softglow)"/>
+  <path d="M1012 98 L1103 151 L1103 257 L1012 310 L921 257 L921 151 Z" fill="url(#plate)" stroke="url(#accent)" stroke-width="2.5"/>
+  <path d="M1012 115 L1087 159 L1087 249 L1012 293 L937 249 L937 159 Z" fill="none" stroke="#7EA9EB" stroke-opacity=".23" stroke-width="1"/>
+  <path d="M976 172 V237 M1049 172 V237 M976 204 H1049" stroke="#EAF8FF" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="1012" cy="204" r="7" fill="#60EAE6"/>
+  <g font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="700" letter-spacing="1.4" text-anchor="middle">
+    <g><circle cx="857" cy="95" r="32" fill="#17273E" stroke="#56DAD7" stroke-width="1.5"/><path d="M845 96 L853 104 L868 86" stroke="#56E9DB" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><text x="857" y="146" fill="#B3C7DC">OPS</text></g>
+    <g><circle cx="1178" cy="105" r="32" fill="#1D2345" stroke="#AE92FF" stroke-width="1.5"/><path d="M1166 114 L1173 91 L1180 104 L1187 91 L1193 114" stroke="#C2AEFF" fill="none" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round"/><text x="1178" y="156" fill="#BDC2E8">RESEARCH</text></g>
+    <g><circle cx="1183" cy="302" r="32" fill="#17273E" stroke="#56DAD7" stroke-width="1.5"/><rect x="1170" y="292" width="26" height="21" rx="4" fill="none" stroke="#56E9DB" stroke-width="2.5"/><path d="M1175 299 H1191 M1175 305 H1186" stroke="#56E9DB" stroke-width="2"/><text x="1183" y="354" fill="#B3C7DC">QUALITY</text></g>
+    <g><circle cx="840" cy="314" r="32" fill="#1D2345" stroke="#AE92FF" stroke-width="1.5"/><path d="M830 317 L838 307 L845 313 L854 301" stroke="#C2AEFF" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/><text x="840" y="366" fill="#BDC2E8">CONTROL</text></g>
+  </g>
+  <circle cx="1012" cy="204" r="172" fill="none" stroke="#4DD6DB" stroke-opacity=".07"/>
+  <path d="M1256 20 H1218 M1256 20 V58 M24 400 H62 M24 400 V362" stroke="#8CA6E8" stroke-opacity=".38" fill="none" stroke-width="2" stroke-linecap="round"/>
+</svg>
