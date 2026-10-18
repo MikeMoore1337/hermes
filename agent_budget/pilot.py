@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import re
 import tempfile
@@ -123,9 +124,25 @@ def _reject_duplicate_fields(pairs: list[tuple[str, object]]) -> dict[str, objec
     return result
 
 
+def _json_float(raw: str) -> float:
+    """Reject oversized exponents that Python otherwise converts to infinity."""
+    value = float(raw)
+    if not math.isfinite(value):
+        raise PilotError("invalid_json")
+    return value
+
+
+def _reject_json_constant(_: str) -> None:
+    # stdlib json.loads accepts NaN/Infinity by default although JSON does not.
+    raise PilotError("invalid_json")
+
+
 def _parse_json(raw: bytes | str) -> object:
     try:
-        return json.loads(raw, object_pairs_hook=_reject_duplicate_fields)
+        return json.loads(
+            raw, object_pairs_hook=_reject_duplicate_fields,
+            parse_float=_json_float, parse_constant=_reject_json_constant,
+        )
     except PilotError:
         raise
     except (UnicodeError, json.JSONDecodeError):
@@ -404,11 +421,13 @@ def _counter(data: Mapping[str, object], *names: str) -> int | None:
 
 
 def _money(value: object) -> float | None:
-    if value is None:
-        return None
     if type(value) not in (int, float) or value < 0:
         return None
-    return float(value)
+    try:
+        amount = float(value)
+    except OverflowError:
+        return None
+    return amount if math.isfinite(amount) else None
 
 
 def case_names() -> list[str]:
