@@ -21,6 +21,7 @@ from control_center.infrastructure import (
 from control_center.cloudflare_billing import OUTPUT as CLOUDFLARE_BILLING_OUTPUT
 from control_center.github_rate_limit import OUTPUT as GITHUB_RATE_LIMIT_OUTPUT
 from control_center.github_rate_history import DB as GITHUB_HISTORY_DB, read as read_github_rate_history
+from control_center.github_rate_history import HistoryUnavailable as GitHubHistoryUnavailable
 from control_center.provider_registry import registry as provider_quota_registry
 from control_center.snapshot import DEFAULT_OUTPUT
 from control_center.codex_usage import DEFAULT_OUTPUT as CODEX_OUTPUT, read_snapshot, UsageError
@@ -223,6 +224,9 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
                         raise ValueError("filters")
                     data=read_github_rate_history(github_history_path,
                                                   resource=resource,days=int(days))
+                except GitHubHistoryUnavailable:
+                    return self.respond(503,"application/json",
+                                        b'{"error":"provider_history_unavailable"}')
                 except ValueError:
                     return self.respond(400,"application/json",
                                         b'{"error":"invalid_parameter"}')
