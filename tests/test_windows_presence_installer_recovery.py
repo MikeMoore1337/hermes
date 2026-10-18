@@ -40,6 +40,16 @@ class WindowsBootstrapSafetyTests(unittest.TestCase):
         self.assertIn("REPAIR_SOURCE_MISMATCH", code)
         self.assertNotIn("$actual = (Get-FileHash -LiteralPath $pair[1] -Algorithm SHA256).Hash", code)
 
+    def test_recursive_grants_repair_individual_staged_file_acls(self):
+        code = SCRIPT.read_text()
+        self.assertIn("function Protect-PrivateState", code)
+        self.assertIn("/inheritance:r | Out-Null", code)
+        self.assertIn("/grant:r '*S-1-5-18:(OI)(CI)F'", code)
+        self.assertIn("'/T'", code.replace(" /T | Out-Null", " '/T'"))  # grant descendants
+        self.assertNotIn("/inheritance:r /grant:r", code)
+        self.assertLess(code.index("function Protect-PrivateState"),
+                        code.index("switch ($Mode)"))
+
     def test_background_principal_and_boot_trigger_unchanged(self):
         code = SCRIPT.read_text()
         self.assertIn("-AtStartup", code)
