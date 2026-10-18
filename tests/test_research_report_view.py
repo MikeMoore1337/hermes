@@ -83,8 +83,14 @@ class OwnerReportTests(unittest.TestCase):
                     for evidence in report["field_evidence"][field]:
                         self.assertEqual(evidence["pmid"], report["pmid"])
                         self.assertEqual(evidence["doi"], report["doi"])
+                        if evidence["source_type"] == "PUBLISHER_CORRECTION":
+                            self.assertEqual(evidence["source_doi"],
+                                             "10.1007/s00520-026-11294-6")
+                        else:
+                            self.assertEqual(evidence["source_doi"], report["doi"])
                         self.assertIn(evidence["source_type"],
-                                      {"CURATED_PUBLIC_ABSTRACT", "PUBLISHER_CORRECTION"})
+                                      {"CURATED_PUBLIC_ABSTRACT", "PUBLISHER_CORRECTION",
+                                       "PUBLISHER_FULL_TEXT_SECTION"})
                         self.assertEqual(evidence["review_status"], "NEEDS_EXPERT_REVIEW")
                         self.assertFalse(evidence["scientifically_approved"])
 
@@ -96,12 +102,58 @@ class OwnerReportTests(unittest.TestCase):
         self.assertEqual(corrected[0]["source_type"], "PUBLISHER_CORRECTION")
         self.assertIn("11294-6", corrected[0]["source_url"])
         self.assertEqual(corrected[0]["evidence_completeness"], "CORRECTION_NOTICE")
+        self.assertEqual(corrected[0]["doi"], ironman["doi"])
+        self.assertEqual(corrected[0]["source_doi"],
+                         "10.1007/s00520-026-11294-6")
+        self.assertEqual(ironman["evidence_basis"],
+                         "CURATED_PUBLIC_ABSTRACT_AND_SCOPED_PUBLISHER_NOTES")
         for r in curated_reports():
             if r["pmid"] != "42771055":
                 self.assertTrue(all(
                     entry["source_type"] == "CURATED_PUBLIC_ABSTRACT"
                     for refs in r["field_evidence"].values() for entry in refs
                 ))
+
+    def test_ironman_methods_are_directly_tied_to_full_text_not_abstract(self):
+        r = next(x for x in curated_reports() if x["pmid"] == "42771055")
+        methods = [e for e in r["field_evidence"]["limits"]
+                   if e["source_type"] == "PUBLISHER_FULL_TEXT_SECTION"]
+        self.assertEqual({x["id"] for x in methods}, {"P1", "P2"})
+        self.assertTrue(all(x["source_url"] ==
+                            "https://link.springer.com/article/10.1007/s00520-026-11251-3"
+                            for x in methods))
+        self.assertTrue(all(x["evidence_completeness"] ==
+                            "SELECTED_FULL_TEXT_SECTION_ONLY" for x in methods))
+        self.assertIn("2485 из 4538", r["limits"])
+        self.assertIn("15 минут за сессию", r["limits"])
+        self.assertIn("не", r["limits"])
+        self.assertFalse(r["full_text_reviewed"])
+        self.assertEqual(r["expert_review"], "NOT_RUN")
+        self.assertFalse(r["scientific_claims_verified"])
+        p1 = next(x for x in methods if x["id"] == "P1")
+        p2 = next(x for x in methods if x["id"] == "P2")
+        self.assertIn("4538", p1["supporting_paraphrase"])
+        self.assertIn("2485", p1["supporting_paraphrase"])
+        self.assertIn("15 minutes", p2["supporting_paraphrase"])
+        self.assertIn("Results", p1["source_section"])
+        self.assertIn("Measurements", p2["source_section"])
+
+        for other in curated_reports():
+            if other["pmid"] != "42771055":
+                self.assertEqual(other["evidence_basis"],
+                                 "CURATED_PUBLIC_ABSTRACT_NOT_FULL_TEXT")
+                self.assertFalse(any(
+                    e["source_type"] == "PUBLISHER_FULL_TEXT_SECTION"
+                    for v in other["field_evidence"].values() for e in v
+                ))
+
+    def test_reject_unrelated_primary_methods_citation(self):
+        from research_scout.report_view import _ironman_method_reference
+        for pmid, fid in (("42733310", "P1"), ("42771055", "F2"),
+                          ("42840492", "P2")):
+            with self.subTest(pmid=pmid, fid=fid):
+                with self.assertRaisesRegex(ValueError, "publisher_method_source_not_allowlisted"):
+                    _ironman_method_reference(pmid, "10.1000/unknown", fid)
 
     def test_omitted_or_unknown_field_evidence_fails_closed(self):
         from unittest.mock import patch
