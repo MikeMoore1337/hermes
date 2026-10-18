@@ -110,7 +110,7 @@ def capture(runner=run_bounded) -> dict:
     for name in sorted(REQUIRED_CASES):
         first = raw_original["cases"][name]
         second = raw_patched["cases"][name]
-        deny = name in BLOCKED_CASES or name == "agent_fresh_native"
+        deny = name in BLOCKED_CASES or name in ("agent_fresh_native", "subagent_scope")
         if deny:
             case_pass = not second["executor_reached"]
         elif name == "direct_allowed":
