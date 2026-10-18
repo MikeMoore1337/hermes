@@ -87,6 +87,19 @@ class ProviderRegistryContract(unittest.TestCase):
             self.assertEqual(item["windows"][0]["used_percent"],100)
             self.assertEqual(item["windows"][0]["remaining_percent"],0)
 
+    def test_provider_reports_no_numeric_quota_not_low(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as tmp:
+            payload={"status":"monitored","quota_remaining_percent":None,
+                     "observed_at":NOW.isoformat(),"remote_execution":"unverified"}
+            with patch("control_center.provider_registry.read_desktop_snapshot",
+                       return_value=payload):
+                items=registry(codex_path=Path(tmp)/"codex.json",
+                               desktop_path=Path(tmp)/"dc.json",now=NOW)["providers"]
+            self.assertEqual(items[2]["status"],"unknown")
+            self.assertEqual(items[2]["windows"],[])
+            self.assertEqual(items[2]["source_kind"],"unknown")
+
     def test_error_snapshot_is_not_a_quota_zero(self):
         with tempfile.TemporaryDirectory() as tmp:
             c=Path(tmp)/"codex.json";d=Path(tmp)/"dc.json"
