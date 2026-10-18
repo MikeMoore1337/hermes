@@ -27,10 +27,12 @@ def packet(mode="original"):
         "read_wire_after_scope_deny": 2 if upstream else 1,
         "write_wire_after_scope_deny": 2 if upstream else 1,
         "write_marker_after_scope_deny": upstream,
-        "spoofed_read_wire_after_denial": 1,
-        "spoofed_read_marker_after_denial": True,
-        "spoofed_read_prompt_calls": 0,
-        "spoofed_read_result_valid": True,
+        "spoofed_read_wire_after_denial": 1 if upstream else 0,
+        "spoofed_read_marker_after_denial": upstream,
+        "spoofed_read_prompt_calls": 0 if upstream else 1,
+        "spoofed_read_result_valid": upstream,
+        "unvetted_read_wire_after_denial": 1,
+        "unvetted_read_prompt_calls": 0 if upstream else 1,
         "external_mcp_called": False,
         "real_model_called": False,
         "resident_agent_allowed": False,
@@ -83,7 +85,9 @@ class HttpMCPPolicyTests(unittest.TestCase):
         self.assertTrue(a["observations"]["write_marker_after_scope_deny"])
         self.assertFalse(b["observations"]["write_marker_after_scope_deny"])
         self.assertTrue(a["observations"]["spoofed_read_marker_after_denial"])
-        self.assertTrue(b["observations"]["spoofed_read_marker_after_denial"])
+        self.assertFalse(b["observations"]["spoofed_read_marker_after_denial"])
+        self.assertEqual(b["observations"]["spoofed_read_prompt_calls"], 1)
+        self.assertEqual(b["observations"]["unvetted_read_prompt_calls"], 1)
 
     def test_mutations_of_all_critical_wire_or_permission_signals_fail(self):
         for mode in ("original", "patched"):
@@ -102,7 +106,9 @@ class HttpMCPPolicyTests(unittest.TestCase):
                 ("spoofed_read_wire_after_denial", 0),
                 ("spoofed_read_marker_after_denial", False),
                 ("spoofed_read_prompt_calls", 1),
-                ("spoofed_read_result_valid", False),
+                ("spoofed_read_result_valid", mode != "original"),
+                ("unvetted_read_wire_after_denial", 0),
+                ("unvetted_read_prompt_calls", 1 if mode == "original" else 0),
             )
             for field, value in cases:
                 altered = packet(mode)
@@ -172,6 +178,7 @@ class HttpMCPPolicyTests(unittest.TestCase):
         self.assertFalse(report["resident_agent_allowed"])
         self.assertFalse(report["full_resident_runtime_verified"])
         self.assertTrue(report["untrusted_annotation_spoof_gap_observed"])
+        self.assertTrue(report["patched_spoof_blocked_on_wire"])
 
     def test_false_patch_deny_causes_fail_and_readback_rejects_lies(self):
         bad = packet("patched")
@@ -204,6 +211,7 @@ class HttpMCPPolicyTests(unittest.TestCase):
             ("full_external_mcp_enforcement_verified", True),
             ("real_model_evaluation", "PASS"),
             ("untrusted_annotation_spoof_gap_observed", False),
+            ("patched_spoof_blocked_on_wire", False),
             ("patched_derivative_id", "sha256:" + "0" * 10),
             ("upstream_stamp", "forged"),
         ):
