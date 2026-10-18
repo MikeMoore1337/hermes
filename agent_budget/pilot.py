@@ -904,20 +904,78 @@ def _write_json_atomic(path: Path, value: object) -> None:
 
 @contextmanager
 def _run_lock(path: Path):
-    path.parent.mkdir(parents=True, exist_ok=True)
+    """Process-owned lock: a crash must not leave an unrecoverable sentinel.
+
+    Keep the lock inode on disk after release. Unlinking an advisory lock can
+    allow a new process to lock a different inode while another still runs.
+    The daily usage ledger is independent and is never reset on lock recovery.
+    """
+    try:
+        if path.parent.is_symlink():
+            raise PilotError("pilot_lock_unsafe")
+        path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        raise PilotError("pilot_lock_unavailable") from None
     lock = path.with_name(path.name + ".lock")
-    try:
-        with lock.open("x", encoding="ascii") as stream:
-            stream.write("active")
-    except FileExistsError:
-        raise PilotError("pilot_already_running") from None
-    try:
-        yield
-    finally:
+
+    if os.name == "posix":
+        import fcntl
+        import stat
+
+        fd: int | None = None
         try:
-            lock.unlink()
+            fd = os.open(lock, os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0), 0o600)
+            info = os.fstat(fd)
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_uid != os.geteuid():
+                raise PilotError("pilot_lock_unsafe")
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            os.fchmod(fd, 0o600)
+        except BlockingIOError:
+            if fd is not None:
+                os.close(fd)
+            raise PilotError("pilot_already_running") from None
+        except (OSError, PilotError) as exc:
+            if fd is not None:
+                os.close(fd)
+            if isinstance(exc, PilotError):
+                raise
+            raise PilotError("pilot_lock_unavailable") from None
+        try:
+            yield
+        finally:
+            os.close(fd)
+        return
+
+    if os.name == "nt":
+        import msvcrt
+
+        if lock.is_symlink():
+            raise PilotError("pilot_lock_unsafe")
+        try:
+            handle = lock.open("a+b")
         except OSError:
-            pass
+            raise PilotError("pilot_lock_unavailable") from None
+        locked = False
+        try:
+            try:
+                handle.seek(0, os.SEEK_END)
+                if handle.tell() == 0:
+                    handle.write(b"\0")
+                    handle.flush()
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                locked = True
+            except OSError:
+                raise PilotError("pilot_already_running") from None
+            yield
+        finally:
+            if locked:
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            handle.close()
+        return
+
+    raise PilotError("pilot_lock_unsupported")
 
 
 def _save_results(path: Path, records: list[dict[str, object]]) -> None:
