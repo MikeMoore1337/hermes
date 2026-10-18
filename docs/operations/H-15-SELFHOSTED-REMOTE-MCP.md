@@ -45,11 +45,15 @@ the H-01 resident agent.
    restricted file policy. The admin password / OAuth consent protects
    identity but does not prevent a prompt-injected authorized session
    from running an unsafe shell command.
-4. Default Linux/Windows service installation is not equivalent to a
+4. The upstream encrypted cross-device transfer uploads encrypted blobs
+   to **tmpfiles.org**. Even with encryption this is a third-party external
+   service with its own availability and usage constraints. Hermes must
+   replace it with self-hosted transfer before claiming full independence.
+5. Default Linux/Windows service installation is not equivalent to a
    dedicated, minimal OS identity or boot-time Windows LocalService.
    Never install a shell-enabled BRC agent as `root`, Administrator,
    LocalSystem, or inside the existing protected presence-service user.
-5. Do not mount `/var/lib/hermes-device-fabric`, `/etc/hermes-agent`,
+6. Do not mount `/var/lib/hermes-device-fabric`, `/etc/hermes-agent`,
    `/root`, production YFC app state, private SSH keys, or Second Brain
    vault into a generic agent runtime. Different users/actions can be
    approved independently later.
@@ -61,6 +65,26 @@ profile, separate non-privileged terminal identity, short bounded
 request deadlines and output sizes, no remote policy mutation.
 Adversarial tests MUST demonstrate shell/Node/PowerShell cannot escape
 to disallowed paths; a denylist of command words is NOT sufficient.
+
+## Hermes source-only hardening applied to the pinned candidate
+
+`scripts/h15_brc_apply_policy_patch.py` is a fail-closed, exact-signature
+patcher. It removes the `set_config_value` handler (to prevent remotely
+editing agent policy) and temporarily hides external
+`prepare_file_transfer` / `send_file_transfer` /
+`receive_file_transfer` calls until a self-hosted transport exists.
+It refuses the `read_file(isUrl=true)` route to prevent direct URL/SSRF
+reads from remotely authorized MCP clients. It preserves the *actual*
+`start_process`, `write_file` and normal file tool implementations
+for future OS sandbox testing.
+
+The isolated GitHub CI checks the true rebuilt and patched dispatcher:
+each denied tool must be absent from `listTools`/`hasTool` and yield
+an error on direct `callTool`; external URL reads must be denied;
+approved process and file tools must remain. It then exercises the
+upstream full OAuth/MCP/agent tests on the patched source. None of
+this makes the host OS account a secure sandbox or authorizes
+production execution.
 
 ## Target deployment (not yet activated)
 
