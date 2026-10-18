@@ -128,6 +128,28 @@ it does not prove equivalent Windows OS isolation or execution within
 the real owner YFC VPS. Real shell execution remains owner-gated and
 disabled by default.
 
+### Independent MCP gateway policy against a malicious device
+
+Agent-only filtering is not a sufficient trust boundary: a compromised
+device can report any `tools[]` during WebSocket hello. The owner-side
+relay must independently enforce the accepted tool policy on
+**both** `tools/list` and `tools/call`, even for direct/unadvertised
+calls. `scripts/h15_brc_harden_gateway.py` adds a fail-closed
+immutable allowlist to the pinned BRC `mcp/server.ts` and
+`mcp/invoke.ts` and a separate policy module. Sensitive config,
+history, external transfers, future unknown tool names and
+`read_file(isUrl=true)` are denied before forwarding to a device.
+Standard file/edit/search/shell/session tools remain available only
+within their eventual host OS sandbox.
+
+The actual compiled `h15_brc_gateway_policy_e2e.mjs` uses an
+intentionally untrusted mock device advertising blocked and unknown
+tools and attempts direct calls that were never advertised. It verifies
+zero forwarded denied calls, refusal of remote URL reads and that
+legitimate calls still route with an audit event. This **does not**
+by itself isolate the shell from owner filesystem or production
+resources. No owner device is paired for command execution yet.
+
 ## Target deployment (not yet activated)
 
 ```text
