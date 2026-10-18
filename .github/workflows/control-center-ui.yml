@@ -75,6 +75,15 @@ jobs:
       - name: Browser checks (approved Atlas, protected GitHub login, mobile)
         working-directory: control_center/frontend
         run: npm run test:e2e
+      - name: Attach #294 separate VPS cards mobile/desktop evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: h15-infrastructure-cards-screenshots
+          path: docs/ux/evidence/h15-infrastructure/infrastructure-*.png
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Attach H-15 scheduler visual evidence for owner review
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
