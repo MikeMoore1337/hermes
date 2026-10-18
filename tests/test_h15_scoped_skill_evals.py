@@ -192,11 +192,12 @@ class ReceiptTests(unittest.TestCase):
         for kwargs in (
             {"revoked": frozenset({self.payload["approval_id"]})},
             {"approved_gates": OperatorGates()},
-            {"runner": None},
         ):
             with self.subTest(kwargs=kwargs), self.assertRaises(AdmissionDenied):
                 self.invoke(runner=lambda _: {"outcome": "succeeded", "artifact_sha256": "f" * 64},
                             **kwargs)
+        with self.assertRaisesRegex(AdmissionDenied, "trusted_fixed_executor_missing"):
+            self.invoke(runner=None)
         self.assertEqual([], list(self.root.iterdir()))
 
     def test_invalid_runner_receipt_is_never_reported_success(self):
