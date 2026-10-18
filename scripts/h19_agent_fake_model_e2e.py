@@ -110,7 +110,7 @@ class FakeLLMServer:
             def do_POST(self):
                 try:
                     content_length = int(self.headers.get("Content-Length", "0"))
-                    if content_length > 65536:
+                    if content_length < 1 or content_length > 2_000_000:
                         self.send_json(413, {"error": {"message": "too large"}})
                         return
                     body = json.loads(self.rfile.read(content_length))
