@@ -37,8 +37,21 @@ def main() -> int:
     # catch-up and manual smoke must not trigger duplicate provider reads.
     now = dt.datetime.now(dt.timezone.utc)
     previous, _ = probe.yesterday_window(now)
+    archive = history.OUTPUT
+    if archive.is_symlink():
+        print("CLOUDFLARE_ADVISORY_ARCHIVE=UNSAFE_EXISTING_ARCHIVE")
+        return 2
+    if archive.exists():
+        metadata = archive.stat()
+        if (not stat.S_ISREG(metadata.st_mode) or
+                metadata.st_uid != 0 or
+                metadata.st_gid != os.getegid() or
+                metadata.st_nlink != 1 or
+                stat.S_IMODE(metadata.st_mode) != 0o640):
+            print("CLOUDFLARE_ADVISORY_ARCHIVE=UNSAFE_EXISTING_ARCHIVE")
+            return 2
     stored = history.read(now=now)
-    if history.OUTPUT.exists() and stored["status"] == "unknown":
+    if archive.exists() and stored["status"] == "unknown":
         print("CLOUDFLARE_ADVISORY_ARCHIVE=UNSAFE_EXISTING_ARCHIVE")
         return 2
     if any(x["day"] == previous[:10] for x in stored["days"]):
