@@ -15,6 +15,10 @@ INCIDENT_CODES = frozenset({
     "alert_sender_missing", "alert_sender_disabled", "alert_sender_inactive",
     "alert_sender_failed",
     "codex_low", "codex_exhausted", "codex_auth_required", "codex_stale",
+    "infra_hermes_unavailable", "infra_hermes_cpu_high",
+    "infra_hermes_ram_high", "infra_hermes_disk_high",
+    "infra_yfc_unavailable", "infra_yfc_cpu_high",
+    "infra_yfc_ram_high", "infra_yfc_disk_high",
 })
 
 
@@ -185,6 +189,30 @@ def analyze(snapshot: Mapping[str, Any], *, now: datetime) -> list[dict[str, str
             found.append(_finding("codex_exhausted", "warning"))
         elif state == "low":
             found.append(_finding("codex_low", "warning"))
+    # Optional, sanitized local resource signals. No source host, model
+    # output, metric content or arbitrary alert identifiers are trusted.
+    if data.get("infrastructure") is not None:
+        infrastructure = _mapping(data["infrastructure"], "infrastructure")
+        if set(infrastructure) != {"hermes", "yfc"}:
+            raise InputError("invalid_infrastructure_hosts")
+        for host in ("hermes", "yfc"):
+            source = _mapping(infrastructure[host], "infrastructure_source")
+            state = _state(source, "status", frozenset({
+                "online", "stale", "offline", "unknown", "not_connected",
+            }))
+            if state in ("offline", "unknown"):
+                found.append(_finding("infra_" + host + "_unavailable", "critical"))
+            if state == "online":
+                levels = _mapping(source.get("levels"), "infrastructure_levels")
+                if set(levels) != {"cpu", "ram", "disk"}:
+                    raise InputError("invalid_infrastructure_levels")
+                for metric in ("cpu", "ram", "disk"):
+                    value = levels[metric]
+                    if type(value) is not str or value not in ("high", "normal", "unknown"):
+                        raise InputError("invalid_infrastructure_level")
+                    if value == "high":
+                        found.append(_finding("infra_" + host + "_" + metric + "_high",
+                                              "critical" if metric == "disk" else "warning"))
     return found
 
 
