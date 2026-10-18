@@ -1,0 +1,34 @@
+[Unit]
+Description=Hermes Cloudflare Workers AI historical advisory analytics (read-only)
+Documentation=https://github.com/MikeMoore1337/hermes/issues/295
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=hermes-control
+WorkingDirectory=/opt/hermes-control-center/current
+ExecStart=/usr/bin/python3 -m scripts.h15_cloudflare_analytics_collect
+StateDirectory=hermes-provider-quota
+StateDirectoryMode=0750
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/hermes-provider-quota
+ReadOnlyPaths=/etc/hermes/cloudflare-analytics-read.token /etc/hermes/cloudflare-analytics-read.env
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+UMask=0077
+MemoryMax=96M
+CPUQuota=10%
+TasksMax=12
+TimeoutStartSec=25
