@@ -43,7 +43,7 @@ class OfflineOSProbeTests(unittest.TestCase):
             proc=self.root / "proc",
             cgroup=self.cg,
             interfaces=self.net,
-            effective_uid=10001,
+            effective_uid=override.pop("effective_uid", 10001),
             **override,
         )
 
