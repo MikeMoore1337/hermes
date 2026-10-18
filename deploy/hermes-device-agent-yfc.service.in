@@ -1,0 +1,39 @@
+[Unit]
+Description=Hermes YFC VPS read-only outbound presence agent (#276)
+Documentation=https://github.com/MikeMoore1337/hermes/issues/276
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=hermes-presence-agent
+Group=hermes-presence-agent
+WorkingDirectory=/var/lib/hermes-presence-agent
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/var/lib/hermes-presence-agent/.venv/bin/python -m device_fabric.device_agent --config /var/lib/hermes-presence-agent/linux-vps.json --watch --ssh-host 111.88.215.204 --ssh-user hermes-presence-tunnel --ssh-key /var/lib/hermes-presence-agent/hermes_presence_ed25519 --known-hosts /var/lib/hermes-presence-agent/hermes_presence_known_hosts
+Restart=always
+RestartSec=30s
+KillMode=control-group
+TimeoutStopSec=15s
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+UMask=0077
+MemoryMax=160M
+CPUQuota=20%
+TasksMax=20
+
+[Install]
+WantedBy=multi-user.target
