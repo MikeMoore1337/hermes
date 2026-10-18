@@ -89,7 +89,7 @@ class NativeEvidenceTests(TestCase):
 
     def test_invalid_or_missing_metadata_fails_closed(self):
         runner = observations()
-        runner.side_effect[0].stdout = b"garbage|amd64"
+        runner.side_effect = [Mock(returncode=0, stdout=b"garbage|amd64")]
         status, report = evidence.run(runner=runner)
         self.assertEqual(status, 2)
         self.assertEqual(report["status"], "INFRA_FAILURE")
