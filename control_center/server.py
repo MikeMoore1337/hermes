@@ -10,9 +10,14 @@ import datetime as dt
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import logging
+import sqlite3
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
+from control_center.infrastructure import (
+    ROOT as INFRA_ROOT, hosts as infrastructure_hosts,
+    history as infrastructure_history,
+)
 from control_center.snapshot import DEFAULT_OUTPUT
 from control_center.codex_usage import DEFAULT_OUTPUT as CODEX_OUTPUT, read_snapshot, UsageError
 from control_center.codex_history import read as read_codex_history
@@ -41,6 +46,8 @@ ASSETS = {
     "/desktop-commander.css": ("desktop-commander.css", "text/css; charset=utf-8"),
     "/ai-analytics.js": ("ai-analytics.js", "text/javascript; charset=utf-8"),
     "/ai-analytics.css": ("ai-analytics.css", "text/css; charset=utf-8"),
+    "/infrastructure.js": ("infrastructure.js", "text/javascript; charset=utf-8"),
+    "/infrastructure.css": ("infrastructure.css", "text/css; charset=utf-8"),
     "/brand.webp": ("brand.webp", "image/webp"),
     "/favicon.png": ("favicon.png", "image/png"),
     "/apple-touch-icon.png": ("apple-touch-icon.png", "image/png"),
@@ -64,6 +71,7 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
                  scheduler_path: Path = SCHEDULER_DB,
                  analytics_path: Path = ANALYTICS_DB,
                  desktop_commander_path: Path = DC_OUTPUT,
+                 infrastructure_dir: Path = INFRA_ROOT,
                  auth_config: AuthConfig | None = None, oauth_service: OAuthService | None = None):
     config = auth_config if auth_config is not None else AuthConfig.from_env()
     oauth = oauth_service if oauth_service is not None else (
@@ -182,8 +190,41 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
                 "/api/providers/codex/history", "/control-center/api/providers/codex/history",
                 "/api/providers/desktop-commander/history",
                 "/control-center/api/providers/desktop-commander/history",
+                "/api/infrastructure/history",
+                "/control-center/api/infrastructure/history",
             ) and not (path == "/" and parsed.query == "preview=login"):
                 return self.respond(404, "text/plain", b"Not found")
+            if path in ("/api/infrastructure/hosts",
+                         "/control-center/api/infrastructure/hosts",
+                         "/api/infrastructure/history",
+                         "/control-center/api/infrastructure/history"):
+                if config.mode == "github" and not oauth.authenticated(
+                        self._cookie(SESSION_COOKIE)):
+                    return self.respond(401, "application/json",
+                                        b'{"error":"authentication_required"}')
+                if path.endswith("/history"):
+                    try:
+                        params = parse_qs(parsed.query, keep_blank_values=True,
+                                          strict_parsing=True, max_num_fields=2)
+                        if set(params) != {"host", "days"} or any(
+                                len(values) != 1 for values in params.values()):
+                            raise ValueError("missing or repeated parameter")
+                        host, days_text = params["host"][0], params["days"][0]
+                        if host not in ("hermes", "yfc") or days_text not in ("1", "7", "30"):
+                            raise ValueError("invalid host or period")
+                        data = infrastructure_history(infrastructure_dir, host, int(days_text))
+                    except ValueError:
+                        return self.respond(400, "application/json",
+                                            b'{"error":"invalid_parameter"}')
+                    except (OSError, sqlite3.DatabaseError):
+                        return self.respond(503, "application/json",
+                                            b'{"error":"infrastructure_history_unavailable"}')
+                else:
+                    if parsed.query:
+                        return self.respond(404, "text/plain", b"Not found")
+                    data = infrastructure_hosts(infrastructure_dir)
+                return self.respond(200, "application/json; charset=utf-8",
+                                    json.dumps(data, separators=(",", ":")).encode())
             if path in ("/api/analytics/codex", "/control-center/api/analytics/codex"):
                 if config.mode == "github" and not oauth.authenticated(
                         self._cookie(SESSION_COOKIE)):
@@ -336,7 +377,9 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
                             b'<link rel="stylesheet" href="/desktop-commander.css">'
                             b'<script src="/desktop-commander.js" defer></script>'
                             b'<link rel="stylesheet" href="/ai-analytics.css">'
-                            b'<script src="/ai-analytics.js" defer></script></head>'))
+                            b'<script src="/ai-analytics.js" defer></script>'
+                             b'<link rel="stylesheet" href="/infrastructure.css">'
+                             b'<script src="/infrastructure.js" defer></script></head>'))
                 except OSError:
                     return self.respond(503, "text/plain", b"Static asset unavailable")
                 return self.respond(200, mime, raw)
