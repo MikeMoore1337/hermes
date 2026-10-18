@@ -24,7 +24,8 @@ def directives(path: Path) -> dict[str, str]:
         if "=" not in row:
             raise ValueError("malformed_systemd_unit")
         key, value = row.split("=", 1)
-        if key in result:
+        # systemd allows repeating AssertPathExists for independent prerequisites.
+        if key in result and key != "AssertPathExists":
             raise ValueError("duplicate_systemd_directive")
         result[key] = value
     return result
