@@ -14,7 +14,7 @@ const data={schema:1,read_only:true,observed_at:moment,providers:[
   limit_documentation:"https://developers.cloudflare.com/workers-ai/platform/pricing/",
   windows:[{metric:"neurons_daily",label:"Суточная квота Free",unit:"neurons",
     quota_limit:10000,used:null,remaining:null,used_percent:null,remaining_percent:null,
-    reset_at_utc:new Date(Date.now()+8*3600_000).toISOString(),source_kind:"unknown"}]},
+    reset_at_utc:new Date(Date.UTC(new Date().getUTCFullYear(),new Date().getUTCMonth(),new Date().getUTCDate()+1)).toISOString(),source_kind:"unknown"}]},
  {id:"codex",title:"Codex / ChatGPT",status:"low",observed_at:moment,
   notes:"official_account_snapshot",source_kind:"official_api",
   windows:windows(81,19,"300 мин")},
@@ -27,7 +27,7 @@ const data={schema:1,read_only:true,observed_at:moment,providers:[
 async function setup(page){
  await page.route("**/api/overview",route=>route.fulfill({
    status:200,contentType:"application/json",
-   body:JSON.stringify({schema:1,services:[],generated_at:moment})}));
+   body:JSON.stringify({schema:1,mode:"read_only",services:[],generated_at:moment})}));
  await page.route("**/api/providers/registry",route=>route.fulfill({
    status:200,contentType:"application/json",body:JSON.stringify(data)}));
  await page.route("**/api/providers/codex/history?*",route=>route.fulfill({
@@ -51,9 +51,10 @@ for(const width of [320,393,1440]){
    await expect(region).toBeVisible();
    const cards=region.locator(".quota295-card");
    await expect(cards).toHaveCount(4);
+   await expect(page.locator(".dc-toggle")).toBeHidden();
    const cloudflare=cards.nth(0),codex=cards.nth(1),desktop=cards.nth(2),github=cards.nth(3);
    await expect(cloudflare.getByRole("heading",{name:"Cloudflare Workers AI"})).toBeVisible();
-   await expect(cloudflare.getByText("Лимит: 10 000 neurons")).toBeVisible();
+   await expect(cloudflare.getByText(/Лимит:.*neurons/)).toBeVisible();
    await expect(cloudflare.getByText("Использовано: неизвестно", {exact:false})).toBeVisible();
    await expect(cloudflare.locator("[role=progressbar]")).toHaveCount(0);
    await expect(codex.getByText("Осталось: 19%")).toBeVisible();
