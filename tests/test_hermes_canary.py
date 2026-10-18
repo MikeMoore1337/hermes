@@ -175,6 +175,9 @@ class CanaryEvidenceTests(unittest.TestCase):
         a, o = examples()
         a["max_cost_usd"] = "2.00"
         self.assertEqual(evaluate(a, o)["reason_code"], "APPROVAL_SCOPE_INVALID")
+        a, o = examples()
+        a["max_cost_usd"] = "0.01"
+        self.assertEqual(evaluate(a, o)["reason_code"], "APPROVAL_SCOPE_INVALID")
 
     def test_observation_cannot_substitute_other_sha_or_run(self):
         for name in ("hermes_sha", "run_id", "fixture_hash", "model"):
@@ -223,7 +226,6 @@ class CanaryEvidenceTests(unittest.TestCase):
 
     def test_verified_receipt_exceeding_cost_or_tokens_fails(self):
         a, o = examples()
-        a["max_cost_usd"] = "0.01"
         o["usage"]["actual_cost_usd"] = "0.02"
         result = evaluate(a, o)
         self.assertEqual((result["status"], result["reason_code"]),
