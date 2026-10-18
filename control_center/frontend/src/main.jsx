@@ -37,7 +37,7 @@ function Header({view,setView,authMode,onLogout}){
    <div className="brand-divider" aria-hidden="true"/>
    <span className="header-subtitle">Центр наблюдения и управления <small>AI · АВТОМАТИЗАЦИЯ · КОНТРОЛЬ · БЕЗОПАСНОСТЬ</small></span>
    <div className="atlas-nav" role="navigation" aria-label="Основные разделы">
-     {nav.slice(0,5).map(k=><button key={k} className={view===k?"selected":""} onClick={()=>setView(k)}>{groups[k].name}</button>)}
+     {nav.slice(0,5).map(k=><button key={k} type="button" className={view===k?"selected":""} aria-current={view===k?"page":undefined} onClick={()=>setView(k)}>{groups[k].name}</button>)}
    </div>
    <div className="header-tools">
     <InfoBadge tone="outline"><LockKeyhole size={13}/> Только чтение</InfoBadge>
@@ -76,7 +76,7 @@ function Registry({snapshot,view,search,setSearch,filter,setFilter}){
      <option value="all">Все статусы</option>{Object.entries(statuses).map(([id,s])=><option key={id} value={id}>{s.label}</option>)}
     </select><ChevronDown size={14} aria-hidden="true"/></label>
   </div>
-  <div className="table-scroll"><table className="service-table"><thead><tr>
+  <div className="table-scroll"><table className="service-table"><caption className="sr-only">Реестр системных служб и компонентов</caption><thead><tr>
    <th scope="col">Служба / единица</th><th scope="col">Состояние</th>
    <th scope="col">Режим</th><th scope="col">Источник</th>
    </tr></thead><tbody>
