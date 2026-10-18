@@ -76,13 +76,19 @@ def review(
                 if result["status"] == "REVIEW_REQUIRED"
                 else "NO_CROSSREF_UPDATE_FOUND_NOT_PUBLISHER_CLEARANCE"
             )
+            # A correction, retraction, expression of concern or incomplete
+            # registry coverage is never an ordinary MANUAL_REVIEW candidate.
+            if result["status"] == "REVIEW_REQUIRED":
+                item["status"] = "HOLD"
             if publisher_notice and publisher_notice.casefold() not in {
                 x.casefold() for x in found
             }:
                 item["audit_state"] = "CROSSREF_PUBLISHER_DISAGREEMENT_REVIEW_REQUIRED"
         except (UpdateLookupError, ValueError, TypeError, KeyError):
             # No raw upstream strings or third-party content in the report.
+            # Missing integrity coverage cannot be read as an approved study.
             item["audit_state"] = "UNKNOWN"
+            item["status"] = "HOLD"
             item["crossref_coverage"] = "LOOKUP_UNAVAILABLE_OR_INVALID"
         items.append(item)
     return {
