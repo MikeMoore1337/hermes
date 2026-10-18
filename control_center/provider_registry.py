@@ -16,6 +16,10 @@ from control_center.cloudflare_billing import (
     OUTPUT as CLOUDFLARE_BILLING_PATH,
     snapshot as read_cloudflare_billing,
 )
+from control_center.cloudflare_analytics_history import (
+    OUTPUT as CLOUDFLARE_ANALYTICS_PATH,
+    read as read_cloudflare_analytics,
+)
 from control_center.codex_usage import (
     DEFAULT_OUTPUT as CODEX_PATH, UsageError,
     read_snapshot as read_codex_snapshot,
@@ -76,6 +80,7 @@ def _window(*, metric: str, label: str, unit: str, limit: int | None = None,
 def registry(*, codex_path: Path = CODEX_PATH, desktop_path: Path = DC_PATH,
              cloudflare_path: Path = CLOUDFLARE_BILLING_PATH,
              github_path: Path = GITHUB_RATE_LIMIT_PATH,
+             analytics_path: Path = CLOUDFLARE_ANALYTICS_PATH,
              now: dt.datetime | None = None) -> dict:
     moment = now or dt.datetime.now(dt.timezone.utc)
     if moment.tzinfo is None:
@@ -103,6 +108,13 @@ def registry(*, codex_path: Path = CODEX_PATH, desktop_path: Path = DC_PATH,
         cloudflare["notes"] = "billing_auth_required"
     elif bill["status"] == "throttled":
         cloudflare["notes"] = "billing_throttled"
+    # Historical GraphQL adaptive analytics are advisory, not today's
+    # Free quota, billable spend or model-admission evidence. The quota
+    # fields, status, source_kind and progress bar deliberately stay UNKNOWN.
+    analytics = read_cloudflare_analytics(analytics_path, now=utc)
+    cloudflare["analytics_status"] = analytics["status"]
+    cloudflare["analytics_history"] = analytics["days"]
+    cloudflare["analytics_observed_at"] = analytics["observed_at"]
     cloudflare["limit_documentation"] = CLOUDFLARE_DOCS
     cloudflare["windows"] = [
         _window(metric="neurons_daily", label="Суточная квота Free",
