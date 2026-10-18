@@ -228,12 +228,12 @@ def snapshot(path: Path = OUTPUT, *, now: dt.datetime | None = None) -> dict:
 def main() -> int:
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--account-id", required=True)
-    parser.add_argument("--token-file", type=Path, required=True)
+    parser.add_argument("--account-id", default=os.environ.get("CLOUDFLARE_BILLING_ACCOUNT_ID"))
+    parser.add_argument("--token-file", type=Path, default=Path(os.environ.get("CLOUDFLARE_BILLING_TOKEN_FILE", "/etc/hermes/cloudflare-billing-read.token")))
     parser.add_argument("--output", type=Path, default=OUTPUT)
     args = parser.parse_args()
     try:
-        data = read(args.token_file, args.account_id)
+        data = read(args.token_file, args.account_id or "")
         save(data, args.output, group="hermes-control")
         print("CLOUDFLARE_BILLING_READ=" + data["status"])
         return 0 if data["status"] == "ok" else 1
