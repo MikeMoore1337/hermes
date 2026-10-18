@@ -23,8 +23,17 @@ jobs:
         run: python3 scripts/check_policy_index.py
       - name: Verify local Markdown references (offline)
         run: python3 scripts/check_markdown_links.py
-      - name: Unit tests
-        run: python3 -m unittest discover -s tests -v
+      - name: Unit tests and exact deployed runner success contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -v 2>&1 | tee "$RUNNER_TEMP/hermes-unittest.log"
+          # The pinned production receiver requires the literal unskipped success
+          # banner. Catch optional-dependency skip regressions BEFORE a deploy.
+          grep -Fxq 'OK' "$RUNNER_TEMP/hermes-unittest.log" || {
+            echo "Production unittest banner mismatch: required exact OK" >&2
+            exit 1
+          }
       - name: H-19 synthetic AI policy fixtures (Node standard library; no LLM)
         run: node --test evals/promptfoo_offline/policy.test.cjs
       - name: H-23 offline agent benchmark (16 pinned scenarios; no LLM)
