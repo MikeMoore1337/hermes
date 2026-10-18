@@ -119,7 +119,7 @@ class ProviderRegistryContract(unittest.TestCase):
                                       "usedPercent":60,"windowDurationMins":300}}},
                                   now=NOW-timedelta(hours=2))
             codex_save(snap,c)
-            result=registry(codex_path=c,desktop_path=Path(tmp)/"dc",now=NOW)
+            result=registry(codex_path=c,desktop_path=Path(tmp)/"dc",cloudflare_path=Path(tmp)/"cf.json",now=NOW)
             self.assertEqual(result["providers"][1]["status"],"stale")
             self.assertEqual(result["providers"][1]["windows"],[])
 
@@ -132,7 +132,7 @@ class RegistryAPITests(unittest.TestCase):
         self.dc=root/"dc.json"
         self.srv=ThreadingHTTPServer(("127.0.0.1",0),make_handler(
             root/"missing-overview.json",codex_path=self.code,
-            desktop_commander_path=self.dc))
+            desktop_commander_path=self.dc,cloudflare_billing_path=root/"cf.json"))
         self.thread=Thread(target=self.srv.serve_forever,daemon=True)
         self.thread.start()
 
