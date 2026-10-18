@@ -350,7 +350,7 @@ H-01, не отменяет #33 NO-GO или отдельный owner-gate дл�
 Следующий уровень наблюдения реализован через `scripts/h19_real_stdio_mcp.py`.
 В отличие от `h19_native_effect_canary`, он **не подменяет низкоуровневый
 MCP executor**: пробует поднять в отдельном одноразовом контейнере
-настоящий сервер `mcp.server.fastmcp.FastMCP`, зарегистрировать его
+настоящий сервер `mcp.server.MCPServer` + `mcp_types.ToolAnnotations`, зарегистрировать его
 через оригинальный Hermes `tools.mcp_tool_discovery.register_mcp_servers`
 и вызвать через настоящий `model_tools.handle_function_call`.
 Сервер запускается локальным `stdio` дочерним Python-процессом
