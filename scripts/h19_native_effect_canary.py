@@ -31,6 +31,18 @@ CASES = {
 }
 MARKER = b"H19_DISPATCH_CANARY_NO_REAL_TOOL"
 MARKER_SHA256 = hashlib.sha256(MARKER).hexdigest()
+# Pinned v0.22.2 observations from the real, isolated original image:
+# tool_search and connector batch are ALREADY denied before the patch,
+# while direct, alias and unknown tool reach the intercepted executor.
+# The allowed read path must reach it in both variants.
+ORIGINAL_EFFECT_EXPECTED = {
+    "direct_terminal": True,
+    "direct_alias": True,
+    "tool_search_terminal": False,
+    "connector_batch": False,
+    "unknown_native": True,
+    "allowed_web_read": True,
+}
 # Every tool execution is INTERCEPTED before a real network, shell, filesystem
 # or MCP operation is reached. The only side effect is a harmless fixed marker
 # in private /tmp. The actual Hermes policy and dispatch code still executes.
@@ -176,7 +188,7 @@ def compare(original_raw: bytes, patched_raw: bytes, *,
     for name, expected in CASES.items():
         old_effect = baseline[name]["effect_count"]
         new_effect = derivative[name]["effect_count"]
-        expected_old = 1  # proof sensitivity: original unguarded dispatcher reaches interception
+        expected_old = int(ORIGINAL_EFFECT_EXPECTED[name])
         expected_new = 1 if expected == "ALLOW_STUB" else 0
         success = old_effect == expected_old and new_effect == expected_new
         checks.append({
@@ -196,6 +208,9 @@ def compare(original_raw: bytes, patched_raw: bytes, *,
         "scenario_count": len(CASES),
         "physical_effect_canary_count": sum(
             bool(row["original_tmpfs_effect"]) for row in checks),
+        "upstream_already_blocked_count": sum(
+            not bool(row["original_tmpfs_effect"]) and row["expected_behavior"] == "DENY"
+            for row in checks),
         "checks": checks,
         "status": "PASS" if safe else "FAIL",
         "real_mcp_called": False,
