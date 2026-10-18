@@ -87,11 +87,12 @@ class DailyDOIRecoveryTests(unittest.TestCase):
         self.assertEqual(result["items"][0]["reason"], "doi_missing")
 
     def test_core_correction_retains_hold(self):
+        registry = Mock()
         result = prepare(now=NOW, searcher=searcher,
-            doi_verifier=lambda candidate: {"status": "MANUAL_REVIEW",
-                                            "doi": candidate["doi"]},
+            doi_verifier=registry,
             integrity_verifier=lambda *_: core(codes=["CORRECTION_NOTICE"]))
-        self.assertEqual(result["requests_attempted"], 5)
+        registry.assert_not_called()
+        self.assertEqual(result["requests_attempted"], 4)
         self.assertEqual(result["items"][0]["reason"], "integrity_hold")
         self.assertEqual(result["items"][0]["article_notice_codes"],
                          ["CORRECTION_NOTICE"])
