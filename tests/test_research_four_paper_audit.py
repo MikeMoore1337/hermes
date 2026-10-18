@@ -120,6 +120,9 @@ class FourPaperAuditTests(unittest.TestCase):
             {"notice_codes": ["RETRACTION_OR_WITHDRAWAL_NOTICE"]},
             {"coverage": "CROSSREF_FILTER_TRUNCATED", "status": "NOT_FOUND_WITH_COVERAGE"},
             {"notices": "evil"},
+            {"notices": [{"doi": CORRECTION, "notice_type": "CORRECTION_NOTICE",
+                          "published": "2026-02-30",
+                          "source": "CROSSREF_REVERSE_UPDATE_METADATA"}]},
         ):
             with self.subTest(changed=changed):
                 def inspector(doi):
