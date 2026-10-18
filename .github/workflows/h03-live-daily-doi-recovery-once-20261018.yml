@@ -1,0 +1,69 @@
+name: H-03 one-shot official MED DOI recovery bounded live smoke
+on:
+  push:
+    branches: [audit/h03-live-daily-doi-recovery-once-20261018]
+    paths: ['.github/workflows/h03-live-daily-doi-recovery-once-20261018.yml']
+permissions:
+  contents: read
+jobs:
+  doi-recovery-official-read-only:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - name: Checkout exact H-03 feature SHA
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Verify exact MED PMID with at most two real public requests
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from datetime import UTC,datetime
+          import json
+          from research_scout.daily_digest import TOPIC_IDS, prepare
+          from research_scout.article_integrity import inspect
+          from research_scout.crossref import review_candidate
+          PMID = "42840492"
+          def fake_lite(topic, *, now):
+              assert topic in TOPIC_IDS
+              return {
+                  "topic": topic, "status": "MANUAL_REVIEW",
+                  "candidates": [{
+                      "source": "EUROPE_PMC",
+                      "id": PMID,
+                      "source_url": "https://europepmc.org/article/MED/"+PMID,
+                      "title": "Public 2026 scientific review for integrity validation",
+                      "doi": None,
+                      "first_publication_date": "2026-09-22",
+                      "status": "HOLD", "reason": "doi_missing",
+                      "scientific_claims_verified": False,
+                  }] if topic == TOPIC_IDS[0] else []
+              }
+          # Three lite reports are deterministic synthetic inputs (0 network);
+          # only official MED core and DOI Crossref review may do real GET.
+          report = prepare(now=datetime(2026, 10, 18, 8, 45,tzinfo=UTC),
+                           searcher=fake_lite, doi_verifier=review_candidate,
+                           integrity_verifier=inspect)
+          record = report["items"][0]
+          summary = {
+              "observed_at": "2026-10-18",
+              "pmid": record["identifier"], "doi": record["doi"],
+              "status": record["status"], "reason": record["reason"],
+              "crossref_state": record["crossref_doi_status"],
+              "integrity_state": record["article_notice_state"],
+              "error_topics": [x["topic"] for x in report["errors"]],
+              "logical_request_count_including_3_mocked_lite": report["requests_attempted"],
+              "actual_network_get_max": 2,
+              "scientific_claims_verified": report["scientific_claims_verified"],
+              "automatic_publication": report["automatic_publication"],
+          }
+          assert record["status"] == "HOLD"
+          assert report["scientific_claims_verified"] is False
+          assert report["automatic_publication"] is False
+          assert report["requests_attempted"] <= 5
+          print("H03_LIVE_DOI_RECOVERY="+json.dumps(summary,sort_keys=True))
+          # Do not fake success if official source is unavailable. Fail workflow
+          # (without retry) on inability to recover and Crossref-verify the DOI.
+          assert record["doi"] == "10.3389/fcimb.2026.1918695", summary
+          assert record["crossref_doi_status"] == "MATCHED_METADATA_ONLY", summary
+          PY
