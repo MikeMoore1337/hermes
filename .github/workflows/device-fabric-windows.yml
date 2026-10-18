@@ -40,8 +40,8 @@ jobs:
           }
           Write-Output 'WINDOWS_POWERSHELL_PARSE=PASS'
 
-      - name: Check native Python version assertion on Windows
-        shell: pwsh
+      - name: Check native Python version assertion on Windows PowerShell 5.1
+        shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
           $source = Get-Content 'deploy/h15-device-fabric-windows-autostart.ps1' -Raw
