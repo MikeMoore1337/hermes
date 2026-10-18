@@ -22,7 +22,7 @@ accepted provider/model pair is Cloudflare Workers Free /
 @cf/openai/gpt-oss-20b; effort is null (not fabricated). No tools,
 shell, publishing, patches, merge or deploy are authorized. The contract
 accepts **one model call, zero retries**, up to 512 total reported tokens,
-a finite signed cost cap <= USD 1.00, and an approval lifespan <= one hour.
+a strict signed paid-cost cap of USD 0.00 (Workers Free only), and an approval lifespan <= one hour.
 These validation bounds are NOT owner approval for any real spend.
 
 There are two independently authenticated envelopes:
@@ -37,6 +37,11 @@ The verifier never consults the model's own final success claim. It checks
 both signatures, expiry/scope, exact identity match, the observer event
 sequence, correct answer, trace without unapproved tool calls, signed
 usage fields, reported cost/token bounds, and SQLite replay prevention.
+**Important correction:** `verified_source=provider` inside observer-signed JSON is
+only an observer claim, NOT a provider-signed billing receipt. Even if the
+mock reports `actual_cost_usd="0.00"` and a correct answer, the verifier returns
+`unverified / PROVIDER_ORIGIN_UNVERIFIED`, with actual model calls and actual
+cost set to null. The replay journal still refuses duplicate run IDs.
 Output contains only stable reason codes and safe metadata: no secret,
 private repository path, prompts, arbitrary response text, API keys, or
 credential file path.
@@ -80,8 +85,9 @@ refused; journal stores only run ID plus evidence digest. Journal is
 only local and **requires durable private storage** for meaningful
 cross-restart duplicate protection.
 
-The CLI always returns sanitized JSON and a non-zero exit code unless
-the signed evidence checks all pass. If cost or usage data is unknown,
+The CLI returns sanitized JSON. Without independent provider-origin
+verification, observer HMAC signatures alone result in a nonzero exit with
+`PROVIDER_ORIGIN_UNVERIFIED`, even when the synthetic answer is correct. If cost or usage data is unknown,
 the overall result is UNVERIFIED while independently established task
 correctness remains a separate status. Do not convert null cost into
 zero; subscription pricing is not inferred from API-equivalent estimates.
@@ -122,3 +128,35 @@ safe to merge and ship as an **offline repository/source snapshot**; no
 new worker, proxy, secret, systemd timer or Control Center UI is activated.
 Rollback is reverting the snapshot/merge through standard GitHub Flow,
 with no operational rollback of a service because none was enabled.
+
+## Offline operator preflight for the future live canary
+
+`python3 -m hermes_benchmark.canary_admission` consumes a signed owner
+approval and a separately signed recent preflight observation:
+
+    python3 -m hermes_benchmark.canary_admission \
+      --approval /secure/owner-approval.json \
+      --preflight /secure/host-preflight.json \
+      --owner-key-file /secure/owner-audit.key \
+      --observer-key-file /secure/observer-audit.key
+
+Admission checks: case/commit/model scope and approval expiry, Workers Free
+plan, preflight observed within 0-300 seconds, remaining Neurons >= 1000,
+confirmed inactive #33 burn-in, and affirmatively observed OS isolation,
+egress guard, no paid fallback and host resource capacity. Missing/expired
+data blocks. A fully attested input results **only** in
+`ready_for_operator_review` plus `dispatch_authorized=false`, not live GO.
+Never use an observer-signed boolean as proof of real firewall enforcement.
+
+The 1000-Neuron buffer is a conservative readiness heuristic, not a hard
+per-request spending limit; future execution must enforce independent quota
+reservation and a bounded single request. This CLI performs **no network,
+subprocess, inference, quota changes or service activation**.
+
+To finish the live item in #291: the owner must explicitly approve an exact
+concrete canary and cap, #33 burn-in/quotas must be observed, the VPS must
+have a verified OS/egress-isolated single-call runner, and a trustworthy
+independent provider-response observer must witness an actual completed run.
+Those runtime capabilities are NOT delivered or activated by this PR.
+
+Reference: https://developers.cloudflare.com/workers-ai/platform/pricing/
