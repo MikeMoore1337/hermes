@@ -1,0 +1,90 @@
+name: H-15 ephemeral offline isolation proof
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/h15-evals-offline-smoke.yml"
+      - "tests/fixtures/h15-eval-probe-seccomp.json"
+      - "eval_lane/isolation_probe.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-isolation-proof:
+    # GitHub-hosted ephemeral runner. Never use a self-hosted or YFC worker here.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Require cloud-hosted disposable GitHub runner
+        env:
+          EXEC_ENV: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          test "$EXEC_ENV" = "github-hosted"
+          test "$RUNNER_OS" = "Linux"
+          test "$(uname -m)" = "x86_64"
+          test ! -e /var/run/secrets/kubernetes.io/serviceaccount/token
+      - name: Check security profile remains strict (no model network)
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          data = json.loads(Path("tests/fixtures/h15-eval-probe-seccomp.json").read_text())
+          assert data["defaultAction"] == "SCMP_ACT_ERRNO"
+          allowed = set()
+          for rule in data["syscalls"]:
+              assert rule["action"] == "SCMP_ACT_ALLOW"
+              allowed.update(rule["names"])
+          assert "socket" not in allowed and "connect" not in allowed
+          assert "clone" not in allowed and "fork" not in allowed
+          assert "execve" in allowed
+          print("SECURITY_PROFILE=default-deny; no socket/connect/fork")
+          PY
+      - name: Run real OS probe in disposable offline nonroot container
+        run: |
+          set -euo pipefail
+          docker pull python:3.13-slim
+          docker run --rm \
+            --network none \
+            --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            --security-opt seccomp="$PWD/tests/fixtures/h15-eval-probe-seccomp.json" \
+            --read-only \
+            --user 10001:10001 \
+            --pids-limit 32 \
+            --memory 768m \
+            --cpus 0.45 \
+            --tmpfs /tmp:rw,nosuid,nodev,noexec,size=16m,mode=1777 \
+            --mount "type=bind,source=$PWD,target=/repo,readonly" \
+            --workdir /repo \
+            --env PYTHONDONTWRITEBYTECODE=1 \
+            --env PYTHONPATH=/repo \
+            python:3.13-slim \
+            python -m eval_lane.isolation_probe > offline-isolation-proof.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          evidence = json.loads(Path("offline-isolation-proof.json").read_text())
+          assert evidence["status"] == "OFFLINE_OS_CONTROLS_OBSERVED", evidence
+          assert evidence["socket_creation_deny_test"] == "PASSED", evidence
+          assert all(evidence["checks"].values()), evidence
+          assert evidence["actual_outbound_deny_test"] == "NOT_PERFORMED"
+          assert evidence["provider_cost_cap"] == "NOT_VERIFIED"
+          assert evidence["live_model_execution_allowed"] is False
+          print("EPHEMERAL_OFFLINE_KERNEL_BOUNDARY=PASS")
+          print("NO_MODEL_REQUESTS=TRUE")
+          PY
+      - name: Retain nonsecret offline proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: h15-ephemeral-offline-isolation-proof
+          path: offline-isolation-proof.json
+          if-no-files-found: ignore
+          retention-days: 7
