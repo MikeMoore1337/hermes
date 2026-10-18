@@ -91,6 +91,7 @@ def registry(*, codex_path: Path = CODEX_PATH, desktop_path: Path = DC_PATH,
     # completed historical days only. Never subtract these from today's Free
     # allowance or infer an account-wide CURRENT remaining balance.
     bill = read_cloudflare_billing(cloudflare_path, now=utc)
+    cloudflare["billing_status"] = bill["status"]
     cloudflare["billing_history"] = bill["days"] if bill["status"] == "ok" else []
     cloudflare["billing_observed_at"] = bill["observed_at"] if bill["status"] == "ok" else None
     cloudflare["billing_last_complete_day"] = (
@@ -98,6 +99,10 @@ def registry(*, codex_path: Path = CODEX_PATH, desktop_path: Path = DC_PATH,
     )
     if cloudflare["billing_history"]:
         cloudflare["notes"] = "official_delayed_historical_usage"
+    elif bill["status"] == "auth_required":
+        cloudflare["notes"] = "billing_auth_required"
+    elif bill["status"] == "throttled":
+        cloudflare["notes"] = "billing_throttled"
     cloudflare["limit_documentation"] = CLOUDFLARE_DOCS
     cloudflare["windows"] = [
         _window(metric="neurons_daily", label="Суточная квота Free",
