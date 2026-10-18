@@ -22,7 +22,7 @@ accepted provider/model pair is Cloudflare Workers Free /
 @cf/openai/gpt-oss-20b; effort is null (not fabricated). No tools,
 shell, publishing, patches, merge or deploy are authorized. The contract
 accepts **one model call, zero retries**, up to 512 total reported tokens,
-a finite signed cost cap <= USD 1.00, and an approval lifespan <= one hour.
+a strict signed paid-cost cap of USD 0.00 (Workers Free only), and an approval lifespan <= one hour.
 These validation bounds are NOT owner approval for any real spend.
 
 There are two independently authenticated envelopes:
