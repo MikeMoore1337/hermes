@@ -134,7 +134,7 @@ class RealStdioMCPTests(unittest.TestCase):
 
     def test_sdk_and_trust_gate_are_really_invoked(self):
         source = mcp.PROBE
-        self.assertIn("SERVER = r"+chr(39).repeat(3), source)
+        self.assertIn("SERVER = r" + "'" * 3, source)
         self.assertIn("from mcp.server import MCPServer", source)
         self.assertIn("from mcp_types import ToolAnnotations", source)
         self.assertIn("register_mcp_servers", source)
