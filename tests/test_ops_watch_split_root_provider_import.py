@@ -40,16 +40,16 @@ class OpsWatchProviderImportLayout(unittest.TestCase):
             ui, owner, release = self.fixture(Path(tmp))
             self.assertEqual(quota_alerts.trusted_provider_release(
                 ui_root=ui, owner_root=owner, expected_uid=os.getuid()), release)
-            with patch.object(quota_alerts, "find_spec", return_value=None), \\
+            with patch.object(quota_alerts, "find_spec", return_value=None), \
                     patch.object(quota_alerts, "trusted_provider_release",
-                                 return_value=release), \\
+                                 return_value=release), \
                     patch.object(quota_alerts.sys, "path", [str(owner)]):
                 quota_alerts._bind_control_center()
                 self.assertEqual(quota_alerts.sys.path, [str(release), str(owner)])
 
     def test_monorepo_import_does_not_mutate_python_path(self):
-        with patch.object(quota_alerts, "find_spec", return_value=object()), \\
-                patch.object(quota_alerts, "trusted_provider_release") as finder, \\
+        with patch.object(quota_alerts, "find_spec", return_value=object()), \
+                patch.object(quota_alerts, "trusted_provider_release") as finder, \
                 patch.object(quota_alerts.sys, "path", ["full-repo"]):
             quota_alerts._bind_control_center()
             finder.assert_not_called()
