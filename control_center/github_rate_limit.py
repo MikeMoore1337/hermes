@@ -150,9 +150,12 @@ def save(value:dict,path:Path=OUTPUT,*,group:str|None=None):
 
 def snapshot(path:Path=OUTPUT,*,now:dt.datetime|None=None):
     current=utc(now or dt.datetime.now(dt.timezone.utc))
-    if path.is_symlink() or not path.is_file():
-        return error("unknown",current)
     try:
+        # The production quota file is readable only to its owning service.
+        # Non-root offline tests and unprivileged callers must fail closed
+        # without exposing the file or aborting repository deployment.
+        if path.is_symlink() or not path.is_file():
+            return error("unknown",current)
         if path.stat().st_size>8192:raise ValueError("oversize")
         raw=json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(raw,dict) or set(raw)!={"schema","source","status",

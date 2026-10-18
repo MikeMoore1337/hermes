@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 from urllib.error import HTTPError
 
 from control_center import github_rate_limit as gh
@@ -130,6 +131,19 @@ class GitHubRateLimitTests(unittest.TestCase):
             key=Path(d)/"token";key.write_text("x"*40);key.chmod(0o644)
             with self.assertRaises(gh.GitHubQuotaError):
                 gh.read(key,now=NOW)
+
+    def test_private_production_snapshot_permission_denied_is_unknown(self):
+        # Reproduce hermes-main-deploy.sh non-root test failure when the
+        # real provider-quota directory is private to hermes-control.
+        path=Path("/var/lib/hermes-provider-quota/github-rate-limits.json")
+        with patch.object(Path, "is_file", side_effect=PermissionError("private")):
+            data=gh.snapshot(path,now=NOW)
+        self.assertEqual(data["status"],"unknown")
+        self.assertEqual(data["resources"],[])
+        self.assertNotIn("private",str(data))
+        with patch.object(Path, "is_symlink", side_effect=PermissionError("private")):
+            data=gh.snapshot(path,now=NOW)
+        self.assertEqual(data["status"],"unknown")
 
     def test_malformed_stale_snapshot_fails_closed(self):
         with TemporaryDirectory() as d:
