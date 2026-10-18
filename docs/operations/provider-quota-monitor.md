@@ -506,3 +506,53 @@ sampling uncertainty, historical lag and coverage before considering a
 V1 and V2 remain independent sources with different grants and latency.
 #295 must stay OPEN until the real owner-provisioned Cloudflare access and
 fresh on-host query have been independently verified.
+
+
+## Stage 8 - Cloudflare adaptive-data quality check (opt-in, no timer)
+
+Owner's one-shot GraphQL account-scoped Analytics Read request was accepted on
+the Hermes VPS. Sanitized proof, without account ID or bearer token:
+
+```text
+ANALYTICS_CREDENTIALS_PROVISIONED
+CLOUDFLARE_ANALYTICS=advisory_estimate
+PREVIOUS_UTC_DAY_NEURONS_ADAPTIVE_ESTIMATE=23.427
+QUOTA_REMAINING=UNKNOWN
+BILLABLE_USAGE=NOT_VERIFIED
+```
+
+The first result **only demonstrates access and one historical adaptive
+aggregate**, not completeness across all groups, exact Free metering, or
+real-time quota balance. A GraphQL `...Groups(limit: 1)` request may yield
+just one aggregate bucket; absence of dimensions and single response row must
+be empirically verified against the account's Cloudflare dashboard/schema
+before describing the number as complete account-wide usage.
+
+Cloudflare documents confidence intervals for adaptive `sum`/ `count`
+metrics. To test whether this particular account/Workers AI field offers them,
+an operator can issue **one additional bounded read-only GraphQL query**:
+
+```bash
+active="$(readlink -f /opt/hermes-control-center/current)"
+[[ "$active" =~ ^/opt/hermes-control-center/releases/main-[0-9a-f]{40}$ ]] || exit 1
+sha="${active##*main-}"
+cd "/opt/hermes-agent-owner/releases/main-$sha" || exit 1
+/usr/bin/python3 -m scripts.h15_cloudflare_analytics_probe --confidence
+```
+
+The optional flag requests a 95% confidence interval for the prior completed
+UTC day. It prints a fixed success/failure category and only numeric estimate,
+bounds and sample size when all are valid, without account IDs or credentials.
+Any field/schema denial, absent/malformed CI, impossible interval, no samples
+or auth errors **fail closed**. Cloudflare may not expose this field in the
+target `aiInferenceAdaptiveGroups` schema; a rejection is evidence of
+unsupported quality metadata, not authorization for alternative broad access.
+No automatic retries, timers, snapshots, prices, billing changes or AI
+inference are performed. Never use intervals or point estimates as a #271
+quota-admission ALLOW.
+
+Official references:
+- https://developers.cloudflare.com/analytics/graphql-api/features/confidence-intervals/
+- https://developers.cloudflare.com/analytics/graphql-api/sampling/
+- https://developers.cloudflare.com/analytics/faq/graphql-api-inconsistent-results/
+- https://developers.cloudflare.com/analytics/graphql-api/features/data-sets/
