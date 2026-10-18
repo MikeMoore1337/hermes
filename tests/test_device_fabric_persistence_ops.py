@@ -165,9 +165,9 @@ class PresencePersistenceTests(unittest.TestCase):
             cert = root / "cert.pem"
             cert.write_text("public dummy certificate", encoding="ascii")
             samples = (
-                ("notAfter=Oct 20 14:30:00 2026 GMT\\n", "expiring", "device_tls_expiring"),
-                ("notAfter=Oct 17 14:30:00 2026 GMT\\n", "expired", "device_tls_expired"),
-                ("notAfter=Nov 20 14:30:00 2026 GMT\\n", "healthy", None),
+                ("notAfter=Oct 20 14:30:00 2026 GMT\n", "expiring", "device_tls_expiring"),
+                ("notAfter=Oct 17 14:30:00 2026 GMT\n", "expired", "device_tls_expired"),
+                ("notAfter=Nov 20 14:30:00 2026 GMT\n", "healthy", None),
             )
             for enddate, expected, code in samples:
                 with self.subTest(enddate=enddate), patch(
