@@ -25,14 +25,14 @@
     return Number.isNaN(d.getTime()) ? "Нет данных" :
       d.toLocaleString("ru-RU", {dateStyle: "short", timeStyle: "short"});
   }
-  function meter(root, name, value, note) {
+  function meter(root, host, name, value, note) {
     const line = el("div", "infra294-metric", root);
     const label = el("div", "infra294-label", line);
     el("span", "", label, name);
     el("strong", "", label, percent(value) === null ? "Нет данных" : value + "%");
     const track = el("div", "infra294-track", line);
     track.setAttribute("role", "progressbar");
-    track.setAttribute("aria-label", name);
+    track.setAttribute("aria-label", names[host] + ": " + name);
     track.setAttribute("aria-valuemin", "0");
     track.setAttribute("aria-valuemax", "100");
     if (percent(value) === null) track.setAttribute("aria-valuetext", "Нет данных");
@@ -45,7 +45,7 @@
     }
     if (note) el("small", "", line, note);
   }
-  function chart(root, raw, key, label) {
+  function chart(root, raw, key, label, host) {
     root.replaceChildren();
     const rows = Array.isArray(raw?.samples) ? raw.samples : [];
     const points = rows.filter(item =>
@@ -61,7 +61,7 @@
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.setAttribute("viewBox", "0 0 320 110");
     svg.setAttribute("role", "img");
-    svg.setAttribute("aria-label", "История: " + label);
+    svg.setAttribute("aria-label", "История " + names[host] + ": " + label);
     const from = Date.parse(sample[0].observed_at);
     const end = Date.parse(sample[sample.length - 1].observed_at);
     const poly = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
@@ -95,7 +95,7 @@
       if (!r.ok) throw Error("HTTP " + r.status);
       const result = await r.json();
       if (result.schema !== 1 || result.host !== host) throw Error("invalid");
-      chart(target, result, metric, {"cpu": "CPU", "ram": "RAM", "disk": "Диск"}[metric]);
+      chart(target, result, metric, {"cpu": "CPU", "ram": "RAM", "disk": "Диск"}[metric], host);
     } catch (_) {
       target.replaceChildren(el("p", "infra294-hint", null, "История недоступна."));
     }
@@ -118,16 +118,16 @@
       const m = record.metrics || {};
       if (previous) el("p", "infra294-hint", node,
         "Последние известные значения. Не считать текущей нагрузкой.");
-      meter(node, "CPU", m.cpu_used_percent, "Фактическая загрузка CPU, не load average");
-      meter(node, "RAM", m.ram_used_percent,
+      meter(node, record.host, "CPU", m.cpu_used_percent, "Фактическая загрузка CPU, не load average");
+      meter(node, record.host, "RAM", m.ram_used_percent,
         amount(m.ram_used_bytes) + " из " + amount(m.ram_total_bytes));
       const swap = number(m.swap_total_bytes) && m.swap_total_bytes > 0 ?
         Math.round(1000 * m.swap_used_bytes / m.swap_total_bytes) / 10 : null;
-      meter(node, "Swap", swap, amount(m.swap_used_bytes) + " из " + amount(m.swap_total_bytes));
-      meter(node, "Диск /", m.disk_used_percent,
+      meter(node, record.host, "Swap", swap, amount(m.swap_used_bytes) + " из " + amount(m.swap_total_bytes));
+      meter(node, record.host, "Диск /", m.disk_used_percent,
         amount(m.disk_used_bytes) + " из " + amount(m.disk_total_bytes));
       if (percent(m.inode_used_percent) !== null)
-        meter(node, "Inode /", m.inode_used_percent, "Использование файловых индексов");
+        meter(node, record.host, "Inode /", m.inode_used_percent, "Использование файловых индексов");
       const details = el("div", "infra294-facts", node);
       if (Number.isInteger(m.cpu_cores) && m.cpu_cores > 0)
         el("span", "", details, "Логических CPU: " + m.cpu_cores);
