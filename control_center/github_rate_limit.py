@@ -101,12 +101,17 @@ def read(token: Path, *, now: dt.datetime|None=None, transport=urlopen):
             status=response.status
             body=response.read(MAX_BYTES+1)
     except HTTPError as exc:
-        return error("auth_required" if exc.code in (401,403) else
+        # GitHub returns 403 for either an authorization problem or a
+        # PRIMARY/SECONDARY rate limit. Without authoritative headers/body
+        # this is ambiguous. Never label it definitely auth_required.
+        return error("auth_required" if exc.code==401 else
+                     "unknown" if exc.code==403 else
                      "throttled" if exc.code==429 else "unavailable",when)
     except (OSError,URLError,TimeoutError):
         return error("unavailable",when)
     if status!=200:
-        return error("auth_required" if status in (401,403) else
+        return error("auth_required" if status==401 else
+                     "unknown" if status==403 else
                      "throttled" if status==429 else "unavailable",when)
     try:return parse(body,now=when)
     except GitHubQuotaError:return error("unknown",when)
@@ -163,6 +168,7 @@ def snapshot(path:Path=OUTPUT,*,now:dt.datetime|None=None):
         if len(raw["resources"])>len(RESOURCES):
             raise ValueError("resources")
         seen=set()
+        fresh=[]
         for item in raw["resources"]:
             if not isinstance(item,dict) or set(item)!={"resource","quota_limit","used",
                      "remaining","reset_at_utc","status"}:
@@ -177,8 +183,18 @@ def snapshot(path:Path=OUTPUT,*,now:dt.datetime|None=None):
             if item["remaining"]>item["quota_limit"] or item["status"] not in (
                     "ok","low","exhausted","unknown"):
                 raise ValueError("inconsistent")
-            utc(dt.datetime.fromisoformat(item["reset_at_utc"].replace("Z","+00:00")))
-        return raw
+            reset=utc(dt.datetime.fromisoformat(item["reset_at_utc"].replace("Z","+00:00")))
+            # A source can be younger than 30 minutes but its one-minute
+            # search/reset window already expired. Never claim an old
+            # exhaustion, or a false allowance, after that reset.
+            if reset <= current:
+                continue
+            fresh.append(item)
+        if not fresh:
+            return error("unknown",current)
+        result=dict(raw)
+        result["resources"]=fresh
+        return result
     except (ValueError,TypeError,KeyError,OSError,OverflowError):
         return error("unknown",current)
 
