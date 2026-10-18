@@ -445,8 +445,10 @@ unsafe путь отдельно от bounded patched candidate и требуе�
 `scripts/h19_agent_fake_model_e2e.py --execute` проверяет не только
 `model_tools.handle_function_call`, но и реальный subprocess
 `python -m hermes_cli.main chat -q ... -Q`, HTTP-интерфейс LLM и
-MCP-инструменты. При наличии штатных фикстур Hermes запускается
-**только локальный** `tests.fakes.fake_llm_provider.FakeLLMServer`,
+MCP-инструменты. Поскольку закреплённый upstream Docker-образ не содержит
+`tests.fakes`, внутри инструмента встроен прозрачный минимальный
+stdlib HTTP Chat Completions fake-сервер, слушающий строго
+`127.0.0.1` внутри контейнера без внешней сети. Он
 который сценарно предлагает сначала `mcp__h19cli__peek`,
 затем `mcp__h19cli__mark`, а затем завершает ход. Полученное
 из `peek` содержимое специально включает синтетическую
@@ -470,8 +472,8 @@ prompt-injection команду вызвать запрещённый `mark`. М
 
 Это более высокий интеграционный уровень, чем проверки
 прямого вызова диспетчера, но **не реальные AI turns** и не
-реальная внешняя MCP-система. Фикстуры upstream/MCP SDK
-отсутствуют → `NOT_RUN` (exit 3), а не PASS. Неверный digest,
+реальная внешняя MCP-система. Отсутствие MCP SDK → `NOT_RUN` (exit 3), а не PASS;
+HTTP fake-сервер не устанавливает дополнительных пакетов. Неверный digest,
 source stamp, отсутствие HTTP-хода, пропущенный read-control
 или вредоносный write-side-effect дают красную сборку.
 Все права на работу VPS, исходящий интернет и paid LLM
