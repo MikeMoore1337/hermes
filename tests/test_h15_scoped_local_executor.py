@@ -11,7 +11,25 @@ from subprocess import TimeoutExpired
 from eval_lane.fixed_plan import FixedPlan
 from eval_lane.local_executor import LocalBoundedExecutor
 from eval_lane.protocol import AdmissionDenied
-from tests.test_h15_scoped_skill_evals import job
+from datetime import datetime, timezone
+
+
+def job() -> dict:
+    timestamp = datetime.fromtimestamp(1800000000, timezone.utc).isoformat()
+    return {
+        "schema_version": 1, "kind": "adt_skill_eval_pilot_v1",
+        "job_id": "eval-job-123456789", "approval_id": "owner-grant-123456789",
+        "toolkit_sha": "a" * 40, "provider": "codex", "model": "approved-model",
+        "case_ids": ["python-api", "javascript-ui"], "trials": 2,
+        "timeout_seconds": 150,
+        "resource_limits": {
+            "memory_mb": 512, "cpu_seconds": 300, "output_bytes": 65536,
+        },
+        "budget": {
+            "maximum_usd": "1.00", "provider_hard_cap_id": "hard-cap-12345678",
+        },
+        "issued_at": timestamp, "expires_at": timestamp,
+    }
 
 
 class BoundedExecutorTests(unittest.TestCase):
