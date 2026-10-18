@@ -140,3 +140,53 @@ SHA, обновить версию fixture и lock при изменении с�
 неизвестном расходе запуск блокируется. Публикации, GitHub write,
 restart, deploy и изменение H-01 запрещены. Пилот не является
 разрешением настоящего inference.
+
+
+### 18.10.2026 - изолированный pinned native-v0.22.2 probe (#186, #33)
+
+Продолжение offline-этапа: `scripts/h19_v0222_native_evidence.py`
+переиспользует из #33 настоящий `model_tools.handle_function_call`,
+`AIAgent`, bounded `INSPECTOR` и независимый
+`verify_v0221_native_tool_policy.validate`. Код выполняется в точном
+Docker образе `nousresearch/hermes-agent@sha256:a11574b7fe8e1631d7d88d556677dac693bc058abf558cdeb899155688c1bf05`
+и в одноразовой производной с текущим patch. Это проверка **настоящего
+Python dispatcher** со **заглушкой низкоуровневого executor**; не
+выполняет настоящие команды, LLM, MCP/интеграции, model turns или изменения production.
+
+Отдельный OS probe в том же `--network none --read-only --user 65534`
+контейнере проверяет отсутствие маршрута к тестовому IP, отказ записи
+в директорию приложения, отсутствие Docker socket и отсутствие
+credential env. Если в исходном образе существует `/bin/sh`,
+система честно записывает `shell_execution_denial_verified=false` -
+сетевой и файловой изоляции недостаточно для доказательства общего
+запрета shell. Даже 20/20 bounded native PASS не доказывает полный
+MCP/OS/AI security GO, не устраняет upstream gap и не разрешает запуск
+резидентного H-01.
+
+Отдельный GitHub Actions workflow
+`.github/workflows/h19-pinned-native-runtime.yml` **не** входит
+в обязательный ежедневный quality CI. Запускается на PR, меняющих
+этот probe, либо вручную через workflow_dispatch. Работает только
+на disposable GitHub-hosted runner, с `contents: read`,
+`persist-credentials: false`, без SSH/secrets, с `docker build
+--network none --pull=false` для bounded derivative. Отключает сеть
+контейнеров и не монтирует host volumes. Docker pull закреплённого
+образа производится runner-ом до sandbox (это сетевой запрос за
+фиксированным образом, **не AI inference**).
+
+Запуск вручную только на отдельном подготовленном Docker-хосте:
+
+    docker pull --platform linux/amd64 nousresearch/hermes-agent@sha256:a11574b7fe8e1631d7d88d556677dac693bc058abf558cdeb899155688c1bf05
+    docker build --pull=false --network none --platform linux/amd64 -f docker/v0222-native-tool-policy-test/Dockerfile -t hermes-v0222-native-policy-candidate:20261016 .
+    python3 -m scripts.h19_v0222_native_evidence --execute --out /tmp/h19-native-report.json
+
+Ожидаемый выход: машинный JSON с исходной и исправленной
+синтетической трассой, результатами per-path и OS probes,
+независимой проверкой original-gap, статусом FAIL при реальном
+обходе, INFRA_FAILURE при неполном свидетельстве. Запуск
+без `--execute` ничего не делает. Не копировать команды на
+production VPS. В workflow отчёт доступен как artifact
+`hermes-h19-pinned-native` на 7 дней.
+
+Live-model gate прежний: **NOT_RUN** до явного отдельного
+разрешения с моделью, лимитом вызовов и свежими квотами.
