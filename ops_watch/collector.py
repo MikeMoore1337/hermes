@@ -422,7 +422,8 @@ def once(source: Path = SOURCE, target: Path = TARGET, observed: datetime | None
             ident = "windows-pc" if code == "device_windows_pc_unavailable" else "linux-vps"
             signal = snapshot.get("device_fabric", {}).get(ident, {}).get("status")
             if signal != "online":
-                findings.append({"code": code, "severity": item["severity"],
+                findings.append({"code": code,
+                                 "severity": "critical" if code == "device_linux_vps_unavailable" else "warning",
                                  "fingerprint": item["fingerprint"]})
         for item in previous:
             code = item["code"]
@@ -430,7 +431,8 @@ def once(source: Path = SOURCE, target: Path = TARGET, observed: datetime | None
                     current["code"] == code for current in findings):
                 continue
             if snapshot.get("device_fabric_tls", "unknown") in ("unknown", "not_configured"):
-                findings.append({"code": code, "severity": item["severity"],
+                findings.append({"code": code,
+                                 "severity": "critical" if code == "device_tls_expired" else "warning",
                                  "fingerprint": item["fingerprint"]})
         was_ci_failed = any(item["code"] == "ci_failed" for item in previous)
         if ci == "FAILURE" or (ci is None and was_ci_failed):
