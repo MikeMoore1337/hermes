@@ -179,3 +179,73 @@ tests. In production, a privileged operator must read the fixed snapshot
 file and local Ops Watch journal after a timer cycle, verify the source age,
 and confirm no unintentional alert is delivered. No synthetic production
 incidents should be created just to test Telegram.
+
+
+## Stage 4: reproducible, owner-gated YFC bootstrap (NOT EXECUTED)
+
+Two reviewed, opt-in Linux installer scripts are supplied, but the ordinary
+Hermes deploy **never invokes them**. They change users, SSH keys and
+systemd configuration and therefore require a separate owner-authorized
+console/SSH administrative session on each VPS. The monthly Desktop
+Commander quota cannot silently substitute for that authorization.
+
+**Required trusted identity**: first confirm the target VPS YFC from the
+YFC production inventory, SSH host fingerprint and access route; do not
+infer the identity from an unrelated device-presence indicator.
+
+1. Prepare a private Ed25519 read-only monitoring key *on Hermes*, with
+   mode 0600; transfer ONLY its public key to a trusted root-protected
+   file on YFC. Never copy the private key to YFC.
+2. Obtain a version-pinned Hermes checkout (the approved exact Git SHA) on
+   YFC using the operator's regular deployment procedure. Perform the
+   owner-authorized console install:
+
+       sudo bash deploy/install-yfc-infrastructure-emitter.sh            /root/pinned-hermes-checkout EXPECTED_40_HEX_SHA            /root/hermes-infra-pubkey
+
+   The installer verifies the exact Git SHA and Ed25519 public key,
+   installs the root-owned Python collector, creates a dedicated
+   unprivileged `hermes-infra-read` account and one restricted SSH
+   `authorized_keys` forced command. No shell/API request controls the
+   collector's host flag. It executes a real unprivileged local
+   one-shot smoke before switching the pinned package. No YFC timer,
+   resident agent or service restart is installed.
+3. On Hermes use the *verified* YFC SSH host-key line from the owner/trusted
+   provider console, not an unverified `ssh-keyscan`. The exact YFC
+   hostname and SSH port must match this pinned key. With a pinned Hermes
+   source checkout and private key already present, run:
+
+       sudo bash deploy/install-hermes-yfc-pull.sh            /root/pinned-hermes-checkout VERIFIED_YFC_HOST SSH_PORT            /root/yfc-pinned-known-hosts /root/yfc-infrastructure-private-key
+
+   This installer installs root-owned 0600 credentials under `/etc/hermes`,
+   starts the fixed read-only SSH service once, validates that the received
+   snapshot is current and attributed to YFC, then (and only then)
+   enables the existing `hermes-infrastructure-yfc-pull.timer` unit.
+   It does not disable or restart the independent H-01 timer.
+4. Verify BOTH owner-only API cards show distinct *fresh* observed_at stamps,
+   3 or more real samples in each history, sane CPU/RAM/network units and
+   YFC network isolation. Check `systemctl show -P Result
+   hermes-infrastructure-yfc-pull.service` and monitor CPU/memory impact
+   before declaring completion; no synthetic samples count as proof.
+5. Confirm alerts only from a real, verified incident, and verify the
+   existing Telegram delivery receipt rather than claiming that an outbox
+   insert equals a sent message.
+
+**Failure behavior:** a denied SSH authentication, malformed sample,
+unverified host key or stale telemetry prevents enabling the pull timer.
+The Hermes UI explicitly displays NOT_CONNECTED, UNKNOWN or OFFLINE
+rather than fabricated utilization values. No network fallback, paid
+service, or command-runner endpoint is added.
+
+**Rollback after activation:** on Hermes disable and stop
+`hermes-infrastructure-yfc-pull.timer` and optionally remove the dedicated
+YFC monitoring SSH key and config; on YFC remove ONLY the dedicated
+`hermes-infra-read` authorized key and restore the prior root-owned pinned
+collector symlink. Leave all YFC application deployments and existing
+news/H-01 units untouched.
+
+Offline verification:
+
+    python3 -m unittest tests.test_infrastructure_install_contract -v
+
+This stage delivers repeatable operator tooling, **not** evidence that
+installation, SSH handshake or real YFC resource data has occurred.
