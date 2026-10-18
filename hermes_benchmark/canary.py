@@ -211,18 +211,20 @@ def audit(approval: Any, observation: Any, *, owner_key: bytes,
             spent > _money(a["max_cost_usd"])):
         return _result("failed", "BUDGET_EXCEEDED",
                        case_id=case_id, quality="passed", resource="failed")
-    result = _result("passed", "VERIFIED_EVIDENCE",
-                     case_id=case_id, quality="passed", resource="passed")
-    result["actual_model_calls"] = 1
-    result["actual_cost_usd"] = str(spent)
-    return result
+    # The observer only *claims* provider provenance/cost; no Cloudflare-signed
+    # billing record or independently captured provider response is supplied.
+    # An observer HMAC cannot turn claimed $0/tokens into verified billing.
+    return _result("unverified", "PROVIDER_ORIGIN_UNVERIFIED",
+                   case_id=case_id, quality="unverified", resource="unverified")
 
 
 def audit_once(approval: Any, observation: Any, *, owner_key: bytes,
                observer_key: bytes, now: datetime, journal: Path) -> dict[str, Any]:
     result = audit(approval, observation, owner_key=owner_key,
                    observer_key=observer_key, now=now)
-    if result["status"] != "passed":
+    if (result["status"] != "passed" and
+            not (result["status"] == "unverified" and
+                 result["reason_code"] == "PROVIDER_ORIGIN_UNVERIFIED")):
         return result
     run_id = approval["payload"]["run_id"]
     # The journal records only opaque IDs/digests, no prompt, response or secret.
