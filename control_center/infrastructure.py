@@ -3,8 +3,6 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
-import fcntl
-import grp
 import json
 import math
 import os
@@ -202,6 +200,7 @@ def save(snapshot: dict, directory: Path = ROOT, *, group: str | None = None) ->
     if group is not None:
         if os.geteuid() != 0:
             raise PermissionError("system collector must be root")
+        import grp  # Linux only, never imported by the Windows UI
         gid = grp.getgrnam(group).gr_gid
         os.chown(directory, 0, gid)
     # A bounded lock prevents two timers from replacing an equal/newer snapshot
@@ -210,7 +209,9 @@ def save(snapshot: dict, directory: Path = ROOT, *, group: str | None = None) ->
     if lock.is_symlink():
         raise ValueError("symlink ingest lock")
     with lock.open("a+b") as guard:
-        fcntl.flock(guard.fileno(), fcntl.LOCK_EX)
+        if os.name == "posix":
+            import fcntl  # Linux only; SQLite/unit fixtures can run on Windows.
+            fcntl.flock(guard.fileno(), fcntl.LOCK_EX)
         current = directory / f"{host}.json"
         if current.is_symlink():
             raise ValueError("symlink host snapshot")
@@ -256,6 +257,7 @@ def _insert_history(directory: Path, host: str, snapshot: dict, *, group: str | 
         connection.execute("DELETE FROM samples WHERE observed_at < ?", (cutoff,))
     os.chmod(db, 0o640)
     if group is not None:
+        import grp
         os.chown(db, 0, grp.getgrnam(group).gr_gid)
 
 
