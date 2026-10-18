@@ -19,6 +19,9 @@ if _RELEASE_ROOT not in sys.path:
     sys.path.insert(0, _RELEASE_ROOT)
 
 from research_scout.report_view import read_owner_view
+from control_center.infrastructure import collect as collect_host_metrics
+from control_center.infrastructure import save as save_host_metrics
+
 
 DEFAULT_OUTPUT = Path("/var/lib/hermes-control-center/overview.json")
 UNITS = (
@@ -109,7 +112,17 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     args = parser.parse_args()
+    # Existing systemd timer already executes this collector once per minute.
+    # Reuse it instead of installing a second timer during H-01 #33 burn-in.
+    # Overview is committed first: unavailable metrics must never interrupt
+    # the legacy control center or mark a host falsely healthy.
     save_snapshot(collect(), args.output)
+    try:
+        save_host_metrics(collect_host_metrics("hermes"), group="hermes-control")
+    except Exception as exc:
+        # Only fixed exception type; never log paths, contents or credentials.
+        print("INFRASTRUCTURE_SNAPSHOT=unavailable category=" + type(exc).__name__,
+              file=sys.stderr)
 
 
 if __name__ == "__main__":
