@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import fcntl
 import grp
 import json
+import math
 import os
 from pathlib import Path
 import sqlite3
@@ -28,7 +30,9 @@ def cpu_counters(line: str) -> tuple[int, int]:
     if any(v < 0 for v in values):
         raise ValueError("negative cpu counter")
     idle = values[3] + (values[4] if len(values) > 4 else 0)
-    return sum(values), idle
+    # Linux guest and guest_nice are already included in user and nice.
+    # Counting them again inflates total CPU and distorts utilization.
+    return sum(values[:8]), idle
 
 
 def cpu_percent(before: str, after: str) -> float | None:
@@ -80,13 +84,33 @@ def network(dev: str) -> dict:
     return result
 
 
+def network_speed(before: str, after: str, seconds: float) -> dict[str, dict[str, float]]:
+    """Per-interface B/s based on a bounded positive sampling interval."""
+    if not (0 < seconds <= 10):
+        raise ValueError("invalid network interval")
+    first, last = network(before), network(after)
+    result = {}
+    for iface, counters in last.items():
+        previous = first.get(iface)
+        if previous is None:
+            continue
+        if any(counters[key] < previous[key] for key in ("rx_bytes", "tx_bytes")):
+            continue
+        result[iface] = {
+            "rx_bytes_per_second": round((counters["rx_bytes"] - previous["rx_bytes"]) / seconds),
+            "tx_bytes_per_second": round((counters["tx_bytes"] - previous["tx_bytes"]) / seconds),
+        }
+    return result
+
+
 def build(host: str, *, before: str, after: str, meminfo: str,
           loadavg: str, uptime: str, disk: os.statvfs_result, dev: str,
-          now: dt.datetime | None = None) -> dict:
+          now: dt.datetime | None = None, dev_before: str | None = None,
+          elapsed_seconds: float | None = None, cores: int | None = None) -> dict:
     if host not in HOSTS:
         raise ValueError("unknown host")
     load = [float(x) for x in loadavg.split()[:3]]
-    if len(load) != 3 or any(x < 0 for x in load):
+    if len(load) != 3 or any(not math.isfinite(x) or x < 0 for x in load):
         raise ValueError("invalid load")
     total_disk = disk.f_blocks * disk.f_frsize
     available_disk = disk.f_bavail * disk.f_frsize
@@ -96,14 +120,23 @@ def build(host: str, *, before: str, after: str, meminfo: str,
     if age.tzinfo is None:
         raise ValueError("timezone required")
     metrics = memory(meminfo)
+    inode_count = getattr(disk, "f_files", 0)
+    inode_available = getattr(disk, "f_favail", 0)
+    if inode_count and not 0 <= inode_available <= inode_count:
+        raise ValueError("invalid inode count")
     metrics.update({
         "cpu_used_percent": cpu_percent(before, after),
+        "cpu_cores": cores if isinstance(cores, int) and cores > 0 else None,
+        "inode_used_percent": round(100 * (inode_count - inode_available) / inode_count, 1)
+        if inode_count else None,
         "load1": load[0], "load5": load[1], "load15": load[2],
         "disk_total_bytes": total_disk,
         "disk_used_bytes": total_disk - available_disk,
         "disk_used_percent": round(100 * (total_disk - available_disk) / total_disk, 1),
         "uptime_seconds": int(float(uptime.split()[0])),
         "network_interfaces": network(dev),
+        "network_rates": network_speed(dev_before, dev, elapsed_seconds)
+        if dev_before is not None and elapsed_seconds is not None else {},
     })
     return {
         "schema": SCHEMA,
@@ -118,15 +151,20 @@ def collect(host: str, *, proc: Path = Path("/proc"), mount: Path = Path("/"),
             delay=time.sleep) -> dict:
     # No subprocess, network or model/provider invocation.
     before = (proc / "stat").read_text(encoding="ascii").splitlines()[0]
+    dev_before = (proc / "net/dev").read_text(encoding="ascii")
+    started = time.monotonic()
     delay(0.25)
     after = (proc / "stat").read_text(encoding="ascii").splitlines()[0]
+    elapsed = time.monotonic() - started
+    dev_after = (proc / "net/dev").read_text(encoding="ascii")
     return build(
         host, before=before, after=after,
         meminfo=(proc / "meminfo").read_text(encoding="ascii"),
         loadavg=(proc / "loadavg").read_text(encoding="ascii"),
         uptime=(proc / "uptime").read_text(encoding="ascii"),
         disk=os.statvfs(mount),
-        dev=(proc / "net/dev").read_text(encoding="ascii"),
+        dev=dev_after, dev_before=dev_before, elapsed_seconds=elapsed,
+        cores=os.cpu_count(),
     )
 
 
@@ -155,6 +193,10 @@ def save(snapshot: dict, directory: Path = ROOT, *, group: str | None = None) ->
         raise ValueError("invalid host snapshot")
     if directory.is_symlink():
         raise ValueError("symlink directory")
+    # Refuse malformed or future input before touching the current host snapshot.
+    checked = _validated(snapshot, host, dt.datetime.now(dt.timezone.utc))
+    if checked["status"] == "stale" and host == "yfc":
+        raise ValueError("stale remote input")
     directory.mkdir(parents=True, exist_ok=True)
     os.chmod(directory, 0o750)
     if group is not None:
@@ -162,9 +204,41 @@ def save(snapshot: dict, directory: Path = ROOT, *, group: str | None = None) ->
             raise PermissionError("system collector must be root")
         gid = grp.getgrnam(group).gr_gid
         os.chown(directory, 0, gid)
-    _write_atomic(directory / f"{host}.json", snapshot)
-    if group is not None:
-        os.chown(directory / f"{host}.json", 0, gid)
+    # A bounded lock prevents two timers from replacing an equal/newer snapshot
+    # out of order. Different hosts also share one SQLite database.
+    lock = directory / ".ingest.lock"
+    if lock.is_symlink():
+        raise ValueError("symlink ingest lock")
+    with lock.open("a+b") as guard:
+        fcntl.flock(guard.fileno(), fcntl.LOCK_EX)
+        current = directory / f"{host}.json"
+        if current.is_symlink():
+            raise ValueError("symlink host snapshot")
+        if current.exists():
+            if current.stat().st_size > 16384:
+                raise ValueError("previous snapshot oversized")
+            previous = json.loads(current.read_text(encoding="utf-8"))
+            prior_time = dt.datetime.fromisoformat(
+                str(previous["observed_at"]).replace("Z", "+00:00"))
+            next_time = dt.datetime.fromisoformat(
+                str(snapshot["observed_at"]).replace("Z", "+00:00"))
+            if next_time <= prior_time:
+                raise ValueError("out_of_order_snapshot")
+        sanitized = {
+            "schema": SCHEMA, "host": host,
+            "source": "linux_procfs_local",
+            "observed_at": checked["observed_at"],
+            "received_at": dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z"),
+            "metrics": checked["metrics"],
+        }
+        _write_atomic(current, sanitized)
+        if group is not None:
+            os.chown(current, 0, gid)
+        _insert_history(directory, host, sanitized, group=group)
+    return
+
+
+def _insert_history(directory: Path, host: str, snapshot: dict, *, group: str | None) -> None:
     db = directory / "history.sqlite3"
     if db.is_symlink():
         raise ValueError("symlink history database")
@@ -182,7 +256,7 @@ def save(snapshot: dict, directory: Path = ROOT, *, group: str | None = None) ->
         connection.execute("DELETE FROM samples WHERE observed_at < ?", (cutoff,))
     os.chmod(db, 0o640)
     if group is not None:
-        os.chown(db, 0, gid)
+        os.chown(db, 0, grp.getgrnam(group).gr_gid)
 
 
 def _validated(raw: object, host: str, now: dt.datetime) -> dict:
@@ -210,11 +284,27 @@ def _validated(raw: object, host: str, now: dt.datetime) -> dict:
         "cpu_used_percent", "ram_used_percent", "ram_total_bytes", "ram_used_bytes",
         "swap_total_bytes", "swap_used_bytes", "disk_used_percent",
         "disk_total_bytes", "disk_used_bytes", "load1", "load5", "load15",
-        "uptime_seconds")}
+        "uptime_seconds", "cpu_cores", "inode_used_percent")}
     if any(v is not None and (not isinstance(v, (int, float))
                              or isinstance(v, bool) or not 0 <= v < 10**18)
            for v in safe.values()):
         raise ValueError("invalid metric")
+    net = m.get("network_rates", {})
+    if not isinstance(net, dict) or len(net) > 24:
+        raise ValueError("invalid network rates")
+    cleaned_net = {}
+    for key, item in net.items():
+        if not isinstance(key, str) or not (1 <= len(key) <= 16) or not all(
+                ch.isascii() and (ch.isalnum() or ch in "._-") for ch in key):
+            raise ValueError("invalid interface name")
+        if not isinstance(item, dict):
+            raise ValueError("invalid network record")
+        recv, sent = item.get("rx_bytes_per_second"), item.get("tx_bytes_per_second")
+        if any(not isinstance(v, int) or isinstance(v, bool) or not 0 <= v < 10**12
+               for v in (recv, sent)):
+            raise ValueError("invalid network rate")
+        cleaned_net[key] = {"rx_bytes_per_second": recv, "tx_bytes_per_second": sent}
+    safe["network_rates"] = cleaned_net
     return {
         "host": host, "name": HOSTS[host],
         "status": "stale" if now - date > STALE_AFTER else "online",
@@ -249,11 +339,16 @@ def history(directory: Path, host: str, days: int = 1) -> dict:
     cutoff = (dt.datetime.now(dt.timezone.utc) -
               dt.timedelta(days=days)).isoformat().replace("+00:00", "Z")
     uri = "file:" + quote(str(db.resolve())) + "?mode=ro"
+    # Store minute-level details, serve bounded averages for 24h / 7d / 30d.
+    # The response is under 300 points even after months of observations.
+    window = {1: 300, 7: 3600, 30: 14400}[days]
     with sqlite3.connect(uri, uri=True, timeout=2) as connection:
         rows = connection.execute(
-            "SELECT observed_at, cpu, ram, disk FROM samples "
-            "WHERE host=? AND observed_at>=? ORDER BY observed_at ASC LIMIT 44000",
-            (host, cutoff),
+            "SELECT MAX(observed_at), AVG(cpu), AVG(ram), AVG(disk) "
+            "FROM samples WHERE host=? AND observed_at>=? "
+            "GROUP BY CAST(strftime('%s', observed_at) AS INTEGER) / ? "
+            "ORDER BY MAX(observed_at) ASC LIMIT 400",
+            (host, cutoff, window),
         ).fetchall()
     return {"schema": SCHEMA, "host": host,
             "samples": [{"observed_at": t, "cpu": c, "ram": r, "disk": d}
@@ -263,10 +358,16 @@ def history(directory: Path, host: str, days: int = 1) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", required=True, choices=tuple(HOSTS))
+    parser.add_argument("--stdout", action="store_true",
+                        help="emit a bounded fresh snapshot without modifying disk (SSH forced command)")
     args = parser.parse_args()
-    # Two deployments, one immutable collector. Transport for YFC is intentionally
-    # not inferred from the existence of a local snapshot.
-    save(collect(args.host), group="hermes-control")
+    snapshot = collect(args.host)
+    if args.stdout:
+        print(json.dumps(snapshot, ensure_ascii=False, allow_nan=False, separators=(",", ":")))
+    else:
+        if args.host != "hermes":
+            parser.error("YFC collection must be read via its scoped remote emit command")
+        save(snapshot, group="hermes-control")
 
 
 if __name__ == "__main__":
