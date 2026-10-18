@@ -45,7 +45,7 @@ class WindowsBootstrapSafetyTests(unittest.TestCase):
         self.assertIn("function Protect-PrivateState", code)
         self.assertIn("/inheritance:r | Out-Null", code)
         self.assertIn("/grant:r '*S-1-5-18:(OI)(CI)F'", code)
-        self.assertIn("'/T'", code.replace(" /T | Out-Null", " '/T'"))  # grant descendants
+        self.assertIn(" /T | Out-Null", code)  # grant descendants
         self.assertNotIn("/inheritance:r /grant:r", code)
         self.assertLess(code.index("function Protect-PrivateState"),
                         code.index("switch ($Mode)"))
