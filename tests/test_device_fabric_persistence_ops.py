@@ -136,11 +136,11 @@ class PresencePersistenceTests(unittest.TestCase):
             touch(db, "linux-vps", at=NOW - timedelta(minutes=12), connected=0)
             touch(db, "windows-pc", at=NOW - timedelta(seconds=3), connected=1)
             mock_news = snapshot({})["news"]
-            with patch("ops_watch.collector._state", return_value=True), \\
+            with patch("ops_watch.collector._state", return_value=True), \
                  patch("ops_watch.collector._agent_network_guard_status",
-                       return_value={"loaded": True, "active": True, "enabled": True}), \\
-                 patch("ops_watch.collector._read_state", return_value=mock_news), \\
-                 patch("ops_watch.collector._codex_telemetry", return_value=None), \\
+                       return_value={"loaded": True, "active": True, "enabled": True}), \
+                 patch("ops_watch.collector._read_state", return_value=mock_news), \
+                 patch("ops_watch.collector._codex_telemetry", return_value=None), \
                  patch("ops_watch.collector.observed_status", return_value=None):
                 kw = dict(device_fabric_db=db, device_fabric_opt_in=gate)
                 first = once(root / "health", target, NOW, **kw)
@@ -172,9 +172,7 @@ class PresencePersistenceTests(unittest.TestCase):
         for fragment in ("User=hermes-presence-agent", "--watch",
                          "Restart=always", "RestartSec=30s", "ProtectHome=true",
                          "NoNewPrivileges=true", "ExecStart=",
-                         "hermes-presence-tunnel", "127.0.0.1"):
-            if fragment == "127.0.0.1":
-                continue
+                         "hermes-presence-tunnel"):
             self.assertIn(fragment, unit)
         self.assertNotIn("User=root", unit)
         self.assertNotIn("0.0.0.0", unit)
