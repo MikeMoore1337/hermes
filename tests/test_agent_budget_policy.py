@@ -169,6 +169,21 @@ class BudgetGateTests(unittest.TestCase):
         with self.assertRaisesRegex(BudgetDenied, "attempts_invalid"):
             verify_metrics({**data, "attempts": 2})
 
+    def test_nonfinite_provider_cost_never_passes_metrics_validation(self):
+        baseline = {
+            "duration_seconds": 1.0, "attempts": 1,
+            "input_tokens": None, "output_tokens": None,
+            "provider_neurons": None, "provider_cost_usd": 0.0,
+            "http_status": 200,
+        }
+        for cost in (float("nan"), float("inf"), -float("inf")):
+            with self.subTest(cost=str(cost)):
+                with self.assertRaisesRegex(BudgetDenied, "cost_invalid"):
+                    verify_metrics({**baseline, "provider_cost_usd": cost})
+        self.assertEqual(
+            verify_metrics(baseline)["status"], "MEASURED_ZERO_RECORDED"
+        )
+
     def test_provider_status_requires_an_observed_request_attempt(self):
         metrics = {
             "duration_seconds": 0.0, "attempts": 0,
