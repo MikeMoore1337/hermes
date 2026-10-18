@@ -13,7 +13,8 @@ def packet(mode, *, overrides=None):
     overrides = overrides or {}
     rows = []
     for name, policy in probe.CASES.items():
-        should_effect = bool(mode == "original" or policy == "ALLOW_STUB")
+        should_effect = (probe.ORIGINAL_EFFECT_EXPECTED[name] if mode == "original"
+                         else policy == "ALLOW_STUB")
         if name in overrides:
             should_effect = overrides[name]
         rows.append({
@@ -48,7 +49,8 @@ class PhysicalCanaryTests(unittest.TestCase):
                                derivative_id="sha256:" + "b" * 64)
         self.assertEqual(result["status"], "PASS")
         self.assertEqual(result["scenario_count"], 6)
-        self.assertEqual(result["physical_effect_canary_count"], 6)
+        self.assertEqual(result["physical_effect_canary_count"], 4)
+        self.assertEqual(result["upstream_already_blocked_count"], 2)
         self.assertTrue(all(x["verification_status"] == "PASS" for x in result["checks"]))
         self.assertFalse(result["full_mcp_permission_enforcement_verified"])
         self.assertFalse(result["resident_agent_allowed"])
@@ -70,7 +72,8 @@ class PhysicalCanaryTests(unittest.TestCase):
 
     def test_original_negative_controls_must_reproduce_gap(self):
         for name in probe.CASES:
-            original = packet("original", overrides={name: False})
+            original = packet("original", overrides={
+                name: not probe.ORIGINAL_EFFECT_EXPECTED[name]})
             with self.subTest(case=name):
                 r = probe.compare(original, packet("patched"),
                                   derivative_id="sha256:" + "b" * 64)
