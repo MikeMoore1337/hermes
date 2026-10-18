@@ -529,3 +529,47 @@ Default без `--execute` — `NOT_RUN`. Машинный JSON автомати
 MCP, ключей, shell-действий агента, сети наружу и изменений VPS.
 `#33` остаётся NO-GO; для #186 нужен отдельный owner gate
 на настоящую модель, точный лимит и стоимость вызовов.
+
+
+### 18.10.2026 — реальный Streamable HTTP MCP через loopback (без egress)
+
+Дополнительно к уже проверенному настоящему stdio transport реализован
+`scripts/h19_real_http_mcp.py`. Он запускает реальный MCP 2.x
+`MCPServer.streamable_http_app()` с сервером `uvicorn`, привязанным
+**только к `127.0.0.1`** внутри отдельного Docker с
+`--network none --read-only --user 65534:65534 --cap-drop ALL`,
+без доступа к реальным MCP, секретам и VPS. Таким образом, тест
+реально проходит через HTTP-клиент и настоящий native dispatcher Hermes,
+не используя внешнюю сеть или платную LLM.
+
+В отличие от статики/логов клиента, ASGI-wrapper фиксирует только
+имя `peek` или `mark` в фактически полученных JSON-RPC
+`POST tools/call`, без аргументов, идентификаторов и содержимого
+ответов. Законный `peek` должен достичь сервера один раз; попытка
+`mark` при тестовом `deny` не должна дойти до него и не должна
+создать фиксированный marker в приватном /tmp; при исключительно
+тестовом `accept` `mark` должен дойти ровно один раз.
+После этого даже явный test-only `accept` **не должен** разрешить
+MCP-read или MCP-write при явно выключенном toolset. Сравнение
+запускается отдельно на неизменном официальном pinned upstream
+v0.22.2 и на экспериментальном bounded patched derivative.
+Существующий источник имеет известный недостаток прямой проверки
+scope; исходный вывод не выдаётся за production-security GO.
+
+Строгий receipt `h19-real-http-mcp.json` требует digest исходного
+образа, source stamp, архитектуру и ID derivative, все счётчики
+серверных HTTP-вызовов, отсутствие внешних вызовов и
+`resident_agent_allowed=false`. Неверные/лишние поля,
+несогласованные счётчики и попытки выдать NOT_RUN/FAIL за PASS
+блокируют выпуск; `--verify` повторно проверяет JSON.
+Отсутствие MCP/uvicorn SDK — **NOT_RUN**, а не PASS.
+
+    python3 -m scripts.h19_real_http_mcp --execute --out /tmp/h19-real-http-mcp.json
+    python3 -m scripts.h19_real_http_mcp --verify /tmp/h19-real-http-mcp.json
+
+Важно: loopback HTTP - это проверка настоящего HTTP MCP протокола,
+**не доказательство отказа реальному удалённому MCP-серверу**:
+не проверены DNS, TLS, прокси, реальные сторонние identity/auth,
+egress/firewall, production runtime, реальная LLM и политика всех
+tool families. Патч из тестового derivative не устанавливался в H-01.
+#186 остаётся OPEN/PARTIAL, #33 самостоятельный P0 NO-GO.
