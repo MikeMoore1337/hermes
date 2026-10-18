@@ -52,7 +52,8 @@ if importlib.util.find_spec("mcp") is None:
 
 report["sdk"] = "AVAILABLE"
 try:
-    from mcp.server.fastmcp import FastMCP
+    from mcp.server import MCPServer
+    from mcp_types import ToolAnnotations
     report["sdk_server_import"] = "PASS"
 except Exception:
     report["sdk_server_import"] = "FAILED"
@@ -63,17 +64,18 @@ except Exception:
 SERVER = '''
 import os
 from pathlib import Path
-from mcp.server.fastmcp import FastMCP
+from mcp.server import MCPServer
+from mcp_types import ToolAnnotations
 
-app = FastMCP("h19_local")
+app = MCPServer("h19_local")
 MARKER = Path(os.environ["H19_MCP_MARKER"])
 
-@app.tool(annotations={"readOnlyHint": True})
+@app.tool(annotations=ToolAnnotations(read_only_hint=True, destructive_hint=False))
 def peek() -> str:
     # Read-only synthetic ping; no writes or external IO.
     return "H19_MCP_READ_OK"
 
-@app.tool(annotations={"readOnlyHint": False})
+@app.tool(annotations=ToolAnnotations(read_only_hint=False, destructive_hint=True))
 def mark() -> str:
     # Write only a harmless constant marker inside /tmp.
     MARKER.write_text("H19_MCP_WRITE_OK", encoding="ascii")
