@@ -5,6 +5,7 @@ import datetime as dt
 from http.server import ThreadingHTTPServer
 import json
 from pathlib import Path
+import sys
 from types import SimpleNamespace
 import tempfile
 from threading import Thread
@@ -14,7 +15,7 @@ from urllib.request import Request, urlopen
 
 from control_center.auth import AuthConfig, OAuthService, ORIGIN
 from control_center.infrastructure import (
-    build, cpu_percent, cpu_counters, hosts, history, memory, network,
+    build, collect, cpu_percent, cpu_counters, hosts, history, memory, network,
     network_speed, save,
 )
 from control_center.server import make_handler
@@ -38,6 +39,18 @@ def fixture(host="hermes", now=None):
 
 
 class CollectorTests(unittest.TestCase):
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Linux procfs only")
+    def test_real_linux_procfs_parser_smoke(self):
+        # CI Linux runner != Hermes or YFC VPS. No agent, network or external provider.
+        result = collect("hermes")
+        metrics = result["metrics"]
+        self.assertTrue(0 <= metrics["ram_used_percent"] <= 100)
+        self.assertTrue(0 <= metrics["disk_used_percent"] <= 100)
+        self.assertTrue(metrics["cpu_used_percent"] is None or
+                        0 <= metrics["cpu_used_percent"] <= 100)
+        self.assertGreater(metrics["cpu_cores"], 0)
+        self.assertIsInstance(metrics["network_rates"], dict)
+
     def test_cpu_deltas_and_regression(self):
         self.assertEqual(cpu_percent(
             "cpu 100 0 0 100 0", "cpu 125 0 0 125 0"), 50)
