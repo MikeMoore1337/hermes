@@ -8,12 +8,13 @@ independent scientific review. Never upgrades a bibliographic candidate.
 from __future__ import annotations
 
 import argparse
-from datetime import UTC, datetime
+from datetime import UTC, datetime, date
 import json
+import re
 from collections.abc import Callable
 from typing import Any
 
-from .crossref_updates import UpdateLookupError, inspect
+from .crossref_updates import UpdateLookupError, checked_doi, inspect
 from .report_view import curated_reports
 
 SCHEMA = "hermes-research-four-paper-integrity-v1"
@@ -128,12 +129,19 @@ def _check(result: object, doi: str) -> None:
                     "EXPRESSION_OF_CONCERN", "OTHER_OR_UNKNOWN_NOTICE"
                 }):
             raise ValueError("audit_untrusted_notice")
-        # The original parser returns validated DOI strings and precise dates.
-        from .crossref_updates import checked_doi
+        # Revalidate even injected/in-memory inspector responses, not just
+        # live Crossref JSON parsed by the lower-level component.
         checked_doi(notice["doi"])
-        if (type(notice["published"]) is not str
-                or not 4 <= len(notice["published"]) <= 10):
+        published = notice["published"]
+        if (type(published) is not str
+                or re.fullmatch(r"[0-9]{4}(?:-[0-9]{2}){0,2}", published) is None):
             raise ValueError("audit_untrusted_date")
+        parts = [int(part) for part in published.split("-")]
+        try:
+            date(parts[0], parts[1] if len(parts) > 1 else 1,
+                 parts[2] if len(parts) > 2 else 1)
+        except ValueError:
+            raise ValueError("audit_untrusted_date") from None
         valid_notices.append(notice["doi"].casefold())
         derived_codes.add(notice["notice_type"])
     if len(valid_notices) != len(set(valid_notices)) or set(codes) != derived_codes:
