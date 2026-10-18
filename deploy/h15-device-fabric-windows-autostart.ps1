@@ -37,13 +37,13 @@ function Protect-PrivateState([string] $directory) {
     # Grant each EXISTING object individually first, including children with
     # inheritance already disabled by the original broken installer. Doing
     # recursive /inheritance:r before grants can lock out traversal.
-    & icacls.exe $directory /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-19:(OI)(CI)RX' /T | Out-Null
+    & icacls.exe $directory /grant:r '*S-1-5-18:F' '*S-1-5-32-544:F' '*S-1-5-19:RX' /T | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'PRIVATE_ACL_GRANT_FAILED' }
     # Block broad inheritance on the ROOT only; do not strip individual
     # descendant ACLs after we have intentionally granted them.
     & icacls.exe $directory /inheritance:r | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'PRIVATE_ACL_INHERITANCE_FAILED' }
-    & icacls.exe $directory /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-19:(OI)(CI)RX' /T | Out-Null
+    & icacls.exe $directory /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-19:(OI)(CI)RX' | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'PRIVATE_ACL_GRANT_FAILED' }
 }
 
