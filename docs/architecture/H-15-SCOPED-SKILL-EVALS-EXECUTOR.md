@@ -40,12 +40,27 @@ or remote shell. Instead the local `eval_lane` package implements:
    trusted local config and evidence goes to a pre-existing private directory.
    Aggregate proposed per-attempt runtime is bounded.
 
-Only the library contract and **mocked callback** are implemented. There is
-**no production executor binding, transport, service unit or default-enabled
-configuration**. `OneShotLedger(enabled=False)` always denies execution.
-There is no CLI that promotes an untrusted JSON job to operating-system
-execution. The fixed plan merely describes what a separately reviewed worker
-could invoke; it does not launch it.
+An additional `local_executor.py` now implements an **inert-by-default**
+Linux/POSIX subprocess adapter for the fixed ADT plan. It is deliberately NOT
+wired to any Hermes consumer or service. Its `enabled=False` default blocks
+all processes; a trusted caller must additionally verify a dedicated non-root
+private home, explicit external isolation probe and exact approved plan.
+It passes a deliberately minimal environment, limits per-process CPU, virtual
+memory, file size and core dumps, gives the child its own process group, applies
+an overall wall clock bound, and kills the group on operator cancellation.
+Top-level stdout/stderr are discarded. The only success receipt is the
+SHA256 of a bounded private `observations.json` file. Per-attempt evidence
+remains local for manual sanitation.
+
+**Limits of this implementation:** per-process `rlimit` is not a cgroup,
+network egress filter, OS sandbox, or provider hard-spend control. A local
+`isolation_probe` callback is a trusted operator handoff, not proof on its
+own. This module has **no production executor binding, transport, service
+unit, credentials or default-enabled configuration**. No CLI promotes an
+untrusted JSON job to command execution. Before activation, a separate
+operator-owned launcher must verify the actual isolated environment,
+cost hard stop and cancellation/rollback evidence, and integrate approval
+verification and one-shot fencing rather than calling the adapter directly.
 
 ## Important boundaries, not yet established
 
@@ -92,7 +107,8 @@ and monkeypatches the source pin for fixed argv inspection.
   enforcement, with separate deployment/rollback plan.
 - [ ] Trusted owner provision of signing key and file ACL, revocation store,
   provider quota hard stop with actual verified cap and cancellation.
-- [ ] Implement narrowly reviewed OS executor callback, no WSS command frames.
+- [x] Implement dormant bounded OS adapter with synthetic cancellation/denial tests, no WSS command frames.
+- [ ] Bind executor exclusively to verified owner grants, isolated operator gate and service-level cgroup/egress enforcement after GO.
 - [ ] Run an owner-authorized single bounded canary and independently inspect
   receipts, logs, costs, denied egress and unchanged #33 operation.
 - [ ] Run 2+ paired baseline/candidate attempts per case/provider and have an
