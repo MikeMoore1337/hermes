@@ -614,6 +614,15 @@ Read or Free-runtime inference. The exact current Free usage and remaining
 still stay UNKNOWN, and no adaptive estimate authorizes model execution.
 This stage supersedes the earlier *not authorized* recurring language above.
 
+The daily service runs via `control_center.cloudflare_analytics_runner`,
+which is installed in the immutable **Control Center** release. The runner
+pins the active Control Center release SHA to the matching **owner**
+release (where `scripts/` lives), rejects symlinks/untrusted file ownership
+and permissions, and appends that exact immutable owner source to Python's
+module lookup. A regular monorepo CI checkout alone cannot prove this
+production split-root import layout, so dedicated offline negative tests
+cover it. No service source is overwritten inside immutable releases.
+
 The new independent `hermes-cloudflare-analytics-advisory.service` uses
 a capless one-shot root / `hermes-control` group with
 `ProtectSystem=strict`, root-only Analytics Read files and atomic sanitized
