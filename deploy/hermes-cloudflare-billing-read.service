@@ -7,7 +7,7 @@ After=network-online.target
 [Service]
 Type=oneshot
 User=root
-Group=root
+Group=hermes-control
 WorkingDirectory=/opt/hermes-control-center/current
 EnvironmentFile=/etc/hermes/cloudflare-billing-read.env
 ExecStart=/usr/bin/python3 -m control_center.cloudflare_billing
