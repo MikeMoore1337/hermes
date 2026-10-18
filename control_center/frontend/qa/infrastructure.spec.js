@@ -47,8 +47,14 @@ for(const width of [320,393,1440]){
   await expect(hermes.locator(".infra294-chart polyline")).toHaveAttribute("points",/\d/);
   await yfc.locator("summary").click();
   await expect(yfc.locator(".infra294-chart polyline")).toHaveAttribute("points",/\d/);
-  expect(await hermes.locator(".infra294-chart polyline").getAttribute("points"))
-   .not.toBe(await yfc.locator(".infra294-chart polyline").getAttribute("points"));
+  const hermesPoints=await hermes.locator(".infra294-chart polyline").getAttribute("points");
+  const yfcPoints=await yfc.locator(".infra294-chart polyline").getAttribute("points");
+  expect(hermesPoints).not.toBe(yfcPoints);
+  for(const points of [hermesPoints,yfcPoints]){
+   const xs=points.trim().split(/\\s+/).map(coord=>Number(coord.split(",")[0]));
+   expect(xs.length).toBeGreaterThanOrEqual(2);
+   expect(xs[0],"Chart must not collapse when data is reversed").toBeLessThan(xs[xs.length-1]);
+  }
   const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1);
   expect(overflow).toBe(false);
   mkdirSync(evidence,{recursive:true});
