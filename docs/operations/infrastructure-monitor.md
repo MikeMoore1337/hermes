@@ -20,7 +20,9 @@ No resident AI agent, new provider inference, Docker socket or public write endp
   (host and days in 1/7/30 are strictly allowlisted).
 - Existing GitHub owner-only OAuth protects both endpoints.
 - Data older than 3 minutes is stale; timestamp more than 30 seconds ahead is rejected.
-- Invalid, spoofed and oversize snapshots are unknown; missing snapshots not_connected.
+- Older-than-3-minute samples are stale, older-than-15-minute samples are
+  offline; invalid, spoofed and oversized snapshots are unknown; never-seen
+  snapshots are not_connected. Old numeric values remain labelled historical.
 - Standalone infrastructure.js and infrastructure.css assets are mirrored from
   control_center/frontend/public to control_center/web for reproducible Vite builds.
 
