@@ -1,7 +1,7 @@
 /* #294: separate per-host Atlas cards, read-only and no inferred measurements. */
 (() => {
   "use strict";
-  let button, panel, grid, active = false, pending = false, latest = null;
+  let button, panel, grid, announcement, lastAnnouncement = "", active = false, pending = false, latest = null;
   const names = {hermes: "VPS Hermes", yfc: "VPS YFC"};
   const states = {online: "Данные актуальны", stale: "Данные устарели",
     unknown: "Ошибка снимка", offline: "Нет связи", not_connected: "Не подключён"};
@@ -35,6 +35,7 @@
     track.setAttribute("aria-label", name);
     track.setAttribute("aria-valuemin", "0");
     track.setAttribute("aria-valuemax", "100");
+    if (percent(value) === null) track.setAttribute("aria-valuetext", "Нет данных");
     if (percent(value) !== null) {
       track.setAttribute("aria-valuenow", String(value));
       const fill = el("div", "infra294-fill", track);
@@ -192,7 +193,20 @@
       if (d.schema !== 1 || d.mode !== "read_only") throw Error("schema");
       latest = d;
     } catch (_) { latest = null; }
-    finally {pending = false; render(latest);}
+    finally {
+      pending = false;
+      render(latest);
+      const message = latest && Array.isArray(latest.hosts)
+        ? ["hermes", "yfc"].map(host => {
+          const item = latest.hosts.find(row => row.host === host);
+          return names[host] + ": " + (states[item?.status] || "Не подключён");
+        }).join(". ")
+        : "Сведения об инфраструктуре недоступны.";
+      if (active && announcement && message !== lastAnnouncement) {
+        announcement.textContent = message;
+        lastAnnouncement = message;
+      }
+    }
   }
   function hide() {
     active = false;
@@ -234,6 +248,10 @@
       const reload = el("button", "infra294-refresh", head, "Обновить");
       reload.type = "button"; reload.onclick = refresh;
       grid = el("div", "infra294-grid", panel);
+      announcement = el("p", "sr-only", panel);
+      announcement.setAttribute("role", "status");
+      announcement.setAttribute("aria-atomic", "true");
+      lastAnnouncement = "";
       render(latest);
     }
   }

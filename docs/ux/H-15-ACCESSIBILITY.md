@@ -62,3 +62,16 @@ npm run test:e2e -- --grep 'public GitHub login|operator landmarks|stale snapsho
 ## Manual acceptance (нельзя ставить PASS автоматически)
 
 На локальном или авторизованном стенде: проверить NVDA + Chromium или Firefox, при возможности VoiceOver/Safari, весь обход Tab и Shift+Tab, Space/Enter/Escape, порядок заголовков, озвучивание статусов и ошибок, skip navigation, доступность таблиц и графиков, OAuth login/logout/session expiration, 320/360/393/430/768/1440/1920 px, 200–400% zoom, target sizes, контраст поверхностей, prefers-reduced-motion. Для каждого сценария записать конкретное окружение, PASS/FAIL, снимок или лог, а также origin (fixture/staging/production). Пока нет этого протокола, финальный статус #179: **PARTIAL**, не WCAG-certified.
+
+
+## Этап 2: точечные screen-reader исправления операторских виджетов
+
+В ветке `fix/h15-179-widget-screenreader-20261019` изменены только автономные публичные JavaScript-виджеты и их копии в `control_center/web` (а не React layout, CSS, OAuth, CSP или runtime).
+
+- **Desktop Commander:** вместо `aria-live` на всём списке устройств и истории графика используется один невидимый `role="status"`, сообщающий только о смене состояния или о недоступности API. Кнопка открытия по-прежнему передаёт фокус на «Закрыть», Escape возвращает фокус на «Устройства».
+- **VPS infrastructure:** неизвестная нагрузка для `progressbar` явно имеет `aria-valuetext="Нет данных"` без поддельного `aria-valuenow=0`. При изменении доступности Hermes/YFC VPS озвучивается краткое текстовое резюме, одинаковый статус при опросах раз в минуту повторно не объявляется.
+- **Provider quota:** отдельный невидимый `role="status"` объявляет фактические состояния четырёх источников; неизвестные и неподключённые квоты не называются доступными.
+- **AI Usage Analytics:** статус частичной/неизвестной телеметрии получил `role="status"`, а на время обновления отмечается `aria-busy="true"`.
+- **Регрессии:** `qa/widget-accessibility.spec.js` использует только синтетические данные, проверяет клавиатуру/Escape/focus restore, именованные live statuses, отсутствующие значения CPU без подстановки нуля и снятие `aria-busy`. Снимки production не нужны: расположение, тексты и CSS не менялись.
+
+Проверенные этим этапом пункты не означают полной приёмки WCAG 2.2 AA. Реальный NVDA/VoiceOver, контраст, zoom/reflow, skip-navigation и семантика базового React Registry остаются отдельными условиями. Отметки PASS для точного HEAD/CI/production добавляются в Issue только после фактических результатов.

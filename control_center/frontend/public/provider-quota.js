@@ -25,7 +25,7 @@
     usage_not_exposed: "Поставщик не предоставляет проверенную квоту этому источнику.",
     usage_unavailable: "Невозможно подтвердить текущую квоту.",
     not_configured: "Источник квот ещё не настроен."};
-  let tab, section, grid, active = false, busy = false, data = null;
+  let tab, section, grid, announcement, lastAnnouncement = "", active = false, busy = false, data = null;
   function add(tag, cls, parent, value) {
     const e = document.createElement(tag);
     if (cls) e.className = cls;
@@ -244,7 +244,20 @@
       if(payload.schema!==1||payload.read_only!==true)throw Error("contract");
       data=payload;
     }catch(_){data=null;}
-    finally{busy=false;render();}
+    finally {
+      busy = false;
+      render();
+      const message = data && Array.isArray(data.providers)
+        ? ids.map(id => {
+          const item = data.providers.find(provider => provider.id === id);
+          return labels[id] + ": " + (stateText[item?.status] || "Не подключено");
+        }).join(". ")
+        : "Сведения о квотах недоступны.";
+      if (active && announcement && message !== lastAnnouncement) {
+        announcement.textContent = message;
+        lastAnnouncement = message;
+      }
+    }
   }
   function hide(){
     active=false;document.documentElement.classList.remove("quota295-active");
@@ -276,6 +289,10 @@
         "Каждому сервису - отдельная карточка. Неизвестное потребление не равно нулю.");
       const button=add("button","quota295-reload",head,"Обновить");button.type="button";button.onclick=refresh;
       grid=add("div","quota295-grid",section);
+      announcement=add("p","sr-only",section);
+      announcement.setAttribute("role","status");
+      announcement.setAttribute("aria-atomic","true");
+      lastAnnouncement="";
       render();
     }
   }
