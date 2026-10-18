@@ -85,7 +85,7 @@ class DailyIntegrityGateTests(unittest.TestCase):
         self.assertEqual(outcome["errors"],
                          [{"topic":"article-integrity","reason":"integrity_unavailable"}])
 
-    def test_no_doi_means_zero_integrity_and_crossref_requests(self):
+    def test_no_doi_uses_single_core_slot_but_never_skips_to_crossref(self):
         def no_doi(topic,*,now):
             r=finder(topic,now=now)
             if r["candidates"]:
@@ -94,9 +94,10 @@ class DailyIntegrityGateTests(unittest.TestCase):
         one,two=Mock(),Mock()
         report=prepare(now=NOW,searcher=no_doi,doi_verifier=one,integrity_verifier=two)
         one.assert_not_called()
-        two.assert_not_called()
-        self.assertEqual(report["requests_attempted"],3)
-        self.assertEqual(report["items"][0]["article_notice_state"],"NOT_CHECKED")
+        two.assert_called_once_with("MED", PMID)
+        self.assertEqual(report["requests_attempted"],4)
+        self.assertEqual(report["items"][0]["article_notice_state"],"UNAVAILABLE")
+        self.assertEqual(report["items"][0]["status"],"HOLD")
 
     def test_metadata_without_notice_is_not_verified_clearance(self):
         def verifier(source,identifier):
@@ -183,10 +184,13 @@ class DailyIntegrityGateTests(unittest.TestCase):
         r=prepare(now=NOW,searcher=pmc,doi_verifier=lookup,
                   integrity_verifier=integrity)
         self.assertEqual(r["status"],"HOLD")
-        self.assertEqual(r["items"][0]["reason"],"doi_missing")
-        self.assertEqual(r["items"][0]["article_notice_state"],"NOT_CHECKED")
+        self.assertEqual(r["items"][0]["reason"],"integrity_unknown")
+        self.assertEqual(r["items"][0]["article_notice_state"],"UNAVAILABLE")
         lookup.assert_not_called()
-        integrity.assert_not_called()
+        integrity.assert_called_once_with("PMC", "PMC13639859")
+        self.assertEqual(r["requests_attempted"], 4)
+        self.assertEqual(r["items"][0]["article_notice_state"],"UNAVAILABLE")
+        self.assertEqual(r["items"][0]["reason"],"integrity_unknown")
         with tempfile.TemporaryDirectory() as directory:
             path=Path(directory);path.chmod(0o700)
             save(r,path)

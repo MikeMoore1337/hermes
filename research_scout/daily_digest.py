@@ -106,6 +106,7 @@ def prepare(
     errors: list[dict[str, str]] = []
     calls = 0
     selected_crossref: dict[str, object] | None = None
+    enriched_integrity_checked = False
     for topic in TOPIC_IDS:
         calls += 1
         try:
@@ -125,6 +126,72 @@ def prepare(
                     selected_crossref = candidate
         except (EuropePMCError, DigestError):
             errors.append({"topic": topic, "reason": "source_unknown"})
+    # Use the existing single integrity-GET slot when lite searches have no
+    # DOI-bearing candidate. The official *same identifier* core response may
+    # recover a DOI. No third-party mapping or inferred PMCID -> PMID links.
+    # The recovered DOI is ALWAYS HOLD until a separate human review.
+    if selected_crossref is None and integrity_verifier is not None:
+        missing = next(
+            (i for i in items if i["doi"] is None and i["reason"] == "doi_missing"),
+            None,
+        )
+        if missing is not None:
+            calls += 1
+            enriched_integrity_checked = True
+            identifier = missing["identifier"]
+            source = "PMC" if identifier.startswith("PMC") else "MED"
+            try:
+                core = integrity_verifier(source, identifier)
+                if (type(core) is not dict
+                        or core.get("article_source") != source
+                        or core.get("article_identifier") != identifier
+                        or (source == "MED" and core.get("pmid") != identifier)
+                        or (source == "PMC" and core.get("pmcid") != identifier)
+                        or core.get("status") not in ("HOLD", "MANUAL_REVIEW")
+                        or core.get("notice_state") not in (
+                            "REVIEW_REQUIRED", "NOT_REPORTED_IN_THIS_METADATA")
+                        or core.get("scientific_claims_verified") is not False
+                        or core.get("automatic_publication") is not False
+                        or core.get("authoritative_notice_clearance") is not False):
+                    raise DigestError("enrichment_core_invalid")
+                codes = core.get("notice_codes")
+                if (type(codes) is not list or len(codes) > 4
+                        or any(type(code) is not str or code not in (
+                            "CORRECTION_NOTICE", "RETRACTION_OR_WITHDRAWAL_NOTICE",
+                            "EXPRESSION_OF_CONCERN", "OTHER_OR_UNKNOWN_NOTICE",
+                        ) for code in codes)
+                        or len(set(codes)) != len(codes)
+                        or (core["notice_state"] == "REVIEW_REQUIRED") != bool(codes)):
+                    raise DigestError("enrichment_notices_invalid")
+                known = core.get("doi")
+                if known is not None and (
+                        type(known) is not str or len(known) > 256
+                        or DOI.fullmatch(known) is None
+                        or core["status"] != ("HOLD" if codes else "MANUAL_REVIEW")):
+                    raise DigestError("enrichment_doi_invalid")
+                if known is None and core["status"] != "HOLD":
+                    raise DigestError("enrichment_missing_doi_promoted")
+                missing["article_notice_state"] = core["notice_state"]
+                missing["article_notice_codes"] = codes
+                if known is not None:
+                    missing["doi"] = known
+                    missing["status"] = "HOLD"
+                    missing["reason"] = (
+                        "integrity_hold" if codes else "doi_enriched_review_required")
+                    # An already-reported correction/retraction is HOLD:
+                    # no need to spend the remaining Crossref DOI lookup.
+                    if not codes:
+                        selected_crossref = {
+                            "source": "EUROPE_PMC", "status": "MANUAL_REVIEW",
+                            "id": identifier, "doi": known,
+                        }
+                elif codes:
+                    missing["reason"] = "integrity_hold"
+            except (ArticleIntegrityError, DigestError):
+                missing["status"], missing["reason"] = "HOLD", "integrity_unknown"
+                missing["article_notice_state"] = "UNAVAILABLE"
+                errors.append({"topic": "article-integrity",
+                               "reason": "integrity_unavailable"})
     if selected_crossref is not None:
         calls += 1
         try:
@@ -143,7 +210,8 @@ def prepare(
     # Optional single official Europe PMC integrity check for the SAME item
     # selected for DOI verification. No extra requests for the other items.
     # The production entrypoint opts in; older pure offline callers stay offline.
-    if selected_crossref is not None and integrity_verifier is not None:
+    if (selected_crossref is not None and integrity_verifier is not None
+            and not enriched_integrity_checked):
         calls += 1
         identifier = selected_crossref["id"]
         source = "PMC" if identifier.startswith("PMC") else "MED"
@@ -261,7 +329,9 @@ def save(record: dict[str, object], directory: Path = DIRECTORY) -> None:
         }
         if item["reason"] == "duplicate_across_topics":
             original["reason"] = "duplicate_doi"
-        if item["reason"] in ("integrity_hold", "integrity_unknown"):
+        if item["reason"] in (
+            "integrity_hold", "integrity_unknown", "doi_enriched_review_required"
+        ):
             original["reason"] = "metadata_only"
         _review_item(original, item["topic"])
         if item["crossref_doi_status"] not in ("NOT_CHECKED", "MATCHED_METADATA_ONLY"):
@@ -286,7 +356,8 @@ def save(record: dict[str, object], directory: Path = DIRECTORY) -> None:
         # the original Europe PMC check; these are the only special cases.
         derived_reason = item["reason"]
         if derived_reason in (
-            "duplicate_across_topics", "integrity_hold", "integrity_unknown",
+            "duplicate_across_topics", "integrity_hold",
+            "integrity_unknown", "doi_enriched_review_required",
         ):
             if item["status"] != "HOLD":
                 raise DigestError("report_item_status_reason_conflict")
@@ -295,6 +366,10 @@ def save(record: dict[str, object], directory: Path = DIRECTORY) -> None:
             raise DigestError("report_item_status_reason_conflict")
         if item["status"] not in ("HOLD", "MANUAL_REVIEW"):
             raise DigestError("report_item_status_reason_conflict")
+        if item["reason"] == "doi_enriched_review_required" and (
+                item["doi"] is None or item["article_notice_state"] !=
+                "NOT_REPORTED_IN_THIS_METADATA" or item["article_notice_codes"]):
+            raise DigestError("report_enrichment_provenance_invalid")
         if item["reason"] == "duplicate_across_topics" and item["doi"] is None:
             raise DigestError("report_item_status_reason_conflict")
         if item["status"] == "MANUAL_REVIEW" and (

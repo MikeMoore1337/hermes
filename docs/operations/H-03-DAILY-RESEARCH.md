@@ -84,3 +84,12 @@ sudo systemctl disable --now hermes-research-scout.timer
 - `research_scout.doi_enrichment` остаётся отдельным ограниченным действием: автоматическая активация обогащения увеличила бы количество GET и нагрузку; отсутствие DOI **в данном пакете** не означает отсутствие DOI у статьи. OpenAlex используется только офлайн (Issue #190 / PR #197).
 - Нет Telegram-рассылок, автопубликаций, записи в YFC / Second Brain и расширения тем сбора. Не расширять научное чтение в обход согласованных разрешений.
 - Для технической проверки: `python -m unittest tests.test_research_report_view`, `python -m unittest discover -s tests`, `npm test` и `npm run build` в `control_center/frontend`, exact-SHA GitHub CI, затем existing CD. Реальное качество медицинских выводов и полнотекстовая рецензия остаются отдельным критерием Issue #4.
+
+
+## 18.10.2026 — восстановление пропущенного DOI внутри старого лимита 5 GET
+
+Ранее при отсутствии DOI в `Europe PMC lite` для всех новых кандидатов дополнительные проверки **не вызывались**; запись оставалась `HOLD/doi_missing`. Теперь production `daily_digest` при таком сценарии расходует существующий дополнительный Europe PMC Core GET (четвёртый запрос после трёх тем) для **того же** PMCID/PMID. Если в официальном Core обнаружен корректный DOI, пятым GET выполняется обычный Crossref DOI-verification. Никаких расширений разрешённого дневного бюджета, новых providers, retries, таймеров или внешних публикаций нет.
+
+Кандидат после обогащения **всегда `HOLD`** с явной причиной `doi_enriched_review_required` даже при Crossref match. Если в Core DOI нет, остаётся `doi_missing`; при correction/retrection — `integrity_hold`, при неверной identity/schema/сбое — `integrity_unknown`. Нельзя считать наличие DOI подтверждением научных выводов или применять восстановленный DOI к иным PMID/PMCID. Если уже был обычный DOI-кандидат для Crossref, старый сценарий 3+1+1 GET остаётся неизменным.
+
+[Реализация, пределы и regression test](../../research_scout/DOI_ENRICHMENT.md). Режим был проверен искусственными офлайн-ответами и CI; отсутствие наблюдённого реального DOI-less тикa не заменяет доказательство реального восстановления конкретной статьи.
