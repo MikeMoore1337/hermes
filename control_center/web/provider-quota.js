@@ -18,6 +18,8 @@
     remote_calls_blocked: "Облачные удалённые команды заблокированы даже при подключённых устройствах.",
     device_presence_not_execution_permission: "Подключение устройств не подтверждает право на удалённые команды.",
     per_token_rate_limit_not_collected: "GitHub имеет отдельные лимиты для каждого токена и типа API. Общий остаток не измерен.",
+    per_token_rate_limit_collected: "Показаны только лимиты отдельного настроенного токена GitHub. Это не общий лимит аккаунта и не квота CI.",
+    provider_throttled: "Поставщик ограничил запросы. Не считать эту ошибку исчерпанием всех лимитов.",
     usage_not_exposed: "Поставщик не предоставляет проверенную квоту этому источнику.",
     usage_unavailable: "Невозможно подтвердить текущую квоту.",
     not_configured: "Источник квот ещё не настроен."};
@@ -39,6 +41,10 @@
     add("strong", "", box, w.label || w.metric || "Окно квоты");
     if (w.quota_limit !== null && w.quota_limit !== undefined)
       add("p", "", box, "Лимит: " + readable(w.quota_limit) + " " + w.unit);
+    if (w.used !== null && w.used !== undefined && w.remaining !== null && w.remaining !== undefined)
+      add("p","quota295-note",box,
+        "Фактически использовано: " + readable(w.used) + " · Осталось: " +
+        readable(w.remaining) + " " + w.unit);
     const remainder = w.remaining_percent;
     const used = w.used_percent;
     if (percent(remainder) !== null && percent(used) !== null) {
