@@ -118,3 +118,15 @@ and monkeypatches the source pin for fixed argv inspection.
 **Production proof:** source-only merge is not an active eval worker.
 `DeviceRegistry.list_devices` must continue to advertise
 `execution='disabled'` for every device.
+
+## Offline kernel evidence preparation (#349)
+
+A read-only `eval_lane/isolation_probe.py` and a non-installed,
+network-denied `deploy/hermes-skill-evals-offline.service.example` now
+provide a falsifiable **offline-only** kernel/cgroup prerequisite check.
+See [H-15 Skill Evals offline isolation](../operations/H-15-SKILL-EVALS-OFFLINE-ISOLATION.md).
+No provider call, WSS command, service installation or real protected VM
+smoke occurred. A static template and mocked kernel fixtures do **not**
+prove host isolation, negative network egress or a provider hard cap.
+The existing `LocalBoundedExecutor` remains disabled and is **not** wired
+to the probe or the example service.
