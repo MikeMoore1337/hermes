@@ -55,7 +55,7 @@ def _require(condition: bool, reason: str) -> None:
         raise InvalidReceipt(reason)
 
 
-def _details(row: Any, name: str) -> dict[str, bool]:
+def _details(row: Any, name: str, *, original: bool = False) -> dict[str, bool]:
     _require(type(row) is dict and set(row) <= DETAILS, "CASE_DETAIL_INVALID")
     _require(all(type(value) is bool for value in row.values()), "CASE_DETAIL_INVALID")
     required = {
@@ -64,6 +64,9 @@ def _details(row: Any, name: str) -> dict[str, bool]:
         "parallel_policy": {"restricted_executor_reached", "allowed_executor_reached"},
         "subagent_scope": {"terminal_in_child", "terminal_in_disabled"},
     }.get(name, set())
+    if original:
+        required = ({"nested_terminal_allowed"} if name == "execute_code_nested_scope" else
+                    {"restricted_executor_reached"} if name == "parallel_policy" else set())
     _require(required <= set(row), "CASE_DETAIL_MISSING")
     return row
 
@@ -106,7 +109,7 @@ def validate(report: Any) -> dict[str, Any]:
         _require(type(row["original_stub_executor_reached"]) is bool
                  and type(row["patched_stub_executor_reached"]) is bool,
                  "NATIVE_EXECUTION_TYPE_INVALID")
-        original = _details(row["original_details"], name)
+        original = _details(row["original_details"], name, original=True)
         patched = _details(row["patched_details"], name)
         if name in DENIED:
             allowed = row["patched_stub_executor_reached"] is False
