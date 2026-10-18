@@ -10,6 +10,7 @@
     unknown: "Нет подтверждённых данных", not_connected: "Не подключено"};
   const noteText = {account_usage_unavailable: "10 000 Neurons в сутки - документированный предел Free. Фактическое потребление аккаунта неизвестно.",
     official_account_snapshot: "Показатели из официального локального снимка Codex. Запросы моделей не выполняются.",
+    official_delayed_historical_usage: "Cloudflare публикует исторические Neurons с задержкой. Текущие использовано/остаток всё ещё неизвестны.",
     provider_limit_exhausted: "Поставщик сообщил об исчерпании лимита.",
     some_windows_exhausted: "Часть независимых окон квоты недоступна.",
     reauthorization_required: "Требуется повторная авторизация аккаунта.",
@@ -136,6 +137,23 @@
       link.href="https://developers.cloudflare.com/workers-ai/platform/pricing/";
       link.target="_blank";link.rel="noopener noreferrer";
     }
+    if(service.id==="cloudflare_workers_ai"){
+      const billing = Array.isArray(service.billing_history) ? service.billing_history : [];
+      if(billing.length){
+        const previous = billing[billing.length - 1];
+        add("p","quota295-note",article,
+          "Официальный учёт за завершённые сутки " + previous.day + ": " +
+          readable(previous.neurons) + " Neurons. Данные обновляются с задержкой; это НЕ сегодняшнее потребление.");
+        const detail=add("details","quota295-history",article);
+        add("summary","",detail,"История официального учёта (с задержкой)");
+        const chart=add("div","quota295-chart",detail);
+        add("p","quota295-note",chart,"Опубликованные данные по завершённым UTC-суткам. Никаких прогнозов остатка.");
+        for(const point of billing.slice(-30)){
+          add("p","quota295-note",chart,point.day + ": " + readable(point.neurons) + " Neurons");
+        }
+      }else add("p","quota295-note",article,
+          "Официальный исторический учёт пока недоступен (требуется отдельный доступ Billing Read).");
+    }
     if(service.id==="codex"||service.id==="desktop_commander"){
       const details=add("details","quota295-history",article);
       add("summary","",details,"История собственной квоты");
@@ -148,7 +166,7 @@
       const refresh=()=>history(service.id,period.value,chart);
       details.addEventListener("toggle",()=>{if(details.open)refresh();});
       period.addEventListener("change",()=>{if(details.open)refresh();});
-    }else{
+    }else if(service.id!=="cloudflare_workers_ai"){
       add("p","quota295-note",article,"История расхода ещё не подключена. Никаких расчётных точек.");
     }
   }
