@@ -69,8 +69,10 @@ to disallowed paths; a denylist of command words is NOT sufficient.
 ## Hermes source-only hardening applied to the pinned candidate
 
 `scripts/h15_brc_apply_policy_patch.py` is a fail-closed, exact-signature
-patcher. It removes the `set_config_value` handler (to prevent remotely
-editing agent policy) and temporarily hides external
+patcher. It removes `get_config`, `get_recent_tool_calls` (to avoid
+exposing security policy internals and potentially sensitive historical tool
+arguments), and `set_config_value` (to prevent remotely editing agent policy).
+It also temporarily hides external
 `prepare_file_transfer` / `send_file_transfer` /
 `receive_file_transfer` calls until a self-hosted transport exists.
 It refuses the `read_file(isUrl=true)` route to prevent direct URL/SSRF

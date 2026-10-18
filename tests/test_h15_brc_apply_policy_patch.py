@@ -12,7 +12,9 @@ from scripts.h15_remote_commander_candidate_audit import AuditError
 
 ORIGINAL = """import { getConfig, setConfigValue } from './core/tools/config.js';
 const TOOL_HANDLERS = {
+  get_config: () => getConfig(),
   set_config_value: (a) => setConfigValue(a),
+  get_recent_tool_calls: (a) => handlers.handleGetRecentToolCalls(a),
   start_process: (a) => handlers.handleStartProcess(a),
   read_file: (a) => handlers.handleReadFile(a),
   write_file: (a) => handlers.handleWriteFile(a),
@@ -50,6 +52,27 @@ class BrcHardeningTests(unittest.TestCase):
         self.assertIn(REMOTE_URL_DENIED, new)
         self.assertFalse(result["production_ready"])
         self.assertEqual(result["live_execution"], "DENIED")
+
+    def test_sensitive_config_reads_removed_but_real_file_and_shell_remain(self):
+        result = apply(self.root)
+        patched = self.dispatcher.read_text(encoding="utf-8")
+        self.assertIn("get_config", result["blocked_tools"])
+        self.assertIn("get_recent_tool_calls", result["blocked_tools"])
+        self.assertNotIn("import { getConfig", patched)
+        self.assertNotIn("  get_config:", patched)
+        self.assertNotIn("  get_recent_tool_calls:", patched)
+        self.assertIn("  start_process:", patched)
+        self.assertIn("  write_file:", patched)
+
+    def test_changed_config_read_handler_rejected_atomically(self):
+        changed = ORIGINAL.replace(
+            "  get_config: () => getConfig(),",
+            "  get_config: () => unexpectedConfig(),",
+        )
+        self.dispatcher.write_text(changed, encoding="utf-8")
+        with self.assertRaisesRegex(AuditError, "hardened_handler_pattern_missing"):
+            apply(self.root)
+        self.assertEqual(self.dispatcher.read_text(encoding="utf-8"), changed)
 
     def test_second_patching_is_rejected(self):
         apply(self.root)
