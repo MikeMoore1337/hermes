@@ -4,7 +4,7 @@
   let button, panel, grid, active = false, pending = false, latest = null;
   const names = {hermes: "VPS Hermes", yfc: "VPS YFC"};
   const states = {online: "Данные актуальны", stale: "Данные устарели",
-    unknown: "Ошибка снимка", not_connected: "Не подключён"};
+    unknown: "Ошибка снимка", offline: "Нет связи", not_connected: "Не подключён"};
   function el(tag, cls, parent, text) {
     const node = document.createElement(tag);
     if (cls) node.className = cls;
@@ -97,7 +97,7 @@
     el("h3", "", heading, names[record.host]);
     const status = states[record.status] || "Состояние неизвестно";
     el("span", "infra294-state infra294-" + record.status, header, status);
-    const current = record.status === "online", previous = record.status === "stale";
+    const current = record.status === "online", previous = ["stale", "offline"].includes(record.status);
     if (!current && !previous) {
       el("p", "infra294-hint", node,
         record.host === "yfc" && record.status === "not_connected"
