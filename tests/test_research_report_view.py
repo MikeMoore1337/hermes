@@ -55,7 +55,14 @@ class OwnerReportTests(unittest.TestCase):
                             and x["review_status"] == "NEEDS_EXPERT_REVIEW" for x in items))
         for item in items:
             self.assertTrue(item["url"].startswith("https://pubmed.ncbi.nlm.nih.gov/"))
-            self.assertTrue(all(f["url"] == item["url"] for f in item["evidence"]))
+            self.assertTrue(all(
+                f["url"] == item["url"] or (
+                    item["pmid"] == "42771055"
+                    and f["source_type"] == "PUBLISHER_CORRECTION"
+                    and f["url"] == item["correction_url"]
+                )
+                for f in item["evidence"]
+            ))
         ironman = next(x for x in items if x["pmid"] == "42771055")
         self.assertEqual(ironman["status"], "HOLD")
         self.assertIn("11294-6", ironman["correction_url"])
