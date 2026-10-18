@@ -13,11 +13,11 @@ class WindowsBootstrapSafetyTests(unittest.TestCase):
 
     def test_repair_requires_protected_unchanged_credentials(self):
         code = SCRIPT.read_text()
-        for needle in ("REPAIR_SOURCE_MISMATCH", "PRIVATE_ACL_FAILED",
+        for needle in ("REPAIR_SOURCE_MISMATCH", "PRIVATE_ACL_GRANT_FAILED",
                        "UNTRUSTED_PYTHON_LOCATION", "Get-FileHash",
                        "REPAIR_UNTRUSTED_STATE"):
             self.assertIn(needle, code)
-        self.assertLess(code.index("icacls.exe $state"),
+        self.assertLess(code.index("Protect-PrivateState $state"),
                         code.index("Copy-Item -LiteralPath"))
 
     def test_user_installed_python_staged_under_programdata(self):
