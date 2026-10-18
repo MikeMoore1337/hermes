@@ -1,0 +1,47 @@
+name: H-03 four-DOI one-shot integrity audit (18 Oct 2026)
+on:
+  push:
+    branches: [audit/h03-four-doi-once-20261018]
+    paths: ['.github/workflows/h03-four-doi-once-20261018.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  one-shot-read-only:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - name: Checkout exact snapshot without persistent credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Explicit fixed public Crossref queries (max four GET, no retry)
+        shell: bash
+        run: |
+          set +e
+          python3 -m research_scout.four_paper_audit --execute > "$RUNNER_TEMP/h03-audit.json"
+          code=$?
+          set -e
+          echo "H03_BATCH_EXIT=$code"
+          python3 - "$RUNNER_TEMP/h03-audit.json" <<'PY'
+          import json, sys
+          from pathlib import Path
+          path = Path(sys.argv[1])
+          report = json.loads(path.read_text())
+          allowed = {"schema", "observed_at", "requests_attempted", "results", "report_status",
+                     "source_scope", "authoritative_publisher_clearance",
+                     "scientific_claims_verified", "automatic_publication", "manual_review_required"}
+          if set(report) != allowed:
+              raise SystemExit("Unexpected audit schema")
+          if report["requests_attempted"] != 4 or len(report["results"]) != 4:
+              raise SystemExit("Unexpected request count")
+          assert report["scientific_claims_verified"] is False
+          assert report["automatic_publication"] is False
+          assert report["authoritative_publisher_clearance"] is False
+          print("H03_AUDIT_REPORT_BEGIN")
+          print(json.dumps(report, sort_keys=True, ensure_ascii=False))
+          print("H03_AUDIT_REPORT_END")
+          print("H03_STATUS="+report["report_status"])
+          PY
+          test "$code" -le 2
