@@ -98,9 +98,10 @@ class CanaryEvidenceTests(unittest.TestCase):
                 result = evaluate(a, o)
                 self.assertEqual((result["status"], result["quality_status"],
                                   result["usage_status"]),
-                                 ("passed", "passed", "passed"))
-                self.assertEqual(result["actual_model_calls"], 1)
-                self.assertEqual(result["actual_cost_usd"], "0.00")
+                                 ("unverified", "unverified", "unverified"))
+                self.assertEqual(result["reason_code"], "PROVIDER_ORIGIN_UNVERIFIED")
+                self.assertIsNone(result["actual_model_calls"])
+                self.assertIsNone(result["actual_cost_usd"])
                 self.assertNotIn("response_code", result)
                 self.assertNotIn("signature", result)
 
@@ -251,7 +252,7 @@ class CanaryEvidenceTests(unittest.TestCase):
                                        now=NOW, journal=journal)
             self.assertEqual((first["status"], second["status"],
                               second["reason_code"]),
-                             ("passed", "blocked", "DUPLICATE_RUN"))
+                             ("unverified", "blocked", "DUPLICATE_RUN"))
             self.assertEqual(journal.stat().st_mode & 0o077, 0)
 
     def test_symlink_journal_refused(self):
@@ -318,7 +319,7 @@ class CanaryEvidenceTests(unittest.TestCase):
         with patch.object(socket.socket, "connect", side_effect=AssertionError("network")), \
              patch.object(subprocess, "Popen", side_effect=AssertionError("subprocess")):
             result = evaluate(a, o)
-        self.assertEqual(result["status"], "passed")
+        self.assertEqual(result["status"], "unverified")
 
     def test_cli_ignores_raw_bad_inputs_and_emits_sanitized_failure(self):
         a, o = examples()
