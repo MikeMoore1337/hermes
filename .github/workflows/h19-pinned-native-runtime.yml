@@ -1,0 +1,53 @@
+name: H-19 pinned offline native probe
+
+# Isolated, explicit opt-in. This does NOT run on normal main quality jobs.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - scripts/h19_v0222_native_evidence.py
+      - tests/test_h19_v0222_native_evidence.py
+      - .github/workflows/h19-pinned-native-runtime.yml
+
+permissions:
+  contents: read
+
+jobs:
+  pinned-native:
+    # Never accept code or image from an arbitrary fork in this isolated probe.
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout proposed exact revision without persisted credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Pin and inspect immutable original image
+        shell: bash
+        run: |
+          set -euo pipefail
+          original='nousresearch/hermes-agent@sha256:a11574b7fe8e1631d7d88d556677dac693bc058abf558cdeb899155688c1bf05'
+          docker pull --platform linux/amd64 "$original"
+          docker image inspect "$original" --format '{{.Id}} {{.Architecture}}'
+      - name: Build ephemeral patched candidate with no build network
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build --pull=false --network none --platform linux/amd64 \
+            --file docker/v0222-native-tool-policy-test/Dockerfile \
+            --tag hermes-v0222-native-policy-candidate:20261016 .
+      - name: Validate real pinned dispatcher with synthetic executors and OS sandbox
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m scripts.h19_v0222_native_evidence --execute --out "$RUNNER_TEMP/h19-native-report.json"
+          python3 -c 'import json,os; r=json.load(open(os.path.join(os.environ["RUNNER_TEMP"],"h19-native-report.json"))); print("Native:",r["native_comparison_status"],"OS:",r["os_probe_status"],"model:",r["real_model_evaluation"])' >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve sanitized, no-prompt native evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: hermes-h19-pinned-native
+          path: ${{ runner.temp }}/h19-native-report.json
+          if-no-files-found: warn
+          retention-days: 7
