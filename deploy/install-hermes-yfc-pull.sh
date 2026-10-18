@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Operator-gated Hermes VPS install. Never auto-runs on deploy.
 # Host-key pinning, YFC identity verification, and private key transfer happen
-# OUTSIDE this script with the owner. Do not use ssh-keyscan TOFU.
+# OUTSIDE this script with the owner. Never trust an unverified host-key discovery.
 set -Eeuo pipefail
 export PATH=/usr/sbin:/usr/bin:/bin
 umask 077
