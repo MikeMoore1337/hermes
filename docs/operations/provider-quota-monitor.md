@@ -51,7 +51,7 @@ Cloudflare official billable Neuron usage (currently unsupported/unverified), ne
 On 3 August 2026 Cloudflare announced an **official Billable Usage API**
 covering Workers AI. Unlike previous assumptions, this is a viable **historical
 account-wide source**, but the data is updated daily, so it cannot give
-live quota remaining and must NEVER be fed into a real-time admission gate.
+live quota remaining and must NEVER be fed into a real-time admission gate.\nReported *billable* Neurons can omit usage covered by the free allocation;\ntherefore they are NOT a complete total of the Free daily budget.
 
 References:
 - https://blog.cloudflare.com/billable-usage-api/ (2026-08-03)
