@@ -20,6 +20,7 @@ from ops_watch.core import InputError, analyze, changes
 from ops_watch.infrastructure_alerts import ROOT as INFRASTRUCTURE_ROOT
 from ops_watch.device_fabric_alerts import DB as DEVICE_DB, OPT_IN as DEVICE_OPT_IN
 from ops_watch.device_fabric_alerts import observe as device_fabric_observe
+from ops_watch.device_fabric_alerts import certificate_status as device_tls_status
 from ops_watch.infrastructure_alerts import observe as infrastructure_observe
 from ops_watch.quota_alerts import observe as quota_observe
 from ops_watch.quota_alerts import CODEX as Q_CODEX, DESKTOP as Q_DESKTOP, CLOUDFLARE as Q_CF, GITHUB as Q_GITHUB
@@ -343,6 +344,8 @@ def once(source: Path = SOURCE, target: Path = TARGET, observed: datetime | None
         if device_fabric_db is not None and device_fabric_opt_in is not None:
             snapshot["device_fabric"] = device_fabric_observe(
                 db=device_fabric_db, opt_in=device_fabric_opt_in, now=now)
+            snapshot["device_fabric_tls"] = device_tls_status(
+                opt_in=device_fabric_opt_in, now=now)
         findings = analyze(snapshot, now=now)
         # Separate QA reader never has Telegram credentials or access to the
         # news source. Missing/stale/denied API observations must not falsely
@@ -419,6 +422,14 @@ def once(source: Path = SOURCE, target: Path = TARGET, observed: datetime | None
             ident = "windows-pc" if code == "device_windows_pc_unavailable" else "linux-vps"
             signal = snapshot.get("device_fabric", {}).get(ident, {}).get("status")
             if signal != "online":
+                findings.append({"code": code, "severity": item["severity"],
+                                 "fingerprint": item["fingerprint"]})
+        for item in previous:
+            code = item["code"]
+            if code not in ("device_tls_expiring", "device_tls_expired") or any(
+                    current["code"] == code for current in findings):
+                continue
+            if snapshot.get("device_fabric_tls", "unknown") in ("unknown", "not_configured"):
                 findings.append({"code": code, "severity": item["severity"],
                                  "fingerprint": item["fingerprint"]})
         was_ci_failed = any(item["code"] == "ci_failed" for item in previous)
