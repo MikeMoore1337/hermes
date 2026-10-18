@@ -1,0 +1,44 @@
+name: Hermes provider public authentication boundary
+
+on:
+  workflow_run:
+    workflows: ["Hermes production deploy"]
+    types: [completed]
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: hermes-provider-boundary
+  cancel-in-progress: false
+
+jobs:
+  anonymous-readonly-probe:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - name: Validate health and ensure quota API denies an anonymous caller
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='https://hermes.mikemoore.top'
+          # No cookies, auth headers, credentials, redirect following or model inference.
+          # Only the HTTP status is kept. Never fetch provider account payloads.
+          health="$(curl -sS --connect-timeout 4 --max-time 12 --max-redirs 0             --output /dev/null --write-out '%{http_code}' "$base/healthz")"
+          denied="$(curl -sS --connect-timeout 4 --max-time 12 --max-redirs 0             --output /dev/null --write-out '%{http_code}' "$base/api/providers/registry")"
+          history="$(curl -sS --connect-timeout 4 --max-time 12 --max-redirs 0             --output /dev/null --write-out '%{http_code}'             "$base/api/providers/registry/history?resource=core&days=7")"
+          {
+            echo "## Hermes #295 anonymous boundary"
+            echo "Production /healthz HTTP: ${health}"
+            echo "Quota registry without login HTTP: ${denied}"
+            echo "Quota history without login HTTP: ${history}"
+            echo "Source: unauthenticated GET only (no credentials or metrics downloaded)"
+          } >> "$GITHUB_STEP_SUMMARY"
+          [[ "$health" == 200 && "$denied" == 401 && "$history" == 401 ]] || {
+            echo "PROVIDER_PUBLIC_BOUNDARY=unverified" >&2
+            exit 1
+          }
+          echo "PROVIDER_PUBLIC_BOUNDARY=confirmed"
