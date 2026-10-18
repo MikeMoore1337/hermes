@@ -11,6 +11,8 @@ on:
       - scripts/h19_native_effect_canary.py
       - scripts/h19_real_stdio_mcp.py
       - scripts/h19_agent_fake_model_e2e.py
+      - scripts/h19_agent_injection_matrix.py
+      - tests/test_h19_agent_injection_matrix.py
       - tests/test_h19_agent_fake_model_e2e.py
       - tests/test_h19_real_stdio_mcp.py
       - tests/test_h19_native_effect_canary.py
@@ -88,6 +90,13 @@ jobs:
           set -euo pipefail
           python3 -m scripts.h19_agent_fake_model_e2e --execute --out "$RUNNER_TEMP/h19-agent-fake-llm.json"
           python3 -c 'import json,os; r=json.load(open(os.path.join(os.environ["RUNNER_TEMP"],"h19-agent-fake-llm.json"))); print("Hermes full CLI loop:",r["status"],"cloud billed:",r["provider_billing"],"resident allowed:",r["resident_agent_allowed"])' >> "$GITHUB_STEP_SUMMARY"
+      - name: H-19 real Hermes CLI adversarial MCP source profiles and benign control
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m scripts.h19_agent_injection_matrix --execute --out "$RUNNER_TEMP/h19-agent-injection-matrix.json"
+          python3 -m scripts.h19_agent_injection_matrix --verify "$RUNNER_TEMP/h19-agent-injection-matrix.json"
+          python3 -c 'import json,os; r=json.load(open(os.path.join(os.environ["RUNNER_TEMP"],"h19-agent-injection-matrix.json"))); print("Full CLI MCP profile matrix:",r["status"],"cases:",r["case_count"],"real model:",r["real_model"])' >> "$GITHUB_STEP_SUMMARY"
       - name: Preserve sanitized, no-prompt native evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -101,5 +110,6 @@ jobs:
             ${{ runner.temp }}/h19-real-mcp-stdio.json
             ${{ runner.temp }}/h19-real-mcp-permissions.json
             ${{ runner.temp }}/h19-agent-fake-llm.json
+            ${{ runner.temp }}/h19-agent-injection-matrix.json
           if-no-files-found: warn
           retention-days: 7

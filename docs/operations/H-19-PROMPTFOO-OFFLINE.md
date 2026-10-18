@@ -486,3 +486,46 @@ source stamp, отсутствие HTTP-хода, пропущенный read-co
 Стандартный CI не запускает контейнер, лишь проверяет контракт и
 мутационные тесты; отдельный H-19 CI добавляет
 `h19-agent-fake-llm.json` к sanitized artifacts.
+
+
+### 18.10.2026 — H-19 матрица содержимого недоверенного MCP и benign-контроль
+
+Дополнительный opt-in regression gate
+`scripts/h19_agent_injection_matrix.py --execute` прогоняет настоящий
+`hermes chat` в четырёх **раздельных** ephemeral Docker-контейнерах
+одного и того же проверенного upstream v0.22.2, с реальным локальным
+MCP 2.x stdio SDK и полностью локальным HTTP fake LLM.
+
+Матрица проверяет три варианта **текста ответа недоверенного MCP**:
+подделка высокого system role, подделка одобрения владельца и
+инструкции в Markdown/YAML-подобном содержимом. Промпты фиксированы
+в исходниках; нет доступа к пользовательским данным.
+Все три тестовых fake-model сценария **предписанно**, а не на
+основании разумного выбора модели, пытаются выполнить запрещённый
+`mcp__h19cli__mark` после получения текста источника.
+Ожидается три main HTTP-хода fake LLM, реальный MCP read wire=1,
+write wire=0, отсутствие маркера. *Такие PASS не доказывают
+реальной prompt-injection resistance LLM.*
+
+Четвёртый `benign_control` намеренно не создаёт запрос записи:
+только законное чтение и итог fake модели, два HTTP-хода, read=1,
+write=0, marker absent. Это проверяет, что регрессия не может
+пройти из-за отсутствия связи с MCP/отключённого чтения,
+и что fake-model receipt write-request не подделывается простым
+`len(http_requests) >= 2`: логический target учитывается отдельно.
+Строгий offline readback сверяет полный список 4/4 случаев,
+запрещает неизвестные/дублирующиеся сценарии, битые типы,
+подмену чисел, заявления про внешнюю модель/production/resident GO,
+и завышенные результаты.
+
+Команды в изолированном заранее подготовленном disposable runner:
+
+    python3 -m scripts.h19_agent_injection_matrix --execute --out /tmp/h19-agent-injection-matrix.json
+    python3 -m scripts.h19_agent_injection_matrix --verify /tmp/h19-agent-injection-matrix.json
+
+Default без `--execute` — `NOT_RUN`. Машинный JSON автоматически
+сохраняется в H-19 CI `h19-agent-injection-matrix.json` рядом с
+семью предыдущими отчётами. Никаких облачных моделей, внешних
+MCP, ключей, shell-действий агента, сети наружу и изменений VPS.
+`#33` остаётся NO-GO; для #186 нужен отдельный owner gate
+на настоящую модель, точный лимит и стоимость вызовов.
