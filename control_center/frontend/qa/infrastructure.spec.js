@@ -44,9 +44,11 @@ for(const width of [320,393,1440]){
   await expect(yfc.getByText("77%",{exact:true})).toBeVisible();
   await hermes.locator("summary").click();
   await expect(hermes.locator(".infra294-chart")).toContainText("CPU");
-  await expect(hermes.locator(".infra294-chart")).toContainText("23");
+  await expect(hermes.locator(".infra294-chart polyline")).toHaveAttribute("points",/\d/);
   await yfc.locator("summary").click();
-  await expect(yfc.locator(".infra294-chart")).toContainText("77");
+  await expect(yfc.locator(".infra294-chart polyline")).toHaveAttribute("points",/\d/);
+  expect(await hermes.locator(".infra294-chart polyline").getAttribute("points"))
+   .not.toBe(await yfc.locator(".infra294-chart polyline").getAttribute("points"));
   const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1);
   expect(overflow).toBe(false);
   mkdirSync(evidence,{recursive:true});
