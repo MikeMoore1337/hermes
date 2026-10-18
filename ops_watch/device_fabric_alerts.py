@@ -10,9 +10,11 @@ from datetime import UTC, datetime, timedelta
 import json
 from pathlib import Path
 import sqlite3
+import subprocess
 
 DB = Path("/var/lib/hermes-device-fabric/devices.sqlite3")
 OPT_IN = Path("/var/lib/hermes-device-fabric/ops-watch-presence.json")
+CERT = Path("/var/lib/hermes-device-fabric/tls/cert.pem")
 DEVICES = ("windows-pc", "linux-vps")
 DELAY = {"windows-pc": timedelta(minutes=20),
          "linux-vps": timedelta(minutes=10)}
@@ -27,6 +29,34 @@ def _timestamp(value: object) -> datetime:
     if result.tzinfo is None:
         raise ValueError("invalid_timezone")
     return result.astimezone(UTC)
+
+
+def certificate_status(cert: Path = CERT, opt_in: Path = OPT_IN, *,
+                       now: datetime | None = None) -> str:
+    """Warn before the seven-day pilot TLS identity expires.
+
+    Local, bounded openssl call reads only cert (not key) in private networkless
+    Ops Watch. Missing opt-in is not evidence of a service outage.
+    """
+    at = (now or datetime.now(UTC)).astimezone(UTC)
+    try:
+        if opt_in.is_symlink() or not opt_in.is_file():
+            return "not_configured"
+        if cert.is_symlink() or not cert.is_file() or cert.stat().st_size > 8192:
+            return "unknown"
+        result = subprocess.run(
+            ["/usr/bin/openssl", "x509", "-in", str(cert), "-noout", "-enddate"],
+            capture_output=True, text=True, check=False, timeout=3,
+        )
+        if result.returncode != 0 or len(result.stdout) > 120 or not result.stdout.startswith("notAfter="):
+            return "unknown"
+        expiry = datetime.strptime(result.stdout.strip()[9:],
+                                   "%b %d %H:%M:%S %Y GMT").replace(tzinfo=UTC)
+        if expiry <= at:
+            return "expired"
+        return "expiring" if expiry - at <= timedelta(hours=48) else "healthy"
+    except (OSError, ValueError, TypeError, subprocess.TimeoutExpired, OverflowError):
+        return "unknown"
 
 
 def observe(db: Path = DB, opt_in: Path = OPT_IN, *,
