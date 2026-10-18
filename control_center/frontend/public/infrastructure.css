@@ -11,7 +11,7 @@
 .infra294-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;flex-wrap:wrap}
 .infra294-card-head h3{font-size:18px;margin:8px 0 0;font-weight:650}
 .infra294-state{border:1px solid var(--line-dim,#1a314c);border-radius:6px;padding:5px 8px;color:#9dadbf;font-size:11px}
-.infra294-online{color:#a1d9c0}.infra294-stale{color:#f1c090}
+.infra294-online{color:#a1d9c0}.infra294-stale{color:#f1c090}.infra294-offline{color:#e6a2a2}
 .infra294-label{display:flex;justify-content:space-between;gap:10px;font-size:13px}
 .infra294-label strong{font-variant-numeric:tabular-nums}
 .infra294-metric{display:grid;gap:6px}
