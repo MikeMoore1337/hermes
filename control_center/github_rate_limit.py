@@ -193,6 +193,12 @@ def main():
     try:
         result=read(args.token_file)
         save(result,args.output,group="hermes-control")
+        if result["status"]=="ok":
+            try:
+                from control_center.github_rate_history import append
+                append(result,group="hermes-control")
+            except (OSError,ValueError):
+                print("GITHUB_QUOTA_HISTORY=unavailable")
         print("GITHUB_QUOTA_READ="+result["status"])
         return 0 if result["status"]=="ok" else 1
     except (OSError,GitHubQuotaError,ValueError):
