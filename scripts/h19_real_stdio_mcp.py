@@ -42,12 +42,22 @@ report = {
     "actual_external_mcp": False,
     "real_provider": False,
     "real_agent_resident": False,
+    "sdk_server_import": "NOT_RUN",
+    "registered_tool_count": 0,
+    "discovery_errors_observed": False,
 }
 if importlib.util.find_spec("mcp") is None:
     print(json.dumps(report, sort_keys=True))
     raise SystemExit(0)
 
 report["sdk"] = "AVAILABLE"
+try:
+    from mcp.server.fastmcp import FastMCP
+    report["sdk_server_import"] = "PASS"
+except Exception:
+    report["sdk_server_import"] = "FAILED"
+    print(json.dumps(report, sort_keys=True))
+    raise SystemExit(0)
 # A real MCP SDK server. Stdio stays inside container, child uses this pinned
 # venv interpreter and the only persistent effect is a private /tmp marker.
 SERVER = '''
@@ -96,6 +106,10 @@ with tempfile.TemporaryDirectory(prefix="h19-mcp-", dir="/tmp") as tmp:
             names = register_mcp_servers({name: config})
         expected = {"mcp__h19local__peek", "mcp__h19local__mark"}
         report["registration"] = "OK" if expected <= set(names) else "MISSING_TOOLS"
+        report["registered_tool_count"] = len(names)
+        if report["registration"] != "OK":
+            from tools import mcp_tool as core
+            report["discovery_errors_observed"] = bool(core._server_connect_errors)
         if report["registration"] == "OK":
             report["real_protocol"] = True
             report["agent_dispatch"] = True
@@ -142,14 +156,20 @@ def validate(data: Any) -> dict[str, Any]:
         "server_write_after_denial", "server_write_after_approval",
         "real_protocol", "agent_dispatch", "actual_external_mcp",
         "real_provider", "real_agent_resident",
+        "sdk_server_import", "registered_tool_count", "discovery_errors_observed",
     }
     if (type(data) is not dict or set(data) != required or data["schema"] != SCHEMA
             or data["sdk"] not in ("AVAILABLE", "UNAVAILABLE")
+            or type(data["registered_tool_count"]) is not int
+            or type(data["discovery_errors_observed"]) is not bool
+            or data["sdk_server_import"] not in ("PASS", "FAILED", "NOT_RUN")
             or any(data[k] is not False for k in (
                 "actual_external_mcp", "real_provider", "real_agent_resident"))):
         raise EvidenceDenied("MCP_REPORT_SCHEMA_INVALID")
     if data["sdk"] == "UNAVAILABLE":
         if (data["registration"] != "NOT_RUN"
+                or data["sdk_server_import"] != "NOT_RUN"
+                or data["registered_tool_count"] != 0
                 or data["real_protocol"] is not False
                 or data["agent_dispatch"] is not False
                 or data["server_write_after_denial"] is not None):
@@ -157,7 +177,9 @@ def validate(data: Any) -> dict[str, Any]:
         status = "NOT_RUN"
     else:
         status = ("PASS" if (
-            data["registration"] == "OK"
+            data["sdk_server_import"] == "PASS"
+            and data["registered_tool_count"] >= 2
+            and data["registration"] == "OK"
             and data["read_result"] == "OK"
             and data["write_denied_result"] == "OK"
             and data["write_approved_result"] == "OK"
