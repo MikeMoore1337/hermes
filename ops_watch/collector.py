@@ -398,7 +398,9 @@ def once(source: Path = SOURCE, target: Path = TARGET, observed: datetime | None
             state = signals.get(provider, "unknown")
             if state in ("unknown", "not_connected", "stale", "auth_required"):
                 if code.endswith(("_80", "_95", "_exhausted")):
-                    findings.append({"code": code, "severity": previous_item["severity"],
+                    findings.append({"code": code,
+                                     "severity": "critical" if code.endswith("_exhausted")
+                                     else "warning",
                                      "fingerprint": previous_item["fingerprint"]})
                     active_quota.add(code)
         was_ci_failed = any(item["code"] == "ci_failed" for item in previous)
