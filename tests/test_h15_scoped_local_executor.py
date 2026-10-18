@@ -166,6 +166,8 @@ class BoundedExecutorTests(unittest.TestCase):
     @patch("eval_lane.local_executor.subprocess.Popen")
     @patch("eval_lane.local_executor.fixed_plan")
     def test_success_without_artifact_fails_closed(self, make_plan, popen):
+        # A real runner creates its private output directory before the report.
+        self.runpath.mkdir(mode=0o700)
         make_plan.return_value = FixedPlan(
             argv=(str(self.binary),), cwd=self.kit, output_dir=self.runpath,
         )
