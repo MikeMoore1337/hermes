@@ -49,6 +49,7 @@ report = {
     "real_agent_tools_outside_sandbox": False,
     "resident_agent_allowed": False,
 }
+sdk_available = False
 try:
     sdk_available = importlib.util.find_spec("mcp") is not None
     fake_available = importlib.util.find_spec("tests.fakes.fake_llm_provider") is not None
