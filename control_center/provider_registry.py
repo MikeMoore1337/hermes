@@ -8,6 +8,10 @@ from __future__ import annotations
 import datetime as dt
 from pathlib import Path
 
+from control_center.github_rate_limit import (
+    OUTPUT as GITHUB_RATE_LIMIT_PATH,
+    snapshot as read_github_rate_limit,
+)
 from control_center.cloudflare_billing import (
     OUTPUT as CLOUDFLARE_BILLING_PATH,
     snapshot as read_cloudflare_billing,
@@ -71,6 +75,7 @@ def _window(*, metric: str, label: str, unit: str, limit: int | None = None,
 
 def registry(*, codex_path: Path = CODEX_PATH, desktop_path: Path = DC_PATH,
              cloudflare_path: Path = CLOUDFLARE_BILLING_PATH,
+             github_path: Path = GITHUB_RATE_LIMIT_PATH,
              now: dt.datetime | None = None) -> dict:
     moment = now or dt.datetime.now(dt.timezone.utc)
     if moment.tzinfo is None:
@@ -175,6 +180,34 @@ def registry(*, codex_path: Path = CODEX_PATH, desktop_path: Path = DC_PATH,
     # meter is present in the Control Center. Never invent a shared budget.
     github = empty("github_api", "GitHub API", configured=True)
     github["notes"] = "per_token_rate_limit_not_collected"
+
+    # This is a token/resource-specific official GitHub budget, NOT an
+    # account-wide GitHub API remaining count or a project's shared pool.
+    gh = read_github_rate_limit(github_path, now=utc)
+    github["observed_at"] = timestamp(gh.get("observed_at")) if gh["status"] == "ok" else None
+    if gh["status"] == "ok":
+        remaining_states = [item["status"] for item in gh["resources"]]
+        github["status"] = "exhausted" if remaining_states and all(
+            state == "exhausted" for state in remaining_states) else (
+            "low" if any(state in ("low", "exhausted") for state in remaining_states)
+            else "ok"
+        )
+        github["source_kind"] = "official_api"
+        github["confidence"] = "token_scoped"
+        github["notes"] = "per_token_rate_limit_collected"
+        for item in gh["resources"]:
+            limit = item["quota_limit"]
+            github["windows"].append(_window(
+                metric=item["resource"], label="API " + item["resource"],
+                unit="requests", limit=limit,
+                used=item["used"], remaining=item["remaining"],
+                used_percent=round(100 * item["used"] / limit, 2) if limit > 0 else None,
+                remaining_percent=round(100 * item["remaining"] / limit, 2) if limit > 0 else None,
+                reset_at_utc=item["reset_at_utc"],
+                source_kind="official_api"))
+    elif gh["status"] in ("auth_required", "throttled"):
+        github["status"] = gh["status"]
+        github["notes"] = "reauthorization_required" if gh["status"] == "auth_required" else "provider_throttled"
 
     return {
         "schema": SCHEMA,
