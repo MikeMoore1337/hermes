@@ -24,9 +24,10 @@ class StaticContracts(unittest.TestCase):
         self.thread.join(timeout=3)
         self.tmp.cleanup()
 
-    def get(self, path, host="hermes.mikemoore.top", method="GET"):
+    def get(self, path, host="hermes.mikemoore.top", method="GET", headers=None):
+        request_headers = {"Host": host, **(headers or {})}
         req = Request(f"http://127.0.0.1:{self.server.server_port}{path}",
-                      method=method, headers={"Host": host})
+                      method=method, headers=request_headers)
         try:
             result = urlopen(req, timeout=2)
         except HTTPError as exc:
@@ -46,14 +47,14 @@ class StaticContracts(unittest.TestCase):
             self.assertEqual(status, 200, route)
             self.assertEqual(headers["Content-Type"], mime)
             self.assertTrue(body.startswith(signature))
-            self.assertEqual(headers["Cache-Control"], "no-store")
+            self.assertEqual(headers["Cache-Control"], "private, no-cache")
             self.assertIn("default-src 'none'", headers["Content-Security-Policy"])
 
     def test_third_party_licence_notices_are_exact_local_assets(self):
         status, headers, body = self.get("/third-party-notices.txt")
         self.assertEqual(status, 200)
         self.assertEqual(headers["Content-Type"], "text/plain; charset=utf-8")
-        self.assertEqual(headers["Cache-Control"], "no-store")
+        self.assertEqual(headers["Cache-Control"], "private, no-cache")
         self.assertIn(b"lucide-react 0.468.0", body)
         self.assertIn(b"react-dom 19.2.0", body)
         self.assertIn(b"ISC License", body)
@@ -66,7 +67,27 @@ class StaticContracts(unittest.TestCase):
         b = self.get("/?preview=login")
         self.assertEqual(a[0], 200)
         self.assertEqual(b[0], 200)
-        self.assertEqual(a[2], b[2])
+        self.assertIn(b'data-auth-mode="proxy" data-authenticated="true"', a[2])
+        self.assertIn(b'data-auth-mode="proxy" data-authenticated="true"', b[2])
+        self.assertIn(b'/desktop-commander.js', a[2])
+        self.assertNotIn(b'/desktop-commander.js', b[2])
+        self.assertNotIn(b'/provider-quota.js', b[2])
+
+    def test_static_assets_revalidate_without_caching_html_or_sw(self):
+        status, headers, body = self.get("/app.js")
+        self.assertEqual(status, 200)
+        self.assertGreater(len(body), 1000)
+        tag = headers["ETag"]
+        self.assertEqual(headers["Cache-Control"], "private, no-cache")
+        status, headers, body = self.get("/app.js", headers={"If-None-Match": tag})
+        self.assertEqual((status, body), (304, b""))
+        self.assertEqual(headers["ETag"], tag)
+        self.assertEqual(headers["Cache-Control"], "private, no-cache")
+        self.assertIn("default-src 'none'", headers["Content-Security-Policy"])
+        for path in ("/", "/?preview=login", "/sw.js", "/offline.html"):
+            status, headers, _ = self.get(path, headers={"If-None-Match": tag})
+            self.assertEqual(status, 200, path)
+            self.assertEqual(headers["Cache-Control"], "no-store", path)
 
     def test_no_unlisted_files_or_query_allowed(self):
         for path in ("/src/main.jsx", "/package.json", "/.env",
