@@ -51,7 +51,7 @@ for(const width of [320,393,1440]){
   const yfcPoints=await yfc.locator(".infra294-chart polyline").getAttribute("points");
   expect(hermesPoints).not.toBe(yfcPoints);
   for(const points of [hermesPoints,yfcPoints]){
-   const xs=points.trim().split(/\\s+/).map(coord=>Number(coord.split(",")[0]));
+   const xs=points.trim().split(/\s+/).map(coord=>Number(coord.split(",")[0]));
    expect(xs.length).toBeGreaterThanOrEqual(2);
    expect(xs[0],"Chart must not collapse when data is reversed").toBeLessThan(xs[xs.length-1]);
   }
