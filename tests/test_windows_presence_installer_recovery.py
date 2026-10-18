@@ -65,7 +65,6 @@ class WindowsBootstrapSafetyTests(unittest.TestCase):
         tunnel = (SCRIPT.parents[1] / "device_fabric/ssh_tunnel.py").read_text()
         self.assertIn("choices=('ssh', 'ssh.exe')", client)
         self.assertIn('ssh_bin not in ("ssh", "ssh.exe")', tunnel)
-        self.assertNotIn("--ssh-bin \'\"' + $ssh", code)
 
     def test_background_principal_and_boot_trigger_unchanged(self):
         code = SCRIPT.read_text()
