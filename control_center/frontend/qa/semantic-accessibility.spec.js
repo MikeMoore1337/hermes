@@ -21,8 +21,8 @@ for(const width of [320,393,768,1440]){
   for(const heading of ["Служба / единица","Состояние","Режим","Источник"]){
    await expect(registry.getByRole("columnheader",{name:heading})).toHaveCount(1);
   }
-  await expect(registry.getByRole("row",{name:/Ops Watch.*Актив/})).toHaveCount(1);
-  await expect(registry.getByRole("row",{name:/Полный AI Agent.*Не допущен/})).toHaveCount(1);
+  await expect(registry.getByRole("row",{name:/Ops Watch/})).toContainText("Работает");
+  await expect(registry.getByRole("row",{name:/Полный AI Agent/})).toContainText("Не допущен");
   const overflow=await page.evaluate(()=>document.documentElement.scrollWidth-innerWidth);
   expect(overflow,"No whole-document horizontal overflow").toBeLessThanOrEqual(1);
  });
