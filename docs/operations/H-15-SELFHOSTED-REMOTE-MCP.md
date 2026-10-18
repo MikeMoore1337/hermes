@@ -88,6 +88,27 @@ upstream full OAuth/MCP/agent tests on the patched source. None of
 this makes the host OS account a secure sandbox or authorizes
 production execution.
 
+### Pinned relay WebSocket device-token hardening
+
+The original BRC 2.0.2 relay accepted `/ws?token=<device-credential>`
+when an Authorization header was not provided. Credentials in URI query
+strings can leak to HTTP/reverse proxy access logs. The original device
+agent already sends `Authorization: Bearer`, so the fallback is unnecessary.
+
+`scripts/h15_brc_harden_relay.py` pins and changes the exact upstream
+`packages/relay/src/app.ts` source signature to refuse any
+`?token=` parameter, even with a valid Bearer header, and accept only
+a valid header. This patch is fail-closed on source drift. The native
+`scripts/h15_brc_relay_ws_e2e.mjs` starts a real compiled BRC relay
+on loopback with scratch SQLite and test-only credentials, verifies
+that query-only, query+Bearer, missing-header and invalid-header
+handshakes all fail, and verifies that a valid header-only agent WSS
+handshake succeeds. It then runs full patched upstream agent+OAuth tests.
+
+Do not activate this relay publicly or on existing owner devices:
+this closes one token transport leak, **not** the mandatory OS shell
+sandbox or browser CSRF/replay gates.
+
 ## Target deployment (not yet activated)
 
 ```text
