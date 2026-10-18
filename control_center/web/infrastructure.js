@@ -115,7 +115,23 @@
       meter(node, "Swap", swap, amount(m.swap_used_bytes) + " из " + amount(m.swap_total_bytes));
       meter(node, "Диск /", m.disk_used_percent,
         amount(m.disk_used_bytes) + " из " + amount(m.disk_total_bytes));
+      if (percent(m.inode_used_percent) !== null)
+        meter(node, "Inode /", m.inode_used_percent, "Использование файловых индексов");
       const details = el("div", "infra294-facts", node);
+      if (Number.isInteger(m.cpu_cores) && m.cpu_cores > 0)
+        el("span", "", details, "Логических CPU: " + m.cpu_cores);
+      const rates = m.network_rates && typeof m.network_rates === "object" ?
+        Object.entries(m.network_rates) : [];
+      const mbps = bytes => number(bytes) === null ? "—" :
+        (8 * bytes / 1000000).toLocaleString("ru-RU", {maximumFractionDigits: 2}) + " Мбит/с";
+      for (const [iface, speed] of rates.slice(0, 4)) {
+        if (!speed || typeof speed !== "object") continue;
+        el("span", "", details, "Сеть " + iface + ": ↓ " +
+          mbps(speed.rx_bytes_per_second) + " · ↑ " +
+          mbps(speed.tx_bytes_per_second));
+      }
+      if (!rates.length) el("span", "", details, "Сеть: скорость пока не измерена");
+      if (rates.length > 4) el("span", "", details, "Других интерфейсов: " + (rates.length - 4));
       el("span", "", details, "Load average (1/5/15): " +
         [m.load1, m.load5, m.load15].map(v =>
           number(v) === null ? "—" : v.toFixed(2)).join(" / "));
