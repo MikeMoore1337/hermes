@@ -25,6 +25,62 @@ Bundle files `enrollments/windows-pc.json` and `enrollments/linux-vps.json` have
 
 ## 2. SSH identity and restriction
 
+The owner has already generated two separate ED25519 public keys and supplied
+the authoritative **ED25519 host-key fingerprint** from Hermes VPS.
+Never commit the per-device keys or any enrollment credentials to this repository.
+
+### Owner-scoped SSH forward account (no change to SSHD configuration)
+
+The checked-in `deploy/h15-device-fabric-ssh-forward-setup.sh` is invoked
+manually on the Hermes VPS from a successfully deployed immutable release.
+It accepts two public key **files** and the expected three public SHA-256
+fingerprints. The fingerprints must be provided with the `SHA256:` prefix:
+
+```bash
+sudo bash deploy/h15-device-fabric-ssh-forward-setup.sh prepare \
+  /root/hermes-presence-keys/windows.pub \
+  /root/hermes-presence-keys/linux.pub \
+  'SHA256:<VERIFIED_HERMES_ED25519_HOST_FINGERPRINT>' \
+  'SHA256:<VERIFIED_WINDOWS_ED25519_KEY_FINGERPRINT>' \
+  'SHA256:<VERIFIED_LINUX_ED25519_KEY_FINGERPRINT>'
+sudo bash deploy/h15-device-fabric-ssh-forward-setup.sh status
+```
+
+Create the root-only input directory with `install -d -m 0700 /root/hermes-presence-keys`
+and one **exactly single-line**, newline-terminated public key per file.
+Do not write private keys or device JSON secrets to this directory. A wrong key,
+fingerprint, SSHD preflight failure or existing account mismatch **fails closed**.
+The installer creates a dedicated system account `hermes-presence-tunnel`,
+with a non-interactive `/usr/sbin/nologin` shell and an invalid password hash
+(key-only). Its two `authorized_keys` entries are independently restricted
+by `command="/usr/sbin/nologin",restrict,port-forwarding,permitopen="127.0.0.1:38177"`.
+`-N -T` requests **no SSH session**; the forced command rejects any attempted
+interactive shell/remote command. SSH authentication uses each owner's distinct
+private key; the device's WSS pairing token is an additional independent gate.
+The account has no supplementary groups or root/sudo permissions.
+
+The installer validates the SSH host-key fingerprint from
+`/etc/ssh/ssh_host_ed25519_key.pub`, validates both device fingerprints using
+`ssh-keygen -lf ... -E sha256`, checks `sshd -t`, and neither edits nor
+restarts global SSHD configuration. Do not modify administrators' SSH keys,
+root login, `/etc/ssh/sshd_config` or firewall settings.
+
+**Important:** existing `AllowUsers` / `DenyUsers`, `AuthorizedKeysFile`,
+`Match` blocks or `AllowTcpForwarding` restrictions may still prevent tunnel
+authentication. Verify with the actual Windows/Linux key-based connection.
+Never weaken a global SSHD rule to make this pilot work; a different scoped
+owner-approved transport can be considered if policy blocks the account.
+
+Rollback (disables *only* the two managed device keys; preserves the account
+and the existing root/admin SSH configuration):
+
+```bash
+sudo bash deploy/h15-device-fabric-ssh-forward-setup.sh rollback
+```
+
+### Device-side host-key trust
+
+
 Generate a distinct `ssh-keygen -t ed25519` key pair on *each device*. Keep the private key on that device. Install its public key using an already trusted owner shell on Hermes VPS under a **dedicated unprivileged forwarding identity**, with one authorized_keys line per device:
 
 ```text
