@@ -137,7 +137,7 @@ class DailyDOIRecoveryTests(unittest.TestCase):
             return {"topic": topic, "status": "MANUAL_REVIEW",
                     "candidates": [sample(str(42840000+index*2+suffix))
                                    for suffix in range(2)]}
-        integrity = Mock(return_value=core("42840000"))
+        integrity = Mock(return_value={**core("42840000"), "pmid": "42840000"})
         registry = Mock(return_value={"status": "MANUAL_REVIEW", "doi": DOI})
         result = prepare(now=NOW, searcher=many,
                          doi_verifier=registry, integrity_verifier=integrity)
