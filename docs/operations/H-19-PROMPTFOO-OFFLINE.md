@@ -190,3 +190,49 @@ production VPS. В workflow отчёт доступен как artifact
 
 Live-model gate прежний: **NOT_RUN** до явного отдельного
 разрешения с моделью, лимитом вызовов и свежими квотами.
+
+
+### 18.10.2026 - independent native receipt readback and real shell probe
+
+Последующая проверка H-19 вводит **второй**, независимый от сборщика,
+stdlib-модуль `scripts/h19_native_report_verify.py`. Он принимает
+JSON реального isolated pinned Docker native probe, повторно проверяет
+полный контракт 20 native test-paths, точный immutable upstream digest,
+source stamp, производный image ID, исходный dispatch gap,
+allowed/denied tool decisions, nested/subagent/parallel policy evidence,
+подтверждение owner approval recheck, все поля частичной OS-изоляции и
+отсутствие любых claims о resident GO, реальном LLM или
+полном OS/MCP enforcement. Подмена одного поля, добавление или
+удаление scenario_id, ложное разрешение native action, неверный
+status, неверная классификация shell или claim о реальной модели
+немедленно проваливают readback. Он работает **только на уже сохранённом
+отчёте**, без Docker/AI/network. Отдельный CI шаг запускается после
+сборщика, публикуя отдельный JSON рядом с исходным artefact.
+
+Readback **не** является самостоятельной криптографической
+аттестацией источника отчёта: скомпрометированный producer может
+создать новый последовательный, но ложный JSON. Результаты сохраняются
+как GitHub Actions evidence с exact SHA; signed provenance, model
+red-team и production tool permissions остаются отдельными
+невыполненными задачами.
+
+Внутри *только одноразового* offline pinned контейнера добавлен
+специальный безвредный bounded OS probe: `/bin/sh -c 'printf
+H19_BOUNDED_SHELL_OS_PROBE'`. Он не обращается к сети, не
+пишет файлы и не использует инструментальную API Hermes. Поле
+`shell_os_probe_result` принимает `EXECUTED`, `BLOCKED`
+или `UNVERIFIED`. Это впервые позволяет различить **наличие shell**
+и подтверждённую возможность его запуска внутри ограниченного
+контейнера. `EXECUTED` означает **отсутствие OS-wide shell execution
+deny**; несмотря на сохранённую обычную network/read-only изоляцию,
+полный `full_runtime_permission_enforcement_verified` остаётся
+`false`. `UNVERIFIED` делает ограниченный OS probe FAIL.
+Команда не исполняет действия на host/VPS и не снимает #33 NO-GO.
+
+После изолированного Docker-прогона:
+
+    python3 -m scripts.h19_native_report_verify /tmp/h19-native-report.json --out /tmp/h19-native-readback.json
+
+Не включать этот Docker-гейт в быстрый `quality.yml` или
+production workflow; все изменения проходят обычный unit CI,
+а Docker probe по-прежнему запускается только отдельным workflow.
