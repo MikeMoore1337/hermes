@@ -50,9 +50,9 @@
     const remainder = w.remaining_percent;
     const used = w.used_percent;
     if (percent(remainder) !== null && percent(used) !== null) {
-      const labels = add("div", "quota295-values", box);
-      add("span", "", labels, "Использовано: " + readable(used) + "%");
-      add("strong", "", labels, "Осталось: " + readable(remainder) + "%");
+      const values = add("div", "quota295-values", box);
+      add("span", "", values, "Использовано: " + readable(used) + "%");
+      add("strong", "", values, "Осталось: " + readable(remainder) + "%");
       const bar = add("div", "quota295-track", box);
       bar.setAttribute("role", "progressbar");bar.setAttribute("aria-label",labels[providerId] + ": " + (w.label || "Окно квоты"));
       bar.setAttribute("aria-valuemin","0");bar.setAttribute("aria-valuemax","100");
