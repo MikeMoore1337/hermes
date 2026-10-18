@@ -165,8 +165,9 @@ def validate(data: Any) -> dict[str, Any]:
             "guarded_execveat", "guarded_x32_execve"))
     )
     allowed = {"EXECUTED", "BLOCKED_EPERM", "UNVERIFIED"}
-    if (data["baseline_shell"] not in allowed
-            or any(data[key] not in allowed for key in (
+    if (type(data["baseline_shell"]) is not str or
+            data["baseline_shell"] not in allowed
+            or any(type(data[key]) is not str or data[key] not in allowed for key in (
                 "guarded_subprocess_shell", "guarded_direct_execve",
                 "guarded_execveat", "guarded_x32_execve"))
             or type(data["no_new_privs"]) is not bool
