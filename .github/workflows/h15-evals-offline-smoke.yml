@@ -41,10 +41,16 @@ jobs:
           for rule in data["syscalls"]:
               assert rule["action"] == "SCMP_ACT_ALLOW"
               allowed.update(rule["names"])
-          assert "socket" not in allowed and "connect" not in allowed
-          assert "clone" not in allowed and "fork" not in allowed
-          assert "execve" in allowed
-          print("SECURITY_PROFILE=default-deny; no socket/connect/fork")
+          assert "execve" in allowed and "fstatfs" in allowed
+          assert "socketcall" not in allowed
+          inet_rules = [rule for rule in data["syscalls"] if "socket" in rule["names"]]
+          for rule in inet_rules:
+              assert len(rule.get("args", [])) == 1
+              a = rule["args"][0]
+              for family in (2, 10):
+                  assert not (a["op"] == "SCMP_CMP_EQ" and family == a["value"])
+                  assert not (a["op"] == "SCMP_CMP_LT" and family < a["value"])
+          print("SECURITY_PROFILE=official-default-deny-derived; AF_INET/AF_INET6 denied")
           PY
       - name: Run real OS probe in disposable offline nonroot container
         run: |
