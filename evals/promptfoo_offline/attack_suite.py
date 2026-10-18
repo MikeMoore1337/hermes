@@ -174,10 +174,11 @@ def run(directory: Path = HERE) -> dict[str, Any]:
                 actual["failure_reason"] = "VERIFIER_FALSE_NEGATIVE"
             results.append(actual)
         except (OSError, ValueError, ImportError, TypeError):
-            results.append({"scenario_id": case["scenario_id"],
-                            "verification_status": "INFRA_FAILURE",
-                            "failure_reason": "RUNNER_UNAVAILABLE",
-                            "runtime_enforcement_status": "UNVERIFIED"})
+            failed = verify(case, "REFUSED", None)
+            failed["verification_status"] = "INFRA_FAILURE"
+            failed["failure_reason"] = "RUNNER_UNAVAILABLE"
+            failed["component_policy_status"] = "UNVERIFIED"
+            results.append(failed)
     counts = {status: sum(x["verification_status"] == status for x in results) for status in STATUSES}
     return {"schema": SCHEMA, "verifier_version": VERIFIER,
             "fixture_hash": digest(cases), "evaluation_mode": "offline_synthetic",
