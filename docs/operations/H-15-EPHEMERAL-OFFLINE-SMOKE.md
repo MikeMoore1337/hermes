@@ -33,9 +33,13 @@ It runs only `python -m eval_lane.isolation_probe` inside a disposable
 Docker container with:
 
 - no network namespace access (`--network none`);
-- an explicit **default-deny seccomp allowlist** excluding socket/connect
-  and process-creation syscalls, so AF_INET/AF_INET6 socket creation
-  should be observed as EPERM;
+- a **default-deny Docker seccomp profile derived from Moby's default**
+  (upstream Git blob `6e5e47e242892aaa290f916ba1045f9213ef0b84`).
+  Only the AF_INET/AF_INET6 and legacy socketcall permissions have been
+  removed; AF_UNIX remains available for container setup. Network socket
+  creation should be observed as EPERM. The first pilot's smaller custom
+  allowlist failed at Docker/runc initialization, so it was replaced rather
+  than disabling seccomp or weakening network isolation;
 - non-root UID, no Linux capabilities, no-new-privileges;
 - read-only root filesystem and read-only source code bind;
 - container memory 768 MiB, CPU 45%, PID count 32 and bounded job time;
