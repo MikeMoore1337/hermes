@@ -39,8 +39,9 @@ jobs:
           assert data["defaultAction"] == "SCMP_ACT_ERRNO"
           allowed = set()
           for rule in data["syscalls"]:
-              assert rule["action"] == "SCMP_ACT_ALLOW"
-              allowed.update(rule["names"])
+              assert rule["action"] in ("SCMP_ACT_ALLOW", "SCMP_ACT_ERRNO")
+              if rule["action"] == "SCMP_ACT_ALLOW":
+                  allowed.update(rule["names"])
           assert "execve" in allowed and "fstatfs" in allowed
           assert "socketcall" not in allowed
           inet_rules = [rule for rule in data["syscalls"] if "socket" in rule["names"]]
