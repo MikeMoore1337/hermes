@@ -8,11 +8,12 @@ from scripts import h19_real_stdio_mcp as mcp
 from scripts.verify_v0222_immutable import IMAGE_DIGEST, EXPECTED_SOURCE
 
 
-def payload(*, sdk="AVAILABLE"):
+def payload(*, sdk="AVAILABLE", mode="original"):
     available = sdk == "AVAILABLE"
     return {
         "schema": mcp.SCHEMA,
         "sdk": sdk,
+        "mode": mode,
         "registration": "OK" if available else "NOT_RUN",
         "read_result": "OK" if available else "NOT_RUN",
         "write_denied_result": "OK" if available else "NOT_RUN",
@@ -23,11 +24,18 @@ def payload(*, sdk="AVAILABLE"):
         "actual_external_mcp": False, "real_provider": False,
         "real_agent_resident": False,
         "sdk_server_import": "PASS" if available else "NOT_RUN",
-        "registered_tool_count": 2 if available else 0,
+        "registered_tool_count": 3 if available else 0,
         "discovery_errors_observed": False,
         "wire_read_after_read": 1 if available else None,
         "wire_write_after_denial": 0 if available else None,
         "wire_write_after_approval": 1 if available else None,
+        "wire_read_after_scope_denied": (2 if mode == "original" else 1) if available else None,
+        "wire_write_after_scope_denied": (2 if mode == "original" else 1) if available else None,
+        "scope_denied_write_marker": (mode == "original") if available else None,
+        "wire_write_after_cancel": 1 if available else None,
+        "wire_write_after_approval_error": 1 if available else None,
+        "wire_write_after_post_approval_deny": 1 if available else None,
+        "wire_unannotated_write_after_denial": 0 if available else None,
     }
 
 
@@ -77,6 +85,13 @@ class RealStdioMCPTests(unittest.TestCase):
             ("wire_read_after_read", 0),
             ("wire_write_after_denial", 1),
             ("wire_write_after_approval", 0),
+            ("wire_read_after_scope_denied", 0),
+            ("wire_write_after_scope_denied", 0),
+            ("scope_denied_write_marker", False),
+            ("wire_write_after_cancel", 2),
+            ("wire_write_after_approval_error", 2),
+            ("wire_write_after_post_approval_deny", 2),
+            ("wire_unannotated_write_after_denial", 1),
         ):
             bad_case = payload()
             bad_case[field] = bad
