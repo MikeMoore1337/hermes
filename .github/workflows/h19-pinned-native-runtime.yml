@@ -74,6 +74,12 @@ jobs:
           set -euo pipefail
           python3 -m scripts.h19_real_stdio_mcp --execute --out "$RUNNER_TEMP/h19-real-mcp-stdio.json"
           python3 -c 'import json,os; r=json.load(open(os.path.join(os.environ["RUNNER_TEMP"],"h19-real-mcp-stdio.json"))); print("Real local MCP:",r["status"],"full MCP:",r["full_mcp_permission_enforcement_verified"],"model:",r["real_model_evaluation"])' >> "$GITHUB_STEP_SUMMARY"
+      - name: H-19 real MCP deny-by-toolset original versus bounded patched runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m scripts.h19_real_stdio_mcp --execute --compare-patched --out "$RUNNER_TEMP/h19-real-mcp-permissions.json"
+          python3 -c 'import json,os; r=json.load(open(os.path.join(os.environ["RUNNER_TEMP"],"h19-real-mcp-permissions.json"))); print("MCP scoped policy:",r["status"],"external MCP:",r["external_mcp_effects_verified"],"H-01:",r["resident_agent_allowed"])' >> "$GITHUB_STEP_SUMMARY"
       - name: Preserve sanitized, no-prompt native evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -85,5 +91,6 @@ jobs:
             ${{ runner.temp }}/h19-execve-seccomp.json
             ${{ runner.temp }}/h19-native-effects.json
             ${{ runner.temp }}/h19-real-mcp-stdio.json
+            ${{ runner.temp }}/h19-real-mcp-permissions.json
           if-no-files-found: warn
           retention-days: 7

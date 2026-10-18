@@ -8,11 +8,12 @@ from scripts import h19_real_stdio_mcp as mcp
 from scripts.verify_v0222_immutable import IMAGE_DIGEST, EXPECTED_SOURCE
 
 
-def payload(*, sdk="AVAILABLE"):
+def payload(*, sdk="AVAILABLE", mode="original"):
     available = sdk == "AVAILABLE"
     return {
         "schema": mcp.SCHEMA,
         "sdk": sdk,
+        "mode": mode,
         "registration": "OK" if available else "NOT_RUN",
         "read_result": "OK" if available else "NOT_RUN",
         "write_denied_result": "OK" if available else "NOT_RUN",
@@ -23,11 +24,18 @@ def payload(*, sdk="AVAILABLE"):
         "actual_external_mcp": False, "real_provider": False,
         "real_agent_resident": False,
         "sdk_server_import": "PASS" if available else "NOT_RUN",
-        "registered_tool_count": 2 if available else 0,
+        "registered_tool_count": 3 if available else 0,
         "discovery_errors_observed": False,
         "wire_read_after_read": 1 if available else None,
         "wire_write_after_denial": 0 if available else None,
         "wire_write_after_approval": 1 if available else None,
+        "wire_read_after_scope_denied": (2 if mode == "original" else 1) if available else None,
+        "wire_write_after_scope_denied": (2 if mode == "original" else 1) if available else None,
+        "scope_denied_write_marker": (mode == "original") if available else None,
+        "wire_write_after_cancel": 1 if available else None,
+        "wire_write_after_approval_error": 1 if available else None,
+        "wire_write_after_post_approval_deny": 1 if available else None,
+        "wire_unannotated_write_after_denial": 0 if available else None,
     }
 
 
@@ -45,6 +53,20 @@ def fake_runner(*, observation=None, image=None, source=None, result_code=0):
         Mock(returncode=0, stdout=values[1]),
         Mock(returncode=result_code, stdout=values[2]),
     ])
+
+
+
+def fake_runner_compare(*, old=None, new=None):
+    image_id = (json.dumps(["docker.io/nousresearch/hermes-agent@" + IMAGE_DIGEST]) + "|amd64").encode()
+    stamp = json.dumps({"fields": {"commit": EXPECTED_SOURCE},
+                        "keys": ["commit"], "python": "3.14.7"}).encode()
+    derivative_id = ("sha256:" + "b" * 64 + "|amd64").encode()
+    responses = (
+        image_id, stamp, derivative_id,
+        json.dumps(old if old is not None else payload()).encode(),
+        json.dumps(new if new is not None else payload(mode="patched")).encode(),
+    )
+    return Mock(side_effect=[Mock(returncode=0, stdout=part) for part in responses])
 
 
 class RealStdioMCPTests(unittest.TestCase):
@@ -77,6 +99,13 @@ class RealStdioMCPTests(unittest.TestCase):
             ("wire_read_after_read", 0),
             ("wire_write_after_denial", 1),
             ("wire_write_after_approval", 0),
+            ("wire_read_after_scope_denied", 0),
+            ("wire_write_after_scope_denied", 0),
+            ("scope_denied_write_marker", False),
+            ("wire_write_after_cancel", 2),
+            ("wire_write_after_approval_error", 2),
+            ("wire_write_after_post_approval_deny", 2),
+            ("wire_unannotated_write_after_denial", 1),
         ):
             bad_case = payload()
             bad_case[field] = bad
@@ -131,6 +160,69 @@ class RealStdioMCPTests(unittest.TestCase):
             self.assertEqual(mcp.main([]), 0)
             self.assertIn("NOT_RUN", out.getvalue())
             run.assert_not_called()
+
+
+    def test_patched_mcp_scope_must_deny_even_with_approval(self):
+        result = mcp.validate(payload(mode="patched"))
+        self.assertEqual(result["status"], "PASS")
+        self.assertFalse(result["observations"]["scope_denied_write_marker"])
+        for field, bad in (
+            ("wire_write_after_scope_denied", 2),
+            ("wire_read_after_scope_denied", 2),
+            ("scope_denied_write_marker", True),
+            ("wire_write_after_approval_error", 2),
+            ("wire_unannotated_write_after_denial", 1),
+            ("wire_write_after_post_approval_deny", 2),
+            ("wire_write_after_cancel", 2),
+        ):
+            altered = payload(mode="patched")
+            altered[field] = bad
+            with self.subTest(field=field):
+                self.assertEqual(mcp.validate(altered)["status"], "FAIL")
+
+    def test_sdk_absence_is_not_a_partial_success(self):
+        missing = payload(sdk="UNAVAILABLE")
+        missing["wire_write_after_scope_denied"] = 0
+        with self.assertRaises(mcp.EvidenceDenied):
+            mcp.validate(missing)
+        changed = payload()
+        changed["mode"] = "unknown"
+        with self.assertRaises(mcp.EvidenceDenied):
+            mcp.validate(changed)
+
+    def test_compare_runner_uses_two_disposable_immutable_paths(self):
+        runner = fake_runner_compare()
+        code, report = mcp.compare_isolated(runner=runner)
+        self.assertEqual(code, 0)
+        self.assertEqual(report["status"], "PASS")
+        self.assertEqual(runner.call_count, 5)
+        original = runner.call_args_list[3].args[0]
+        patched = runner.call_args_list[4].args[0]
+        self.assertIn(mcp.IMAGE, original)
+        self.assertIn("hermes-v0222-native-policy-candidate:20261016", patched)
+        for cmd in (original, patched):
+            self.assertEqual(cmd[-1], mcp.PROBE)
+            for token in ("--pull=never", "--network", "none", "--read-only",
+                          "--cap-drop", "ALL", "--user", "65534:65534"):
+                self.assertIn(token, cmd)
+            for token in ("--privileged", "--mount", "--volume",
+                          "--env-file", "--publish", "--network=host"):
+                self.assertNotIn(token, cmd)
+        self.assertFalse(report["resident_agent_allowed"])
+
+    def test_compare_detects_forged_modes_and_effects(self):
+        cases = (
+            (payload(), {**payload(mode="patched"), "wire_write_after_scope_denied": 2}),
+            (payload(mode="patched"), payload(mode="patched")),
+            (payload(), payload(mode="original")),
+        )
+        for first, second in cases:
+            with self.subTest(first=first["mode"], second=second["mode"]):
+                code, report = mcp.compare_isolated(
+                    runner=fake_runner_compare(old=first, new=second))
+                self.assertNotEqual(code, 0)
+                self.assertIn(report["status"], ("FAIL", "INFRA_FAILURE"))
+                self.assertFalse(report["resident_agent_allowed"])
 
     def test_sdk_and_trust_gate_are_really_invoked(self):
         source = mcp.PROBE
