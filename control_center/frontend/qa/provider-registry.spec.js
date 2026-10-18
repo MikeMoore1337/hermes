@@ -149,5 +149,7 @@ for(const width of [320,393,1440]){
    await card.getByText("История оценочных данных Cloudflare").click();
    await expect(card.getByText(/95% интервал 23,427 - 23,427/)).toBeVisible();
    expect(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1)).toBe(false);
+   mkdirSync(evidence,{recursive:true});
+   await page.screenshot({path:resolve(evidence,"cloudflare-advisory-"+width+".png"),fullPage:true});
  });
 }
