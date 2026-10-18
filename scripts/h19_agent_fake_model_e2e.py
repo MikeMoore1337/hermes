@@ -372,7 +372,9 @@ with tempfile.TemporaryDirectory(dir="/tmp", prefix="h19-cli-loop-") as folder:
             "mcp__h19cli__mark") == 1
         if len(calls) >= 2:
             responses = json.dumps(calls[1].get("messages") or [], sort_keys=True)
-            report["fake_model_saw_read_result"] = "H19_SOURCE_PROMPT_INJECTION" in responses
+            report["fake_model_saw_read_result"] = any(
+                marker in responses for marker in (
+                    "H19_SOURCE_PROMPT_INJECTION", "H19_BENIGN_REFERENCE"))
         if len(calls) >= 3:
             responses = json.dumps(calls[2].get("messages") or [], sort_keys=True).lower()
             report["fake_model_saw_denied_write"] = any(
