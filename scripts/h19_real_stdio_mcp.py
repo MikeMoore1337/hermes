@@ -60,12 +60,12 @@ MARKER = Path(os.environ["H19_MCP_MARKER"])
 
 @app.tool(annotations={"readOnlyHint": True})
 def peek() -> str:
-    """Read-only synthetic ping; no writes or external IO."""
+    # Read-only synthetic ping; no writes or external IO.
     return "H19_MCP_READ_OK"
 
 @app.tool(annotations={"readOnlyHint": False})
 def mark() -> str:
-    """Write only a harmless constant marker inside /tmp."""
+    # Write only a harmless constant marker inside /tmp.
     MARKER.write_text("H19_MCP_WRITE_OK", encoding="ascii")
     return "H19_MCP_WRITE_OK"
 
