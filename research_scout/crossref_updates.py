@@ -60,6 +60,10 @@ def fetch(doi: str) -> bytes:
             "Accept-Encoding": "identity", "Connection": "close",
         })
         response = conn.getresponse()
+        if response.status == 429:
+            # Explicit upstream throttling signal; a later manually approved
+            # invocation may be appropriate, but NEVER retry automatically.
+            raise UpdateLookupError("update_http_429")
         if response.status != 200:
             raise UpdateLookupError("update_http_unavailable")
         if not response.getheader("Content-Type", "").lower().startswith("application/json"):
