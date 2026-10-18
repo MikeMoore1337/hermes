@@ -53,3 +53,4 @@ jobs:
           & python -c 'import sys; sys.exit(0 if str(16.0) == sys.argv[1] else 1)' '15.0'
           if ($LASTEXITCODE -eq 0) { throw 'PYTHON_NATIVE_NEGATIVE_CHECK_FAILED' }
           Write-Output 'WINDOWS_NATIVE_ARGUMENTS=PASS'
+          exit 0
