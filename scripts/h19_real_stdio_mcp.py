@@ -334,15 +334,74 @@ def capture(*, runner=run_bounded) -> tuple[int, dict[str, Any]]:
                    "full_mcp_permission_enforcement_verified": False}
 
 
+
+def compare_isolated(*, runner=run_bounded) -> tuple[int, dict[str, Any]]:
+    """Original-versus-bounded derivative through actual MCP SDK and real wire receipts."""
+    inspect, stamp_cmd, original_run = commands()
+    derivative_inspect, derivative_run = patched_commands()
+    try:
+        original_image = runner(inspect, timeout=20, stdout_limit=8192, stderr_limit=8192)
+        if original_image.returncode or not image_identity(original_image.stdout):
+            raise EvidenceDenied("MCP_COMPARE_ORIGINAL_DIGEST_DENIED")
+        stamp = runner(stamp_cmd, timeout=35, stdout_limit=4096, stderr_limit=4096)
+        if stamp.returncode or stamp_details(stamp.stdout).get("matches_source") is not True:
+            raise EvidenceDenied("MCP_COMPARE_SOURCE_STAMP_DENIED")
+        derivative = runner(derivative_inspect, timeout=15, stdout_limit=4096, stderr_limit=4096)
+        try:
+            derivative_id, architecture = derivative.stdout.decode("ascii").strip().split("|")
+        except (ValueError, UnicodeError):
+            raise EvidenceDenied("MCP_COMPARE_DERIVATIVE_ID_DENIED") from None
+        if (derivative.returncode or architecture != "amd64"
+                or re.fullmatch(r"sha256:[0-9a-f]{64}", derivative_id) is None):
+            raise EvidenceDenied("MCP_COMPARE_DERIVATIVE_ID_DENIED")
+        original_run, derivative_run = list(original_run), list(derivative_run)
+        original_run[-1], derivative_run[-1] = PROBE, PROBE
+        original = runner(original_run, timeout=95, stdout_limit=12_000, stderr_limit=8192)
+        patched = runner(derivative_run, timeout=95, stdout_limit=12_000, stderr_limit=8192)
+        if original.returncode or patched.returncode:
+            raise EvidenceDenied("MCP_COMPARE_SANDBOX_EXECUTION_DENIED")
+        first, second = json.loads(original.stdout), json.loads(patched.stdout)
+        if first.get("mode") != "original" or second.get("mode") != "patched":
+            raise EvidenceDenied("MCP_COMPARE_MODE_MISMATCH")
+        first_receipt, patched_receipt = validate(first), validate(second)
+        if first_receipt["status"] == "NOT_RUN" or patched_receipt["status"] == "NOT_RUN":
+            return 3, {
+                "schema": SCHEMA, "status": "NOT_RUN",
+                "reason": "OPTIONAL_SDK_MISSING",
+                "real_model_evaluation": "NOT_RUN", "resident_agent_allowed": False,
+            }
+        ok = first_receipt["status"] == "PASS" and patched_receipt["status"] == "PASS"
+        return (0 if ok else 1), {
+            "schema": SCHEMA, "status": "PASS" if ok else "FAIL",
+            "mode": "original_vs_bounded_patch_real_mcp_wire",
+            "image": IMAGE, "upstream_source_stamp": EXPECTED_SOURCE,
+            "patched_derivative_id": derivative_id,
+            "original": first_receipt["observations"],
+            "patched": patched_receipt["observations"],
+            "untrusted_approval_error_and_denial_tested": ok,
+            "full_mcp_permission_enforcement_verified": False,
+            "external_mcp_effects_verified": False,
+            "real_model_evaluation": "NOT_RUN", "resident_agent_allowed": False,
+        }
+    except (EvidenceDenied, BoundedProcessError, OSError, UnicodeError,
+            ValueError, TypeError, KeyError, AttributeError):
+        return 2, {
+            "schema": SCHEMA, "status": "INFRA_FAILURE",
+            "real_model_evaluation": "NOT_RUN", "resident_agent_allowed": False,
+            "full_mcp_permission_enforcement_verified": False,
+        }
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--execute", action="store_true")
+    parser.add_argument("--compare-patched", action="store_true")
     parser.add_argument("--out", type=Path)
     args = parser.parse_args(argv)
     if not args.execute:
         print(json.dumps({"schema": SCHEMA, "status": "NOT_RUN", "resident_agent_allowed": False}))
         return 0
-    code, report = capture()
+    code, report = compare_isolated() if args.compare_patched else capture()
     if args.out:
         try:
             args.out.write_text(json.dumps(report, sort_keys=True, indent=2) + "\n", encoding="utf-8")
