@@ -57,6 +57,8 @@ class FabricPilotContractTests(unittest.TestCase):
             "MemoryMax=192M",
             "CPUQuota=25%",
             "CapabilityBoundingSet=",
+            "StartLimitIntervalSec=60s",
+            "StartLimitBurst=3",
             "WantedBy=multi-user.target",
         ):
             with self.subTest(fragment=fragment):
