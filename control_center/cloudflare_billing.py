@@ -151,7 +151,7 @@ def read(token_path: Path, account: str, *, now: dt.datetime | None = None,
         return error("unknown", when)
 
 
-def save(snapshot: dict, path: Path = OUTPUT) -> None:
+def save(snapshot: dict, path: Path = OUTPUT, *, group: str | None = None) -> None:
     if path.is_symlink():
         raise BillingError("symlink_denied")
     # Validate a complete sanitized round-trip before writing.
@@ -164,6 +164,10 @@ def save(snapshot: dict, path: Path = OUTPUT) -> None:
     if len(snapshot["days"]) > 30:
         raise BillingError("invalid_history")
     path.parent.mkdir(mode=0o750, parents=True, exist_ok=True)
+    if group is not None:
+        import grp
+        os.chown(path.parent, 0, grp.getgrnam(group).gr_gid)
+        os.chmod(path.parent, 0o750)
     target = None
     try:
         with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,
@@ -175,6 +179,9 @@ def save(snapshot: dict, path: Path = OUTPUT) -> None:
             os.fchmod(file.fileno(), 0o640)
             os.fsync(file.fileno())
         os.replace(target, path)
+        if group is not None:
+            import grp
+            os.chown(path, 0, grp.getgrnam(group).gr_gid)
     finally:
         if target is not None:
             target.unlink(missing_ok=True)
@@ -227,7 +234,7 @@ def main() -> int:
     args = parser.parse_args()
     try:
         data = read(args.token_file, args.account_id)
-        save(data, args.output)
+        save(data, args.output, group="hermes-control")
         print("CLOUDFLARE_BILLING_READ=" + data["status"])
         return 0 if data["status"] == "ok" else 1
     except (OSError, BillingError, ValueError):
