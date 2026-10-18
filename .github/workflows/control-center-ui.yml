@@ -88,7 +88,9 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: h15-provider-quota-cards-screenshots
-          path: docs/ux/evidence/h15-provider-registry/provider-cards-*.png
+          path: |
+            docs/ux/evidence/h15-provider-registry/provider-cards-*.png
+            docs/ux/evidence/h15-provider-registry/cloudflare-advisory-*.png
           if-no-files-found: ignore
           retention-days: 7
 
