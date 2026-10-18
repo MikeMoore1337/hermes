@@ -16,7 +16,7 @@ From the checkout, with OpenSSL and Python installed:
 
     python -m venv .venv-device-fabric
     .venv-device-fabric/bin/python -m pip install websockets==16.0
-    .venv-device-fabric/bin/python -m unittest discover -s tests -p 'test_device_fabric_presence.py' -v
+    .venv-device-fabric/bin/python -m unittest discover -s evals/device_fabric_wss -p 'presence_integration.py' -v
 
 On Windows the venv Python path is `.venv-device-fabric\Scripts\python.exe`. No device registration or real network tunnel is performed by tests.
 

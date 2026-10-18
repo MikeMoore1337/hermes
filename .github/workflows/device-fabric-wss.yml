@@ -4,13 +4,13 @@ on:
   pull_request:
     paths:
       - 'device_fabric/**'
-      - 'tests/test_device_fabric_presence.py'
+      - 'evals/device_fabric_wss/presence_integration.py'
       - '.github/workflows/device-fabric-wss.yml'
   push:
     branches: [main]
     paths:
       - 'device_fabric/**'
-      - 'tests/test_device_fabric_presence.py'
+      - 'evals/device_fabric_wss/presence_integration.py'
       - '.github/workflows/device-fabric-wss.yml'
 
 permissions:
@@ -32,4 +32,4 @@ jobs:
       - name: Execute actual TLS WebSocket loopback integration tests
         run: |
           "$RUNNER_TEMP/hermes-device-fabric/bin/python" -c "import websockets; assert websockets.__version__ == '16.0'"
-          "$RUNNER_TEMP/hermes-device-fabric/bin/python" -m unittest discover -s tests -p 'test_device_fabric_presence.py' -v
+          "$RUNNER_TEMP/hermes-device-fabric/bin/python" -m unittest discover -s evals/device_fabric_wss -p 'presence_integration.py' -v
