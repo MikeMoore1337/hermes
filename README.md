@@ -1,69 +1,107 @@
-# Hermes
+<div align="center">
 
-Приватный репозиторий **управления собственным Hermes Agent**: исследовательские агенты, мониторинг, правила, адаптеры и инфраструктурный код.
+<img src="assets/branding/hermes-hero.svg" alt="Hermes Agent — независимый контур управления агентами, исследованиями, мониторингом и проверками" width="100%">
 
-> **Состояние на 15.10.2026:** на VPS действительно включены новости YFC, Ops Watch с Telegram-отправителем, приватный GitHub Actions QA Advisor и ежедневный Research Scout по Europe PMC + Crossref. Первый самостоятельный Research Scout tick завершился успешно (4 кандидата, 0 ошибок). Постоянный AI Agent и Cloudflare proxy **преднамеренно выключены** до P0 проверок происхождения образа, отсутствия платного биллинга и длительной устойчивости. Дубликат Python metadata `hermes-agent` и отсутствие проверенной полной SBOM не позволяют объявить эту работу завершённой. [Актуальные доказательства, даты и условия](docs/status/HERMES-CURRENT-2026-10-15.md). Новостной конвейер по-прежнему принадлежит YFC.
+<br>
 
-## Зачем отдельный репозиторий
+**Собственный контур агентных инструментов: наблюдаемость, исследования, контроль качества и управляемые действия.**
 
-- Независимый жизненный цикл собственных агентов (Ops Watch, Research Scout, QA Advisor).
-- Минимальные права для каждой интеграции: YFC, Second Brain, GitHub.
-- Отдельные GitHub Issues, PR, проверки, решения и журнал совместимости.
-- Предсказуемое использование upstream [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent): **не форк** и не копия движка.
+Hermes объединяет специализированные возможности вокруг проверяемых данных, явных разрешений и воспроизводимой доставки. Это **не форк** [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent) и **не замена** действующим системам YFC или Second Brain.
 
-## Документация
+[**Возможности**](#возможности) · [**Архитектура**](#архитектура-и-границы) · [**Быстрый старт**](#быстрая-проверка) · [**Документация**](#документация) · [**Задачи**](https://github.com/MikeMoore1337/hermes/issues)
 
-- [Актуальное состояние 15.10.2026 - работающие службы и ограничения](docs/status/HERMES-CURRENT-2026-10-15.md)
-- [Исторический снимок 14.10.2026](docs/status/HERMES-CURRENT-2026-10-14.md)
-- [Правила для Codex и других агентов](AGENTS.md)
-- [Архитектура и границы](docs/architecture/OVERVIEW.md)
-- [Каноническое владение данными и контрактами](docs/architecture/OWNERSHIP.md)
-- [План безопасной миграции конвейера новостей](docs/architecture/MIGRATION.md)
-- [H-01: upstream, модель угроз и требования к изолированному runtime](docs/architecture/H-01-runtime-plan.md)
-- [H-01: ограниченный локальный контур на выделенном VPS](deploy/H-01-LOCAL-SANDBOX.md)
-- [H-01: фактический запуск и статус после увеличения RAM 14.10.2026](docs/audits/H-01-vps-upgrade-2026-10-14.md)
-- [H-02: установленный локальный мониторинг, фактический статус](docs/audits/H-02-vps-monitor-2026-10-14.md)
-- [H-02: ограниченная автоматическая доставка Telegram, акт установки](docs/audits/H-02-autosender-vps-2026-10-14.md)
-- [Groq Free: ключ и ограничения для полноценного AI-агента](docs/architecture/GROQ_FREE_BLOCKER.md)
-- [Безопасность и угрозы](docs/security/THREAT_MODEL.md)
-- [Дорожная карта H-00...H-07](docs/roadmap/ROADMAP.md)
-- [Эксплуатация и выпуск](docs/operations/DEPLOYMENT.md)
-- [Решение о выделении репозитория](docs/decisions/ADR-0001-separate-repository.md)
+[![Hermes repository checks](https://github.com/MikeMoore1337/hermes/actions/workflows/quality.yml/badge.svg?branch=main)](https://github.com/MikeMoore1337/hermes/actions/workflows/quality.yml)
 
-## Текущие границы
+</div>
 
-Работающий новостной поток остаётся **в YFC**: discovery -> hardened editorial worker -> подписанный YFC intake -> ручная проверка -> Telegram. Его исходники, release, секреты, список источников и канонические проверки сейчас **не переносятся**.
+---
 
-Second Brain v4 проходит эксплуатационную проверку [#386](https://github.com/MikeMoore1337/second-brain/issues/386); прямой доступ к приватному vault и новые интеграции не разрешены. SEO Growth Operator уже учитывается в [YFC #322](https://github.com/MikeMoore1337/your-fitness-coach/issues/322) и блокируется условиями [#320](https://github.com/MikeMoore1337/your-fitness-coach/issues/320).
+## Что такое Hermes
 
-## Cloudflare Workers AI Free
+**Hermes Agent** - отдельный приватный репозиторий для инфраструктуры и собственных возможностей агентной системы: подсистем наблюдения, исследовательских инструментов, оценки качества, операторской панели, политик и ограниченного исполнения. Исходники upstream-движка не копируются в этот репозиторий.
 
-Подготовлен [проверяемый модуль бесплатного провайдера](plugins/cloudflare-workers-ai-free/README.md): строго один допущенный `@cf/openai/gpt-oss-20b`, без платных моделей и автоматического выбора другого тарифа. Установка не включает сеть и не требует ключа. Текущий статус конкретного аккаунта — `ACCOUNT_FREE_UNVERIFIED`; [offline-пилот качества и ручной запуск](docs/operations/H-10-AI-QUALITY-PILOT.md) не выполняют живых запросов. [Текущий статус и ограничения](docs/architecture/GROQ_FREE_BLOCKER.md).
+Идея проста: **собирать сигналы, проверять факты, предлагать действия и выполнять только то, что явно разрешено**. Наличие кода в `main` не означает, что соответствующий сервис запущен или имеет доступ к внешним системам.
 
-- [Результаты локальной проверки Cloudflare и безопасное подключение ключа](docs/audits/H-01-cloudflare-free-preflight-2026-10-14.md)
+## Возможности
 
-## Фактическая проверка Cloudflare и сетевой изоляции
+| Подсистема | Назначение | Исходники |
+| :--- | :--- | :--- |
+| **🔭 Ops Watch** | Сигналы инфраструктуры, инциденты, безопасные уведомления и проверка восстановления | [`ops_watch/`](ops_watch/) |
+| **🔬 Research Scout** | Поиск научных публикаций, проверка метаданных, происхождения и достоверности источников; выводы проходят ручную экспертизу | [`research_scout/`](research_scout/) |
+| **🧪 QA Advisor** | Анализ GitHub Actions и CI-сигналов, проверяемые свидетельства без права изменять чужие репозитории | [`qa_advisor/`](qa_advisor/) |
+| **🖥️ Control Center** | Операторский интерфейс для наблюдения за компонентами, квотами, состоянием и доступными действиями | [`control_center/`](control_center/) |
+| **⚡ H-01 runtime** | Ограниченный агентный контур с отдельными правилами доступа и лимитами; эксплуатационная приёмка ведётся отдельно | [`deploy/`](deploy/) · [#33](https://github.com/MikeMoore1337/hermes/issues/33) |
+| **🛡️ Evaluation & Policy** | Offline-проверки ограничений, регрессий и нежелательных действий, тестовые сценарии и эталонные оценки | [`evals/`](evals/) · [`hermes_benchmark/`](hermes_benchmark/) · [`policies/`](policies/) |
 
-[Аудит 14.10.2026](docs/audits/H-01-cloudflare-live-2026-10-14.md): Cloudflare GPT-OSS 20B реально ответила HTTP 200 **на хосте и из изолированного контейнера**, негативные проверки сети пройдены. Дополнительно сам OpenAI SDK из Hermes Docker-образа вернул HTTP 200 через защищённую сеть. Но полный Hermes CLI не завершил ограниченный agent turn за 86 секунд; автономная служба остаётся отключённой. [Диагностика #24](https://github.com/MikeMoore1337/hermes/issues/24).
+> **Актуальность:** это карта компонентов в исходном коде, а не таблица работающих на VPS служб. Состояние конкретного развёртывания устанавливается по [операционным проверкам](docs/operations/DEPLOYMENT.md), [фактическому статусу от 15.10.2026](docs/status/HERMES-CURRENT-2026-10-15.md) и незакрытым условиям [H-01 #33](https://github.com/MikeMoore1337/hermes/issues/33).
 
-## Проверки
+## Архитектура и границы
 
-Только стандартная библиотека Python; запуск из корня:
+```mermaid
+flowchart TB
+    S["Разрешённые источники и сигналы"]
+    O["Ops Watch"]
+    R["Research Scout"]
+    Q["QA Advisor"]
+    C["Hermes Control Center"]
+    H["Ограниченный H-01 runtime"]
+    U["Оператор / ручное решение"]
+    Y["YFC: собственный news pipeline"]
+    B["Second Brain: отдельный vault"]
+
+    S --> O
+    S --> R
+    S --> Q
+    O --> C
+    R --> C
+    Q --> C
+    C --> U
+    O -. "только при выполнении условий" .-> H
+    H -. "ограниченный результат" .-> C
+    Y -. "отдельный владелец и контракт" .- C
+    B -. "нет прямого доступа к vault" .- C
+```
+
+- **Изоляция:** инструменты, доступ к сети, данным и ресурсам ограничиваются отдельно; описание роли само по себе не является защитой.
+- **Разделение ответственности:** рабочий новостной конвейер принадлежит [Your Fitness Coach](https://github.com/MikeMoore1337/your-fitness-coach); данные и vault принадлежат [Second Brain](https://github.com/MikeMoore1337/second-brain).
+- **Никаких скрытых полномочий:** внешние публикации, новые поставщики, расходы и расширение доступа требуют предусмотренных проектом решений.
+- **Не путать стадии:** реализация, offline-тесты, CI, merge, production snapshot и реальная активация сервиса подтверждаются независимо.
+
+Подробности: [архитектурный обзор](docs/architecture/OVERVIEW.md) · [контракты владения](docs/architecture/OWNERSHIP.md) · [модель угроз](docs/security/THREAT_MODEL.md).
+
+## Быстрая проверка
+
+Для локальной проверки репозитория нужен **Python 3**. Базовые проверки и unit-тесты запускаются из корня, без ключей доступа и платных AI API:
 
 ```bash
 python3 scripts/validate_repo.py
+python3 scripts/check_policy_index.py
+python3 scripts/check_markdown_links.py
 python3 -m unittest discover -s tests -v
 ```
 
-CI проводит только статическую проверку репозитория, **не** развёртывает Hermes и не выполняет внешние AI-запросы.
+Основной CI запускает эти проверки, а также отдельные offline-сценарии оценки поведения. **Эти команды ничего не развёртывают**. Установка и выпуск описаны отдельно в [документации по доставке](docs/operations/DEPLOYMENT.md).
 
-## Очередь работ
+## Документация
 
-- [H-00: аудит runtime (#1)](https://github.com/MikeMoore1337/hermes/issues/1) - фактические измерения оформлены в [отчёте](docs/audits/H-00-2026-10-11.md); задача закрывается по CI и PR.
-- [H-01: независимый Agent (#2)](https://github.com/MikeMoore1337/hermes/issues/2) - заблокирован до доказательств и отдельного разрешения.
-- [Ops Watch (#3)](https://github.com/MikeMoore1337/hermes/issues/3), [Research Scout (#4)](https://github.com/MikeMoore1337/hermes/issues/4), [QA Advisor (#5)](https://github.com/MikeMoore1337/hermes/issues/5).
-- [Second Brain Bridge (#6)](https://github.com/MikeMoore1337/hermes/issues/6), [news runtime migration (#7)](https://github.com/MikeMoore1337/hermes/issues/7), [future capabilities (#8)](https://github.com/MikeMoore1337/hermes/issues/8).
+| Начать с | Где читать |
+| :--- | :--- |
+| **Текущий операционный контекст** | [Эксплуатация и точная доставка](docs/operations/DEPLOYMENT.md) · [зафиксированное состояние](docs/status/HERMES-CURRENT-2026-10-15.md) |
+| **Правила работы в репозитории** | [AGENTS.md](AGENTS.md) · [принятые решения](docs/decisions/ADR-0002-workers-free-and-delivery-first.md) |
+| **Система и границы** | [Архитектура](docs/architecture/OVERVIEW.md) · [Ownership](docs/architecture/OWNERSHIP.md) · [Security](docs/security/THREAT_MODEL.md) |
+| **Разработка и поставка** | [Deployment](docs/operations/DEPLOYMENT.md) · [Дорожная карта](docs/roadmap/ROADMAP.md) |
+| **Испытания и качество** | [Offline-evals](evals/) · [Бенчмарк](hermes_benchmark/) · [GitHub Actions](.github/workflows/quality.yml) |
 
-## Начало работ
+## Как устроена работа
 
-Первая задача - H-00: зафиксировать фактический runtime, доступы, ресурсные ограничения и схему размещения, **без изменений production**. Затем отдельным решением допускается H-01. Все последующие задачи оформляются Issues с критериями приёмки.
+**Issue → отдельная ветка → PR → проверки → разрешённое объединение → подтверждённая доставка.**
+
+Изменения проходят проверки именно той ревизии, которую предполагается поставлять. Автоматическая доставка и работающий сервис - разные факты; для новых возможностей сохраняются необходимые ограничения и разрешения. См. [правила для агентов](AGENTS.md) и [политику эксплуатации](docs/operations/DEPLOYMENT.md).
+
+---
+
+<div align="center">
+
+<sub>Hermes Agent · Private, owner-operated project · Powered by verifiable evidence, not assumptions.</sub>
+
+</div>
