@@ -1,0 +1,104 @@
+--- a/tools/mcp_tool.py
++++ b/tools/mcp_tool.py
+@@ -527,2 +527,4 @@
+-_server_trust_levels: dict[Any, str] = {}
+-_tool_read_only_hints: dict[Any, dict[str, bool]] = {}
++_server_trust_levels: dict[Any, str] = {}
++_tool_read_only_hints: dict[Any, dict[str, bool]] = {}
++# Operator-controlled names; MCP annotations by themselves are not authority.
++_owner_read_only_allowlists: dict[Any, frozenset[str]] = {}
+--- a/tools/mcp_tool_registration.py
++++ b/tools/mcp_tool_registration.py
+@@ -8,2 +8,3 @@
+-import logging
+-import threading
++import logging
++import re
++import threading
+@@ -49,1 +50,17 @@
+-def _annotation_read_only_hint(mcp_tool: Any) -> bool:
++def _owner_read_only_allowlist(config: dict) -> frozenset[str]:
++    """Only exact MCP tool names from local config can bypass approval.
++
++    Missing, malformed, globbed or duplicated entries fail closed. This does
++    not consult MCP tool annotations or any server-delivered text.
++    """
++    values = (config or {}).get("read_only_allowlist", [])
++    if type(values) is not list or len(values) > 128 or any(
++        type(name) is not str or re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}", name) is None
++        for name in values
++    ) or len(set(values)) != len(values):
++        logger.warning("MCP owner read-only allowlist invalid; ignoring entire list")
++        return frozenset()
++    return frozenset(values)
++
++
++def _annotation_read_only_hint(mcp_tool: Any) -> bool:
+@@ -69,2 +86,3 @@
+-        _core._server_trust_levels[key] = _normalize_server_trust((config or {}).get("trust"))
+-        hints = _core._tool_read_only_hints.setdefault(key, {})
++        _core._server_trust_levels[key] = _normalize_server_trust((config or {}).get("trust"))
++        _core._owner_read_only_allowlists[key] = _owner_read_only_allowlist(config)
++        hints = _core._tool_read_only_hints.setdefault(key, {})
+@@ -78,2 +96,3 @@
+-        _core._server_trust_levels[_server_key(server_name, scope, current=False)] = _normalize_server_trust(
+-            (config or {}).get("trust"))
++        policy_key = _server_key(server_name, scope, current=False)
++        _core._server_trust_levels[policy_key] = _normalize_server_trust((config or {}).get("trust"))
++        _core._owner_read_only_allowlists[policy_key] = _owner_read_only_allowlist(config)
+@@ -152,1 +171,3 @@
+-        _core._server_trust_levels.pop(_server_key(server_name, scope, current=False), None)
++        policy_key = _server_key(server_name, scope, current=False)
++        _core._server_trust_levels.pop(policy_key, None)
++        _core._owner_read_only_allowlists.pop(policy_key, None)
+--- a/tools/mcp_tool_handlers.py
++++ b/tools/mcp_tool_handlers.py
+@@ -52,6 +52,17 @@
+-def _tool_is_read_only(server_name: str, tool_name: str) -> bool:
+-    """True only when discovery captured ``readOnlyHint=True`` for the tool. Missing or malformed
+-    metadata fails safe to False (treated as write-capable). readOnlyHint is a property of the
+-    connection's tools, so it lives under the connection key."""
+-    from tools.mcp_tool_scope import _resolve_server_key
+-    return _core._tool_read_only_hints.get(_resolve_server_key(server_name), {}).get(tool_name) is True
++def _tool_is_read_only(server_name: str, tool_name: str) -> bool:
++    """Effective permission AND retry policy, never remote annotation alone.
++
++    On untrusted servers a positive server hint must be independently vetted
++    by the operator's exact per-tool read-only allowlist. Missing policy
++    metadata is untrusted. Shared connections use the consuming profile's
++    own allowlist, not the original connection owner's privileges.
++    """
++    from tools.mcp_tool_scope import _resolve_server_key, _server_key
++    hint = _core._tool_read_only_hints.get(_resolve_server_key(server_name), {}).get(tool_name) is True
++    if not hint:
++        return False
++    policy_key = _server_key(server_name)
++    trust = _core._server_trust_levels.get(policy_key, _core._TRUST_UNTRUSTED)
++    if trust == _core._TRUST_FULL:
++        return True
++    return tool_name in _core._owner_read_only_allowlists.get(policy_key, frozenset())
+@@ -65,1 +76,1 @@
+-    trust = _core._server_trust_levels.get(_server_key(server_name), _core._TRUST_FULL)
++    trust = _core._server_trust_levels.get(_server_key(server_name), _core._TRUST_UNTRUSTED)
+@@ -71,2 +82,2 @@
+-            f"MCP tool '{tool_name}' on UNTRUSTED server '{server_name}' wants to run. This tool is write-capable "
+-            f"(no readOnlyHint=true annotation) and may modify external state.",
++            f"MCP tool '{tool_name}' on UNTRUSTED server '{server_name}' wants to run. It may "
++            f"modify external state; an unvetted server readOnlyHint is not authorization.",
+@@ -581,2 +592,2 @@
+-        # Only a tool annotated readOnlyHint=True is replayed after session expiry; a 401 is always
+-        # pre-dispatch so the auth recoverer keeps its retry for every tool.
++        # Replay only a locally vetted read-only tool (and positive server hint).
++        # A misleading remote hint alone must NEVER make a write retry-safe.
+--- a/tools/mcp_tool_lifecycle.py
++++ b/tools/mcp_tool_lifecycle.py
+@@ -197,3 +197,6 @@
+-            _core._server_connect_errors.pop(key, None)
+-            _core._server_scope_keys.pop(key, None)
+-            _core._server_tool_scopes.pop(key, None)
++            _core._server_connect_errors.pop(key, None)
++            _core._server_scope_keys.pop(key, None)
++            _core._server_tool_scopes.pop(key, None)
++            _core._server_trust_levels.pop(key, None)
++            _core._owner_read_only_allowlists.pop(key, None)
++            _core._tool_read_only_hints.pop(key, None)
