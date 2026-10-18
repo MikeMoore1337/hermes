@@ -99,3 +99,40 @@ jobs:
           if (-not $configuration.Contains($target)) { throw 'VENV_PROFILE_PATH_LEAK' }
           Write-Output 'WINDOWS_COPIED_CPYTHON=PASS'
           exit 0
+
+      - name: Regression recover nested files with empty inherited ACLs
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dir = Join-Path $env:RUNNER_TEMP 'hermes-acl-recovery'
+          $child = Join-Path $dir 'nested'
+          $file = Join-Path $child 'windows-pc.json'
+          New-Item -Path $child -ItemType Directory -Force | Out-Null
+          Set-Content -LiteralPath $file -Value 'public-regression-fixture'
+          # Reproduce observed broken state: child has no inheritable grants.
+          & icacls.exe $file /inheritance:r | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw 'FIXTURE_ACL_SETUP_FAILED' }
+          $scriptPath = (Resolve-Path 'deploy/h15-device-fabric-windows-autostart.ps1').Path
+          $tokens = $null
+          $errors = $null
+          $ast = [System.Management.Automation.Language.Parser]::ParseFile(
+              $scriptPath, [ref]$tokens, [ref]$errors
+          )
+          $function = $ast.Find({
+              param($node)
+              $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+              $node.Name -eq 'Protect-PrivateState'
+          }, $true)
+          if (-not $function) { throw 'ACL_PROTECT_FUNCTION_MISSING' }
+          . ([scriptblock]::Create($function.Extent.Text))
+          Protect-PrivateState $dir
+          if ((Get-Content -LiteralPath $file -Raw -ErrorAction Stop).Trim() -ne 'public-regression-fixture') {
+              throw 'NESTED_FILE_NOT_READABLE_AFTER_ACL_REPAIR'
+          }
+          $acl = Get-Acl -LiteralPath $file
+          $aclDetails = @($acl.Access | ForEach-Object { $_.IdentityReference.Translate(
+              [Security.Principal.SecurityIdentifier]).Value })
+          foreach ($sid in @('S-1-5-18', 'S-1-5-32-544', 'S-1-5-19')) {
+              if ($sid -notin $aclDetails) { throw 'EXPECTED_FILE_GRANT_MISSING' }
+          }
+          Write-Output 'WINDOWS_PRIVATE_ACL_REPAIR=PASS'
