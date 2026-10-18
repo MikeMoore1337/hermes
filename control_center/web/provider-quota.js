@@ -137,7 +137,8 @@
       for(const w of windows.slice(0,48))usage(box,w);
     } else add("p","quota295-empty",article,"Доступные квотные окна: нет данных");
     add("small","quota295-timestamp",article,
-      "Последний замер: "+(service.observed_at?time(service.observed_at):"отсутствует"));
+      (service.id==="cloudflare_workers_ai"?"Последний замер квоты: ":"Последний замер: ")+
+      (service.observed_at?time(service.observed_at):"отсутствует"));
     const src=service.source_kind==="official_api"?"официальный API":
       service.source_kind==="local_meter"?"локальный отчёт поставщика":"источник расхода не подтверждён";
     add("small","quota295-note",article,"Достоверность: "+src);

@@ -55,6 +55,8 @@ for(const width of [320,393,1440]){
    const cloudflare=cards.nth(0),codex=cards.nth(1),desktop=cards.nth(2),github=cards.nth(3);
    await expect(cloudflare.getByRole("heading",{name:"Cloudflare Workers AI"})).toBeVisible();
    await expect(cloudflare.getByText("СЕРВИС / КВОТЫ")).toBeVisible();
+   await expect(cloudflare.getByText("Последний замер квоты: отсутствует")).toBeVisible();
+   await expect(codex.getByText(/Последний замер:/)).toBeVisible();
    await expect(cloudflare.getByText(/Billing Read даёт запаздывающие данные/)).toBeVisible();
    await expect(cloudflare.getByText(/Analytics Read доступен отдельно/)).toBeVisible();
    await expect(cloudflare.getByText(/точного остатка Free-квоты/)).toBeVisible();

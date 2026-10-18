@@ -1,0 +1,13 @@
+[Unit]
+Description=Hermes completed-UTC-day Cloudflare Analytics advisory collection (owner opt-in)
+Documentation=https://github.com/MikeMoore1337/hermes/issues/295
+
+[Timer]
+OnCalendar=*-*-* 06:15:00 UTC
+AccuracySec=1min
+RandomizedDelaySec=15min
+Persistent=true
+Unit=hermes-cloudflare-analytics-advisory.service
+
+[Install]
+WantedBy=timers.target

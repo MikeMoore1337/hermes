@@ -603,3 +603,83 @@ The existing GitHub timer is unchanged. No repeats or automated retries.
 The above command should be executed in an isolated child Bash process in
 SSH, not sourced into the owner shell, to avoid disconnects on `exit`.
 A fail-closed non-zero outcome means no new estimate is published.
+
+
+## Stage 10 - owner-authorized daily advisory Analytics Read (#295)
+
+Owner approved **recurring, non-billable, read-only Analytics observation** on
+18 October 2026 after real provider API, confidence readback, local archive and
+authenticated desktop UI acceptance. This is a separate grant from Billing
+Read or Free-runtime inference. The exact current Free usage and remaining
+still stay UNKNOWN, and no adaptive estimate authorizes model execution.
+This stage supersedes the earlier *not authorized* recurring language above.
+
+The daily service runs via `control_center.cloudflare_analytics_runner`,
+which is installed in the immutable **Control Center** release. The runner
+pins the active Control Center release SHA to the matching **owner**
+release (where `scripts/` lives), rejects symlinks/untrusted file ownership
+and permissions, and appends that exact immutable owner source to Python's
+module lookup. A regular monorepo CI checkout alone cannot prove this
+production split-root import layout, so dedicated offline negative tests
+cover it. No service source is overwritten inside immutable releases.
+
+The new independent `hermes-cloudflare-analytics-advisory.service` uses
+a capless one-shot root / `hermes-control` group with
+`ProtectSystem=strict`, root-only Analytics Read files and atomic sanitized
+history. The `hermes-cloudflare-analytics-advisory.timer` runs once each
+calendar day at **06:15 UTC + 0-15 minutes jitter**
+(**09:15-09:30 MSK**) after the previous complete UTC day; `Persistent=true`
+allows bounded catch-up after reboot. The collector checks the archive first:
+if a valid observation for that completed day already exists, it returns
+`already_collected` without another Cloudflare request. No query when the
+state directory / existing snapshot has unsafe owner/mode/symlink.
+All API errors fail closed without logging raw HTTP bodies, API keys or
+account IDs, and a bad result never overwrites the previous archive.
+Cloudflare confidence results with tiny samples are advisory, never billable
+amounts or exact Free-quota balance.
+
+**Normal CI/CD does not install or enable the timer.** Only the owner on
+the existing Hermes VPS may install it, smoke it and then enable it via
+`deploy/h15-cloudflare-analytics-setup.sh`. Never run these commands on
+the YFC VPS, and never source the setup script in an interactive SSH shell.
+Its `status`, `install`, `smoke`, `enable` and `disable` actions are
+independent. Each validates the currently active exact-SHA immutable
+release; installation checks root ownership of source systemd units,
+rejects symlinks, backs up pre-existing units, validates systemd syntax,
+and **does not start** the timer. Smoke executes the collector once (or
+skips remote API when today's completed-day archive is already present);
+the observed gate requires an actual prior UTC-day archive and secure
+root-only credentials; enable requires a fresh observation.
+
+Run as root on the owner-approved Hermes VPS after exact-SHA deploy:
+
+```bash
+active="$(readlink -f /opt/hermes-control-center/current)"
+if [[ "$active" =~ ^/opt/hermes-control-center/releases/main-([0-9a-f]{40})$ ]]; then
+  release="/opt/hermes-agent-owner/releases/main-${BASH_REMATCH[1]}"
+  setup="$release/deploy/h15-cloudflare-analytics-setup.sh"
+  bash "$setup" status
+  # Review the results, then execute these in order as separate child processes:
+  bash "$setup" install
+  bash "$setup" smoke
+  bash "$setup" enable
+  bash "$setup" status
+  systemctl list-timers --all hermes-cloudflare-analytics-advisory.timer --no-pager
+fi
+```
+
+**Rollback** (no changes to the GitHub rate-limit timer, H-01/33,
+Cloudflare Free-mode budget #62, or existing history):
+
+```bash
+bash "$setup" disable
+```
+
+Do not claim *operationally enabled* before checking
+`ActiveState=active`, `UnitFileState=enabled`, a nonempty `NEXT`
+calendar trigger and a real timer-triggered service `Result=success`.
+A successful one-shot smoke is not proof of future daily collection.
+Systemd failure is visible in `systemctl show ...service -p Result
+-p ExecMainStatus`; automated external notification delivery is a
+separate acceptance gate. No Free quota threshold (80/95/100%) alerts are
+generated from these sampled analytics numbers.

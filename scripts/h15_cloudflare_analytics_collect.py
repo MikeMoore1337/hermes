@@ -9,7 +9,7 @@ from __future__ import annotations
 import datetime as dt
 import grp
 import os
-from pathlib import Path
+import stat
 
 from control_center import cloudflare_analytics_history as history
 from scripts import h15_cloudflare_analytics_probe as probe
@@ -26,12 +26,45 @@ def main() -> int:
     if directory.is_symlink() or not directory.is_dir():
         print("CLOUDFLARE_ADVISORY_ARCHIVE=STATE_UNAVAILABLE")
         return 2
+    info = directory.stat()
+    if (info.st_uid != 0 or
+            info.st_gid != os.getegid() or
+            stat.S_IMODE(info.st_mode) != 0o750):
+        print("CLOUDFLARE_ADVISORY_ARCHIVE=UNSAFE_STATE_DIRECTORY")
+        return 2
+
+    # One confirmed observation per *completed UTC day*. Persistent timer
+    # catch-up and manual smoke must not trigger duplicate provider reads.
+    now = dt.datetime.now(dt.timezone.utc)
+    previous, _ = probe.yesterday_window(now)
+    archive = history.OUTPUT
+    if archive.is_symlink():
+        print("CLOUDFLARE_ADVISORY_ARCHIVE=UNSAFE_EXISTING_ARCHIVE")
+        return 2
+    if archive.exists():
+        metadata = archive.stat()
+        if (not stat.S_ISREG(metadata.st_mode) or
+                metadata.st_uid != 0 or
+                metadata.st_gid != os.getegid() or
+                metadata.st_nlink != 1 or
+                stat.S_IMODE(metadata.st_mode) != 0o640):
+            print("CLOUDFLARE_ADVISORY_ARCHIVE=UNSAFE_EXISTING_ARCHIVE")
+            return 2
+    stored = history.read(now=now)
+    if archive.exists() and stored["status"] == "unknown":
+        print("CLOUDFLARE_ADVISORY_ARCHIVE=UNSAFE_EXISTING_ARCHIVE")
+        return 2
+    if any(x["day"] == previous[:10] for x in stored["days"]):
+        print("CLOUDFLARE_ADVISORY_ARCHIVE=already_collected")
+        print("OBSERVATION_DAY=" + previous[:10])
+        print("QUOTA_REMAINING=UNKNOWN")
+        print("BILLABLE_USAGE=NOT_VERIFIED")
+        return 0
     try:
         token, account = probe.load_credentials()
     except probe.PreflightError:
         print("CLOUDFLARE_ADVISORY_ARCHIVE=UNSAFE_OR_MISSING_CREDENTIALS")
         return 2
-    now = dt.datetime.now(dt.timezone.utc)
     status, confidence = probe.inspect_confidence(
         token=token, account=account, now=now)
     if status != "advisory_confidence" or confidence is None:
