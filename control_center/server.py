@@ -18,6 +18,11 @@ from control_center.infrastructure import (
     ROOT as INFRA_ROOT, hosts as infrastructure_hosts,
     history as infrastructure_history,
 )
+from control_center.cloudflare_billing import OUTPUT as CLOUDFLARE_BILLING_OUTPUT
+from control_center.github_rate_limit import OUTPUT as GITHUB_RATE_LIMIT_OUTPUT
+from control_center.github_rate_history import DB as GITHUB_HISTORY_DB, read as read_github_rate_history
+from control_center.github_rate_history import HistoryUnavailable as GitHubHistoryUnavailable
+from control_center.provider_registry import registry as provider_quota_registry
 from control_center.snapshot import DEFAULT_OUTPUT
 from control_center.codex_usage import DEFAULT_OUTPUT as CODEX_OUTPUT, read_snapshot, UsageError
 from control_center.codex_history import read as read_codex_history
@@ -48,6 +53,8 @@ ASSETS = {
     "/ai-analytics.css": ("ai-analytics.css", "text/css; charset=utf-8"),
     "/infrastructure.js": ("infrastructure.js", "text/javascript; charset=utf-8"),
     "/infrastructure.css": ("infrastructure.css", "text/css; charset=utf-8"),
+    "/provider-quota.js": ("provider-quota.js", "text/javascript; charset=utf-8"),
+    "/provider-quota.css": ("provider-quota.css", "text/css; charset=utf-8"),
     "/brand.webp": ("brand.webp", "image/webp"),
     "/favicon.png": ("favicon.png", "image/png"),
     "/apple-touch-icon.png": ("apple-touch-icon.png", "image/png"),
@@ -71,6 +78,9 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
                  scheduler_path: Path = SCHEDULER_DB,
                  analytics_path: Path = ANALYTICS_DB,
                  desktop_commander_path: Path = DC_OUTPUT,
+                 cloudflare_billing_path: Path = CLOUDFLARE_BILLING_OUTPUT,
+                 github_rate_limit_path: Path = GITHUB_RATE_LIMIT_OUTPUT,
+                 github_history_path: Path = GITHUB_HISTORY_DB,
                  infrastructure_dir: Path = INFRA_ROOT,
                  auth_config: AuthConfig | None = None, oauth_service: OAuthService | None = None):
     config = auth_config if auth_config is not None else AuthConfig.from_env()
@@ -192,8 +202,52 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
                 "/control-center/api/providers/desktop-commander/history",
                 "/api/infrastructure/history",
                 "/control-center/api/infrastructure/history",
+                "/api/providers/registry/history",
+                "/control-center/api/providers/registry/history",
             ) and not (path == "/" and parsed.query == "preview=login"):
                 return self.respond(404, "text/plain", b"Not found")
+            if path in ("/api/providers/registry/history",
+                         "/control-center/api/providers/registry/history"):
+                if config.mode == "github" and not oauth.authenticated(
+                        self._cookie(SESSION_COOKIE)):
+                    return self.respond(401, "application/json",
+                                        b'{"error":"authentication_required"}')
+                try:
+                    q = parse_qs(parsed.query,keep_blank_values=True,
+                                 strict_parsing=True,max_num_fields=2)
+                    if set(q) != {"resource", "days"} or any(
+                            len(values) != 1 for values in q.values()):
+                        raise ValueError("parameters")
+                    resource,days=q["resource"][0],q["days"][0]
+                    from control_center.github_rate_limit import RESOURCES
+                    if resource not in RESOURCES or days not in ("1", "7", "30"):
+                        raise ValueError("filters")
+                    data=read_github_rate_history(github_history_path,
+                                                  resource=resource,days=int(days))
+                except GitHubHistoryUnavailable:
+                    return self.respond(503,"application/json",
+                                        b'{"error":"provider_history_unavailable"}')
+                except ValueError:
+                    return self.respond(400,"application/json",
+                                        b'{"error":"invalid_parameter"}')
+                except (OSError, sqlite3.DatabaseError):
+                    return self.respond(503,"application/json",
+                                        b'{"error":"provider_history_unavailable"}')
+                return self.respond(200,"application/json; charset=utf-8",
+                                    json.dumps(data,separators=(",",":")).encode())
+            if path in ("/api/providers/registry", "/control-center/api/providers/registry"):
+                if config.mode == "github" and not oauth.authenticated(
+                        self._cookie(SESSION_COOKIE)):
+                    return self.respond(401, "application/json",
+                                        b'{"error":"authentication_required"}')
+                if parsed.query:
+                    return self.respond(404, "text/plain", b"Not found")
+                data = provider_quota_registry(
+                    codex_path=codex_path, desktop_path=desktop_commander_path,
+                    cloudflare_path=cloudflare_billing_path,
+                    github_path=github_rate_limit_path)
+                return self.respond(200, "application/json; charset=utf-8",
+                                    json.dumps(data, separators=(",", ":")).encode())
             if path in ("/api/infrastructure/hosts",
                          "/control-center/api/infrastructure/hosts",
                          "/api/infrastructure/history",
@@ -379,7 +433,9 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
                             b'<link rel="stylesheet" href="/ai-analytics.css">'
                             b'<script src="/ai-analytics.js" defer></script>'
                              b'<link rel="stylesheet" href="/infrastructure.css">'
-                             b'<script src="/infrastructure.js" defer></script></head>'))
+                             b'<script src="/infrastructure.js" defer></script>'
+                             b'<link rel="stylesheet" href="/provider-quota.css">'
+                             b'<script src="/provider-quota.js" defer></script></head>'))
                 except OSError:
                     return self.respond(503, "text/plain", b"Static asset unavailable")
                 return self.respond(200, mime, raw)

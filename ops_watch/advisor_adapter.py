@@ -57,6 +57,16 @@ CODE_MAPPING: dict[str, tuple[str, str, str, str]] = {
     "infra_yfc_cpu_high": ("service_health_failure", "YFC_CPU_HIGH", "degraded", "vps-yfc"),
     "infra_yfc_ram_high": ("service_health_failure", "YFC_RAM_HIGH", "degraded", "vps-yfc"),
     "infra_yfc_disk_high": ("service_health_failure", "YFC_DISK_HIGH", "unhealthy", "vps-yfc"),
+    "quota_desktop_80": ("provider_rate_limited", "DC_QUOTA_80", "degraded", "desktop-commander"),
+    "quota_desktop_95": ("provider_rate_limited", "DC_QUOTA_95", "degraded", "desktop-commander"),
+    "quota_desktop_exhausted": ("provider_rate_limited", "DC_QUOTA_EXHAUSTED", "unhealthy", "desktop-commander"),
+    "quota_desktop_auth": ("monitoring_stale", "DC_AUTH_REQUIRED", "unknown", "desktop-commander"),
+    "quota_desktop_stale": ("monitoring_stale", "DC_STALE", "unknown", "desktop-commander"),
+    "quota_github_80": ("provider_rate_limited", "GH_QUOTA_80", "degraded", "github-token"),
+    "quota_github_95": ("provider_rate_limited", "GH_QUOTA_95", "degraded", "github-token"),
+    "quota_github_exhausted": ("provider_rate_limited", "GH_QUOTA_EXHAUSTED", "unhealthy", "github-token"),
+    "quota_github_auth": ("monitoring_stale", "GH_QUOTA_AUTH", "unknown", "github-token"),
+    "quota_github_stale": ("monitoring_stale", "GH_QUOTA_STALE", "unknown", "github-token"),
 }
 
 # New stable Ops codes must never crash the active H-01 timer during projection.

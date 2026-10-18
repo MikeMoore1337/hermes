@@ -44,6 +44,16 @@ TITLES: dict[str, str] = {
     "infra_yfc_cpu_high": "VPS YFC: длительная высокая загрузка CPU",
     "infra_yfc_ram_high": "VPS YFC: длительная высокая загрузка RAM",
     "infra_yfc_disk_high": "VPS YFC: длительное заполнение диска",
+    "quota_desktop_80": "Desktop Commander: использовано более 80% удалённых вызовов",
+    "quota_desktop_95": "Desktop Commander: использовано более 95% удалённых вызовов",
+    "quota_desktop_exhausted": "Desktop Commander: удалённые вызовы исчерпаны",
+    "quota_desktop_auth": "Desktop Commander: требуется авторизация источника квот",
+    "quota_desktop_stale": "Desktop Commander: данные о квоте устарели",
+    "quota_github_80": "GitHub API: использовано более 80% квоты одного токен-ресурса",
+    "quota_github_95": "GitHub API: использовано более 95% квоты одного токен-ресурса",
+    "quota_github_exhausted": "GitHub API: исчерпан один лимит настроенного токена",
+    "quota_github_auth": "GitHub API: токен источника квот отклонён",
+    "quota_github_stale": "GitHub API: данные о квоте настроенного токена устарели",
 }
 CRITICAL = frozenset({
     "timer_disabled", "timer_inactive", "discovery_failures", "drain_failures",
@@ -53,6 +63,7 @@ CRITICAL = frozenset({
     "alert_sender_failed",
     "infra_hermes_unavailable", "infra_hermes_disk_high",
     "infra_yfc_unavailable", "infra_yfc_disk_high",
+    "quota_desktop_exhausted", "quota_github_exhausted",
 })
 ACTIONS: dict[str, str] = {
     "snapshot_stale": "Проверить журнал службы мониторинга вручную",
@@ -88,6 +99,16 @@ ACTIONS: dict[str, str] = {
     "infra_yfc_cpu_high": "Проверить процессы и длительную нагрузку CPU VPS YFC",
     "infra_yfc_ram_high": "Проверить память и swap VPS YFC, без автоматической очистки",
     "infra_yfc_disk_high": "Проверить диск VPS YFC без автоматического удаления данных",
+    "quota_desktop_80": "Проверить остаток удалённых вызовов Desktop Commander",
+    "quota_desktop_95": "Отложить новые удалённые операции Desktop Commander",
+    "quota_desktop_exhausted": "Не запускать Desktop Commander до подтверждённого восстановления",
+    "quota_desktop_auth": "Проверить отдельную авторизацию коллектора Desktop Commander",
+    "quota_desktop_stale": "Проверить таймер Desktop Commander без повторных команд на устройствах",
+    "quota_github_80": "Проверить независимые окна квоты конкретного токена GitHub",
+    "quota_github_95": "Отложить операции через ограниченный токен GitHub",
+    "quota_github_exhausted": "Не использовать исчерпанный ресурс токена до подтверждённого восстановления",
+    "quota_github_auth": "Проверить авторизацию отдельного GitHub quota token",
+    "quota_github_stale": "Проверить историю чтения GitHub rate-limit без запуска задач",
 }
 CODEX_CODES = frozenset({"codex_low", "codex_exhausted", "codex_auth_required", "codex_stale"})
 

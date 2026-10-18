@@ -1,0 +1,35 @@
+[Unit]
+Description=Hermes read-only Cloudflare Workers AI delayed billing observation
+Documentation=https://github.com/MikeMoore1337/hermes/issues/295
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/opt/hermes-control-center/current
+EnvironmentFile=/etc/hermes/cloudflare-billing-read.env
+ExecStart=/usr/bin/python3 -m control_center.cloudflare_billing
+StateDirectory=hermes-provider-quota
+StateDirectoryMode=0750
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/hermes-provider-quota
+ReadOnlyPaths=/etc/hermes/cloudflare-billing-read.env /etc/hermes/cloudflare-billing-read.token
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+UMask=0077
+MemoryMax=96M
+CPUQuota=10%
+TasksMax=12
+TimeoutStartSec=20

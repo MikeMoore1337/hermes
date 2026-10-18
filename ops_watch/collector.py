@@ -19,6 +19,8 @@ from typing import Any
 from ops_watch.core import InputError, analyze, changes
 from ops_watch.infrastructure_alerts import ROOT as INFRASTRUCTURE_ROOT
 from ops_watch.infrastructure_alerts import observe as infrastructure_observe
+from ops_watch.quota_alerts import observe as quota_observe
+from ops_watch.quota_alerts import CODEX as Q_CODEX, DESKTOP as Q_DESKTOP, CLOUDFLARE as Q_CF, GITHUB as Q_GITHUB
 from ops_watch.state_store import persist, read_current
 from qa_advisor.signal_store import SignalError, observed_status
 
@@ -308,7 +310,7 @@ def _atomic_json(directory: Path, name: str, document: object) -> None:
         temporary.unlink(missing_ok=True)
 
 
-def once(source: Path = SOURCE, target: Path = TARGET, observed: datetime | None = None, *, agent_guard: dict[str, bool] | None = None, alerts_timer: dict[str, bool] | None = None, alerts_service: dict[str, bool] | None = None, infrastructure_dir: Path | None = None) -> dict[str, Any]:
+def once(source: Path = SOURCE, target: Path = TARGET, observed: datetime | None = None, *, agent_guard: dict[str, bool] | None = None, alerts_timer: dict[str, bool] | None = None, alerts_service: dict[str, bool] | None = None, infrastructure_dir: Path | None = None, quota_paths: dict[str, Path] | None = None) -> dict[str, Any]:
     """Collect, deduplicate, and atomically store safe findings under a lock."""
     if target.is_symlink() or not target.is_dir() or (target.stat().st_mode & 0o077) != 0:
         raise InputError("unsafe_target_directory")
@@ -334,6 +336,8 @@ def once(source: Path = SOURCE, target: Path = TARGET, observed: datetime | None
         if infrastructure_dir is not None:
             snapshot["infrastructure"] = infrastructure_observe(
                 directory=infrastructure_dir, now=now)
+        if quota_paths is not None:
+            snapshot["quota_signals"] = quota_observe(now=now, paths=quota_paths)
         findings = analyze(snapshot, now=now)
         # Separate QA reader never has Telegram credentials or access to the
         # news source. Missing/stale/denied API observations must not falsely
@@ -381,6 +385,24 @@ def once(source: Path = SOURCE, target: Path = TARGET, observed: datetime | None
                                          "_unavailable", "_disk_high")) else "warning",
                                      "fingerprint": item["fingerprint"]})
                     active_codes.add(item["code"])
+        # Missing/untrusted snapshots never prove recovery of a previously
+        # measured quota threshold. Keep the old incident until a fresh,
+        # explicitly confirmed good state or another measured threshold.
+        active_quota = {item["code"] for item in findings}
+        signals = snapshot.get("quota_signals", {})
+        for previous_item in previous:
+            code = previous_item["code"]
+            if not code.startswith("quota_") or code in active_quota:
+                continue
+            provider = "desktop_commander" if code.startswith("quota_desktop_") else "github_api"
+            state = signals.get(provider, "unknown")
+            if state in ("unknown", "not_connected", "stale", "auth_required"):
+                if code.endswith(("_80", "_95", "_exhausted")):
+                    findings.append({"code": code,
+                                     "severity": "critical" if code.endswith("_exhausted")
+                                     else "warning",
+                                     "fingerprint": previous_item["fingerprint"]})
+                    active_quota.add(code)
         was_ci_failed = any(item["code"] == "ci_failed" for item in previous)
         if ci == "FAILURE" or (ci is None and was_ci_failed):
             findings.append({
@@ -412,6 +434,8 @@ def main() -> int:
             alerts_timer=_ops_alert_timer_status(),
             alerts_service=_ops_alert_service_status(),
             infrastructure_dir=INFRASTRUCTURE_ROOT,
+            quota_paths={"codex": Q_CODEX, "desktop": Q_DESKTOP,
+                         "cloudflare": Q_CF, "github": Q_GITHUB},
         )
     except (InputError, OSError, ValueError) as exc:
         # Log only an allowlisted internal error CLASS; no paths or user text.

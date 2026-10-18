@@ -1,0 +1,33 @@
+/* #295 - neutral 1px rails, mobile-first service-level isolation. */
+.quota295-panel{display:grid;gap:18px;min-width:0;color:var(--white,#f2f6ff);padding:20px;border:1px solid var(--line-dim,#1a314c);border-radius:8px;background:var(--surface,#0b1625)}
+.quota295-panel[hidden]{display:none!important}
+/* The existing floating DC device panel duplicates its quota card and overlaps 320px. */
+.quota295-active .dc-toggle,.quota295-active .dc-panel{display:none!important}
+.quota295-active .center-area>:not(.quota295-panel){display:none!important}
+.quota295-head{display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:14px}
+.quota295-head h2{font-size:23px;font-weight:650;margin:8px 0}
+.quota295-note,.quota295-timestamp{font-size:12px;line-height:1.55;color:var(--muted,#9aaac4);margin:6px 0;overflow-wrap:anywhere}
+.quota295-reload,.quota295-history select{padding:9px;border:1px solid var(--line,#214163);border-radius:6px;background:var(--raised,#101f32);color:var(--white,#f2f6ff);font:inherit;font-size:12px}
+.quota295-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;align-items:start}
+.quota295-card{display:grid;min-width:0;gap:12px;align-content:start;background:var(--panel,#0b192a);border:1px solid var(--line-dim,#1a314c);border-radius:8px;padding:17px}
+.quota295-card-head{display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:8px}
+.quota295-card-head h3{font-size:18px;font-weight:650;margin:8px 0 0}
+.quota295-status{font-size:11px;border:1px solid var(--line-dim,#1a314c);border-radius:6px;padding:6px 8px;color:#b7c1d3}
+.quota295-ok{color:#a1d9c0}.quota295-low{color:#f2cf90}.quota295-exhausted{color:#e8aaaa}
+.quota295-windows{display:grid;gap:10px}
+.quota295-window{display:grid;gap:7px;min-width:0;border:1px solid var(--line-dim,#1a314c);border-radius:7px;padding:11px}
+.quota295-window strong{font-size:13px}.quota295-window p{font-size:12px;margin:0}
+.quota295-values{display:flex;gap:10px;justify-content:space-between;flex-wrap:wrap;font-size:12px}
+.quota295-track{height:8px;background:#1b324e;border-radius:7px;overflow:hidden}
+.quota295-fill{height:100%;background:#4e9bec;border-radius:7px}
+.quota295-warning{background:#d5b072}.quota295-critical{background:#dc8989}
+.quota295-empty{font-size:13px;color:var(--muted,#9aaac4);margin:0}
+.quota295-history{border-top:1px solid var(--line-dim,#1a314c);padding-top:12px}
+.quota295-history summary{cursor:pointer;font-size:13px;font-weight:600;margin-bottom:10px}
+.quota295-history select{display:block}
+.quota295-chart{padding-top:10px;display:grid;gap:8px}
+.quota295-chart svg{display:block;width:100%;max-height:150px;border-radius:6px;background:var(--raised,#101f32)}
+.quota295-link{font-size:12px;color:var(--soft,#91b6e7);text-decoration:underline}
+.quota295-panel button:focus-visible,.quota295-panel select:focus-visible,.quota295-panel summary:focus-visible{outline:2px solid #70abff;outline-offset:2px}
+@media(max-width:1100px){.quota295-grid{grid-template-columns:1fr}}
+@media(max-width:450px){.quota295-panel{padding:12px}.quota295-card{padding:12px}.quota295-head h2{font-size:20px}}
