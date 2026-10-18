@@ -236,3 +236,57 @@ deny**; несмотря на сохранённую обычную network/read
 Не включать этот Docker-гейт в быстрый `quality.yml` или
 production workflow; все изменения проходят обычный unit CI,
 а Docker probe по-прежнему запускается только отдельным workflow.
+
+
+### 18.10.2026 - ограниченная Linux seccomp защита запуска дочерних процессов
+
+Изолированный opt-in runner `scripts/h19_execve_seccomp_probe.py`
+показывает **наблюдаемое отличие OS enforcement** от прежнего
+наблюдения `/bin/sh -c printf`, когда shell без ограничителя
+реально выполнялся. Проверка запускается только на GitHub-hosted
+одноразовом Linux/AMD64 runner внутри исходного закреплённого
+Docker `v0.22.2`; пароль, реальные агенты, Cloudflare/GitHub
+write, модель, VPS и настоящие инструменты не используются.
+
+Порядок: из уже запущенного Python выполняется безвредный
+`/bin/sh -c printf H19_SAFE_EXEC_BASELINE` до установки фильтра
+(контроль, что shell доступен), затем отдельному **текущему
+Python-процессу** устанавливается `no_new_privs` и Linux
+`seccomp` BPF. Контрольный BPF запрещает `execve`, `execveat`
+и вызовы x32 ABI с `EPERM`; неподдерживаемая архитектура,
+отказ загрузки фильтра, неожиданный syscall result или
+успешный повторный `subprocess` приводят к FAIL/INFRA_FAILURE.
+После загрузки повторяются: `subprocess` shell, прямой
+`os.execve`, syscall `execveat`, x32-variant. Для прямых
+вызовов берётся заведомо несуществующий путь, так что даже
+ошибка фильтра не запустит стороннюю программу. Linux BPF и
+`prctl` реализованы в неизменённой Python stdlib `ctypes`
+без новых внешних пакетов или динамического `latest`.
+Docker остаётся networkless, read-only, nonroot, no Docker
+socket/credentials; контейнер одноразовый.
+
+Эта проверка подтверждает исключительно возможность
+**дополнительного kernel-level запрета запуска программ внутри
+текущего процесса и его потомков**. Она **не устанавливает
+seccomp в рабочий процесс Hermes H-01**, не доказывает все
+права инструментов, filesystem, возможные внутриязыковые
+обходы, изоляцию MCP, отсутствие доступа к данным и не
+является production patch. BPF deny-list не заменяет более
+строгий allow-list и проверку архитектур для production.
+Таким образом, даже при PASS поля
+`full_agent_os_enforcement=UNVERIFIED`,
+`live_model=NOT_RUN`, `h01_resident_allowed=false`.
+`#33` NO-GO и отдельное право владельца на будущую активацию
+не меняются.
+
+Для изолированного воспроизведения после получения точного
+immutable Docker образа из H-19 workflow:
+
+    python3 -m scripts.h19_execve_seccomp_probe --execute --out /tmp/h19-execve-seccomp.json
+
+Запуск без `--execute` ничего не выполняет. Отчёт публикуется
+в `hermes-h19-pinned-native` рядом с native report/readback;
+проверка ограничена отдельным opt-in workflow, а в стандартном
+quality CI выполняются лишь проверочные stdlib unit tests.
+Официальная документация: https://man7.org/linux/man-pages/man2/seccomp.2.html
+и https://kernel.org/doc/html/latest/userspace-api/seccomp_filter.html .
