@@ -14,7 +14,8 @@ from urllib.request import Request, urlopen
 
 from control_center.auth import AuthConfig, OAuthService, ORIGIN
 from control_center.infrastructure import (
-    build, cpu_percent, hosts, history, memory, network, save,
+    build, cpu_percent, cpu_counters, hosts, history, memory, network,
+    network_speed, save,
 )
 from control_center.server import make_handler
 
@@ -122,6 +123,43 @@ class CollectorTests(unittest.TestCase):
             for host, days in (("../etc", 1), ("yfc", 60), ("yfc", 0)):
                 with self.assertRaises(ValueError):
                     history(Path(root), host, days)
+
+    def test_cpu_guest_not_counted_twice(self):
+        total, idle = cpu_counters("cpu 100 0 20 100 0 0 0 0 30 10")
+        self.assertEqual(total, 220)
+        self.assertEqual(idle, 100)
+
+    def test_network_rates_and_reset(self):
+        first = "header\nheader\neth0: 100 0 0 0 0 0 0 0 90 0 0 0 0 0 0 0\n"
+        later = "header\nheader\neth0: 160 0 0 0 0 0 0 0 110 0 0 0 0 0 0 0\n"
+        self.assertEqual(network_speed(first, later, 0.25)["eth0"],
+                         {"rx_bytes_per_second": 240, "tx_bytes_per_second": 80})
+        self.assertEqual(network_speed(later, first, 0.25), {})
+        with self.assertRaises(ValueError):
+            network_speed(first, later, 0)
+
+    def test_future_or_repeat_sample_refused(self):
+        with tempfile.TemporaryDirectory() as root:
+            base = Path(root)
+            t = dt.datetime.now(dt.timezone.utc)
+            save(fixture(now=t), base)
+            with self.assertRaisesRegex(ValueError, "out_of_order"):
+                save(fixture(now=t), base)
+            with self.assertRaisesRegex(ValueError, "out_of_order"):
+                save(fixture(now=t-dt.timedelta(seconds=1)), base)
+            self.assertEqual(len(history(base, "hermes", 1)["samples"]), 1)
+
+    def test_inodes_and_core_count(self):
+        from types import SimpleNamespace
+        sample = build(
+            "hermes", before="cpu 10 0 0 10", after="cpu 20 0 0 20",
+            meminfo="MemTotal: 100 kB\nMemAvailable: 50 kB\n",
+            loadavg="1 2 3", uptime="42 0",
+            disk=SimpleNamespace(f_blocks=100, f_frsize=1024, f_bavail=50,
+                                 f_files=1000, f_favail=200),
+            dev="header\nheader\n", cores=4)
+        self.assertEqual(sample["metrics"]["cpu_cores"], 4)
+        self.assertEqual(sample["metrics"]["inode_used_percent"], 80)
 
 
 class ApiTests(unittest.TestCase):
