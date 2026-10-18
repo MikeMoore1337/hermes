@@ -18,6 +18,7 @@ from control_center.infrastructure import (
     ROOT as INFRA_ROOT, hosts as infrastructure_hosts,
     history as infrastructure_history,
 )
+from control_center.provider_registry import registry as provider_quota_registry
 from control_center.snapshot import DEFAULT_OUTPUT
 from control_center.codex_usage import DEFAULT_OUTPUT as CODEX_OUTPUT, read_snapshot, UsageError
 from control_center.codex_history import read as read_codex_history
@@ -48,6 +49,8 @@ ASSETS = {
     "/ai-analytics.css": ("ai-analytics.css", "text/css; charset=utf-8"),
     "/infrastructure.js": ("infrastructure.js", "text/javascript; charset=utf-8"),
     "/infrastructure.css": ("infrastructure.css", "text/css; charset=utf-8"),
+    "/provider-quota.js": ("provider-quota.js", "text/javascript; charset=utf-8"),
+    "/provider-quota.css": ("provider-quota.css", "text/css; charset=utf-8"),
     "/brand.webp": ("brand.webp", "image/webp"),
     "/favicon.png": ("favicon.png", "image/png"),
     "/apple-touch-icon.png": ("apple-touch-icon.png", "image/png"),
@@ -194,6 +197,17 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
                 "/control-center/api/infrastructure/history",
             ) and not (path == "/" and parsed.query == "preview=login"):
                 return self.respond(404, "text/plain", b"Not found")
+            if path in ("/api/providers/registry", "/control-center/api/providers/registry"):
+                if config.mode == "github" and not oauth.authenticated(
+                        self._cookie(SESSION_COOKIE)):
+                    return self.respond(401, "application/json",
+                                        b'{"error":"authentication_required"}')
+                if parsed.query:
+                    return self.respond(404, "text/plain", b"Not found")
+                data = provider_quota_registry(
+                    codex_path=codex_path, desktop_path=desktop_commander_path)
+                return self.respond(200, "application/json; charset=utf-8",
+                                    json.dumps(data, separators=(",", ":")).encode())
             if path in ("/api/infrastructure/hosts",
                          "/control-center/api/infrastructure/hosts",
                          "/api/infrastructure/history",
@@ -379,7 +393,9 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
                             b'<link rel="stylesheet" href="/ai-analytics.css">'
                             b'<script src="/ai-analytics.js" defer></script>'
                              b'<link rel="stylesheet" href="/infrastructure.css">'
-                             b'<script src="/infrastructure.js" defer></script></head>'))
+                             b'<script src="/infrastructure.js" defer></script>'
+                             b'<link rel="stylesheet" href="/provider-quota.css">'
+                             b'<script src="/provider-quota.js" defer></script></head>'))
                 except OSError:
                     return self.respond(503, "text/plain", b"Static asset unavailable")
                 return self.respond(200, mime, raw)
