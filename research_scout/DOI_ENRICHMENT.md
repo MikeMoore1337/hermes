@@ -30,3 +30,12 @@ python3 -m unittest -q tests.test_research_doi_enrichment
 python3 -m unittest -q tests.test_research_daily_doi_recovery tests.test_research_daily_integrity
 ```
 Предел запросов, точная source identity, correction HOLD, отсутствие платных API/публикации и отказ сохранения поддельного повышения статуса проверяются offline тестами; их успешность не означает живой production-run DOI enrichment на реальной DOI-less записи.
+
+
+## Live smoke test 18.10.2026 — 08:52 UTC
+
+[GitHub Actions #39113134401](https://github.com/MikeMoore1337/hermes/actions/runs/39113134401), одноразовый ограниченный workflow на SHA `8ceffdf6a15d23eda486263a169bd17b9e217c58` (ветка `audit/h03-live-daily-doi-recovery-once-20261018`) проверил **реальную** цепочку recovery: три тематических lite-ответа были **синтетическими и без сети**, DOI-less candidate `MED/42840492` с публикацией 22.09.2026 был фиксирован, а `article_integrity.inspect` сделал **ровно один официальный Europe PMC MED core GET** и `review_candidate` **один Crossref DOI GET**. Дополнительных retries или иных реальных источников не было, токены и секреты не использовались. Стандартный отчёт `prepare` указывает 5 *логических* вызовов, в том числе три mocked lite, но реальных HTTP максимум 2.
+
+**Действительный ответ:** `doi=10.3389/fcimb.2026.1918695`, `crossref_state=MATCHED_METADATA_ONLY`, `integrity_state=NOT_REPORTED_IN_THIS_METADATA`, `errors=[]`, `reason=doi_enriched_review_required`, `status=HOLD`, `scientific_claims_verified=false`, `automatic_publication=false`. Workflow SUCCESS; точная запись `H03_LIVE_DOI_RECOVERY` содержится в GitHub Actions logs. Одноразовый workflow после проверки **удалён из изолированной ветки**, не был включён в `main`.
+
+Это доказывает реальный bounded network + parser + Crossref happy path на зафиксированном PMID, **не** натуральный scheduled-daily сбор, полноту PMID↔PMCID для любых статей или отсутствие publisher corrections.
