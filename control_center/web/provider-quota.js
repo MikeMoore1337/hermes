@@ -163,6 +163,13 @@
       }else add("p","quota295-note",article,
           "Подтверждённых данных о расходе нет. Billing Read даёт запаздывающие данные, которые могут не включать бесплатные Neurons; Analytics Read доступен отдельно для оценочной статистики, но не для точного остатка Free-квоты.");
     }
+    if(service.id==="cloudflare_workers_ai" && Array.isArray(service.analytics_history) && service.analytics_history.length){
+      const latest=service.analytics_history.at(-1);
+      add("p","quota295-note",article,
+        "Cloudflare Analytics, завершённые UTC-сутки "+latest.day+
+        ": оценка "+readable(latest.estimate_neurons)+" Neurons; выборка "+latest.sample_size+
+        ". Не является измеренным остатком квоты Free.");
+    }
     if(service.id==="codex"||service.id==="desktop_commander"){
       const details=add("details","quota295-history",article);
       add("summary","",details,"История собственной квоты");
