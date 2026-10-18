@@ -141,6 +141,30 @@ class BoundedExecutorTests(unittest.TestCase):
 
     @patch("eval_lane.local_executor.subprocess.Popen")
     @patch("eval_lane.local_executor.fixed_plan")
+    def test_world_readable_evidence_result_is_rejected(self, make_plan, popen):
+        self.runpath.mkdir(mode=0o700)
+        (self.runpath / "observations.json").write_text('{"fake":true}', encoding="utf-8")
+        self.runpath.chmod(0o755)
+        make_plan.return_value = FixedPlan(
+            argv=(str(self.binary),), cwd=self.kit, output_dir=self.runpath,
+        )
+        child = MagicMock()
+        child.wait.return_value = 0
+        popen.return_value = child
+        instance = self.worker(enabled=True, probe=lambda: True)
+        with patch.object(instance, "_preflight", return_value=None):
+            with self.assertRaisesRegex(AdmissionDenied, "evidence_root_unsafe"):
+                instance(self.payload)
+
+    @patch("eval_lane.local_executor.os.umask")
+    @patch("eval_lane.local_executor.resource.setrlimit")
+    def test_process_resource_guard_uses_private_umask(self, limit, umask):
+        LocalBoundedExecutor._resources(self.payload)()
+        umask.assert_called_once_with(0o077)
+        self.assertEqual(limit.call_count, 4)
+
+    @patch("eval_lane.local_executor.subprocess.Popen")
+    @patch("eval_lane.local_executor.fixed_plan")
     def test_success_without_artifact_fails_closed(self, make_plan, popen):
         make_plan.return_value = FixedPlan(
             argv=(str(self.binary),), cwd=self.kit, output_dir=self.runpath,
