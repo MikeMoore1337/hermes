@@ -14,6 +14,11 @@ RETENTION = 30
 MAX_POINTS = 500
 
 
+class HistoryUnavailable(ValueError):
+    """Source is corrupt/inaccessible, not a bad HTTP query filter."""
+
+
+
 def _date(value: str) -> dt.datetime:
     date = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
     if date.tzinfo is None:
@@ -95,5 +100,5 @@ def read(path: Path = DB, *, resource: str, days: int = 7,
                     for i in range(MAX_POINTS)]
         result["points"]=points
         return result
-    except (sqlite3.Error,TypeError,AttributeError,OverflowError) as exc:
-        raise ValueError("history_unavailable") from exc
+    except (sqlite3.Error,TypeError,AttributeError,OverflowError,ValueError) as exc:
+        raise HistoryUnavailable("history_unavailable") from exc
