@@ -1,0 +1,42 @@
+# EXAMPLE ONLY — never installed or enabled by GitHub/CD.
+# Runs a no-provider/no-network, read-only OS boundary inspection.
+# DO NOT use this unit to run a model or grant owner GO.
+[Unit]
+Description=Hermes H-15 Skill Evals offline OS boundary probe (example, disabled)
+Documentation=https://github.com/MikeMoore1337/hermes/issues/349
+ConditionPathExists=/etc/hermes-skill-evals/owner-offline-probe-opt-in
+
+[Service]
+Type=oneshot
+User=hermes-evals
+Group=hermes-evals
+WorkingDirectory=/opt/hermes/current
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/python3 -m eval_lane.isolation_probe
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateNetwork=yes
+IPAddressDeny=any
+RestrictAddressFamilies=AF_UNIX
+PrivateDevices=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+UMask=0077
+CPUQuota=45%
+MemoryMax=768M
+TasksMax=32
+TimeoutStartSec=30
+RuntimeMaxSec=30
+StandardOutput=journal
+StandardError=journal
