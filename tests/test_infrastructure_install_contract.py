@@ -22,7 +22,7 @@ class YfcInstallContractTests(unittest.TestCase):
         script = (ROOT / "deploy/install-yfc-infrastructure-emitter.sh").read_text()
         self.assertIn('user=hermes-infra-read', script)
         self.assertIn('forced="restrict,command=', script)
-        self.assertIn('die existing_authorized_keys_conflict', script)
+        self.assertIn('die authorized_keys_conflict', script)
         self.assertIn('die revision_mismatch', script)
         self.assertIn('die release_already_exists', script)
         self.assertNotIn("systemctl enable", script)
