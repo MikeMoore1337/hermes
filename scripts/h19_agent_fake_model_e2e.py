@@ -312,6 +312,7 @@ with tempfile.TemporaryDirectory(dir="/tmp", prefix="h19-cli-loop-") as folder:
         "updates:\n"
         "  check: false\n"
     )
+    scripted_tool_targets = []
     def fake_script(record):
         body = record.get("body") or {}
         main = [m for m in (body.get("messages") or []) if m.get("role") == "tool"]
@@ -322,6 +323,7 @@ with tempfile.TemporaryDirectory(dir="/tmp", prefix="h19-cli-loop-") as folder:
         }
 
         def issue(name):
+            scripted_tool_targets.append(name)
             # Same official upstream E2E behavior: direct MCP when offered,
             # otherwise go through actual tool_search 'tool_call' bridge.
             if name not in offered and "tool_call" in offered:
@@ -360,8 +362,14 @@ with tempfile.TemporaryDirectory(dir="/tmp", prefix="h19-cli-loop-") as folder:
 
         calls = provider.main_requests()
         report["fake_http_main_turns"] = len(calls)
-        report["fake_provider_sent_read"] = len(calls) >= 1
-        report["fake_provider_sent_forbidden_write"] = len(calls) >= 2
+        # A second HTTP turn is not evidence that a forbidden call was
+        # emitted. Record the exact fixed logical target from the scripted
+        # fake-model response; server wire receipt independently confirms
+        # any real invocation.
+        report["fake_provider_sent_read"] = scripted_tool_targets.count(
+            "mcp__h19cli__peek") == 1
+        report["fake_provider_sent_forbidden_write"] = scripted_tool_targets.count(
+            "mcp__h19cli__mark") == 1
         if len(calls) >= 2:
             responses = json.dumps(calls[1].get("messages") or [], sort_keys=True)
             report["fake_model_saw_read_result"] = "H19_SOURCE_PROMPT_INJECTION" in responses
