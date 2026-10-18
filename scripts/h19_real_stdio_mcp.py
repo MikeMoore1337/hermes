@@ -45,6 +45,9 @@ report = {
     "sdk_server_import": "NOT_RUN",
     "registered_tool_count": 0,
     "discovery_errors_observed": False,
+    "wire_read_after_read": None,
+    "wire_write_after_denial": None,
+    "wire_write_after_approval": None,
 }
 if importlib.util.find_spec("mcp") is None:
     print(json.dumps(report, sort_keys=True))
@@ -63,12 +66,47 @@ except Exception:
 # venv interpreter and the only persistent effect is a private /tmp marker.
 SERVER = '''
 import os
+import json
+import threading
 from pathlib import Path
 from mcp.server import MCPServer
 from mcp_types import ToolAnnotations
 
 app = MCPServer("h19_local")
 MARKER = Path(os.environ["H19_MCP_MARKER"])
+WIRE_LOG = Path(os.environ["H19_MCP_WIRE_LOG"])
+
+# Record only the public fixed tool NAME from the real MCP JSON-RPC stdin wire;
+# do not store source text, arguments, ids, tokens, prompt data or responses.
+def capture_wire():
+    read_fd, write_fd = os.pipe()
+    original_stdin = os.dup(0)
+    os.dup2(read_fd, 0)
+    os.close(read_fd)
+
+    def pump():
+        pending = b""
+        with os.fdopen(original_stdin, "rb", buffering=0) as source:
+            with os.fdopen(write_fd, "wb", buffering=0) as destination:
+                while True:
+                    chunk = os.read(source.fileno(), 65536)
+                    if not chunk:
+                        break
+                    pending += chunk
+                    *frames, pending = pending.split(b"\n")
+                    for frame in frames:
+                        try:
+                            message = json.loads(frame)
+                            method = message.get("method") if isinstance(message, dict) else None
+                            params = message.get("params") if isinstance(message, dict) else None
+                            name = params.get("name") if isinstance(params, dict) else None
+                            if method == "tools/call" and name in ("peek", "mark"):
+                                with WIRE_LOG.open("a", encoding="ascii") as evidence:
+                                    evidence.write(name + "\n")
+                        except (ValueError, OSError, TypeError):
+                            pass
+                    destination.write(chunk)
+    threading.Thread(target=pump, daemon=True, name="h19-mcp-wire").start()
 
 @app.tool(annotations=ToolAnnotations(read_only_hint=True, destructive_hint=False))
 def peek() -> str:
@@ -82,6 +120,7 @@ def mark() -> str:
     return "H19_MCP_WRITE_OK"
 
 if __name__ == "__main__":
+    capture_wire()
     app.run(transport="stdio")
 '''
 with tempfile.TemporaryDirectory(prefix="h19-mcp-", dir="/tmp") as tmp:
@@ -89,6 +128,11 @@ with tempfile.TemporaryDirectory(prefix="h19-mcp-", dir="/tmp") as tmp:
     source = root / "stdio_server.py"
     source.write_text(SERVER, encoding="utf-8")
     marker = root / "server-marker"
+    wire_log = root / "inbound-wire"
+    def wire():
+        if not wire_log.exists():
+            return []
+        return wire_log.read_text(encoding="ascii").splitlines()
     from tools.mcp_tool_discovery import register_mcp_servers
     from tools.mcp_tool_lifecycle import shutdown_mcp_servers
     import model_tools
@@ -97,7 +141,7 @@ with tempfile.TemporaryDirectory(prefix="h19-mcp-", dir="/tmp") as tmp:
     config = {
         "command": sys.executable,
         "args": ["-B", "-u", str(source)],
-        "env": {"H19_MCP_MARKER": str(marker)},
+        "env": {"H19_MCP_MARKER": str(marker), "H19_MCP_WIRE_LOG": str(wire_log)},
         "trust": "untrusted",
         "connect_timeout": 13,
         "tool_timeout": 12,
@@ -125,15 +169,18 @@ with tempfile.TemporaryDirectory(prefix="h19-mcp-", dir="/tmp") as tmp:
                         )
 
             read = dispatch("mcp__h19local__peek", "deny")
+            report["wire_read_after_read"] = wire().count("peek")
             report["read_result"] = "OK" if "H19_MCP_READ_OK" in str(read) else "FAILED"
             denied = dispatch("mcp__h19local__mark", "deny")
             report["server_write_after_denial"] = marker.exists()
+            report["wire_write_after_denial"] = wire().count("mark")
             report["write_denied_result"] = ("OK" if not marker.exists() and
                 ("approve" in str(denied).lower() or "not run" in str(denied).lower()
                  or "did not" in str(denied).lower() or "blocked" in str(denied).lower())
                 else "FAILED")
             allowed = dispatch("mcp__h19local__mark", "accept")
             report["server_write_after_approval"] = marker.read_text(encoding="ascii") if marker.exists() else None
+            report["wire_write_after_approval"] = wire().count("mark")
             report["write_approved_result"] = ("OK" if
                 report["server_write_after_approval"] == "H19_MCP_WRITE_OK"
                 and "H19_MCP_WRITE_OK" in str(allowed) else "FAILED")
@@ -159,6 +206,7 @@ def validate(data: Any) -> dict[str, Any]:
         "real_protocol", "agent_dispatch", "actual_external_mcp",
         "real_provider", "real_agent_resident",
         "sdk_server_import", "registered_tool_count", "discovery_errors_observed",
+        "wire_read_after_read", "wire_write_after_denial", "wire_write_after_approval",
     }
     if (type(data) is not dict or set(data) != required or data["schema"] != SCHEMA
             or data["sdk"] not in ("AVAILABLE", "UNAVAILABLE")
@@ -174,7 +222,10 @@ def validate(data: Any) -> dict[str, Any]:
                 or data["registered_tool_count"] != 0
                 or data["real_protocol"] is not False
                 or data["agent_dispatch"] is not False
-                or data["server_write_after_denial"] is not None):
+                or data["server_write_after_denial"] is not None
+                or any(data[k] is not None for k in (
+                    "wire_read_after_read", "wire_write_after_denial",
+                    "wire_write_after_approval"))):
             raise EvidenceDenied("MCP_SDK_ABSENCE_OVERCLAIM")
         status = "NOT_RUN"
     else:
@@ -182,6 +233,12 @@ def validate(data: Any) -> dict[str, Any]:
             data["sdk_server_import"] == "PASS"
             and data["registered_tool_count"] >= 2
             and data["registration"] == "OK"
+            and type(data["wire_read_after_read"]) is int
+            and data["wire_read_after_read"] == 1
+            and type(data["wire_write_after_denial"]) is int
+            and data["wire_write_after_denial"] == 0
+            and type(data["wire_write_after_approval"]) is int
+            and data["wire_write_after_approval"] == 1
             and data["read_result"] == "OK"
             and data["write_denied_result"] == "OK"
             and data["write_approved_result"] == "OK"
