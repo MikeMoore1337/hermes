@@ -49,7 +49,7 @@ fi
 forced="restrict,command=\"/usr/local/libexec/hermes-yfc-metrics-emit\" $public_key"
 if [[ -e "$home/.ssh/authorized_keys" ]]; then
   [[ "$(cat "$home/.ssh/authorized_keys")" == "$forced" ]] ||
-    die authorized_keys_conflict
+    die existing_authorized_keys_conflict
 fi
 
 install -d -o root -g root -m 0755 /opt/hermes-yfc-metrics /opt/hermes-yfc-metrics/releases
