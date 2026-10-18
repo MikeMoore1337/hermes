@@ -63,6 +63,7 @@ CRITICAL = frozenset({
     "alert_sender_failed",
     "infra_hermes_unavailable", "infra_hermes_disk_high",
     "infra_yfc_unavailable", "infra_yfc_disk_high",
+    "quota_desktop_exhausted", "quota_github_exhausted",
 })
 ACTIONS: dict[str, str] = {
     "snapshot_stale": "Проверить журнал службы мониторинга вручную",
