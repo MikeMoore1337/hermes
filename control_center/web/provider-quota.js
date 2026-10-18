@@ -126,7 +126,7 @@
     article.setAttribute("data-provider",service.id);
     const header=add("div","quota295-card-head",article);
     const name=add("div","",header);
-    add("span","eyebrow",name,"ПОДКЛЮЧЁННЫЕ СЕРВИСЫ / КВОТЫ");
+    add("span","eyebrow",name,"СЕРВИС / КВОТЫ");
     add("h3","",name,labels[service.id]);
     add("span","quota295-status quota295-"+service.status,header,
       stateText[service.status]||"Нет подтверждённых данных");
@@ -161,7 +161,7 @@
           add("p","quota295-note",chart,point.day + ": " + readable(point.neurons) + " Neurons");
         }
       }else add("p","quota295-note",article,
-          "Официальный исторический учёт пока недоступен (требуется отдельный доступ Billing Read).");
+          "Подтверждённых данных о расходе нет. Billing Read даёт запаздывающие данные, которые могут не включать бесплатные Neurons; Analytics Read доступен отдельно для оценочной статистики, но не для точного остатка Free-квоты.");
     }
     if(service.id==="codex"||service.id==="desktop_commander"){
       const details=add("details","quota295-history",article);
