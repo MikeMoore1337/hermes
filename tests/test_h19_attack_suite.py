@@ -16,6 +16,9 @@ class H19Attacks(unittest.TestCase):
         self.assertGreaterEqual(len(self.cases), 30)
         self.assertEqual(report["counts"]["PASS"], len(self.cases))
         self.assertEqual(report["counts"]["FAIL"], 0)
+        self.assertEqual(report["synthetic_negative_detections"], len(self.cases))
+        self.assertTrue(all(x["runtime_enforcement_status"] == "UNVERIFIED"
+                            for x in report["results"]))
         self.assertEqual(report["h01_os_enforcement"], "UNVERIFIED")
         self.assertEqual(report["real_model_evaluation"], "NOT_RUN")
         self.assertGreaterEqual(sum(x["boundary"] == "real_policy_component" for x in report["results"]), 2)
@@ -60,6 +63,8 @@ class H19Attacks(unittest.TestCase):
     def test_mock_evidence_cannot_be_upgraded_to_actual_runtime(self):
         case = self.cases[0]
         self.assertEqual(h19.verify(case, "REFUSED", h19.ledger([], []))["runtime_enforcement_status"], "UNVERIFIED")
+        spoof = h19.verify(case, "REFUSED", h19.ledger([], []), boundary="real_policy_component")
+        self.assertEqual(spoof["runtime_enforcement_status"], "UNVERIFIED")
 
 
 if __name__ == "__main__":
