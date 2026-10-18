@@ -24,6 +24,7 @@ INCIDENT_CODES = frozenset({
     "quota_github_80", "quota_github_95", "quota_github_exhausted",
     "quota_github_auth", "quota_github_stale",
     "device_windows_pc_unavailable", "device_linux_vps_unavailable",
+    "device_tls_expiring", "device_tls_expired",
 })
 
 
@@ -232,6 +233,13 @@ def analyze(snapshot: Mapping[str, Any], *, now: datetime) -> list[dict[str, str
             }))
             if status == "offline":
                 found.append(_finding(code, "critical" if ident == "linux-vps" else "warning"))
+    if data.get("device_fabric_tls") is not None:
+        tls = _state({"status": data["device_fabric_tls"]}, "status", frozenset({
+            "not_configured", "unknown", "healthy", "expiring", "expired",
+        }))
+        if tls in ("expiring", "expired"):
+            found.append(_finding("device_tls_" + tls,
+                                  "critical" if tls == "expired" else "warning"))
     if data.get("quota_signals") is not None:
         signals = _mapping(data["quota_signals"], "quota_signals")
         if set(signals) != {"desktop_commander", "github_api"}:
