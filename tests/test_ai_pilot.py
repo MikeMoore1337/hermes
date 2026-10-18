@@ -61,6 +61,11 @@ class _Response:
         return self.payload[:limit]
 
 
+class _RawResponse(_Response):
+    def __init__(self, raw: bytes) -> None:
+        self.payload = raw
+
+
 class _Opener:
     def __init__(self, response: object) -> None:
         self.response = response
@@ -162,6 +167,50 @@ class PilotTests(unittest.TestCase):
         self.assertTrue(body["options"]["rejectIfBusy"])
         with self.assertRaisesRegex(PilotError, "model_call_limit_exceeded"):
             provider.complete("второй вызов")
+
+    def test_nonfinite_provider_json_is_denied_without_retry_or_false_zero(self) -> None:
+        # The stdlib JSON parser normally accepts nonstandard NaN/Infinity,
+        # and very large exponents turn into float('inf').
+        invalid_usage = [b'NaN', b'Infinity', b'-Infinity', b'1e999']
+        for cost in invalid_usage:
+            with self.subTest(cost=cost):
+                body = (
+                    b'{"success":true,"choices":[{"message":{"content":"{}"}}],'
+                    b'"usage":{"cost_usd":' + cost + b'}}'
+                )
+                opener = _Opener(_RawResponse(body))
+                provider = CloudflareFreeProvider(
+                    token=TOKEN,
+                    base_url=f"https://api.cloudflare.com/client/v4/accounts/{ACCOUNT_ID}/ai/v1",
+                    account_status=account_status(), opener=opener,
+                )
+                with self.assertRaisesRegex(PilotError, "invalid_json") as caught:
+                    provider.complete("synthetic request")
+                self.assertEqual(caught.exception.http_status, 200)
+                self.assertEqual(caught.exception.attempts, 1)
+                self.assertEqual(provider.calls, 1)
+                self.assertEqual(len(opener.requests), 1)
+                with self.assertRaisesRegex(PilotError, "model_call_limit_exceeded"):
+                    provider.complete("attempted retry")
+                self.assertEqual(len(opener.requests), 1)
+
+    def test_nonfinite_usage_cost_never_becomes_a_valid_counter(self) -> None:
+        from agent_budget.pilot import _money
+
+        for value in (float("nan"), float("inf"), -float("inf"), 10 ** 400):
+            with self.subTest(value=str(value)[:20]):
+                self.assertIsNone(_money(value))
+        self.assertEqual(_money(0), 0)
+        self.assertEqual(_money(0.01), 0.01)
+
+    def test_nonfinite_account_attestation_is_not_a_quota_proof(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "account.json"
+            payload = account_status()
+            payload["daily_neurons_remaining"] = float("nan")
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(PilotError, "invalid_json"):
+                load_account_status(path)
 
     def test_cloudflare_429_stops_without_retry_or_body_leak(self) -> None:
         opener = _Opener(HTTPError(
