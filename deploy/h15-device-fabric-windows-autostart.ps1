@@ -5,7 +5,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory=$true)]
-    [ValidateSet('Prepare','Repair','Enable','Status','Rollback')]
+    [ValidateSet('Prepare','Repair','FixTask','Enable','Status','Rollback')]
     [string] $Mode,
     [string] $MachinePython = ''
 )
@@ -45,6 +45,16 @@ function Protect-PrivateState([string] $directory) {
     if ($LASTEXITCODE -ne 0) { throw 'PRIVATE_ACL_INHERITANCE_FAILED' }
     & icacls.exe $directory /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-19:(OI)(CI)RX' | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'PRIVATE_ACL_GRANT_FAILED' }
+}
+
+function Get-PresenceTaskArguments([string] $sshBin) {
+    # Return the ONLY approved read-only agent invocation. This stays
+    # compatible with shipped device_agent/ssh_tunnel, which explicitly allow
+    # just ssh and ssh.exe for --ssh-bin (no absolute executable path).
+    return '-m device_fabric.device_agent --config "' + $state + '\windows-pc.json" --watch ' +
+      '--ssh-host 111.88.215.204 --ssh-user hermes-presence-tunnel ' +
+      '--ssh-key "' + $state + '\hermes_presence_ed25519" ' +
+      '--known-hosts "' + $state + '\hermes_presence_known_hosts" --ssh-bin ' + $sshBin
 }
 
 # A prior failed Prepare can contain secrets before task registration.
@@ -211,10 +221,7 @@ switch ($Mode) {
         # Re-apply restricted ACLs to files created by venv/pip.
         Protect-PrivateState $state
 
-        $arguments = '-m device_fabric.device_agent --config "' + $state + '\windows-pc.json" --watch ' +
-          '--ssh-host 111.88.215.204 --ssh-user hermes-presence-tunnel ' +
-          '--ssh-key "' + $state + '\hermes_presence_ed25519" ' +
-          '--known-hosts "' + $state + '\hermes_presence_known_hosts" --ssh-bin "' + $ssh + '"'
+        $arguments = Get-PresenceTaskArguments 'ssh.exe'
 
         $taskAction = New-ScheduledTaskAction -Execute $venvPython -Argument $arguments -WorkingDirectory $state
         $trigger = New-ScheduledTaskTrigger -AtStartup
@@ -230,10 +237,47 @@ switch ($Mode) {
         Write-Output 'WINDOWS_PERSISTENCE=PREPARED'
         Write-Output 'AUTOSTART=NOT_ENABLED'
     }
+    FixTask {
+        # Owner-approved migration for a successfully PREPARED task created by
+        # older installer. No credentials, venv or pairing are accessed.
+        $task = Get-ScheduledTask -TaskName $taskName -ErrorAction Stop
+        if ($task.State -ne 'Disabled') { throw 'TASK_MUST_BE_DISABLED' }
+        if ($task.Principal.UserId -notin @('NT AUTHORITY\LOCAL SERVICE','LOCAL SERVICE','S-1-5-19')) {
+            throw 'TASK_IDENTITY_MISMATCH'
+        }
+        if (@($task.Actions).Count -ne 1) { throw 'TASK_ACTION_COUNT_MISMATCH' }
+        $action = @($task.Actions)[0]
+        if (-not [string]::Equals($action.Execute, $venvPython, [StringComparison]::OrdinalIgnoreCase) -or
+            -not [string]::Equals($action.WorkingDirectory, $state, [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'TASK_ACTION_PATH_MISMATCH'
+        }
+        $original = Get-PresenceTaskArguments ('"' + (Join-Path $env:WINDIR 'System32\OpenSSH\ssh.exe') + '"')
+        $approved = Get-PresenceTaskArguments 'ssh.exe'
+        if ($action.Arguments -ne $original -and $action.Arguments -ne $approved) {
+            throw 'TASK_ARGUMENTS_UNEXPECTED'
+        }
+        $replacement = New-ScheduledTaskAction -Execute $venvPython -Argument $approved -WorkingDirectory $state
+        Set-ScheduledTask -TaskName $taskName -Action $replacement -ErrorAction Stop | Out-Null
+        $verified = Get-ScheduledTask -TaskName $taskName -ErrorAction Stop
+        if ($verified.State -ne 'Disabled' -or @($verified.Actions).Count -ne 1 -or
+            @($verified.Actions)[0].Arguments -ne $approved) {
+            throw 'TASK_FIX_POSTCONDITION_FAILED'
+        }
+        Write-Output 'WINDOWS_TASK_SSH_ARGS=FIXED'
+        Write-Output 'AUTOSTART=NOT_ENABLED'
+    }
     Enable {
         $task = Get-ScheduledTask -TaskName $taskName -ErrorAction Stop
-        if ($task.Principal.UserId -notin @('NT AUTHORITY\LOCAL SERVICE','S-1-5-19')) {
+        if ($task.Principal.UserId -notin @('NT AUTHORITY\LOCAL SERVICE','LOCAL SERVICE','S-1-5-19')) {
             throw 'TASK_IDENTITY_MISMATCH'
+        }
+        if ($task.State -ne 'Disabled' -or @($task.Actions).Count -ne 1 -or
+            @($task.Actions)[0].Arguments -ne (Get-PresenceTaskArguments 'ssh.exe') -or
+            -not [string]::Equals(@($task.Actions)[0].Execute, $venvPython,
+                                  [StringComparison]::OrdinalIgnoreCase) -or
+            -not [string]::Equals(@($task.Actions)[0].WorkingDirectory, $state,
+                                  [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'TASK_ACTION_NOT_VALIDATED'
         }
         Enable-ScheduledTask -TaskName $taskName | Out-Null
         Start-ScheduledTask -TaskName $taskName
