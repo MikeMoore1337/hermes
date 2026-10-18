@@ -1,4 +1,6 @@
 import {test,expect} from "@playwright/test";
+// Auth routing tests own the document; the PWA worker is tested separately in pwa.spec.js.
+test.use({serviceWorkers:"block"});
 import {mkdirSync} from "node:fs";
 import {resolve} from "node:path";
 const folder=resolve(".artifacts/h15-visual");
