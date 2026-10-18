@@ -20,7 +20,8 @@ from device_fabric.presence import NAME, AccessDenied, MAX_MSG
 
 
 async def observe(url: str, device_id: str, token: str, *, tls: ssl.SSLContext,
-                  stop: asyncio.Event, heartbeat_interval: float = 10) -> None:
+                  stop: asyncio.Event, heartbeat_interval: float = 10,
+                  connected: asyncio.Event | None = None) -> None:
     """Single outbound connection; disconnect on unknown server frame.
 
     A reconnect supervisor can call this again, but no work is ever buffered.
@@ -37,7 +38,8 @@ async def observe(url: str, device_id: str, token: str, *, tls: ssl.SSLContext,
         raise ValueError('invalid_token')
     if not 0.02 <= heartbeat_interval <= 60:
         raise ValueError('invalid_heartbeat')
-    async with connect(url, ssl=tls, compression=None, max_size=MAX_MSG, open_timeout=5) as socket:
+    async with connect(url, ssl=tls, compression=None, max_size=MAX_MSG,
+                       proxy=None, open_timeout=5) as socket:
         await socket.send(json.dumps({'type': 'hello', 'device_id': device_id, 'token': token}))
         response = json.loads(await asyncio.wait_for(socket.recv(), 5))
         if response != {'type': 'welcome'}:
@@ -51,6 +53,8 @@ async def observe(url: str, device_id: str, token: str, *, tls: ssl.SSLContext,
             if response != {'type': 'alive'}:
                 # Do not interpret untrusted agent commands or arguments.
                 raise AccessDenied('unexpected_server_message')
+            if connected is not None:
+                connected.set()
             try:
                 await asyncio.wait_for(stop.wait(), heartbeat_interval)
             except asyncio.TimeoutError:
