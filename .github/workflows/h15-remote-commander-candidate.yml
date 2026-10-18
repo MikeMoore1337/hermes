@@ -5,7 +5,9 @@ on:
   pull_request:
     paths:
       - scripts/h15_remote_commander_candidate_audit.py
+      - scripts/h15_brc_apply_policy_patch.py
       - tests/test_h15_remote_commander_candidate_audit.py
+      - tests/test_h15_brc_apply_policy_patch.py
       - docs/operations/H-15-SELFHOSTED-REMOTE-MCP.md
       - .github/workflows/h15-remote-commander-candidate.yml
 
@@ -28,7 +30,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m unittest -v tests.test_h15_remote_commander_candidate_audit
+          python3 -m unittest -v tests.test_h15_remote_commander_candidate_audit tests.test_h15_brc_apply_policy_patch
 
       - name: Fetch exact upstream Git commit (not tag, latest or npm install)
         shell: bash
@@ -69,6 +71,44 @@ jobs:
           pnpm test
           echo "UPSTREAM_ISOLATED_E2E=PASS" >> "$GITHUB_STEP_SUMMARY"
           echo "PRODUCTION_ACTIVATION=NOT_EXECUTED" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Apply Hermes policy to exact pinned agent (never production)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m scripts.h15_brc_apply_policy_patch \
+            --source-dir "$RUNNER_TEMP/brc-upstream"
+          test "$(git -C "$RUNNER_TEMP/brc-upstream" rev-parse HEAD)" = cbe511702dd0147650353c29ac6ab1decd8afda1
+
+      - name: Verify actual patched agent tool surface and denied paths
+        shell: bash
+        working-directory: ${{ runner.temp }}/brc-upstream
+        run: |
+          set -euo pipefail
+          pnpm build
+          node --input-type=module <<'JS'
+          import { listTools, hasTool, callTool } from './packages/agent/dist/dispatcher.js';
+          const denied = ['set_config_value', 'prepare_file_transfer',
+                          'send_file_transfer', 'receive_file_transfer'];
+          const advertised = new Set(listTools().map((tool) => tool.name));
+          for (const tool of denied) {
+            if (hasTool(tool) || advertised.has(tool)) throw Error('POLICY_BYPASS:' + tool);
+            const result = await callTool(tool, {});
+            if (!result.isError) throw Error('DENIED_TOOL_EXECUTED:' + tool);
+          }
+          if (!hasTool('start_process') || !hasTool('write_file')) {
+            throw Error('MANDATORY_COMPATIBLE_TOOL_MISSING');
+          }
+          const result = await callTool('read_file', {
+            path: 'https://example.invalid/', isUrl: true
+          });
+          if (!result.isError || !JSON.stringify(result).includes('HERMES_REMOTE_URL_FETCH_DENIED')) {
+            throw Error('EXTERNAL_URL_READ_ALLOWED');
+          }
+          console.log('HERMES_PATCHED_DISPATCHER=PASS');
+          JS
+          pnpm test
+          echo "HERMES_PATCHED_MCP_POLICY=PASS (source-only, no live agent)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Retain sanitized source audit receipt
         if: always()
