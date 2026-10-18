@@ -74,10 +74,10 @@ the Control Center API. The UI shows such observations only as
 is not a real-time 10k/day guarantee.
 
 The `GET /rate_limit` GitHub REST API provides independently scoped,
-token-specific bucket limits (`core`, `search`, `graphql`, etc.).
+requester/resource-scoped limits (`core`, `search`, `graphql`, etc.).
 `control_center/github_rate_limit.py` reads only that fixed endpoint;
 does not enumerate repositories or user data and refuses insecure credentials.
-It makes **no claim of account-wide API/CI budget**. A zero-limit resource
+The authenticated-user primary limit can be **shared across user credentials**,\nnot isolated to one PAT; a GitHub App installation has different scope.\nIt makes **no claim of a single account-wide API/CI budget**. A zero-limit resource
 means disabled/unknown, not available. The token is distinct from
 GitHub Actions and the owner's ChatGPT/GitHub OAuth integration.
 
@@ -311,3 +311,105 @@ Rollback: restore the securely backed-up service file, run
 systemd's failure counter is distinct from deleting or acknowledging
 messages; it must never modify `incidents.sqlite3`. The optional GitHub
 and Cloudflare collectors remain independently owner gated.
+
+
+## Stage 5 — safe owner-gated GitHub / Cloudflare activation
+
+The owner-confirmed local readback after the October 18 production release
+showed Codex and Desktop Commander source signals, while
+`github_api=unknown` and current Cloudflare Free Neurons used/remaining
+remained UNKNOWN. This is accurate; the **two external one-shot collectors**
+are opt-in and NOT installed by normal CI/CD. The live Desktop Commander
+`ops:quota_desktop_exhausted` event obtained a genuine Telegram
+`acknowledged=1`; the Ops Watch timer was later verified active with
+a successful normal sender invocation after applying the 12-start/hour
+service rate-limit correction. Do not confuse this with GitHub/Cloudflare
+source authorization.
+
+A dedicated owner-only helper separates the steps below:
+
+| Step | Exact command suffix | Effects |
+| --- | --- | --- |
+| Status | `status github` / `status cloudflare` | Local file metadata and validated source state only |
+| Install | `install github` / `install cloudflare` | Back up and install just those two opt-in systemd units, no start |
+| Smoke | `smoke github` / `smoke cloudflare` | Exactly one bounded official GET using a separately approved credential |
+| Enable | `enable github` / `enable cloudflare` | Activate periodic timer **only with a fresh real source observation** |
+| Rollback | `disable github` / `disable cloudflare` | Stop only that collector timer; preserve existing snapshots and unrelated services |
+
+In the owner-authorized **root SSH console**, always invoke the helper
+through a child `bash` process, never `source` it. Its fail-closed
+`set -e` will then exit only that child and **will not log out SSH**.
+
+```bash
+active="$(readlink -f /opt/hermes-control-center/current)"
+if [[ "$active" =~ ^/opt/hermes-control-center/releases/main-([0-9a-f]{40})$ ]]; then
+  sha="${BASH_REMATCH[1]}"
+  setup="/opt/hermes-agent-owner/releases/main-$sha/deploy/h15-provider-source-setup.sh"
+  bash "$setup" status github
+  bash "$setup" status cloudflare
+fi
+```
+
+If `MISSING_OR_UNSAFE` appears, stop there. The helper does **not**
+create, display, repair or request credentials. It refuses to install
+or enable collectors until the owner **independently provisions**
+root-owned non-symlink `0600` token files in `/etc/hermes/`.
+The Cloudflare source additionally requires a root-owned `0600`
+`/etc/hermes/cloudflare-billing-read.env` containing **only**
+`CLOUDFLARE_BILLING_ACCOUNT_ID=<32-hex-account-id>`.
+Never paste tokens, account IDs, browser cookies or .env contents
+into ChatGPT, GitHub, CI, screenshots or journal logs.
+
+### GitHub account selection and API semantics
+
+The official [GET /rate_limit API](https://docs.github.com/en/rest/rate-limit/rate-limit)
+**does not consume** primary REST quota. GitHub explicitly states that
+fine-grained PATs do **not** require repository permissions for that
+endpoint. Create a new short-lived, least-privilege fine-grained token
+for the intended GitHub principal, **not** a ChatGPT connector secret,
+GitHub Actions `GITHUB_TOKEN`, an OAuth session or a token for unrelated
+repositories. Review GitHub's account/token settings independently,
+and provision the bearer string directly into
+`/etc/hermes/github-rate-limit-read.token` on the VPS with mode `0600`.
+
+GitHub's `GET /rate_limit` reports per-resource windows for the requesting
+identity/authentication context. **User limits can be shared across multiple
+user tokens**, and installation limits can differ; do **not** label a
+user's primary bucket as exclusively belonging to one PAT or as every
+GitHub integration's aggregate quota. Primary rate limits alone do
+not establish secondary throttling, Actions job usage or capacity.
+When the official source fails, the card remains UNKNOWN.
+
+After owner provisioning and review, the commands are deliberately
+separate and no source is activated by the normal production deploy:
+
+```bash
+# GitHub; inspect returned fixed statuses between each step.
+bash "$setup" install github
+bash "$setup" smoke github
+bash "$setup" enable github
+
+# Cloudflare only after separate Account Billing Read scope,
+# verified account ID and explicit owner opt-in.
+bash "$setup" install cloudflare
+bash "$setup" smoke cloudflare
+bash "$setup" enable cloudflare
+```
+
+Each step validates the exact currently active immutable release
+and rejects systemd unit drift. The `smoke` step is a **single bounded
+official API read**, never inference; the `enable` gate validates an
+actual fresh snapshot rather than just a token's existence. A delayed
+Cloudflare V1 billing response with no unambiguous previous-day Workers AI
+Neurons record is NOT sufficient to enable its timer; it remains
+UNKNOWN even if the API replied 200. Cloudflare V1 may omit Free usage.
+Cloudflare V2 includes Free but is currently **Alpha / restricted access**
+and cannot be substituted without a separately validated response schema
+and owner permission. No plan or paid feature is enabled by this helper.
+
+Finally run the existing `sudo -u hermes-control /usr/bin/python3 -m
+scripts.h15_provider_readback` from the matching Hermes source release
+and inspect per-provider cards in the existing owner OAuth UI. Confirm
+source_kind and independent reset windows, not merely collector exit=0.
+Rollback via `bash "$setup" disable <provider>` leaves Ops Watch
+and the existing H-01 fail-closed policy untouched.
