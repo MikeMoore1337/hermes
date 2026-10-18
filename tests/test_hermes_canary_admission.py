@@ -160,11 +160,14 @@ class CanaryAdmissionTests(unittest.TestCase):
                 "--owner-key-file", str(root / "owner.key"),
                 "--observer-key-file", str(root / "observer.key"),
             ]
-            with patch("hermes_benchmark.canary_admission.datetime") as clock:
-                clock.now.return_value = NOW
+            admitted = {"status": "ready_for_operator_review",
+                        "reason_code": "EXTERNAL_LIVE_GO_REQUIRED",
+                        "dispatch_authorized": False}
+            with patch("hermes_benchmark.canary_admission.assess",
+                       return_value=admitted):
                 with patch("sys.stdout", new_callable=StringIO) as output:
                     exit_code = canary_admission.main(args)
-            self.assertNotEqual(exit_code, 0)
+            self.assertEqual(exit_code, 2)
             self.assertEqual(json.loads(output.getvalue())["dispatch_authorized"], False)
 
     def test_no_network_and_no_subprocess_even_when_ready(self):
