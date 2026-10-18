@@ -85,6 +85,7 @@ function draw(){
 }
 async function refresh(){
  if(!panel)return;
+ panel.setAttribute("aria-busy", "true");
  panel.querySelector("[data-status]").textContent="Обновление…";
  try{
   const res=await fetch("/api/analytics/codex?period="+period,{credentials:"same-origin",cache:"no-store"});
@@ -93,6 +94,7 @@ async function refresh(){
   if(json.schema!==1||json.source!=="codex-local-rollout-jsonl")throw Error("schema");
   data=json;draw();
  }catch(_){data=null;draw();panel.querySelector("[data-status]").textContent="Недоступно";}
+ finally{panel.removeAttribute("aria-busy");}
 }
 function hide(){
  active=false;document.documentElement.classList.remove("ai272-active");
@@ -121,7 +123,7 @@ function mount(){
   panel.innerHTML=[
    '<div class="ai272-head"><div><span class="eyebrow">H-15 / #272 / CODEX</span>',
    '<h2>AI Usage Analytics</h2><p>Фактическая активность моделей и ориентировочная стоимость</p></div>',
-   '<span data-status class="ai272-status">Нет данных</span></div>',
+   '<span data-status class="ai272-status" role="status" aria-atomic="true">Нет данных</span></div>',
    '<div class="ai272-controls"><label>Период <select data-period></select></label>',
    '<label>Проект <select data-project></select></label>',
    '<label>Модель <select data-model></select></label>',

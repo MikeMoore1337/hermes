@@ -29,7 +29,11 @@
   description.textContent = "Удалённые устройства и облачный лимит. Статус Online не подтверждает возможность выполнения команд.";
   const content = document.createElement("div");
   content.className = "dc-status";
-  content.setAttribute("aria-live", "polite");
+  // Announce only meaningful state transitions, not the whole refreshed device list.
+  const announcements = document.createElement("p");
+  announcements.className = "sr-only";
+  announcements.setAttribute("role", "status");
+  announcements.setAttribute("aria-atomic", "true");
   const actions = document.createElement("div");
   actions.className = "dc-actions";
   const refresh = document.createElement("button");
@@ -59,13 +63,19 @@
   historyControls.append(historyPeriod);
   const chart = document.createElement("div");
   chart.className = "dc-chart";
-  chart.setAttribute("aria-live", "polite");
   history.append(historySummary, historyControls, chart);
-  panel.append(head, description, content, history, actions);
+  panel.append(head, description, content, announcements, history, actions);
   wrap.append(toggle, panel);
   document.body.append(wrap);
   let pending = false;
   let nextPoll = 0;
+  let lastAnnounced = "";
+  function announce(message) {
+    if (message !== lastAnnounced) {
+      announcements.textContent = message;
+      lastAnnounced = message;
+    }
+  }
   function elt(tag, value, css) {
     const node = document.createElement(tag);
     if (value !== undefined) node.textContent = value;
@@ -82,6 +92,7 @@
     };
     const status = data && labels[data.status] ? data.status : "unknown";
     content.append(elt("div", labels[status], "dc-state dc-" + status));
+    if (!panel.hidden) announce("Desktop Commander: " + labels[status]);
     content.append(elt("p", data && Number.isInteger(data.quota_remaining_percent)
       ? data.quota_remaining_percent + "% облачной квоты осталось"
       : "Точный остаток облачной квоты неизвестен", "dc-metric"));
@@ -123,6 +134,7 @@
       nextPoll = Date.now() + 60000;
     } catch (_) {
       content.replaceChildren(elt("p", "Не удалось получить защищённый снимок.", "dc-error"));
+      if (!panel.hidden) announce("Desktop Commander: защищённый снимок недоступен");
       nextPoll = Date.now() + 30000;
     } finally {
       pending = false;
