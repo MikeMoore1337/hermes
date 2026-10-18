@@ -436,7 +436,7 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
                             f'data-authenticated="{str(authenticated).lower()}"></div>'
                         ).encode("ascii")
                         raw = raw.replace(b'<div id="root"></div>', root)
-                        if authenticated:
+                        if authenticated and parsed.query != "preview=login":
                             # Load operator-only widgets on authorized pages only.
                             raw = raw.replace(b"</head>", (
                                 b'<link rel="stylesheet" href="/desktop-commander.css">'
