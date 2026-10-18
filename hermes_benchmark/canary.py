@@ -115,7 +115,7 @@ def _approval_valid(a: dict[str, Any], now: datetime) -> str | None:
             type(a.get("max_total_tokens")) is not int or
             not 1 <= a["max_total_tokens"] <= 512 or
             _money(a.get("max_cost_usd")) is None or
-            _money(a["max_cost_usd"]) > Decimal("1.00")):
+            _money(a["max_cost_usd"]) != Decimal("0.00")):
         return "APPROVAL_SCOPE_INVALID"
     issued, expires = _timestamp(a.get("issued_at")), _timestamp(a.get("expires_at"))
     if issued is None or expires is None or not 0 < (expires - issued).total_seconds() <= 3600:
