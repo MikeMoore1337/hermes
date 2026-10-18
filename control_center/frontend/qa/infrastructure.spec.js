@@ -10,7 +10,9 @@ const host=(name,cpu,ram,disk)=>({
  metrics:{cpu_used_percent:cpu,ram_used_percent:ram,ram_total_bytes:1000000000,
   ram_used_bytes:ram*10000000,swap_total_bytes:500000000,swap_used_bytes:50000000,
   disk_used_percent:disk,disk_total_bytes:2000000000,disk_used_bytes:disk*20000000,
-  uptime_seconds:7200,load1:0.11,load5:0.22,load15:0.33}
+  uptime_seconds:7200,load1:0.11,load5:0.22,load15:0.33,
+  cpu_cores:4,inode_used_percent:19,
+  network_rates:{eth0:{rx_bytes_per_second:1200000,tx_bytes_per_second:2200000}}}
 });
 async function setup(page,mode="online"){
  await page.route("**/api/overview",route=>route.fulfill({status:200,
@@ -42,6 +44,8 @@ for(const width of [320,393,1440]){
   await expect(yfc.getByRole("heading",{name:"VPS YFC"})).toBeVisible();
   await expect(hermes.getByText("23%",{exact:true})).toBeVisible();
   await expect(yfc.getByText("77%",{exact:true})).toBeVisible();
+  await expect(hermes.getByText("Сеть eth0:",{exact:false})).toBeVisible();
+  await expect(yfc.getByText("Inode /",{exact:true})).toBeVisible();
   await hermes.locator("summary").click();
   await expect(hermes.locator(".infra294-chart")).toContainText("CPU");
   await expect(hermes.locator(".infra294-chart polyline")).toHaveAttribute("points",/\d/);
