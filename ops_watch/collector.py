@@ -18,6 +18,8 @@ from typing import Any
 
 from ops_watch.core import InputError, analyze, changes
 from ops_watch.infrastructure_alerts import ROOT as INFRASTRUCTURE_ROOT
+from ops_watch.device_fabric_alerts import DB as DEVICE_DB, OPT_IN as DEVICE_OPT_IN
+from ops_watch.device_fabric_alerts import observe as device_fabric_observe
 from ops_watch.infrastructure_alerts import observe as infrastructure_observe
 from ops_watch.quota_alerts import observe as quota_observe
 from ops_watch.quota_alerts import CODEX as Q_CODEX, DESKTOP as Q_DESKTOP, CLOUDFLARE as Q_CF, GITHUB as Q_GITHUB
@@ -310,7 +312,7 @@ def _atomic_json(directory: Path, name: str, document: object) -> None:
         temporary.unlink(missing_ok=True)
 
 
-def once(source: Path = SOURCE, target: Path = TARGET, observed: datetime | None = None, *, agent_guard: dict[str, bool] | None = None, alerts_timer: dict[str, bool] | None = None, alerts_service: dict[str, bool] | None = None, infrastructure_dir: Path | None = None, quota_paths: dict[str, Path] | None = None) -> dict[str, Any]:
+def once(source: Path = SOURCE, target: Path = TARGET, observed: datetime | None = None, *, agent_guard: dict[str, bool] | None = None, alerts_timer: dict[str, bool] | None = None, alerts_service: dict[str, bool] | None = None, infrastructure_dir: Path | None = None, quota_paths: dict[str, Path] | None = None, device_fabric_db: Path | None = None, device_fabric_opt_in: Path | None = None) -> dict[str, Any]:
     """Collect, deduplicate, and atomically store safe findings under a lock."""
     if target.is_symlink() or not target.is_dir() or (target.stat().st_mode & 0o077) != 0:
         raise InputError("unsafe_target_directory")
@@ -338,6 +340,9 @@ def once(source: Path = SOURCE, target: Path = TARGET, observed: datetime | None
                 directory=infrastructure_dir, now=now)
         if quota_paths is not None:
             snapshot["quota_signals"] = quota_observe(now=now, paths=quota_paths)
+        if device_fabric_db is not None and device_fabric_opt_in is not None:
+            snapshot["device_fabric"] = device_fabric_observe(
+                db=device_fabric_db, opt_in=device_fabric_opt_in, now=now)
         findings = analyze(snapshot, now=now)
         # Separate QA reader never has Telegram credentials or access to the
         # news source. Missing/stale/denied API observations must not falsely
@@ -403,6 +408,19 @@ def once(source: Path = SOURCE, target: Path = TARGET, observed: datetime | None
                                      else "warning",
                                      "fingerprint": previous_item["fingerprint"]})
                     active_quota.add(code)
+        # Unreadable or missing presence observations do not prove recovery.
+        # Only a fresh authenticated ONLINE signal may resolve a prior outage.
+        for item in previous:
+            code = item["code"]
+            if code not in ("device_windows_pc_unavailable", "device_linux_vps_unavailable"):
+                continue
+            if any(current["code"] == code for current in findings):
+                continue
+            ident = "windows-pc" if code == "device_windows_pc_unavailable" else "linux-vps"
+            signal = snapshot.get("device_fabric", {}).get(ident, {}).get("status")
+            if signal != "online":
+                findings.append({"code": code, "severity": item["severity"],
+                                 "fingerprint": item["fingerprint"]})
         was_ci_failed = any(item["code"] == "ci_failed" for item in previous)
         if ci == "FAILURE" or (ci is None and was_ci_failed):
             findings.append({
@@ -434,6 +452,7 @@ def main() -> int:
             alerts_timer=_ops_alert_timer_status(),
             alerts_service=_ops_alert_service_status(),
             infrastructure_dir=INFRASTRUCTURE_ROOT,
+            device_fabric_db=DEVICE_DB, device_fabric_opt_in=DEVICE_OPT_IN,
             quota_paths={"codex": Q_CODEX, "desktop": Q_DESKTOP,
                          "cloudflare": Q_CF, "github": Q_GITHUB},
         )
