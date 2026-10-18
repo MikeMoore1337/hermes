@@ -64,7 +64,7 @@ except Exception:
     raise SystemExit(0)
 # A real MCP SDK server. Stdio stays inside container, child uses this pinned
 # venv interpreter and the only persistent effect is a private /tmp marker.
-SERVER = '''
+SERVER = r'''
 import os
 import json
 import threading
