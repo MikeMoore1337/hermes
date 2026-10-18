@@ -268,6 +268,34 @@ class CanaryEvidenceTests(unittest.TestCase):
             self.assertEqual(r["reason_code"], "JOURNAL_UNAVAILABLE")
             self.assertEqual(outside.read_text(), "not a database")
 
+    def test_public_replay_journal_is_not_accepted(self):
+        a, o = examples()
+        with tempfile.TemporaryDirectory() as name:
+            journal = Path(name) / "journal.sqlite"
+            journal.touch(mode=0o600)
+            journal.chmod(0o644)
+            r = canary.audit_once(sign(a, OWNER), sign(o, OBSERVER),
+                                  owner_key=OWNER, observer_key=OBSERVER,
+                                  now=NOW, journal=journal)
+            self.assertEqual((r["status"], r["reason_code"]),
+                             ("unverified", "JOURNAL_UNAVAILABLE"))
+
+    def test_unhashable_owner_case_id_is_safely_blocked(self):
+        a, o = examples()
+        a["case_id"] = ["quota-denial"]
+        r = evaluate(a, o)
+        self.assertEqual((r["status"], r["reason_code"]),
+                         ("blocked", "APPROVAL_SCOPE_INVALID"))
+
+    def test_nonnumeric_signed_payload_is_not_trusted(self):
+        a, o = examples()
+        a["max_calls"] = float("nan")
+        envelope = {"payload": a, "signature": "0" * 64}
+        r = canary.audit(envelope, sign(o, OBSERVER),
+                         owner_key=OWNER, observer_key=OBSERVER, now=NOW)
+        self.assertEqual((r["status"], r["reason_code"]),
+                         ("unverified", "APPROVAL_SIGNATURE_INVALID"))
+
     def test_key_files_must_be_private_and_independent(self):
         with tempfile.TemporaryDirectory() as name:
             p = Path(name) / "key"
