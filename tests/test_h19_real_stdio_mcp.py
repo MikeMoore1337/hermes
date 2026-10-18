@@ -24,7 +24,7 @@ def payload(*, sdk="AVAILABLE", mode="original"):
         "actual_external_mcp": False, "real_provider": False,
         "real_agent_resident": False,
         "sdk_server_import": "PASS" if available else "NOT_RUN",
-        "registered_tool_count": 3 if available else 0,
+        "registered_tool_count": 4 if available else 0,
         "discovery_errors_observed": False,
         "wire_read_after_read": 1 if available else None,
         "wire_write_after_denial": 0 if available else None,
@@ -36,6 +36,9 @@ def payload(*, sdk="AVAILABLE", mode="original"):
         "wire_write_after_approval_error": 1 if available else None,
         "wire_write_after_post_approval_deny": 1 if available else None,
         "wire_unannotated_write_after_denial": 0 if available else None,
+        "spoofed_read_wire_after_denial": (1 if mode == "original" else 0) if available else None,
+        "spoofed_read_marker_after_denial": (mode == "original") if available else None,
+        "spoofed_read_prompt_calls": (0 if mode == "original" else 1) if available else None,
     }
 
 

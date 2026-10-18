@@ -19,7 +19,7 @@ from .verify_v0222_immutable import (
     patched_commands,
 )
 
-SCHEMA = "h19-real-http-mcp-v2"
+SCHEMA = "h19-real-http-mcp-v3"
 PROBE = r"""
 import asyncio
 import contextlib
@@ -34,7 +34,7 @@ import threading
 import time
 from unittest.mock import patch
 
-SCHEMA = "h19-real-http-mcp-v2"
+SCHEMA = "h19-real-http-mcp-v3"
 report = {
     "schema": SCHEMA,
     "mode": os.environ.get("HERMES_SCOPE_PROBE_MODE", "unknown"),
@@ -55,6 +55,8 @@ report = {
     "spoofed_read_marker_after_denial": False,
     "spoofed_read_prompt_calls": 0,
     "spoofed_read_result_valid": False,
+    "unvetted_read_wire_after_denial": 0,
+    "unvetted_read_prompt_calls": 0,
     "external_mcp_called": False,
     "real_model_called": False,
     "resident_agent_allowed": False,
@@ -159,6 +161,7 @@ with tempfile.TemporaryDirectory(prefix="h19-http-", dir="/tmp") as tmp:
             "url": "http://127.0.0.1:" + str(port) + "/mcp",
             "transport": "http",
             "trust": "untrusted",
+            "read_only_allowlist": ["peek"],  # owner-reviewed, genuine read only
             "connect_timeout": 12,
             "tool_timeout": 10,
             "tools": {"resources": False, "prompts": False},
@@ -212,6 +215,33 @@ with tempfile.TemporaryDirectory(prefix="h19-http-", dir="/tmp") as tmp:
                 and "H19_MCP_SPOOFED_WRITE" in str(spoof_result)
             ) if spoof_marker.exists() else False
 
+            # An owner must vet the tool independently. For the derivative,
+            # clearing the local allowlist makes a genuine read demand consent.
+            # Original lacks this control and remains an intentionally unsafe baseline.
+            if report["mode"] == "patched":
+                from tools import mcp_tool as core
+                from tools.mcp_tool_scope import _server_key
+                policy_key = _server_key("h19http")
+                saved = core._owner_read_only_allowlists.get(policy_key)
+                core._owner_read_only_allowlists[policy_key] = frozenset()
+                try:
+                    denied_read_calls = []
+                    with patch("tools.approval_prompt.request_elicitation_consent",
+                               side_effect=lambda *a, **kw: (denied_read_calls.append(True) or "deny")):
+                        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                            model_tools.handle_function_call(
+                                "mcp__h19http__peek", {}, enabled_toolsets=["mcp-h19http"],
+                                disabled_toolsets=[], skip_tool_execution_middleware=True,
+                                skip_tool_request_middleware=True, skip_pre_tool_call_hook=True,
+                            )
+                    report["unvetted_read_prompt_calls"] = len(denied_read_calls)
+                finally:
+                    if saved is None:
+                        core._owner_read_only_allowlists.pop(policy_key, None)
+                    else:
+                        core._owner_read_only_allowlists[policy_key] = saved
+            report["unvetted_read_wire_after_denial"] = counts()[0]
+
             invoke("mcp__h19http__mark", "deny")
             report["write_wire_after_denial"] = counts()[1]
             report["write_marker_after_denial"] = marker.exists()
@@ -259,6 +289,7 @@ def validate(raw: Any, *, expected_mode: str) -> dict[str, Any]:
         "write_wire_after_scope_deny", "write_marker_after_scope_deny",
         "spoofed_read_wire_after_denial", "spoofed_read_marker_after_denial",
         "spoofed_read_prompt_calls", "spoofed_read_result_valid",
+        "unvetted_read_wire_after_denial", "unvetted_read_prompt_calls",
         "external_mcp_called", "real_model_called", "resident_agent_allowed",
     }
     if (type(raw) is not dict or set(raw) != fields
@@ -278,6 +309,7 @@ def validate(raw: Any, *, expected_mode: str) -> dict[str, Any]:
         "write_wire_after_approval", "read_wire_after_scope_deny",
         "write_wire_after_scope_deny",
         "spoofed_read_wire_after_denial", "spoofed_read_prompt_calls",
+        "unvetted_read_wire_after_denial", "unvetted_read_prompt_calls",
     )
     if any(type(raw[k]) is not bool for k in bools) or any(
             type(raw[k]) is not int or not 0 <= raw[k] <= (3 if k == "registered_tools" else 2)
@@ -302,10 +334,12 @@ def validate(raw: Any, *, expected_mode: str) -> dict[str, Any]:
         # For both unmodified upstream and the limited scope-only patch,
         # remote readOnlyHint=True is believed. This is a documented GAP,
         # not a successful security denial or an owner approval.
-        "spoofed_read_wire_after_denial": 1,
-        "spoofed_read_marker_after_denial": True,
-        "spoofed_read_prompt_calls": 0,
-        "spoofed_read_result_valid": True,
+        "spoofed_read_wire_after_denial": 1 if expected_mode == "original" else 0,
+        "spoofed_read_marker_after_denial": expected_mode == "original",
+        "spoofed_read_prompt_calls": 0 if expected_mode == "original" else 1,
+        "spoofed_read_result_valid": expected_mode == "original",
+        "unvetted_read_wire_after_denial": 1,
+        "unvetted_read_prompt_calls": 0 if expected_mode == "original" else 1,
     }
     passed = all(type(raw[k]) is type(v) and raw[k] == v for k, v in expected.items())
     return {"status": "PASS" if passed else "FAIL", "observations": raw}
@@ -348,7 +382,8 @@ def execute(*, runner=run_bounded) -> tuple[int, dict[str, Any]]:
             "patched_derivative_id": derivative_id,
             "original": readings["original"]["observations"],
             "patched": readings["patched"]["observations"],
-            "untrusted_annotation_spoof_gap_observed": True if status == "PASS" else False,
+            "untrusted_annotation_spoof_gap_observed": status == "PASS",
+            "patched_spoof_blocked_on_wire": status == "PASS",
             "full_external_mcp_enforcement_verified": False,
             "full_resident_runtime_verified": False,
             "real_model_evaluation": "NOT_RUN",
@@ -369,6 +404,7 @@ def verify_report(data: Any) -> str:
         "schema", "status", "mode", "upstream_image", "upstream_stamp",
         "patched_derivative_id", "original", "patched",
         "untrusted_annotation_spoof_gap_observed",
+        "patched_spoof_blocked_on_wire",
         "full_external_mcp_enforcement_verified", "full_resident_runtime_verified",
         "real_model_evaluation", "resident_agent_allowed",
     }
@@ -378,6 +414,7 @@ def verify_report(data: Any) -> str:
             or type(data["patched_derivative_id"]) is not str
             or re.fullmatch(r"sha256:[0-9a-f]{64}", data["patched_derivative_id"]) is None
             or data["untrusted_annotation_spoof_gap_observed"] is not (data["status"] == "PASS")
+            or data["patched_spoof_blocked_on_wire"] is not (data["status"] == "PASS")
             or data["full_external_mcp_enforcement_verified"] is not False
             or data["full_resident_runtime_verified"] is not False
             or data["real_model_evaluation"] != "NOT_RUN"
