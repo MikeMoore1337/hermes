@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import errno
 import json
 import os
 import tempfile
@@ -39,6 +40,9 @@ class OfflineOSProbeTests(unittest.TestCase):
         (self.scope / "pids.max").write_text("32\n")
 
     def run_probe(self, **override):
+        def synthetic_denial(family, socktype):
+            raise OSError(errno.EPERM, "synthetic socket policy deny")
+        override.setdefault("socket_factory", synthetic_denial)
         return inspect_offline_controls(
             proc=self.root / "proc",
             cgroup=self.cg,
@@ -54,6 +58,30 @@ class OfflineOSProbeTests(unittest.TestCase):
         self.assertEqual(evidence["actual_outbound_deny_test"], "NOT_PERFORMED")
         self.assertEqual(evidence["provider_cost_cap"], "NOT_VERIFIED")
         self.assertFalse(evidence["live_model_execution_allowed"])
+
+    def test_socket_creation_denial_is_measured_without_connect(self):
+        valid = self.run_probe()
+        self.assertEqual(valid["socket_creation_deny_test"], "PASSED")
+        self.assertTrue(valid["checks"]["ipv4_socket_denied"])
+        self.assertTrue(valid["checks"]["ipv6_socket_denied"])
+        self.assertEqual(valid["actual_outbound_deny_test"], "NOT_PERFORMED")
+
+        opened = []
+        class FakeSocket:
+            def close(self):
+                opened.append("closed")
+        candidate = self.run_probe(socket_factory=lambda family, type_: FakeSocket())
+        self.assertEqual(candidate["status"], "NO_GO")
+        self.assertEqual(candidate["socket_creation_deny_test"], "FAILED")
+        self.assertEqual(opened, ["closed", "closed"])
+
+    def test_resource_error_must_not_be_mistaken_for_network_policy(self):
+        def exhausted(family, kind):
+            raise OSError(errno.EMFILE, "synthetic resource exhaustion")
+        result = self.run_probe(socket_factory=exhausted)
+        self.assertEqual(result["status"], "NO_GO")
+        self.assertFalse(result["checks"]["ipv4_socket_denied"])
+        self.assertFalse(result["checks"]["ipv6_socket_denied"])
 
     def test_observed_limits_fail_closed_on_each_violation(self):
         violations = (
