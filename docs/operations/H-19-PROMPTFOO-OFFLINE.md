@@ -388,3 +388,17 @@ MCP executor**: пробует поднять в отдельном однора
 `full_mcp_permission_enforcement_verified=false`,
 `real_model_evaluation=NOT_RUN`, `resident_agent_allowed=false`.
 #33 и resident H-01 остаются NO-GO.
+
+
+Важно: физическое отсутствие marker после denied write **само по себе**
+недостаточно для доказательства, что `tools/call` не достиг сервера.
+Поэтому MCP fixture дополнительно считывает настоящий stdin JSON-RPC
+с помощью прозрачного byte-preserving pipe и записывает в отдельный
+локальный `/tmp` журнал **только белый список имён** `peek` и
+`mark` при `method=tools/call`; никакие аргументы, токены, другие
+сообщения или ответы не сохраняются. Отчёт содержит только counts:
+`wire_read_after_read=1`, `wire_write_after_denial=0`,
+`wire_write_after_approval=1`. Все три обязательны для PASS,
+включая положительный wire-control. Unit mutation tests проверяют
+подмену каждого числа. Это проверка получения протокольного запроса
+локальным SDK-сервером; внешние MCP endpoints по-прежнему NOT_RUN.
