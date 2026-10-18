@@ -161,7 +161,8 @@ class AnalyticsReadProbeTests(unittest.TestCase):
         sample["data"]["viewer"]["accounts"][0]["aiInferenceAdaptiveGroups"].append(
             {"sum":{"totalNeurons":100}})
         self.assertEqual(answer(sample),("unknown",None))
-        for http_code, expected in ((401,"auth_required"),(403,"auth_required"),
+        for http_code, expected in ((400,"unsupported_or_denied"),
+                                    (401,"auth_required"),(403,"auth_required"),
                                     (429,"throttled"),(500,"unavailable")):
             with self.subTest(http_code=http_code):
                 def denied(req, timeout):
