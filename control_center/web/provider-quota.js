@@ -10,7 +10,7 @@
     unknown: "Нет подтверждённых данных", not_connected: "Не подключено"};
   const noteText = {account_usage_unavailable: "10 000 Neurons в сутки - документированный предел Free. Фактическое потребление аккаунта неизвестно.",
     official_account_snapshot: "Показатели из официального локального снимка Codex. Запросы моделей не выполняются.",
-    official_delayed_historical_usage: "Cloudflare публикует исторические Neurons с задержкой. Текущие использовано/остаток всё ещё неизвестны.",
+    official_delayed_historical_usage: "Cloudflare передаёт учтённые для биллинга Neurons с задержкой. Это не обязательно весь расход бесплатной квоты; текущие использовано/остаток неизвестны.",
     billing_auth_required: "Исторический учёт недоступен: токен Cloudflare не имеет подтверждённого Billing Read. Суточная квота AI отдельно.",
     billing_throttled: "Обращения к отчётности Cloudflare ограничены. Текущий остаток Neurons неизвестен.",
     provider_limit_exhausted: "Поставщик сообщил об исчерпании лимита.",
@@ -151,8 +151,8 @@
       if(billing.length){
         const previous = billing[billing.length - 1];
         add("p","quota295-note",article,
-          "Официальный учёт за завершённые сутки " + previous.day + ": " +
-          readable(previous.neurons) + " Neurons. Данные обновляются с задержкой; это НЕ сегодняшнее потребление.");
+          "Учтено биллингом за завершённые сутки " + previous.day + ": " +
+          readable(previous.neurons) + " Neurons. Данные обновляются с задержкой и могут не включать бесплатное потребление.");
         const detail=add("details","quota295-history",article);
         add("summary","",detail,"История официального учёта (с задержкой)");
         const chart=add("div","quota295-chart",detail);
