@@ -252,10 +252,18 @@ function LoginPreview({onBack,active=false,unavailable=false}){
   <footer className="login-footer">HERMES CONTROL CENTER · Только для владельца <a target="_blank" rel="noopener noreferrer" href={ISSUE33}>Политика доступа ↗</a></footer>
  </div>;
 }
+function serverAuthBootstrap(){
+ const root=document.getElementById("root");
+ const mode=root?.dataset.authMode;
+ const authenticated=root?.dataset.authenticated;
+ if(!["proxy","github"].includes(mode)||!["true","false"].includes(authenticated))return null;
+ return {mode,authenticated:authenticated==="true"};
+}
 function App(){
  const preview=new URLSearchParams(location.search).get("preview")==="login";
- const [auth,setAuth]=useState(null);
+ const [auth,setAuth]=useState(serverAuthBootstrap);
  useEffect(()=>{
+  if(serverAuthBootstrap())return;
   let active=true;
   fetch("/api/auth/session",{cache:"no-store",credentials:"same-origin"})
    .then(async response=>{
@@ -274,7 +282,7 @@ function App(){
   try{
    const result=await fetch("/auth/logout",{method:"POST",credentials:"same-origin",
      cache:"no-store",headers:{"Content-Type":"text/plain"}});
-   if(result.status===204)setAuth({mode:"github",authenticated:false});
+   if(result.status===204)window.location.replace("/");
   }catch(_){/* remain on protected screen; expiry will deny future APIs */}
  },[]);
  if(!auth)return <div className="auth-wait" role="status">Проверка доступа к Hermes Control Center…</div>;
