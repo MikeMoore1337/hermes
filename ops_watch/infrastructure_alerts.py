@@ -8,6 +8,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 import json
 import math
+import os
 from pathlib import Path
 import sqlite3
 from typing import Any
@@ -86,10 +87,21 @@ def observe(directory: Path = ROOT, *, now: datetime | None = None) -> dict[str,
     if at.tzinfo is None:
         raise ValueError("timezone_required")
     at = at.astimezone(UTC)
-    result: dict[str, Any] = {}
+    result: dict[str, Any] = {
+        host: {"status": "not_connected"} for host in HOSTS
+    }
+    # The release's isolated, unprivileged *test sandbox* must not treat its
+    # lack of authority over a root/group-only production directory as proof
+    # that both VPS have failed. Production Ops Watch is explicitly granted
+    # read/traverse capability; once the root directory is readable, malformed
+    # or denied per-host snapshots are still reported as unknown.
+    try:
+        with os.scandir(directory):
+            pass
+    except (PermissionError, FileNotFoundError, NotADirectoryError):
+        return result
     for host in HOSTS:
         path = directory / (host + ".json")
-        result[host] = {"status": "not_connected"}
         try:
             if path.is_symlink():
                 raise ValueError("source_symlink")
