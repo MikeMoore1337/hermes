@@ -215,7 +215,11 @@ def curated_reports() -> list[dict[str, Any]]:
             "publication_date": published, "doi": doi, "url": url,
             "study_type": design, "sample_size": sample,
             "status": status, "review_status": "NEEDS_EXPERT_REVIEW",
-            "evidence_basis": "CURATED_PUBLIC_ABSTRACT_AND_SCOPED_PUBLISHER_NOTES",
+            "evidence_basis": (
+                "CURATED_PUBLIC_ABSTRACT_AND_SCOPED_PUBLISHER_NOTES"
+                if pmid == "42771055"
+                else "CURATED_PUBLIC_ABSTRACT_NOT_FULL_TEXT"
+            ),
             "effect_size": "NOT_REPORTED_IN_CURATED_ABSTRACT",
             "statistical_uncertainty": "NOT_ASSESSED_FROM_FULL_TEXT",
             "causal_conclusion": "NOT_ESTABLISHED_BY_THIS_REVIEW",
