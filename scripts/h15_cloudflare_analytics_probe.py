@@ -118,11 +118,13 @@ def _graphql(*, query: str, token: str, account: str,
         with transport(request, timeout=7) as response:
             if response.status != 200:
                 return ("auth_required" if response.status in (401, 403)
+                        else "unsupported_or_denied" if response.status == 400
                         else "throttled" if response.status == 429
                         else "unavailable", None)
             raw = response.read(MAX_BODY + 1)
     except HTTPError as exc:
         return ("auth_required" if exc.code in (401, 403)
+                else "unsupported_or_denied" if exc.code == 400
                 else "throttled" if exc.code == 429
                 else "unavailable", None)
     except (OSError, URLError, TimeoutError):
