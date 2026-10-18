@@ -23,15 +23,15 @@ jobs:
         run: python3 scripts/check_policy_index.py
       - name: Verify local Markdown references (offline)
         run: python3 scripts/check_markdown_links.py
-      - name: Unit tests and exact deployed runner success contract
+      - name: Unit tests and exact VPS success banner
         shell: bash
         run: |
           set -euo pipefail
           python3 -m unittest discover -s tests -v 2>&1 | tee "$RUNNER_TEMP/hermes-unittest.log"
-          # The pinned production receiver requires the literal unskipped success
-          # banner. Catch optional-dependency skip regressions BEFORE a deploy.
+          # The pinned VPS receiver expects the literal unskipped success
+          # banner. Catch optional-dependency skip regressions here.
           grep -Fxq 'OK' "$RUNNER_TEMP/hermes-unittest.log" || {
-            echo "Production unittest banner mismatch: required exact OK" >&2
+            echo "VPS unittest banner mismatch: required exact OK" >&2
             exit 1
           }
       - name: H-19 synthetic AI policy fixtures (Node standard library; no LLM)
