@@ -60,6 +60,56 @@ class OwnerReportTests(unittest.TestCase):
         self.assertEqual(ironman["status"], "HOLD")
         self.assertIn("11294-6", ironman["correction_url"])
 
+    def test_every_substantial_field_has_scoped_public_evidence(self):
+        expected = {"question", "design", "comparison", "finding",
+                    "limits", "application", "confirmed", "unconfirmed"}
+        for report in curated_reports():
+            with self.subTest(pmid=report["pmid"]):
+                self.assertEqual(set(report["field_evidence"]), expected)
+                self.assertEqual(report["claim_coverage"],
+                                 "FIELD_LINKED_CURATED_EVIDENCE_NOT_SEMANTIC_VALIDATION")
+                self.assertFalse(report["full_text_reviewed"])
+                self.assertEqual(report["expert_review"], "NOT_RUN")
+                for field in expected:
+                    self.assertTrue(report[field])
+                    self.assertTrue(report["field_evidence"][field])
+                    for evidence in report["field_evidence"][field]:
+                        self.assertEqual(evidence["pmid"], report["pmid"])
+                        self.assertEqual(evidence["doi"], report["doi"])
+                        self.assertIn(evidence["source_type"],
+                                      {"CURATED_PUBLIC_ABSTRACT", "PUBLISHER_CORRECTION"})
+                        self.assertEqual(evidence["review_status"], "NEEDS_EXPERT_REVIEW")
+                        self.assertFalse(evidence["scientifically_approved"])
+
+    def test_ironman_correction_references_publisher_not_abstract(self):
+        ironman = next(r for r in curated_reports() if r["pmid"] == "42771055")
+        corrected = [entry for entry in ironman["field_evidence"]["finding"]
+                     if entry["id"] == "F7"]
+        self.assertEqual(len(corrected), 1)
+        self.assertEqual(corrected[0]["source_type"], "PUBLISHER_CORRECTION")
+        self.assertIn("11294-6", corrected[0]["source_url"])
+        self.assertEqual(corrected[0]["evidence_completeness"], "CORRECTION_NOTICE")
+        for r in curated_reports():
+            if r["pmid"] != "42771055":
+                self.assertTrue(all(
+                    entry["source_type"] == "CURATED_PUBLIC_ABSTRACT"
+                    for refs in r["field_evidence"].values() for entry in refs
+                ))
+
+    def test_omitted_or_unknown_field_evidence_fails_closed(self):
+        from unittest.mock import patch
+        from research_scout.report_view import FIELD_FACT_IDS, _field_evidence, EXPLANATIONS
+        pmid = "42733310"
+        original = FIELD_FACT_IDS[pmid]
+        for broken in ({k:v for k,v in original.items() if k != "finding"},
+                       {**original, "finding": ("F999",)},
+                       {**original, "finding": ()},
+                       {**original, "finding": ("F4", "F4")}):
+            with self.subTest(broken=broken), patch.dict(FIELD_FACT_IDS, {pmid: broken}):
+                with self.assertRaises(ValueError):
+                    curated_reports()
+        self.assertEqual(set(EXPLANATIONS[pmid]) - {"ids"}, set(original))
+
     def test_metadata_only_candidate_is_not_verified(self):
         view = project_packet(packet())
         self.assertEqual(view["availability"], "AVAILABLE")
