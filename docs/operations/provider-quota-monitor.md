@@ -116,3 +116,32 @@ CI covers HTTP 401/403/429/500, permission rejection, invalid unit/period,
 complete-vs-current day, current snapshot age, independently scoped GitHub
 reset/remaining, and secret redaction. **No live Cloudflare/GitHub
 collector has been activated or authorized by normal release.**
+
+
+## Stage 3 - actual quota-warning pipeline
+
+The existing Ops Watch collector reads the **same validated local snapshots**
+and emits fixed, service-separated warnings using the already installed
+transactional SQLite outbox and Telegram sender. No new external model call
+or HTTP query occurs in Ops Watch. The production entrypoint explicitly
+passes provider paths; offline unit tests do not inherit live server files.
+
+- For Desktop Commander Remote MCP and GitHub **configured token** only:
+  80% / 95% usage of a documented provider window produces a warning;
+  100% or explicit exhausted produces a critical incident. Each threshold
+  uses a separate reviewed incident code.
+- Stale and auth_required observations create a **distinct monitoring
+  warning**, never a fabricated remaining quota.
+- A previously confirmed threshold alarm cannot be automatically resolved
+  by UNKNOWN, no connection, auth failure, or stale observation. Only a
+  fresh authoritative lower-used reading proves recovery.
+- GitHub independent window categories remain visible separately; a warning
+  says *at least one* token resource is high, not "all GitHub calls blocked".
+- Codex remains monitored through existing #255/#271 alerts so no duplicate
+  notification is emitted by this new code. Cloudflare official billing is
+  delayed; the historical Neurons result must **never** create real-time
+  quota-exhausted signals or an ALLOW admission for H-01.
+
+The code only describes the notification pipeline; delivery acceptance
+requires a real Ops Watch event and an actual Telegram sender acknowledgment.
+CI test proofs are synthetic, without simulated production alarm delivery.
