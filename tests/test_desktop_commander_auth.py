@@ -67,8 +67,8 @@ class AccessTests(unittest.TestCase):
     def test_widget_assets_are_static_but_api_remains_private(self):
         index_code, index = self.get("/")
         self.assertEqual(index_code, 200)
-        self.assertIn(b'/desktop-commander.js', index)
-        self.assertIn(b'/desktop-commander.css', index)
+        self.assertNotIn(b'/desktop-commander.js', index)
+        self.assertNotIn(b'/desktop-commander.css', index)
         self.assertEqual(self.get("/desktop-commander.js")[0], 200)
         self.assertEqual(self.get("/desktop-commander.css")[0], 200)
         self.assertEqual(self.get("/desktop-commander.js?x=1")[0], 404)
