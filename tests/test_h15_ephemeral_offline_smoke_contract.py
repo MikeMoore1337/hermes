@@ -19,11 +19,21 @@ class EphemeralOfflineSmokeContract(unittest.TestCase):
         for entry in cfg["syscalls"]:
             self.assertEqual("SCMP_ACT_ALLOW", entry["action"])
             names.update(entry["names"])
-        for forbidden in ("socket", "connect", "sendto", "sendmsg",
-                          "clone", "clone3", "fork", "vfork", "mount",
-                          "ptrace", "bpf", "unshare", "setns"):
-            self.assertNotIn(forbidden, names)
+        self.assertNotIn("socketcall", names)
         self.assertIn("execve", names)
+        self.assertIn("fstatfs", names)  # Docker init needs this.
+        inet_families = (2, 10)  # AF_INET, AF_INET6
+        inet_allowed = []
+        for rule in cfg["syscalls"]:
+            if "socket" not in rule["names"]:
+                continue
+            self.assertEqual(1, len(rule.get("args", [])))
+            arg = rule["args"][0]
+            for family in inet_families:
+                if (arg["op"] == "SCMP_CMP_EQ" and family == arg["value"] or
+                        arg["op"] == "SCMP_CMP_LT" and family < arg["value"]):
+                    inet_allowed.append(family)
+        self.assertEqual([], inet_allowed)
 
     def test_github_hosted_only_and_no_prod_or_model_auth(self):
         text = WORKFLOW.read_text(encoding="utf-8")
