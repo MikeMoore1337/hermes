@@ -24,7 +24,7 @@ class ProviderRegistryContract(unittest.TestCase):
     def test_cloudflare_limit_but_usage_strictly_unknown(self):
         with tempfile.TemporaryDirectory() as tmp:
             data = registry(codex_path=Path(tmp)/"codex.json",
-                            desktop_path=Path(tmp)/"dc.json",cloudflare_path=Path(tmp)/"cf.json",now=NOW)
+                            desktop_path=Path(tmp)/"dc.json",cloudflare_path=Path(tmp)/"cf.json",github_path=Path(tmp)/"gh.json",now=NOW)
         self.assertEqual(data["schema"], 1)
         self.assertTrue(data["read_only"])
         self.assertEqual([x["id"] for x in data["providers"]], [
@@ -46,7 +46,7 @@ class ProviderRegistryContract(unittest.TestCase):
         offset_now = datetime(2026, 10, 19, 1, 10, tzinfo=timezone(timedelta(hours=3)))
         with tempfile.TemporaryDirectory() as tmp:
             data=registry(codex_path=Path(tmp)/"none",desktop_path=Path(tmp)/"missing",
-                          cloudflare_path=Path(tmp)/"cf.json",now=offset_now)
+                          cloudflare_path=Path(tmp)/"cf.json",github_path=Path(tmp)/"gh.json",now=offset_now)
         self.assertEqual(data["providers"][0]["windows"][0]["reset_at_utc"],
                          "2026-10-19T00:00:00Z")
         with self.assertRaises(ValueError):
@@ -64,7 +64,7 @@ class ProviderRegistryContract(unittest.TestCase):
                                  "resetsAt":int((NOW+timedelta(days=4)).timestamp())}}}},
                 now=NOW)
             codex_save(snap,c)
-            result=registry(codex_path=c,desktop_path=Path(tmp)/"dc",cloudflare_path=Path(tmp)/"cf.json",now=NOW)
+            result=registry(codex_path=c,desktop_path=Path(tmp)/"dc",cloudflare_path=Path(tmp)/"cf.json",github_path=Path(tmp)/"gh.json",now=NOW)
             entry=result["providers"][1]
             self.assertEqual(entry["status"],"low")
             self.assertEqual(entry["source_kind"],"official_api")
@@ -80,7 +80,7 @@ class ProviderRegistryContract(unittest.TestCase):
             snap=dc_normalize({"remote_calls_left_pct":0},
                 "Device: vps1777112993\n Status: online\n",now=NOW)
             dc_save(snap,p)
-            result=registry(desktop_path=p,codex_path=Path(tmp)/"codex",cloudflare_path=Path(tmp)/"cf.json",now=NOW)
+            result=registry(desktop_path=p,codex_path=Path(tmp)/"codex",cloudflare_path=Path(tmp)/"cf.json",github_path=Path(tmp)/"gh.json",now=NOW)
             item=result["providers"][2]
             self.assertEqual(item["status"],"exhausted")
             self.assertEqual(item["notes"],"remote_calls_blocked")
@@ -95,7 +95,7 @@ class ProviderRegistryContract(unittest.TestCase):
             with patch("control_center.provider_registry.read_desktop_snapshot",
                        return_value=payload):
                 items=registry(codex_path=Path(tmp)/"codex.json",
-                               desktop_path=Path(tmp)/"dc.json",cloudflare_path=Path(tmp)/"cf.json",now=NOW)["providers"]
+                               desktop_path=Path(tmp)/"dc.json",cloudflare_path=Path(tmp)/"cf.json",github_path=Path(tmp)/"gh.json",now=NOW)["providers"]
             self.assertEqual(items[2]["status"],"unknown")
             self.assertEqual(items[2]["windows"],[])
             self.assertEqual(items[2]["source_kind"],"unknown")
@@ -105,7 +105,7 @@ class ProviderRegistryContract(unittest.TestCase):
             c=Path(tmp)/"codex.json";d=Path(tmp)/"dc.json"
             c.write_text('{"secret":"sensitive quota"}',encoding="utf-8")
             d.write_text("{invalid}",encoding="utf-8")
-            result=registry(codex_path=c,desktop_path=d,cloudflare_path=Path(tmp)/"cf.json",now=NOW)
+            result=registry(codex_path=c,desktop_path=d,cloudflare_path=Path(tmp)/"cf.json",github_path=Path(tmp)/"gh.json",now=NOW)
             for x in result["providers"][1:3]:
                 self.assertEqual(x["status"],"unknown")
                 self.assertEqual(x["windows"],[])
@@ -119,7 +119,7 @@ class ProviderRegistryContract(unittest.TestCase):
                                       "usedPercent":60,"windowDurationMins":300}}},
                                   now=NOW-timedelta(hours=2))
             codex_save(snap,c)
-            result=registry(codex_path=c,desktop_path=Path(tmp)/"dc",cloudflare_path=Path(tmp)/"cf.json",now=NOW)
+            result=registry(codex_path=c,desktop_path=Path(tmp)/"dc",cloudflare_path=Path(tmp)/"cf.json",github_path=Path(tmp)/"gh.json",now=NOW)
             self.assertEqual(result["providers"][1]["status"],"stale")
             self.assertEqual(result["providers"][1]["windows"],[])
 
@@ -132,7 +132,8 @@ class RegistryAPITests(unittest.TestCase):
         self.dc=root/"dc.json"
         self.srv=ThreadingHTTPServer(("127.0.0.1",0),make_handler(
             root/"missing-overview.json",codex_path=self.code,
-            desktop_commander_path=self.dc,cloudflare_billing_path=root/"cf.json"))
+            desktop_commander_path=self.dc,cloudflare_billing_path=root/"cf.json",
+            github_rate_limit_path=root/"gh.json"))
         self.thread=Thread(target=self.srv.serve_forever,daemon=True)
         self.thread.start()
 
@@ -170,7 +171,8 @@ class RegistryAPITests(unittest.TestCase):
             Path(self.tmp.name)/"missing-overview.json",
             codex_path=self.code,desktop_commander_path=self.dc,
             auth_config=config,oauth_service=oauth,
-            cloudflare_billing_path=Path(self.tmp.name)/"cf.json"))
+            cloudflare_billing_path=Path(self.tmp.name)/"cf.json",
+            github_rate_limit_path=Path(self.tmp.name)/"gh.json"))
         thread=Thread(target=server.serve_forever,daemon=True);thread.start()
         try:
             req=Request(f"http://127.0.0.1:{server.server_port}/api/providers/registry",
