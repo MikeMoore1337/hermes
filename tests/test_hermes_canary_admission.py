@@ -140,6 +140,33 @@ class CanaryAdmissionTests(unittest.TestCase):
         self.assertEqual(r["status"], "unverified")
         self.assertIs(r["dispatch_authorized"], False)
 
+    def test_cli_never_returns_shell_success_on_only_attested_readiness(self):
+        a, w = fixtures()
+        from io import StringIO
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            for filename, payload in (("approval.json", signed(a, OWNER)),
+                                      ("preflight.json", signed(w, OBSERVER))):
+                (root / filename).write_text(json.dumps(payload))
+            for filename, key in (("owner.key", OWNER), ("observer.key", OBSERVER)):
+                target = root / filename
+                target.write_bytes(key)
+                target.chmod(0o600)
+            args = [
+                "--approval", str(root / "approval.json"),
+                "--preflight", str(root / "preflight.json"),
+                "--owner-key-file", str(root / "owner.key"),
+                "--observer-key-file", str(root / "observer.key"),
+            ]
+            with patch("hermes_benchmark.canary_admission.datetime") as clock:
+                clock.now.return_value = NOW
+                with patch("sys.stdout", new_callable=StringIO) as output:
+                    exit_code = canary_admission.main(args)
+            self.assertNotEqual(exit_code, 0)
+            self.assertEqual(json.loads(output.getvalue())["dispatch_authorized"], False)
+
     def test_no_network_and_no_subprocess_even_when_ready(self):
         with patch.object(socket.socket, "connect",
                           side_effect=AssertionError("network called")), \
