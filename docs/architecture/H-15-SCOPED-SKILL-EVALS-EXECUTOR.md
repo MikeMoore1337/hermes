@@ -141,3 +141,24 @@ mismatched provider/model/fixture metadata. It **never exports raw model
 responses or secrets** and always sets `safe_to_publish=false`.
 See [H-15 private evidence manifest](../operations/H-15-SKILL-EVALS-PRIVATE-EVIDENCE.md).
 It does not replace the independent review required by ADT #11.
+
+## Owner zero-spend hard stop — 2026-10-18
+
+The owner refused **any incremental cost**, including paid model/API
+requests, overages and test hosting. `eval_lane/owner_spend_lock.py`
+therefore hard-freezes *real* `LocalBoundedExecutor.__call__` before its
+planning or process-creation step, even if a caller sets `enabled=True`,
+uses forged runtime flags, or submits a previously valid signed job.
+
+This is a source-level safety interlock, NOT an environment flag, an owner
+approval grant, a budget string or permission to use a free trial. A future
+change requires an explicit new owner decision, proof of non-billable
+execution (without possible overages), reviewed code and CI before any
+model-capable runner is called. Simply installing the currently dormant
+worker cannot authorize provider traffic.
+
+All existing synthetic offline tests and GitHub-hosted standard runner
+checks remain available; test-only mocked calls intentionally do not
+launch processes. If the owner supplies no zero-cost verified model
+runtime, #349 and ADT #11 stay open and the empirical metric stays
+**NOT_MEASURED**. No YFC production or H-01 VPS workloads are used.
