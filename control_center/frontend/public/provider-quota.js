@@ -103,9 +103,10 @@
     add("small", "quota295-note", root,
       "Подтверждённых точек: "+samples.length+". Последняя: "+time(samples[samples.length-1].at));
   }
-  async function history(id,days,target) {
+  async function history(id,days,target,resource=null) {
     target.replaceChildren(add("p","quota295-note",null,"Загрузка истории…"));
     const path=id==="codex"?"/api/providers/codex/history?days=":
+      id==="github_api"?"/api/providers/registry/history?resource="+encodeURIComponent(resource)+"&days=":
       "/api/providers/desktop-commander/history?days=";
     try {
       const r=await fetch(path+days,{cache:"no-store",credentials:"same-origin"});
@@ -174,6 +175,24 @@
       const refresh=()=>history(service.id,period.value,chart);
       details.addEventListener("toggle",()=>{if(details.open)refresh();});
       period.addEventListener("change",()=>{if(details.open)refresh();});
+    }else if(service.id==="github_api" && service.windows?.length){
+      const details=add("details","quota295-history",article);
+      add("summary","",details,"История лимитов этого токена");
+      const resource=add("select","",details);
+      resource.setAttribute("aria-label","Отдельный ресурс GitHub API");
+      for(const w of service.windows){
+        const option=add("option","",resource,w.metric);option.value=w.metric;
+      }
+      const period=add("select","",details);
+      period.setAttribute("aria-label","Период истории GitHub API");
+      for(const [day,title] of [["1","24 часа"],["7","7 дней"],["30","30 дней"]]){
+        const option=add("option","",period,title);option.value=day;if(day==="7")option.selected=true;
+      }
+      const chart=add("div","quota295-chart",details);
+      const refresh=()=>history("github_api",period.value,chart,resource.value);
+      details.addEventListener("toggle",()=>{if(details.open)refresh();});
+      period.addEventListener("change",()=>{if(details.open)refresh();});
+      resource.addEventListener("change",()=>{if(details.open)refresh();});
     }else if(service.id!=="cloudflare_workers_ai"){
       add("p","quota295-note",article,"История расхода ещё не подключена. Никаких расчётных точек.");
     }
