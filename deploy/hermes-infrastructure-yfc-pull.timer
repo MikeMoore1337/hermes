@@ -1,0 +1,13 @@
+[Unit]
+Description=Periodic authorized read-only YFC resource snapshot
+Documentation=https://github.com/MikeMoore1337/hermes/issues/294
+
+[Timer]
+OnBootSec=45s
+OnUnitInactiveSec=60s
+AccuracySec=10s
+RandomizedDelaySec=5s
+Unit=hermes-infrastructure-yfc-pull.service
+
+[Install]
+WantedBy=timers.target
