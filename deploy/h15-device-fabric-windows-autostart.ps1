@@ -43,6 +43,8 @@ switch ($Mode) {
                 ($existing.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
                 throw 'REPAIR_UNTRUSTED_STATE'
             }
+            & icacls.exe $state /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-19:(OI)(CI)RX' /T | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw 'PRIVATE_ACL_FAILED' }
         } elseif (Test-Path -LiteralPath $state) {
             throw 'STATE_EXISTS_USE_REPAIR_AFTER_ACL_REVIEW'
         }
