@@ -101,3 +101,42 @@ activation.
 - Alerting based on sustained thresholds through existing Ops Alerts (not added yet).
 - Service-specific application checks without unbounded Docker or journal access.
 - Current alert history, disk inode and network UI completeness review.
+
+
+## Stage 2 - Hermes local activation via an existing timer
+
+Owner approved the Atlas infrastructure cards on 18 October 2026.
+Stage 2 reuses **hermes-control-center-snapshot.timer** that is already
+running in production. Every invocation of `python3 -m control_center.snapshot`
+now writes the original systemd overview **first**, then makes one
+read-only Linux resource sample for the Hermes host. Failure to read
+`/proc` or append history is reported by a constant error category;
+it does not change the systemd overview, Cloudflare quota enforcement,
+H-01 #33 systemd units, or any running YFC service.
+
+No new `systemd` unit is enabled by the normal release, and no
+remote device connection is required to activate the local Hermes card.
+Deploying a pinned release through the existing GitHub Actions pipeline
+is enough **provided the existing timer remains running and the systemd
+sandbox permits the collector**. It is never evidence of activation on
+its own. After the production deploy, check:
+
+- The exact SHA in the deployment receipt and current UI symlink.
+- Timer active and service Result=success on the release.
+- Snapshot `/var/lib/hermes-control-center/infrastructure/hermes.json`
+  has host=hermes, observed_at updated within 3 minutes, and real
+  CPU/RAM/disk measurements with valid units.
+- API under the owner's authenticated session returns
+  online for `hermes` and not_connected for `yfc`
+  until the separate YFC SSH link passes its own admission.
+- No errors printed as INFRASTRUCTURE_SNAPSHOT=unavailable in a
+  recent run; otherwise mark LOCAL_PROBE_FAILED, do not fake GREEN.
+- Source isolation and read-only API remain intact.
+
+If validation fails, reverting the snapshot hook in a new release
+returns to the original timer behavior. The optional standalone
+`deploy/hermes-infrastructure-collector.*` service files remain
+**disabled** to avoid duplicate samples and additional scheduled load.
+YFC transport is still explicitly blocked pending host identity,
+SSH key setup, proof of an authenticated transfer, and load/health
+evidence. Telegram alerting is still a follow-up.
