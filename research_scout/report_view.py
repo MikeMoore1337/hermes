@@ -84,6 +84,75 @@ EXPLANATIONS = {
 }
 
 
+# Human-curated *field-level* source pointers. A link to the publication in
+# general is not evidence for every individual scientific assertion.
+# In particular IRONMAN's amended 150-minute figure comes from the separate
+# Springer notice rather than the original uncorrected abstract.
+FIELD_FACT_IDS: dict[str, dict[str, tuple[str, ...]]] = {
+    "42840492": {
+        "question": ("F1",), "design": ("F1", "F2"),
+        "comparison": ("F1",), "finding": ("F3", "F4"),
+        "limits": ("F3", "F5"), "application": ("F3", "F6"),
+        "confirmed": ("F1", "F3"), "unconfirmed": ("F3", "F6"),
+    },
+    "42771055": {
+        "question": ("F1",), "design": ("F1",),
+        "comparison": ("F1", "F5"), "finding": ("F4", "F7"),
+        "limits": ("F1", "F5"), "application": ("F1", "F5"),
+        "confirmed": ("F2", "F6", "F7", "F8"),
+        "unconfirmed": ("F1", "F5"),
+    },
+    "42797032": {
+        "question": ("F1",), "design": ("F1",),
+        "comparison": ("F3",), "finding": ("F4", "F5"),
+        "limits": ("F6", "F7"), "application": ("F8",),
+        "confirmed": ("F1", "F4"), "unconfirmed": ("F5", "F8"),
+    },
+    "42733310": {
+        "question": ("F3",), "design": ("F1",),
+        "comparison": ("F3",), "finding": ("F4", "F5", "F6", "F7"),
+        "limits": ("F2", "F7"), "application": ("F6", "F7"),
+        "confirmed": ("F1", "F4"), "unconfirmed": ("F6", "F7"),
+    },
+}
+CORRECTION_FACT_IDS = frozenset({"F6", "F7", "F8"})
+IRONMAN_CORRECTION_URL = "https://link.springer.com/article/10.1007/s00520-026-11294-6"
+
+
+def _fact_reference(pmid: str, doi: str, fact_id: str, fact: str,
+                    abstract_url: str) -> dict[str, object]:
+    corrected = pmid == "42771055" and fact_id in CORRECTION_FACT_IDS
+    return {
+        "id": fact_id, "pmid": pmid, "doi": doi,
+        "source_type": "PUBLISHER_CORRECTION" if corrected else "CURATED_PUBLIC_ABSTRACT",
+        "source_url": IRONMAN_CORRECTION_URL if corrected else abstract_url,
+        "supporting_paraphrase": fact,
+        "evidence_completeness": "CORRECTION_NOTICE" if corrected else "ABSTRACT_ONLY",
+        "review_status": "NEEDS_EXPERT_REVIEW",
+        "scientifically_approved": False,
+    }
+
+
+def _field_evidence(pmid: str, doi: str, url: str,
+                    facts: dict[str, str]) -> dict[str, list[dict[str, object]]]:
+    """Require individually linked, correctly scoped curated facts per field.
+
+    Structural provenance is NOT an automated judgement of scientific truth.
+    """
+    mapping = FIELD_FACT_IDS[pmid]
+    expected = set(EXPLANATIONS[pmid]) - {"ids"}
+    if set(mapping) != expected:
+        raise ValueError("curated_fields_without_evidence")
+    evidence: dict[str, list[dict[str, object]]] = {}
+    for field, ids in mapping.items():
+        if not ids or len(ids) != len(set(ids)) or any(fid not in facts for fid in ids):
+            raise ValueError("curated_evidence_missing_or_invalid")
+        evidence[field] = [
+            _fact_reference(pmid, doi, fid, facts[fid], url) for fid in ids
+        ]
+    return evidence
+
+
 def curated_reports() -> list[dict[str, Any]]:
     """Four fixed public-abstract review aids, never a claim of expert approval."""
     records = []
@@ -93,6 +162,7 @@ def curated_reports() -> list[dict[str, Any]]:
         doi = case["doi"] if case is not None else SOURCE_DOI
         facts = case["facts"] if case is not None else ABSTRACT_FACTS
         explanation = EXPLANATIONS[pmid]
+        field_evidence = _field_evidence(pmid, doi, url, facts)
         records.append({
             "pmid": pmid, "title": title, "journal": journal,
             "publication_date": published, "doi": doi, "url": url,
@@ -114,9 +184,17 @@ def curated_reports() -> list[dict[str, Any]]:
             "application": explanation["application"],
             "confirmed": explanation["confirmed"], "unconfirmed": explanation["unconfirmed"],
             "evidence": [
-                {"id": fid, "abstract_paraphrase": facts[fid], "url": url}
+                {**_fact_reference(pmid, doi, fid, facts[fid], url),
+                 "abstract_paraphrase": facts[fid],
+                 "url": (IRONMAN_CORRECTION_URL
+                         if pmid == "42771055" and fid in CORRECTION_FACT_IDS
+                         else url)}
                 for fid in explanation["ids"]
             ],
+            "field_evidence": field_evidence,
+            "claim_coverage": "FIELD_LINKED_CURATED_EVIDENCE_NOT_SEMANTIC_VALIDATION",
+            "full_text_reviewed": False,
+            "expert_review": "NOT_RUN",
             "checked_at": "2026-10-17",
             "scientific_claims_verified": False,
         })
