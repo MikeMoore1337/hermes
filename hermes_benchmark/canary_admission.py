@@ -101,7 +101,8 @@ def main(argv: list[str] | None = None) -> int:
         result = {"status": "unverified", "reason_code": "INPUT_UNAVAILABLE",
                   "dispatch_authorized": False}
     print(json.dumps(result, sort_keys=True))
-    return 0 if result["status"] == "ready_for_operator_review" else 1
+    # Never return a shell success code that could be mistaken for dispatch GO.
+    return 2 if result["status"] == "ready_for_operator_review" else 1
 
 
 if __name__ == "__main__":
