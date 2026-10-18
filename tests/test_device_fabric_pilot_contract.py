@@ -42,6 +42,24 @@ class FabricPilotContractTests(unittest.TestCase):
         self.assertNotIn("curl ", script)
         self.assertNotIn("chmod 0777", script)
 
+    def test_venv_missing_dependency_preflight_and_safe_partial_repair(self):
+        script = SCRIPT.read_text(encoding="utf-8")
+        prepare = script.split("prepare() {", 1)[1].split("\nenable() {", 1)[0]
+        # Repeated prepare after Debian ensurepip failure must repair incomplete
+        # venv/bin/python instead of assuming executable python implies pip.
+        self.assertIn("import ensurepip, venv", prepare)
+        self.assertIn("PILOT_PREPARE_BLOCKED=PYTHON_VENV_UNAVAILABLE", prepare)
+        self.assertIn("PILOT_VENV=REPAIR_INCOMPLETE", prepare)
+        self.assertIn('! as_identity "$STATE/venv/bin/python" -m pip --version', prepare)
+        self.assertIn('as_identity /usr/bin/python3 -m venv --clear "$STATE/venv"', prepare)
+        self.assertIn('[[ -L "$STATE/venv"', prepare)
+        self.assertIn("PILOT_PREPARE_BLOCKED=INVALID_VENV_PATH", prepare)
+        self.assertIn("PILOT_PREPARE_BLOCKED=VENV_PIP_UNAVAILABLE", prepare)
+        self.assertNotRegex(prepare, r"(?m)^\s*(?:sudo\s+)?apt-get\s+install")
+        self.assertNotIn("rm -rf", prepare)
+        self.assertLess(prepare.index("import ensurepip, venv"), prepare.index("-m venv --clear"))
+        self.assertLess(prepare.index("-m venv --clear"), prepare.index("websockets==16.0"))
+
     def test_service_is_loopback_and_non_privileged(self):
         unit = UNIT.read_text(encoding="utf-8")
         for fragment in (

@@ -38,8 +38,35 @@ prepare() {
     useradd --system --user-group --home-dir "$STATE" --shell /usr/sbin/nologin --no-create-home "$USER_NAME"
   fi
   install -d -m 0700 -o "$USER_NAME" -g "$USER_NAME" "$STATE" "$STATE/tls"
-  if [[ ! -x "$STATE/venv/bin/python" ]]; then
+  # Debian/Ubuntu may ship /usr/bin/python3 without pythonX.Y-venv.
+  # Check before touching the venv; never auto-modify system packages.
+  if ! as_identity /usr/bin/python3 -c 'import ensurepip, venv' >/dev/null 2>&1; then
+    local py_pkg
+    py_pkg=$(/usr/bin/python3 -c 'import sys; print("python%d.%d-venv" % sys.version_info[:2])')
+    echo "PILOT_PREPARE_BLOCKED=PYTHON_VENV_UNAVAILABLE" >&2
+    echo "Owner action required: sudo apt-get install --no-install-recommends $py_pkg" >&2
+    echo "No remote device service was enabled." >&2
+    return 3
+  fi
+  # A failed ensurepip leaves venv/bin/python executable but without pip.
+  # Clear ONLY this dedicated venv (not the registry, TLS files or pilot token).
+  # Reject symlinks/other file types to prevent unintended filesystem writes.
+  if [[ -L "$STATE/venv" || ( -e "$STATE/venv" && ! -d "$STATE/venv" ) ]]; then
+    echo "PILOT_PREPARE_BLOCKED=INVALID_VENV_PATH" >&2
+    return 3
+  fi
+  if [[ -d "$STATE/venv" ]]; then
+    if [[ ! -x "$STATE/venv/bin/python" ]] ||
+       ! as_identity "$STATE/venv/bin/python" -m pip --version >/dev/null 2>&1; then
+      echo "PILOT_VENV=REPAIR_INCOMPLETE" >&2
+      as_identity /usr/bin/python3 -m venv --clear "$STATE/venv"
+    fi
+  else
     as_identity /usr/bin/python3 -m venv "$STATE/venv"
+  fi
+  if ! as_identity "$STATE/venv/bin/python" -m pip --version >/dev/null 2>&1; then
+    echo "PILOT_PREPARE_BLOCKED=VENV_PIP_UNAVAILABLE" >&2
+    return 3
   fi
   # Optional external dependency is installed once, pinned, as an unprivileged identity.
   as_identity "$STATE/venv/bin/python" -m pip --isolated install --no-input --disable-pip-version-check \

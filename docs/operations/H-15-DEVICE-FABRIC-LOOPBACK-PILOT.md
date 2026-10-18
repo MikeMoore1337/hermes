@@ -10,6 +10,33 @@ Approval: owner explicitly authorized **isolated loopback-only WSS presence serv
 - systemd unit `hermes-device-fabric-pilot.service`: `127.0.0.1:38177` only; IP restrictions to loopback; CPU 25%, memory 192 MiB, 32 tasks, no new privileges, bounded restart. **No timer and no shell/process/file tools.**
 - The only emulated device is `pilot-sim`: it connects for the one-shot owner smoke, sends a heartbeat and disconnects. When smoke ends it must be `offline` with nonempty last-seen. No other devices paired.
 
+## Debian/Ubuntu: missing python3-venv, partial environment recovery
+
+If `prepare` reports `ensurepip is not available`, the OS Python lacks the matching
+venv package. **Do not enable the service** and do not remove the entire
+`/var/lib/hermes-device-fabric` directory: it may contain the registry, TLS
+keys and test token. The `prepare` script is now fail-closed and reports
+`PILOT_PREPARE_BLOCKED=PYTHON_VENV_UNAVAILABLE` with the matching package
+name. Installing an OS package is a separate explicit owner action, not
+performed by the pilot script.
+
+On the approved Hermes VPS, as root (no reboot required):
+
+```bash
+/usr/bin/python3 -c 'import sys; print(sys.version)'
+venv_package=$(/usr/bin/python3 -c 'import sys; print("python%d.%d-venv" % sys.version_info[:2])')
+sudo apt-get update
+sudo apt-get install --no-install-recommends "$venv_package"
+```
+
+Then rerun `sudo bash deploy/h15-device-fabric-pilot-setup.sh prepare` from
+the latest **successfully deployed** release. If the first attempt left an
+incomplete `venv/bin/python` without `pip`, the new script repairs **only**
+the isolated `$STATE/venv` using `python3 -m venv --clear`. It rejects
+symlinks and preserves SQLite, certificate/key and token. It does not
+install packages globally via pip. Check the resulting `PILOT_PREPARED=YES`
+before `enable` and `smoke`.
+
 ## Production activation procedure — explicit owner step
 
 Use the approved production release SHA **actually present on the VPS** (do not guess the latest from GitHub alone). Example `cd /opt/hermes-agent-owner/releases/main-<EXACT_DEPLOYED_SHA>`.
