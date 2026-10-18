@@ -76,8 +76,8 @@ jobs:
       - name: Browser checks (approved Atlas, protected GitHub login, mobile)
         working-directory: control_center/frontend
         run: npm run test:e2e
-      - name: Python per-provider quota registry read-only and auth contracts
-        run: python3 -m unittest tests.test_provider_registry -v
+      - name: Python per-provider, official Cloudflare billing and GitHub rate-limit contracts
+        run: python3 -m unittest tests.test_provider_registry tests.test_cloudflare_billing tests.test_github_rate_limit -v
 
       - name: Attach #295 separate provider quota cards for visual approval
         if: always()
