@@ -38,7 +38,7 @@
     n.toLocaleString("ru-RU", {maximumFractionDigits: 2}) : "Нет данных";
   const time = s => {const t = Date.parse(s);return Number.isFinite(t) ?
     new Date(t).toLocaleString("ru-RU", {dateStyle:"short",timeStyle:"short"}) : "Нет данных";};
-  function usage(root, w) {
+  function usage(root, providerId, w) {
     const box = add("div", "quota295-window", root);
     add("strong", "", box, w.label || w.metric || "Окно квоты");
     if (w.quota_limit !== null && w.quota_limit !== undefined)
@@ -54,9 +54,11 @@
       add("span", "", labels, "Использовано: " + readable(used) + "%");
       add("strong", "", labels, "Осталось: " + readable(remainder) + "%");
       const bar = add("div", "quota295-track", box);
-      bar.setAttribute("role", "progressbar");bar.setAttribute("aria-label",w.label||"Окно квоты");
+      bar.setAttribute("role", "progressbar");bar.setAttribute("aria-label",labels[providerId] + ": " + (w.label || "Окно квоты"));
       bar.setAttribute("aria-valuemin","0");bar.setAttribute("aria-valuemax","100");
       bar.setAttribute("aria-valuenow",String(used));
+      bar.setAttribute("aria-valuetext","Использовано: " + readable(used) +
+        "%; осталось: " + readable(remainder) + "%");
       const fill = add("div", "quota295-fill", bar);
       fill.style.width = used + "%";
       if (used >= 95) fill.classList.add("quota295-critical");
@@ -134,7 +136,7 @@
     const windows=Array.isArray(service.windows)?service.windows:[];
     if(windows.length){
       const box=add("div","quota295-windows",article);
-      for(const w of windows.slice(0,48))usage(box,w);
+      for(const w of windows.slice(0,48))usage(box,service.id,w);
     } else add("p","quota295-empty",article,"Доступные квотные окна: нет данных");
     add("small","quota295-timestamp",article,
       (service.id==="cloudflare_workers_ai"?"Последний замер квоты: ":"Последний замер: ")+

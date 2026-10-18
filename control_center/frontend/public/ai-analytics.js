@@ -62,7 +62,9 @@ function draw(){
   items.forEach(x=>bar(chart,x.date,x.input+x.output,peak,
    "Вход: "+fmt(x.input)+" · Выход: "+fmt(x.output)+" · Кеш: "+fmt(x.cached)));
  }else{
-  bar(chart,"Завершённые циклы",data.completed_turns||0,Math.max(1,data.completed_turns||0));
+  if(Number.isSafeInteger(data.completed_turns)&&data.completed_turns>=0)
+   bar(chart,"Завершённые циклы",data.completed_turns,Math.max(1,data.completed_turns));
+  else el("p","ai272-hint",chart,"Число завершённых циклов неизвестно.");
   el("p","ai272-hint",chart,"Активность рассчитывается по завершённым интервалам. Отсутствие событий не считается простоем.");
  }
  if(selectedProject!=="all"||selectedModel!=="all")
