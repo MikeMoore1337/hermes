@@ -27,9 +27,9 @@ done
 [[ -f "$pub" && ! -L "$3" ]] || die bad_public_key
 [[ "$(wc -c < "$pub")" -le 300 ]] || die key_oversize
 public_key=$(cat "$pub")
-[[ "$public_key" != *
-[[ "$public_key" =~ ^ssh-ed25519[[:space:]][A-Za-z0-9+/=]+([[:space:]][A-Za-z0-9_.@:-]+)?$ ]] ||
-  die unsupported_key
+# Use a quoted regular expression variable to avoid Bash condition parsing of ().
+pubkey_pattern='^ssh-ed25519[[:space:]][A-Za-z0-9+/=]+([[:space:]][A-Za-z0-9_.@:-]+)?$'
+[[ "$public_key" =~ $pubkey_pattern ]] || die unsupported_key
 /usr/bin/ssh-keygen -lf "$pub" >/dev/null || die malformed_key
 
 user=hermes-infra-read
