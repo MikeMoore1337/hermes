@@ -337,7 +337,13 @@ class RouteTests(unittest.TestCase):
         st, h, body = self.req("GET", "/api/auth/session")
         self.assertEqual((st, json.loads(body)["authenticated"]), (200, False))
         self.assertEqual(self.req("GET", "/api/overview")[0], 401)
-        self.assertEqual(self.req("GET", "/")[0], 200)
+        st, h, html = self.req("GET", "/")
+        self.assertEqual(st, 200)
+        self.assertEqual(dict(h)["Cache-Control"], "no-store")
+        self.assertIn(b'data-auth-mode="github" data-authenticated="false"', html)
+        for widget in (b"desktop-commander.js", b"ai-analytics.js",
+                       b"infrastructure.js", b"provider-quota.js"):
+            self.assertNotIn(widget, html)
         st, h, _ = self.req("GET", "/auth/github/start")
         self.assertEqual(st, 303)
         headers = dict(h)
@@ -353,9 +359,22 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(self.req("GET", "/api/overview", {"Cookie": token})[0], 200)
         self.assertTrue(json.loads(self.req("GET", "/api/auth/session",
                                            {"Cookie": token})[2])["authenticated"])
+        st, h, html = self.req("GET", "/", {"Cookie": token})
+        self.assertEqual(st, 200)
+        self.assertIn(b'data-auth-mode="github" data-authenticated="true"', html)
+        for widget in (b"desktop-commander.js", b"ai-analytics.js",
+                       b"infrastructure.js", b"provider-quota.js"):
+            self.assertIn(widget, html)
+        st, _, preview = self.req("GET", "/?preview=login", {"Cookie": token})
+        self.assertEqual(st, 200)
+        self.assertNotIn(b"desktop-commander.js", preview)
         self.assertEqual(self.req("POST", "/auth/logout",
                                   {"Origin": ORIGIN, "Cookie": token})[0], 204)
         self.assertEqual(self.req("GET", "/api/overview", {"Cookie": token})[0], 401)
+        st, _, html = self.req("GET", "/", {"Cookie": token})
+        self.assertEqual(st, 200)
+        self.assertIn(b'data-authenticated="false"', html)
+        self.assertNotIn(b"desktop-commander.js", html)
 
     def test_fail_closed_routes(self):
         self.assertEqual(self.req("GET", "/api/overview?junk=1")[0], 404)

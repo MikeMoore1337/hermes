@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import logging
@@ -97,11 +98,11 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
             # Never log callback paths (OAuth codes/states), cookies, or provider tokens.
             return
 
-        def respond(self, status, content_type, payload, headers=()):
+        def respond(self, status, content_type, payload, headers=(), *, cache_control="no-store"):
             self.send_response(status)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(payload)))
-            self.send_header("Cache-Control", "no-store")
+            self.send_header("Cache-Control", cache_control)
             self.send_header("X-Content-Type-Options", "nosniff")
             self.send_header("X-Frame-Options", "DENY")
             self.send_header("Referrer-Policy", "no-referrer")
@@ -426,19 +427,39 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
                 try:
                     raw = (WEB / name).read_bytes()
                     if name == "index.html":
-                        # Additive same-origin widget; never modify the Vite bundle at runtime.
-                        raw = raw.replace(b"</head>", (
-                            b'<link rel="stylesheet" href="/desktop-commander.css">'
-                            b'<script src="/desktop-commander.js" defer></script>'
-                            b'<link rel="stylesheet" href="/ai-analytics.css">'
-                            b'<script src="/ai-analytics.js" defer></script>'
-                             b'<link rel="stylesheet" href="/infrastructure.css">'
-                             b'<script src="/infrastructure.js" defer></script>'
-                             b'<link rel="stylesheet" href="/provider-quota.css">'
-                             b'<script src="/provider-quota.js" defer></script></head>'))
+                        # Bootstrap contains only the server-verified auth state, never a
+                        # session cookie, token, or user identity. HTML stays no-store.
+                        authenticated = config.mode == "proxy" or oauth.authenticated(
+                            self._cookie(SESSION_COOKIE))
+                        root = (
+                            f'<div id="root" data-auth-mode="{config.mode}" '
+                            f'data-authenticated="{str(authenticated).lower()}"></div>'
+                        ).encode("ascii")
+                        raw = raw.replace(b'<div id="root"></div>', root)
+                        if authenticated and parsed.query != "preview=login":
+                            # Load operator-only widgets on authorized pages only.
+                            raw = raw.replace(b"</head>", (
+                                b'<link rel="stylesheet" href="/desktop-commander.css">'
+                                b'<script src="/desktop-commander.js" defer></script>'
+                                b'<link rel="stylesheet" href="/ai-analytics.css">'
+                                b'<script src="/ai-analytics.js" defer></script>'
+                                b'<link rel="stylesheet" href="/infrastructure.css">'
+                                b'<script src="/infrastructure.js" defer></script>'
+                                b'<link rel="stylesheet" href="/provider-quota.css">'
+                                b'<script src="/provider-quota.js" defer></script></head>'))
                 except OSError:
                     return self.respond(503, "text/plain", b"Static asset unavailable")
-                return self.respond(200, mime, raw)
+                if name in ("index.html", "sw.js", "offline.html"):
+                    return self.respond(200, mime, raw)
+                # Static public UI assets are non-sensitive; HTTP revalidation avoids
+                # repeating full bundle/image downloads, without caching auth or API.
+                etag = '"' + hashlib.sha256(raw).hexdigest() + '"'
+                headers = (("ETag", etag),)
+                if self.headers.get("If-None-Match") == etag:
+                    return self.respond(304, mime, b"", headers,
+                                        cache_control="private, no-cache")
+                return self.respond(200, mime, raw, headers,
+                                    cache_control="private, no-cache")
             return self.respond(404, "text/plain", b"Not found")
 
         def do_POST(self):

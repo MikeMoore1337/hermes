@@ -1,4 +1,6 @@
 import {test,expect} from "@playwright/test";
+// Auth routing tests own the document; the PWA worker is tested separately in pwa.spec.js.
+test.use({serviceWorkers:"block"});
 import {mkdirSync} from "node:fs";
 import {resolve} from "node:path";
 const folder=resolve(".artifacts/h15-visual");
@@ -16,6 +18,22 @@ function mock(page,extras={}){
  return page.route("**/api/overview", route=>route.fulfill({status:200,
    contentType:"application/json",
    body:JSON.stringify({schema:1,mode:"read_only",generated_at:new Date().toISOString(),services,agent_policy:"Ограниченный H-01 Ops AI: расписание активно. Полный AI Agent не допущен; успешность полезного цикла не доказана.",...extras})}));
+}
+async function fakeServerAuth(page,getState){
+ await page.route("http://127.0.0.1:9133/",async route=>{
+  const response=await route.fetch();
+  const state=getState();
+  let html=(await response.text()).replace(
+    ' data-auth-mode="proxy" data-authenticated="true"',
+    state.mode===null?'':` data-auth-mode="${state.mode}" data-authenticated="${state.authenticated}"`);
+  if(!state.authenticated){
+   for(const widget of ["desktop-commander","ai-analytics","infrastructure","provider-quota"]){
+    html=html.replace(`<link rel="stylesheet" href="/${widget}.css">`,"");
+    html=html.replace(`<script src="/${widget}.js" defer></script>`,"");
+   }
+  }
+  await route.fulfill({response,body:html});
+ });
 }
 async function assertNoOverflow(page){
  const out=await page.evaluate(()=>({width:innerWidth,doc:document.documentElement.scrollWidth,body:document.body.scrollWidth}));
@@ -134,9 +152,7 @@ test("stale data never shown as healthy",async({page})=>{
 
 test("GitHub mode shows real owner login and gates the protected API",async({page})=>{
  let overviewRequests=0;
- await page.route("**/api/auth/session",route=>route.fulfill({
-  status:200,contentType:"application/json",
-  body:JSON.stringify({mode:"github",authenticated:false})}));
+ await fakeServerAuth(page,()=>({mode:"github",authenticated:false}));
  await page.route("**/api/overview",route=>{overviewRequests+=1;return route.abort();});
  await page.goto("/");
  await expect(page.getByRole("heading",{name:"Вход в систему"})).toBeVisible();
@@ -148,6 +164,7 @@ test("GitHub mode shows real owner login and gates the protected API",async({pag
 });
 
 test("session probe errors fail closed without showing protected dashboard",async({page})=>{
+ await fakeServerAuth(page,()=>({mode:null,authenticated:false}));
  await page.route("**/api/auth/session",route=>route.fulfill({status:503,body:"unavailable"}));
  await page.goto("/");
  await expect(page.getByText(/Проверка состояния авторизации не удалась/)).toBeVisible();
@@ -155,14 +172,28 @@ test("session probe errors fail closed without showing protected dashboard",asyn
  await expect(page.getByRole("table")).toHaveCount(0);
 });
 
+test("server bootstrapped GitHub login paints without waiting for auth API",async({page})=>{
+ let authRequests=0;
+ await page.route("**/api/auth/session",route=>{
+  authRequests++;
+  return route.abort();
+ });
+ await fakeServerAuth(page,()=>({mode:"github",authenticated:false}));
+ await page.goto("/");
+ await expect(page.getByRole("heading",{name:"Вход в систему"})).toBeVisible();
+ await expect(page.getByRole("link",{name:/Войти через GitHub/})).toBeVisible();
+ expect(authRequests).toBe(0);
+ await expect(page.getByRole("button",{name:"Устройства"})).toHaveCount(0);
+});
+
 test("owner GitHub session can log out and loses snapshot view",async({page})=>{
- await page.route("**/api/auth/session",route=>route.fulfill({
-  status:200,contentType:"application/json",
-  body:JSON.stringify({mode:"github",authenticated:true})}));
+ let loggedIn=true;
+ await fakeServerAuth(page,()=>({mode:"github",authenticated:loggedIn}));
  await mock(page);
  let logoutCalled=0;
  await page.route("**/auth/logout",route=>{
   logoutCalled++;
+  loggedIn=false;
   expect(route.request().method()).toBe("POST");
   return route.fulfill({status:204,body:""});
  });
