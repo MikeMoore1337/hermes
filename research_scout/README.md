@@ -1,6 +1,6 @@
 # Hermes Research Scout - offline evidence gate
 
-Status 15.10.2026: **daily public metadata research collector active on VPS**; offline evidence gate also operates. No AI model calls, no external reporting, no automatic publication or YFC/Second Brain writes. Partial progress for [Issue #4](https://github.com/MikeMoore1337/hermes/issues/4).
+Status 18.10.2026: **Research Scout v1 — owner-only read-only bibliographic collection and Control Center reporting, technically accepted**. No AI model calls, no automatic publication, no YFC/Second Brain writes. [Issue #4](https://github.com/MikeMoore1337/hermes/issues/4) is the **v1 technical delivery contract**; claim-level independent scientific verification is tracked separately in [Issue #317](https://github.com/MikeMoore1337/hermes/issues/317). [Final v1 technical acceptance](../docs/audits/H-03-RESEARCH-SCOUT-V1-ACCEPTANCE-2026-10-18.md).
 
 This deliberately does not copy code from VIBE-SERCH or other repositories
 with unclear licences. Uses Python standard library.
@@ -25,14 +25,14 @@ This stage does **not** verify the truth or factual independence of studies.
 Even `READY_FOR_REVIEW` is NOT permission to publish to Telegram/YFC,
 change a fitness recommendation, send a message or store in Second Brain.
 
-Follow-up gate: independent manual assessment of original study methods, DOI/PMID/license, evidence citations and human-approved research delivery. Fixed public source clients, timeout/size limits and 20+ negative cases exist; keep #4 OPEN until scientific review and outgoing channel are separately authorized.
+Follow-up gate for **scientific claims**, not v1 metadata delivery: independent manual assessment of original study methods, DOI/PMID/license, effect sizes/CI, evidence citations and owner-approved external research delivery is [Issue #317](https://github.com/MikeMoore1337/hermes/issues/317). Fixed public source clients, timeout/size limits and 20+ negative cases exist; closing technical #4 does not approve scientific conclusions or any outward channel.
 
 
 ## Матрица негативных случаев (14.10.2026)
 
 [Набор сквозных синтетических проверок](../tests/test_research_safety_matrix.py) покрывает 29 отдельно названных отклонений URL/SSRF, схемы, контрольных символов, дат, правдивости заявлений и внедрённых команд. Дополнительно проверяются многоязычные инструкции, приоритет причины при stale+injection, ложная независимость доменов и противоречия.
 
-CI подтверждает только офлайн-защиту. Актуальность реальных исследований, NCBI registration, общая квота IP и live API остаются в статусе OPEN в [#4](https://github.com/MikeMoore1337/hermes/issues/4). `READY_FOR_REVIEW` и `MANUAL_REVIEW` не означают доказанный научный вывод и не дают разрешения публиковать материалы.
+CI подтверждает только офлайн-защиту. Актуальность и доказательность отдельных исследований и permission на научную публикацию остаются в [#317](https://github.com/MikeMoore1337/hermes/issues/317); регистрация NCBI не требуется для уже разрешённого Europe PMC/Crossref v1. Реальные ограниченные API проверки выполнены, но не подтверждают беспрерывную доступность внешних каталогов. `READY_FOR_REVIEW` и `MANUAL_REVIEW` не означают доказанный научный вывод и не дают разрешения публиковать материалы.
 
 
 ## Альтернатива NCBI без регистрации
@@ -145,3 +145,12 @@ python3 -m research_scout.science_handoff
 ```
 
 Инструмент работает без сети, модели, прав на публикацию или чтения приватных данных; не может принять экспертное решение и не повышает `scientific_claims_verified`. Ни один из 19 пунктов не закрыт человеческой экспертизой — **Issue #4 остаётся OPEN/PARTIAL**.
+
+
+## Контракт Research Scout v1 после приёмки 18.10.2026
+
+**[Акт финальной технической приёмки](../docs/audits/H-03-RESEARCH-SCOUT-V1-ACCEPTANCE-2026-10-18.md)** отделяет доставленный read-only библиографический продукт от полноценной научной экспертизы. Владелец получает данные и предварительные научно-аналитические оговорки через защищённый Control Center; это **разрешённый внутренний канал выдачи** в рамках v1. Внешняя публикация не входит в v1.
+
+- **#4** — реализация ежедневного bounded сбора Europe PMC/Crossref (не более 5 GET за run), защищённого локального snapshot, provenance, `HOLD/NO_DATA/MANUAL_REVIEW`, проверки DOI/коррекций и owner Control Center. Никаких новых прав и платных API.
+- **[#317 Scientific Evidence Review](https://github.com/MikeMoore1337/hermes/issues/317)** — 19 уже подготовленных человеческих review gates, полноценные первоисточники, риск систематической ошибки, эффекты/95% CI, проверка publisher notices и claim-level редакционное решение. Не prerequisite для технического закрытия #4.
+- Любые внешние советы, рекомендации YFC, Telegram/Second Brain publication, изменения fitness/nutrition алгоритмов требуют самостоятельного owner GO и применимой научной экспертизы. `scientific_claims_verified=false` и `automatic_publication=false` не меняются.
