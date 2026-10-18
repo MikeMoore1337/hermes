@@ -1,0 +1,12 @@
+[Unit]
+Description=Cloudflare historical Billing Read snapshot once a day (opt-in)
+Documentation=https://github.com/MikeMoore1337/hermes/issues/295
+
+[Timer]
+OnCalendar=*-*-* 05:10:00 UTC
+RandomizedDelaySec=30min
+Persistent=true
+Unit=hermes-cloudflare-billing-read.service
+
+[Install]
+WantedBy=timers.target
