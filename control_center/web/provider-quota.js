@@ -164,11 +164,30 @@
           "Подтверждённых данных о расходе нет. Billing Read даёт запаздывающие данные, которые могут не включать бесплатные Neurons; Analytics Read доступен отдельно для оценочной статистики, но не для точного остатка Free-квоты.");
     }
     if(service.id==="cloudflare_workers_ai" && Array.isArray(service.analytics_history) && service.analytics_history.length){
-      const latest=service.analytics_history.at(-1);
+      const rows=service.analytics_history;
+      const latest=rows[rows.length-1];
+      const fmt=n=>typeof n==="number"&&Number.isFinite(n)?
+        n.toLocaleString("ru-RU",{maximumFractionDigits:3}):"нет данных";
+      const quality=q=>q==="very_small_sample"?"очень маленькая выборка":
+        q==="limited_sample"?"ограниченная выборка":"адаптивная оценка";
       add("p","quota295-note",article,
-        "Cloudflare Analytics, завершённые UTC-сутки "+latest.day+
-        ": оценка "+readable(latest.estimate_neurons)+" Neurons; выборка "+latest.sample_size+
-        ". Не является измеренным остатком квоты Free.");
+        "Cloudflare Analytics за "+latest.day+" (UTC): оценка "+
+        fmt(latest.estimate_neurons)+" Neurons; выборка "+latest.sample_size+
+        " ("+quality(latest.quality)+"). Это не подтверждённый расход "+
+        "и не остаток Free-квоты.");
+      const details=add("details","quota295-history",article);
+      add("summary","",details,"История оценочных данных Cloudflare");
+      const body=add("div","quota295-chart",details);
+      add("p","quota295-note",body,
+        "95% интервал отражает только статистическую неопределённость, "+
+        "а не полноту учёта или точность биллинга.");
+      for(const point of rows.slice(-30)){
+        add("p","quota295-note",body,
+          point.day+": "+fmt(point.estimate_neurons)+" Neurons; "+
+          "95% интервал "+fmt(point.lower95_neurons)+" - "+
+          fmt(point.upper95_neurons)+"; выборка "+point.sample_size+
+          " ("+quality(point.quality)+").");
+      }
     }
     if(service.id==="codex"||service.id==="desktop_commander"){
       const details=add("details","quota295-history",article);
