@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from ops_watch.core import InputError, analyze, changes
+from ops_watch.infrastructure_alerts import ROOT as INFRASTRUCTURE_ROOT
 from ops_watch.infrastructure_alerts import observe as infrastructure_observe
 from ops_watch.state_store import persist, read_current
 from qa_advisor.signal_store import SignalError, observed_status
@@ -307,7 +308,7 @@ def _atomic_json(directory: Path, name: str, document: object) -> None:
         temporary.unlink(missing_ok=True)
 
 
-def once(source: Path = SOURCE, target: Path = TARGET, observed: datetime | None = None, *, agent_guard: dict[str, bool] | None = None, alerts_timer: dict[str, bool] | None = None, alerts_service: dict[str, bool] | None = None) -> dict[str, Any]:
+def once(source: Path = SOURCE, target: Path = TARGET, observed: datetime | None = None, *, agent_guard: dict[str, bool] | None = None, alerts_timer: dict[str, bool] | None = None, alerts_service: dict[str, bool] | None = None, infrastructure_dir: Path | None = None) -> dict[str, Any]:
     """Collect, deduplicate, and atomically store safe findings under a lock."""
     if target.is_symlink() or not target.is_dir() or (target.stat().st_mode & 0o077) != 0:
         raise InputError("unsafe_target_directory")
@@ -326,7 +327,13 @@ def once(source: Path = SOURCE, target: Path = TARGET, observed: datetime | None
             alerts_service=alerts_service,
         )
         snapshot["codex"] = _codex_telemetry(observed=now)
-        snapshot["infrastructure"] = infrastructure_observe(now=now)
+        # External host telemetry is an EXPLICIT input, not a global side
+        # effect in offline tests or sandboxed collectors. Only the production
+        # CLI wires the real bounded source. A test-provided target must never
+        # silently inherit the VPS snapshot directory.
+        if infrastructure_dir is not None:
+            snapshot["infrastructure"] = infrastructure_observe(
+                directory=infrastructure_dir, now=now)
         findings = analyze(snapshot, now=now)
         # Separate QA reader never has Telegram credentials or access to the
         # news source. Missing/stale/denied API observations must not falsely
@@ -350,18 +357,30 @@ def once(source: Path = SOURCE, target: Path = TARGET, observed: datetime | None
         # NOT clear a previously confirmed resource alarm. Clearing requires
         # three distinct recent values <=80% (hysteresis vs >=90% raise).
         active_codes = {item["code"] for item in findings}
-        for item in previous:
-            code = item["code"]
-            if code.startswith("infra_") and code.endswith(("_cpu_high", "_ram_high", "_disk_high")):
-                host = "hermes" if code.startswith("infra_hermes_") else "yfc"
-                metric = code.rsplit("_", 2)[-2]
-                source = snapshot["infrastructure"][host]
-                levels = source.get("levels", {})
-                if levels.get(metric) != "normal" and code not in active_codes:
-                    findings.append({"code": code, "severity": (
-                        "critical" if metric == "disk" else "warning"),
-                        "fingerprint": "ops:" + code})
-                    active_codes.add(code)
+        if infrastructure_dir is not None:
+            for item in previous:
+                code = item["code"]
+                if code.startswith("infra_") and code.endswith((
+                        "_cpu_high", "_ram_high", "_disk_high")):
+                    host = "hermes" if code.startswith("infra_hermes_") else "yfc"
+                    metric = code.rsplit("_", 2)[-2]
+                    source = snapshot["infrastructure"][host]
+                    levels = source.get("levels", {})
+                    if levels.get(metric) != "normal" and code not in active_codes:
+                        findings.append({"code": code, "severity": (
+                            "critical" if metric == "disk" else "warning"),
+                            "fingerprint": "ops:" + code})
+                        active_codes.add(code)
+        else:
+            # Disabling the optional detector in an offline context must not
+            # "resolve" a historically confirmed incident by omission.
+            for item in previous:
+                if item["code"].startswith("infra_") and item["code"] not in active_codes:
+                    findings.append({"code": item["code"],
+                                     "severity": "critical" if item["code"].endswith((
+                                         "_unavailable", "_disk_high")) else "warning",
+                                     "fingerprint": item["fingerprint"]})
+                    active_codes.add(item["code"])
         was_ci_failed = any(item["code"] == "ci_failed" for item in previous)
         if ci == "FAILURE" or (ci is None and was_ci_failed):
             findings.append({
@@ -392,6 +411,7 @@ def main() -> int:
         result = once(
             alerts_timer=_ops_alert_timer_status(),
             alerts_service=_ops_alert_service_status(),
+            infrastructure_dir=INFRASTRUCTURE_ROOT,
         )
     except (InputError, OSError, ValueError) as exc:
         # Log only an allowlisted internal error CLASS; no paths or user text.
