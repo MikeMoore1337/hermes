@@ -11,6 +11,8 @@
   const noteText = {account_usage_unavailable: "10 000 Neurons в сутки - документированный предел Free. Фактическое потребление аккаунта неизвестно.",
     official_account_snapshot: "Показатели из официального локального снимка Codex. Запросы моделей не выполняются.",
     official_delayed_historical_usage: "Cloudflare публикует исторические Neurons с задержкой. Текущие использовано/остаток всё ещё неизвестны.",
+    billing_auth_required: "Исторический учёт недоступен: токен Cloudflare не имеет подтверждённого Billing Read. Суточная квота AI отдельно.",
+    billing_throttled: "Обращения к отчётности Cloudflare ограничены. Текущий остаток Neurons неизвестен.",
     provider_limit_exhausted: "Поставщик сообщил об исчерпании лимита.",
     some_windows_exhausted: "Часть независимых окон квоты недоступна.",
     reauthorization_required: "Требуется повторная авторизация аккаунта.",
