@@ -8,6 +8,8 @@ on:
       - scripts/h19_v0222_native_evidence.py
       - scripts/h19_native_report_verify.py
       - scripts/h19_execve_seccomp_probe.py
+      - scripts/h19_native_effect_canary.py
+      - tests/test_h19_native_effect_canary.py
       - tests/test_h19_execve_seccomp_probe.py
       - tests/test_h19_v0222_native_evidence.py
       - .github/workflows/h19-pinned-native-runtime.yml
@@ -58,6 +60,12 @@ jobs:
           set -euo pipefail
           python3 -m scripts.h19_execve_seccomp_probe --execute --out "$RUNNER_TEMP/h19-execve-seccomp.json"
           python3 -c 'import json,os; r=json.load(open(os.path.join(os.environ["RUNNER_TEMP"],"h19-execve-seccomp.json"))); print("Seccomp process-local:",r["status"],"H-01 OS:",r["full_agent_os_enforcement"],"LLM:",r["live_model"])' >> "$GITHUB_STEP_SUMMARY"
+      - name: Actual pinned native dispatcher with disposable tmpfs side-effect canaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m scripts.h19_native_effect_canary --execute --out "$RUNNER_TEMP/h19-native-effects.json"
+          python3 -c 'import json,os; r=json.load(open(os.path.join(os.environ["RUNNER_TEMP"],"h19-native-effects.json"))); print("Native intercepted effects:",r["status"],"cases:",r["scenario_count"],"actual MCP:",r["real_mcp_called"])' >> "$GITHUB_STEP_SUMMARY"
       - name: Preserve sanitized, no-prompt native evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -67,5 +75,6 @@ jobs:
             ${{ runner.temp }}/h19-native-report.json
             ${{ runner.temp }}/h19-native-readback.json
             ${{ runner.temp }}/h19-execve-seccomp.json
+            ${{ runner.temp }}/h19-native-effects.json
           if-no-files-found: warn
           retention-days: 7

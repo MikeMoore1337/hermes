@@ -290,3 +290,56 @@ immutable Docker образа из H-19 workflow:
 quality CI выполняются лишь проверочные stdlib unit tests.
 Официальная документация: https://man7.org/linux/man-pages/man2/seccomp.2.html
 и https://kernel.org/doc/html/latest/userspace-api/seccomp_filter.html .
+
+
+### 18.10.2026 - Native interception + physical side-effect canaries
+
+Дополнительная проверка `scripts/h19_native_effect_canary.py` использует
+**настоящий, неизменённый Hermes v0.22.2 Python dispatch**
+(`model_tools.handle_function_call`), выполняемый в исходном pinned image
+и отдельно в одноразовом bounded patched derivative. Шесть зафиксированных
+сценариев проверяют запрещённые `terminal`, alias `process`,
+`tool_search` c `terminal`, batch вызов синтетического connector,
+неизвестный native tool и разрешённый тестовый `web_search`.
+
+Низкоуровневый executor **полностью перехвачен** тестовым callback;
+вместо реального shell, HTTP, MCP или файлового инструмента он записывает
+только фиксированный безвредный файл-marker в отдельный временный
+`/tmp` (Docker tmpfs) и возвращает тестовую строку.
+Это **фактическое наблюдение тестового побочного эффекта** с независимым
+прочтением marker из `/tmp`, а не утверждение агента в тексте ответа.
+Зафиксированный **фактический первый Docker-прогон** показал:
+из пяти запрещённых сценариев upstream v0.22.2 создал физический
+marker для трёх (`terminal`, alias `process`, unknown native);
+для двух (`tool_search` с terminal и synthetic connector batch)
+исходный upstream **уже отказал до low-level executor**.
+Исправленный bounded patch не должен допускать эффект через ни один
+запрещённый путь, но обязан пропустить единственный разрешённый
+тестовый callback. Точные ожидания оригинальной версии закреплены в
+`ORIGINAL_EFFECT_EXPECTED`. Не выдавать уже работающие отказы
+исходной версии за найденные уязвимости или доказательство исправления. Контрольный разрешённый случай нужен, чтобы не считать
+полное отключение всех tools успешной политикой. Данные не содержат
+настоящих секретов, реальных MCP endpoint или production URLs.
+
+Сборщик выдаёт только ограниченные имена сценариев, boolean наличия
+marker и фиксированный SHA-256 содержимого marker. Отдельный Python
+валидатор проверяет точный digest pinned image, stamp, ID derivative,
+полную матрицу, наличие контрольного исходного побочного эффекта,
+отсутствие эффекта в запрещённых patched путях и наличие разрешённого
+callback. Отсутствующее свидетельство даёт INFRA_FAILURE; обход
+запрета - FAIL. Mutation tests меняют каждый сценарий, marker,
+доказательства и статус, чтобы проверить сигнал FAIL.
+
+Изолированный workflow `h19-pinned-native-runtime.yml` запускает
+проверку и сохраняет `h19-native-effects.json` в artifact. В обычном
+quality CI исполняются только безсетевые stdlib unit-tests.
+Запуск без `--execute` не выполняет Docker:
+
+    python3 -m scripts.h19_native_effect_canary --execute --out /tmp/h19-native-effects.json
+
+**Граница доказательства:** наблюдаемая запись marker выполнена
+только специально внедрённой заглушкой low-level executor; настоящая
+MCP-библиотека, сетевой connector, SSH, shell tool, модель и внешние
+side effects **НЕ запускались**. Такой PASS не доказывает full
+`mcp_external_effect_denial_verified`, не переносится на резидентный
+H-01, не отменяет #33 NO-GO или отдельный owner-gate для реальной LLM.
