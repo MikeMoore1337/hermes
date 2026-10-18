@@ -14,7 +14,7 @@ from unittest.mock import patch
 from device_fabric.presence import DeviceRegistry
 from ops_watch.core import analyze
 from ops_watch.collector import once
-from ops_watch.device_fabric_alerts import observe
+from ops_watch.device_fabric_alerts import observe, certificate_status
 
 NOW = datetime(2026, 10, 18, 16, 30, tzinfo=UTC)
 ROOT = Path(__file__).resolve().parents[1]
@@ -157,6 +157,33 @@ class PresencePersistenceTests(unittest.TestCase):
                 touch(db, "windows-pc", at=NOW + timedelta(minutes=2), connected=1)
                 third = once(root / "health", target, NOW + timedelta(minutes=2), **kw)
                 self.assertIn("ops:device_linux_vps_unavailable", third["changes"]["resolved"])
+
+    def test_tls_expiry_warns_before_silent_permanent_disconnect(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _, gate = prepare(root)
+            cert = root / "cert.pem"
+            cert.write_text("public dummy certificate", encoding="ascii")
+            samples = (
+                ("notAfter=Oct 20 14:30:00 2026 GMT\\n", "expiring", "device_tls_expiring"),
+                ("notAfter=Oct 17 14:30:00 2026 GMT\\n", "expired", "device_tls_expired"),
+                ("notAfter=Nov 20 14:30:00 2026 GMT\\n", "healthy", None),
+            )
+            for enddate, expected, code in samples:
+                with self.subTest(enddate=enddate), patch(
+                    "ops_watch.device_fabric_alerts.subprocess.run",
+                    return_value=subprocess.CompletedProcess([], 0, enddate, "")
+                ) as call:
+                    level = certificate_status(cert, gate, now=NOW)
+                    self.assertEqual(level, expected)
+                    s = snapshot({"windows-pc": {"status": "online"},
+                                  "linux-vps": {"status": "online"}})
+                    s["device_fabric_tls"] = level
+                    findings = {item["code"] for item in analyze(s, now=NOW)}
+                    self.assertEqual(findings, {code} if code else set())
+                    self.assertEqual(call.call_args.kwargs["timeout"], 3)
+            gate.write_text('{"untrusted":true}')
+            self.assertEqual(certificate_status(cert, gate, now=NOW), "unknown")
 
     def test_linux_hardening_and_no_unapproved_enable(self):
         script = ROOT / "deploy/h15-device-fabric-yfc-autostart.sh"
