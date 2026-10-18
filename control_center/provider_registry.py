@@ -8,6 +8,10 @@ from __future__ import annotations
 import datetime as dt
 from pathlib import Path
 
+from control_center.cloudflare_billing import (
+    OUTPUT as CLOUDFLARE_BILLING_PATH,
+    snapshot as read_cloudflare_billing,
+)
 from control_center.codex_usage import (
     DEFAULT_OUTPUT as CODEX_PATH, UsageError,
     read_snapshot as read_codex_snapshot,
@@ -66,6 +70,7 @@ def _window(*, metric: str, label: str, unit: str, limit: int | None = None,
 
 
 def registry(*, codex_path: Path = CODEX_PATH, desktop_path: Path = DC_PATH,
+             cloudflare_path: Path = CLOUDFLARE_BILLING_PATH,
              now: dt.datetime | None = None) -> dict:
     moment = now or dt.datetime.now(dt.timezone.utc)
     if moment.tzinfo is None:
@@ -77,6 +82,17 @@ def registry(*, codex_path: Path = CODEX_PATH, desktop_path: Path = DC_PATH,
     # access to Cloudflare account-wide billing data or recent AI success.
     cloudflare = empty("cloudflare_workers_ai", "Cloudflare Workers AI", configured=True)
     cloudflare["notes"] = "account_usage_unavailable"
+    # Published invoice/account usage is delayed by a day or more. Expose
+    # completed historical days only. Never subtract these from today's Free
+    # allowance or infer an account-wide CURRENT remaining balance.
+    bill = read_cloudflare_billing(cloudflare_path, now=utc)
+    cloudflare["billing_history"] = bill["days"] if bill["status"] == "ok" else []
+    cloudflare["billing_observed_at"] = bill["observed_at"] if bill["status"] == "ok" else None
+    cloudflare["billing_last_complete_day"] = (
+        bill["last_complete_day"] if bill["status"] == "ok" else None
+    )
+    if cloudflare["billing_history"]:
+        cloudflare["notes"] = "official_delayed_historical_usage"
     cloudflare["limit_documentation"] = CLOUDFLARE_DOCS
     cloudflare["windows"] = [
         _window(metric="neurons_daily", label="Суточная квота Free",
