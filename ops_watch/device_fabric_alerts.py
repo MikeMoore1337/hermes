@@ -42,6 +42,13 @@ def certificate_status(cert: Path = CERT, opt_in: Path = OPT_IN, *,
     try:
         if opt_in.is_symlink() or not opt_in.is_file():
             return "not_configured"
+        if opt_in.stat().st_size > 512:
+            return "unknown"
+        gate = json.loads(opt_in.read_text(encoding="utf-8"))
+        if (not isinstance(gate, dict) or set(gate) !=
+                {"schema", "devices", "enabled_at"} or
+                gate["schema"] != 1 or gate["devices"] != list(DEVICES)):
+            return "unknown"
         if cert.is_symlink() or not cert.is_file() or cert.stat().st_size > 8192:
             return "unknown"
         result = subprocess.run(
