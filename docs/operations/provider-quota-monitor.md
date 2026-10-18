@@ -44,3 +44,75 @@ Rollback: restore the previous immutable Control Center release. Existing #255/#
 ## Not implemented here
 
 Cloudflare official billable Neuron usage (currently unsupported/unverified), new GitHub token and rate-limit header collection, billing API support, provider-wide history for Cloudflare/GitHub, consolidated Ops Watch quota alert coverage and #271 admission. These require separate evidence and must not be inferred from an attractive UI.
+
+
+## Stage 2 - genuine API-supported usage probes, opt-in only (not activated)
+
+On 3 August 2026 Cloudflare announced an **official Billable Usage API**
+covering Workers AI. Unlike previous assumptions, this is a viable **historical
+account-wide source**, but the data is updated daily, so it cannot give
+live quota remaining and must NEVER be fed into a real-time admission gate.
+
+References:
+- https://blog.cloudflare.com/billable-usage-api/ (2026-08-03)
+- https://developers.cloudflare.com/api/resources/billing/subresources/usage/methods/get_account_usage_v1/
+- https://developers.cloudflare.com/workers-ai/platform/pricing/
+- https://developers.cloudflare.com/workers-ai/platform/errors/
+
+The optional read-only collector `control_center/cloudflare_billing.py`
+performs only GET `/client/v4/accounts/{ID}/billable-usage` once daily.
+It accepts **only** unambiguous Workers AI billing rows whose
+`ConsumedUnit` is Neurons and a complete previous UTC day is specified.
+Any ambiguity, unsupported unit, authorization failure, 429 or malformed
+response fails closed as unknown or auth_required. The raw HTTP response,
+account ID, other products, token and costs never reach local snapshots or
+the Control Center API. The UI shows such observations only as
+**official delayed historical consumption**, while today's
+`used` and `remaining` always remain null. A successful billing sample
+is not a real-time 10k/day guarantee.
+
+The `GET /rate_limit` GitHub REST API provides independently scoped,
+token-specific bucket limits (`core`, `search`, `graphql`, etc.).
+`control_center/github_rate_limit.py` reads only that fixed endpoint;
+does not enumerate repositories or user data and refuses insecure credentials.
+It makes **no claim of account-wide API/CI budget**. A zero-limit resource
+means disabled/unknown, not available. The token is distinct from
+GitHub Actions and the owner's ChatGPT/GitHub OAuth integration.
+
+Both collectors are **opt-in**, pinned to one host and disabled in the
+normal release. The new unit/timer files are intentionally not installed or
+enabled by `deploy/hermes-main-deploy.sh`. For Cloudflare, an operator
+must create a narrowly scoped API token with **Account Billing Read**
+and root-owned 0600 files:
+- `/etc/hermes/cloudflare-billing-read.token` - token alone, no quotes;
+- `/etc/hermes/cloudflare-billing-read.env` - a single line
+  `CLOUDFLARE_BILLING_ACCOUNT_ID=<verified-32-hex-id>`.
+
+On a separately authorized Hermes VPS root console (not GitHub CI):
+```bash
+install -o root -g root -m 0644 deploy/hermes-cloudflare-billing-read.service /etc/systemd/system/
+install -o root -g root -m 0644 deploy/hermes-cloudflare-billing-read.timer /etc/systemd/system/
+systemctl daemon-reload
+systemctl start hermes-cloudflare-billing-read.service
+systemctl show hermes-cloudflare-billing-read.service -p Result -p ExecMainStatus
+# Only enable after a reviewed success, real daily sample and owner proof.
+systemctl enable --now hermes-cloudflare-billing-read.timer
+```
+
+For GitHub, create a **separate** root-owned 0600 token file at
+`/etc/hermes/github-rate-limit-read.token` with a token whose quota is
+meaningful for Hermes; install the two
+`deploy/hermes-github-rate-limit.{service,timer}` units and run one
+authenticated smoke before enabling its 10-minute timer. GitHub API rate
+limits for other tokens and Cloudflare requests outside Hermes remain unknown.
+
+These opt-in external probes run as isolated one-shot systemd services with
+bounded timeouts and memory/CPU quotas. They do not modify existing
+Codex subscription usage #255/#272, Desktop Commander #275, runtime #33 or
+Cloudflare Free-only enforcement #62. Revoke credentials and disable
+both timers to roll back external sampling without touching the UI.
+
+CI covers HTTP 401/403/429/500, permission rejection, invalid unit/period,
+complete-vs-current day, current snapshot age, independently scoped GitHub
+reset/remaining, and secret redaction. **No live Cloudflare/GitHub
+collector has been activated or authorized by normal release.**
