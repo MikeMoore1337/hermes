@@ -147,67 +147,9 @@ isolated_python scripts/validate_repo.py || die "repo validation failed"
 isolated_python scripts/check_policy_index.py || die "policy check failed"
 isolated_python scripts/check_markdown_links.py || die "markdown links failed"
 isolated_python -m unittest discover -s tests -q > "$work/tests.log" 2>&1 || { tail -25 "$work/tests.log" >&2; die "non-root offline tests failed"; }
-# Optional WSS integration tests run in their own pinned CI venv; isolated host
-# stdlib unittest may legitimately finish as OK (skipped=N).
-grep -Eq '^OK( \(skipped=[0-9]+\))?
-grep '^Ran [0-9]* tests' "$work/tests.log" | tail -1
-systemctl is-active --quiet hermes-agent-sandbox.service && die "unscoped gateway unexpectedly active"
-# The approved H-01 read-only one-shot needs the dedicated CONNECT proxy.
-# Allow an already-running proxy only when the dedicated OS egress guard passes.
-if systemctl is-active --quiet hermes-cloudflare-proxy.service; then
-  systemctl is-active --quiet hermes-cloudflare-network-guard.service || die "agent guard inactive"
-  /usr/bin/python3 "$base/scripts/ensure_cloudflare_egress.py" --check >/dev/null ||
-    die "active agent proxy has unverified egress boundary"
-fi
-for u in hermes-ops-watch.service hermes-ops-alerts.service hermes-qa-watch.service hermes-research-scout.service hermes-h01-ops-agent.service; do
-  for attempt in 1 2 3 4 5; do
-    systemctl is-active --quiet "$u" || break
-    sleep 3
-  done
-  systemctl is-active --quiet "$u" && die "service busy: $u"
-done
-[[ ! -e "$release" && ! -e "$ui_release" ]] || die "release path already exists"
-mv -T -- "$work/src" "$release"
-release_created=yes
-mkdir -m 0700 "$backup"
-for m in ops_watch qa_advisor research_scout scripts agent_budget editorial_review knowledge_quality content_research marketing plugins; do
-  cp -a -- "$release/$m" "$base/.incoming-$short-$m"
-  if [[ -d "$base/$m" ]]; then mv -T -- "$base/$m" "$backup/$m"; fi
-  updated="$m $updated"
-  mv -T -- "$base/.incoming-$short-$m" "$base/$m"
-done
-mkdir -m 0755 "$ui_release"
-ui_created=yes
-cp -a -- "$release/control_center" "$ui_release/"
-# H-03 owner review consumes the existing read-only Research Scout packet.
-cp -a -- "$release/research_scout" "$ui_release/"
-chown -R root:root "$ui_release"
-chmod -R a+rX,go-w "$ui_release"
-# Verify imports exactly as the UI service starts: cwd-based python -m,
-# without the PYTHONPATH override which previously concealed missing siblings.
-runuser -u hermes-control -- sh -c 'cd "$1" && /usr/bin/python3 -c "import control_center.server; import research_scout.report_view"' sh "$ui_release"
-ui_old=$(readlink -f "$ui/current")
-ln -s -- "$ui_release" "$ui/.incoming-$short"
-mv -Tf -- "$ui/.incoming-$short" "$ui/current"
-ui_switched=yes
-systemctl restart hermes-control-center.service
-wait_for_control_center_health
-for u in hermes-discovery.timer hermes-ops-watch.timer hermes-ops-alerts.timer hermes-qa-watch.timer hermes-research-scout.timer hermes-control-center-snapshot.timer; do
-  systemctl is-active --quiet "$u" || die "timer unhealthy: $u"
-done
-systemctl is-active --quiet hermes-agent-sandbox.service && die "unscoped gateway unexpectedly enabled"
-if systemctl is-active --quiet hermes-cloudflare-proxy.service; then
-  systemctl is-active --quiet hermes-cloudflare-network-guard.service || die "agent guard lost"
-  /usr/bin/python3 "$base/scripts/ensure_cloudflare_egress.py" --check >/dev/null ||
-    die "active agent proxy drifted during deploy"
-fi
-printf 'SHA=%s\nARCHIVE_SHA256=%s\nPREVIOUS_UI=%s\nBACKUP=%s\nRESIDENT_ACTIVATED=no\n' "$sha" "$digest" "$ui_old" "$backup" > "$release/.deployment-receipt.txt"
-chmod -R a-w "$release"
-printf '%s\n' "$sha" > "$work/last-success.sha"
-install -m 0600 "$work/last-success.sha" "$state"
-committed=yes
-echo "PRODUCTION_DEPLOYED=$sha"
- "$work/tests.log" || die "unit test status missing"
+# WSS integration tests use a separate pinned CI venv; the isolated host
+# stdlib test run may legitimately report OK (skipped=N).
+grep -Eq '^OK( \(skipped=[0-9]+\))?$' "$work/tests.log" || die "unit test status missing"
 grep '^Ran [0-9]* tests' "$work/tests.log" | tail -1
 systemctl is-active --quiet hermes-agent-sandbox.service && die "unscoped gateway unexpectedly active"
 # The approved H-01 read-only one-shot needs the dedicated CONNECT proxy.
