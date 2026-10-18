@@ -57,6 +57,29 @@ class BoundedExecutorTests(unittest.TestCase):
         )
 
     @patch("eval_lane.local_executor.subprocess.Popen")
+    @patch("eval_lane.local_executor.fixed_plan")
+    def test_owner_zero_spend_lock_denies_even_explicit_enable(self, plan, popen):
+        instance = self.worker(enabled=True, probe=lambda: True)
+        # Pretend all environmental isolation checks passed: cost lock is
+        # independent and cannot become an accidental model-launch permit.
+        with patch.object(instance, "_preflight", return_value=None):
+            with self.assertRaisesRegex(AdmissionDenied, "zero_incremental_spend"):
+                instance(self.payload)
+        popen.assert_not_called()
+        plan.assert_not_called()
+        self.assertFalse(self.runpath.exists())
+
+    @patch("eval_lane.local_executor.subprocess.Popen")
+    def test_environment_does_not_override_owner_decision(self, popen):
+        instance = self.worker(enabled=True, probe=lambda: True)
+        with patch.object(instance, "_preflight", return_value=None), \
+             patch.dict(os.environ, {"HERMES_EVAL_PAID_ALLOWED": "1",
+                                     "OWNER_RUNTIME_GO": "true"}):
+            with self.assertRaisesRegex(AdmissionDenied, "zero_incremental_spend"):
+                instance(self.payload)
+        popen.assert_not_called()
+
+    @patch("eval_lane.local_executor.subprocess.Popen")
     def test_default_disabled_never_calls_any_process(self, popen):
         with self.assertRaisesRegex(AdmissionDenied, "local_execution_disabled"):
             self.worker()(self.payload)
@@ -89,7 +112,8 @@ class BoundedExecutorTests(unittest.TestCase):
         child.wait.return_value = 0
         popen.return_value = child
         instance = self.worker(enabled=True, probe=lambda: True)
-        with patch.object(instance, "_preflight", return_value=None):
+        with patch.object(instance, "_preflight", return_value=None), \
+             patch("eval_lane.local_executor.assert_owner_real_execution_allowed"):
             result = instance(self.payload)
         self.assertEqual(result["outcome"], "succeeded")
         self.assertEqual(len(result["artifact_sha256"]), 64)
@@ -113,7 +137,8 @@ class BoundedExecutorTests(unittest.TestCase):
             argv=(str(self.binary),), cwd=self.kit, output_dir=self.runpath,
         )
         instance = self.worker(enabled=True, probe=lambda: True, cancel=lambda: True)
-        with patch.object(instance, "_preflight", return_value=None):
+        with patch.object(instance, "_preflight", return_value=None), \
+             patch("eval_lane.local_executor.assert_owner_real_execution_allowed"):
             with self.assertRaisesRegex(AdmissionDenied, "cancelled_before_launch"):
                 instance(self.payload)
         popen.assert_not_called()
@@ -134,7 +159,8 @@ class BoundedExecutorTests(unittest.TestCase):
             counter[0] += 1
             return counter[0] >= 3
         instance = self.worker(enabled=True, probe=lambda: True, cancel=cancelled)
-        with patch.object(instance, "_preflight", return_value=None):
+        with patch.object(instance, "_preflight", return_value=None), \
+             patch("eval_lane.local_executor.assert_owner_real_execution_allowed"):
             with self.assertRaisesRegex(AdmissionDenied, "cancelled_during_execution"):
                 instance(self.payload)
         killpg.assert_called_once()
@@ -152,7 +178,8 @@ class BoundedExecutorTests(unittest.TestCase):
         child.wait.return_value = 0
         popen.return_value = child
         instance = self.worker(enabled=True, probe=lambda: True)
-        with patch.object(instance, "_preflight", return_value=None):
+        with patch.object(instance, "_preflight", return_value=None), \
+             patch("eval_lane.local_executor.assert_owner_real_execution_allowed"):
             with self.assertRaisesRegex(AdmissionDenied, "evidence_root_unsafe"):
                 instance(self.payload)
 
@@ -175,7 +202,8 @@ class BoundedExecutorTests(unittest.TestCase):
         child.wait.return_value = 0
         popen.return_value = child
         instance = self.worker(enabled=True, probe=lambda: True)
-        with patch.object(instance, "_preflight", return_value=None):
+        with patch.object(instance, "_preflight", return_value=None), \
+             patch("eval_lane.local_executor.assert_owner_real_execution_allowed"):
             with self.assertRaisesRegex(AdmissionDenied, "evidence_missing"):
                 instance(self.payload)
 
