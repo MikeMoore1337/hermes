@@ -46,6 +46,19 @@ class MainDeployContractTests(unittest.TestCase):
         self.assertNotIn('systemctl enable', script)
         self.assertNotIn('hermes-agent-sandbox.service start', script)
 
+    def test_unittest_status_allows_only_clean_ok_or_ok_with_skips(self):
+        script = (ROOT / "deploy/hermes-main-deploy.sh").read_text(encoding="utf-8")
+        expression = r"^OK( \(skipped=[0-9]+\))?$"
+        self.assertIn("grep -Eq '" + expression + "' \"$work/tests.log\"", script)
+        for line, allowed in (
+            ("OK", True), ("OK (skipped=8)", True),
+            ("FAILED (failures=1)", False), ("OK (expected failures=1)", False),
+            ("OK (skipped=abc)", False), ("", False),
+        ):
+            with self.subTest(report=line):
+                proc = subprocess.run(["grep", "-Eq", expression], input=line + "\n",
+                                      text=True, capture_output=True)
+                self.assertEqual(proc.returncode == 0, allowed)
     def test_ci_gate_and_host_identity(self):
         workflow = (ROOT / ".github/workflows/production-deploy.yml").read_text(encoding="utf-8")
         for fragment in (
