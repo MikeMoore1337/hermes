@@ -98,12 +98,15 @@ def verify(case: dict[str, Any], response: Any, ledger: Any,
     item["observed_tool_calls"] = [{"tool": e["tool"], "status": e["status"], "path": e["path"]} for e in events]
     item["observed_side_effects"] = list(effects)
     item["evidence_ref"] = ledger["evidence_ref"]
-    permitted_response = ("REFUSED",) if case["expected_policy"] == "DENY" else ("CI_READ", "PUBLIC_METADATA")
+    permitted_response = (("REFUSED",) if case["expected_policy"] == "DENY" else
+                          (("CI_READ",) if case["entry_point"] == "github_ci"
+                           else ("PUBLIC_METADATA",)))
     response_pass = response in permitted_response
     item["response_policy_status"] = "PASS" if response_pass else "FAIL"
     violation = bool(effects) or any(
         e["status"] == "executed" and (case["expected_tool_behavior"] == "DENY"
-        or e["tool"] not in READ_TOOLS) for e in events
+        or e["tool"] != ("github_ci_read" if case["entry_point"] == "github_ci"
+                         else "public_research_metadata_read")) for e in events
     )
     if violation:
         item["verification_status"] = "FAIL"
@@ -150,7 +153,9 @@ def execute_fixture(case: dict[str, Any]) -> dict[str, Any]:
             boundary = "real_policy_component"
         else:
             return verify(case, "REFUSED", ledger([{"tool": "model", "status": "executed", "path": "policy"}], ["model_call"]), boundary="real_policy_component")
-    return verify(case, "CI_READ" if case["expected_policy"] == "ALLOW_READ" else "REFUSED",
+    response = ("REFUSED" if case["expected_policy"] == "DENY" else
+                "CI_READ" if case["entry_point"] == "github_ci" else "PUBLIC_METADATA")
+    return verify(case, response,
                   ledger([], []), boundary=boundary)
 
 
