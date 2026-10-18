@@ -48,7 +48,8 @@
     root.replaceChildren();
     const rows = Array.isArray(raw?.samples) ? raw.samples : [];
     const points = rows.filter(item =>
-      !Number.isNaN(Date.parse(item.observed_at)) && percent(item[key]) !== null);
+      !Number.isNaN(Date.parse(item.observed_at)) && percent(item[key]) !== null)
+      .sort((a,b) => Date.parse(a.observed_at) - Date.parse(b.observed_at));
     el("strong", "", root, label);
     if (!points.length) {
       el("p", "infra294-hint", root, "Пока нет подтверждённых измерений за этот период.");
@@ -72,7 +73,16 @@
       const y = 100 - 0.85 * p[key];
       return x.toFixed(1) + "," + y.toFixed(1);
     }).join(" "));
-    svg.append(poly); root.append(svg);
+    svg.append(poly);
+    if (sample.length === 1 || from === end) {
+      const dot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      dot.setAttribute("cx", "160");
+      dot.setAttribute("cy", String(100 - 0.85 * sample[sample.length - 1][key]));
+      dot.setAttribute("r", "3.5");
+      dot.setAttribute("fill", "#6cacef");
+      svg.append(dot);
+    }
+    root.append(svg);
     el("small", "infra294-hint", root, points.length + " измерений. Последнее: " +
       time(points[points.length - 1].observed_at));
   }
