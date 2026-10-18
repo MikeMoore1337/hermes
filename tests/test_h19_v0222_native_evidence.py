@@ -5,6 +5,7 @@ from unittest import TestCase
 from unittest.mock import Mock, patch
 
 from scripts import h19_v0222_native_evidence as evidence
+from scripts import h19_native_report_verify as readback
 from scripts import verify_v0221_native_tool_policy as policy
 from scripts import verify_v0222_immutable as image
 
@@ -44,6 +45,7 @@ def observations(*, original=None, patched=None, os_probe=None):
         "nonroot": True, "network_egress_probe_denied": True,
         "runtime_path_write_denied": True, "docker_socket_absent": True,
         "shell_binary_present": True, "credentials_injected": False,
+        "shell_os_probe_result": "EXECUTED",
     }
     records = [
         json.dumps(["docker.io/nousresearch/hermes-agent@" + image.IMAGE_DIGEST]).encode() + b"|amd64",
@@ -69,6 +71,10 @@ class NativeEvidenceTests(TestCase):
         self.assertFalse(report["shell_execution_denial_verified"])
         self.assertEqual(report["real_model_evaluation"], "NOT_RUN")
         self.assertFalse(report["resident_agent_allowed"])
+        self.assertEqual(report["schema"], "h19-native-evidence-v2")
+        self.assertEqual(report["os_probe"]["shell_os_probe_result"], "EXECUTED")
+        self.assertFalse(report["shell_execution_denial_verified"])
+        self.assertEqual(readback.validate(report)["verification_status"], "PASS")
         self.assertEqual(runner.call_count, 6)
 
     def test_incomplete_patch_or_observed_network_access_is_fail(self):
@@ -83,7 +89,8 @@ class NativeEvidenceTests(TestCase):
         status, report = evidence.run(runner=observations(os_probe={
             "nonroot": True, "network_egress_probe_denied": False,
             "runtime_path_write_denied": True, "docker_socket_absent": True,
-            "shell_binary_present": True, "credentials_injected": False}))
+            "shell_binary_present": True, "credentials_injected": False,
+            "shell_os_probe_result": "EXECUTED"}))
         self.assertEqual(status, 1)
         self.assertEqual(report["os_probe_status"], "FAIL")
 
@@ -108,6 +115,53 @@ class NativeEvidenceTests(TestCase):
             self.assertNotIn("--volume", cmd)
             self.assertNotIn("--env-file", cmd)
             self.assertNotIn("--network=host", cmd)
+
+    def test_independent_readback_rejects_mutated_reports(self):
+        import copy
+        _, report = evidence.run(runner=observations())
+        self.assertEqual(readback.validate(report)["native_matrix_cases_checked"], 20)
+        mutations = []
+        short = copy.deepcopy(report)
+        short["checks"].pop()
+        mutations.append(short)
+        bad_tool = copy.deepcopy(report)
+        bad_tool["checks"][0]["patched_stub_executor_reached"] = True
+        mutations.append(bad_tool)
+        bad_approval = copy.deepcopy(report)
+        target = next(x for x in bad_approval["checks"] if
+                      x["scenario_id"] == "h19-native-execution_arg_recheck")
+        target["patched_details"]["modified_approval_seen"] = False
+        mutations.append(bad_approval)
+        false_os = copy.deepcopy(report)
+        false_os["shell_execution_denial_verified"] = True
+        mutations.append(false_os)
+        forged_model = copy.deepcopy(report)
+        forged_model["real_model_evaluation"] = "PASS"
+        mutations.append(forged_model)
+        bad_os = copy.deepcopy(report)
+        bad_os["os_probe"]["network_egress_probe_denied"] = False
+        mutations.append(bad_os)
+        bad_verdict = copy.deepcopy(report)
+        bad_verdict["native_comparison_status"] = "FORGED_PASS"
+        mutations.append(bad_verdict)
+        duplicate = copy.deepcopy(report)
+        duplicate["checks"][0] = copy.deepcopy(duplicate["checks"][1])
+        mutations.append(duplicate)
+        for i, mutated in enumerate(mutations):
+            with self.subTest(mutation=i):
+                with self.assertRaises(readback.InvalidReceipt):
+                    readback.validate(mutated)
+
+    def test_readback_never_promotes_runtime_or_resident_to_go(self):
+        _, report = evidence.run(runner=observations())
+        for marker in ("resident_agent_allowed", "production_verified",
+                       "mcp_external_effect_denial_verified",
+                       "full_runtime_permission_enforcement_verified"):
+            changed = dict(report)
+            changed[marker] = True
+            with self.subTest(marker=marker):
+                with self.assertRaises(readback.InvalidReceipt):
+                    readback.validate(changed)
 
     def test_default_no_execution(self):
         with patch.object(evidence, "run") as real:
