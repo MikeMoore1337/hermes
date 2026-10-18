@@ -1,5 +1,6 @@
 # Owner-triggered Windows boot-time presence agent with least-privilege LocalService.
-# Requires elevated PowerShell and a MACHINE-WIDE Python installation.
+# Requires elevated PowerShell and a trusted owner Python 3.14, copied to
+# a private machine-local runtime so LocalService needs NO user profile access.
 # No Windows login, stored password, public WSS port or command execution.
 [CmdletBinding()]
 param(
@@ -55,15 +56,32 @@ switch ($Mode) {
             [IO.Path]::GetFileName($MachinePython) -ne 'python.exe') {
             throw 'MACHINE_PYTHON_PATH_REQUIRED'
         }
-        # Venv Python relies on its base interpreter: a per-user AppData
-        # installation cannot be assumed accessible to a boot-time LocalService.
-        $machineRoot = [IO.Path]::GetFullPath($env:ProgramFiles).TrimEnd('\') + '\'
+        # Only trust the owner's installed CPython or Program Files Python,
+        # never an arbitrary binary from Downloads, TEMP or untrusted share.
         $pythonPath = [IO.Path]::GetFullPath($MachinePython)
-        if (-not $pythonPath.StartsWith(
-            $machineRoot, [StringComparison]::OrdinalIgnoreCase)) {
-            throw 'MACHINE_WIDE_PYTHON_REQUIRED'
+        $userPython = [IO.Path]::GetFullPath(
+            (Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'Programs\Python')
+        ).TrimEnd('\') + '\'
+        $systemPython = [IO.Path]::GetFullPath($env:ProgramFiles).TrimEnd('\') + '\'
+        if (-not ($pythonPath.StartsWith($userPython, [StringComparison]::OrdinalIgnoreCase) -or
+                  $pythonPath.StartsWith($systemPython, [StringComparison]::OrdinalIgnoreCase))) {
+            throw 'UNTRUSTED_PYTHON_LOCATION'
         }
         Require-File $MachinePython
+        & $MachinePython -I -c 'import sys; assert sys.version_info[:2] == (3,14)'
+        if ($LASTEXITCODE -ne 0) { throw 'PYTHON_VERSION_NOT_SUPPORTED' }
+        $pythonRoot = Split-Path -Parent $pythonPath
+        foreach ($directory in @($pythonRoot, (Join-Path $pythonRoot 'Lib'),
+                                  (Join-Path $pythonRoot 'DLLs'))) {
+            $entry = Get-Item -LiteralPath $directory -Force -ErrorAction Stop
+            if (-not $entry.PSIsContainer -or
+                ($entry.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                throw 'UNTRUSTED_PYTHON_DIRECTORY'
+            }
+        }
+        foreach ($name in @('python314.dll', 'python.exe')) {
+            Require-File (Join-Path $pythonRoot $name)
+        }
         Require-File (Join-Path $source 'windows-pc.json')
         Require-File (Join-Path $source 'device_fabric\device_agent.py')
         $key = Join-Path ([Environment]::GetFolderPath('UserProfile')) '.ssh\hermes_presence_ed25519'
@@ -80,6 +98,49 @@ switch ($Mode) {
         # CRITICAL: protect ProgramData BEFORE copying tokens and private SSH
         # keys or installing wheels, including all existing files on Repair.
         # Applying ACLs only after pip is unsafe if preparation fails mid-way.
+        & icacls.exe $state /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-19:(OI)(CI)RX' /T | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw 'PRIVATE_ACL_FAILED' }
+
+        # Copy only the CPython runtime, NEVER the user's site-packages or
+        # Scripts. The service's venv points at this ProgramData copy and
+        # therefore remains usable before the owner signs in after reboot.
+        $runtime = Join-Path $state 'python-runtime'
+        $runtimePython = Join-Path $runtime 'python.exe'
+        if (Test-Path -LiteralPath $runtime) {
+            $runtimeInfo = Get-Item -LiteralPath $runtime -Force
+            if (-not $runtimeInfo.PSIsContainer -or
+                ($runtimeInfo.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                throw 'UNTRUSTED_STAGED_RUNTIME'
+            }
+        } else {
+            New-Item -ItemType Directory -Path $runtime -ErrorAction Stop | Out-Null
+        }
+        foreach ($name in @('python.exe', 'python314.dll', 'python3.dll',
+                             'vcruntime140.dll', 'vcruntime140_1.dll',
+                             'python314.zip')) {
+            $src = Join-Path $pythonRoot $name
+            if (Test-Path -LiteralPath $src) {
+                Require-File $src
+                Copy-Item -LiteralPath $src -Destination (Join-Path $runtime $name) -Force
+            }
+        }
+        foreach ($folder in @('Lib', 'DLLs')) {
+            $src = Join-Path $pythonRoot $folder
+            $dst = Join-Path $runtime $folder
+            New-Item -ItemType Directory -Path $dst -Force | Out-Null
+            $exclude = @()
+            if ($folder -eq 'Lib') {
+                $exclude = @('/XD', (Join-Path $src 'site-packages'))
+            }
+            # Robocopy skips junctions and symlinks (/XJ) and never uses MIR.
+            # Exit 0..7 is success/extra files; 8+ indicates an actual failure.
+            & robocopy.exe $src $dst /E /XJ /R:0 /W:0 /NFL /NDL /NJH /NJS /NP @exclude | Out-Null
+            if ($LASTEXITCODE -ge 8) { throw 'PYTHON_RUNTIME_COPY_FAILED' }
+        }
+        # This validation exercises SSL/socket/venv imports from a copy
+        # that does NOT have access to per-user third-party site-packages.
+        & $runtimePython -I -c 'import ssl, socket, venv, ensurepip'
+        if ($LASTEXITCODE -ne 0) { throw 'ISOLATED_PYTHON_RUNTIME_INVALID' }
         & icacls.exe $state /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-19:(OI)(CI)RX' /T | Out-Null
         if ($LASTEXITCODE -ne 0) { throw 'PRIVATE_ACL_FAILED' }
 
@@ -104,16 +165,20 @@ switch ($Mode) {
                 ($venvInfo.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
                 throw 'REPAIR_UNTRUSTED_VENV'
             }
-            # Incomplete venv is rebuilt from an approved machine-wide Python.
-            & $MachinePython -m venv --clear $venv
+            # Incomplete venv is rebuilt against the isolated staged runtime.
+            & $runtimePython -I -m venv --clear $venv
         } else {
             Copy-Item -LiteralPath (Join-Path $source 'device_fabric') -Destination (Join-Path $state 'device_fabric') -Recurse
             Copy-Item -LiteralPath (Join-Path $source 'windows-pc.json') -Destination $state
             Copy-Item -LiteralPath $key -Destination (Join-Path $state 'hermes_presence_ed25519')
             Copy-Item -LiteralPath $known -Destination (Join-Path $state 'hermes_presence_known_hosts')
-            & $MachinePython -m venv (Join-Path $state '.venv')
+            & $runtimePython -I -m venv (Join-Path $state '.venv')
         }
         if ($LASTEXITCODE -ne 0) { throw 'VENV_CREATION_FAILED' }
+        # Verify the venv's sys.base_prefix resolves under private ProgramData
+        # rather than relying on the user-profile Python at boot.
+        $cfg = Get-Content -LiteralPath (Join-Path $state '.venv\pyvenv.cfg') -Raw
+        if (-not $cfg.Contains($runtime)) { throw 'VENV_HOME_OUTSIDE_STATE' }
         & $venvPython -m pip install --isolated --no-input --only-binary=:all: --no-deps 'websockets==16.0'
         if ($LASTEXITCODE -ne 0) { throw 'WEBSOCKETS_SETUP_FAILED' }
         # PowerShell 5.1 strips inner double-quotes when passing -c to a

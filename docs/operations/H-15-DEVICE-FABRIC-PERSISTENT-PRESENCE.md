@@ -27,9 +27,10 @@ We do **not** use Windows S4U here: Microsoft documents its lack of network
 access. We do **not** run the task as SYSTEM or require an owner's login.
 `LocalService` has access only to an explicitly ACL-protected ProgramData
 copy of the Python client, WSS bundle and SSH key. Administrative rights are
-required only to install/remove the scheduled task. Windows must have a
-**machine-wide Python** executable accessible to LocalService; a per-user
-Python in AppData is not sufficient.
+required only to install/remove the scheduled task. The installer copies only CPython 3.14's runtime components from the already
+installed owner Python (including per-user AppData installs) into ACL-protected
+ProgramData. The new venv points only to this private local runtime, **not**
+to the user profile. No second/all-users Python install is necessary.
 
 ## Prerequisites - do not enable yet
 
@@ -44,8 +45,8 @@ Python in AppData is not sufficient.
   `hermes_presence_known_hosts`.
 - On Windows: the same owner-approved `$HOME\.hermes-device` for
   `windows-pc`; private SSH identity and pinned host key in `$HOME\.ssh`.
-  Machine-wide Python 3 with `venv` and `pip` installed. No sensitive
-  contents transferred to chat/GitHub.
+  Existing owner Python 3.14 with `venv` and `pip` installed is enough.
+  No sensitive contents transferred to chat/GitHub.
 - Use scripts **only from a verified GitHub Actions delivered main SHA**.
   Copy source-only install scripts over the existing trusted administrator
   channel. Review those scripts before elevated execution.
@@ -86,19 +87,21 @@ It preserves the private state for audit and manual reactivation.
 ## Windows (elevated PowerShell)
 
 Use the verified source-only `deploy/h15-device-fabric-windows-autostart.ps1`
-copied locally over a trusted channel. **Replace** the example machine-wide
-Python path with the actual installed `python.exe`. Installers may require
+copied locally over a trusted channel. Use the path to the owner's **already
+installed Python 3.14**, including its per-user AppData installation. Installers may require
 network access to fetch the pinned `websockets==16.0` wheel only during
 `Prepare`, never from the scheduled runtime task.
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\h15-device-fabric-windows-autostart.ps1 -Mode Prepare -MachinePython 'C:\Program Files\Python314\python.exe'
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\h15-device-fabric-windows-autostart.ps1 -Mode Prepare -MachinePython 'C:\Users\Mike\AppData\Local\Programs\Python\Python314\python.exe'
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\h15-device-fabric-windows-autostart.ps1 -Mode Status
 ```
 
 `Prepare` refuses existing installations, creates
 `%ProgramData%\HermesDevicePresence`, copies the approved source, device
-bundle and SSH materials, creates a fresh venv, validates `websockets==16.0`,
+bundle and SSH materials, stages only the existing CPython base runtime (not
+user site-packages) under a private ProgramData subtree, creates its venv from
+that local runtime, validates `websockets==16.0`,
 removes inherited ACLs and grants access only to SYSTEM, Administrators and
 read/execute to LocalService via language-neutral SIDs. It registers a disabled
 **AtStartup** task running the exact pinned binary as
@@ -138,18 +141,20 @@ installed in `$env:ProgramFiles`, run:
 
 ```powershell
 $script = Join-Path $HOME '.hermes-device\h15-device-fabric-windows-autostart.ps1'
-& $script -Mode Repair -MachinePython 'C:\Program Files\Python314\python.exe'
+& $script -Mode Repair -MachinePython 'C:\Users\Mike\AppData\Local\Programs\Python\Python314\python.exe'
 & $script -Mode Status
 ```
 
 `Repair` refuses to overwrite a registered task, rejects symlinked staging,
 checks private staged config/key/host file/source hashes against the working
-originals, recreates only the isolated venv with the new interpreter, and
+originals, copies only the base CPython runtime excluding user site-packages,
+recreates the isolated venv pointing at that runtime, and
 registers a task **disabled by default**. A mismatch requires manual review,
 not `Remove-Item -Recurse` of the working source or revocation of the live
-registration. A user-profile Python executable is now refused by preflight
-(`MACHINE_WIDE_PYTHON_REQUIRED`) because LocalService must start before
-interactive logon. Never call `Enable` before `WINDOWS_PERSISTENCE=PREPARED`
+registration. A Python installed under owner AppData is supported **as a
+source for the private ProgramData copy**, rather than being used directly
+by LocalService at startup. Unexpected Python directories (such as Temp or
+Downloads), mismatched Python versions and reparse points are refused. Never call `Enable` before `WINDOWS_PERSISTENCE=PREPARED`
 and credential ACL verification.
 
 Stop the interactive `--watch` Windows process before activation, then:
