@@ -44,7 +44,7 @@ class DailyAnalyticsTests(unittest.TestCase):
         ):
             self.assertIn(directive, service)
         for value in (
-            "scripts.h15_cloudflare_analytics_collect",
+            "control_center.cloudflare_analytics_runner",
             "/etc/hermes/cloudflare-analytics-read.token",
             "/etc/hermes/cloudflare-analytics-read.env",
         ):
