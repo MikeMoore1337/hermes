@@ -15,6 +15,7 @@ except ImportError:
     ConnectionClosed = Exception
 
 from device_fabric.read_only_agent import observe
+from device_fabric.device_agent import run_agent
 from device_fabric.owner_smoke import probe
 from device_fabric.presence import (AccessDenied, DeviceRegistry, DeviceStatusMCP,
                                     SecurePresenceRelay, MAX_MSG)
@@ -164,6 +165,47 @@ class PresenceWssTests(unittest.IsolatedAsyncioTestCase):
         state = self.registry.get_device_status('pilot-sim')
         self.assertEqual(state['status'], 'offline')
         self.assertIsNotNone(state['last_seen'])
+
+    async def test_real_two_device_agent_watch_and_clean_disconnect(self):
+        windows = self.pair('windows-pc')
+        linux = self.pair('linux-vps')
+        stop = asyncio.Event()
+        events = [asyncio.Event(), asyncio.Event()]
+        cert = (Path(self.temp.name) / 'cert.pem').read_text()
+        configs = [
+            {'endpoint': self.url, 'device_id': device, 'token': token,
+             'server_ca_pem': cert}
+            for device, token in [('windows-pc', windows), ('linux-vps', linux)]
+        ]
+        tasks = [
+            asyncio.create_task(run_agent(config, stop, heartbeat_interval=.06,
+                                          reconnect_delay=.05, connected=ev))
+            for config, ev in zip(configs, events)
+        ]
+        try:
+            await asyncio.wait_for(asyncio.gather(*(ev.wait() for ev in events)), 2)
+            self.assertEqual({d['status'] for d in self.registry.list_devices()}, {'online'})
+        finally:
+            stop.set()
+            self.assertEqual(await asyncio.wait_for(asyncio.gather(*tasks), 3), [0, 0])
+        for _ in range(30):
+            if {d['status'] for d in self.registry.list_devices()} == {'offline'}:
+                break
+            await asyncio.sleep(.05)
+        self.assertEqual({d['status'] for d in self.registry.list_devices()}, {'offline'})
+
+    async def test_revoked_device_never_accepts_new_heartbeat(self):
+        token = self.pair('windows-pc')
+        self.registry.revoke('windows-pc')
+        stop = asyncio.Event()
+        cert = (Path(self.temp.name) / 'cert.pem').read_text()
+        config = {'endpoint': self.url, 'device_id': 'windows-pc',
+                  'token': token, 'server_ca_pem': cert}
+        code = await asyncio.wait_for(
+            run_agent(config, stop, heartbeat_interval=.06,
+                      reconnect_delay=.05, max_attempts=3), 3)
+        self.assertEqual(code, 3)
+        self.assertEqual(self.registry.get_device_status('windows-pc')['status'], 'revoked')
 
     async def test_idle_timeout_and_read_only_mcp(self):
         token = self.pair('timed-out')
