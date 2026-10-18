@@ -129,7 +129,11 @@ class SenderTimerMonitoringTests(unittest.TestCase):
         service.assert_called_once()
         collector_run.assert_called_once_with(alerts_timer=GOOD,
                                                alerts_service={"failed":False},
-                                               infrastructure_dir=collector.INFRASTRUCTURE_ROOT)
+                                               infrastructure_dir=collector.INFRASTRUCTURE_ROOT,
+                                               quota_paths={"codex": collector.Q_CODEX,
+                                                            "desktop": collector.Q_DESKTOP,
+                                                            "cloudflare": collector.Q_CF,
+                                                            "github": collector.Q_GITHUB})
 
 
 if __name__=="__main__":
