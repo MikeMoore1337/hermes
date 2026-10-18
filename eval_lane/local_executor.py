@@ -59,6 +59,7 @@ class LocalBoundedExecutor:
     def _resources(job: dict) -> Callable[[], None]:
         limits = job["resource_limits"]
         def enforce() -> None:
+            os.umask(0o077)  # All child-created oracle logs/evidence remain private.
             # These are SECONDARY limits; container cgroups and network ACL
             # must be enforced by a separately approved OS policy.
             cpu = limits["cpu_seconds"]
@@ -121,9 +122,14 @@ class LocalBoundedExecutor:
             raise
         if status != 0:
             return {"outcome": "failed", "artifact_sha256": "0" * 64}
-        record = plan.output_dir / "observations.json"
-        if (not record.is_file() or record.is_symlink() or
-                not record.resolve().is_relative_to(plan.output_dir.resolve())
+        root = plan.output_dir
+        if (not root.is_dir() or root.is_symlink() or root.is_junction()
+                or not root.resolve().is_relative_to(self.evidence_root.resolve())
+                or root.stat().st_mode & 0o077):
+            raise AdmissionDenied("execution_evidence_root_unsafe")
+        record = root / "observations.json"
+        if (not record.is_file() or record.is_symlink() or record.is_junction()
+                or not record.resolve().is_relative_to(self.evidence_root.resolve())
                 or record.stat().st_size > job["resource_limits"]["output_bytes"]):
             raise AdmissionDenied("execution_evidence_missing_or_unbounded")
         return {"outcome": "succeeded",
