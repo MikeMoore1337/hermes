@@ -207,3 +207,53 @@ and independently authorised live source smoke + relevant alert receipt.
 Keep #295 OPEN if any externally privileged step remains unverified. H-01
 #33 stays untouched, and the separate #271 Codex admission policy remains
 fail-closed.
+
+
+## Production incident — 18 October 2026: Ops Watch split-root imports
+
+**Observed on owner VPS**: `hermes-ops-watch.timer` enabled/active, but the
+one-shot `hermes-ops-watch.service` failed (`Result=exit-code`,
+`ExecMainStatus=1`) before creating any `quota_*` incident. The import
+traceback reported `ModuleNotFoundError: No module named 'control_center'`
+from `ops_watch/quota_alerts.py`. The production deploy intentionally
+places the Ops Watch Python package at
+`/opt/hermes-agent-owner/ops_watch`, but places the Control Center
+Python package at `/opt/hermes-control-center/current/control_center`;
+a full-repository CI checkout obscured that production topology.
+
+**Fix**: the quota observer imports its read-only Control Center adapter
+from the immutable, root-owned, SHA-pinned Control Center release only if
+the canonical monorepo import is unavailable. It verifies exact release
+path, same-SHA Hermes owner release, and non-writable root-owned source
+paths. An untrusted or missing release fails closed rather than importing
+arbitrary Python. No `PYTHONPATH` injection, handler installation, new
+systemd overrides, inference, or resident-agent change.
+
+**Readback after the *new exact-SHA* production deploy** (read-only):
+
+```bash
+systemctl show hermes-ops-watch.service \
+  -p Result -p ExecMainStatus -p ExecMainStartTimestamp \
+  -p ExecMainExitTimestamp --no-pager
+cd /opt/hermes-agent-owner
+/usr/bin/python3 - <<'PY'
+from ops_watch.quota_alerts import observe
+for provider, state in sorted(observe().items()):
+    print(f"{provider}={state}")
+PY
+```
+
+Let the already enabled `hermes-ops-watch.timer` execute normally.
+Then verify the real collector returns `Result=success`, and read
+`events` joined to `delivery_receipts` in the existing
+`/var/lib/hermes-agent/ops-watch/incidents.sqlite3` using SQLite
+`mode=ro`. A new `ops:quota_desktop_exhausted` incident is expected
+**only if** the fresh desktop snapshot still reports `exhausted` when
+the collector runs and is not already a persisted active incident.
+Delivery is confirmed only by a persisted acknowledged receipt whose
+event fingerprint matches that quota incident. The queue has no synthetic
+quota rows from this repair.
+
+Do not reset timers, inject test incidents, run a Telegram sender manually,
+or alter the unrelated H-01 burn-in. Missing Cloudflare Billing Read and
+GitHub quota collector credentials remain independent owner gates.
