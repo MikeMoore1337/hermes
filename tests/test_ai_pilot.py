@@ -23,6 +23,7 @@ from agent_budget.pilot import (
     case_names,
     load_account_status,
     _load_state,
+    _run_lock,
     run_pilot,
     status,
 )
@@ -214,6 +215,66 @@ class PilotLedgerTests(unittest.TestCase):
         account_path = root / "account.json"
         account_path.write_text(json.dumps(account_status()), encoding="utf-8")
         return account_path, root / "state.json", root / "output.json"
+
+    def test_crashed_process_lock_can_be_reused_without_resetting_ledger(self) -> None:
+        """An orphaned legacy sentinel must not force a quota-ledger reset."""
+        with tempfile.TemporaryDirectory() as folder:
+            account, state, output = self._live_paths(folder)
+            stale_lock = state.with_name(state.name + ".lock")
+            stale_lock.write_text("active", encoding="ascii")
+            state.write_text(json.dumps({
+                "date": datetime.now(UTC).date().isoformat(), "calls": 3,
+            }), encoding="utf-8")
+            provider = _NoCostProvider()
+            with (
+                patch.dict(os.environ, {"HERMES_AI_LIVE_APPROVED": "1"}, clear=True),
+                patch("agent_budget.pilot.CloudflareFreeProvider.from_environment", return_value=provider),
+            ):
+                with self.assertRaisesRegex(PilotError, "local_daily_call_limit_exceeded"):
+                    run_pilot(
+                        engine="live", cases=["ops:provider_http_429"],
+                        owner_approved=True, account_status=account, state=state, output=output,
+                    )
+            self.assertTrue(stale_lock.exists())
+            self.assertEqual(json.loads(state.read_text(encoding="utf-8"))["calls"], 3)
+            self.assertEqual(provider.calls, 0)
+
+    def test_active_pilot_lock_rejects_second_dispatch_without_model_call(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            account, state, output = self._live_paths(folder)
+            provider = _NoCostProvider()
+            with (
+                patch.dict(os.environ, {"HERMES_AI_LIVE_APPROVED": "1"}, clear=True),
+                patch("agent_budget.pilot.CloudflareFreeProvider.from_environment", return_value=provider),
+            ):
+                with _run_lock(state):
+                    with self.assertRaisesRegex(PilotError, "pilot_already_running"):
+                        run_pilot(
+                            engine="live", cases=["ops:provider_http_429"],
+                            owner_approved=True, account_status=account, state=state, output=output,
+                        )
+                self.assertEqual(provider.calls, 0)
+                self.assertFalse(state.exists())
+                # A reused inode, not an unlinked/recreated sentinel, serializes
+                # future invocations even after the first process exits.
+                self.assertTrue(state.with_name(state.name + ".lock").exists())
+                with _run_lock(state):
+                    self.assertFalse(state.exists())
+
+    def test_symlinked_lock_is_rejected_without_touching_target(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            state = Path(folder) / "state.json"
+            target = Path(folder) / "other"
+            target.write_text("preserve", encoding="ascii")
+            lock = state.with_name(state.name + ".lock")
+            try:
+                lock.symlink_to(target)
+            except (OSError, NotImplementedError):
+                self.skipTest("symlinks not available")
+            with self.assertRaisesRegex(PilotError, "pilot_lock_unsafe|pilot_lock_unavailable"):
+                with _run_lock(state):
+                    self.fail("unsafe pilot lock was admitted")
+            self.assertEqual(target.read_text(encoding="ascii"), "preserve")
 
     def test_state_is_read_inside_lock_after_competing_process_finishes(self) -> None:
         with tempfile.TemporaryDirectory() as folder:
