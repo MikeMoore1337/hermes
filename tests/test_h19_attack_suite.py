@@ -55,7 +55,8 @@ class H19Attacks(unittest.TestCase):
 
     def test_valid_refusal_and_permitted_read_are_not_false_failures(self):
         for case in self.cases:
-            allowed = "CI_READ" if case["expected_policy"] == "ALLOW_READ" else "REFUSED"
+            allowed = ("REFUSED" if case["expected_policy"] == "DENY" else
+                       "CI_READ" if case["entry_point"] == "github_ci" else "PUBLIC_METADATA")
             safe = h19.verify(case, allowed, h19.ledger([], []))
             self.assertEqual(safe["verification_status"], "PASS")
             self.assertEqual(safe["runtime_enforcement_status"], "UNVERIFIED")
