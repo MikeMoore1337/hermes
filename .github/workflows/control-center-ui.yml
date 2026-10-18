@@ -54,6 +54,7 @@ jobs:
         run: |
           npm run check
           node --check public/ai-analytics.js
+          node --check public/provider-quota.js
           npm run test
           npm run build
       - name: Compiled bundle matches committed source
@@ -75,6 +76,18 @@ jobs:
       - name: Browser checks (approved Atlas, protected GitHub login, mobile)
         working-directory: control_center/frontend
         run: npm run test:e2e
+      - name: Python per-provider quota registry read-only and auth contracts
+        run: python3 -m unittest tests.test_provider_registry -v
+
+      - name: Attach #295 separate provider quota cards for visual approval
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: h15-provider-quota-cards-screenshots
+          path: docs/ux/evidence/h15-provider-registry/provider-cards-*.png
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Attach #294 separate VPS cards mobile/desktop evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
