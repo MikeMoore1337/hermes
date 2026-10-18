@@ -92,6 +92,27 @@ class FourPaperAuditTests(unittest.TestCase):
         self.assertEqual(ironman["audit_state"],
                          "CROSSREF_PUBLISHER_DISAGREEMENT_REVIEW_REQUIRED")
 
+    def test_retraction_in_other_paper_is_hold_not_ordinary_manual_review(self):
+        affected = "10.1002/ejsc.70246"
+        def inspector(doi):
+            if doi != affected:
+                return normal(doi)
+            row = source(doi)
+            row["status"] = "REVIEW_REQUIRED"
+            row["notices"] = [{
+                "doi": "10.1000/retraction-1",
+                "notice_type": "RETRACTION_OR_WITHDRAWAL_NOTICE",
+                "published": "2026-10-17",
+                "source": "CROSSREF_REVERSE_UPDATE_METADATA",
+            }]
+            row["notice_codes"] = ["RETRACTION_OR_WITHDRAWAL_NOTICE"]
+            return row
+        r = audit.review(now=NOW, inspector=inspector)
+        item = next(x for x in r["results"] if x["doi"] == affected)
+        self.assertEqual(item["status"], "HOLD")
+        self.assertEqual(item["audit_state"], "CROSSREF_REVIEW_REQUIRED")
+        self.assertFalse(item["scientific_claims_verified"])
+
     def test_partial_missing_sources_do_not_stop_remaining_lookups(self):
         calls = []
         def inspector(doi):
@@ -103,6 +124,8 @@ class FourPaperAuditTests(unittest.TestCase):
         self.assertEqual(len(calls), 4)
         self.assertEqual(sum(x["audit_state"] == "UNKNOWN" for x in r["results"]), 1)
         self.assertTrue(all(x["status"] in ("HOLD","MANUAL_REVIEW") for x in r["results"]))
+        self.assertTrue(all(x["status"] == "HOLD" for x in r["results"]
+                            if x["audit_state"] == "UNKNOWN"))
 
     def test_invalid_upstream_metadata_never_shown_as_clean(self):
         for changed in (
