@@ -16,6 +16,7 @@ ROOT = Path("/var/lib/hermes-control-center/infrastructure")
 HOSTS = {"hermes": "VPS Hermes", "yfc": "VPS YFC"}
 SCHEMA = 1
 STALE_AFTER = dt.timedelta(minutes=3)
+OFFLINE_AFTER = dt.timedelta(minutes=15)
 MAX_FUTURE = dt.timedelta(seconds=30)
 RETENTION_DAYS = 30
 
@@ -267,6 +268,8 @@ def _validated(raw: object, host: str, now: dt.datetime) -> dict:
     date = dt.datetime.fromisoformat(str(raw["observed_at"]).replace("Z", "+00:00"))
     if date.tzinfo is None or date - now > MAX_FUTURE:
         raise ValueError("invalid timestamp")
+    # Keep all stored and compared keys in the same UTC lexical ordering.
+    canonical_time = date.astimezone(dt.timezone.utc).isoformat().replace("+00:00", "Z")
     m = raw.get("metrics")
     if not isinstance(m, dict):
         raise ValueError("invalid metrics")
@@ -288,9 +291,15 @@ def _validated(raw: object, host: str, now: dt.datetime) -> dict:
         "disk_total_bytes", "disk_used_bytes", "load1", "load5", "load15",
         "uptime_seconds", "cpu_cores", "inode_used_percent")}
     if any(v is not None and (not isinstance(v, (int, float))
-                             or isinstance(v, bool) or not 0 <= v < 10**18)
+                             or isinstance(v, bool) or not math.isfinite(v)
+                             or not 0 <= v < 10**18)
            for v in safe.values()):
         raise ValueError("invalid metric")
+    if safe["inode_used_percent"] is not None and safe["inode_used_percent"] > 100:
+        raise ValueError("invalid inode percent")
+    if safe["cpu_cores"] is not None and (
+            not isinstance(safe["cpu_cores"], int) or not 1 <= safe["cpu_cores"] <= 4096):
+        raise ValueError("invalid cpu core count")
     net = m.get("network_rates", {})
     if not isinstance(net, dict) or len(net) > 24:
         raise ValueError("invalid network rates")
@@ -309,8 +318,9 @@ def _validated(raw: object, host: str, now: dt.datetime) -> dict:
     safe["network_rates"] = cleaned_net
     return {
         "host": host, "name": HOSTS[host],
-        "status": "stale" if now - date > STALE_AFTER else "online",
-        "observed_at": raw["observed_at"], "metrics": safe,
+        "status": "offline" if now - date > OFFLINE_AFTER else
+                  "stale" if now - date > STALE_AFTER else "online",
+        "observed_at": canonical_time, "metrics": safe,
     }
 
 
