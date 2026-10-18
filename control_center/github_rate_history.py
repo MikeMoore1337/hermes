@@ -62,7 +62,12 @@ def append(snapshot: dict, path: Path = DB, *, group: str | None = None) -> None
     os.chmod(path,0o640)
     if group:
         import grp
-        os.chown(path,0,grp.getgrnam(group).gr_gid)
+        # The SQLite file is created under the configured systemd Group.
+        # Do not request CAP_CHOWN from a sandboxed collector.
+        expected_gid=grp.getgrnam(group).gr_gid
+        owner=path.lstat()
+        if owner.st_uid!=os.geteuid() or owner.st_gid!=expected_gid:
+            raise HistoryUnavailable("unsafe_history_group")
 
 
 def read(path: Path = DB, *, resource: str, days: int = 7,
