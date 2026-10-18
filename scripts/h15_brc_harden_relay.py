@@ -30,6 +30,8 @@ PATCHED = """    // Reject URI device tokens even when a valid Authorization hea
 
 
 def apply(root: Path, *, sha: str = UPSTREAM_SHA) -> dict[str, object]:
+    if sha != UPSTREAM_SHA:
+        raise AuditError("unreviewed_upstream_sha")
     evaluate(root, sha=sha)
     path = root / RELAY
     if path.is_symlink() or not path.is_file() or path.stat().st_size > 250_000:
