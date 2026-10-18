@@ -75,3 +75,47 @@ for(const width of [320,393,1440]){
    await expect(region).toBeHidden();
  });
 }
+
+test("GitHub configured token has two separately measured history windows",async({page})=>{
+  await page.setViewportSize({width:393,height:850});
+  await setup(page);
+  const current={...data,providers:data.providers.map(p=>p.id!=="github_api"?p:{
+    ...p,status:"low",source_kind:"official_api",
+    notes:"per_token_rate_limit_collected",observed_at:moment,
+    windows:[{
+      metric:"core",label:"API core",unit:"requests",
+      quota_limit:5000,used:100,remaining:4900,
+      used_percent:2,remaining_percent:98,reset_at_utc:moment,source_kind:"official_api"
+    },{
+      metric:"search",label:"API search",unit:"requests",
+      quota_limit:30,used:29,remaining:1,
+      used_percent:96.67,remaining_percent:3.33,
+      reset_at_utc:moment,source_kind:"official_api"
+    }]
+  })};
+  await page.route("**/api/providers/registry",route=>route.fulfill({
+    status:200,contentType:"application/json",body:JSON.stringify(current)
+  }));
+  await page.route("**/api/providers/registry/history?*",route=>{
+    const query=new URL(route.request().url()).searchParams;
+    const resource=query.get("resource");
+    return route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({
+      schema:1,resource,days:7,points:[
+        {at:new Date(Date.now()-600000).toISOString(),
+         remaining_percent:resource==="core"?90:55},
+        {at:moment,remaining_percent:resource==="core"?98:3.33}
+      ]
+    })});
+  });
+  await page.goto("/");
+  await page.getByRole("button",{name:"Квоты и инструменты"}).click();
+  const github=page.locator('.quota295-card[data-provider="github_api"]');
+  await expect(github.getByText(/Фактически использовано: 29/)).toBeVisible();
+  await expect(github.locator("[role=progressbar]")).toHaveCount(2);
+  await github.locator("summary").click();
+  await expect(github.locator(".quota295-chart polyline")).toHaveAttribute("points",/\d/);
+  const first=await github.locator(".quota295-chart polyline").getAttribute("points");
+  await github.getByLabel("Отдельный ресурс GitHub API").selectOption("search");
+  await expect(github.locator(".quota295-chart polyline")).not.toHaveAttribute("points",first);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1)).toBe(false);
+});
