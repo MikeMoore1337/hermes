@@ -50,6 +50,11 @@ ss -lntp '( sport = :38177 )'
 systemctl show hermes-device-fabric-pilot.service -p Result -p ExecMainStatus -p ActiveState
 ```
 
+The one-shot `smoke` now waits up to 3 seconds after the agent closes its
+WebSocket for the service to persist the `Offline` status. This is an
+eventual-consistency check, not a fixed sleep and not a relaxation of the
+acceptance condition; failure to disconnect still fails the smoke.
+
 `prepare` installs only on the owner VPS and does NOT start the service. `enable` starts the service, `smoke` verifies an actual TLS connection + heartbeat + offline transition. If any operation fails, do not claim live success and review *sanitized* exit diagnostics; never post tokens, cert private keys or OAuth callbacks to Issues or chat.
 
 Expected proof: `PILOT_PREPARED=YES`, `PILOT_SERVICE=ACTIVE`, `WSS_TLS_HANDSHAKE=PASS`, `PILOT_HEARTBEAT=PASS`, `PILOT_OFFLINE_AFTER_DISCONNECT=PASS`, `REMOTE_COMMAND_EXECUTION=NOT_IMPLEMENTED`; `ss` must show only `127.0.0.1:38177` and **must not** show a public `0.0.0.0` listener. Agent can be Offline after one-shot smoke: this is intentional.

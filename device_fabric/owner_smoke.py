@@ -30,6 +30,24 @@ def provision(registry: DeviceRegistry, token_path: Path) -> None:
     print("PILOT_IDENTITY=created")
 
 
+async def wait_for_offline(registry: DeviceRegistry, *, timeout: float = 3.0) -> None:
+    """Wait for the server's asynchronous session cleanup, not just client close.
+
+    A successful client WebSocket close returns before the server has necessarily
+    committed the final offline update to SQLite. This is bounded and fail-closed.
+    """
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while True:
+        status = registry.get_device_status("pilot-sim")
+        if status["status"] == "offline" and status["last_seen"] is not None:
+            return
+        remaining = deadline - loop.time()
+        if remaining <= 0:
+            raise RuntimeError("pilot_did_not_disconnect")
+        await asyncio.sleep(min(0.05, remaining))
+
+
 async def probe(registry: DeviceRegistry, token_path: Path, cert: Path, port: int) -> None:
     token = token_path.read_text().strip()
     if not registry.authenticated("pilot-sim", token):
@@ -53,9 +71,7 @@ async def probe(registry: DeviceRegistry, token_path: Path, cert: Path, port: in
     finally:
         stop.set()
         await asyncio.wait_for(task, timeout=4)
-    status = registry.get_device_status("pilot-sim")
-    if status["status"] != "offline" or status["last_seen"] is None:
-        raise RuntimeError("pilot_did_not_disconnect")
+    await wait_for_offline(registry, timeout=3.0)
     print("WSS_TLS_HANDSHAKE=PASS")
     print("PILOT_HEARTBEAT=PASS")
     print("PILOT_OFFLINE_AFTER_DISCONNECT=PASS")

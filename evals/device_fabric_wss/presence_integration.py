@@ -15,6 +15,7 @@ except ImportError:
     ConnectionClosed = Exception
 
 from device_fabric.read_only_agent import observe
+from device_fabric.owner_smoke import probe
 from device_fabric.presence import (AccessDenied, DeviceRegistry, DeviceStatusMCP,
                                     SecurePresenceRelay, MAX_MSG)
 
@@ -153,6 +154,16 @@ class PresenceWssTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['type'], 'welcome')
         with self.assertRaises(asyncio.TimeoutError):
             await asyncio.wait_for(other.recv(), .04)
+
+    async def test_owner_smoke_checks_real_handshake_heartbeat_and_offline(self):
+        token = self.pair('pilot-sim')
+        token_path = Path(self.temp.name) / 'pilot-token'
+        token_path.write_text(token, encoding='utf-8')
+        await probe(self.registry, token_path,
+                    Path(self.temp.name) / 'cert.pem', self.hub.port)
+        state = self.registry.get_device_status('pilot-sim')
+        self.assertEqual(state['status'], 'offline')
+        self.assertIsNotNone(state['last_seen'])
 
     async def test_idle_timeout_and_read_only_mcp(self):
         token = self.pair('timed-out')
