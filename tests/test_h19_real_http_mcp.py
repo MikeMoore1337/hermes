@@ -17,7 +17,7 @@ def packet(mode="original"):
         "sdk_available": True,
         "server_bound_loopback": True,
         "transport": "http_streamable",
-        "registered_tools": 2,
+        "registered_tools": 3,
         "read_result_valid": True,
         "read_wire_after_allowed": 1,
         "write_wire_after_denial": 0,
@@ -27,6 +27,10 @@ def packet(mode="original"):
         "read_wire_after_scope_deny": 2 if upstream else 1,
         "write_wire_after_scope_deny": 2 if upstream else 1,
         "write_marker_after_scope_deny": upstream,
+        "spoofed_read_wire_after_denial": 1,
+        "spoofed_read_marker_after_denial": True,
+        "spoofed_read_prompt_calls": 0,
+        "spoofed_read_result_valid": True,
         "external_mcp_called": False,
         "real_model_called": False,
         "resident_agent_allowed": False,
@@ -63,6 +67,9 @@ class HttpMCPPolicyTests(unittest.TestCase):
             "model_tools.handle_function_call(",
             "request_elicitation_consent",
             "marker.write_text(",
+            "spoof_marker.write_text(",
+            "read_only_hint=True, destructive_hint=False",
+            'inbound_names.count("disguised")',
         ):
             self.assertIn(part, probe)
         self.assertNotIn("https://", probe)
@@ -75,6 +82,8 @@ class HttpMCPPolicyTests(unittest.TestCase):
         self.assertEqual(b["status"], "PASS")
         self.assertTrue(a["observations"]["write_marker_after_scope_deny"])
         self.assertFalse(b["observations"]["write_marker_after_scope_deny"])
+        self.assertTrue(a["observations"]["spoofed_read_marker_after_denial"])
+        self.assertTrue(b["observations"]["spoofed_read_marker_after_denial"])
 
     def test_mutations_of_all_critical_wire_or_permission_signals_fail(self):
         for mode in ("original", "patched"):
@@ -90,6 +99,10 @@ class HttpMCPPolicyTests(unittest.TestCase):
                 ("read_wire_after_scope_deny", 0),
                 ("write_wire_after_scope_deny", 0),
                 ("write_marker_after_scope_deny", mode != "original"),
+                ("spoofed_read_wire_after_denial", 0),
+                ("spoofed_read_marker_after_denial", False),
+                ("spoofed_read_prompt_calls", 1),
+                ("spoofed_read_result_valid", False),
             )
             for field, value in cases:
                 altered = packet(mode)
@@ -158,6 +171,7 @@ class HttpMCPPolicyTests(unittest.TestCase):
                       runner.call_args_list[-1].args[0])
         self.assertFalse(report["resident_agent_allowed"])
         self.assertFalse(report["full_resident_runtime_verified"])
+        self.assertTrue(report["untrusted_annotation_spoof_gap_observed"])
 
     def test_false_patch_deny_causes_fail_and_readback_rejects_lies(self):
         bad = packet("patched")
@@ -189,6 +203,7 @@ class HttpMCPPolicyTests(unittest.TestCase):
             ("resident_agent_allowed", True),
             ("full_external_mcp_enforcement_verified", True),
             ("real_model_evaluation", "PASS"),
+            ("untrusted_annotation_spoof_gap_observed", False),
             ("patched_derivative_id", "sha256:" + "0" * 10),
             ("upstream_stamp", "forged"),
         ):
