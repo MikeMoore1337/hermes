@@ -155,14 +155,35 @@ test("session probe errors fail closed without showing protected dashboard",asyn
  await expect(page.getByRole("table")).toHaveCount(0);
 });
 
+test("server bootstrapped GitHub login paints without waiting for auth API",async({page})=>{
+ let authRequests=0;
+ await page.route("**/api/auth/session",route=>{
+  authRequests++;
+  return route.abort();
+ });
+ await page.route("http://127.0.0.1:9133/",async route=>{
+  const response=await route.fetch();
+  const html=(await response.text()).replace('<div id="root"></div>',
+    '<div id="root" data-auth-mode="github" data-authenticated="false"></div>');
+  await route.fulfill({response,body:html});
+ });
+ await page.goto("/");
+ await expect(page.getByRole("heading",{name:"Вход в систему"})).toBeVisible();
+ await expect(page.getByRole("link",{name:/Войти через GitHub/})).toBeVisible();
+ expect(authRequests).toBe(0);
+ await expect(page.getByRole("button",{name:"Устройства"})).toHaveCount(0);
+});
+
 test("owner GitHub session can log out and loses snapshot view",async({page})=>{
+ let loggedIn=true;
  await page.route("**/api/auth/session",route=>route.fulfill({
   status:200,contentType:"application/json",
-  body:JSON.stringify({mode:"github",authenticated:true})}));
+  body:JSON.stringify({mode:"github",authenticated:loggedIn})}));
  await mock(page);
  let logoutCalled=0;
  await page.route("**/auth/logout",route=>{
   logoutCalled++;
+  loggedIn=false;
   expect(route.request().method()).toBe("POST");
   return route.fulfill({status:204,body:""});
  });
