@@ -49,6 +49,28 @@ def base(infrastructure):
 
 
 class ResourceAlertTests(unittest.TestCase):
+    def test_protected_root_is_not_misreported_as_two_vps_outages(self):
+        # Production's non-root isolated preflight cannot traverse the
+        # real root:hermes-control 0750 directory; it is not a live outage.
+        with patch("ops_watch.infrastructure_alerts.os.scandir",
+                   side_effect=PermissionError("PRIVATE dir")):
+            state = observe(Path("/var/lib/hermes-control-center/infrastructure"),
+                            now=NOW)
+        self.assertEqual(state, {
+            "hermes": {"status": "not_connected"},
+            "yfc": {"status": "not_connected"},
+        })
+        self.assertEqual(analyze(base(state), now=NOW), [])
+
+    def test_readable_directory_with_corrupt_snapshot_still_reports_an_issue(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "hermes.json"
+            path.write_text("{SECRET_TOKEN:redacted")
+            state = observe(Path(tmp), now=NOW)
+            self.assertEqual(state["hermes"]["status"], "unknown")
+            self.assertEqual({x["code"] for x in analyze(base(state), now=NOW)},
+                             {"infra_hermes_unavailable"})
+
     def test_missing_yfc_has_no_fabricated_incident(self):
         with tempfile.TemporaryDirectory() as tmp:
             report = observe(Path(tmp), now=NOW)
