@@ -53,7 +53,7 @@ EXPLANATIONS = {
         "design": "Анализ наблюдательного международного регистра IRONMAN, без рандомизации активности",
         "comparison": "Группы по региону и самоидентифицированной расе, по данным наблюдения",
         "finding": "58-63% соответствовали аэробным рекомендациям, 19-23% - силовым; исправленная медиана умеренной активности около 150 минут в неделю",
-        "limits": "Самоотчёт, возможные смешивающие факторы, без причинного вывода об эффективности лечения",
+        "limits": "Самоотчёт; 2485 из 4538 участников предоставили данные активности, различия между ответившими и остальными; частота силовых занятий выведена косвенно из минут (15 минут за сессию). Вывод о причинной эффективности лечения невозможен",
         "application": "Статистика участия в активности, не доказательство эффективности лечения",
         "confirmed": "N=2485, наблюдательный характер; отдельно опубликовано исправление 50 на 150 минут",
         "unconfirmed": "Эффективность тренировок для онкологических исходов",
@@ -117,6 +117,44 @@ FIELD_FACT_IDS: dict[str, dict[str, tuple[str, ...]]] = {
 }
 CORRECTION_FACT_IDS = frozenset({"F6", "F7", "F8"})
 IRONMAN_CORRECTION_URL = "https://link.springer.com/article/10.1007/s00520-026-11294-6"
+IRONMAN_CORRECTION_DOI = "10.1007/s00520-026-11294-6"
+IRONMAN_ORIGINAL_URL = "https://link.springer.com/article/10.1007/s00520-026-11251-3"
+# Exactly two additional limitations observed in the publisher's Methods and
+# Results. Not an expert risk-of-bias assessment of the full study or dataset.
+IRONMAN_PUBLISHER_METHOD_FACTS = {
+    "P1": (
+        "Of 4538 IRONMAN registry participants, 2485 answered at least one "
+        "activity questionnaire; responders differed from nonresponders "
+        "in baseline characteristics.",
+        "Results / participant flow",
+    ),
+    "P2": (
+        "Resistance training frequency was not recorded directly by the "
+        "questionnaire; the authors approximated weekly sessions using "
+        "a threshold of 15 minutes per session.",
+        "Measurements and procedures / physical activity levels",
+    ),
+}
+
+
+def _ironman_method_reference(
+    pmid: str, article_doi: str, fact_id: str,
+) -> dict[str, object]:
+    if pmid != "42771055" or fact_id not in IRONMAN_PUBLISHER_METHOD_FACTS:
+        raise ValueError("publisher_method_source_not_allowlisted")
+    summary, section = IRONMAN_PUBLISHER_METHOD_FACTS[fact_id]
+    return {
+        "id": fact_id, "pmid": pmid, "doi": article_doi,
+        "source_doi": article_doi,
+        "source_type": "PUBLISHER_FULL_TEXT_SECTION",
+        "source_url": IRONMAN_ORIGINAL_URL,
+        "source_section": section,
+        "supporting_paraphrase": summary,
+        "evidence_completeness": "SELECTED_FULL_TEXT_SECTION_ONLY",
+        "review_status": "NEEDS_EXPERT_REVIEW",
+        "scientifically_approved": False,
+    }
+
 
 
 def _fact_reference(pmid: str, doi: str, fact_id: str, fact: str,
@@ -124,6 +162,10 @@ def _fact_reference(pmid: str, doi: str, fact_id: str, fact: str,
     corrected = pmid == "42771055" and fact_id in CORRECTION_FACT_IDS
     return {
         "id": fact_id, "pmid": pmid, "doi": doi,
+        # Keep the historical "doi" field as the original *article* DOI;
+        # source_doi uniquely identifies the supporting document. A notice
+        # is a separate publication with its own DOI.
+        "source_doi": IRONMAN_CORRECTION_DOI if corrected else doi,
         "source_type": "PUBLISHER_CORRECTION" if corrected else "CURATED_PUBLIC_ABSTRACT",
         "source_url": IRONMAN_CORRECTION_URL if corrected else abstract_url,
         "supporting_paraphrase": fact,
@@ -150,6 +192,11 @@ def _field_evidence(pmid: str, doi: str, url: str,
         evidence[field] = [
             _fact_reference(pmid, doi, fid, facts[fid], url) for fid in ids
         ]
+        if pmid == "42771055" and field == "limits":
+            evidence[field] += [
+                _ironman_method_reference(pmid, doi, fid)
+                for fid in ("P1", "P2")
+            ]
     return evidence
 
 
@@ -168,7 +215,7 @@ def curated_reports() -> list[dict[str, Any]]:
             "publication_date": published, "doi": doi, "url": url,
             "study_type": design, "sample_size": sample,
             "status": status, "review_status": "NEEDS_EXPERT_REVIEW",
-            "evidence_basis": "CURATED_PUBLIC_ABSTRACT_NOT_FULL_TEXT",
+            "evidence_basis": "CURATED_PUBLIC_ABSTRACT_AND_SCOPED_PUBLISHER_NOTES",
             "effect_size": "NOT_REPORTED_IN_CURATED_ABSTRACT",
             "statistical_uncertainty": "NOT_ASSESSED_FROM_FULL_TEXT",
             "causal_conclusion": "NOT_ESTABLISHED_BY_THIS_REVIEW",
