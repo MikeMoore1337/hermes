@@ -20,6 +20,7 @@ from control_center.infrastructure import (
 )
 from control_center.cloudflare_billing import OUTPUT as CLOUDFLARE_BILLING_OUTPUT
 from control_center.github_rate_limit import OUTPUT as GITHUB_RATE_LIMIT_OUTPUT
+from control_center.github_rate_history import DB as GITHUB_HISTORY_DB, read as read_github_rate_history
 from control_center.provider_registry import registry as provider_quota_registry
 from control_center.snapshot import DEFAULT_OUTPUT
 from control_center.codex_usage import DEFAULT_OUTPUT as CODEX_OUTPUT, read_snapshot, UsageError
@@ -78,6 +79,7 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
                  desktop_commander_path: Path = DC_OUTPUT,
                  cloudflare_billing_path: Path = CLOUDFLARE_BILLING_OUTPUT,
                  github_rate_limit_path: Path = GITHUB_RATE_LIMIT_OUTPUT,
+                 github_history_path: Path = GITHUB_HISTORY_DB,
                  infrastructure_dir: Path = INFRA_ROOT,
                  auth_config: AuthConfig | None = None, oauth_service: OAuthService | None = None):
     config = auth_config if auth_config is not None else AuthConfig.from_env()
@@ -199,8 +201,36 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
                 "/control-center/api/providers/desktop-commander/history",
                 "/api/infrastructure/history",
                 "/control-center/api/infrastructure/history",
+                "/api/providers/registry/history",
+                "/control-center/api/providers/registry/history",
             ) and not (path == "/" and parsed.query == "preview=login"):
                 return self.respond(404, "text/plain", b"Not found")
+            if path in ("/api/providers/registry/history",
+                         "/control-center/api/providers/registry/history"):
+                if config.mode == "github" and not oauth.authenticated(
+                        self._cookie(SESSION_COOKIE)):
+                    return self.respond(401, "application/json",
+                                        b'{"error":"authentication_required"}')
+                try:
+                    q = parse_qs(parsed.query,keep_blank_values=True,
+                                 strict_parsing=True,max_num_fields=2)
+                    if set(q) != {"resource", "days"} or any(
+                            len(values) != 1 for values in q.values()):
+                        raise ValueError("parameters")
+                    resource,days=q["resource"][0],q["days"][0]
+                    from control_center.github_rate_limit import RESOURCES
+                    if resource not in RESOURCES or days not in ("1", "7", "30"):
+                        raise ValueError("filters")
+                    data=read_github_rate_history(github_history_path,
+                                                  resource=resource,days=int(days))
+                except ValueError:
+                    return self.respond(400,"application/json",
+                                        b'{"error":"invalid_parameter"}')
+                except (OSError, sqlite3.DatabaseError):
+                    return self.respond(503,"application/json",
+                                        b'{"error":"provider_history_unavailable"}')
+                return self.respond(200,"application/json; charset=utf-8",
+                                    json.dumps(data,separators=(",",":")).encode())
             if path in ("/api/providers/registry", "/control-center/api/providers/registry"):
                 if config.mode == "github" and not oauth.authenticated(
                         self._cookie(SESSION_COOKIE)):
