@@ -64,7 +64,7 @@ class GitHubRateLimitTests(unittest.TestCase):
                     self.assertEqual(timeout,7)
                     raise HTTPError(req.full_url,status,"sensitive text",{},None)
                 return request
-            for status,expected in [(401,"auth_required"),(403,"auth_required"),
+            for status,expected in [(401,"auth_required"),(403,"unknown"),
                                     (429,"throttled"),(500,"unavailable")]:
                 with self.subTest(status=status):
                     data=gh.read(token,now=NOW,transport=deny(status))
@@ -82,6 +82,43 @@ class GitHubRateLimitTests(unittest.TestCase):
                 data["resources"]["core"][pair[0]]=pair[1]
                 with self.assertRaises(gh.GitHubQuotaError):
                     gh.parse(json.dumps(data).encode(),now=NOW)
+
+    def test_expired_bucket_never_claims_current_available_or_exhausted(self):
+        with TemporaryDirectory() as d:
+            from control_center.provider_registry import registry
+            p=Path(d)/"gh.json"
+            # Fresh collected snapshot, but the search bucket already reset.
+            raw=gh.parse(json.dumps({"resources":{
+                "core":{"limit":5000,"used":200,"remaining":4800,
+                    "reset":int((NOW+timedelta(minutes=50)).timestamp())},
+                "search":{"limit":30,"used":30,"remaining":0,
+                    "reset":int((NOW+timedelta(seconds=30)).timestamp())},
+            }}).encode(),now=NOW)
+            gh.save(raw,p)
+            later=NOW+timedelta(minutes=2)
+            report=gh.snapshot(p,now=later)
+            self.assertEqual(report["status"],"ok")
+            self.assertEqual([x["resource"] for x in report["resources"]],["core"])
+            card=registry(codex_path=Path(d)/"c",desktop_path=Path(d)/"dc",
+                          cloudflare_path=Path(d)/"cf",github_path=p,
+                          now=later)["providers"][3]
+            self.assertEqual(card["status"],"ok")
+            self.assertEqual([x["metric"] for x in card["windows"]],["core"])
+            stale=gh.snapshot(p,now=NOW+timedelta(hours=1))
+            self.assertEqual(stale["status"],"unknown")
+            self.assertEqual(stale["resources"],[])
+
+    def test_all_buckets_expired_snapshot_unknown(self):
+        with TemporaryDirectory() as d:
+            p=Path(d)/"gh.json"
+            value=gh.parse(json.dumps({"resources":{
+                "core":{"limit":5000,"used":5000,"remaining":0,
+                    "reset":int((NOW+timedelta(seconds=20)).timestamp())}
+            }}).encode(),now=NOW)
+            gh.save(value,p)
+            report=gh.snapshot(p,now=NOW+timedelta(minutes=2))
+            self.assertEqual(report["status"],"unknown")
+            self.assertEqual(report["resources"],[])
 
     def test_read_only_token_configured_not_connected_without_snapshot(self):
         with TemporaryDirectory() as d:

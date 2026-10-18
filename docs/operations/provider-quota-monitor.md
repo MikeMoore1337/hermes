@@ -51,7 +51,9 @@ Cloudflare official billable Neuron usage (currently unsupported/unverified), ne
 On 3 August 2026 Cloudflare announced an **official Billable Usage API**
 covering Workers AI. Unlike previous assumptions, this is a viable **historical
 account-wide source**, but the data is updated daily, so it cannot give
-live quota remaining and must NEVER be fed into a real-time admission gate.\nReported *billable* Neurons can omit usage covered by the free allocation;\ntherefore they are NOT a complete total of the Free daily budget.
+live quota remaining and must NEVER be fed into a real-time admission gate.
+Reported *billable* Neurons can omit usage covered by the free allocation;
+therefore they are NOT a complete total of the Free daily budget.
 
 References:
 - https://blog.cloudflare.com/billable-usage-api/ (2026-08-03)
@@ -145,3 +147,63 @@ passes provider paths; offline unit tests do not inherit live server files.
 The code only describes the notification pipeline; delivery acceptance
 requires a real Ops Watch event and an actual Telegram sender acknowledgment.
 CI test proofs are synthetic, without simulated production alarm delivery.
+
+
+## Stage 4 — concrete production read-back and external auth gate
+
+A merge/CD receipt alone is not proof that all *real account metrics* are
+available. The independently triggered
+`.github/workflows/provider-boundary.yml` inspects only public HTTP
+status codes after successful production CD:
+`/healthz == 200`,
+`/api/providers/registry == 401`, and
+`/api/providers/registry/history?resource=core&days=7 == 401`
+from an anonymous caller. No cookies, provider account data, API credentials
+or redirect following are used. A job failure is **unverified**, not an
+authorization to change OAuth/proxy settings or disable controls.
+
+For a separate **owner-approved read-only VPS terminal**, run:
+
+```bash
+# On the Hermes VPS; only prints status metadata, not quotas or credentials.
+active="$(readlink -f /opt/hermes-control-center/current)"
+[[ "$active" =~ ^/opt/hermes-control-center/releases/main-[0-9a-f]{40}$ ]] || exit 1
+sha="${active##*main-}"
+cd "/opt/hermes-agent-owner/releases/main-$sha"
+sudo -u hermes-control /usr/bin/python3 -m scripts.h15_provider_readback
+```
+
+The report has four fixed provider IDs, per-provider status, **number** of
+fresh trusted windows and source-kind only; it excludes raw limits, observed
+usage, account identifiers, filesystem paths, credentials and incident
+payloads. `/healthz` must be 200 and a local request without owner session
+to the quota registry must be 401. Exit code 0 means **local registry/auth
+probe succeeded**; it does NOT mean Cloudflare and GitHub quota collectors
+have been provisioned or their data verified. `UNKNOWN` is valid evidence
+of an absent/unsupported source, not zero remaining.
+
+The owner can separately sign in through the existing GitHub OAuth UI
+and inspect the four cards (without copying OAuth cookies, response headers
+or tokens to GitHub, terminal logs or chat). When real source credentials
+are configured in root-owned `/etc/hermes` on the VPS through an authorized
+owner console, perform **one bounded, read-only smoke per collector**,
+confirm its sanitized snapshot is fresh and check the existing timer results
+before enabling a recurring polling timer. Neither collector calls any
+inference API.
+
+The optional Cloudflare Billing API V1 can exclude usage covered by the Free
+allowance. Cloudflare V2 explicitly includes Free usage but is **Alpha,
+restricted-access**; it is not a production source until access and exact
+schemas are independently confirmed. Do not infer today’s Free Neurons from
+the current Billing V1 data. GitHub `403` can mean permission denial OR
+primary/secondary throttling, so absent authoritative evidence it is
+`unknown`, not a proved expired credential. A GitHub rate-limit window with
+a reset timestamp already in the past must not be presented as a live budget,
+even if the parent snapshot is newer than the 30-minute TTL.
+
+**Full closure gate:** owner visual approval (passed), exact-main CI and CD
+(passed for #315), anonymous production boundary, local registry readback,
+and independently authorised live source smoke + relevant alert receipt.
+Keep #295 OPEN if any externally privileged step remains unverified. H-01
+#33 stays untouched, and the separate #271 Codex admission policy remains
+fail-closed.
