@@ -34,8 +34,14 @@ function Protect-PrivateState([string] $directory) {
     # Windows icacls processes /inheritance:r and /grant:r differently when
     # passed in one recursive invocation: parent grants can survive while
     # descendants become empty-DACL and unreadable (observed in owner pilot).
-    # Always do these as TWO operations across the same subtree.
-    & icacls.exe $directory /inheritance:r /T | Out-Null
+    # Grant each EXISTING object individually first, including children with
+    # inheritance already disabled by the original broken installer. Doing
+    # recursive /inheritance:r before grants can lock out traversal.
+    & icacls.exe $directory /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-19:(OI)(CI)RX' /T | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'PRIVATE_ACL_GRANT_FAILED' }
+    # Block broad inheritance on the ROOT only; do not strip individual
+    # descendant ACLs after we have intentionally granted them.
+    & icacls.exe $directory /inheritance:r | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'PRIVATE_ACL_INHERITANCE_FAILED' }
     & icacls.exe $directory /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-19:(OI)(CI)RX' /T | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'PRIVATE_ACL_GRANT_FAILED' }
