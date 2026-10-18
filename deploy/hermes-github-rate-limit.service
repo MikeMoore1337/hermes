@@ -7,7 +7,7 @@ After=network-online.target
 [Service]
 Type=oneshot
 User=root
-Group=root
+Group=hermes-control
 WorkingDirectory=/opt/hermes-control-center/current
 ExecStart=/usr/bin/python3 -m control_center.github_rate_limit
 StateDirectory=hermes-provider-quota
