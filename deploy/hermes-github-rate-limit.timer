@@ -1,0 +1,13 @@
+[Unit]
+Description=GitHub account-token rate-limit read-only snapshot every 10 minutes (opt-in)
+Documentation=https://github.com/MikeMoore1337/hermes/issues/295
+
+[Timer]
+OnBootSec=10min
+OnUnitInactiveSec=10min
+RandomizedDelaySec=2min
+Persistent=true
+Unit=hermes-github-rate-limit.service
+
+[Install]
+WantedBy=timers.target
