@@ -147,7 +147,9 @@ isolated_python scripts/validate_repo.py || die "repo validation failed"
 isolated_python scripts/check_policy_index.py || die "policy check failed"
 isolated_python scripts/check_markdown_links.py || die "markdown links failed"
 isolated_python -m unittest discover -s tests -q > "$work/tests.log" 2>&1 || { tail -25 "$work/tests.log" >&2; die "non-root offline tests failed"; }
-grep -q '^OK$' "$work/tests.log" || die "unit test status missing"
+# WSS integration tests use a separate pinned CI venv; the isolated host
+# stdlib test run may legitimately report OK (skipped=N).
+grep -Eq '^OK( \(skipped=[0-9]+\))?$' "$work/tests.log" || die "unit test status missing"
 grep '^Ran [0-9]* tests' "$work/tests.log" | tail -1
 systemctl is-active --quiet hermes-agent-sandbox.service && die "unscoped gateway unexpectedly active"
 # The approved H-01 read-only one-shot needs the dedicated CONNECT proxy.
