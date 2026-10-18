@@ -343,3 +343,48 @@ MCP-библиотека, сетевой connector, SSH, shell tool, модел�
 side effects **НЕ запускались**. Такой PASS не доказывает full
 `mcp_external_effect_denial_verified`, не переносится на резидентный
 H-01, не отменяет #33 NO-GO или отдельный owner-gate для реальной LLM.
+
+
+### 18.10.2026 - Real isolated local MCP stdio test (owner-gated external access remains disabled)
+
+Следующий уровень наблюдения реализован через `scripts/h19_real_stdio_mcp.py`.
+В отличие от `h19_native_effect_canary`, он **не подменяет низкоуровневый
+MCP executor**: пробует поднять в отдельном одноразовом контейнере
+настоящий сервер `mcp.server.fastmcp.FastMCP`, зарегистрировать его
+через оригинальный Hermes `tools.mcp_tool_discovery.register_mcp_servers`
+и вызвать через настоящий `model_tools.handle_function_call`.
+Сервер запускается локальным `stdio` дочерним Python-процессом
+внутри networkless Docker без host mounts, секретов и провайдеров.
+Единственный побочный эффект - фиксированная строка-маркер в
+частном `/tmp` контейнера. Нет реальных сторонних MCP сервисов.
+
+Проверка различает read-only `peek`, write-capable `mark`,
+отказ на `trust: untrusted` без подтверждения владельца и разрешённый
+только тестовый `mark` после искусственного `accept` в тестовом
+контексте. Она требует отсутствия маркера после отказа и наличия
+точного маркера только после разрешённого вызова. Тестовое разрешение
+не имеет отношения к production user approval.
+
+`mcp` является **необязательной** зависимостью upstream v0.22.2.
+Если конкретный pinned image не содержит MCP SDK, поле `sdk=UNAVAILABLE`
+должно давать `status=NOT_RUN`, exit 3. **Нельзя выдавать
+пропущенную реальную проверку за PASS.** Установка случайного `latest`
+или временное включение egress контейнера запрещены. Для новой версии
+образа потребуется отдельный pinned SBOM/provenance/cost owner gate.
+
+Команда только на подготовленном disposable GitHub-hosted Docker
+с заранее полученным pinned image:
+
+    python3 -m scripts.h19_real_stdio_mcp --execute --out /tmp/h19-real-mcp-stdio.json
+
+В штатном `quality.yml` тесты без Docker выполняют лишь проверку
+контракта и mutation controls. Изолированный CI workflow
+`h19-pinned-native-runtime.yml` сохраняет sanitized JSON вместе
+с остальными evidence.
+
+Даже PASS настоящего stdio локального сервера **не является**
+проверкой реального внешнего MCP, разрешений всех инструментов
+или устойчивости модели к injection. `external_mcp_effects_verified=false`,
+`full_mcp_permission_enforcement_verified=false`,
+`real_model_evaluation=NOT_RUN`, `resident_agent_allowed=false`.
+#33 и resident H-01 остаются NO-GO.
