@@ -49,8 +49,13 @@ report = {
     "real_agent_tools_outside_sandbox": False,
     "resident_agent_allowed": False,
 }
-if (importlib.util.find_spec("mcp") is None
-        or importlib.util.find_spec("tests.fakes.fake_llm_provider") is None):
+try:
+    sdk_available = importlib.util.find_spec("mcp") is not None
+    fake_available = importlib.util.find_spec("tests.fakes.fake_llm_provider") is not None
+except (ImportError, AttributeError, ValueError):
+    fake_available = False
+if not sdk_available or not fake_available:
+    report["sdk_available"] = sdk_available
     print(json.dumps(report, sort_keys=True))
     raise SystemExit(0)
 
@@ -270,7 +275,15 @@ def run(*, runner=run_bounded) -> tuple[int, dict[str, Any]]:
         cmd[-1] = PROBE
         result = runner(cmd, timeout=105, stdout_limit=8192, stderr_limit=8192)
         if result.returncode:
-            raise InvalidEvidence("container_probe_failed")
+            stderr = result.stderr.decode("utf-8", errors="replace") if isinstance(result.stderr, bytes) else str(result.stderr)
+            category = next((key for key in ("ModuleNotFoundError", "ImportError", "SyntaxError",
+                "PermissionError", "ValueError", "OSError", "TimeoutExpired")
+                if key in stderr), "UNCLASSIFIED")
+            return 2, {
+                "schema": SCHEMA, "status": "INFRA_FAILURE",
+                "reason": "container_probe_failed", "error_category": category,
+                "actual_real_model": False, "resident_agent_allowed": False,
+            }
         report = verify(json.loads(result.stdout))
         return {"PASS": 0, "FAIL": 1, "NOT_RUN": 3}[report["status"]], report
     except (OSError, BoundedProcessError, ValueError, UnicodeError, TypeError,
