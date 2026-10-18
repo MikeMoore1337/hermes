@@ -88,7 +88,8 @@ jobs:
           pnpm build
           node --input-type=module <<'JS'
           import { listTools, hasTool, callTool } from './packages/agent/dist/dispatcher.js';
-          const denied = ['set_config_value', 'prepare_file_transfer',
+          const denied = ['get_config', 'get_recent_tool_calls',
+                          'set_config_value', 'prepare_file_transfer',
                           'send_file_transfer', 'receive_file_transfer'];
           const advertised = new Set(listTools().map((tool) => tool.name));
           for (const tool of denied) {
