@@ -18,6 +18,7 @@ from control_center.infrastructure import (
     ROOT as INFRA_ROOT, hosts as infrastructure_hosts,
     history as infrastructure_history,
 )
+from control_center.cloudflare_billing import OUTPUT as CLOUDFLARE_BILLING_OUTPUT
 from control_center.provider_registry import registry as provider_quota_registry
 from control_center.snapshot import DEFAULT_OUTPUT
 from control_center.codex_usage import DEFAULT_OUTPUT as CODEX_OUTPUT, read_snapshot, UsageError
@@ -74,6 +75,7 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
                  scheduler_path: Path = SCHEDULER_DB,
                  analytics_path: Path = ANALYTICS_DB,
                  desktop_commander_path: Path = DC_OUTPUT,
+                 cloudflare_billing_path: Path = CLOUDFLARE_BILLING_OUTPUT,
                  infrastructure_dir: Path = INFRA_ROOT,
                  auth_config: AuthConfig | None = None, oauth_service: OAuthService | None = None):
     config = auth_config if auth_config is not None else AuthConfig.from_env()
@@ -205,7 +207,8 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
                 if parsed.query:
                     return self.respond(404, "text/plain", b"Not found")
                 data = provider_quota_registry(
-                    codex_path=codex_path, desktop_path=desktop_commander_path)
+                    codex_path=codex_path, desktop_path=desktop_commander_path,
+                    cloudflare_path=cloudflare_billing_path)
                 return self.respond(200, "application/json; charset=utf-8",
                                     json.dumps(data, separators=(",", ":")).encode())
             if path in ("/api/infrastructure/hosts",
