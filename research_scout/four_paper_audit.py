@@ -11,6 +11,7 @@ import argparse
 from datetime import UTC, datetime, date
 import json
 import re
+import time
 from collections.abc import Callable
 from typing import Any
 
@@ -23,6 +24,17 @@ PUBLISHER_CORRECTION = {
 }
 MAX_REQUESTS = 4
 EXPECTED_PMIDS = frozenset({"42840492", "42771055", "42797032", "42733310"})
+# Fixed sanitized codes only: never include arbitrary exception messages.
+SAFE_LOOKUP_ERRORS = frozenset({
+    "update_doi_invalid", "update_dns_unavailable", "update_http_unavailable",
+    "update_http_429", "update_content_type_invalid", "update_encoding_invalid",
+    "update_body_oversize", "update_network_or_tls_unavailable",
+    "update_response_invalid", "update_duplicate_json_key",
+    "update_json_invalid", "update_schema_invalid", "update_links_invalid",
+    "update_type_invalid", "update_date_invalid", "update_duplicate_notice",
+    "update_relation_mismatch", "update_incomplete_result",
+})
+MIN_INTERVAL_SECONDS = 1.5
 
 
 def review(
@@ -52,6 +64,7 @@ def review(
             "doi": doi,
             "source": "CROSSREF_REVERSE_UPDATES",
             "audit_state": "UNKNOWN",
+            "lookup_error_code": None,
             "crossref_coverage": "UNKNOWN",
             "crossref_notice_dois": [],
             "crossref_notice_codes": [],
@@ -84,12 +97,16 @@ def review(
                 x.casefold() for x in found
             }:
                 item["audit_state"] = "CROSSREF_PUBLISHER_DISAGREEMENT_REVIEW_REQUIRED"
-        except (UpdateLookupError, ValueError, TypeError, KeyError):
-            # No raw upstream strings or third-party content in the report.
-            # Missing integrity coverage cannot be read as an approved study.
+        except (UpdateLookupError, ValueError, TypeError, KeyError) as exc:
+            # Do not leak upstream messages or injected exception text. The
+            # code alone is diagnostic, NOT scientific evidence or clearance.
             item["audit_state"] = "UNKNOWN"
             item["status"] = "HOLD"
             item["crossref_coverage"] = "LOOKUP_UNAVAILABLE_OR_INVALID"
+            reason = str(exc) if type(exc) is UpdateLookupError else ""
+            item["lookup_error_code"] = (
+                reason if reason in SAFE_LOOKUP_ERRORS else "audit_result_invalid"
+            )
         items.append(item)
     return {
         "schema": SCHEMA,
@@ -173,7 +190,19 @@ def main(argv: list[str] | None = None) -> int:
     if not args.execute:
         print(json.dumps({"status": "NOT_EXECUTED", "requests_attempted": 0}))
         return 0
-    result = review(now=datetime.now(UTC))
+    # Pace ONLY real operator-triggered network calls. Offline review() tests
+    # with injected inspectors remain fast and deterministic. No retries,
+    # extra requests, additional providers or persistent scheduler.
+    calls = 0
+
+    def paced_inspector(doi: str) -> dict[str, object]:
+        nonlocal calls
+        if calls:
+            time.sleep(MIN_INTERVAL_SECONDS)
+        calls += 1
+        return inspect(doi)
+
+    result = review(now=datetime.now(UTC), inspector=paced_inspector)
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     return 2 if any(i["audit_state"] == "UNKNOWN" for i in result["results"]) else 0
 

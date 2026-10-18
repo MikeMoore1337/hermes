@@ -189,6 +189,38 @@ class FourPaperAuditTests(unittest.TestCase):
         finally:
             audit.curated_reports = original
 
+    def test_live_operator_cli_paces_all_four_lookups_without_retry(self):
+        looked_up, pauses = [], []
+        def pretend_registry(doi):
+            looked_up.append(doi)
+            return normal(doi)
+        out = io.StringIO()
+        with patch.object(audit, "inspect", side_effect=pretend_registry), \
+             patch.object(audit.time, "sleep", side_effect=pauses.append), \
+             patch("sys.stdout", out):
+            code = audit.main(["--execute"])
+        self.assertEqual(code, 0)
+        self.assertEqual(len(looked_up), 4)
+        self.assertEqual(len(set(looked_up)), 4)
+        self.assertEqual(pauses, [audit.MIN_INTERVAL_SECONDS] * 3)
+        self.assertEqual(len(json.loads(out.getvalue())["results"]), 4)
+
+    def test_error_code_is_sanitized_but_known_429_retained(self):
+        def failure(code):
+            def inspector(_doi):
+                raise UpdateLookupError(code)
+            return audit.review(now=NOW, inspector=inspector)
+        unknown = failure("secret API detail from untrusted inspector")
+        self.assertTrue(all(row["status"] == "HOLD" for row in unknown["results"]))
+        self.assertTrue(all(row["lookup_error_code"] == "audit_result_invalid"
+                            for row in unknown["results"]))
+        self.assertNotIn("secret API detail", json.dumps(unknown))
+        throttled = failure("update_http_429")
+        self.assertTrue(all(row["lookup_error_code"] == "update_http_429"
+                            for row in throttled["results"]))
+        confirmed = audit.review(now=NOW, inspector=normal)
+        self.assertTrue(all(row["lookup_error_code"] is None for row in confirmed["results"]))
+
     def test_default_cli_is_strictly_offline(self):
         out = io.StringIO()
         with patch.object(audit, "review") as run, patch("sys.stdout", out):
@@ -206,6 +238,9 @@ class FourPaperAuditTests(unittest.TestCase):
         with patch.object(audit, "review", return_value=report), patch("sys.stdout", buf):
             self.assertEqual(audit.main(["--execute"]), 2)
         self.assertNotIn("private secret", buf.getvalue())
+        self.assertTrue(all(row["lookup_error_code"] == "audit_result_invalid"
+                            for row in json.loads(buf.getvalue())["results"]
+                            if row["audit_state"] == "UNKNOWN"))
         self.assertTrue(json.loads(buf.getvalue())["manual_review_required"])
 
 

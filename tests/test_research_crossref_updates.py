@@ -157,7 +157,7 @@ class CrossrefReverseUpdateTests(unittest.TestCase):
             def read(self, count):
                 return self.raw[:count]
         for response, code in [
-            (Response(status=429), "update_http_unavailable"),
+            (Response(status=429), "update_http_429"),
             (Response(status=302), "update_http_unavailable"),
             (Response(content_type="text/html"), "update_content_type_invalid"),
             (Response(size="999999"), "update_body_oversize"),
