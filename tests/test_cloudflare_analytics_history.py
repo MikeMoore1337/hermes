@@ -96,6 +96,26 @@ class CloudflareAdvisoryHistoryTests(unittest.TestCase):
             }))
             self.assertEqual(h.read(archive,now=NOW)["status"],"unknown")
 
+    def test_rolling_retention_does_not_lock_out_future_daily_writes(self):
+        with TemporaryDirectory() as folder:
+            root=Path(folder)
+            root.chmod(0o750)
+            archive=root/"history.json"
+            later=NOW+timedelta(days=32)
+            new_day=(later.date()-timedelta(days=1)).isoformat()
+            with patch("grp.getgrnam",
+                       return_value=SimpleNamespace(gr_gid=os.getegid())):
+                h.append(h.observation("2026-10-17",CI,now=NOW),
+                         path=archive,now=NOW)
+                before=h.read(archive,now=later)
+                self.assertEqual(before["status"],"stale")
+                self.assertEqual(before["days"],[])
+                h.append(h.observation(new_day,CI,now=later),
+                         path=archive,now=later)
+            after=h.read(archive,now=later)
+            self.assertEqual(after["status"],"historical_estimate")
+            self.assertEqual([x["day"] for x in after["days"]],[new_day])
+
     def test_collector_refuses_unsafe_context_before_network(self):
         import io
         from contextlib import redirect_stdout
