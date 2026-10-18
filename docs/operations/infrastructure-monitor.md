@@ -140,3 +140,42 @@ returns to the original timer behavior. The optional standalone
 YFC transport is still explicitly blocked pending host identity,
 SSH key setup, proof of an authenticated transfer, and load/health
 evidence. Telegram alerting is still a follow-up.
+
+
+## Stage 3: Ops Watch resource incidents (read-only, no second Telegram sender)
+
+The existing `hermes-ops-watch.service` reads only the fixed, sanitized
+`/var/lib/hermes-control-center/infrastructure/{hermes,yfc}.json` files
+and `history.sqlite3`; no SSH, Docker socket, network calls or arbitrary
+paths are accepted. The source remains produced by the separate infrastructure
+collectors. The Ops Watch transaction/outbox and existing Telegram delivery
+remain the *single* deduplicated notification pipeline.
+
+For both VPS, independently:
+
+- Unconfigured YFC (no sample/history): **not_connected**, no outage alert.
+- After a source is configured, a missing/invalid/older-than-15-min sample:
+  a constant, per-host **source unavailable** alert; an invalid snapshot never
+  becomes a measured zero or green.
+- CPU/RAM/root-disk `>=90%` for **three** distinct, recent samples,
+  separated by 30-180 seconds: metric-specific alert for that particular VPS.
+- A previous metric alert clears only after **three** distinct values
+  `<=80%`. Between 80% and 90%, an intermittent error, stale/offline
+  data or partial samples do not falsely assert recovery.
+- Existing SQLite transitions deduplicate repeat notifications, and their
+  fixed notification catalog never interpolates paths, IP addresses, raw
+  content, credentials or metric values into Telegram messages.
+
+The detector is invoked by the existing Ops Watch collector, not a new
+daemon or timer. Keep the current ops-watch/alerts units and network
+boundaries as installed. The code **does not** enable YFC's remote collector
+or change existing #33 resident-agent policy. A genuine alert delivery
+receipt requires the existing Telegram sender to accept the queued event;
+offline tests and ordinary release success are not such proof.
+
+Run `python3 -m unittest tests.test_infrastructure_ops_alerts -v`
+alongside repository quality CI and check existing Ops Watch event/receipt
+tests. In production, a privileged operator must read the fixed snapshot
+file and local Ops Watch journal after a timer cycle, verify the source age,
+and confirm no unintentional alert is delivered. No synthetic production
+incidents should be created just to test Telegram.

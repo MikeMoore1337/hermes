@@ -36,6 +36,14 @@ TITLES: dict[str, str] = {
     "codex_exhausted": "Codex: квота ограничена или исчерпана",
     "codex_auth_required": "Codex: требуется повторный вход",
     "codex_stale": "Codex: нет подтверждённых свежих данных о квоте",
+    "infra_hermes_unavailable": "VPS Hermes: нет достоверной телеметрии",
+    "infra_hermes_cpu_high": "VPS Hermes: длительная высокая загрузка CPU",
+    "infra_hermes_ram_high": "VPS Hermes: длительная высокая загрузка RAM",
+    "infra_hermes_disk_high": "VPS Hermes: длительное заполнение диска",
+    "infra_yfc_unavailable": "VPS YFC: нет достоверной телеметрии",
+    "infra_yfc_cpu_high": "VPS YFC: длительная высокая загрузка CPU",
+    "infra_yfc_ram_high": "VPS YFC: длительная высокая загрузка RAM",
+    "infra_yfc_disk_high": "VPS YFC: длительное заполнение диска",
 }
 CRITICAL = frozenset({
     "timer_disabled", "timer_inactive", "discovery_failures", "drain_failures",
@@ -43,6 +51,8 @@ CRITICAL = frozenset({
     "agent_guard_missing", "agent_guard_inactive",
     "alert_sender_missing", "alert_sender_disabled", "alert_sender_inactive",
     "alert_sender_failed",
+    "infra_hermes_unavailable", "infra_hermes_disk_high",
+    "infra_yfc_unavailable", "infra_yfc_disk_high",
 })
 ACTIONS: dict[str, str] = {
     "snapshot_stale": "Проверить журнал службы мониторинга вручную",
@@ -70,6 +80,14 @@ ACTIONS: dict[str, str] = {
     "codex_exhausted": "Отложить новые задания Codex до подтверждённого восстановления",
     "codex_auth_required": "Проверить официальную авторизацию Codex на VPS",
     "codex_stale": "Проверить таймер опроса и сеть, не запускать новые задания Codex",
+    "infra_hermes_unavailable": "Проверить источник локального снимка VPS Hermes, без перезапуска служб",
+    "infra_hermes_cpu_high": "Проверить процессы и длительную нагрузку CPU VPS Hermes",
+    "infra_hermes_ram_high": "Проверить память и swap VPS Hermes, без автоматической очистки",
+    "infra_hermes_disk_high": "Проверить диск VPS Hermes без автоматического удаления данных",
+    "infra_yfc_unavailable": "Проверить защищённый канал метрик VPS YFC, без изменения приложения",
+    "infra_yfc_cpu_high": "Проверить процессы и длительную нагрузку CPU VPS YFC",
+    "infra_yfc_ram_high": "Проверить память и swap VPS YFC, без автоматической очистки",
+    "infra_yfc_disk_high": "Проверить диск VPS YFC без автоматического удаления данных",
 }
 CODEX_CODES = frozenset({"codex_low", "codex_exhausted", "codex_auth_required", "codex_stale"})
 

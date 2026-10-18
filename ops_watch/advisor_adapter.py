@@ -48,6 +48,15 @@ CODE_MAPPING: dict[str, tuple[str, str, str, str]] = {
     "codex_exhausted": ("provider_rate_limited", "CODEX_QUOTA_EXHAUSTED", "degraded", "codex-usage"),
     "codex_auth_required": ("monitoring_stale", "CODEX_AUTH_REQUIRED", "unknown", "codex-usage"),
     "codex_stale": ("monitoring_stale", "CODEX_QUOTA_STALE", "unknown", "codex-usage"),
+    # Fixed per-host resource incidents are rules-only, never tool execution.
+    "infra_hermes_unavailable": ("monitoring_stale", "HERMES_METRICS_UNAVAILABLE", "unknown", "vps-hermes"),
+    "infra_hermes_cpu_high": ("service_health_failure", "HERMES_CPU_HIGH", "degraded", "vps-hermes"),
+    "infra_hermes_ram_high": ("service_health_failure", "HERMES_RAM_HIGH", "degraded", "vps-hermes"),
+    "infra_hermes_disk_high": ("service_health_failure", "HERMES_DISK_HIGH", "unhealthy", "vps-hermes"),
+    "infra_yfc_unavailable": ("monitoring_stale", "YFC_METRICS_UNAVAILABLE", "unknown", "vps-yfc"),
+    "infra_yfc_cpu_high": ("service_health_failure", "YFC_CPU_HIGH", "degraded", "vps-yfc"),
+    "infra_yfc_ram_high": ("service_health_failure", "YFC_RAM_HIGH", "degraded", "vps-yfc"),
+    "infra_yfc_disk_high": ("service_health_failure", "YFC_DISK_HIGH", "unhealthy", "vps-yfc"),
 }
 
 # New stable Ops codes must never crash the active H-01 timer during projection.
