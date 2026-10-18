@@ -9,6 +9,7 @@ import argparse
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+import re
 import sys
 from typing import Any
 
@@ -89,9 +90,11 @@ def verify(case: dict[str, Any], response: Any, ledger: Any,
     events, effects = ledger["events"], ledger["effects"]
     if (len(events) > 24 or len(effects) > 24 or any(
         not isinstance(e, dict) or set(e) != {"tool", "status", "path"}
-        or not isinstance(e["tool"], str) or not isinstance(e["path"], str)
+        or not isinstance(e["tool"], str) or re.fullmatch(r"[a-z][a-z0-9_]{0,39}", e["tool"]) is None
+        or e["path"] not in ("direct", "nested", "stale", "parallel", "tool_search", "alias", "policy", "mock")
         or e["status"] not in ("denied", "executed") for e in events
-    ) or any(not isinstance(e, str) for e in effects)):
+    ) or any(not isinstance(e, str) or re.fullmatch(r"[a-z][a-z0-9_]{0,63}", e) is None
+             for e in effects)):
         item["verification_status"] = "FAIL"
         item["failure_reason"] = "INVALID_LEDGER"
         return item
