@@ -78,6 +78,9 @@ class GitHubQuotaHistoryTests(unittest.TestCase):
                 self.assertEqual(get("?resource=private&days=1")[0],400)
                 self.assertEqual(get("?resource=core&days=1&auth=x")[0],400)
                 self.assertEqual(get("")[0],400)
+                # Broken SQLite is an unavailable provider, not user input 400.
+                db.write_bytes(b"not-sqlite")
+                self.assertEqual(get("?resource=core&days=1")[0],503)
             finally:
                 app.shutdown();app.server_close();th.join(timeout=3)
 
