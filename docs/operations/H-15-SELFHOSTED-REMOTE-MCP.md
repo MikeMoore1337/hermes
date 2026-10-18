@@ -109,6 +109,25 @@ Do not activate this relay publicly or on existing owner devices:
 this closes one token transport leak, **not** the mandatory OS shell
 sandbox or browser CSRF/replay gates.
 
+### Linux OS sandbox proof (disposable CI only)
+
+`scripts/h15_brc_sandbox_linux_e2e.mjs` invokes **actual rebuilt BRC
+agent file tools and `start_process`** in a throwaway Docker container
+with a non-root UID 65534, zero Linux capabilities, no-new-privileges,
+read-only root and source mounts, only one writable disposable
+workspace, no network, memory/PID/CPU limits and no production mounts.
+The subprocess itself tests that it cannot mutate mounted BRC source,
+read an unmounted owner-only host canary or `/root`, or establish
+Internet egress; authorized workspace writes must still work.
+
+The CI Docker image tag is used only for ephemeral negative tests,
+**not** a pinned production deployment artifact. Future production
+builds must be pinned by digest and have signed provenance. This
+proves these specific Docker/kernel restrictions in GitHub Actions;
+it does not prove equivalent Windows OS isolation or execution within
+the real owner YFC VPS. Real shell execution remains owner-gated and
+disabled by default.
+
 ## Target deployment (not yet activated)
 
 ```text
