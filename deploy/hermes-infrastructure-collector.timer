@@ -1,0 +1,12 @@
+[Unit]
+Description=Periodic read-only Hermes VPS resource snapshot
+
+[Timer]
+OnBootSec=30s
+OnUnitInactiveSec=60s
+AccuracySec=10s
+RandomizedDelaySec=5s
+Unit=hermes-infrastructure-collector.service
+
+[Install]
+WantedBy=timers.target

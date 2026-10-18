@@ -1,0 +1,32 @@
+[Unit]
+Description=Hermes read-only authenticated YFC VPS metrics pull
+Documentation=https://github.com/MikeMoore1337/hermes/issues/294
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/opt/hermes-control-center/current
+ExecStart=/usr/bin/python3 -m control_center.infrastructure_pull
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/hermes-control-center
+ReadOnlyPaths=/etc/hermes/yfc-infrastructure-pull.json /etc/hermes/yfc-infrastructure-readonly /etc/hermes/yfc-infrastructure-known-hosts
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+UMask=0077
+MemoryMax=64M
+CPUQuota=15%
+TasksMax=12
+TimeoutStartSec=15

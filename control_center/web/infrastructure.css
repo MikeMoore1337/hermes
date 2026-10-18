@@ -1,0 +1,32 @@
+/* #294 Atlas separate per-host read-only cards. Neutral 1px borders only. */
+.infra294-panel{display:grid;gap:18px;padding:20px;min-width:0;color:var(--white,#f2f6ff);border:1px solid var(--line-dim,#1a314c);border-radius:8px;background:var(--surface,#0b1625)}
+.infra294-panel[hidden]{display:none!important}
+.infra294-active .center-area>:not(.infra294-panel){display:none!important}
+.infra294-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap}
+.infra294-head h2{font-size:23px;font-weight:650;margin:8px 0}
+.infra294-hint{font-size:12px;line-height:1.6;color:var(--muted,#9aaac4);margin:7px 0}
+.infra294-refresh,.infra294-toolbar select{border:1px solid var(--line,#214163);background:var(--raised,#101f32);color:var(--white,#f2f6ff);border-radius:6px;padding:9px;font:inherit;font-size:12px}
+.infra294-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;align-items:start}
+.infra294-card{display:grid;gap:13px;min-width:0;background:var(--panel,#0b192a);border:1px solid var(--line-dim,#1a314c);border-radius:8px;padding:17px}
+.infra294-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.infra294-card-head h3{font-size:18px;margin:8px 0 0;font-weight:650}
+.infra294-state{border:1px solid var(--line-dim,#1a314c);border-radius:6px;padding:5px 8px;color:#9dadbf;font-size:11px}
+.infra294-online{color:#a1d9c0}.infra294-stale{color:#f1c090}.infra294-offline{color:#e6a2a2}
+.infra294-label{display:flex;justify-content:space-between;gap:10px;font-size:13px}
+.infra294-label strong{font-variant-numeric:tabular-nums}
+.infra294-metric{display:grid;gap:6px}
+.infra294-metric small,.infra294-updated{font-size:11px;line-height:1.5;color:var(--muted,#9aaac4)}
+.infra294-track{background:#1b324e;height:7px;border-radius:7px;overflow:hidden}
+.infra294-fill{background:#4e9bec;height:100%;border-radius:7px}
+.infra294-fill.infra294-high{background:#d5b072}
+.infra294-fill.infra294-critical{background:#dc8989}
+.infra294-facts{display:grid;gap:6px;font-size:12px;color:var(--soft,#91b6e7)}
+.infra294-history{border-top:1px solid var(--line-dim,#1a314c);padding-top:12px}
+.infra294-history summary{font-size:13px;font-weight:600;cursor:pointer}
+.infra294-toolbar{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+.infra294-chart{display:grid;gap:7px}
+.infra294-chart strong{font-size:12px}
+.infra294-chart svg{display:block;width:100%;max-height:145px;background:var(--raised,#101f32);border-radius:7px}
+.infra294-nav:focus-visible,.infra294-panel button:focus-visible,.infra294-panel select:focus-visible,.infra294-history summary:focus-visible{outline:2px solid #70abff;outline-offset:2px}
+@media(max-width:1150px){.infra294-grid{grid-template-columns:1fr}}
+@media(max-width:450px){.infra294-panel{padding:12px}.infra294-card{padding:13px}.infra294-head h2{font-size:20px}}
