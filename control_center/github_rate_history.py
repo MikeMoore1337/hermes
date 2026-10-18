@@ -52,7 +52,7 @@ def append(snapshot: dict, path: Path = DB, *, group: str | None = None) -> None
             remaining_percent REAL,
             PRIMARY KEY(observed_at,resource))""")
         con.executemany("INSERT OR IGNORE INTO samples VALUES (?,?,?,?,?)", rows)
-        cutoff = (_date(observed)-dt.timedelta(days=RETENTION)).isoformat()
+        cutoff = (_date(observed)-dt.timedelta(days=RETENTION)).isoformat(timespec="seconds").replace("+00:00","Z")
         con.execute("DELETE FROM samples WHERE observed_at < ?", (cutoff,))
     os.chmod(path,0o640)
     if group:
@@ -68,8 +68,9 @@ def read(path: Path = DB, *, resource: str, days: int = 7,
               "resource":resource,"days":days,"points":[]}
     if path.is_symlink() or not path.is_file():
         return result
-    date = (now or dt.datetime.now(dt.timezone.utc)).astimezone(dt.timezone.utc)
-    since = (date-dt.timedelta(days=days)).isoformat()
+    current = now or dt.datetime.now(dt.timezone.utc)
+    date = _date(current.isoformat())  # enforce aware clock before filtering
+    since = (date-dt.timedelta(days=days)).isoformat(timespec="seconds").replace("+00:00","Z")
     try:
         with sqlite3.connect(path.absolute().as_uri()+"?mode=ro",
                              uri=True,timeout=2) as conn:
