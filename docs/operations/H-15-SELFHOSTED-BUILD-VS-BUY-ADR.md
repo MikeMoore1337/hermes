@@ -14,7 +14,7 @@ Reuse its MCP Streamable HTTP/OAuth2 PKCE, outbound WebSocket device
 routing, session/process and file tools, and admin interface. Own
 infrastructure; no hosted relay service or per-call vendor charges.
 
-**Important distinction**: current Hermione source-only verified
+**Important distinction**: current Hermes source-only verified
 BRC-patch workflow in #373 and #374 is NOT an independent GitHub fork.
 A dedicated fork/source mirror and signed versioned build provenance are
 the next build/publishing gate. Do not confuse a patching script or a
