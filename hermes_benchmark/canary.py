@@ -61,7 +61,10 @@ def _auth(envelope: Any, key: bytes) -> dict[str, Any] | None:
             type(envelope["signature"]) is not str or
             HEX64.fullmatch(envelope["signature"]) is None):
         return None
-    actual = hmac.new(key, canonical(envelope["payload"]), hashlib.sha256).hexdigest()
+    try:
+        actual = hmac.new(key, canonical(envelope["payload"]), hashlib.sha256).hexdigest()
+    except (TypeError, ValueError, OverflowError):
+        return None
     return envelope["payload"] if hmac.compare_digest(actual, envelope["signature"]) else None
 
 
@@ -173,7 +176,8 @@ def audit(approval: Any, observation: Any, *, owner_key: bytes,
     a = _auth(approval, owner_key)
     if a is None:
         return _result("unverified", "APPROVAL_SIGNATURE_INVALID")
-    case_id = a.get("case_id") if a.get("case_id") in CASES else None
+    case_id = a.get("case_id")
+    case_id = case_id if type(case_id) is str and case_id in CASES else None
     error = _approval_valid(a, now.astimezone(timezone.utc))
     if error:
         return _result("blocked", error, case_id=case_id)
@@ -224,7 +228,11 @@ def audit_once(approval: Any, observation: Any, *, owner_key: bytes,
     # The journal records only opaque IDs/digests, no prompt, response or secret.
     if journal.is_symlink():
         return _result("unverified", "JOURNAL_UNAVAILABLE", case_id=result["case_id"])
-    journal.parent.mkdir(parents=True, exist_ok=True)
+    # Prevent replay ledgers from living in public or symlinked directories.
+    if (journal.parent.is_symlink() or not journal.parent.is_dir()
+            or journal.parent.stat().st_mode & 0o077
+            or (journal.exists() and journal.stat().st_mode & 0o077)):
+        return _result("unverified", "JOURNAL_UNAVAILABLE", case_id=result["case_id"])
     previous_mask = os.umask(0o077)
     try:
         with sqlite3.connect(journal, timeout=5) as conn:
