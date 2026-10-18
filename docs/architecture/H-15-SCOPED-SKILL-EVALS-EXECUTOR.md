@@ -130,3 +130,14 @@ smoke occurred. A static template and mocked kernel fixtures do **not**
 prove host isolation, negative network egress or a provider hard cap.
 The existing `LocalBoundedExecutor` remains disabled and is **not** wired
 to the probe or the example service.
+
+## Strictly private evidence indexing (#349)
+
+`eval_lane/evidence_manifest.py` now provides a read-only verified
+hash-only index for a complete pair set, when given the signed job contract
+and the SHA256 already persisted in the one-shot receipt. It rejects
+tampered files, public permissions, links, missing/duplicate evidence and
+mismatched provider/model/fixture metadata. It **never exports raw model
+responses or secrets** and always sets `safe_to_publish=false`.
+See [H-15 private evidence manifest](../operations/H-15-SKILL-EVALS-PRIVATE-EVIDENCE.md).
+It does not replace the independent review required by ADT #11.
