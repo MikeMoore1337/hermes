@@ -55,7 +55,7 @@ class FabricPilotContractTests(unittest.TestCase):
         self.assertIn('[[ -L "$STATE/venv"', prepare)
         self.assertIn("PILOT_PREPARE_BLOCKED=INVALID_VENV_PATH", prepare)
         self.assertIn("PILOT_PREPARE_BLOCKED=VENV_PIP_UNAVAILABLE", prepare)
-        self.assertNotRegex(prepare, r"(?m)^\\s*(?:sudo\\s+)?apt-get\\s+install")
+        self.assertNotRegex(prepare, r"(?m)^\s*(?:sudo\s+)?apt-get\s+install")
         self.assertNotIn("rm -rf", prepare)
         self.assertLess(prepare.index("import ensurepip, venv"), prepare.index("-m venv --clear"))
         self.assertLess(prepare.index("-m venv --clear"), prepare.index("websockets==16.0"))
