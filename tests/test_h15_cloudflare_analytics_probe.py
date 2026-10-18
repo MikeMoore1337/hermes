@@ -178,9 +178,9 @@ class AnalyticsReadProbeTests(unittest.TestCase):
             "estimate":23.4,"lower":23,"upper":24,"sample_size":12,
         })
         output=io.StringIO()
-        with patch.object(probe.os,"geteuid",return_value=0), \\
-             patch.object(probe,"load_credentials",return_value=("x"*40,"a"*32)), \\
-             patch.object(probe,"inspect_confidence",return_value=result) as check, \\
+        with patch.object(probe.os,"geteuid",return_value=0), \
+             patch.object(probe,"load_credentials",return_value=("x"*40,"a"*32)), \
+             patch.object(probe,"inspect_confidence",return_value=result) as check, \
              patch.object(probe,"inspect") as baseline, redirect_stdout(output):
             self.assertEqual(probe.main(["--confidence"]),0)
             check.assert_called_once()
