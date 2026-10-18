@@ -36,6 +36,11 @@ jobs:
           }
       - name: H-19 synthetic AI policy fixtures (Node standard library; no LLM)
         run: node --test evals/promptfoo_offline/policy.test.cjs
+      - name: H-19 adversarial trace verifier (40 pinned scenarios; no AI)
+        shell: bash
+        run: |
+          python3 -m evals.promptfoo_offline.attack_suite --out "$RUNNER_TEMP/h19-attack-report.json"
+          python3 -c 'import json,os; r=json.load(open(os.path.join(os.environ["RUNNER_TEMP"],"h19-attack-report.json"))); print("H-19 synthetic attacks:",r["counts"],"H-01 OS:",r["h01_os_enforcement"])' >> "$GITHUB_STEP_SUMMARY"
       - name: H-23 offline agent benchmark (16 pinned scenarios; no LLM)
         shell: bash
         run: |
@@ -50,4 +55,11 @@ jobs:
           path: |
             ${{ runner.temp }}/hermes-benchmark/report.json
             ${{ runner.temp }}/hermes-benchmark/summary.md
+          retention-days: 7
+      - name: Preserve H-19 sanitized attack report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: hermes-h19-offline-attacks
+          path: ${{ runner.temp }}/h19-attack-report.json
           retention-days: 7
