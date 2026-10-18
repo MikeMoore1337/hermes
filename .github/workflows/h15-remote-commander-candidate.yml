@@ -1,0 +1,80 @@
+name: H-15 pinned Remote Commander candidate (isolated CI only)
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - scripts/h15_remote_commander_candidate_audit.py
+      - tests/test_h15_remote_commander_candidate_audit.py
+      - docs/operations/H-15-SELFHOSTED-REMOTE-MCP.md
+      - .github/workflows/h15-remote-commander-candidate.yml
+
+permissions:
+  contents: read
+
+jobs:
+  candidate:
+    # Never run external source alongside fork PR secrets or credentials.
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout Hermes, never persist repository credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Offline fail-closed Hermes security gate regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest -v tests.test_h15_remote_commander_candidate_audit
+
+      - name: Fetch exact upstream Git commit (not tag, latest or npm install)
+        shell: bash
+        run: |
+          set -euo pipefail
+          upstream="$RUNNER_TEMP/brc-upstream"
+          mkdir -p "$upstream"
+          git -C "$upstream" init -q
+          git -C "$upstream" remote add origin https://github.com/shahidx0x/better-remote-commander.git
+          git -C "$upstream" fetch --no-tags --depth=1 origin cbe511702dd0147650353c29ac6ab1decd8afda1
+          git -C "$upstream" checkout -q --detach FETCH_HEAD
+          test "$(git -C "$upstream" rev-parse HEAD)" = cbe511702dd0147650353c29ac6ab1decd8afda1
+          echo "UPSTREAM_SOURCE_PIN=PASS"
+
+      - name: Fail-closed provenance, license, full-tool inventory, known policy risks
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/h15_remote_commander_candidate_audit.py \
+            --source-dir "$RUNNER_TEMP/brc-upstream" \
+            | tee "$RUNNER_TEMP/brc-audit.json"
+          python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); assert r["production_ready"] is False and r["live_execution"] == "DENIED"; print("LIVE_REMOTE_COMMAND_EXECUTION=DENIED")' "$RUNNER_TEMP/brc-audit.json"
+
+      - name: Node runtime pinned to major line for disposable upstream E2E
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+
+      - name: Build and exercise actual upstream relay, OAuth, multi-device and agent tests
+        shell: bash
+        working-directory: ${{ runner.temp }}/brc-upstream
+        run: |
+          set -euo pipefail
+          npm install --global pnpm@11.24.0
+          pnpm --version
+          pnpm install --frozen-lockfile
+          pnpm build
+          pnpm test
+          echo "UPSTREAM_ISOLATED_E2E=PASS" >> "$GITHUB_STEP_SUMMARY"
+          echo "PRODUCTION_ACTIVATION=NOT_EXECUTED" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Retain sanitized source audit receipt
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: h15-remote-commander-source-audit
+          path: ${{ runner.temp }}/brc-audit.json
+          if-no-files-found: ignore
+          retention-days: 7
