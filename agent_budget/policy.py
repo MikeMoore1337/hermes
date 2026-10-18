@@ -6,6 +6,7 @@ and does not confer OS/Git/Telegram privileges. No network or secrets.
 from __future__ import annotations
 
 import json
+import math
 import re
 from datetime import UTC, datetime
 from pathlib import Path
@@ -144,7 +145,10 @@ def verify_metrics(metrics: object) -> dict[str, object]:
         if value is not None and (type(value) is not int or not 0 <= value <= 1_000_000):
             raise BudgetDenied("counter_invalid")
     spent = metrics["provider_cost_usd"]
-    if spent is not None and (type(spent) not in (float, int) or spent < 0):
+    if spent is not None and (
+        type(spent) not in (float, int) or spent < 0
+        or (type(spent) is float and not math.isfinite(spent))
+    ):
         raise BudgetDenied("cost_invalid")
     status = metrics["http_status"]
     if status is not None and (type(status) is not int or not 100 <= status <= 599):
