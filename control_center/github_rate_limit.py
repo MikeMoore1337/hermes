@@ -128,10 +128,17 @@ def save(value:dict,path:Path=OUTPUT,*,group:str|None=None):
     if path.is_symlink():
         raise GitHubQuotaError("symlink")
     path.parent.mkdir(mode=0o750,parents=True,exist_ok=True)
+    target_gid=None
     if group:
         import grp
-        os.chown(path.parent,0,grp.getgrnam(group).gr_gid)
-        os.chmod(path.parent,0o750)
+        target_gid=grp.getgrnam(group).gr_gid
+        state=path.parent.lstat()
+        # systemd StateDirectory and Group provision ownership *before*
+        # sandboxing. A capless collector must never call chown at runtime.
+        if (not path.parent.is_dir() or path.parent.is_symlink()
+                or state.st_uid!=os.geteuid() or state.st_gid!=target_gid
+                or (state.st_mode & 0o777)!=0o750):
+            raise GitHubQuotaError("unsafe_state_directory")
     tmp=None
     try:
         with tempfile.NamedTemporaryFile(mode="w",encoding="utf-8",
@@ -139,11 +146,13 @@ def save(value:dict,path:Path=OUTPUT,*,group:str|None=None):
             tmp=Path(out.name)
             json.dump(value,out,separators=(",",":"))
             out.write("\n");out.flush()
-            os.fchmod(out.fileno(),0o640);os.fsync(out.fileno())
+            os.fchmod(out.fileno(),0o640)
+            if target_gid is not None:
+                owner=os.fstat(out.fileno())
+                if owner.st_uid!=os.geteuid() or owner.st_gid!=target_gid:
+                    raise GitHubQuotaError("unsafe_snapshot_group")
+            os.fsync(out.fileno())
         os.replace(tmp,path)
-        if group:
-            import grp
-            os.chown(path,0,grp.getgrnam(group).gr_gid)
     finally:
         if tmp is not None:tmp.unlink(missing_ok=True)
 

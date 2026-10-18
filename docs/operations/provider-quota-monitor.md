@@ -413,3 +413,31 @@ and inspect per-provider cards in the existing owner OAuth UI. Confirm
 source_kind and independent reset windows, not merely collector exit=0.
 Rollback via `bash "$setup" disable <provider>` leaves Ops Watch
 and the existing H-01 fail-closed policy untouched.
+
+
+## Stage 6 - capless provider snapshot ownership repair (#295)
+
+On the Hermes VPS the one-shot GitHub collector's first official API read
+succeeded from the owner console (`READ_STATUS=ok`, six resources), but the
+systemd smoke reported `GITHUB_QUOTA_READ=unavailable`. Its StateDirectory was
+`root:root 0750`; both optional collectors previously called `os.chown`
+from inside a `CapabilityBoundingSet=` empty sandbox. Such runtime
+ownership changes cannot be relied upon without CAP_CHOWN.
+
+Both isolated service units now specify `User=root` and
+`Group=hermes-control`. systemd provisions `StateDirectory=hermes-provider-quota`
+with that user/group before applying the capless sandbox. Snapshot writers
+assert matching owner/group and directory mode, write root-owned group-readable
+files atomically, and **never chown**. The GitHub SQLite history writer
+likewise checks inherited group ownership without a runtime chown. A missing
+or wrongly provisioned StateDirectory fails closed; no world-readable file,
+capability increase, extra API request, or runtime H-01 change is allowed.
+
+After exact-SHA CI and production CD, source-deployed units are **not** installed
+by the normal deploy. On the owner's root VPS console, use
+`bash /opt/hermes-agent-owner/releases/main-$SHA/deploy/h15-provider-source-setup.sh install github`
+to replace/backup the installed units, then `smoke github`, verify a fresh
+`FRESH_OBSERVED` official snapshot and usable history, and only then
+`enable github` for its 10-minute timer. Do not run install/smoke/enable
+for Cloudflare until its own approved root-only token and account ID are
+independently provisioned. Keep #295 OPEN until all source and UI proofs pass.

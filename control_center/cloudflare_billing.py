@@ -164,10 +164,16 @@ def save(snapshot: dict, path: Path = OUTPUT, *, group: str | None = None) -> No
     if len(snapshot["days"]) > 30:
         raise BillingError("invalid_history")
     path.parent.mkdir(mode=0o750, parents=True, exist_ok=True)
+    target_gid = None
     if group is not None:
         import grp
-        os.chown(path.parent, 0, grp.getgrnam(group).gr_gid)
-        os.chmod(path.parent, 0o750)
+        target_gid = grp.getgrnam(group).gr_gid
+        state = path.parent.lstat()
+        # systemd owns the StateDirectory; CAP_CHOWN is intentionally absent.
+        if (not path.parent.is_dir() or path.parent.is_symlink()
+                or state.st_uid != os.geteuid() or state.st_gid != target_gid
+                or (state.st_mode & 0o777) != 0o750):
+            raise BillingError("unsafe_state_directory")
     target = None
     try:
         with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,
@@ -177,11 +183,12 @@ def save(snapshot: dict, path: Path = OUTPUT, *, group: str | None = None) -> No
             file.write("\n")
             file.flush()
             os.fchmod(file.fileno(), 0o640)
+            if target_gid is not None:
+                owner = os.fstat(file.fileno())
+                if owner.st_uid != os.geteuid() or owner.st_gid != target_gid:
+                    raise BillingError("unsafe_snapshot_group")
             os.fsync(file.fileno())
         os.replace(target, path)
-        if group is not None:
-            import grp
-            os.chown(path, 0, grp.getgrnam(group).gr_gid)
     finally:
         if target is not None:
             target.unlink(missing_ok=True)
