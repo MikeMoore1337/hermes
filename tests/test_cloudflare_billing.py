@@ -119,6 +119,18 @@ class BillingTests(unittest.TestCase):
             self.assertEqual(len(seen),1)
             self.assertTrue(seen[0].startswith("https://api.cloudflare.com/client/v4/accounts/"))
 
+    def test_billing_denial_does_not_claim_ai_model_auth_failure(self):
+        with TemporaryDirectory() as tmp:
+            path=Path(tmp)/"billing.json"
+            cf.save(cf.error("auth_required",NOW),path)
+            result=registry(cloudflare_path=path,codex_path=Path(tmp)/"codex",
+                            desktop_path=Path(tmp)/"dc",github_path=Path(tmp)/"gh",
+                            now=NOW)["providers"][0]
+            self.assertEqual(result["status"],"unknown")
+            self.assertEqual(result["billing_status"],"auth_required")
+            self.assertEqual(result["notes"],"billing_auth_required")
+            self.assertIsNone(result["windows"][0]["remaining_percent"])
+
     def test_invalid_saved_snapshot_cannot_fake_neurons(self):
         with TemporaryDirectory() as tmp:
             p=Path(tmp)/"billing.json"
