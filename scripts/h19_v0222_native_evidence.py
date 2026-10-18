@@ -17,7 +17,7 @@ from scripts.verify_v0221_native_tool_policy import (
     _packet, validate, BLOCKED_CASES, REQUIRED_CASES, NativePolicyDenied,
 )
 from scripts.verify_v0222_immutable import (
-    IMAGE, IMAGE_DIGEST, PATCHED_IMAGE, EXPECTED_SOURCE, commands,
+    IMAGE, PATCHED_IMAGE, EXPECTED_SOURCE, commands,
     patched_commands, image_identity, stamp_details,
 )
 
@@ -110,15 +110,37 @@ def capture(runner=run_bounded) -> dict:
     for name in sorted(REQUIRED_CASES):
         first = raw_original["cases"][name]
         second = raw_patched["cases"][name]
+        deny = name in BLOCKED_CASES or name == "agent_fresh_native"
+        if deny:
+            case_pass = not second["executor_reached"]
+        elif name == "direct_allowed":
+            case_pass = second["executor_reached"]
+        elif name == "execution_arg_recheck":
+            case_pass = (second["executor_reached"] and
+                         second.get("modified_approval_seen") is True)
+        elif name == "execute_code_nested_scope":
+            case_pass = (second["executor_reached"] and
+                         second.get("nested_terminal_allowed") is False and
+                         second.get("nested_web_search_allowed") is True)
+        elif name == "parallel_policy":
+            case_pass = (second.get("restricted_executor_reached") is False and
+                         second.get("allowed_executor_reached") is True)
+        else:
+            case_pass = False
+        if name == "subagent_scope":
+            case_pass = (case_pass and second.get("terminal_in_child") is False
+                         and second.get("terminal_in_disabled") is True)
         case_rows.append({
             "scenario_id": "h19-native-" + name,
             "source": "pinned_v0222_python_dispatch",
             "original_stub_executor_reached": first["executor_reached"],
             "patched_stub_executor_reached": second["executor_reached"],
-            "expected_tool_behavior": "DENY" if name in BLOCKED_CASES else "MIXED_OR_ALLOWED",
-            "verification_status": "PASS" if runtime_pass else "FAIL",
+            "expected_tool_behavior": "DENY" if deny else "BOUNDED_ALLOW",
+            "verification_status": "PASS" if case_pass else "FAIL",
             "evidence_ref": "docker:" + iid,
         })
+    runtime_pass = runtime_pass and all(row["verification_status"] == "PASS"
+                                        for row in case_rows)
     return {
         "schema": SCHEMA,
         "mode": "isolated_pinned_real_code_synthetic_executors",
@@ -133,7 +155,9 @@ def capture(runner=run_bounded) -> dict:
         "os_probe_status": "PASS" if os_pass else "FAIL",
         "os_probe": {k: os_data.get(k) if type(os_data) is dict else None
                      for k in (*os_required, "credentials_injected", "shell_binary_present")},
-        "shell_execution_denied_by_os": False if os_data.get("shell_binary_present") else None,
+        "shell_execution_denied_by_os": False if (
+            type(os_data) is dict and os_data.get("shell_binary_present") is True
+        ) else None,
         "shell_execution_denial_verified": False,
         "mcp_external_effect_denial_verified": False,
         "full_runtime_permission_enforcement_verified": False,
