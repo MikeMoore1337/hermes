@@ -22,6 +22,9 @@ def payload(*, sdk="AVAILABLE"):
         "real_protocol": available, "agent_dispatch": available,
         "actual_external_mcp": False, "real_provider": False,
         "real_agent_resident": False,
+        "sdk_server_import": "PASS" if available else "NOT_RUN",
+        "registered_tool_count": 2 if available else 0,
+        "discovery_errors_observed": False,
     }
 
 
