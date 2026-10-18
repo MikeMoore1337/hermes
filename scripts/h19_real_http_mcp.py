@@ -19,7 +19,7 @@ from .verify_v0222_immutable import (
     patched_commands,
 )
 
-SCHEMA = "h19-real-http-mcp-v1"
+SCHEMA = "h19-real-http-mcp-v2"
 PROBE = r"""
 import asyncio
 import contextlib
@@ -34,7 +34,7 @@ import threading
 import time
 from unittest.mock import patch
 
-SCHEMA = "h19-real-http-mcp-v1"
+SCHEMA = "h19-real-http-mcp-v2"
 report = {
     "schema": SCHEMA,
     "mode": os.environ.get("HERMES_SCOPE_PROBE_MODE", "unknown"),
