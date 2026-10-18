@@ -54,12 +54,12 @@ def _number(value: object) -> bool:
     return type(value) in (float, int) and math.isfinite(value) and 0 <= value <= 1e9
 
 
-def _validate(row: dict, *, now: dt.datetime) -> dict:
+def _validate(row: dict, *, now: dt.datetime, allow_old: bool = False) -> dict:
     if not isinstance(row, dict) or set(row) != FIELDS:
         raise AdvisoryError("observation_fields")
     day = _date(row["day"])
     current_day = now.astimezone(dt.timezone.utc).date()
-    if day >= current_day or (current_day - day).days > MAX_DAYS:
+    if day >= current_day or (not allow_old and (current_day - day).days > MAX_DAYS):
         raise AdvisoryError("observation_day")
     numbers = [row[key] for key in
                ("estimate_neurons", "lower95_neurons", "upper95_neurons")]
@@ -119,14 +119,16 @@ def read(path: Path = OUTPUT, *, now: dt.datetime | None = None) -> dict:
         days = raw["days"]
         if not isinstance(days, list) or not 1 <= len(days) <= MAX_DAYS:
             return result
-        if [_validate(row, now=moment)["day"] for row in days] != sorted(
+        if [_validate(row, now=moment, allow_old=True)["day"] for row in days] != sorted(
                 {row["day"] for row in days}):
             return result
         result["observed_at"] = raw["observed_at"]
-        result["days"] = days
+        current_day = moment.astimezone(dt.timezone.utc).date()
+        result["days"] = [row for row in days
+                          if (current_day - _date(row["day"])).days <= MAX_DAYS]
         newest = _date(days[-1]["day"])
         result["status"] = ("historical_estimate" if
-                            (moment.astimezone(dt.timezone.utc).date() - newest).days <= 2
+                            (current_day - newest).days <= 2
                             else "stale")
         return result
     except (OSError, UnicodeError, ValueError, TypeError, KeyError,
