@@ -16,12 +16,26 @@ from scripts.h15_remote_commander_candidate_audit import (
 )
 
 RELATIVE = Path("packages/agent/src/dispatcher.ts")
-DENIED_TOOLS = (
-    "set_config_value",       # config ACL / blockedCommands mutable by MCP
-    "prepare_file_transfer", # external tmpfiles.org transfer, not self-hosted
-    "send_file_transfer",
-    "receive_file_transfer",
-)
+DENIED_HANDLERS = {
+    # Never expose remote config or historical tool arguments, which can
+    # reveal policy internals or secret-bearing command prompts.
+    "get_config": "  get_config: () => getConfig(),",
+    "set_config_value": "  set_config_value: (a) => setConfigValue(a),",
+    "get_recent_tool_calls": (
+        "  get_recent_tool_calls: (a) => handlers.handleGetRecentToolCalls(a),"
+    ),
+    # The original encrypted transfer uses external tmpfiles.org hosting.
+    "prepare_file_transfer": (
+        "  prepare_file_transfer: (a) => handlers.handlePrepareFileTransfer(a),"
+    ),
+    "send_file_transfer": (
+        "  send_file_transfer: (a) => handlers.handleSendFileTransfer(a),"
+    ),
+    "receive_file_transfer": (
+        "  receive_file_transfer: (a) => handlers.handleReceiveFileTransfer(a),"
+    ),
+}
+DENIED_TOOLS = tuple(DENIED_HANDLERS)
 REMOTE_URL_DENIED = "HERMES_REMOTE_URL_FETCH_DENIED"
 REMOTE_POLICY_DENIED = "HERMES_MCP_TOOL_DISABLED_BY_OWNER_POLICY"
 
@@ -34,7 +48,7 @@ def apply(root: Path, *, sha: str = UPSTREAM_SHA) -> dict[str, object]:
         raise AuditError("unsafe_dispatcher")
     raw = path.read_text(encoding="utf-8")
     old_import = "import { getConfig, setConfigValue } from './core/tools/config.js';"
-    new_import = "import { getConfig } from './core/tools/config.js';"
+    new_import = ""
     old_read = "  read_file: (a) => handlers.handleReadFile(a),"
     new_read = (
         "  read_file: (a) => a.isUrl === true\n"
@@ -43,13 +57,8 @@ def apply(root: Path, *, sha: str = UPSTREAM_SHA) -> dict[str, object]:
         "    : handlers.handleReadFile(a),"
     )
     replacements = [(old_import, new_import), (old_read, new_read)]
-    for tool in DENIED_TOOLS:
-        line = next(
-            (line for line in raw.splitlines()
-             if line.lstrip().startswith(tool + ": (a) => ")),
-            None,
-        )
-        if not line:
+    for tool, line in DENIED_HANDLERS.items():
+        if raw.count(line) != 1:
             raise AuditError("hardened_handler_pattern_missing")
         replacements.append((line, ""))
 
