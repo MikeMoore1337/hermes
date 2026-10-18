@@ -30,6 +30,23 @@ function Require-File([string] $path) {
     }
 }
 
+function Protect-PrivateState([string] $directory) {
+    # Windows icacls processes /inheritance:r and /grant:r differently when
+    # passed in one recursive invocation: parent grants can survive while
+    # descendants become empty-DACL and unreadable (observed in owner pilot).
+    # Grant each EXISTING object individually first, including children with
+    # inheritance already disabled by the original broken installer. Doing
+    # recursive /inheritance:r before grants can lock out traversal.
+    & icacls.exe $directory /grant:r '*S-1-5-18:F' '*S-1-5-32-544:F' '*S-1-5-19:RX' /T | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'PRIVATE_ACL_GRANT_FAILED' }
+    # Block broad inheritance on the ROOT only; do not strip individual
+    # descendant ACLs after we have intentionally granted them.
+    & icacls.exe $directory /inheritance:r | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'PRIVATE_ACL_INHERITANCE_FAILED' }
+    & icacls.exe $directory /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-19:(OI)(CI)RX' | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'PRIVATE_ACL_GRANT_FAILED' }
+}
+
 # A prior failed Prepare can contain secrets before task registration.
 # Only an explicit Repair can re-use this pinned private staging directory.
 switch ($Mode) {
@@ -44,8 +61,7 @@ switch ($Mode) {
                 ($existing.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
                 throw 'REPAIR_UNTRUSTED_STATE'
             }
-            & icacls.exe $state /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-19:(OI)(CI)RX' /T | Out-Null
-            if ($LASTEXITCODE -ne 0) { throw 'PRIVATE_ACL_FAILED' }
+            Protect-PrivateState $state
         } elseif (Test-Path -LiteralPath $state) {
             throw 'STATE_EXISTS_USE_REPAIR_AFTER_ACL_REVIEW'
         }
@@ -98,8 +114,7 @@ switch ($Mode) {
         # CRITICAL: protect ProgramData BEFORE copying tokens and private SSH
         # keys or installing wheels, including all existing files on Repair.
         # Applying ACLs only after pip is unsafe if preparation fails mid-way.
-        & icacls.exe $state /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-19:(OI)(CI)RX' /T | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw 'PRIVATE_ACL_FAILED' }
+        Protect-PrivateState $state
 
         # Copy only the CPython runtime, NEVER the user's site-packages or
         # Scripts. The service's venv points at this ProgramData copy and
@@ -141,8 +156,7 @@ switch ($Mode) {
         # that does NOT have access to per-user third-party site-packages.
         & $runtimePython -I -c 'import ssl, socket, venv, ensurepip'
         if ($LASTEXITCODE -ne 0) { throw 'ISOLATED_PYTHON_RUNTIME_INVALID' }
-        & icacls.exe $state /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-19:(OI)(CI)RX' /T | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw 'PRIVATE_ACL_FAILED' }
+        Protect-PrivateState $state
 
         if ($repair) {
             # No overwrites or imports from an unknown staging directory.
@@ -195,8 +209,7 @@ switch ($Mode) {
         if ($LASTEXITCODE -ne 0) { throw 'WEBSOCKETS_VERSION_INVALID' }
 
         # Re-apply restricted ACLs to files created by venv/pip.
-        & icacls.exe $state /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-19:(OI)(CI)RX' /T | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw 'PRIVATE_ACL_FAILED' }
+        Protect-PrivateState $state
 
         $arguments = '-m device_fabric.device_agent --config "' + $state + '\windows-pc.json" --watch ' +
           '--ssh-host 111.88.215.204 --ssh-user hermes-presence-tunnel ' +
