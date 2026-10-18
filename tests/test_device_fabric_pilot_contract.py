@@ -7,7 +7,7 @@ import subprocess
 import tempfile
 import unittest
 
-from device_fabric.owner_smoke import provision
+from device_fabric.owner_smoke import provision, wait_for_offline
 from device_fabric.presence import DeviceRegistry
 from device_fabric.service import run
 
@@ -101,6 +101,46 @@ class FabricPilotContractTests(unittest.TestCase):
             token_file.write_text("invalid")
             with self.assertRaises(ValueError):
                 provision(registry, token_file)
+
+    def test_smoke_waits_for_async_server_cleanup_and_requires_last_seen(self):
+        class Registry:
+            def __init__(self):
+                self.status = "online"
+                self.last_seen = None
+                self.calls = 0
+
+            def get_device_status(self, device_id):
+                self.calls += 1
+                return {"status": self.status, "last_seen": self.last_seen}
+
+        async def delayed_close():
+            registry = Registry()
+
+            async def close_on_server():
+                await asyncio.sleep(0.12)
+                registry.status = "offline"
+                registry.last_seen = "2026-10-18T00:00:00Z"
+
+            task = asyncio.create_task(close_on_server())
+            await wait_for_offline(registry, timeout=0.5)
+            await task
+            return registry.calls
+
+        self.assertGreaterEqual(asyncio.run(delayed_close()), 2)
+
+        async def stays_online():
+            with self.assertRaisesRegex(RuntimeError, "pilot_did_not_disconnect"):
+                await wait_for_offline(Registry(), timeout=0.09)
+
+        asyncio.run(stays_online())
+
+        async def offline_but_missing_observation():
+            registry = Registry()
+            registry.status = "offline"
+            with self.assertRaisesRegex(RuntimeError, "pilot_did_not_disconnect"):
+                await wait_for_offline(registry, timeout=0.09)
+
+        asyncio.run(offline_but_missing_observation())
 
     def test_service_entry_refuses_unprepared_and_bad_port(self):
         with tempfile.TemporaryDirectory() as temp:
