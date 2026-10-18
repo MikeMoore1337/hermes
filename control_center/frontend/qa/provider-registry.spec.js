@@ -124,3 +124,32 @@ test("GitHub configured token has two separately measured history windows",async
   await expect(github.locator(".quota295-chart polyline")).not.toHaveAttribute("points",first);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1)).toBe(false);
 });
+
+for(const width of [320,393,1440]){
+ test("Cloudflare historical adaptive estimates never become Free quota "+width, async({page})=>{
+   await page.setViewportSize({width,height:900});
+   await setup(page);
+   const previous={...data,providers:data.providers.map(p=>p.id!=="cloudflare_workers_ai"?p:{
+     ...p,analytics_status:"historical_estimate",analytics_observed_at:moment,
+     analytics_history:[{day:"2026-10-17",estimate_neurons:23.427,
+       lower95_neurons:23.427,upper95_neurons:23.427,
+       sample_size:2,quality:"very_small_sample"}]
+   })};
+   await page.route("**/api/providers/registry",route=>route.fulfill({
+     status:200,contentType:"application/json",body:JSON.stringify(previous)
+   }));
+   await page.goto("/");
+   await page.getByRole("button",{name:"Квоты и инструменты"}).click();
+   const card=page.locator('.quota295-card[data-provider="cloudflare_workers_ai"]');
+   await expect(card.getByText(/^Cloudflare Analytics за/)).toBeVisible();
+   await expect(card.getByText(/очень маленькая выборка/).first()).toBeVisible();
+   await expect(card.getByText(/Использовано: неизвестно/)).toBeVisible();
+   await expect(card.getByText(/Осталось: неизвестно/)).toBeVisible();
+   await expect(card.locator("[role=progressbar]")).toHaveCount(0);
+   await card.getByText("История оценочных данных Cloudflare").click();
+   await expect(card.getByText(/95% интервал 23,427 - 23,427/)).toBeVisible();
+   expect(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1)).toBe(false);
+   mkdirSync(evidence,{recursive:true});
+   await page.screenshot({path:resolve(evidence,"cloudflare-advisory-"+width+".png"),fullPage:true});
+ });
+}

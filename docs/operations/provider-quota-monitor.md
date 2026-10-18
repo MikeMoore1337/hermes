@@ -556,3 +556,50 @@ Official references:
 - https://developers.cloudflare.com/analytics/graphql-api/sampling/
 - https://developers.cloudflare.com/analytics/faq/graphql-api-inconsistent-results/
 - https://developers.cloudflare.com/analytics/graphql-api/features/data-sets/
+
+
+## Stage 9 - bounded advisory Cloudflare history (prepared, NOT enabled)
+
+Owner's Cloudflare Analytics Read confidence probe successfully returned a
+prior-day `estimate=23.427`, `lower95=23.427`, `upper95=23.427`,
+`sampleSize=2` for the authorised account. Cloudflare's response supports
+the GraphQL field and an estimate but **does not demonstrate full coverage**
+or zero uncertainty: only two underlying samples and an apparent zero-width
+interval. Never advertise this as the exact total Neurons, Free quota spent,
+billing usage, or today's available budget.
+
+The optional `control_center.cloudflare_analytics_history` module stores
+up to 30 **completed UTC-day** estimates, their 95% reported bounds and
+sample size. Sample sizes below 10 are tagged `very_small_sample`;
+10 through 29 are `limited_sample` (display-only heuristics, not
+statistical guarantees). The registry can expose these only under separate
+`analytics_history` / `analytics_status` keys. Cloudflare's current
+quota fields remain `status=unknown`, `source_kind=unknown`,
+`used=null`, `remaining=null`. Do not feed these values into #271/#62,
+Free-quota alerts, or machine ALLOW.
+
+The optional collector is **one-shot only** and will refuse to query if
+not running with root UID and primary group `hermes-control`, or if the
+root-created StateDirectory does not exist. This stage deliberately does not
+install a systemd unit or timer.
+
+Root-only manual admission command after exact-SHA production deploy
+and only while the source matches the immutable owner release:
+
+```bash
+active="$(readlink -f /opt/hermes-control-center/current)"
+[[ "$active" =~ ^/opt/hermes-control-center/releases/main-([0-9a-f]{40})$ ]] || exit 1
+sha="${BASH_REMATCH[1]}"
+test -d "/opt/hermes-agent-owner/releases/main-$sha" || exit 1
+cd "/opt/hermes-agent-owner/releases/main-$sha" || exit 1
+runuser -u root -g hermes-control -- /usr/bin/python3 -m scripts.h15_cloudflare_analytics_collect
+```
+
+This performs exactly one bounded read-only Cloudflare GraphQL confidence
+query, then writes only a sanitized `0640` atomic local archive in the
+already-created `/var/lib/hermes-provider-quota/` directory. It does not
+persist bearer tokens, account IDs, raw API data, prompts or request headers.
+The existing GitHub timer is unchanged. No repeats or automated retries.
+The above command should be executed in an isolated child Bash process in
+SSH, not sourced into the owner shell, to avoid disconnects on `exit`.
+A fail-closed non-zero outcome means no new estimate is published.
