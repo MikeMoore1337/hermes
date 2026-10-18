@@ -33,6 +33,13 @@ class WindowsBootstrapSafetyTests(unittest.TestCase):
         # the owner's AppData only as an approved copy input.
         self.assertLess(code.index("python-runtime"), code.index("Register-ScheduledTask"))
 
+    def test_inaccessible_staged_identity_fails_closed_without_hash_exception(self):
+        code = SCRIPT.read_text()
+        self.assertIn("REPAIR_HASH_ACCESS_OR_IO_FAILED", code)
+        self.assertIn("-Algorithm SHA256 -ErrorAction Stop", code)
+        self.assertIn("REPAIR_SOURCE_MISMATCH", code)
+        self.assertNotIn("$actual = (Get-FileHash -LiteralPath $pair[1] -Algorithm SHA256).Hash", code)
+
     def test_background_principal_and_boot_trigger_unchanged(self):
         code = SCRIPT.read_text()
         self.assertIn("-AtStartup", code)

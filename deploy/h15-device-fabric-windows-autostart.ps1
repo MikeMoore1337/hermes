@@ -155,8 +155,16 @@ switch ($Mode) {
                 @((Join-Path $source 'device_fabric\device_agent.py'), (Join-Path $state 'device_fabric\device_agent.py'))
             )) {
                 Require-File $pair[1]
-                $expected = (Get-FileHash -LiteralPath $pair[0] -Algorithm SHA256).Hash
-                $actual = (Get-FileHash -LiteralPath $pair[1] -Algorithm SHA256).Hash
+                # Fail on the FIRST unreadable source/staged file. Native
+                # Get-FileHash without ErrorAction Stop writes a nonterminating
+                # access-denied error, then StrictMode reports a misleading
+                # missing Hash property. Do not skip this identity check.
+                try {
+                    $expected = (Get-FileHash -LiteralPath $pair[0] -Algorithm SHA256 -ErrorAction Stop).Hash
+                    $actual = (Get-FileHash -LiteralPath $pair[1] -Algorithm SHA256 -ErrorAction Stop).Hash
+                } catch {
+                    throw 'REPAIR_HASH_ACCESS_OR_IO_FAILED'
+                }
                 if ($actual -ne $expected) { throw 'REPAIR_SOURCE_MISMATCH' }
             }
             $venv = Join-Path $state '.venv'
