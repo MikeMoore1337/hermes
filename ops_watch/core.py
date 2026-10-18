@@ -23,6 +23,8 @@ INCIDENT_CODES = frozenset({
     "quota_desktop_auth", "quota_desktop_stale",
     "quota_github_80", "quota_github_95", "quota_github_exhausted",
     "quota_github_auth", "quota_github_stale",
+    "device_windows_pc_unavailable", "device_linux_vps_unavailable",
+    "device_tls_expiring", "device_tls_expired",
 })
 
 
@@ -217,6 +219,27 @@ def analyze(snapshot: Mapping[str, Any], *, now: datetime) -> list[dict[str, str
                     if value == "high":
                         found.append(_finding("infra_" + host + "_" + metric + "_high",
                                               "critical" if metric == "disk" else "warning"))
+    if data.get("device_fabric") is not None:
+        fabric = _mapping(data["device_fabric"], "device_fabric")
+        if set(fabric) != {"windows-pc", "linux-vps"}:
+            raise InputError("invalid_device_fabric_set")
+        for ident, code in (("windows-pc", "device_windows_pc_unavailable"),
+                            ("linux-vps", "device_linux_vps_unavailable")):
+            item = _mapping(fabric[ident], "device_fabric_device")
+            if set(item) != {"status"}:
+                raise InputError("invalid_device_fabric_fields")
+            status = _state(item, "status", frozenset({
+                "not_configured", "unknown", "warming", "online", "offline",
+            }))
+            if status == "offline":
+                found.append(_finding(code, "critical" if ident == "linux-vps" else "warning"))
+    if data.get("device_fabric_tls") is not None:
+        tls = _state({"status": data["device_fabric_tls"]}, "status", frozenset({
+            "not_configured", "unknown", "healthy", "expiring", "expired",
+        }))
+        if tls in ("expiring", "expired"):
+            found.append(_finding("device_tls_" + tls,
+                                  "critical" if tls == "expired" else "warning"))
     if data.get("quota_signals") is not None:
         signals = _mapping(data["quota_signals"], "quota_signals")
         if set(signals) != {"desktop_commander", "github_api"}:

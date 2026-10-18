@@ -130,6 +130,8 @@ class SenderTimerMonitoringTests(unittest.TestCase):
         collector_run.assert_called_once_with(alerts_timer=GOOD,
                                                alerts_service={"failed":False},
                                                infrastructure_dir=collector.INFRASTRUCTURE_ROOT,
+                                               device_fabric_db=collector.DEVICE_DB,
+                                               device_fabric_opt_in=collector.DEVICE_OPT_IN,
                                                quota_paths={"codex": collector.Q_CODEX,
                                                             "desktop": collector.Q_DESKTOP,
                                                             "cloudflare": collector.Q_CF,

@@ -67,6 +67,10 @@ CODE_MAPPING: dict[str, tuple[str, str, str, str]] = {
     "quota_github_exhausted": ("provider_rate_limited", "GH_QUOTA_EXHAUSTED", "unhealthy", "github-token"),
     "quota_github_auth": ("monitoring_stale", "GH_QUOTA_AUTH", "unknown", "github-token"),
     "quota_github_stale": ("monitoring_stale", "GH_QUOTA_STALE", "unknown", "github-token"),
+    "device_windows_pc_unavailable": ("service_health_failure", "WINDOWS_PRESENCE_OFFLINE", "degraded", "device-windows"),
+    "device_linux_vps_unavailable": ("service_health_failure", "LINUX_PRESENCE_OFFLINE", "unhealthy", "device-linux"),
+    "device_tls_expiring": ("service_health_failure", "WSS_CERT_EXPIRING", "degraded", "device-wss"),
+    "device_tls_expired": ("service_health_failure", "WSS_CERT_EXPIRED", "unhealthy", "device-wss"),
 }
 
 # New stable Ops codes must never crash the active H-01 timer during projection.

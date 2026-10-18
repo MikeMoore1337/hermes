@@ -54,6 +54,10 @@ TITLES: dict[str, str] = {
     "quota_github_exhausted": "GitHub API: исчерпан один лимит настроенного токена",
     "quota_github_auth": "GitHub API: токен источника квот отклонён",
     "quota_github_stale": "GitHub API: данные о квоте настроенного токена устарели",
+    "device_windows_pc_unavailable": "Hermes Device Fabric: Windows PC долго не подключается",
+    "device_linux_vps_unavailable": "Hermes Device Fabric: VPS YFC долго не подключается",
+    "device_tls_expiring": "Hermes Device Fabric: срок TLS-сертификата скоро истечёт",
+    "device_tls_expired": "Hermes Device Fabric: TLS-сертификат истёк",
 }
 CRITICAL = frozenset({
     "timer_disabled", "timer_inactive", "discovery_failures", "drain_failures",
@@ -64,6 +68,7 @@ CRITICAL = frozenset({
     "infra_hermes_unavailable", "infra_hermes_disk_high",
     "infra_yfc_unavailable", "infra_yfc_disk_high",
     "quota_desktop_exhausted", "quota_github_exhausted",
+    "device_linux_vps_unavailable", "device_tls_expired",
 })
 ACTIONS: dict[str, str] = {
     "snapshot_stale": "Проверить журнал службы мониторинга вручную",
@@ -109,6 +114,10 @@ ACTIONS: dict[str, str] = {
     "quota_github_exhausted": "Не использовать исчерпанный ресурс токена до подтверждённого восстановления",
     "quota_github_auth": "Проверить авторизацию отдельного GitHub quota token",
     "quota_github_stale": "Проверить историю чтения GitHub rate-limit без запуска задач",
+    "device_windows_pc_unavailable": "Проверить питание Windows, задачу HermesDevicePresence и исходящий SSH; не открывать входящие порты",
+    "device_linux_vps_unavailable": "Проверить hermes-device-agent.service на VPS YFC и исходящий SSH без вывода секретов",
+    "device_tls_expiring": "Согласованно заменить пилотный TLS-сертификат и обновить CA на обоих устройствах до окончания срока",
+    "device_tls_expired": "Восстановить сертификат и доверие обоих клиентов без отключения проверки TLS",
 }
 CODEX_CODES = frozenset({"codex_low", "codex_exhausted", "codex_auth_required", "codex_stale"})
 
