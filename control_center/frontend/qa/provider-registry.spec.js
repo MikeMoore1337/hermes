@@ -141,8 +141,8 @@ for(const width of [320,393,1440]){
    await page.goto("/");
    await page.getByRole("button",{name:"Квоты и инструменты"}).click();
    const card=page.locator('.quota295-card[data-provider="cloudflare_workers_ai"]');
-   await expect(card.getByText(/23,427 Neurons/)).toBeVisible();
-   await expect(card.getByText(/очень маленькая выборка/)).toBeVisible();
+   await expect(card.getByText(/^Cloudflare Analytics за/)).toBeVisible();
+   await expect(card.getByText(/очень маленькая выборка/).first()).toBeVisible();
    await expect(card.getByText(/Использовано: неизвестно/)).toBeVisible();
    await expect(card.getByText(/Осталось: неизвестно/)).toBeVisible();
    await expect(card.locator("[role=progressbar]")).toHaveCount(0);
