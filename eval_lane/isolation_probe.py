@@ -5,11 +5,13 @@ execution and does not set OperatorGates. No dependencies, service or secrets.
 """
 from __future__ import annotations
 
+import errno
 import json
 import os
 from pathlib import Path
 import re
 import sys
+import socket
 
 
 MEMORY_CEILING = 768 * 1024 * 1024
@@ -48,11 +50,28 @@ def _cgroup_relative(text: str) -> Path:
     return Path(path.lstrip("/"))
 
 
+def _address_family_denied(family: int, socket_factory=socket.socket) -> bool:
+    """Attempt socket() only; NEVER connect/send/resolve a hostname.
+
+    Success opening an AF_INET socket means the namespace/socket policy is
+    insufficient. Only policy-denial errno values count as observable denial.
+    """
+    try:
+        connection = socket_factory(family, socket.SOCK_STREAM)
+    except OSError as exc:
+        return exc.errno in (errno.EPERM, errno.EACCES,
+                             errno.EAFNOSUPPORT, errno.EPROTONOSUPPORT)
+    else:
+        connection.close()
+        return False
+
+
 def inspect_offline_controls(*, proc: Path = Path("/proc"),
                              cgroup: Path = Path("/sys/fs/cgroup"),
                              interfaces: Path = Path("/sys/class/net"),
                              effective_uid: int | None = None,
-                             require_linux: bool = True) -> dict:
+                             require_linux: bool = True,
+                             socket_factory=socket.socket) -> dict:
     """Observations only. Even PASS never permits a model request or network.
 
     `proc`/`cgroup`/`interfaces` overrides are solely for synthetic tests;
@@ -62,9 +81,11 @@ def inspect_offline_controls(*, proc: Path = Path("/proc"),
     observed = {"nonroot": False, "no_new_privileges": False,
                 "no_effective_capabilities": False, "no_bounding_capabilities": False,
                 "seccomp_filter": False, "private_cgroup_limits": False,
-                "only_loopback_interface": False}
+                "only_loopback_interface": False,
+                "ipv4_socket_denied": False, "ipv6_socket_denied": False}
     result = {"schema_version": 1, "checks": observed,
               "actual_outbound_deny_test": "NOT_PERFORMED",
+              "socket_creation_deny_test": "NOT_PERFORMED",
               "provider_cost_cap": "NOT_VERIFIED",
               "live_model_execution_allowed": False,
               "status": "NO_GO"}
@@ -95,6 +116,18 @@ def inspect_offline_controls(*, proc: Path = Path("/proc"),
                 sorted(p.name for p in interfaces.iterdir()) == ["lo"])
     except (OSError, ValueError, UnicodeError, OverflowError):
         pass
+    # Only if all static prerequisites are present, attempt opening IPv4/IPv6
+    # sockets without calling connect(). A successful socket() is an immediate
+    # denial of the offline isolation claim, even when no route is configured.
+    if all(v for k, v in observed.items() if k not in
+           ("ipv4_socket_denied", "ipv6_socket_denied")):
+        observed["ipv4_socket_denied"] = _address_family_denied(
+            socket.AF_INET, socket_factory)
+        observed["ipv6_socket_denied"] = _address_family_denied(
+            socket.AF_INET6, socket_factory)
+        result["socket_creation_deny_test"] = (
+            "PASSED" if observed["ipv4_socket_denied"] and
+            observed["ipv6_socket_denied"] else "FAILED")
     if all(observed.values()):
         result["status"] = "OFFLINE_OS_CONTROLS_OBSERVED"
     return result

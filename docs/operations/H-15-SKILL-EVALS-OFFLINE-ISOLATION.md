@@ -23,6 +23,10 @@ Observed requirements:
 - current cgroup v2 enforces `memory.max <= 768 MiB`,
   `cpu.max <= 45%`, and `pids.max <= 32`;
 - current network namespace exposes only loopback;
+- actual `socket(AF_INET, SOCK_STREAM)` and `socket(AF_INET6, SOCK_STREAM)`
+  creation both fail with a **policy-denial errno**; no `connect()`, packet,
+  DNS lookup, model call or outbound request is made. A successful socket
+  creation or unrelated resource exhaustion fails closed;
 - fail closed for missing/unreadable files, unlimited cgroup quotas,
   malformed control values and symlinked pseudo-files.
 
@@ -37,8 +41,11 @@ or `NO_GO`. In **both** cases it explicitly records:
 }
 ```
 
-This is a read-only observation, not an independent egress deny test,
-complete security attestation or runtime permission. A systemd unit's
+The probe attempts only `socket()` (no connection) to observe the
+address-family restriction on the real process. Its JSON adds
+`socket_creation_deny_test=PASSED|FAILED|NOT_PERFORMED`. This is **not an
+outbound connect/egress deny test** or complete security attestation, and
+never establishes runtime permission. A systemd unit's
 configuration, even combined with this probe, must not be represented as
 proof until executed on the intended isolated test host.
 
