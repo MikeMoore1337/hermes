@@ -67,7 +67,8 @@
    horizontal scroller would obscure the NO-GO status of the resident Agent. */
 @media(max-width:560px){
  .service-table{min-width:0}
- .service-table thead{display:none}
+ /* Visually hide table headers without removing column-header semantics. */
+ .service-table thead{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);clip-path:inset(50%);white-space:nowrap;border:0}
  .service-table tbody tr{display:flex;align-items:center;justify-content:space-between;gap:3px;border-bottom:1px solid #214163}
  .service-table tbody tr:last-child{border-bottom:0}
  .service-table td{border:0;padding:12px 8px;white-space:normal}
