@@ -315,10 +315,24 @@ with tempfile.TemporaryDirectory(dir="/tmp", prefix="h19-cli-loop-") as folder:
     def fake_script(record):
         body = record.get("body") or {}
         main = [m for m in (body.get("messages") or []) if m.get("role") == "tool"]
+        offered = {
+            str((item.get("function") or {}).get("name"))
+            for item in (body.get("tools") or [])
+            if isinstance(item, dict)
+        }
+
+        def issue(name):
+            # Same official upstream E2E behavior: direct MCP when offered,
+            # otherwise go through actual tool_search 'tool_call' bridge.
+            if name not in offered and "tool_call" in offered:
+                return ToolCall("tool_call", {
+                    "calls": [{"name": name, "arguments": {}}]})
+            return ToolCall(name, {})
+
         if not main:
-            return ToolCall("mcp__h19cli__peek", {})
+            return issue("mcp__h19cli__peek")
         if len(main) == 1:
-            return ToolCall("mcp__h19cli__mark", {})
+            return issue("mcp__h19cli__mark")
         return Text("H19_FAKE_LOOP_FINISHED")
 
     with FakeLLMServer(fake_script) as provider:
