@@ -12,6 +12,8 @@ on:
       - "tests/test_h15_oauth_egress_evidence.py"
       - "scripts/h15_oauth_egress_evidence.py"
       - "scripts/h15_caddy_callback_log_guard.py"
+      # Match production-deploy SHA gate: any scripts/h15_* change requires UI CI.
+      - "scripts/h15_*"
       - "tests/test_h15_caddy_callback_log_guard.py"
       - ".github/workflows/control-center-ui.yml"
   push:
@@ -25,6 +27,8 @@ on:
       - "tests/test_h15_oauth_egress_evidence.py"
       - "scripts/h15_oauth_egress_evidence.py"
       - "scripts/h15_caddy_callback_log_guard.py"
+      # Match production-deploy SHA gate: any scripts/h15_* change requires UI CI.
+      - "scripts/h15_*"
       - "tests/test_h15_caddy_callback_log_guard.py"
       - ".github/workflows/control-center-ui.yml"
 
