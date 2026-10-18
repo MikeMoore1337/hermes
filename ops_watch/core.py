@@ -19,6 +19,10 @@ INCIDENT_CODES = frozenset({
     "infra_hermes_ram_high", "infra_hermes_disk_high",
     "infra_yfc_unavailable", "infra_yfc_cpu_high",
     "infra_yfc_ram_high", "infra_yfc_disk_high",
+    "quota_desktop_80", "quota_desktop_95", "quota_desktop_exhausted",
+    "quota_desktop_auth", "quota_desktop_stale",
+    "quota_github_80", "quota_github_95", "quota_github_exhausted",
+    "quota_github_auth", "quota_github_stale",
 })
 
 
@@ -213,6 +217,23 @@ def analyze(snapshot: Mapping[str, Any], *, now: datetime) -> list[dict[str, str
                     if value == "high":
                         found.append(_finding("infra_" + host + "_" + metric + "_high",
                                               "critical" if metric == "disk" else "warning"))
+    if data.get("quota_signals") is not None:
+        signals = _mapping(data["quota_signals"], "quota_signals")
+        if set(signals) != {"desktop_commander", "github_api"}:
+            raise InputError("quota_provider_set")
+        for provider, prefix in (("desktop_commander", "desktop"),
+                                 ("github_api", "github")):
+            level = signals[provider]
+            if type(level) is not str or level not in {
+                    "not_connected", "unknown", "auth_required", "stale",
+                    "healthy", "warn80", "warn95", "exhausted"}:
+                raise InputError("quota_provider_level")
+            suffix = {"warn80": "80", "warn95": "95",
+                      "exhausted": "exhausted", "auth_required": "auth",
+                      "stale": "stale"}.get(level)
+            if suffix:
+                found.append(_finding("quota_" + prefix + "_" + suffix,
+                                      "critical" if suffix == "exhausted" else "warning"))
     return found
 
 
