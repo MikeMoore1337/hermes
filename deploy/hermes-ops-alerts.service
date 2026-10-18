@@ -6,8 +6,13 @@ After=network-online.target local-fs.target
 RequiresMountsFor=/var/lib/hermes-agent/ops-watch /etc/hermes-agent
 AssertPathExists=/var/lib/hermes-agent/ops-watch/incidents.sqlite3
 AssertPathExists=/etc/hermes-agent/ops-watch.env
-StartLimitIntervalSec=3600
-StartLimitBurst=6
+# Ten-minute timer consumes about 6 starts/hour. Keep a bounded reserve
+# for owner diagnostics and short scheduling jitter without throttling normal
+# idle polls: 12 starts/hour still protects against manual invocation storms.
+# This is a start-count limit, NOT a send retry policy. One start still sends
+# at most one existing outbox event, through the existing receipt lease.
+StartLimitIntervalSec=1h
+StartLimitBurst=12
 
 [Service]
 Type=oneshot

@@ -257,3 +257,57 @@ quota rows from this repair.
 Do not reset timers, inject test incidents, run a Telegram sender manually,
 or alter the unrelated H-01 burn-in. Missing Cloudflare Billing Read and
 GitHub quota collector credentials remain independent owner gates.
+
+
+## Telegram sender start-limit hit — 18 October 2026 (#295, #3)
+
+Live owner-confirmed `ops:quota_desktop_exhausted`, phase `new`,
+`acknowledged=1`, `pending=0` proves end-to-end acceptance in the
+existing SQLite transactional outbox and Telegram API. The next production
+readback showed `hermes-ops-alerts.service Result=start-limit-hit`,
+while the journal contained multiple `EMPTY_OR_LEASED` sender runs and
+one `ACCEPTED_BY_TELEGRAM`. An old 6-starts/1-hour systemd limit gave
+essentially no margin for a 10-minute timer plus approved diagnostics.
+A previous `ExecMainStatus=0` does **not** prove that later timer triggers
+were accepted after `start-limit-hit`.
+
+The reviewed fix raises the *systemd activation cap* to **12 starts/hour**
+with unchanged 10-minute timer and unchanged **one queued event per start**,
+fixed retry/receipt logic, credential isolation, memory/CPU protections and
+sandbox. This is **not** 12 retries per event, nor a faster polling timer.
+
+The normal GitHub CD handler intentionally does NOT replace any installed
+`/etc/systemd/system` units. After the fix is merged, CI-clean and its
+exact SHA is live, an authorized VPS operator must review/apply the service
+file from the immutable release (never assume `/opt/hermes-agent-owner/deploy`
+was updated). First verify the currently active fragment and SHA:
+
+```bash
+systemctl show hermes-ops-alerts.service \
+  -p FragmentPath -p Result -p StartLimitBurst \
+  -p StartLimitIntervalUSec --no-pager
+active="$(readlink -f /opt/hermes-control-center/current)"
+[[ "$active" =~ ^/opt/hermes-control-center/releases/main-[0-9a-f]{40}$ ]] || exit 1
+sha="${active##*main-}"
+candidate="/opt/hermes-agent-owner/releases/main-$sha/deploy/hermes-ops-alerts.service"
+[[ -f "$candidate" && ! -L "$candidate" ]] || exit 1
+grep -E '^StartLimit(IntervalSec|Burst)=' "$candidate"
+systemd-analyze verify "$candidate"
+```
+
+Only with the exact production SHA and owner approval for this systemd
+configuration edit, back up the existing installed service file, install
+the reviewed candidate in `/etc/systemd/system/hermes-ops-alerts.service`
+with root:root 0644, run `systemctl daemon-reload`, and then
+`systemctl reset-failed hermes-ops-alerts.service` to clear the previous
+start-rate failure. **Do not** restart the sender or sender timer just to
+test the repair; keep the existing `hermes-ops-alerts.timer` schedule.
+The next normal timer activation should be confirmed in `systemctl show`
+and `journalctl`. Read-only `python3 -m ops_watch.telegram_dispatch`
+returns aggregate pending ACK counts without sending any message.
+
+Rollback: restore the securely backed-up service file, run
+`systemctl daemon-reload`, and inspect the sender timer/state. Resetting
+systemd's failure counter is distinct from deleting or acknowledging
+messages; it must never modify `incidents.sqlite3`. The optional GitHub
+and Cloudflare collectors remain independently owner gated.
