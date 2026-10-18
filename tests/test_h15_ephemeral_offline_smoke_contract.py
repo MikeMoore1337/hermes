@@ -17,8 +17,9 @@ class EphemeralOfflineSmokeContract(unittest.TestCase):
         self.assertEqual(1, cfg["defaultErrnoRet"])
         names = set()
         for entry in cfg["syscalls"]:
-            self.assertEqual("SCMP_ACT_ALLOW", entry["action"])
-            names.update(entry["names"])
+            self.assertIn(entry["action"], ("SCMP_ACT_ALLOW", "SCMP_ACT_ERRNO"))
+            if entry["action"] == "SCMP_ACT_ALLOW":
+                names.update(entry["names"])
         self.assertNotIn("socketcall", names)
         self.assertIn("execve", names)
         self.assertIn("fstatfs", names)  # Docker init needs this.
