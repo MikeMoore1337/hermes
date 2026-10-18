@@ -43,7 +43,7 @@ assert(outside.isError === true, 'MCP_UNMOUNTED_SECRET_READ_DENIED');
 
 // Run the SAME general-purpose shell tool that would be dangerous if its OS
 // identity had production privileges. Even a Node subprocess must be isolated.
-const childProgram = String.raw\`
+const childProgram = String.raw`
 import fs from 'node:fs';
 import net from 'node:net';
 import { writeFileSync } from 'node:fs';
@@ -65,7 +65,7 @@ const report = {
   egressBlocked: networkBlocked
 };
 writeFileSync('/workspace/child-result.json', JSON.stringify(report));
-\`;
+`;
 fs.writeFileSync('/workspace/child-worker.mjs', childProgram);
 const started = await callTool('start_process', {
   command: 'node /workspace/child-worker.mjs',
