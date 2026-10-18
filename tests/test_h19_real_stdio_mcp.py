@@ -25,6 +25,9 @@ def payload(*, sdk="AVAILABLE"):
         "sdk_server_import": "PASS" if available else "NOT_RUN",
         "registered_tool_count": 2 if available else 0,
         "discovery_errors_observed": False,
+        "wire_read_after_read": 1 if available else None,
+        "wire_write_after_denial": 0 if available else None,
+        "wire_write_after_approval": 1 if available else None,
     }
 
 
@@ -71,6 +74,9 @@ class RealStdioMCPTests(unittest.TestCase):
             ("server_write_after_approval", None),
             ("real_protocol", False),
             ("agent_dispatch", False),
+            ("wire_read_after_read", 0),
+            ("wire_write_after_denial", 1),
+            ("wire_write_after_approval", 0),
         ):
             bad_case = payload()
             bad_case[field] = bad
@@ -134,6 +140,9 @@ class RealStdioMCPTests(unittest.TestCase):
         self.assertIn("model_tools.handle_function_call", source)
         self.assertIn("request_elicitation_consent", source)
         self.assertIn("marker.read_text", source)
+        self.assertIn('method == "tools/call"', source)
+        self.assertIn('WIRE_LOG.open("a"', source)
+        self.assertIn('wire().count("mark")', source)
         self.assertIn("server_write_after_denial", source)
         self.assertNotIn("requests.post(", source)
         self.assertNotIn("http://", source)
