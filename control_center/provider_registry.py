@@ -138,7 +138,7 @@ def registry(*, codex_path: Path = CODEX_PATH, desktop_path: Path = DC_PATH,
     pct = _pct(dc.get("quota_remaining_percent"))
     desktop["observed_at"] = timestamp(dc.get("observed_at"))
     desktop["status"] = {
-        "monitored": "ok" if pct is not None and pct > 20 else "low",
+        "monitored": "unknown" if pct is None else "exhausted" if pct == 0 else "ok" if pct > 20 else "low",
         "exhausted": "exhausted", "stale": "stale",
         "not_configured": "not_connected", "unavailable": "unknown",
         "auth_required": "auth_required", "unknown": "unknown",
