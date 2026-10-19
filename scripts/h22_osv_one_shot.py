@@ -182,7 +182,7 @@ def main():
                 # Synthetic fixtures only. Replace filesystem paths and constrain diagnostics.
                 diagnostic = scan.stderr.decode("utf-8", errors="replace")
                 diagnostic = re.sub(r"/(?:[A-Za-z0-9._-]+/)+[A-Za-z0-9._-]*", "<path>", diagnostic)
-                diagnostic = re.sub(r"[^\\x20-\\x7e]", " ", diagnostic)[:240]
+                diagnostic = "".join(ch if ch.isprintable() else " " for ch in diagnostic)[:240]
                 out(step="scan", case=name, status="INCONCLUSIVE", exit_code=scan.returncode,
                     duration_s=elapsed, stderr_bytes=len(scan.stderr), stderr_hint=diagnostic)
                 all_ok = False
