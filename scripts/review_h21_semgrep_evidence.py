@@ -14,6 +14,15 @@ VERSION = "1.181.0"
 MAX_BYTES = 2_000_000
 MAX_PATHS = 2000
 ROOTS = ("scripts", "qa_advisor")
+# A finding must belong to one of the five reviewed local rules. This is
+# NOT evidence that every rule actually executed when the result list is empty.
+RULE_IDS = frozenset({
+    "hermes-subprocess-shell-true",
+    "hermes-direct-os-system",
+    "hermes-requests-verify-false",
+    "hermes-jwt-verify-disabled",
+    "hermes-environment-secret-logged",
+})
 
 
 class EvidenceDenied(ValueError):
@@ -27,6 +36,35 @@ def _unique(pairs: list[tuple[str, object]]) -> dict:
             raise EvidenceDenied("duplicate_key")
         obj[key] = value
     return obj
+
+
+def _scoped_path(value: object) -> str:
+    """Normalize ONLY /code/<root>/... or <root>/... offline Docker paths."""
+    if type(value) is not str or not 1 <= len(value) <= 500:
+        raise EvidenceDenied("invalid_scan_path")
+    name = value.replace("\\", "/")
+    if (any(ord(c) < 32 or ord(c) == 127 for c in name)
+            or ":" in name or "//" in name):
+        raise EvidenceDenied("unsafe_scan_path")
+    if name.startswith("/code/"):
+        name = name[len("/code/"):]
+    elif name.startswith("/"):
+        raise EvidenceDenied("unreviewed_scan_root")
+    parts = name.split("/")
+    if (len(parts) < 2 or any(p in ("", ".", "..") for p in parts)
+            or parts[0] not in ROOTS or not name.endswith(".py")):
+        raise EvidenceDenied("unreviewed_scan_scope")
+    return name
+
+
+def _location(value: object) -> tuple[int, int]:
+    if type(value) is not dict:
+        raise EvidenceDenied("missing_finding_location")
+    line, column = value.get("line"), value.get("col")
+    if (type(line) is not int or line < 1
+            or type(column) is not int or column < 1):
+        raise EvidenceDenied("invalid_finding_location")
+    return line, column
 
 
 def review(raw: bytes) -> dict:
@@ -46,38 +84,48 @@ def review(raw: bytes) -> dict:
         raise EvidenceDenied("scanned_inventory_missing")
     scanned = paths["scanned"]
     skipped = paths.get("skipped", [])
-    if (type(skipped) is not list or not scanned or len(scanned) > MAX_PATHS
-            or len(set(str(p) for p in scanned)) != len(scanned)):
-        raise EvidenceDenied("incomplete_or_duplicate_file_inventory")
-    roots = set()
-    for name in scanned:
-        if type(name) is not str or not 1 <= len(name) <= 500:
-            raise EvidenceDenied("invalid_scanned_path")
-        normalized = name.replace("\\", "/")
-        if normalized.startswith(("http:", "https:")) or ".." in normalized.split("/"):
-            raise EvidenceDenied("unsafe_scanned_path")
-        matched = [root for root in ROOTS
-                   if normalized.startswith(root + "/") or "/" + root + "/" in normalized]
-        if len(matched) != 1 or not normalized.endswith(".py"):
-            raise EvidenceDenied("unreviewed_scan_scope")
-        roots.add(matched[0])
-    if roots != set(ROOTS):
+    if type(skipped) is not list or type(scanned) is not list:
+        raise EvidenceDenied("invalid_scan_inventory")
+    if not scanned or len(scanned) > MAX_PATHS:
+        raise EvidenceDenied("missing_or_oversized_scan_scope")
+    normalized = [_scoped_path(name) for name in scanned]
+    if len(set(normalized)) != len(normalized):
+        raise EvidenceDenied("duplicate_scanned_path")
+    if {name.split("/", 1)[0] for name in normalized} != set(ROOTS):
         raise EvidenceDenied("incomplete_scan_roots")
     if report["errors"] or report["skipped_rules"] or skipped:
         raise EvidenceDenied("scanner_errors_or_skips")
     findings = report["results"]
-    if len(findings) > 10_000 or any(
-        type(item) is not dict
-        or type(item.get("check_id")) is not str
-        or not 1 <= len(item["check_id"]) <= 200
-        for item in findings
-    ):
-        raise EvidenceDenied("invalid_finding_inventory")
+    if len(findings) > 10_000:
+        raise EvidenceDenied("oversized_finding_inventory")
+    known_paths = set(normalized)
+    seen_findings: set[tuple[str, str, tuple[int, int], tuple[int, int]]] = set()
+    for item in findings:
+        if type(item) is not dict:
+            raise EvidenceDenied("invalid_finding_inventory")
+        rule = item.get("check_id")
+        if (type(rule) is not str or not 1 <= len(rule) <= 200
+                or not any(rule == known or rule.endswith("." + known)
+                           for known in RULE_IDS)):
+            raise EvidenceDenied("unknown_finding_rule")
+        location = _scoped_path(item.get("path"))
+        if location not in known_paths:
+            raise EvidenceDenied("finding_outside_scanned_scope")
+        beginning = _location(item.get("start"))
+        ending = _location(item.get("end"))
+        if ending < beginning:
+            raise EvidenceDenied("invalid_finding_range")
+        key = (rule, location, beginning, ending)
+        if key in seen_findings:
+            raise EvidenceDenied("duplicate_finding")
+        seen_findings.add(key)
     return {
         "status": "BOUNDED_SCAN_SCOPE_RECORDED_NO_GO",
         "semgrep_version": VERSION,
         "scanned_files": len(scanned),
         "finding_count": len(findings),
+        "rule_execution_inventory_verified": False,
+        "scan_exit_code_verified": False,
         "errors_and_skips": 0,
         "coverage_and_false_negatives_verified": False,
         "incremental_value_over_codeql_verified": False,

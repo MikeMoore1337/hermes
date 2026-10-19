@@ -55,6 +55,64 @@ class SemgrepEvidenceTests(unittest.TestCase):
             with self.assertRaises(review.EvidenceDenied):
                 review.review(data)
 
+    def test_valid_finding_is_sanitized_not_a_security_go(self):
+        found = {
+            "check_id": "hermes-direct-os-system",
+            "path": "/code/scripts/one.py",
+            "start": {"line": 3, "col": 1},
+            "end": {"line": 3, "col": 18},
+            "extra": {"lines": "PRIVATE_TOKEN_VALUE"},
+        }
+        output = review.review(packet(results=[found]))
+        self.assertEqual(output["finding_count"], 1)
+        self.assertFalse(output["rule_execution_inventory_verified"])
+        self.assertFalse(output["scan_exit_code_verified"])
+        self.assertNotIn("PRIVATE_TOKEN_VALUE", json.dumps(output))
+
+    def test_ambiguous_scanned_paths_are_rejected(self):
+        for path in (
+            "/tmp/scripts/one.py",
+            "/code/vault/scripts/one.py",
+            "/code/scripts/../vault.py",
+            "/code/scripts//one.py",
+            "/code/scripts/./one.py",
+            "C:\\\\code\\\\scripts\\\\one.py",
+            "/code/scripts/a.py\\nPRIVATE",
+            "/code/scripts/data.txt",
+        ):
+            with self.subTest(path=path):
+                with self.assertRaises(review.EvidenceDenied):
+                    review.review(packet(paths={"scanned": [
+                        path, "/code/qa_advisor/two.py"], "skipped": []}))
+        with self.assertRaises(review.EvidenceDenied):
+            review.review(packet(paths={"scanned": [
+                "scripts/one.py", "/code/scripts/one.py",
+                "qa_advisor/two.py"], "skipped": []}))
+
+    def test_unknown_unscanned_or_duplicate_findings_are_denied(self):
+        good = {
+            "check_id": "hermes-direct-os-system",
+            "path": "/code/scripts/one.py",
+            "start": {"line": 3, "col": 1},
+            "end": {"line": 3, "col": 18},
+        }
+        changes = [
+            {"check_id": "unreviewed-custom-rule"},
+            {"path": "/code/scripts/not-scanned.py"},
+            {"path": "/code/private/vault.py"},
+            {"start": {"line": 0, "col": 1}},
+            {"start": {"line": True, "col": 1}},
+            {"start": None},
+            {"end": {"line": 2, "col": 1}},
+            {"end": {"line": 3}},
+        ]
+        for mutation in changes:
+            with self.subTest(mutation=mutation):
+                with self.assertRaises(review.EvidenceDenied):
+                    review.review(packet(results=[good | mutation]))
+        with self.assertRaises(review.EvidenceDenied):
+            review.review(packet(results=[good, dict(good)]))
+
     def test_cli_no_scanner_execution_and_no_secret_echo(self):
         output = io.StringIO()
         with redirect_stdout(output):
