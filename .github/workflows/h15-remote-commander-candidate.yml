@@ -270,6 +270,12 @@ jobs:
             if docker exec "$relay" node -e "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" >/dev/null 2>&1; then break; fi
             sleep 0.25
           done
+          if [ "$(docker inspect --format '{{.State.Running}}' "$relay")" != "true" ]; then
+            echo "H15_CI_RELAY_EXITED_BEFORE_HEALTH=true"
+            docker logs --tail 30 "$relay" 2>&1
+            docker inspect --format 'relay_state={{.State.Status}} exit_code={{.State.ExitCode}} oom={{.State.OOMKilled}}' "$relay"
+            exit 1
+          fi
           docker exec "$relay" node -e "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1))"
           token_json="$(docker exec "$relay" node /opt/brc/h15-ci-provision.mjs)"
           token_a="$(printf '%s' "$token_json" | python3 -c 'import json,sys;print(json.load(sys.stdin)["one"])')"
