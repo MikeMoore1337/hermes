@@ -13,6 +13,8 @@ on:
       - scripts/h15_brc_gateway_policy_e2e.mjs
       - scripts/h15_brc_relay_ws_e2e.mjs
       - scripts/h15_brc_sandbox_linux_e2e.mjs
+      - scripts/h15_brc_oci_relay_smoke.mjs
+      - deploy/h15/Dockerfile.brc-relay
       - tests/test_h15_remote_commander_candidate_audit.py
       - tests/test_h15_brc_apply_policy_patch.py
       - tests/test_h15_brc_harden_relay.py
@@ -170,6 +172,41 @@ jobs:
             -w /workspace \
             node:24-bookworm-slim node /e2e/run.mjs
           echo "HERMES_BRC_LINUX_OS_SANDBOX=PASS (disposable CI only)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build real hardened BRC relay OCI image and test least-privilege deployment shape
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="hermes-brc-relay-eval:${GITHUB_SHA:0:12}"
+          docker build --pull --progress=plain \
+            --file "$GITHUB_WORKSPACE/deploy/h15/Dockerfile.brc-relay" \
+            --tag "$image" "$RUNNER_TEMP/brc-upstream"
+          test "$(docker image inspect --format '{{.Config.User}}' "$image")" = "65534:65534"
+          test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image")" = "cbe511702dd0147650353c29ac6ab1decd8afda1"
+          container="h15-brc-smoke-${GITHUB_RUN_ID}"
+          trap 'docker rm -f "$container" >/dev/null 2>&1 || true' EXIT
+          admin_secret="$(openssl rand -hex 32)"
+          cookie_secret="$(openssl rand -hex 32)"
+          docker run --detach --name "$container" \
+            --network none --read-only --cap-drop ALL \
+            --security-opt no-new-privileges \
+            --user 65534:65534 \
+            --memory 768m --cpus 1 --pids-limit 100 \
+            --tmpfs /state:rw,nosuid,nodev,uid=65534,gid=65534,size=64m \
+            --tmpfs /tmp:rw,nosuid,nodev,uid=65534,gid=65534,size=16m \
+            --env BRC_ADMIN_PASSWORD="$admin_secret" \
+            --env BRC_SESSION_SECRET="$cookie_secret" \
+            --volume "$GITHUB_WORKSPACE/scripts/h15_brc_oci_relay_smoke.mjs:/opt/brc/oci-relay-smoke.mjs:ro" \
+            "$image" >/dev/null
+          docker exec "$container" node /opt/brc/oci-relay-smoke.mjs
+          # Strictly no published host ports and no outbound network.
+          test -z "$(docker port "$container")"
+          test "$(docker inspect --format '{{.HostConfig.NetworkMode}}' "$container")" = "none"
+          image_id="$(docker image inspect --format '{{.Id}}' "$image")"
+          echo "HERMES_BRC_RELAY_OCI_TEST_IMAGE_ID=$image_id" >> "$GITHUB_STEP_SUMMARY"
+          echo "HERMES_BRC_RELAY_OCI_NONROOT_E2E=PASS" >> "$GITHUB_STEP_SUMMARY"
+          echo "OCI_PUBLIC_PORTS=NONE" >> "$GITHUB_STEP_SUMMARY"
+          echo "OCI_PRODUCTION_DEPLOY=NOT_EXECUTED" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Build verified offline patch bundle for an owner-maintained MIT fork
         shell: bash
