@@ -418,6 +418,73 @@ and command scope approval, HTTPS/TLS with stable domain,
 real OAuth plugin entitlement and full Ops Watch/rollback
 acceptance. Existing presence heartbeat continues unchanged.
 
+### Safe VPS staging commands — installation preparation only (#371)
+
+`deploy/h15/stage-relay.sh` implements a reversible **offline staging
+mode** for the first real BRC relay container. It is intentionally
+independent of existing Hermes `systemd` services, YFC containers,
+Control Center and current Windows/Linux heartbeat agents.
+
+**Operator prerequisites:** root privileges on a Linux host already
+running Docker, at least 768 MiB available memory, and a **previously
+reviewed and locally loaded** BRC OCI image by exact full
+`sha256:...` IMAGE ID. Do not pull a moving registry tag or rebuild
+unreviewed source as root on a production VPS. The script rejects tags,
+invalid ID, missing image, root user, unexpected MIT upstream revision,
+missing MIT license, wrong startup command, embedded credential
+variables and insufficient available host memory. **The image-ID and
+metadata checks alone do not cryptographically authenticate the build**;
+pair the preloaded image with independently checked CI build/source
+provenance and SBOM, not with only upstream-like labels.
+
+The installable offline flow (only once an approved image is available
+on the target host) is:
+
+```bash
+# BEFORE this: independently verify and load the source-pinned OCI
+# artifact; fill in the full exact local ID from Docker image inspect.
+IMAGE_ID=sha256:PUT_THE_REAL_64_HEX_DIGEST_HERE
+sudo bash deploy/h15/stage-relay.sh preflight "$IMAGE_ID"
+sudo bash deploy/h15/stage-relay.sh start "$IMAGE_ID"
+sudo bash deploy/h15/stage-relay.sh smoke
+sudo bash deploy/h15/stage-relay.sh status
+# Reversible, idempotent, removes ONLY the exact owned staging container:
+sudo bash deploy/h15/stage-relay.sh rollback
+```
+
+The stage launches `hermes-brc-stage-h15` with **no Docker network
+interface**, no host-published ports, no host mounts, no privileged
+mode, UID 65534, `cap-drop ALL`, read-only root, tmpfs-only empty
+SQLite and short-lived random local admin secrets. CPU/memory/PIDs
+are bounded; the container is not restarted automatically. Its
+health, zero registered devices, OS identity, absence of host presence
+DB, and `401` for unauthorized MCP are checked by `docker exec`
+against its own internal loopback.
+
+This **cannot be reached by ChatGPT, browsers, other containers or
+real devices**. It is strictly a reversible operator staging rehearsal
+with zero device access. Startup rejection or health failure removes
+only the newly labelled container. If a foreign container holds the
+reserved name, all management operations fail closed rather than
+deleting it. Rollback never removes Docker images/volumes, stops other
+containers or touches `systemd`.
+
+In the dedicated pinned candidate workflow, the real previously
+built and security-tested OCI image is exercised with
+`preflight → start → smoke → status → rollback → status` on a
+disposable GitHub-hosted runner, including a rejected mutable
+tag and double-rollback check. This workflow **does not SSH to the
+owner's VPS and does not create a production listener**.
+
+**Production-blocking next stage:** verify actual host Docker/kernel
+availability and resource budgets; publish a fully attested approved
+image with immutability and OS-layer SBOM; configure owner-approved
+HTTPS domain and OAuth callback (not HTTP loopback), isolated
+persistent SQLite backup, networking/firewall restrictions and real
+agent-specific shell/file boundaries. A distinct owner signoff is
+needed before allowing inbound ChatGPT MCP or any real command
+agent enrollment. Do not couple such a change to this offline stage.
+
 ## Target deployment (not yet activated)
 
 ```text
