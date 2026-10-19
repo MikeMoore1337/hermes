@@ -120,6 +120,15 @@ class TrivyReviewTests(unittest.TestCase):
             self.assertEqual(second.returncode, 2)
             self.assertEqual(out.read_bytes(), original)
 
+    def test_scanner_alias_removed_before_strict_offline_image_export(self):
+        workflow = (ROOT / ".github/workflows/h15-remote-commander-candidate.yml").read_text()
+        tagged = workflow.index("      - name: Pin real local BRC image for read-only vulnerability scan")
+        removed = workflow.index('docker image rm "hermes-brc-relay-scan:${GITHUB_SHA}"')
+        export = workflow.index("      - name: Export real vetted relay OCI image as independently pinned offline archive")
+        self.assertLess(tagged, removed)
+        self.assertLess(removed, export)
+        self.assertIn("H15_TRIVY_PRODUCTION_GO=NO", workflow)
+
     def test_failure_message_never_leaks_input(self):
         with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp)
