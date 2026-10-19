@@ -36,8 +36,8 @@ class H15DependencyFixTests(unittest.TestCase):
             result = apply(self.root)
         self.assertEqual(result["packages"]["@modelcontextprotocol/sdk"], "1.31.0")
         self.assertEqual(result["packages"]["proxy-addr"], "2.0.8")
-        self.assertEqual(result["packages"]["undici"], "6.28.1")
         self.assertEqual(result["packages"]["sharp"], "0.35.5")
+        self.assertNotIn("undici", result["packages"])
         for override in (
             "'brace-expansion@^1.0.0': 1.1.21",
             "'brace-expansion@^2.0.0': 2.1.7",
@@ -70,6 +70,17 @@ class H15DependencyFixTests(unittest.TestCase):
             with self.assertRaisesRegex(AuditError, "unsafe_pnpm_workspace"):
                 apply(self.root)
 
+    def test_runtime_image_strips_npm_but_preserves_node_and_user(self):
+        root = Path(__file__).resolve().parents[1]
+        dockerfile = (root / "deploy/h15/Dockerfile.brc-relay").read_text()
+        runtime_start = dockerfile.index(" AS runtime")
+        final_stage = dockerfile[runtime_start:]
+        self.assertIn("rm -rf /usr/local/lib/node_modules/npm", final_stage)
+        self.assertIn("rm -f /usr/local/bin/npm /usr/local/bin/npx", final_stage)
+        self.assertIn("test -x /usr/local/bin/node", final_stage)
+        self.assertIn("USER 65534:65534", final_stage)
+        self.assertNotIn("undici: 6.28.1", PATCHED)
+
     def test_offline_patch_bundle_includes_lock_and_workspace(self):
         root = Path(__file__).resolve().parents[1]
         workflow = (root / ".github/workflows/h15-remote-commander-candidate.yml").read_text()
@@ -87,7 +98,6 @@ class H15DependencyFixTests(unittest.TestCase):
         path.write_text(
             "  '@modelcontextprotocol/sdk@1.31.0':\n"
             "  proxy-addr@2.0.8:\n"
-            "  undici@6.28.1:\n"
             "  sharp@0.35.5:\n"
             "  brace-expansion@1.1.21:\n"
             "  brace-expansion@2.1.7:\n"
@@ -116,7 +126,7 @@ class H15DependencyFixTests(unittest.TestCase):
             + " neutral@1.0.0:\n" * 150
         )
         for package, version in (
-            ("undici", "6.28.0"), ("sharp", "0.34.5"),
+            ("sharp", "0.34.5"),
             ("brace-expansion", "1.1.18"),
             ("brace-expansion", "2.1.4"),
             ("brace-expansion", "5.0.9"),
