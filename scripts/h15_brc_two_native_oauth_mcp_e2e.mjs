@@ -4,7 +4,7 @@
 // This runs INSIDE isolated CI only. Never touches owner machines.
 import { createHash, randomBytes } from 'node:crypto';
 
-const base = process.env.PUBLIC_URL ?? 'http://ci-relay:3000';
+const base = process.env.PUBLIC_URL ?? 'http://localhost:3000';
 const user = process.env.BRC_ADMIN_USER ?? 'ci-owner';
 const pass = process.env.BRC_ADMIN_PASSWORD;
 if (!pass) throw Error('CI_PASSWORD_NOT_PROVIDED');
