@@ -23,6 +23,8 @@ on:
       - scripts/h15_brc_offline_image_bundle.py
       - scripts/h15_brc_os_inventory.py
       - scripts/h15_brc_trivy_review.py
+      - scripts/h15_brc_patch_dependencies.py
+      - tests/test_h15_brc_patch_dependencies.py
       - tests/test_h15_brc_trivy_review.py
       - deploy/h15/Dockerfile.brc-relay
       - deploy/h15/stage-relay.sh
@@ -137,6 +139,23 @@ jobs:
           python3 -m scripts.h15_brc_apply_policy_patch \
             --source-dir "$RUNNER_TEMP/brc-upstream"
           test "$(git -C "$RUNNER_TEMP/brc-upstream" rev-parse HEAD)" = cbe511702dd0147650353c29ac6ab1decd8afda1
+
+      - name: Patch pinned vulnerable BRC dependencies (disposable source only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          source="$RUNNER_TEMP/brc-upstream"
+          python3 -m scripts.h15_brc_patch_dependencies --source-dir "$source"
+          (
+            cd "$source"
+            # Regenerate from exact verified upstream; retain a frozen lock thereafter.
+            pnpm install --no-frozen-lockfile
+            pnpm install --frozen-lockfile
+          )
+          python3 -m scripts.h15_brc_patch_dependencies --source-dir "$source" --check-lock
+          test "$(git -C "$source" rev-parse HEAD)" = cbe511702dd0147650353c29ac6ab1decd8afda1
+          echo "H15_BRC_UPSTREAM_DEPENDENCY_OVERRIDES=PASS" >> "$GITHUB_STEP_SUMMARY"
+          echo "H15_BRC_DEPENDENCY_PATCH_PRODUCTION_APPROVED=NO" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Verify actual patched agent tool surface and denied paths
         shell: bash
@@ -580,6 +599,8 @@ jobs:
           packages/relay/src/mcp/hermes-policy.ts
           packages/relay/src/mcp/invoke.ts
           packages/relay/src/mcp/server.ts
+          pnpm-lock.yaml
+          pnpm-workspace.yaml
           scripts/e2e-admin.mjs
           scripts/e2e-all.mjs
           scripts/e2e-oauth.mjs
