@@ -19,7 +19,7 @@ def input_packet():
         "selected_query": QUERY,
         "as_of": "2026-10-19",
         "research_item": {
-            "topic": "recovery_training",
+            "topic": "exercise-recovery",
             "title": "Plant-Derived Whole Foods and Food-Based Supplements on Post-Exercise Recovery",
             "identifier": "42797032",
             "source_url": "https://europepmc.org/article/MED/42797032",
