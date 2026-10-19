@@ -40,10 +40,10 @@ def backup_sqlite(source: Path, backup_dir: Path) -> Path:
         os.chmod(temp, 0o600)
         with temp.open("rb") as file:
             os.fsync(file.fileno())
-        # Filename includes microseconds; refuse overwrites explicitly.
-        if destination.exists() or destination.is_symlink():
-            raise FileExistsError("Backup filename collision")
-        os.replace(temp, destination)
+        # Atomic no-clobber publication: never replace an existing snapshot,
+        # even if another backup was created between name check and rename.
+        os.link(temp, destination)
+        temp.unlink()
         dir_fd = os.open(backup_dir, os.O_RDONLY | os.O_DIRECTORY)
         try:
             os.fsync(dir_fd)
