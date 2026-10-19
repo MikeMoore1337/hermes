@@ -319,6 +319,33 @@ No image is pushed to a public registry, no new listening
 socket is enabled on owner VPS and no remote device operation is
 authorized by these reproducibility checks.
 
+### Two-device live WebSocket routing proof (synthetic read-only agents)
+
+The pinned candidate CI now starts the **actual compiled/patched**
+BRC relay on a throwaway loopback port with empty SQLite, then
+connects two independently authenticated synthetic WebSocket
+agents advertising only a `read_file` fixture. It checks
+`hello/welcome`, owner-specific device state and routed
+`invokeTool` responses. With two devices, omitting
+`deviceId` must be rejected; targeted calls must deliver
+a distinct per-device reply without cross-device confusion.
+Disallowed remote config tools must fail at the relay.
+The owner's pause state must prevent a call, and a closed socket
+must become offline and reject calls while remaining visible
+in device inventory. Receipts include
+`HERMES_BRC_TWO_WSS_AGENT_ROUTING_E2E=PASS`.
+
+This demonstrates real network frames, registry state and internal
+MCP routing **without enabling OS file reads or process execution**:
+the synthetic agents never open files or run commands and no
+OAuth browser client is enrolled by this separate test.
+The existing full OAuth/MCP single-agent native E2E and
+Docker Linux OS-shell confinement remain independent passing
+checks. The future acceptance test must join the entire chain
+OAuth → remote MCP tools/call → two OS-sandboxed live native agents,
+then prove read/write/shell behavior only in disposable directories.
+No owner device is affected by these CI fixtures.
+
 ## Target deployment (not yet activated)
 
 ```text
