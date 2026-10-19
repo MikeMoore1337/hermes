@@ -279,6 +279,56 @@ production image signature, CVE waiver or approval to expose the
 relay. The remaining Debian advisories with no fixed package
 version remain subject to a separate risk decision.
 
+## Owner-approved one-shot, zero-device OAuth pilot (no public MCP)
+
+Owner permission is limited to a **single, disposable** test of BRC OAuth
+on the Hermes VPS: no agent enrollment, no filesystem/process tool calls,
+no external network access and no persistent relay. This is **not**
+acceptance of the residual OCI CVEs for production use.
+
+`deploy/h15/run-zero-device-oauth-pilot.sh` reuses the existing
+`deploy/h15/stage-relay.sh` evaluation-only runner and a locally
+**preloaded, immutable SHA256 image**. A network-none, nonroot, no-capability,
+read-only image with disposable tmpfs DB is started without host mounts
+or published ports. The script checks public HTTPS `/mcp` remains 503
+**before and after** the test.
+
+The OAuth probe `scripts/h15_brc_zero_device_oauth_pilot.mjs`
+is fed into the isolated container via `docker exec -i node -`, no
+host bind mount. Its requests are restricted to container loopback
+`127.0.0.1:3000` and never follow redirects. It verifies:
+zero devices, RFC8414/OAuth resource discovery and S256 PKCE,
+dynamic test-client registration, ephemeral owner login and consent,
+access-token grant, authenticated MCP `initialize`, rejected
+code replay and bad Bearer, refresh-token rotation and rejected old
+refresh-token reuse. It does **not** call `tools/call` or any file,
+terminal, device-registration or transfer endpoint. All credentials,
+clients and tokens exist in the **disposable tmpfs**, never in the
+owner's protected `relay.env`.
+
+Run from the deployed Hermes source checkout *only after* validating
+the image ID independently, with root shell access on the authorized
+Hermes VPS:
+
+```bash
+bash deploy/h15/run-zero-device-oauth-pilot.sh preflight sha256:<reviewed-locally-loaded-image-id>
+bash deploy/h15/run-zero-device-oauth-pilot.sh run sha256:<same-review-approved-image-id>
+```
+
+Both commands fail closed on a preexisting stage container. A shell
+EXIT trap rolls back **only the stage container it started**, including
+on failed OAuth tests. No `--restart` policy, persistent SQLite,
+Caddy modification, Cloudflare change or shell-enabled owner agent.
+
+The disposable end-to-end probe also executes in full pinned H-15 CI
+on the **latest patched image**. That CI result **does not imply**
+that the owner VPS has imported the latest image: the old imported
+evaluation-only image has different OS/CVE contents and cannot be
+mistaken for a released production image. Release signing/approval,
+resident service identity and public reverse-proxy acceptance remain
+separate gates. No permanent start via `owner-relay.sh` is authorized
+by this scoped test.
+
 ## Explicit NO-GO until separately approved
 
 - Test-only OCI image must be replaced by a provenance-verified
