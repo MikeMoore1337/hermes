@@ -1,13 +1,14 @@
 # H-15 #371 disposable CI: build the REAL MIT BRC relay and shared packages
 # from the exact approved, already policy-patched upstream checkout.
-# DO NOT push this moving-base development image into production.
-FROM node:24-bookworm-slim AS builder
+# Eval-only base is pinned to an immutable OCI manifest digest proven by CI.
+# Do NOT publish/deploy this image without approved device/shell scope.
+FROM node:24-bookworm-slim@sha256:a5f4366e834695d5f363b920c104953a535d3a9864d1bdf74566a0ebe01daee5 AS builder
 WORKDIR /opt/brc
 RUN npm install --global pnpm@11.24.0
 COPY . .
 RUN pnpm install --frozen-lockfile && pnpm build
 
-FROM node:24-bookworm-slim AS runtime
+FROM node:24-bookworm-slim@sha256:a5f4366e834695d5f363b920c104953a535d3a9864d1bdf74566a0ebe01daee5 AS runtime
 LABEL org.opencontainers.image.title="Hermes Self-hosted Remote MCP Relay (evaluation only)" \
       org.opencontainers.image.description="Hardened, source-audited BRC prototype. Owner commands disabled pending per-device approval." \
       org.opencontainers.image.licenses="MIT" \

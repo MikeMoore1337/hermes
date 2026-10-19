@@ -14,6 +14,7 @@ on:
       - scripts/h15_brc_relay_ws_e2e.mjs
       - scripts/h15_brc_sandbox_linux_e2e.mjs
       - scripts/h15_brc_oci_relay_smoke.mjs
+      - scripts/h15_brc_oci_receipt.py
       - deploy/h15/Dockerfile.brc-relay
       - tests/test_h15_remote_commander_candidate_audit.py
       - tests/test_h15_brc_apply_policy_patch.py
@@ -21,6 +22,7 @@ on:
       - tests/test_h15_brc_harden_gateway.py
       - tests/test_h15_brc_harden_browser_csrf.py
       - tests/test_h15_brc_oci_relay_contract.py
+      - tests/test_h15_brc_oci_receipt.py
       - docs/operations/H-15-SELFHOSTED-REMOTE-MCP.md
       - .github/workflows/h15-remote-commander-candidate.yml
 
@@ -43,7 +45,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m unittest -v tests.test_h15_remote_commander_candidate_audit tests.test_h15_brc_apply_policy_patch tests.test_h15_brc_harden_relay tests.test_h15_brc_harden_gateway tests.test_h15_brc_harden_browser_csrf tests.test_h15_brc_oci_relay_contract
+          python3 -m unittest -v tests.test_h15_remote_commander_candidate_audit tests.test_h15_brc_apply_policy_patch tests.test_h15_brc_harden_relay tests.test_h15_brc_harden_gateway tests.test_h15_brc_harden_browser_csrf tests.test_h15_brc_oci_relay_contract tests.test_h15_brc_oci_receipt
 
       - name: Fetch exact upstream Git commit (not tag, latest or npm install)
         shell: bash
@@ -208,6 +210,43 @@ jobs:
           echo "HERMES_BRC_RELAY_OCI_NONROOT_E2E=PASS" >> "$GITHUB_STEP_SUMMARY"
           echo "OCI_PUBLIC_PORTS=NONE" >> "$GITHUB_STEP_SUMMARY"
           echo "OCI_PRODUCTION_DEPLOY=NOT_EXECUTED" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Immutable base + CycloneDX dependency SBOM + fail-closed OCI receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/h15-brc-oci-evidence"
+          mkdir -p "$evidence"
+          image="hermes-brc-relay-eval:${GITHUB_SHA:0:12}"
+          # Never publish an image in this evaluation workflow.
+          cd "$RUNNER_TEMP/brc-upstream"
+          pnpm sbom --sbom-format cyclonedx --lockfile-only --out "$evidence/sbom.cdx.json"
+          docker image inspect "$image" > "$RUNNER_TEMP/oci-image-inspect.json"
+          python3 "$GITHUB_WORKSPACE/scripts/h15_brc_oci_receipt.py" \
+            --dockerfile "$GITHUB_WORKSPACE/deploy/h15/Dockerfile.brc-relay" \
+            --image-inspect "$RUNNER_TEMP/oci-image-inspect.json" \
+            --sbom "$evidence/sbom.cdx.json" \
+            --source-audit "$RUNNER_TEMP/brc-audit.json" \
+            --git-sha "$GITHUB_SHA" \
+            --out "$evidence/OCI_RECEIPT.json"
+          cp "$RUNNER_TEMP/brc-audit.json" "$evidence/UPSTREAM_AUDIT.json"
+          printf 'sha256:a5f4366e834695d5f363b920c104953a535d3a9864d1bdf74566a0ebe01daee5\n' > "$evidence/NODE_BASE_DIGEST"
+          (
+            cd "$evidence"
+            sha256sum OCI_RECEIPT.json sbom.cdx.json UPSTREAM_AUDIT.json NODE_BASE_DIGEST > SHA256SUMS
+            sha256sum --check SHA256SUMS
+          )
+          echo "HERMES_BRC_OCI_PINNED_BASE=PASS" >> "$GITHUB_STEP_SUMMARY"
+          echo "HERMES_BRC_OCI_CYCLONEDX_SBOM=PASS" >> "$GITHUB_STEP_SUMMARY"
+          echo "HERMES_BRC_OCI_RECEIPT=CI_IMAGE_VERIFIED_NOT_DEPLOYABLE" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Retain isolated image provenance and CycloneDX SBOM
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: h15-brc-oci-source-and-sbom
+          path: ${{ runner.temp }}/h15-brc-oci-evidence/
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Build verified offline patch bundle for an owner-maintained MIT fork
         shell: bash
