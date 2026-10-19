@@ -1,0 +1,35 @@
+[Unit]
+Description=Hermes H-24 read-only Google Search Console snapshot
+Documentation=https://github.com/MikeMoore1337/hermes/issues/191
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=hermes-gsc
+Group=hermes-gsc
+WorkingDirectory=/opt/hermes-agent-owner
+ExecStart=/opt/hermes-gsc/venv/bin/python -m scripts.hermes_gsc_collect --credentials /etc/hermes-gsc/service-account.json --output /var/lib/hermes-gsc/latest.json
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryMax=192M
+TasksMax=20
+RuntimeMaxSec=100
+ReadOnlyPaths=/etc/hermes-gsc
+ReadWritePaths=/var/lib/hermes-gsc
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
+# IMPORTANT: not installed or activated by main deploy. Egress restriction,
+# credentials, service identity and authorized network activation are operator gates.
+
+[Install]
+WantedBy=multi-user.target
