@@ -19,6 +19,7 @@ UPSTREAM_SHA = "cbe511702dd0147650353c29ac6ab1decd8afda1"
 ARCHIVE = "brc-relay.docker.tar.zst"
 RECEIPT = "OCI_RECEIPT.json"
 SBOM = "sbom.cdx.json"
+OS_SBOM = "os-packages.cdx.json"
 MANIFEST = "IMAGE_BUNDLE.json"
 DIGEST_RE = re.compile(r"sha256:[0-9a-f]{64}\Z")
 SHA_RE = re.compile(r"[0-9a-f]{64}\Z")
@@ -72,6 +73,26 @@ def validate_source_receipt(oci: dict) -> None:
         raise BundleDenied("unapproved_oci_source_receipt")
 
 
+def validate_os_sbom(os_sbom: dict, image_id: str) -> int:
+    if (os_sbom.get("bomFormat") != "CycloneDX"
+        or os_sbom.get("specVersion") != "1.5"
+        or not isinstance(os_sbom.get("components"), list)
+        or not 30 <= len(os_sbom["components"]) <= 1500
+        or ((os_sbom.get("metadata") or {}).get("component") or {}).get("version") != image_id):
+        raise BundleDenied("unverified_os_package_inventory")
+    refs = set()
+    for component in os_sbom["components"]:
+        if not isinstance(component, dict):
+            raise BundleDenied("invalid_os_package_record")
+        ref = component.get("bom-ref")
+        if (not isinstance(ref, str) or not ref.startswith("pkg:deb/debian/")
+            or ref in refs or ref != component.get("purl")
+            or component.get("type") != "library"):
+            raise BundleDenied("invalid_os_package_record")
+        refs.add(ref)
+    return len(refs)
+
+
 def build(*, directory: Path, inspect: Path) -> dict:
     archive = regular_file(directory, ARCHIVE, MAX_ARCHIVE_BYTES)
     oci = read_json(regular_file(directory, RECEIPT, 200_000))
@@ -79,6 +100,8 @@ def build(*, directory: Path, inspect: Path) -> dict:
     sbom = regular_file(directory, SBOM, 50_000_000)
     if digest_file(sbom) != oci["cyclonedx_sha256"]:
         raise BundleDenied("oci_sbom_digest_mismatch")
+    os_path = regular_file(directory, OS_SBOM, 20_000_000)
+    os_count = validate_os_sbom(read_json(os_path), oci["image_id"])
     inspect_data = json.loads(inspect.read_text(encoding="utf-8"))
     if not isinstance(inspect_data, list) or len(inspect_data) != 1:
         raise BundleDenied("unexpected_image_inspection")
@@ -100,6 +123,8 @@ def build(*, directory: Path, inspect: Path) -> dict:
         "archive_sha256": digest_file(archive),
         "oci_receipt_sha256": digest_file(directory / RECEIPT),
         "sbom_sha256": digest_file(sbom),
+        "os_sbom_sha256": digest_file(os_path),
+        "os_package_count": os_count,
         "owner_agents_paired": False,
         "production_mcp_enabled": False,
     }
@@ -120,7 +145,8 @@ def verify(*, directory: Path, expected_archive_sha: str,
     if set(doc) != {
         "schema", "status", "image_id", "image_platform", "upstream_sha",
         "hermes_commit", "archive_file", "archive_bytes", "archive_sha256",
-        "oci_receipt_sha256", "sbom_sha256", "owner_agents_paired",
+        "oci_receipt_sha256", "sbom_sha256", "os_sbom_sha256",
+        "os_package_count", "owner_agents_paired",
         "production_mcp_enabled",
     }:
         raise BundleDenied("unexpected_manifest_schema")
@@ -137,11 +163,15 @@ def verify(*, directory: Path, expected_archive_sha: str,
     archive = regular_file(directory, ARCHIVE, MAX_ARCHIVE_BYTES)
     receipt = read_json(regular_file(directory, RECEIPT, 200_000))
     sbom = regular_file(directory, SBOM, 50_000_000)
+    os_path = regular_file(directory, OS_SBOM, 20_000_000)
+    os_count = validate_os_sbom(read_json(os_path), expected_image_id)
     validate_source_receipt(receipt)
     if (doc["archive_bytes"] != archive.stat().st_size
         or digest_file(archive) != expected_archive_sha
         or digest_file(directory / RECEIPT) != doc["oci_receipt_sha256"]
         or digest_file(sbom) != doc["sbom_sha256"]
+        or digest_file(os_path) != doc["os_sbom_sha256"]
+        or doc["os_package_count"] != os_count
         or receipt["image_id"] != expected_image_id
         or receipt["hermes_commit"] != expected_hermes_sha
         or receipt["cyclonedx_sha256"] != doc["sbom_sha256"]):
