@@ -24,6 +24,9 @@ on:
       - scripts/h15_brc_os_inventory.py
       - scripts/h15_brc_trivy_review.py
       - scripts/h15_brc_cve_triage.py
+      - scripts/h15_brc_image_runtime_surface.cjs
+      - scripts/h15_brc_image_runtime_surface.py
+      - tests/test_h15_brc_image_runtime_surface.py
       - tests/test_h15_brc_cve_triage.py
       - docs/security/h15-brc-cve-dispositions.json
       - scripts/h15_brc_patch_dependencies.py
@@ -467,6 +470,40 @@ jobs:
           echo "HERMES_BRC_OCI_CYCLONEDX_SBOM=PASS" >> "$GITHUB_STEP_SUMMARY"
           echo "HERMES_BRC_OCI_RECEIPT=CI_IMAGE_VERIFIED_NOT_DEPLOYABLE" >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Observe actual OCI kernel scope and installed vulnerable-tool presence
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="hermes-brc-relay-eval:${GITHUB_SHA:0:12}"
+          evidence="$RUNNER_TEMP/h15-brc-oci-evidence"
+          container="h15-surface-${GITHUB_RUN_ID}"
+          trap 'docker rm -f "$container" >/dev/null 2>&1 || true' EXIT
+          # No binds, host mounts, user devices, secrets, network or ports.
+          # Run the probe from stdin; it is never baked into the OCI image.
+          docker create --interactive --name "$container" \
+            --network none --read-only --user 65534:65534 \
+            --cap-drop ALL --security-opt no-new-privileges \
+            --memory 256m --pids-limit 32 --entrypoint node \
+            "$image" --input-type=commonjs - >/dev/null
+          docker start --attach --interactive "$container" \
+            < "$GITHUB_WORKSPACE/scripts/h15_brc_image_runtime_surface.cjs" \
+            > "$evidence/runtime-surface.raw.json"
+          docker inspect "$container" > "$RUNNER_TEMP/h15-surface-container-inspect.json"
+          python3 "$GITHUB_WORKSPACE/scripts/h15_brc_image_runtime_surface.py" \
+            --probe "$evidence/runtime-surface.raw.json" \
+            --inspect "$RUNNER_TEMP/h15-surface-container-inspect.json" \
+            --out "$evidence/runtime-surface.json"
+          (
+            cd "$evidence"
+            sha256sum OCI_RECEIPT.json sbom.cdx.json \
+              runtime-surface.raw.json runtime-surface.json \
+              UPSTREAM_AUDIT.json NODE_BASE_DIGEST > SHA256SUMS
+            sha256sum --check SHA256SUMS
+          )
+          echo "H15_ACTUAL_OCI_KERNEL_SCOPE=CI_ISOLATED" >> "$GITHUB_STEP_SUMMARY"
+          echo "H15_VULNERABLE_BINARY_PRESENCE=OBSERVED_NOT_WAIVED" >> "$GITHUB_STEP_SUMMARY"
+          echo "H15_RUNTIME_RELEASE_GO=NO" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Inventory built OCI Debian packages (no CVE clearance)
         shell: bash
         run: |
@@ -488,6 +525,7 @@ jobs:
             --output "$evidence/os-packages.cdx.json"
           (cd "$evidence" && \
             sha256sum OCI_RECEIPT.json sbom.cdx.json os-packages.cdx.json \
+              runtime-surface.raw.json runtime-surface.json \
               UPSTREAM_AUDIT.json NODE_BASE_DIGEST > SHA256SUMS && \
             sha256sum --check SHA256SUMS)
           echo "H15_OS_VULNERABILITY_SCAN=NOT_PERFORMED" >> "$GITHUB_STEP_SUMMARY"
@@ -541,7 +579,9 @@ jobs:
           (
             cd "$evidence"
             sha256sum OCI_RECEIPT.json sbom.cdx.json os-packages.cdx.json \
-              trivy-image.json trivy-review.json trivy-triage.json UPSTREAM_AUDIT.json NODE_BASE_DIGEST > SHA256SUMS
+              trivy-image.json trivy-review.json trivy-triage.json \
+              runtime-surface.raw.json runtime-surface.json \
+              UPSTREAM_AUDIT.json NODE_BASE_DIGEST > SHA256SUMS
             sha256sum --check SHA256SUMS
           )
           echo "H15_TRIVY_IMAGE_SCAN_EVIDENCE=RECORDED" >> "$GITHUB_STEP_SUMMARY"
