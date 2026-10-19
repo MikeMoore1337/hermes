@@ -107,6 +107,14 @@ case "$mode" in
     session="$(openssl rand -hex 32)"
     [[ "$admin" =~ ^[a-f0-9]{64}$ && "$session" =~ ^[a-f0-9]{64}$ ]] ||
       fail EPHEMERAL_SECRET_GENERATION_FAILED
+    committed=no
+    cleanup_new_stage() {
+      if [[ "$committed" != yes ]] &&
+         [[ "$(docker inspect --type container --format "{{index .Config.Labels \"$LABEL_KEY\"}}" "$NAME" 2>/dev/null)" == "$LABEL_VALUE" ]]; then
+        docker rm -f "$NAME" >/dev/null 2>&1 || true
+      fi
+    }
+    trap cleanup_new_stage EXIT
     docker run -d --name "$NAME" --label "$LABEL_KEY=$LABEL_VALUE" \
       --network none --read-only --user 65534:65534 --cap-drop ALL \
       --security-opt no-new-privileges --memory 512m --cpus 0.50 \
@@ -118,11 +126,9 @@ case "$mode" in
       -e BRC_ADMIN_PASSWORD="$admin" -e BRC_SESSION_SECRET="$session" \
       "$2" >/dev/null || fail DOCKER_START_FAILED
     unset admin session
-    if ! smoke; then
-      our_container
-      docker rm -f "$NAME" >/dev/null 2>&1 || true
-      fail STAGING_START_ACCEPTANCE_FAILED
-    fi
+    smoke
+    committed=yes
+    trap - EXIT
     echo "H15_STAGE_STARTED=YES"
     echo "H15_STAGE_PUBLIC_MCP=DISABLED"
     ;;
