@@ -9,6 +9,14 @@ from pathlib import Path
 
 
 def review(probe, inspect):
+    if (probe.get("schema") != "hermes-h15-oci-runtime-surface-v1"
+            or probe.get("scope_limit") != "BINARY_PRESENCE_ONLY_NOT_EXPLOITABILITY"
+            or probe.get("release_approved") is not False):
+        raise ValueError("untrusted_probe_schema")
+    if (not isinstance(inspect.get("Image"), str)
+            or not inspect["Image"].startswith("sha256:")
+            or len(inspect["Image"]) != 71):
+        raise ValueError("invalid_image_digest")
     config = inspect["HostConfig"]
     if (probe["uid"] != 65534 or probe["gid"] != 65534 or
             int(probe["cap_eff_hex"], 16) != 0 or
@@ -17,7 +25,11 @@ def review(probe, inspect):
             probe["root_write_denied"] is not True or
             probe["block_devices"] != []):
         raise ValueError("kernel_scope_unconfirmed")
-    if (config["NetworkMode"] != "none" or
+    if (config.get("PidMode") == "host"
+            or config.get("IpcMode") == "host"
+            or config.get("CgroupnsMode") == "host"
+            or config.get("UsernsMode") == "host"
+            or config["NetworkMode"] != "none" or
             config["ReadonlyRootfs"] is not True or
             config["Privileged"] is not False or
             config["CapDrop"] != ["ALL"] or
@@ -27,6 +39,9 @@ def review(probe, inspect):
             inspect["Config"]["User"] != "65534:65534" or
             inspect["State"]["ExitCode"] != 0):
         raise ValueError("docker_scope_unconfirmed")
+    if (type(probe.get("observed_systemd_homed_binary")) is not bool
+            or type(probe.get("observed_perl_archive_tar_module")) is not bool):
+        raise ValueError("invalid_component_inventory")
     binaries = probe["observed_binaries"]
     expected = {"mount", "umount", "nsenter", "unshare", "fdisk",
                 "sfdisk", "infocmp", "gzip", "perl", "setfacl", "getfacl"}
