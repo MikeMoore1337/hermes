@@ -105,7 +105,7 @@ def reconcile(raw: bytes, image_id: str, ledger: dict) -> dict:
     for ident, group in sorted(observed.items()):
         existing = reviewed.get(ident)
         if existing is None:
-            disposition = "NEW_IDENTFIER_NOT_REVIEWED"
+            disposition = "NEW_IDENTIFIER_NOT_REVIEWED"
             matched = False
             source = "UNKNOWN"
         else:
@@ -123,7 +123,7 @@ def reconcile(raw: bytes, image_id: str, ledger: dict) -> dict:
             "package_scope_matches_reviewed_baseline": matched,
             "owner_signoff": False,
         })
-    unknown = sum(1 for row in rows if row["disposition"] == "NEW_IDENTFIER_NOT_REVIEWED")
+    unknown = sum(1 for row in rows if row["disposition"] == "NEW_IDENTIFIER_NOT_REVIEWED")
     changed = sum(1 for row in rows if row["disposition"] == "PACKAGE_SCOPE_CHANGED_REVIEW_REQUIRED")
     source_exceptions = sum(
         1 for row in rows if row["disposition"] == "DEBIAN_SOURCE_EXCEPTION_REQUIRES_OWNER_REVIEW"
