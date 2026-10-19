@@ -41,16 +41,19 @@ zstd -tq "$BASE/brc-relay.docker.tar.zst" || fail CORRUPT_ZSTD_STREAM
 # Exact pin check happens again after load; "start" remains a separate step.
 zstd -dc "$BASE/brc-relay.docker.tar.zst" | docker image load >/dev/null ||
   fail DOCKER_IMAGE_LOAD_FAILED
-LOADED_ID="$(docker image inspect --format '{{.Id}}' "$IMAGE_ID" 2>/dev/null)" ||
-  fail EXPECTED_IMAGE_MISSING_AFTER_LOAD
-[[ "$LOADED_ID" == "$IMAGE_ID" ]] || fail IMPORTED_IMAGE_ID_MISMATCH
-[[ "$(docker image inspect --format '{{.Config.User}}' "$IMAGE_ID")" == 65534:65534 ]] ||
-  fail IMPORTED_IMAGE_NOT_NONROOT
-[[ "$(docker image inspect --format '{{.Architecture}}' "$IMAGE_ID")" == amd64 ]] ||
-  fail IMPORTED_IMAGE_WRONG_ARCH
-[[ "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$IMAGE_ID")" == cbe511702dd0147650353c29ac6ab1decd8afda1 ]] ||
-  fail IMPORTED_IMAGE_WRONG_UPSTREAM
+# Docker classic uses the config digest as the ID; Docker 29/containerd
+# may use the OCI manifest digest. Validate the imported image against the
+# pinned archive before reporting either runtime identity as safe.
+TAG="hermes-brc-relay-eval:${HERMES_SHA:0:12}"
+LOADED_ID="$(docker image inspect --format '{{.Id}}' "$TAG" 2>/dev/null)" ||
+  fail EXPECTED_IMAGE_TAG_MISSING_AFTER_LOAD
+docker image inspect "$TAG" |
+  python3 "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)/scripts/h15_brc_loaded_identity.py" \
+    --archive "$BASE/brc-relay.docker.tar.zst" \
+    --expected-config-id "$IMAGE_ID" \
+    --expected-tag "$TAG" || fail IMPORTED_IMAGE_IDENTITY_MISMATCH
 echo "H15_BRC_IMAGE_OFFLINE_LOAD=PASS"
-echo "H15_BRC_IMAGE_ID=$IMAGE_ID"
+echo "H15_BRC_IMAGE_ID=$LOADED_ID"
+echo "H15_BRC_CI_CONFIG_IMAGE_ID=$IMAGE_ID"
 echo "H15_BRC_IMAGE_SERVICE_STARTED=NO"
 echo "H15_BRC_OWNER_AGENTS_CHANGED=NO"
