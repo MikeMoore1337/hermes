@@ -13,7 +13,10 @@ from pathlib import Path
 import re
 import sys
 
-from scripts.h15_brc_trivy_review import MAX_REPORT, _strict_dict, assess
+if __package__:
+    from .h15_brc_trivy_review import MAX_REPORT, _strict_dict, assess
+else:
+    from h15_brc_trivy_review import MAX_REPORT, _strict_dict, assess
 
 CVE = re.compile(r"CVE-\d{4}-\d{4,}\Z")
 DISPOSITIONS = {"UNRESOLVED", "DEBIAN_SOURCE_EXCEPTION_REQUIRES_OWNER_REVIEW"}
