@@ -170,6 +170,57 @@ class H11OfflineTests(unittest.TestCase):
         self.assertTrue(all("LINKED_FACT_HOLD" in item["reason_codes"]
                             for item in result["facts"]))
 
+    def test_mixed_dependency_statuses_are_order_independent(self):
+        data = good()
+        parent = data["facts"][0]
+        held = copy.deepcopy(parent)
+        unknown = copy.deepcopy(parent)
+        ready = copy.deepcopy(parent)
+        held["id"], held["checked_on"], held["links"] = "F-b", "2026-01-01", ["F-a"]
+        unknown["id"], unknown["source_ids"], unknown["links"] = "F-c", [], ["F-d"]
+        ready["id"] = "F-d"
+        parent["links"] = ["F-b", "F-c"]
+        data["facts"].extend([held, unknown, ready])
+        baseline = audit_fixture(data, as_of="2026-10-16")
+        self.assertEqual(baseline["summary"], {"READY": 1, "UNKNOWN": 1, "HOLD": 2})
+        rows = {row["fact_id"]: row for row in baseline["facts"]}
+        self.assertIn("LINKED_FACT_HOLD", rows["F-a"]["reason_codes"])
+        self.assertNotIn("LINKED_FACT_UNKNOWN", rows["F-a"]["reason_codes"])
+        self.assertIn("LINKED_FACT_UNKNOWN", rows["F-c"]["reason_codes"])
+        for order in (list(reversed(data["facts"])), [unknown, ready, parent, held]):
+            permuted = copy.deepcopy(data)
+            permuted["facts"] = order
+            self.assertEqual(audit_fixture(permuted, as_of="2026-10-16"), baseline)
+
+    def test_cli_rejects_shadowed_private_json_keys(self):
+        cmd = [sys.executable, "-m", "knowledge_quality.offline_audit", "--as-of", "2026-10-16"]
+        baseline = json.dumps(good())
+        shadowed = (
+            ('"origin": "synthetic_only"',
+             '"origin": "private_vault", "origin": "synthetic_only"'),
+            ('"value": "YES"',
+             '"value": "private note content", "value": "YES"'),
+            ('"schema": "hermes-h11-synthetic-fixture-v1"',
+             '"schema": "forged", "schema": "hermes-h11-synthetic-fixture-v1"'),
+        )
+        for original, replacement in shadowed:
+            self.assertIn(original, baseline)
+            payload = baseline.replace(original, replacement, 1).encode("utf-8")
+            with self.subTest(duplicate_key=original):
+                result = subprocess.run(cmd, input=payload, capture_output=True)
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertEqual(json.loads(result.stdout),
+                                 {"status": "REJECTED", "reason": "invalid_fixture"})
+                self.assertNotIn(b"private note content", result.stdout)
+
+    def test_pure_audit_never_opens_files_sockets_or_processes(self):
+        from unittest.mock import patch
+
+        with (patch("builtins.open", side_effect=AssertionError("file access")),
+              patch("socket.socket", side_effect=AssertionError("network access")),
+              patch("subprocess.Popen", side_effect=AssertionError("process access"))):
+            self.assertEqual(audit_fixture(good(), as_of="2026-10-16")["summary"]["READY"], 1)
+
     def test_cli_read_only_roundtrip_and_rejection(self):
         cmd = [sys.executable, "-m", "knowledge_quality.offline_audit", "--as-of", "2026-10-16"]
         result = subprocess.run(cmd, input=json.dumps(good()).encode("utf-8"), capture_output=True)
