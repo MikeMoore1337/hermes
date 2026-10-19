@@ -139,12 +139,27 @@ def main():
         if boundary.returncode:
             raise RuntimeError("network_boundary_unverified")
         out(step="network_boundary", status="PASS", network="none", interfaces="lo_only")
+        # Diagnose the binary without ever mounting real project content or secrets.
+        probe = command(base + ["--entrypoint=/bin/sh", image_id, "-c",
+                                'ls -l /osv-scanner; head -c 4 /osv-scanner | od -An -tx1'])
+        out(step="binary_mount_probe", status="PASS" if probe.returncode == 0 else "INCONCLUSIVE",
+            exit_code=probe.returncode, readable=probe.returncode == 0)
+        version_probe = command(base + ["--entrypoint=/osv-scanner", image_id, "--version"])
+        version_err = version_probe.stderr.decode("utf-8", errors="replace").lower()
+        category = ("exec_not_found" if "no such file or directory" in version_err
+                    else "access_denied" if "permission denied" in version_err
+                    else "dynamic_link_failure" if "shared librar" in version_err
+                    else "unclassified")
+        out(step="binary_execution_probe",
+            status="PASS" if version_probe.returncode == 0 else "INCONCLUSIVE",
+            exit_code=version_probe.returncode, reason=category,
+            stderr_bytes=len(version_probe.stderr))
 
         cases = [
             ("python-vulnerable", "uv.lock", "2.19.0", {"CVE-2018-18074", "GHSA-x84v-xcm2-53pg"}, True),
             ("python-fixed", "uv.lock", "2.32.5", {"CVE-2018-18074", "GHSA-x84v-xcm2-53pg"}, False),
-            ("npm-vulnerable", "package-lock.json", "4.17.15", {"GHSA-f23m-r3pf-42rh", "CVE-2026-2950"}, True),
-            ("npm-fixed", "package-lock.json", "4.18.0", {"GHSA-f23m-r3pf-42rh", "CVE-2026-2950"}, False),
+            ("npm-vulnerable", "package-lock.json", "4.17.15", {"GHSA-p6mc-m468-83gw", "CVE-2020-8203"}, True),
+            ("npm-fixed", "package-lock.json", "4.17.23", {"GHSA-p6mc-m468-83gw", "CVE-2020-8203"}, False),
         ]
         all_ok = True
         for name, lock, version, ids, expected in cases:
