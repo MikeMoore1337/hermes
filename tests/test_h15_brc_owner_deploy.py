@@ -93,6 +93,28 @@ class H15SqliteBackupTests(unittest.TestCase):
                 self.assertEqual(restored.execute("PRAGMA integrity_check").fetchone()[0], "ok")
             self.assertFalse(list(archive.glob(".relay-backup-*")))
 
+    def test_existing_snapshot_is_never_overwritten(self):
+        from unittest.mock import patch
+        from datetime import datetime, timezone
+
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            source = root / "relay.sqlite"
+            with sqlite3.connect(source) as db:
+                db.execute("CREATE TABLE users (name TEXT)")
+                db.execute("INSERT INTO users VALUES ('original')")
+            target_dir = root / "backups"
+            target_dir.mkdir(mode=0o700)
+            fixed_now = datetime(2026, 10, 19, 15, 0, 0, 123456, tzinfo=timezone.utc)
+            fixed_name = "relay-20261019T150000123456Z.sqlite3"
+            existing = target_dir / fixed_name
+            existing.write_bytes(b"must-not-be-overwritten")
+            with patch.object(self.module.datetime, "now", return_value=fixed_now):
+                with self.assertRaises(FileExistsError):
+                    self.module.backup_sqlite(source, target_dir)
+            self.assertEqual(existing.read_bytes(), b"must-not-be-overwritten")
+            self.assertEqual(list(target_dir.glob(".relay-backup-*")), [])
+
     def test_nonexistent_and_symlinked_db_are_denied(self):
         with tempfile.TemporaryDirectory() as root:
             root = Path(root)
