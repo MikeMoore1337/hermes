@@ -76,9 +76,9 @@ Semgrep. Проверка Docker на отдельном Windows-хосте в �
 изолированном контейнере. Ни один новый production scanner scan не проводился.
 
 **Точные исследованные версии веток:** Hermes main
-\`49e9aaf73aa45e0c5b136cd71c651c808dd04834\`;
-YFC main \`42a75a5f1fbea025204c5d1e1a928bfd6581b1a1\`;
-Second Brain main \`e70cc82b4aa592909a74dbf66da3c88fed5ec90a\`.
+`49e9aaf73aa45e0c5b136cd71c651c808dd04834`;
+YFC main `42a75a5f1fbea025204c5d1e1a928bfd6581b1a1`;
+Second Brain main `e70cc82b4aa592909a74dbf66da3c88fed5ec90a`.
 Исходники были прочитаны через GitHub connector. Это выборочная
 проверка, не repository-wide code audit.
 
@@ -86,8 +86,8 @@ Second Brain main \`e70cc82b4aa592909a74dbf66da3c88fed5ec90a\`.
 
 | Показатель | Результат | Достоверность |
 | --- | --- | --- |
-| Прежний pinned Semgrep CE Docker \`semgrep test\` | 5/5 suites PASS | Ранее зафиксированный live запуск 16.10, не повторён |
-| Разметка текущих пяти fixture-файлов | 12 \`ruleid\`, 8 \`ok\` | Подсчёт в committed файлах на main, не отдельный re-run |
+| Прежний pinned Semgrep CE Docker `semgrep test` | 5/5 suites PASS | Ранее зафиксированный live запуск 16.10, не повторён |
+| Разметка текущих пяти fixture-файлов | 12 `ruleid`, 8 `ok` | Подсчёт в committed файлах на main, не отдельный re-run |
 | TP/FP/FN/TN для исходных 20 примеров | **12/0/0/8 предполагаются только при полном совпадении** прежнего PASS и текущей разметки | Вывод из успешного Semgrep rule-test, без сохранённого per-case report |
 | Precision / recall на этих 20 примерах | Условно 100%/100% при указанном предположении | **НЕ** production precision/recall, нет независимого отчёта по каждому примеру |
 | Scan исходников Hermes | 42 Python-файла, 0 matches/errors/skips, exit 0 | Ранее зафиксированный read-only scan 16.10 |
@@ -101,16 +101,16 @@ Second Brain main \`e70cc82b4aa592909a74dbf66da3c88fed5ec90a\`.
 
 | Rule | Риск / boundary | Вероятные FP | Явные ограничения / FN | Блокировать CI сейчас? |
 | --- | --- | --- | --- | --- |
-| \`shell-true\` | Shell injection, выполнение процессов | Константный shell-командный текст | Wrapper, динамический \`**kwargs\`, alias с неопределённым связыванием | Нет |
-| \`shell-os-system\` | Прямое shell-выполнение вне разрешённой границы | Константный локальный административный вызов | Alias, shell через другие библиотеки | Нет |
-| \`tls-disable\` | MITM, доверие к HTTP/TLS | Заведомо локальная лабораторная среда | \`requests.Session.verify=False\`, \`httpx.AsyncClient(verify=False)\`, \`ssl._create_unverified_context\`, kwargs/alias | Нет |
-| \`jwt-no-verify\` | Доверие к неподписанным JWT claims | Диагностическое чтение неподтверждённого токена после отказа auth | Словарь options через переменную, чужие JWT wrappers; контекст допуска установить нельзя | Нет |
-| \`token-log\` | Секреты в stdout/logging | Синтетические имена типа \`FAKE_SECRET\` | f-strings, промежуточные переменные, \`os.getenv\`, другие logger methods, межпроцедурная передача | Нет |
+| `shell-true` | Shell injection, выполнение процессов | Константный shell-командный текст | Wrapper, динамический `**kwargs`, alias с неопределённым связыванием | Нет |
+| `shell-os-system` | Прямое shell-выполнение вне разрешённой границы | Константный локальный административный вызов | Alias, shell через другие библиотеки | Нет |
+| `tls-disable` | MITM, доверие к HTTP/TLS | Заведомо локальная лабораторная среда | `requests.Session.verify=False`, `httpx.AsyncClient(verify=False)`, `ssl._create_unverified_context`, kwargs/alias | Нет |
+| `jwt-no-verify` | Доверие к неподписанным JWT claims | Диагностическое чтение неподтверждённого токена после отказа auth | Словарь options через переменную, чужие JWT wrappers; контекст допуска установить нельзя | Нет |
+| `token-log` | Секреты в stdout/logging | Синтетические имена типа `FAKE_SECRET` | f-strings, промежуточные переменные, `os.getenv`, другие logger methods, межпроцедурная передача | Нет |
 
 Здесь FP/FN - **теоретически возможные сценарии**, а не измеренные
 срабатывания в текущем прогоне. Semgrep CE поддерживает семантические
 сопоставления и локальное распространение констант, поэтому нельзя
-автоматически объявлять каждый alias или \`kwargs\` доказанным обходом.
+автоматически объявлять каждый alias или `kwargs` доказанным обходом.
 Каждый вариант должен пройти через точную версию 1.181.0, затем
 проверяться по фактическому scan JSON. Межфайловый taint нельзя
 приписывать пяти search-pattern правилам.
@@ -130,34 +130,34 @@ Second Brain main \`e70cc82b4aa592909a74dbf66da3c88fed5ec90a\`.
 
 Источник характеристик CodeQL:
 [официальный каталог Python-запросов](https://docs.github.com/en/code-security/reference/code-scanning/codeql/codeql-queries/python-built-in-queries).
-В текущем YFC \`.github/workflows/security-audit.yml\` CodeQL/Trivy
+В текущем YFC `.github/workflows/security-audit.yml` CodeQL/Trivy
 срабатывают по расписанию/ручному dispatch, **не непосредственно на
 каждый pull_request**. Это gap в частоте проверки, но само по себе не
 основание автоматически добавлять ещё один сканер. В выборочно
-просмотренном \`backend/fitminiapp_api/services/jwt.py\` YFC
-подпись проверяется через \`jwt.decode(..., settings.secret_key,
-algorithms=["HS256"])\`; исследован только этот callsite,
+просмотренном `backend/fitminiapp_api/services/jwt.py` YFC
+подпись проверяется через `jwt.decode(..., settings.secret_key,
+algorithms=["HS256"])`; исследован только этот callsite,
 полное покрытие auth не установлено.
 
-В Second Brain актуальный \`.github/workflows/ci.yml\` использует
+В Second Brain актуальный `.github/workflows/ci.yml` использует
 Ruff/mypy/pytest/frontend; отдельный универсальный SAST в этом
-workflow отсутствует. Выборочный \`src/second_brain/adapters/commands.py\`
-запускает \`subprocess.run(list(argv), shell=False)\`, а Safe Write в
-\`src/second_brain/application/goal_progress_safe_write.py\` разделён
-на reviewed draft / plan / apply. Простое правило \`shell=True\`
+workflow отсутствует. Выборочный `src/second_brain/adapters/commands.py`
+запускает `subprocess.run(list(argv), shell=False)`, а Safe Write в
+`src/second_brain/application/goal_progress_safe_write.py` разделён
+на reviewed draft / plan / apply. Простое правило `shell=True`
 не доказывает добавочную ценность для такой архитектуры. Исходники
-приватного \`second-brain-vault\` **не читались**.
+приватного `second-brain-vault` **не читались**.
 
 ### Проверка evidence reviewer
 
 PR, подготовленный 19.10, усиливает _только_ чтение JSON evidence:
-допускает известные scoped пути \`/code/scripts/\`,
-\`/code/qa_advisor/\` или эквивалентные относительные пути;
+допускает известные scoped пути `/code/scripts/`,
+`/code/qa_advisor/` или эквивалентные относительные пути;
 отклоняет нормализованные дубли, path traversal, неразрешённые roots,
 unknown rule ID, finding вне scanned inventory, отсутствующие координаты
 и дубли findings. В выдаче дополнительно явно записано
-\`rule_execution_inventory_verified=false\` и
-\`scan_exit_code_verified=false\`: пустой JSON \`results\` сам по себе
+`rule_execution_inventory_verified=false` и
+`scan_exit_code_verified=false`: пустой JSON `results` сам по себе
 **не доказывает**, что все правила выполнились, а JSON не подтверждает
 exit code процесса. Synthetic unit tests используют только
 фиктивные пути/токены и не исполняют scanner.
