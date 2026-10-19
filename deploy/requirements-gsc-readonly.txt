@@ -1,0 +1,4 @@
+# Install only in an isolated, separately approved /opt/hermes-gsc/venv.
+# Do not add these runtime dependencies to the resident Hermes / YFC worker.
+google-auth==2.62.0
+requests==2.32.5
