@@ -186,7 +186,7 @@ class H11OfflineTests(unittest.TestCase):
         rows = {row["fact_id"]: row for row in baseline["facts"]}
         self.assertIn("LINKED_FACT_HOLD", rows["F-a"]["reason_codes"])
         self.assertNotIn("LINKED_FACT_UNKNOWN", rows["F-a"]["reason_codes"])
-        self.assertIn("LINKED_FACT_UNKNOWN", rows["F-c"]["reason_codes"])
+        self.assertIn("INSUFFICIENT_PROVENANCE", rows["F-c"]["reason_codes"])
         for order in (list(reversed(data["facts"])), [unknown, ready, parent, held]):
             permuted = copy.deepcopy(data)
             permuted["facts"] = order
