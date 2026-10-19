@@ -68,8 +68,8 @@ class H15DependencyFixTests(unittest.TestCase):
         start = workflow.index("      - name: Build verified offline patch bundle")
         end = workflow.index("      - name: Preserve owner-selfhosted MIT fork patch artifact", start)
         section = workflow[start:end]
-        self.assertIn("          pnpm-lock.yaml\\n", section)
-        self.assertIn("          pnpm-workspace.yaml\\n", section)
+        self.assertIn("          pnpm-lock.yaml\n", section)
+        self.assertIn("          pnpm-workspace.yaml\n", section)
         self.assertIn('git -C "$replay" apply --check "$bundle/hermes-brc.patch"', section)
         self.assertIn('cmp "$bundle/hermes-brc.patch" "$RUNNER_TEMP/replayed-brc.patch"', section)
 
