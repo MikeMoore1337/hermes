@@ -85,6 +85,11 @@ def parse_report(raw: bytes, target_ids: set[str]) -> tuple[bool, int, int]:
     for result in report["results"]:
         for item in result.get("packages", []):
             entries += 1
+            pkg = item.get("package") or {}
+            if isinstance(pkg, dict) and pkg.get("name") in {"requests", "lodash"}:
+                # Synthetic public package names only.
+                print(json.dumps({"step": "extraction_identity", "package": pkg.get("name"),
+                                  "version": pkg.get("version"), "ecosystem": pkg.get("ecosystem")}))
             for vuln in item.get("vulnerabilities", []):
                 findings += 1
                 ids = {vuln.get("id"), *(vuln.get("aliases") or [])}
@@ -122,10 +127,7 @@ def main():
         # Keep downloaded ZIPs immutable and give it only a disposable scratch copy.
         cache = root / "scratch-db"
         shutil.copytree(root / "db", cache)
-        # Host runner owns the files; scanner uses unprivileged uid 65534.
-        # Writability is limited to this disposable scratch copy on this runner.
-        for directory in (cache, *(p for p in cache.rglob("*") if p.is_dir())):
-            directory.chmod(0o777)
+        # GitHub runner UID is non-root and owns only the disposable cache copy.
         out(step="db_scratch_prepared", disposable=True, source_archives_readonly=True)
         image = command(["docker", "pull", "ubuntu:24.04"], timeout=180)
         if image.returncode:
@@ -138,7 +140,7 @@ def main():
         base = [
             "docker", "run", "--rm", "--network=none", "--read-only", "--cap-drop=ALL",
             "--security-opt=no-new-privileges", "--pids-limit=64", "--cpus=1.0",
-            "--memory=1536m", "--user=65534:65534",
+            "--memory=1536m", "--user=" + str(os.getuid()) + ":" + str(os.getgid()),
             "--tmpfs=/tmp:rw,nosuid,nodev,size=96m,mode=1777",
             "--env=HOME=/tmp", "--env=XDG_CACHE_HOME=/tmp/osv-cache",
             "--env=TMPDIR=/tmp",
