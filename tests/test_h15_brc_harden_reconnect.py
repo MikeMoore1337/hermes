@@ -26,8 +26,11 @@ class ReconnectPolicyTests(unittest.TestCase):
         result = apply(self.root)
         source = self.target.read_text(encoding="utf-8")
         for old, new in REPLACEMENTS:
-            self.assertNotIn(old, source)
             self.assertIn(new, source)
+            # The tick() method's original header is intentionally kept
+            # after an inserted guard, so do not require its removal.
+            if old not in new:
+                self.assertNotIn(old, source)
         self.assertEqual(result["pending_calls"], "BOUND_TO_DEVICE_AND_SOCKET")
         self.assertEqual(result["old_socket_results"], "IGNORED")
         self.assertFalse(result["production_ready"])
