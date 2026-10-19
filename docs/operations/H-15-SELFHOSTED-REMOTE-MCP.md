@@ -346,6 +346,36 @@ OAuth → remote MCP tools/call → two OS-sandboxed live native agents,
 then prove read/write/shell behavior only in disposable directories.
 No owner device is affected by these CI fixtures.
 
+### Reconnect / replay boundary for remote commands
+
+The reviewed MIT BRC `DeviceHub` formerly tracked pending calls by
+random request ID alone, without binding a result to the authenticated
+WebSocket that received the call. If a device reconnected while a call
+was running, the superseded socket could still complete that call,
+update presence and leave old calls waiting for the full timeout.
+This is a lifecycle correctness/security gap independent of OAuth.
+
+`scripts/h15_brc_harden_reconnect.py` now patches the *actual exact-pinned
+relay source* to bind pending request state to `(deviceId, socket)`,
+reject pending work immediately on reconnect, disconnect or heartbeat
+expiry, ignore foreign/old socket results and stale activity, and
+reject duplicate `hello` on a single authenticated socket.
+The patcher checks the original source signatures and makes **no**
+partial writes on source drift. `scripts/h15_brc_reconnect_socket_e2e.mjs`
+exercises the compiled `DeviceHub` against real pending Promises:
+old-socket and foreign-socket forged result IDs are ignored; only the
+correct live socket resolves; a stale pending call is rejected during
+reconnect and close, and duplicate hello and expired heartbeat are
+rejected. The full upstream OAuth/MCP regression suite and separate
+real WSS two-device test must continue passing.
+
+Limitations: a remote command already running on the old device
+cannot necessarily be rolled back by the relay. Rejection means
+the **result is no longer trusted**, not that filesystem side effects
+have been reversed. Future operation IDs and dedicated destructive
+action confirmation still require explicit owner approval.
+No owner Windows/YFC device is paired or reconfigured by this step.
+
 ## Target deployment (not yet activated)
 
 ```text
