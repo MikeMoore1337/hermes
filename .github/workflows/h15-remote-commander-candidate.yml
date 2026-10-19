@@ -426,8 +426,8 @@ jobs:
           docker run --rm --network none --read-only --user 65534:65534 \
             --cap-drop ALL --security-opt no-new-privileges \
             --memory 256m --pids-limit 32 --entrypoint dpkg-query \
-            "$image" -W '-f=${Package}\t${Version}\t${Architecture}\n' \
-            > "$RUNNER_TEMP/brc-runtime-dpkg.tsv"
+            "$image" -W '-f=${Status}\t${Package}\t${Version}\t${Architecture}\n' |
+            awk -F '\t' '$1 == "install ok installed" { print $2 "\t" $3 "\t" $4 }'             > "$RUNNER_TEMP/brc-runtime-dpkg.tsv"
           docker image inspect "$image" > "$RUNNER_TEMP/brc-runtime-os-inspect.json"
           python3 "$GITHUB_WORKSPACE/scripts/h15_brc_os_inventory.py" \
             --dpkg-list "$RUNNER_TEMP/brc-runtime-dpkg.tsv" \
