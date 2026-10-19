@@ -25,7 +25,6 @@ allowBuilds:
 PATCHED = ORIGINAL + """overrides:
   '@modelcontextprotocol/sdk': 1.31.0
   proxy-addr: 2.0.8
-  undici: 6.28.1
   sharp: 0.35.5
   'brace-expansion@^1.0.0': 1.1.21
   'brace-expansion@^2.0.0': 2.1.7
@@ -34,7 +33,6 @@ PATCHED = ORIGINAL + """overrides:
 EXPECTED_VERSIONS = {
     "@modelcontextprotocol/sdk": "1.31.0",
     "proxy-addr": "2.0.8",
-    "undici": "6.28.1",
     "sharp": "0.35.5",
 }
 BRACE_FIXED = ("1.1.21", "2.1.7", "5.0.12")
@@ -93,7 +91,6 @@ def validate_lock(root: Path) -> None:
     for key, old in (
         ("@modelcontextprotocol/sdk", "1.30.0"),
         ("proxy-addr", "2.0.7"),
-        ("undici", "6.28.0"),
         ("sharp", "0.34.5"),
         *(("brace-expansion", version) for version in BRACE_OLD),
     ):
