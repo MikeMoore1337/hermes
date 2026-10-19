@@ -36,6 +36,14 @@ class H15DependencyFixTests(unittest.TestCase):
             result = apply(self.root)
         self.assertEqual(result["packages"]["@modelcontextprotocol/sdk"], "1.31.0")
         self.assertEqual(result["packages"]["proxy-addr"], "2.0.8")
+        self.assertEqual(result["packages"]["undici"], "6.28.1")
+        self.assertEqual(result["packages"]["sharp"], "0.35.5")
+        for override in (
+            "'brace-expansion@^1.0.0': 1.1.21",
+            "'brace-expansion@^2.0.0': 2.1.7",
+            "'brace-expansion@^5.0.0': 5.0.12",
+        ):
+            self.assertIn(override, result["source_revision"] and PATCHED)
         self.assertFalse(result["production_approved"])
         self.assertEqual((self.root / "pnpm-workspace.yaml").read_text(), PATCHED)
         with self.fake_git():
@@ -79,6 +87,11 @@ class H15DependencyFixTests(unittest.TestCase):
         path.write_text(
             "  '@modelcontextprotocol/sdk@1.31.0':\n"
             "  proxy-addr@2.0.8:\n"
+            "  undici@6.28.1:\n"
+            "  sharp@0.35.5:\n"
+            "  brace-expansion@1.1.21:\n"
+            "  brace-expansion@2.1.7:\n"
+            "  brace-expansion@5.0.12:\n"
             + " unrelated: installed\n" * 200
         )
         validate_lock(self.root)
@@ -88,6 +101,39 @@ class H15DependencyFixTests(unittest.TestCase):
         path.unlink()
         with self.assertRaisesRegex(AuditError, "unsafe_pnpm_lockfile"):
             validate_lock(self.root)
+
+    def test_reject_stale_versions_in_every_major(self):
+        (self.root / "pnpm-workspace.yaml").write_text(PATCHED)
+        path = self.root / "pnpm-lock.yaml"
+        fixed = (
+            "  '@modelcontextprotocol/sdk@1.31.0':\\n"
+            "  proxy-addr@2.0.8:\\n"
+            "  undici@6.28.1:\\n"
+            "  sharp@0.35.5:\\n"
+            "  brace-expansion@1.1.21:\\n"
+            "  brace-expansion@2.1.7:\\n"
+            "  brace-expansion@5.0.12:\\n"
+            + " neutral@1.0.0:\\n" * 150
+        )
+        for package, version in (
+            ("undici", "6.28.0"), ("sharp", "0.34.5"),
+            ("brace-expansion", "1.1.18"),
+            ("brace-expansion", "2.1.4"),
+            ("brace-expansion", "5.0.9"),
+        ):
+            with self.subTest(package=package, version=version):
+                path.write_text(fixed + f"  {package}@{version}:\\n")
+                with self.assertRaisesRegex(AuditError, "vulnerable_version_remains"):
+                    validate_lock(self.root)
+        for package, version in (
+            ("brace-expansion", "1.1.21"),
+            ("brace-expansion", "2.1.7"),
+            ("brace-expansion", "5.0.12"),
+        ):
+            with self.subTest(package=package, version=version):
+                path.write_text(fixed.replace(f"  {package}@{version}:\\n", ""))
+                with self.assertRaisesRegex(AuditError, "fixed_brace_expansion_branch_absent"):
+                    validate_lock(self.root)
 
 
 if __name__ == "__main__":
