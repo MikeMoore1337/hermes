@@ -199,6 +199,50 @@ remain required before enabling command execution on the owner's
 Windows PC. This CI never modifies the owner's real
 `HermesDevicePresence` task or credentials.
 
+### Reproducible owner-maintained source fork artifact
+
+The isolated pinned-candidate workflow produces a downloadable CI
+artifact `h15-brc-selfhosted-fork-source` with:
+
+- `UPSTREAM_SHA`: immutable MIT BRC base
+  `cbe511702dd0147650353c29ac6ab1decd8afda1`
+- `hermes-brc.patch`: all reviewed modifications from the exact
+  upstream source, including the newly added gateway allowlist
+  module, relay WS Bearer-only, browser CSRF, agent tool reductions,
+  and synthetic upstream e2e fixture updates
+- `LICENSE` and `NOTICE`: original MIT license and derived
+  Desktop Commander attribution, without relabeling authorship
+- `PROVENANCE.json`, `EXPECTED_PATHS.txt`, and `SHA256SUMS`
+
+CI performs `git apply --check`, applies the patch in an **independent
+clean detached checkout**, compares the full binary diffs byte-for-byte
+and validates the SHA-256 manifest, after native upstream/patched
+OAuth+MCP, security and Linux OS sandbox tests have passed. This
+allows the owner to create a maintainable fork or mirror without
+hand-merging code or trusting a mutable package tag.
+
+Rebuild from that artifact on a development machine only:
+
+```bash
+git init brc-hermes && cd brc-hermes
+git remote add upstream https://github.com/shahidx0x/better-remote-commander.git
+git fetch --no-tags upstream cbe511702dd0147650353c29ac6ab1decd8afda1
+git checkout --detach FETCH_HEAD
+(cd /path/to/artifact && sha256sum -c SHA256SUMS)
+git apply --check /path/to/artifact/hermes-brc.patch
+git apply /path/to/artifact/hermes-brc.patch
+npm install --global pnpm@11.24.0
+pnpm install --frozen-lockfile
+pnpm build
+pnpm test
+```
+
+**Not yet an independently hosted GitHub fork or a runnable production
+image**. It is a reproducible, license-preserving patchset, not a
+ChatGPT plugin, not a real Windows/YFC remote command enrollment and
+not an OS security certification. The production relay image still
+needs a pinned digest/SBOM and per-device sandbox signoff.
+
 ## Target deployment (not yet activated)
 
 ```text

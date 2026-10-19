@@ -171,6 +171,59 @@ jobs:
             node:24-bookworm-slim node /e2e/run.mjs
           echo "HERMES_BRC_LINUX_OS_SANDBOX=PASS (disposable CI only)" >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Build verified offline patch bundle for an owner-maintained MIT fork
+        shell: bash
+        run: |
+          set -euo pipefail
+          candidate="$RUNNER_TEMP/brc-upstream"
+          bundle="$RUNNER_TEMP/hermes-brc-pinned-source"
+          replay="$RUNNER_TEMP/brc-replay"
+          mkdir -p "$bundle"
+          # Include the newly added gateway policy file in git diff.
+          git -C "$candidate" add -N packages/relay/src/mcp/hermes-policy.ts
+          git -C "$candidate" diff --check HEAD
+          git -C "$candidate" diff --binary HEAD > "$bundle/hermes-brc.patch"
+          test -s "$bundle/hermes-brc.patch"
+          cat > "$bundle/EXPECTED_PATHS.txt" <<'PATHS'
+          packages/agent/src/dispatcher.ts
+          packages/relay/src/app.ts
+          packages/relay/src/mcp/hermes-policy.ts
+          packages/relay/src/mcp/invoke.ts
+          packages/relay/src/mcp/server.ts
+          scripts/e2e-admin.mjs
+          scripts/e2e-all.mjs
+          scripts/e2e-oauth.mjs
+          PATHS
+          git -C "$candidate" diff --name-only HEAD | diff -u "$bundle/EXPECTED_PATHS.txt" -
+          cp "$candidate/LICENSE" "$candidate/NOTICE" "$bundle/"
+          cp "$RUNNER_TEMP/brc-audit.json" "$bundle/PROVENANCE.json"
+          printf 'cbe511702dd0147650353c29ac6ab1decd8afda1\n' > "$bundle/UPSTREAM_SHA"
+          # A fresh, detached, separate worktree proves the exact distributed
+          # patch can be reapplied to the immutable MIT upstream checkout.
+          git -C "$candidate" worktree add --detach "$replay" cbe511702dd0147650353c29ac6ab1decd8afda1
+          git -C "$replay" apply --check "$bundle/hermes-brc.patch"
+          git -C "$replay" apply "$bundle/hermes-brc.patch"
+          git -C "$replay" add -N packages/relay/src/mcp/hermes-policy.ts
+          git -C "$replay" diff --check HEAD
+          git -C "$replay" diff --binary HEAD > "$RUNNER_TEMP/replayed-brc.patch"
+          cmp "$bundle/hermes-brc.patch" "$RUNNER_TEMP/replayed-brc.patch"
+          (
+            cd "$bundle"
+            sha256sum EXPECTED_PATHS.txt hermes-brc.patch LICENSE NOTICE PROVENANCE.json UPSTREAM_SHA > SHA256SUMS
+            sha256sum --check SHA256SUMS
+          )
+          echo "HERMES_BRC_REPRODUCIBLE_PATCH_BUNDLE=PASS" >> "$GITHUB_STEP_SUMMARY"
+          echo "HERMES_BRC_PATCH_SHA256=$(sha256sum "$bundle/hermes-brc.patch" | cut -d' ' -f1)" >> "$GITHUB_STEP_SUMMARY"
+          echo "BUNDLE_PRODUCTION_EXECUTION=NOT_ENABLED" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Preserve owner-selfhosted MIT fork patch artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: h15-brc-selfhosted-fork-source
+          path: ${{ runner.temp }}/hermes-brc-pinned-source/
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Retain sanitized source audit receipt
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
