@@ -123,6 +123,16 @@ def audit_fixture(data: Any, *, as_of: str, stale_days: int = 30) -> dict[str, A
             "vault_accessed": False, "model_called": False, "facts": output,
             "summary": {s: sum(x["status"] == s for x in output) for s in ("READY", "UNKNOWN", "HOLD")}}
 
+def _strict_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    """Reject duplicate JSON keys, including shadowed private fields."""
+    value: dict[str, Any] = {}
+    for key, item in pairs:
+        if key in value:
+            raise KnowledgeAuditError("duplicate_json_key")
+        value[key] = item
+    return value
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="H-11 offline synthetic-only audit")
     parser.add_argument("--as-of", required=True)
@@ -133,7 +143,7 @@ def main() -> int:
         data = sys.stdin.buffer.read(16385)
         if len(data) > 16384:
             raise KnowledgeAuditError("input_too_large")
-        result = audit_fixture(json.loads(data), as_of=args.as_of)
+        result = audit_fixture(json.loads(data, object_pairs_hook=_strict_object), as_of=args.as_of)
     except (KnowledgeAuditError, ValueError, TypeError):
         print(json.dumps({"status": "REJECTED", "reason": "invalid_fixture"}))
         return 2
