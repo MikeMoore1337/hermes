@@ -25,6 +25,8 @@ on:
       - scripts/h15_brc_trivy_review.py
       - scripts/h15_brc_patch_dependencies.py
       - tests/test_h15_brc_patch_dependencies.py
+      - tests/test_h15_brc_runtime_perl_base.py
+      - deploy/h15/Dockerfile.brc-relay
       - tests/test_h15_brc_trivy_review.py
       - deploy/h15/Dockerfile.brc-relay
       - deploy/h15/stage-relay.sh
@@ -227,6 +229,14 @@ jobs:
           docker build --pull --progress=plain \
             --file "$GITHUB_WORKSPACE/deploy/h15/Dockerfile.brc-relay" \
             --tag "$image" "$RUNNER_TEMP/brc-upstream"
+          # Read the ACTUAL image's dpkg database, not the runner host.
+          # No network, privileges, host mounts or writable paths.
+          package="$(docker run --rm --network none --read-only --cap-drop ALL \
+            --security-opt no-new-privileges --user 65534:65534 \
+            --memory 128m --pids-limit 32 --entrypoint dpkg-query \
+            "$image" -W '-f=${Version}' perl-base)"
+          test "$package" = "5.36.0-7+deb12u4"
+          echo "H15_RUNTIME_PERL_BASE_FIXED_VERSION=PASS" >> "$GITHUB_STEP_SUMMARY"
           # BRC runtime does not need npm/npx (and npm's bundled undici).
           # Prove the non-root Node interpreter and upgraded sharp native module
           # remain usable inside the ACTUAL built image, with no network/mounts.
