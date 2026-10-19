@@ -103,7 +103,16 @@ if ($LASTEXITCODE -ne 0) { throw "CHILD_PROCESS_FAILED" }
     Register-ScheduledTask -TaskName $taskName -Action $action -Principal $principal -Settings $settings | Out-Null
     $registered = $true
     $task = Get-ScheduledTask -TaskName $taskName
-    if ($task.Principal.UserId -notin @('NT AUTHORITY\LOCAL SERVICE', 'S-1-5-19')) {
+    # Task Scheduler normalizes the account spelling (e.g. LocalService
+    # without a space). Compare canonical Windows SID, not display names.
+    $resolvedSid = if ($task.Principal.UserId -eq 'S-1-5-19') {
+        'S-1-5-19'
+    } else {
+        ([Security.Principal.NTAccount]::new($task.Principal.UserId)).Translate(
+            [Security.Principal.SecurityIdentifier]
+        ).Value
+    }
+    if ($resolvedSid -ne 'S-1-5-19') {
         throw "SCHEDULED_TASK_PRINCIPAL_CHANGED"
     }
     Start-ScheduledTask -TaskName $taskName
