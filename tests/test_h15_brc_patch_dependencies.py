@@ -122,7 +122,7 @@ class H15DependencyFixTests(unittest.TestCase):
             "  brace-expansion@1.1.21:\n"
             "  brace-expansion@2.1.7:\n"
             "  brace-expansion@5.0.12:\n"
-            + " neutral@1.0.0:\n" * 150
+            + " neutral@1.0.0:\n" * 400
         )
         for package, version in (
             ("sharp", "0.34.5"),
