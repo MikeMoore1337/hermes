@@ -1,0 +1,89 @@
+# TEMPORARY one-shot branch-only pilot. Remove before merging into main.
+name: H-21 one-shot Semgrep measurement
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/h21-one-shot-scan.yml'
+      - 'evals/semgrep_offline/**'
+      - 'tests/test_h21_semgrep_mutations.py'
+
+permissions:
+  contents: read
+
+jobs:
+  offline-measurement:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout source (no persisted token)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Validate corpus without executing it
+        run: |
+          python3 -m unittest tests.test_h21_semgrep_mutations -v
+      - name: Acquire EXACT pinned Semgrep container (separate from offline execution)
+        env:
+          IMAGE: semgrep/semgrep@sha256:c47e426f7f0cfa19af6d7877560d0a7135f683b8090ad0efc97c4ec7810dc435
+        run: |
+          set -euo pipefail
+          started="$SECONDS"
+          docker pull --platform linux/amd64 "$IMAGE"
+          echo "image_pull_seconds=$((SECONDS-started))" >> "$GITHUB_STEP_SUMMARY"
+      - name: Real networkless Semgrep test + mutations + source scan
+        shell: bash
+        env:
+          IMAGE: semgrep/semgrep@sha256:c47e426f7f0cfa19af6d7877560d0a7135f683b8090ad0efc97c4ec7810dc435
+        run: |
+          set -euo pipefail
+          ulimit -c 0
+          runner() {
+            timeout --signal=TERM --kill-after=10s 240s docker run --rm \
+              --pull=never --platform linux/amd64 --network none \
+              --read-only --user 65534:65534 --cap-drop ALL \
+              --security-opt no-new-privileges --pids-limit 80 \
+              --cpus 1 --memory 1024m --memory-swap 1024m \
+              --tmpfs /tmp:rw,nosuid,nodev,size=160m,mode=1777 \
+              -e HOME=/tmp -e SEMGREP_SEND_METRICS=off \
+              --mount "type=bind,src=$PWD/evals/semgrep_offline,dst=/work,readonly" \
+              --mount "type=bind,src=$PWD/scripts,dst=/code/scripts,readonly" \
+              --mount "type=bind,src=$PWD/qa_advisor,dst=/code/qa_advisor,readonly" \
+              --entrypoint semgrep "$IMAGE" "$@"
+          }
+          runner --version
+          start="$SECONDS"
+          runner test /work
+          echo "semgrep_test_seconds=$((SECONDS-started))" >> "$GITHUB_STEP_SUMMARY"
+          started="$SECONDS"
+          runner scan --quiet --json --config /work /work/mutation_corpus.py \
+            > "$RUNNER_TEMP/h21-mutation-report.json"
+          echo "mutation_scan_seconds=$((SECONDS-started))" >> "$GITHUB_STEP_SUMMARY"
+          python3 evals/semgrep_offline/score_mutations.py \
+            "$RUNNER_TEMP/h21-mutation-report.json" \
+            > "$RUNNER_TEMP/h21-score.json"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          score = json.loads((Path(os.environ["RUNNER_TEMP"]) / "h21-score.json").read_text())
+          print("SYNTHETIC_SCORE=" + json.dumps(score, sort_keys=True))
+          with (Path(os.environ["GITHUB_STEP_SUMMARY"])).open("a") as out:
+              out.write("\nSynthetic 29-case score: " + json.dumps(score["total"]) + "\n")
+              out.write("Precision: " + str(score["precision"]) + ", recall: " + str(score["recall"]) + "\n")
+          PY
+          started="$SECONDS"
+          runner scan --quiet --json --config /work /code/scripts /code/qa_advisor \
+            > "$RUNNER_TEMP/h21-hermes-report.json"
+          echo "hermes_scan_seconds=$((SECONDS-started))" >> "$GITHUB_STEP_SUMMARY"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          from scripts.review_h21_semgrep_evidence import review
+          report = (Path(os.environ["RUNNER_TEMP"]) / "h21-hermes-report.json").read_bytes()
+          measured = review(report)
+          print("HERMES_SCAN=" + json.dumps(measured, sort_keys=True))
+          with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a") as out:
+              out.write("Hermes inspected files: " + str(measured["scanned_files"]) + "\n")
+              out.write("Hermes pattern findings: " + str(measured["finding_count"]) + "\n")
+          PY
+          # No raw JSON upload: findings may include internal source fragments.
+          echo "image_size_bytes=$(docker image inspect "$IMAGE" --format='{{.Size}}')" >> "$GITHUB_STEP_SUMMARY"
