@@ -14,6 +14,17 @@ LABEL org.opencontainers.image.title="Hermes Self-hosted Remote MCP Relay (evalu
       org.opencontainers.image.licenses="MIT" \
       org.opencontainers.image.source="https://github.com/MikeMoore1337/hermes" \
       org.opencontainers.image.revision="cbe511702dd0147650353c29ac6ab1decd8afda1"
+# Debian 12 security DLA-4821-1 (2026-10-05): source perl
+# 5.36.0-7+deb12u4, security-patched over base image's deb12u3.
+# APT metadata/package signatures verified by Debian apt; fail closed if
+# this exact version becomes unavailable. Only the evaluation runtime is
+# affected, never the owner VPS host or the pinned builder stage.
+RUN set -eu; \
+    apt-get update; \
+    apt-get install --yes --no-install-recommends perl-base=5.36.0-7+deb12u4; \
+    test "$(dpkg-query -W '-f=${Version}' perl-base)" = '5.36.0-7+deb12u4'; \
+    rm -rf /var/lib/apt/lists/*
+
 WORKDIR /opt/brc
 COPY --from=builder --chown=65534:65534 /opt/brc /opt/brc
 # Production relay only needs node, not npm/npx CLIs or npm's bundled
