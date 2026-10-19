@@ -8,7 +8,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import stat
 import tomllib
 import zipfile
 from pathlib import Path, PurePosixPath
@@ -52,7 +51,7 @@ def _binary(path: Path) -> None:
     with path.open("rb") as source:
         header = source.read(20)
     # ELF64, little-endian, x86-64. Header alone is not executable provenance.
-    if header[:6] != b"\\x7fELF\\x02\\x01" or header[18:20] != b"\\x3e\\x00":
+    if header[:6] != b"\x7fELF\x02\x01" or header[18:20] != b"\x3e\x00":
         raise Denied("unexpected_binary_architecture")
     if _digest(path) != BINARY_SHA256:
         raise Denied("binary_digest_mismatch")
