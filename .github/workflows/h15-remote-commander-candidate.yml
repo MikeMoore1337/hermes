@@ -21,6 +21,7 @@ on:
       - scripts/h15_brc_oci_relay_smoke.mjs
       - scripts/h15_brc_oci_receipt.py
       - scripts/h15_brc_offline_image_bundle.py
+      - scripts/h15_brc_os_inventory.py
       - deploy/h15/Dockerfile.brc-relay
       - deploy/h15/stage-relay.sh
       - deploy/h15/load-verified-image.sh
@@ -34,6 +35,7 @@ on:
       - tests/test_h15_brc_oci_receipt.py
       - tests/test_h15_brc_offline_stage.py
       - tests/test_h15_brc_offline_image_bundle.py
+      - tests/test_h15_brc_os_inventory.py
       - docs/operations/H-15-SELFHOSTED-REMOTE-MCP.md
       - .github/workflows/h15-remote-commander-candidate.yml
 
@@ -231,6 +233,45 @@ jobs:
           echo "OCI_PUBLIC_PORTS=NONE" >> "$GITHUB_STEP_SUMMARY"
           echo "OCI_PRODUCTION_DEPLOY=NOT_EXECUTED" >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Verify dedicated owner UID/GID image runtime (CI-only, no host mounts)
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="hermes-brc-relay-eval:${GITHUB_SHA:0:12}"
+          container="h15-brc-uid-${GITHUB_RUN_ID}"
+          trap 'docker rm -f "$container" >/dev/null 2>&1 || true' EXIT
+          admin="$(openssl rand -hex 32)"
+          session="$(openssl rand -hex 32)"
+          docker run -d --name "$container" \
+            --network none --read-only --user 979:975 --cap-drop ALL \
+            --security-opt no-new-privileges --memory 512m --cpus 0.5 --pids-limit 80 \
+            --tmpfs /state:rw,nosuid,nodev,noexec,uid=979,gid=975,mode=0700,size=32m \
+            --tmpfs /tmp:rw,nosuid,nodev,uid=979,gid=975,mode=0700,size=16m \
+            -e HOST=127.0.0.1 -e PORT=3000 -e PUBLIC_URL=http://localhost:3000 \
+            -e BRC_ADMIN_USER=ci-owner -e BRC_ADMIN_PASSWORD="$admin" \
+            -e BRC_SESSION_SECRET="$session" "$image" >/dev/null
+          unset admin session
+          ready=0
+          for i in $(seq 1 40); do
+            if docker exec "$container" node -e '
+              fetch("http://127.0.0.1:3000/health", {signal: AbortSignal.timeout(1500)})
+                .then(async r => { const v = await r.json(); process.exit(r.ok && v.ok === true && v.devices === 0 ? 0 : 1); })
+                .catch(() => process.exit(1))
+            ' >/dev/null 2>&1; then ready=1; break; fi
+            sleep 0.25
+          done
+          test "$ready" = 1 || { echo 'H15_UID_SMOKE_START_FAILED'; exit 1; }
+          docker exec "$container" node -e '
+            const fs = require("node:fs");
+            const s = fs.statSync("/state/relay.sqlite");
+            if (process.getuid() !== 979 || process.getgid() !== 975 || s.uid !== 979 || s.gid !== 975)
+              process.exit(1);
+          '
+          test -z "$(docker port "$container")"
+          test "$(docker inspect --format '{{.HostConfig.NetworkMode}}' "$container")" = none
+          echo "H15_BRC_UID_979_975=PASS" >> "$GITHUB_STEP_SUMMARY"
+          echo "H15_BRC_UID_OWNER_DEVICE_ACCESSED=NO" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Two real BRC agents in separate native Linux sandbox containers over full OAuth HTTP MCP
         shell: bash
         run: |
@@ -373,6 +414,32 @@ jobs:
           echo "HERMES_BRC_OCI_CYCLONEDX_SBOM=PASS" >> "$GITHUB_STEP_SUMMARY"
           echo "HERMES_BRC_OCI_RECEIPT=CI_IMAGE_VERIFIED_NOT_DEPLOYABLE" >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Inventory built OCI Debian packages (no CVE clearance)
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="hermes-brc-relay-eval:${GITHUB_SHA:0:12}"
+          evidence="$RUNNER_TEMP/h15-brc-oci-evidence"
+          test -d "$evidence"
+          # Observe installed dpkg records from the ACTUAL built runtime image.
+          # No network, ports, volumes, Docker socket, or owner host reads.
+          docker run --rm --network none --read-only --user 65534:65534 \
+            --cap-drop ALL --security-opt no-new-privileges \
+            --memory 256m --pids-limit 32 --entrypoint dpkg-query \
+            "$image" -W '-f=${Package}\t${Version}\t${Architecture}\n' \
+            > "$RUNNER_TEMP/brc-runtime-dpkg.tsv"
+          docker image inspect "$image" > "$RUNNER_TEMP/brc-runtime-os-inspect.json"
+          python3 "$GITHUB_WORKSPACE/scripts/h15_brc_os_inventory.py" \
+            --dpkg-list "$RUNNER_TEMP/brc-runtime-dpkg.tsv" \
+            --docker-inspect "$RUNNER_TEMP/brc-runtime-os-inspect.json" \
+            --output "$evidence/os-packages.cdx.json"
+          (cd "$evidence" && \
+            sha256sum OCI_RECEIPT.json sbom.cdx.json os-packages.cdx.json \
+              UPSTREAM_AUDIT.json NODE_BASE_DIGEST > SHA256SUMS && \
+            sha256sum --check SHA256SUMS)
+          echo "H15_OS_VULNERABILITY_SCAN=NOT_PERFORMED" >> "$GITHUB_STEP_SUMMARY"
+          echo "H15_OS_RELEASE_APPROVED=NO" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Retain isolated image provenance and CycloneDX SBOM
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -395,6 +462,7 @@ jobs:
           test "$(docker image inspect --format '{{.Architecture}}' "$image")" = amd64
           cp "$RUNNER_TEMP/h15-brc-oci-evidence/OCI_RECEIPT.json" "$bundle/"
           cp "$RUNNER_TEMP/h15-brc-oci-evidence/sbom.cdx.json" "$bundle/"
+          cp "$RUNNER_TEMP/h15-brc-oci-evidence/os-packages.cdx.json" "$bundle/"
           docker image inspect "$image" > "$RUNNER_TEMP/h15-brc-export-inspect.json"
           docker image save "$image" | zstd -T2 -3 -q -o "$bundle/brc-relay.docker.tar.zst"
           zstd -tq "$bundle/brc-relay.docker.tar.zst"
@@ -406,7 +474,7 @@ jobs:
             verify "$bundle" "$archive_sha" "$image_id" "$GITHUB_SHA"
           (
             cd "$bundle"
-            sha256sum brc-relay.docker.tar.zst OCI_RECEIPT.json sbom.cdx.json IMAGE_BUNDLE.json > SHA256SUMS
+            sha256sum brc-relay.docker.tar.zst OCI_RECEIPT.json sbom.cdx.json os-packages.cdx.json IMAGE_BUNDLE.json > SHA256SUMS
             sha256sum --check SHA256SUMS
           )
           # Verify the exported artifact is an actual loadable image, rather
