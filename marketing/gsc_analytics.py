@@ -81,7 +81,7 @@ def _snapshot_header(raw: object) -> tuple[dict[str, Any], date, date, date]:
         raise GscEvidenceError("snapshot_schema_invalid")
     if raw["property"] != PROPERTY:
         raise GscEvidenceError("property_mismatch")
-    if raw["transport"] not in TRANSPORTS:
+    if type(raw["transport"]) is not str or raw["transport"] not in TRANSPORTS:
         raise GscEvidenceError("transport_invalid")
     start, end, observed = (_day(raw[k]) for k in
                              ("period_start", "period_end", "observed_at"))
@@ -91,14 +91,14 @@ def _snapshot_header(raw: object) -> tuple[dict[str, Any], date, date, date]:
     latest = _day(latest_raw) if latest_raw is not None else None
     if latest is not None and (latest > observed or latest > end):
         raise GscEvidenceError("latest_date_invalid")
-    if raw["search_type"] not in SEARCH_TYPES:
+    if type(raw["search_type"]) is not str or raw["search_type"] not in SEARCH_TYPES:
         raise GscEvidenceError("search_type_invalid")
     dims = raw["dimensions"]
     if (type(dims) is not list or len(dims) > 3
-            or any(type(v) is not str or v not in DIMENSIONS for v in dims)
+            or any(type(v) is not str or v not in (DIMENSIONS | {"sitemap"}) for v in dims)
             or len(dims) != len(set(dims))):
         raise GscEvidenceError("dimensions_invalid")
-    if raw["ctr_unit"] not in {"fraction", "percent"}:
+    if type(raw["ctr_unit"]) is not str or raw["ctr_unit"] not in {"fraction", "percent"}:
         raise GscEvidenceError("ctr_unit_required")
     rows = raw["rows"]
     if type(rows) is not list or len(rows) > MAX_ROWS:
@@ -142,6 +142,8 @@ def normalize_analytics(snapshot: object) -> dict[str, Any]:
     """
     result, start, end, observed = _snapshot_header(snapshot)
     dims = result["dimensions"]
+    if "sitemap" in dims:
+        raise GscEvidenceError("analytics_dimensions_invalid")
     rows: list[dict[str, Any]] = []
     seen: set[tuple[str, ...]] = set()
     for raw in snapshot["rows"]:
