@@ -177,6 +177,28 @@ the same origin, a stolen authenticated cookie, or prompt injection
 through an authorized MCP client. HTML output encoding, OAuth client
 consent, and per-action authorization still require their own tests.
 
+### Windows native kernel ACL negative test (disposable CI)
+
+`scripts/h15_windows_os_sandbox_e2e.ps1` registers and immediately
+removes a temporary Windows Scheduled Task under
+`NT AUTHORITY\\LOCAL SERVICE` on a disposable GitHub Actions
+`windows-2022` runner. It creates separate NTFS ACL-protected
+disposable private and source directories, a writable approved
+workspace, and invokes a real child `powershell.exe` inheriting the
+service token. The child must prove SID S-1-5-19, read the
+read-only source, write only in its workspace, fail both reads and
+writes under the private directory, and fail writes to the protected
+source. The task and test data are removed in a `finally` block.
+
+This verifies a **real** Windows token+NTFS boundary; it does not
+prove containment of all possible system writable directories,
+network egress, Windows user-profile junctions, or malicious native
+binary behavior. A separate dedicated non-admin service identity,
+host-specific ACL policy, and full patched BRC dispatcher tests
+remain required before enabling command execution on the owner's
+Windows PC. This CI never modifies the owner's real
+`HermesDevicePresence` task or credentials.
+
 ## Target deployment (not yet activated)
 
 ```text
