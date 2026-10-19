@@ -150,3 +150,71 @@ None of these conclusions claims that package versions were scanned or that any 
 - Изолированный Docker продолжал использовать `--network=none`, непривилегированный UID, одноразовый записываемый кеш и read-only исходные ZIP. Оба Python-примера дали прежний ожидаемый результат, время около 1.38-1.39 секунды каждый. Реальные проекты, production и секреты не участвовали.
 
 **Важное ограничение:** наличие advisory-файла в архиве не доказывает, что все affected/version/events корректно прочитаны, обработаны и сопоставлены. До диагностики этого разрыва OSV нельзя считать достоверным дополнительным контролем для npm в Hermes/YFC/Second Brain. Широкую CI-интеграцию не включать.
+
+
+## 19 октября 2026 - итоговый публичный пилот (заменяет прежний предварительный INCONCLUSIVE по npm)
+
+**Актуальные подтверждённые результаты:** [изолированный npm-контроль #39299602120](https://github.com/MikeMoore1337/hermes/actions/runs/39299602120) - SUCCESS; [точечное сканирование реальных публичных lockfiles #39299982094](https://github.com/MikeMoore1337/hermes/actions/runs/39299982094) - SUCCESS. Предыдущие выводы выше о предполагаемом дефекте npm и отсутствии реальных project scans относились к *более раннему этапу*. Не использовать их как текущую оценку.
+
+### Исправление ложной тревоги на синтетической npm-фикстуре
+
+- В исходном тесте `lodash@4.17.15` был записан в минимальный вручную собранный `package-lock.json`, которого хватало для извлечения имени/версии, но **недостаточно для надёжного подтверждения CVE**.
+- В повторном запуске стандартный npm lockfile v3 был получен через `npm install --package-lock-only --ignore-scripts --no-audit --no-fund --save-exact` **в подготовительной среде, а не внутри офлайн-контейнера**. `OSV-Scanner v2.7.0` с той же официальной локальной npm DB обнаружил `GHSA-p6mc-m468-83gw` / `CVE-2020-8203` в `lodash@4.17.15` (6 записей), но не в `lodash@4.17.23` (2 *другие* записи). [GHSA: High 7.4, исправлено в 4.17.19](https://github.com/advisories/GHSA-p6mc-m468-83gw).
+- **Вердикт:** подтверждённая способность OSV обнаруживать npm advisory при настоящем lockfile; вывод о *дефекте сканера* снят. Конкретное отсутствовавшее поле старой фикстуры НЕ установлено - не выдавать гипотезу за найденный корень.
+- Правило на будущее: использовать реальные manager-generated lockfiles либо отдельно подтверждать полноту синтетического формата; нулевой результат одной сокращённой фикстуры не означает `NOT_AFFECTED`.
+
+### Изолированное сканирование публичных проектов
+
+Публичные lockfiles были загружены в подготовительную среду по **точным commit SHA**, а затем проверены настоящим OSV внутри Docker (`--network=none`, подтверждён только loopback, непривилегированный UID, read-only rootfs, no privileges, лимиты CPU/RAM/PID). **Никаких сетевых запросов внутри сканера, private vault, токенов, зависимостей для установки, production или новых полномочий.** Всё временное экспериментальное обеспечение необходимо удалить до merge этого отчёта.
+
+| Проект и закреплённый коммит | Lockfile | Зависимости в OSV-отчёте | Совпадения OSV |
+| --- | --- | ---: | --- |
+| Hermes `79104b83136e03f33fec0a23494cd042848d3d0a` | `control_center/frontend/package-lock.json` | 120 | **5** записей для `vite@7.1.11` |
+| YFC `bc48d09c3415c4b146a0400efc18cb9031413d18` | `uv.lock` | 109 | **3** записи для `aiohttp@3.14.3` |
+| YFC, тот же SHA | `frontend/package-lock.json` | 344 | 0 |
+| YFC, тот же SHA | `frontend/scheduled-report/package-lock.json` | 79 | 0 |
+
+SHA256 входных lockfiles в указанном порядке:
+`80ed28558da4d8c5eb9a13cae8a0a2c8db3f322579021394a37712064d689a70`,
+`d0925901c471a54b1249eb5516e8795ad48134c78866687b0d5f67b4965ea392`,
+`efa223759b3e0e276c0950952636a6b7b484ed0abf4174dd1e6e3a4070c575c9`,
+`b75fc1ae560c952f24c6a7e5c8e576a82d4ccd06`.
+
+Файлы DB текущего эксперимента: npm 218 582 931 байт, SHA256
+`88e0d0fc50cb30a4a4e360069d6d6bff853449bac87ec31b1910c6dcac7e6faa`;
+PyPI 36 468 536 байт, SHA256
+`3526b5868fdcb3c398595948e8a2941794e27ae7f1fe146c1f8774c48e8a3efe`.
+Полнота и независимая аутентичность DB, подпись поставщика бинарника и точная дата состава DB **NOT_VERIFIED**. Ноль находок по отдельному lockfile - не доказательство безопасности всех версий/режимов работы.
+
+#### Hermes: `vite@7.1.11` (devDependency)
+
+| CVE / GHSA | Важность согласно GitHub Advisory | Исправление в ветке 7.x |
+| --- | --- | --- |
+| `CVE-2026-39365` / [`GHSA-4w7w-66w2-5vf9`](https://github.com/advisories/GHSA-4w7w-66w2-5vf9) | Moderate (CVSS 6.3), чтение исходных `.map` | 7.3.2 |
+| `CVE-2026-53571` / [`GHSA-fx2h-pf6j-xcff`](https://github.com/advisories/GHSA-fx2h-pf6j-xcff) | High (8.2), Windows/NTFS dev-server `fs.deny` | 7.3.5 |
+| `CVE-2026-39363` / [`GHSA-p9ff-h696-f583`](https://github.com/advisories/GHSA-p9ff-h696-f583) | High (8.2), чтение файлов через WebSocket dev-server | 7.3.2 |
+| `CVE-2026-39364` / [`GHSA-v2wj-q39q-566r`](https://github.com/advisories/GHSA-v2wj-q39q-566r) | High (8.2), обход `fs.deny` через query | 7.3.2 |
+| `CVE-2026-53632` / [`GHSA-v6wh-96g9-6wx3`](https://github.com/advisories/GHSA-v6wh-96g9-6wx3) | Moderate, Windows UNC/NTLM в `launch-editor` | 7.3.5 |
+
+Все пять относятся преимущественно к использованию **Vite dev-server**. `control_center/frontend/package.json` объявляет `vite: 7.1.11` в `devDependencies`, скрипт `dev` запускает локальный `vite --host 127.0.0.1`. **Это не свидетельство эксплуатации production Control Center**, собранного в статические файлы. Если разработчик или CI включает сетевой dev-server/запускает Windows, сценарии воздействия зависят от конфигурации. Разумный *отдельный* шаг - целевое обновление Vite до совместимой безопасной версии **не ниже 7.3.5** с регрессионными тестами фронтенда. Это **не выполнено** в #189, потому что Issue запрещает автообновление.
+
+#### Your Fitness Coach: `aiohttp==3.14.3` (через optional `bot`)
+
+| CVE / GHSA | Важность | Исправление |
+| --- | --- | --- |
+| [`GHSA-2g87-pp6c-29x5`](https://github.com/aio-libs/aiohttp/security/advisories/GHSA-2g87-pp6c-29x5) | Moderate, исчерпание памяти/CPU; CVE не присвоен | 3.14.4 |
+| `CVE-2026-111063` / [`GHSA-494j-54xm-rwp3`](https://github.com/aio-libs/aiohttp/security/advisories/GHSA-494j-54xm-rwp3) | Low, атрибут `Secure` у shared cookie | 3.14.4 |
+| `CVE-2026-111064` / [`GHSA-5wr8-gcqf-gqf3`](https://github.com/aio-libs/aiohttp/security/advisories/GHSA-5wr8-gcqf-gqf3) | Low, отсутствие начального timeout заголовков HTTP-сервера | 3.14.4 по выпуску исправлений октября 2026; прямой текст GHSA при проверке недоступен |
+
+По публичным `pyproject.toml` и `uv.lock` на этом SHA: `[project.optional-dependencies].bot` включает `aiogram` и `aiohttp-socks`, **оба** зависят от `aiohttp`; это зависимость optional bot-группы, а не обязательной пустой `[project].dependencies`. Проверять фактическую установленную конфигурацию bot отдельно, не считать автоматически уязвимым production.
+
+**Сравнение с существующими инструментами YFC по тому же commit:** [Security Audit #39225025515](https://github.com/MikeMoore1337/your-fitness-coach/actions/runs/39225025515) `uv audit --locked --no-group dev --no-group scheduled-report` проверял 86 пакетов, `npm audit --omit=dev` - production-only, Trivy 0.73.0 - `HIGH/CRITICAL`, `ignore-unfixed=true`, без dev-зависимостей по логам; всё SUCCESS/0 находок. OSV анализировал **все записи** четырёх lockfiles (`--all-packages`), включая optional и dev. Это **показанный разрыв в областях сканирования**, но ещё не доказательство, что инструменты с **одинаковым включением групп и severity** дали бы разные ответы. Не вводить второй блокирующий CI без полного сопоставления областей.
+
+### Решение по #189 после реального публичного пилота
+
+1. **Hermes:** подтверждены пять advisory для сборочного/dev-инструмента Vite в pinned версии; зафиксировать их и планировать совместимый отдельный апгрейд после оценки dev-server exposure, без автоматических правок по #189.
+2. **YFC:** подтверждены три advisory для optional bot-зависимости `aiohttp` в конкретном историческом SHA; проверить использование в активном bot-runtime и целесообразность целевого обновления до 3.14.4+ отдельным процессом. Сохранить действующие `uv audit`, npm audit и Trivy, не заменять их OSV.
+3. **Second Brain:** реальная проверка не проводилась из-за отдельного owner gate. Ни приватный `second-brain-vault`, ни production не читались.
+4. **Охват OSV:** настоящее сканирование и обнаружение в **обеих экосистемах доказаны**, но широкую обязательную интеграцию `REJECT_BROAD_ADOPTION` пока оставить: нужны решения о scope/dev/optional и независимая проверка DB/binary provenance. Сами эти шаги не блокируют другую разработку Hermes.
+
+**Статус #189: `PARTIAL`** по требованию полного охвата Second Brain и уточнению отличий существующих аудиторов. Этот отчёт исправляет ошибочные прежние предположения, но не даёт runtime GO, не закрывает #33 и не обновляет зависимости автоматически.
