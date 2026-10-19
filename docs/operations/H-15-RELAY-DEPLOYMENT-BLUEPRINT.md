@@ -183,9 +183,15 @@ The baseline Trivy report on the exact disposable OCI image
 from H-15 CI #39300310663 showed 78 HIGH/CRITICAL records,
 including 14 JavaScript/library findings. The next reproducible
 **CI-only** patch retains the earlier SDK 1.31.0 and proxy-addr 2.0.8,
-and pins the following versions in the disposable pnpm-workspace:
+and changes only the disposable dependency graph and runtime Docker stage:
 
-- `undici` 6.28.0 → 6.28.1 (maintains the 6.x major used upstream).
+- The `undici` 6.28.0 finding is **not in the BRC pnpm lockfile**.
+  The Trivy package path is
+  `/usr/local/lib/node_modules/npm/node_modules/undici/package.json`.
+  The runtime Docker stage now removes unused bundled npm/npx and that
+  subtree; the builder keeps npm/pnpm for reproducibility. Real OCI
+  scanning and relay startup tests verify this. No deceptive
+  `undici` pnpm override is added.
 - `brace-expansion` has **three** installed major branches, so the
   overrides are version-selector specific: 1.1.18 → 1.1.21,
   2.1.4 → 2.1.7, 5.0.9 → 5.0.12. A global 5.x override could
