@@ -10,6 +10,7 @@ import json
 import os
 import platform
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -117,6 +118,11 @@ def main():
             metadata[ecosystem] = {"sha256": sha, "size": size, "last_modified": modified}
         out(step="db_acquired", at_utc=datetime.now(timezone.utc).isoformat(),
             metadata=metadata, db_snapshot_verified=False)
+        # OSV v2's local DB extractor creates cache entries under its DB root.
+        # Keep downloaded ZIPs immutable and give it only a disposable scratch copy.
+        cache = root / "scratch-db"
+        shutil.copytree(root / "db", cache)
+        out(step="db_scratch_prepared", disposable=True, source_archives_readonly=True)
         image = command(["docker", "pull", "ubuntu:24.04"], timeout=180)
         if image.returncode:
             raise RuntimeError("sandbox_image_unavailable")
@@ -128,13 +134,14 @@ def main():
         base = [
             "docker", "run", "--rm", "--network=none", "--read-only", "--cap-drop=ALL",
             "--security-opt=no-new-privileges", "--pids-limit=64", "--cpus=1.0",
-            "--memory=768m", "--user=65534:65534",
+            "--memory=1536m", "--user=65534:65534",
             "--tmpfs=/tmp:rw,nosuid,nodev,size=96m,mode=1777",
             "--env=HOME=/tmp", "--env=XDG_CACHE_HOME=/tmp/osv-cache",
             "--env=TMPDIR=/tmp",
             "--env=OSV_SCANNER_LOCAL_DB_CACHE_DIRECTORY=/db",
             "--mount=type=bind,src=" + str(binary) + ",dst=/osv-scanner,readonly",
-            "--mount=type=bind,src=" + str(root / "db") + ",dst=/db,readonly",
+            "--mount=type=bind,src=" + str(root / "db") + ",dst=/db-source,readonly",
+            "--mount=type=bind,src=" + str(cache) + ",dst=/db",
             "--mount=type=bind,src=" + str(fixtures) + ",dst=/input,readonly",
         ]
         boundary = command(base + ["--entrypoint=/bin/sh", image_id, "-c",
