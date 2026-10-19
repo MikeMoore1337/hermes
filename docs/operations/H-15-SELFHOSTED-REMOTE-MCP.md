@@ -150,6 +150,33 @@ legitimate calls still route with an audit event. This **does not**
 by itself isolate the shell from owner filesystem or production
 resources. No owner device is paired for command execution yet.
 
+### Browser-owner mutation CSRF gate
+
+The candidate relay uses a signed `SameSite=Lax` browser login cookie
+for pairing approval, OAuth consent, device pause/delete, registered
+OAuth clients and API-key administration. A signed cookie proves a
+session but not the intent of a browser request initiated by another
+site. For these **seven authenticated owner POST endpoints**,
+`scripts/h15_brc_harden_browser_csrf.py` installs an exact same-origin
+`Origin` guard with `Sec-Fetch-Site` rejecting cross-site requests.
+Absent/foreign/null Origin fails closed. This changes native upstream
+e2e's synthetic (nonbrowser) form POST fixtures to include the same
+Origin header a real browser sends; it does not bypass production
+policy.
+
+`scripts/h15_brc_browser_csrf_e2e.mjs` boots a genuine compiled
+relay on isolated loopback with throwaway SQLite and tests missing
+Origin, foreign Origin, contradictory cross-site fetch metadata,
+and successful same-origin browser mutation requests. OAuth/MCP
+Bearer traffic is not incorrectly forced to send browser Origin.
+No live browser cookies, keys or real devices are used.
+
+This is protection against ordinary browser cross-site request
+forgery, **not** protection against malicious JavaScript already on
+the same origin, a stolen authenticated cookie, or prompt injection
+through an authorized MCP client. HTML output encoding, OAuth client
+consent, and per-action authorization still require their own tests.
+
 ## Target deployment (not yet activated)
 
 ```text
