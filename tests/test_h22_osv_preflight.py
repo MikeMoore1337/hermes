@@ -43,7 +43,7 @@ class OSVPreflightTest(unittest.TestCase):
             self.addCleanup(item.stop)
 
     def make_database(self, eco, name="PYSEC-2024-12345.json", raw=None):
-        directory = self.db_root / "osv-scanner" / eco
+        directory = self.db_root / "osv-scalibr" / eco
         directory.mkdir(parents=True, exist_ok=True)
         archive = directory / "all.zip"
         with zipfile.ZipFile(archive, "w") as handle:
@@ -95,12 +95,12 @@ class OSVPreflightTest(unittest.TestCase):
                 preflight.assess(self.binary, self.db_root, self.lockfile)
 
     def test_missing_database_is_not_security_pass(self):
-        (self.db_root / "osv-scanner" / "PyPI" / "all.zip").unlink()
+        (self.db_root / "osv-scalibr" / "PyPI" / "all.zip").unlink()
         with self.assertRaises(preflight.Denied):
             preflight.assess(self.binary, self.db_root, self.lockfile)
 
     def test_reject_corrupt_database(self):
-        (self.db_root / "osv-scanner" / "PyPI" / "all.zip").write_bytes(b"fake ZIP")
+        (self.db_root / "osv-scalibr" / "PyPI" / "all.zip").write_bytes(b"fake ZIP")
         with self.assertRaises(preflight.Denied):
             preflight.assess(self.binary, self.db_root, self.lockfile)
 
