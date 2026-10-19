@@ -8,6 +8,8 @@ on:
       - scripts/h15_brc_apply_policy_patch.py
       - scripts/h15_brc_harden_relay.py
       - scripts/h15_brc_harden_gateway.py
+      - scripts/h15_brc_harden_reconnect.py
+      - scripts/h15_brc_reconnect_socket_e2e.mjs
       - scripts/h15_brc_harden_browser_csrf.py
       - scripts/h15_brc_browser_csrf_e2e.mjs
       - scripts/h15_brc_gateway_policy_e2e.mjs
@@ -21,6 +23,7 @@ on:
       - tests/test_h15_brc_apply_policy_patch.py
       - tests/test_h15_brc_harden_relay.py
       - tests/test_h15_brc_harden_gateway.py
+      - tests/test_h15_brc_harden_reconnect.py
       - tests/test_h15_brc_harden_browser_csrf.py
       - tests/test_h15_brc_oci_relay_contract.py
       - tests/test_h15_brc_oci_receipt.py
@@ -46,7 +49,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m unittest -v tests.test_h15_remote_commander_candidate_audit tests.test_h15_brc_apply_policy_patch tests.test_h15_brc_harden_relay tests.test_h15_brc_harden_gateway tests.test_h15_brc_harden_browser_csrf tests.test_h15_brc_oci_relay_contract tests.test_h15_brc_oci_receipt
+          python3 -m unittest -v tests.test_h15_remote_commander_candidate_audit tests.test_h15_brc_apply_policy_patch tests.test_h15_brc_harden_relay tests.test_h15_brc_harden_gateway tests.test_h15_brc_harden_reconnect tests.test_h15_brc_harden_browser_csrf tests.test_h15_brc_oci_relay_contract tests.test_h15_brc_oci_receipt
 
       - name: Fetch exact upstream Git commit (not tag, latest or npm install)
         shell: bash
@@ -102,6 +105,13 @@ jobs:
           python3 -m scripts.h15_brc_harden_gateway \
             --source-dir "$RUNNER_TEMP/brc-upstream"
 
+      - name: Fix stale/foreign WebSocket result replay at source-pinned relay DeviceHub
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m scripts.h15_brc_harden_reconnect \
+            --source-dir "$RUNNER_TEMP/brc-upstream"
+
       - name: Apply exact-pinned owner browser CSRF origin guard
         shell: bash
         run: |
@@ -126,6 +136,7 @@ jobs:
           node "$GITHUB_WORKSPACE/scripts/h15_brc_relay_ws_e2e.mjs"
           node "$GITHUB_WORKSPACE/scripts/h15_brc_two_wss_agents_e2e.mjs"
           node "$GITHUB_WORKSPACE/scripts/h15_brc_gateway_policy_e2e.mjs"
+          node "$GITHUB_WORKSPACE/scripts/h15_brc_reconnect_socket_e2e.mjs"
           node "$GITHUB_WORKSPACE/scripts/h15_brc_browser_csrf_e2e.mjs"
           node --input-type=module <<'JS'
           import { listTools, hasTool, callTool } from './packages/agent/dist/dispatcher.js';
@@ -266,6 +277,7 @@ jobs:
           cat > "$bundle/EXPECTED_PATHS.txt" <<'PATHS'
           packages/agent/src/dispatcher.ts
           packages/relay/src/app.ts
+          packages/relay/src/device-hub.ts
           packages/relay/src/mcp/hermes-policy.ts
           packages/relay/src/mcp/invoke.ts
           packages/relay/src/mcp/server.ts
