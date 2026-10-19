@@ -67,6 +67,16 @@ def main() -> int:
         return 2
     status, confidence = probe.inspect_confidence(
         token=token, account=account, now=now)
+    if status == "no_confirmed_samples" and confidence is None:
+        # An authenticated, well-formed response with no Adaptive groups
+        # is a completed source check, not a provider outage or zero use.
+        # Keep historical estimates untouched and NEVER record 0 Neurons.
+        print("CLOUDFLARE_ADVISORY_ARCHIVE=no_confirmed_samples")
+        print("OBSERVATION_DAY=" + previous[:10])
+        print("HISTORY_UPDATED=false")
+        print("QUOTA_REMAINING=UNKNOWN")
+        print("BILLABLE_USAGE=NOT_VERIFIED")
+        return 0
     if status != "advisory_confidence" or confidence is None:
         print("CLOUDFLARE_ADVISORY_ARCHIVE=" + status)
         return 1
