@@ -31,6 +31,15 @@ for(const width of [320,393,1440]){
   const shown=await link.boundingBox();
   expect(shown.y,"Keyboard link must become visible").toBeGreaterThanOrEqual(0);
   expect(shown.x).toBeGreaterThanOrEqual(0);
+  const header=page.locator(".site-header");
+  const logo=header.locator(".brand img");
+  await expect(logo).toBeVisible();
+  const headerBox=await header.boundingBox();
+  const logoBox=await logo.boundingBox();
+  expect(headerBox).not.toBeNull();
+  expect(logoBox).not.toBeNull();
+  expect(shown.y+shown.height,"Skip link must end above header, never cover logo or navigation").toBeLessThanOrEqual(headerBox.y+1);
+  expect(shown.y+shown.height,"Skip link must not overlap visible logo").toBeLessThan(logoBox.y);
   await page.screenshot({path:resolve(evidence,`after-focus-${width}.png`),fullPage:true});
   await link.press("Enter");
   await expect(main).toBeFocused();
