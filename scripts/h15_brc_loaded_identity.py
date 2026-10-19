@@ -148,18 +148,26 @@ def main() -> int:
         response = json.load(sys.stdin)
         if not isinstance(response, list) or len(response) != 1:
             raise LoadedImageDenied("invalid_docker_inspect")
-        with subprocess.Popen(
+        proc = subprocess.Popen(
             ["zstd", "-dc", args.archive], stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
-        ) as proc:
+        )
+        try:
             assert proc.stdout is not None
             runtime_id, style = verify_loaded_tar(
                 proc.stdout, response[0], args.expected_config_id,
                 args.expected_tag,
             )
-            if proc.wait() != 0:
+            if proc.wait(timeout=60) != 0:
                 raise LoadedImageDenied("zstd_stream_failure")
-    except (LoadedImageDenied, KeyError, OSError, ValueError, tarfile.TarError) as exc:
+        finally:
+            if proc.stdout is not None:
+                proc.stdout.close()
+            if proc.poll() is None:
+                proc.kill()
+            proc.wait()
+    except (LoadedImageDenied, KeyError, OSError, ValueError,
+            subprocess.TimeoutExpired, tarfile.TarError) as exc:
         print("H15_LOADED_IMAGE_REJECTED=" + type(exc).__name__, file=sys.stderr)
         return 2
     print("H15_LOADED_IMAGE_VERIFY=PASS")
