@@ -1,0 +1,24 @@
+name: H-22 OSV ephemeral synthetic pilot (remove before merge)
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - scripts/h22_osv_one_shot.py
+      - .github/workflows/h22-osv-one-shot.yml
+
+permissions:
+  contents: read
+
+jobs:
+  isolated-synthetic-once:
+    if: github.head_ref == 'feat/h22-osv-preflight-20261019'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Checkout without persisted credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: One-off official v2.7.0 / PyPI npm DB prep and Docker network-none synthetic scans
+        run: python3 scripts/h22_osv_one_shot.py
