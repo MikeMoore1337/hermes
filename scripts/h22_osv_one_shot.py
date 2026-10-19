@@ -173,7 +173,7 @@ def main():
             started = time.monotonic()
             scan = command(
                 ["timeout", "100s", *base, "--entrypoint=/osv-scanner", image_id,
-                 "--offline", "scan", "-L", "/input/" + name + "/" + lock,
+                 "scan", "source", "--offline", "-L", "/input/" + name + "/" + lock,
                  "--format=json", "--all-packages"],
                 timeout=115,
             )
