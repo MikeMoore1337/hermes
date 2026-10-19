@@ -7,11 +7,12 @@ loaded only in live_run(), from an operator-provisioned private JSON file.
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import stat
 import tempfile
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
 from urllib.error import HTTPError, URLError
@@ -76,9 +77,46 @@ def _google_rows(payload: object, dims: tuple[str, ...]) -> list[dict[str, Any]]
         row = dict(zip(dims, keys))
         for k in ("clicks", "impressions", "ctr", "position"):
             if k in item:
-                row[k] = item[k]
+                value = item[k]
+                if k in ("clicks", "impressions"):
+                    # Google's Search Analytics schema calls these doubles.
+                    # Preserve exact counts when the wire format is 4.0.
+                    if (type(value) is float and math.isfinite(value)
+                            and value >= 0 and value.is_integer()
+                            and value <= 2 ** 53):
+                        value = int(value)
+                    elif type(value) is not int or value < 0 or value > 2 ** 53:
+                        raise GscRuntimeError("analytics_count_invalid")
+                row[k] = value
         result.append(row)
     return result
+
+
+def _gsc_long(value: object) -> int:
+    """Google JSON int64 fields can be encoded as decimal strings."""
+    if type(value) is int and 0 <= value <= 2 ** 63 - 1:
+        return value
+    if (type(value) is str and re.fullmatch(r"(?:0|[1-9][0-9]{0,18})", value)
+            and int(value) <= 2 ** 63 - 1):
+        return int(value)
+    raise GscRuntimeError("sitemap_count_invalid")
+
+
+def _gsc_timestamp(value: object) -> str:
+    """Canonicalize RFC3339 datetimes (including explicit UTC offsets) to UTC Z."""
+    if (type(value) is not str or len(value) > 48 or
+            not re.fullmatch(
+                r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}"
+                r"(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})", value)):
+        raise GscRuntimeError("sitemap_timestamp_invalid")
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.utcoffset() is None:
+            raise ValueError("timezone missing")
+        utc = parsed.astimezone(timezone.utc).isoformat(timespec="microseconds")
+    except ValueError:
+        raise GscRuntimeError("sitemap_timestamp_invalid") from None
+    return utc.replace("+00:00", "Z")
 
 
 def _sitemap_rows(payload: object) -> list[dict[str, Any]]:
@@ -98,10 +136,12 @@ def _sitemap_rows(payload: object) -> list[dict[str, Any]]:
         for c in contents:
             if type(c) is not dict:
                 raise GscRuntimeError("sitemap_contents_invalid")
-            n = c.get("submitted")
-            if type(n) is not int or n < 0:
+            try:
+                submitted += _gsc_long(c.get("submitted"))
+            except GscRuntimeError:
+                raise GscRuntimeError("sitemap_submitted_invalid") from None
+            if submitted > 2 ** 63 - 1:
                 raise GscRuntimeError("sitemap_submitted_invalid")
-            submitted += n
         row = {"path": item.get("path")}
         if contents:
             row["submitted"] = submitted
@@ -109,7 +149,10 @@ def _sitemap_rows(payload: object) -> list[dict[str, Any]]:
                                    ("lastSubmitted", "last_submitted"),
                                    ("lastDownloaded", "last_downloaded")):
             if native in item:
-                row[normalized] = item[native]
+                if native in ("errors", "warnings"):
+                    row[normalized] = _gsc_long(item[native])
+                else:
+                    row[normalized] = _gsc_timestamp(item[native])
         # 'contents[].indexed' is deprecated and never copied to evidence.
         results.append(row)
     return results

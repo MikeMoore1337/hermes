@@ -212,5 +212,55 @@ class GscRuntimeTests(unittest.TestCase):
             self.assertNotIn(tmp, p.stdout.decode())
 
 
+    def test_official_google_double_and_int64_json_wire_formats(self):
+        from marketing.gsc_direct import _gsc_timestamp
+        base_fetch, _ = fixture_fetch()
+        def google_wire(method, url, body):
+            value = copy.deepcopy(base_fetch(method, url, body))
+            if method == "POST":
+                for row in value["rows"]:
+                    row["clicks"] = 0.0
+                    row["impressions"] = float(row["impressions"])
+            else:
+                sitemap = value["sitemap"][0]
+                sitemap["contents"][0]["submitted"] = "29"
+                sitemap["errors"] = "0"
+                sitemap["warnings"] = "0"
+                sitemap["lastSubmitted"] = "2026-10-01T03:00:00+03:00"
+            return value
+        result = collect(google_wire, as_of=date(2026, 10, 19))
+        site = result["reports"]["site"]["rows"][0]
+        self.assertEqual(site["metrics"]["impressions"], 16)
+        self.assertIs(type(site["metrics"]["impressions"]), int)
+        sitemap = result["reports"]["sitemaps"]["rows"][0]
+        self.assertEqual(sitemap["submitted_url_count"], 29)
+        self.assertEqual(sitemap["errors"], 0)
+        self.assertEqual(sitemap["warnings"], 0)
+        self.assertEqual(sitemap["last_submitted"],
+                         "2026-10-01T00:00:00.000000Z")
+        self.assertEqual(_gsc_timestamp("2026-10-16T00:32:20Z"),
+                         "2026-10-16T00:32:20.000000Z")
+
+    def test_google_wire_types_fail_closed(self):
+        from marketing.gsc_direct import _gsc_long, _gsc_timestamp
+        for invalid in (True, -1, 1.2, "1.2", "-1", "99999999999999999999",
+                        "", None, "1e2"):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(GscRuntimeError):
+                    _gsc_long(invalid)
+        for invalid in ("2026-10-01", "2026-10-01T03:00:00",
+                        "2026-99-01T02:00:00Z", "123<script>alert(1)</script>",
+                        "2026-10-01T00:00:00+99:99", None):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(GscRuntimeError):
+                    _gsc_timestamp(invalid)
+        for invalid in (-1.0, float("nan"), 2.5, 1e30, True, "2.0"):
+            with self.subTest(invalid=invalid):
+                with self.assertRaisesRegex(GscRuntimeError, "analytics_count_invalid"):
+                    _google_rows({"rows": [{"impressions": invalid}]}, ())
+        self.assertEqual(_google_rows({"rows": [{"impressions": 4.0}]}, ()),
+                         [{"impressions": 4}])
+
+
 if __name__ == "__main__":
     unittest.main()
