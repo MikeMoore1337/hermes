@@ -6,6 +6,7 @@ is an attestation, never cryptographic/provider verification of statistics.
 """
 from __future__ import annotations
 
+import ipaddress
 import json
 import math
 import re
@@ -69,6 +70,12 @@ def _public_url(value: object) -> str:
             raise SeoResearchDenied("url_invalid")
     except ValueError:
         raise SeoResearchDenied("url_invalid") from None
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        pass
+    else:
+        raise SeoResearchDenied("url_invalid")
     return value
 
 
@@ -304,6 +311,7 @@ def render_markdown(packet: dict[str, Any]) -> str:
             " / " + v["period_start"] + "..." + v["period_end"] +
             " / quality=" + v["data_quality"] + " / " +
             json.dumps(v["metrics"], ensure_ascii=False, sort_keys=True) +
+            " / sha256=" + (v["evidence_sha256"] or "NO_DATA") +
             " / ограничения: " + v["limitations"]
         )
     lines += [
