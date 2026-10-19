@@ -16,6 +16,13 @@ LABEL org.opencontainers.image.title="Hermes Self-hosted Remote MCP Relay (evalu
       org.opencontainers.image.revision="cbe511702dd0147650353c29ac6ab1decd8afda1"
 WORKDIR /opt/brc
 COPY --from=builder --chown=65534:65534 /opt/brc /opt/brc
+# Production relay only needs node, not npm/npx CLIs or npm's bundled
+# dependency tree (including its vulnerable undici). Leave builder unchanged.
+RUN rm -rf /usr/local/lib/node_modules/npm \
+    && rm -f /usr/local/bin/npm /usr/local/bin/npx \
+    && test -x /usr/local/bin/node \
+    && test ! -e /usr/local/lib/node_modules/npm
+
 ENV NODE_ENV=production \
     PORT=3000 \
     HOST=127.0.0.1 \
