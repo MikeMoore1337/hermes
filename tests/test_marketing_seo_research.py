@@ -109,6 +109,24 @@ class H12OfflineResearchTests(unittest.TestCase):
         data["observations"] = [item]
         self.assertEqual(build_packet(data)["status"], "NO_DATA")
 
+    def test_omits_optional_fields_that_have_no_evidence(self):
+        data = input_packet()
+        item = mock_search()
+        del item["page"]
+        del item["country"]
+        del item["language"]
+        item["impressions"] = 0
+        item["clicks"] = 0
+        item["ctr"] = 0.0
+        data["observations"] = [item]
+        packet = build_packet(data)
+        row = packet["observations"][0]
+        for field in ("page", "country", "language", "evidence_sha256"):
+            self.assertNotIn(field, row)
+        self.assertEqual(row["metrics"]["impressions"], 0)
+        self.assertEqual(packet["status"], "NO_DATA")
+        self.assertIn("sha256=NO_DATA", packet["markdown"])
+
     def test_stale_demand_is_no_data(self):
         data = input_packet()
         item = mock_search()

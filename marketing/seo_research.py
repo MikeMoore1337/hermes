@@ -155,7 +155,7 @@ def normalize_observations(values: object, *, as_of: date) -> list[dict[str, Any
         if key in seen:
             raise SeoResearchDenied("duplicate_observation")
         seen.add(key)
-        results.append({
+        normalized = {
             "source": source,
             "source_type": kind,
             "observed_at": str(observed),
@@ -163,17 +163,22 @@ def normalize_observations(values: object, *, as_of: date) -> list[dict[str, Any
             "period_end": str(end),
             "query": query,
             "search_intent": intent,
-            "page": page,
-            "country": country,
-            "language": language,
             "metrics": metrics,
             "data_quality": ("SYNTHETIC_TEST_ONLY" if kind == "synthetic_fixture"
                              else "OWNER_ATTESTED_NOT_PROVIDER_VERIFIED" if attested
                              else "OWNER_EXPORT_UNVERIFIED"),
-            "evidence_sha256": digest,
             "limitations": limits,
             "stale": (as_of - end).days > STALE_DAYS,
-        })
+        }
+        if page is not None:
+            normalized["page"] = page
+        if country is not None:
+            normalized["country"] = country
+        if language is not None:
+            normalized["language"] = language
+        if digest is not None:
+            normalized["evidence_sha256"] = digest
+        results.append(normalized)
     return results
 
 
@@ -311,7 +316,7 @@ def render_markdown(packet: dict[str, Any]) -> str:
             " / " + v["period_start"] + "..." + v["period_end"] +
             " / quality=" + v["data_quality"] + " / " +
             json.dumps(v["metrics"], ensure_ascii=False, sort_keys=True) +
-            " / sha256=" + (v["evidence_sha256"] or "NO_DATA") +
+            " / sha256=" + (v.get("evidence_sha256") or "NO_DATA") +
             " / ограничения: " + v["limitations"]
         )
     lines += [
