@@ -243,6 +243,47 @@ ChatGPT plugin, not a real Windows/YFC remote command enrollment and
 not an OS security certification. The production relay image still
 needs a pinned digest/SBOM and per-device sandbox signoff.
 
+### First real OCI service artifact (ephemeral CI pilot, not production activation)
+
+`deploy/h15/Dockerfile.brc-relay` builds **actual fully patched BRC
+relay and shared packages** directly from the immutable MIT upstream
+source checkout. Node 24 and pnpm 11.24.0 compile the entire project
+using the upstream frozen dependency lock; the resulting container
+retains original LICENSE/NOTICE and source attribution.
+
+For this step the OCI image is **test-only** and must not be published
+or deployed to owner devices: the mutable `node:24-bookworm-slim`
+base has not been pinned to an immutable OCI digest, no SBOM has been
+approved, and the cross-device command channel still requires owner
+permissions and an OS sandbox for every agent. Image `EXPOSE 3000`
+only documents the internal service port; it does not publish a host
+port. The default `HOST=127.0.0.1` intentionally denies remote
+connections inside the container until TLS/reverse-proxy routing is
+explicitly approved.
+
+The existing pinned candidate GitHub workflow executes `docker build`
+from the **patched source**, runs the resulting real relay as UID/GID
+65534 with no Linux capabilities, no-new-privileges, read-only root,
+`--network none`, limited memory, CPU and PIDs, plus only two
+temporary writable tmpfs volumes. The container never receives
+owner-device tokens, production SSH keys or mounts.
+
+`scripts/h15_brc_oci_relay_smoke.mjs` probes the live process:
+fresh SQLite state, no registered device, correct Linux identity,
+read-only application source, no host SSH or read-only presence
+database access, unauthenticated MCP denied with HTTP 401,
+OAuth metadata available, owner dashboard requiring login, and
+cross-origin admin mutations denied. Docker also verifies no
+published ports or external egress network. These are stronger
+proofs than a successful `docker build`, but **not** a production
+remote-MCP readiness verdict.
+
+Security ownership remains strict: isolated relay is not a
+shell isolation mechanism on paired endpoints. Do not enroll
+`windows-pc` or `linux-vps` with command credentials merely
+because the relay smoke passes. Windows and YFC presence-only
+agents keep operating unchanged.
+
 ## Target deployment (not yet activated)
 
 ```text
