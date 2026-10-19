@@ -214,6 +214,34 @@ pairing, shell access or new paid services. Any unexpected CI
 regression requires fixing/reverting the specific package before
 merge.
 
+## Debian 12 perl-base security fix (next disposable OCI review)
+
+The successful H-15 OCI Trivy report from CI #39307078505
+is 65 HIGH/CRITICAL records: 64 Debian and one Node (braces).
+The perl-base package inside the immutable Node 24 Bookworm base
+is 5.36.0-7+deb12u3; Debian LTS advisory DLA-4821-1 dated
+2026-10-05 confirms **5.36.0-7+deb12u4** fixes multiple
+Perl vulnerabilities:
+
+- https://lists.debian.org/debian-lts-announce/2026/10/msg00013.html
+- https://packages.debian.org/bookworm/perl-base
+
+The **evaluation-only** Docker runtime stage now installs this
+**exact** Debian security package version using Debian signed APT
+repositories, before switching to non-root. Failure to obtain that
+version aborts the image build. The builder stage remains pinned
+and untouched. No wildcard `apt-get upgrade`, no mutation of owner
+host packages, and no Docker privilege escalation.
+
+The actual OCI image is queried as UID 65534 with network=none,
+read-only root filesystem and dropped Linux capabilities; its
+`perl-base` version must match the pinned fix. Existing OAuth,
+native agent sandbox, protected path denial, OS SBOM and real Trivy
+checks still apply. A successful **CI-only** image build is not a
+production image signature, CVE waiver or approval to expose the
+relay. The remaining Debian advisories with no fixed package
+version remain subject to a separate risk decision.
+
 ## Explicit NO-GO until separately approved
 
 - Test-only OCI image must be replaced by a provenance-verified
