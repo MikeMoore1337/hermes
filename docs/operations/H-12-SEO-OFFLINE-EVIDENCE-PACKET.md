@@ -122,3 +122,51 @@ GSC OAuth - отдельно Hermes #191, поисковое наблюдени�
 
 Ни один новый таймер, разрешение сети, ключ, платный маршрут, CMS,
 обработчик production или публикация этим PR не создаётся.
+
+## Приёмка существующих SEO-исследований YFC - 19.10.2026
+
+Источники уже существуют в YFC, повторного сбора статистики не требуется:
+
+- YFC Task 241A: [semantic core CSV](https://github.com/MikeMoore1337/your-fitness-coach/blob/master/docs/seo/semantic-core-ru-cis.csv), [owner Wordstat export](https://github.com/MikeMoore1337/your-fitness-coach/blob/master/docs/seo/manual-wordstat-input.md), [SERP/конкуренты Google и Яндекс](https://github.com/MikeMoore1337/your-fitness-coach/blob/master/docs/seo/serp-competitor-matrix-ru-cis.md).
+- YFC #264: поисковая foundation и Яндекс Метрика уже доставлены.
+- YFC #502/#608/#612: технические SEO-проблемы исправлены; не повторять.
+- YFC #320: GSC 12 показов / 0 кликов за 03-14.10.2026, выборка недостаточна; внешняя реальная статистика Яндекса за октябрь пока NO_DATA.
+
+Модуль marketing.yfc_wordstat_import и CLI scripts.hermes_import_yfc_wordstat
+принимают **только фиксированный Git-blob snapshot** исторического
+YFC semantic-core-ru-cis.csv, зафиксированный в tests/fixtures/
+yfc_241a_semantic_core_20260916.csv с исходным SHA-1
+da88488e780b187afcfc5f70cb001ef4f4eb3a72.
+Оригинал остался в YFC; копия нужна исключительно для воспроизводимой
+офлайн-проверки существующей статистики, а не как ещё одна SEO-база.
+
+Воспроизведение:
+
+    python -m scripts.hermes_import_yfc_wordstat --query "калькулятор кбжу" --as-of 2026-10-19 < tests/fixtures/yfc_241a_semantic_core_20260916.csv
+
+Результат - JSON с observations, пригодными для H-12 build_packet. Одна
+выгрузка Wordstat дублируется в исходном semantic CSV в строках
+search_engine=Google и search_engine=Yandex из-за сравнения SERP; importer
+исключает двойной подсчёт и маркирует ВСЁ как yandex_wordstat.
+Типы частотности сохраняются раздельно: broad и quoted_fixed_word_count,
+с регионами, устройствами, period, SHA-256 исходных байтов и provenance.
+Отсутствующие owner frequency остаются NO_DATA, реальный ноль не подменяется.
+При обновлении YFC CSV исторический pin не изменяется незаметно - нужна
+явная новая ревизия и проверки. Snapshot не подтверждает свежие live API
+цифры.
+
+Для темы без действительно подходящей статьи Research Scout можно подать
+theme=market_research и research_item=null. Такой бриф НЕ делает научных
+утверждений: research_brief=null, научный статус NOT_PROVIDED, экспертная
+и owner READY проверки обязательны, никакой публикации.
+Не следует привязывать случайный DOI к коммерческому SEO-запросу.
+
+Source-specific yandex_wordstat наблюдение требует поля wordstat_operator,
+wordstat_region, wordstat_device. В остальных источниках Wordstat-поля
+запрещены. Показатели разных режимов и поисковых систем не суммируются.
+
+Текущий завершённый объём Hermes #64 - офлайн-пакет с реальными ранее
+предоставленными owner observations и безопасный маркетинговый handoff.
+Свежие GSC API - Hermes #191; Яндекс Вебмастер API - Hermes #397;
+эффективность/индексация на YFC - #320; изменение страниц/публикация -
+YFC #322. Их самостоятельное завершение не требуется для офлайн-приёмки #64.
