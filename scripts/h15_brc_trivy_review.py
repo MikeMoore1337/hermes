@@ -57,6 +57,8 @@ def assess(raw: bytes, expected_image_id: str) -> dict:
     if not isinstance(targets, list) or not 1 <= len(targets) <= 150:
         raise ScanDenied("missing_scan_targets")
     counts = Counter({level: 0 for level in LEVELS})
+    grouped = {"os-pkgs": Counter(), "lang-pkgs": Counter()}
+    fixed_high_critical = {"os-pkgs": 0, "lang-pkgs": 0}
     covered = set()
     vuln_records = 0
     os_packages = 0
@@ -91,9 +93,12 @@ def assess(raw: bytes, expected_image_id: str) -> dict:
             if not isinstance(v.get("VulnerabilityID"), str) or not v["VulnerabilityID"]:
                 raise ScanDenied("missing_vulnerability_identifier")
             severity = v.get("Severity", "UNKNOWN")
-            if severity not in LEVELS:
+            if not isinstance(severity, str) or severity not in LEVELS:
                 raise ScanDenied("unknown_severity")
             counts[severity] += 1
+            grouped[cls][severity] += 1
+            if severity in ("HIGH", "CRITICAL") and isinstance(v.get("FixedVersion"), str) and v["FixedVersion"].strip():
+                fixed_high_critical[cls] += 1
             vuln_records += 1
     # --list-all-pkgs must be used to demonstrate OS package extraction.
     if "os-pkgs" not in covered or not 30 <= os_packages <= 1500:
@@ -111,6 +116,11 @@ def assess(raw: bytes, expected_image_id: str) -> dict:
         "vulnerability_records": vuln_records,
         "severity_counts": dict(counts),
         "high_critical_records": counts["HIGH"] + counts["CRITICAL"],
+        "high_critical_by_source": {
+            key: grouped[key]["HIGH"] + grouped[key]["CRITICAL"]
+            for key in ("os-pkgs", "lang-pkgs")
+        },
+        "high_critical_with_fixed_version_claim": fixed_high_critical,
         "db_freshness_cryptographically_verified": False,
         "fixed_version_review_completed": False,
         "production_release_approved": False,
@@ -141,6 +151,10 @@ def main() -> int:
     print("H15_TRIVY_REVIEW=" + summary["status"])
     print("H15_TRIVY_OS_PACKAGES=" + str(summary["os_packages_detected"]))
     print("H15_TRIVY_HIGH_CRITICAL=" + str(summary["high_critical_records"]))
+    print("H15_TRIVY_OS_HIGH_CRITICAL=" + str(summary["high_critical_by_source"]["os-pkgs"]))
+    print("H15_TRIVY_LIBRARY_HIGH_CRITICAL=" + str(summary["high_critical_by_source"]["lang-pkgs"]))
+    print("H15_TRIVY_FIX_VERSION_OS=" + str(summary["high_critical_with_fixed_version_claim"]["os-pkgs"]))
+    print("H15_TRIVY_FIX_VERSION_LIBRARY=" + str(summary["high_critical_with_fixed_version_claim"]["lang-pkgs"]))
     print("H15_TRIVY_PRODUCTION_GO=NO")
     return 0
 
