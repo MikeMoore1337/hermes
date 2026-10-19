@@ -177,6 +177,43 @@ OAuth/device safeguards, and scoped owner authorization. OS package
 updates and additional Node packages require a separate reviewed
 step after the new scan.
 
+## Follow-on remediation: image-processing and transitive packages
+
+The baseline Trivy report on the exact disposable OCI image
+from H-15 CI #39300310663 showed 78 HIGH/CRITICAL records,
+including 14 JavaScript/library findings. The next reproducible
+**CI-only** patch retains the earlier SDK 1.31.0 and proxy-addr 2.0.8,
+and changes only the disposable dependency graph and runtime Docker stage:
+
+- The `undici` 6.28.0 finding is **not in the BRC pnpm lockfile**.
+  The Trivy package path is
+  `/usr/local/lib/node_modules/npm/node_modules/undici/package.json`.
+  The runtime Docker stage now removes unused bundled npm/npx and that
+  subtree; the builder keeps npm/pnpm for reproducibility. Real OCI
+  scanning and relay startup tests verify this. No deceptive
+  `undici` pnpm override is added.
+- `brace-expansion` has **three** installed major branches, so the
+  overrides are version-selector specific: 1.1.18 → 1.1.21,
+  2.1.4 → 2.1.7, 5.0.9 → 5.0.12. A global 5.x override could
+  break consumers that require 1.x or 2.x.
+- `sharp` 0.34.5 → 0.35.5. This upgrade has **breaking changes**,
+  so a successful lock regeneration alone is insufficient: actual
+  builds and image/file native sandbox tests must pass.
+
+`scripts/h15_brc_patch_dependencies.py --check-lock` requires
+all expected patched versions and rejects the known superseded
+versions. Offline patch replay must contain the complete regenerated
+pnpm-lock.yaml and pnpm-workspace.yaml. The existing full-H-15
+CI verifies OAuth, WSS, per-device native tools, the OCI image,
+actual Trivy findings and strict offline import/rollback.
+
+The remediation patch modifies *only* disposable upstream build
+inputs and does not touch current owner VPS runtime or images.
+No implicit production release promotion, Caddy change, device
+pairing, shell access or new paid services. Any unexpected CI
+regression requires fixing/reverting the specific package before
+merge.
+
 ## Explicit NO-GO until separately approved
 
 - Test-only OCI image must be replaced by a provenance-verified

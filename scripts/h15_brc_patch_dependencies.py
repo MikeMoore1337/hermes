@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Apply two reviewed dependency overrides to a disposable, pinned BRC checkout.
+"""Apply narrowly reviewed dependency overrides to a disposable pinned BRC checkout.
 
 No package installation or network access. CI regenerates pnpm-lock.yaml, then
 performs full OAuth/MCP/native-device and image-scanner regressions. Never edits
@@ -25,11 +25,18 @@ allowBuilds:
 PATCHED = ORIGINAL + """overrides:
   '@modelcontextprotocol/sdk': 1.31.0
   proxy-addr: 2.0.8
+  sharp: 0.35.5
+  'brace-expansion@^1.0.0': 1.1.21
+  'brace-expansion@^2.0.0': 2.1.7
+  'brace-expansion@^5.0.0': 5.0.12
 """
 EXPECTED_VERSIONS = {
     "@modelcontextprotocol/sdk": "1.31.0",
     "proxy-addr": "2.0.8",
+    "sharp": "0.35.5",
 }
+BRACE_FIXED = ("1.1.21", "2.1.7", "5.0.12")
+BRACE_OLD = ("1.1.18", "2.1.4", "5.0.9")
 
 
 def apply(root: Path) -> dict[str, object]:
@@ -76,10 +83,16 @@ def validate_lock(root: Path) -> None:
 
     for key, version in EXPECTED_VERSIONS.items():
         if not has_key(key, version):
-            raise AuditError("fixed_version_absent")
+            # Keys originate only from this checked-in static allowlist.
+            raise AuditError("fixed_version_absent_" + key.replace("@", "").replace("/", "_"))
+    for version in BRACE_FIXED:
+        if not has_key("brace-expansion", version):
+            raise AuditError("fixed_brace_expansion_branch_absent")
     for key, old in (
         ("@modelcontextprotocol/sdk", "1.30.0"),
         ("proxy-addr", "2.0.7"),
+        ("sharp", "0.34.5"),
+        *(("brace-expansion", version) for version in BRACE_OLD),
     ):
         if has_key(key, old):
             raise AuditError("vulnerable_version_remains")
@@ -101,8 +114,12 @@ def main() -> int:
             print("H15_BRC_DISPOSABLE_OVERRIDES=APPLIED")
         print("H15_BRC_UPSTREAM_REVISION=" + UPSTREAM_SHA)
         print("H15_BRC_PRODUCTION_APPROVED=NO")
-    except (AuditError, OSError, UnicodeError):
-        print("H15_BRC_DEPENDENCY_PATCH=REJECTED", file=sys.stderr)
+    except AuditError as exc:
+        # AuditError reasons are fixed control-plane codes, never user input.
+        print("H15_BRC_DEPENDENCY_PATCH=REJECTED_" + str(exc), file=sys.stderr)
+        return 2
+    except (OSError, UnicodeError):
+        print("H15_BRC_DEPENDENCY_PATCH=REJECTED_IO", file=sys.stderr)
         return 2
     return 0
 

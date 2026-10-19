@@ -36,6 +36,14 @@ class H15DependencyFixTests(unittest.TestCase):
             result = apply(self.root)
         self.assertEqual(result["packages"]["@modelcontextprotocol/sdk"], "1.31.0")
         self.assertEqual(result["packages"]["proxy-addr"], "2.0.8")
+        self.assertEqual(result["packages"]["sharp"], "0.35.5")
+        self.assertNotIn("undici", result["packages"])
+        for override in (
+            "'brace-expansion@^1.0.0': 1.1.21",
+            "'brace-expansion@^2.0.0': 2.1.7",
+            "'brace-expansion@^5.0.0': 5.0.12",
+        ):
+            self.assertIn(override, PATCHED)
         self.assertFalse(result["production_approved"])
         self.assertEqual((self.root / "pnpm-workspace.yaml").read_text(), PATCHED)
         with self.fake_git():
@@ -62,6 +70,17 @@ class H15DependencyFixTests(unittest.TestCase):
             with self.assertRaisesRegex(AuditError, "unsafe_pnpm_workspace"):
                 apply(self.root)
 
+    def test_runtime_image_strips_npm_but_preserves_node_and_user(self):
+        root = Path(__file__).resolve().parents[1]
+        dockerfile = (root / "deploy/h15/Dockerfile.brc-relay").read_text()
+        runtime_start = dockerfile.index(" AS runtime")
+        final_stage = dockerfile[runtime_start:]
+        self.assertIn("rm -rf /usr/local/lib/node_modules/npm", final_stage)
+        self.assertIn("rm -f /usr/local/bin/npm /usr/local/bin/npx", final_stage)
+        self.assertIn("test -x /usr/local/bin/node", final_stage)
+        self.assertIn("USER 65534:65534", final_stage)
+        self.assertNotIn("undici: 6.28.1", PATCHED)
+
     def test_offline_patch_bundle_includes_lock_and_workspace(self):
         root = Path(__file__).resolve().parents[1]
         workflow = (root / ".github/workflows/h15-remote-commander-candidate.yml").read_text()
@@ -79,6 +98,10 @@ class H15DependencyFixTests(unittest.TestCase):
         path.write_text(
             "  '@modelcontextprotocol/sdk@1.31.0':\n"
             "  proxy-addr@2.0.8:\n"
+            "  sharp@0.35.5:\n"
+            "  brace-expansion@1.1.21:\n"
+            "  brace-expansion@2.1.7:\n"
+            "  brace-expansion@5.0.12:\n"
             + " unrelated: installed\n" * 200
         )
         validate_lock(self.root)
@@ -88,6 +111,38 @@ class H15DependencyFixTests(unittest.TestCase):
         path.unlink()
         with self.assertRaisesRegex(AuditError, "unsafe_pnpm_lockfile"):
             validate_lock(self.root)
+
+    def test_reject_stale_versions_in_every_major(self):
+        (self.root / "pnpm-workspace.yaml").write_text(PATCHED)
+        path = self.root / "pnpm-lock.yaml"
+        fixed = (
+            "  '@modelcontextprotocol/sdk@1.31.0':\n"
+            "  proxy-addr@2.0.8:\n"
+            "  sharp@0.35.5:\n"
+            "  brace-expansion@1.1.21:\n"
+            "  brace-expansion@2.1.7:\n"
+            "  brace-expansion@5.0.12:\n"
+            + " neutral@1.0.0:\n" * 400
+        )
+        for package, version in (
+            ("sharp", "0.34.5"),
+            ("brace-expansion", "1.1.18"),
+            ("brace-expansion", "2.1.4"),
+            ("brace-expansion", "5.0.9"),
+        ):
+            with self.subTest(package=package, version=version):
+                path.write_text(fixed + f"  {package}@{version}:\n")
+                with self.assertRaisesRegex(AuditError, "vulnerable_version_remains"):
+                    validate_lock(self.root)
+        for package, version in (
+            ("brace-expansion", "1.1.21"),
+            ("brace-expansion", "2.1.7"),
+            ("brace-expansion", "5.0.12"),
+        ):
+            with self.subTest(package=package, version=version):
+                path.write_text(fixed.replace(f"  {package}@{version}:\n", ""))
+                with self.assertRaisesRegex(AuditError, "fixed_brace_expansion_branch_absent"):
+                    validate_lock(self.root)
 
 
 if __name__ == "__main__":
