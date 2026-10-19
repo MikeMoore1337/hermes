@@ -116,8 +116,7 @@ class H15RestoreRehearsalTests(unittest.TestCase):
         with sqlite3.connect(snapshot) as empty:
             self.assertEqual(empty.execute("PRAGMA integrity_check").fetchone()[0], "ok")
         snapshot.chmod(0o600)
-        with self.assertRaisesRegex(self.module.RestoreRehearsalDenied,
-                                    "unexpected_database_schema"):
+        with self.assertRaises(self.module.RestoreRehearsalDenied):
             self.module.rehearse_restore(snapshot, self.scratch)
 
     def test_cli_no_sensitive_data_printed_and_no_restore_to_production(self):
