@@ -284,6 +284,41 @@ shell isolation mechanism on paired endpoints. Do not enroll
 because the relay smoke passes. Windows and YFC presence-only
 agents keep operating unchanged.
 
+### Pinned OCI base image and component inventory
+
+The evaluation-only image is now built from a **fixed Docker Official
+Node 24 OCI manifest digest** in both stages:
+`node:24-bookworm-slim@sha256:a5f4366e834695d5f363b920c104953a535d3a9864d1bdf74566a0ebe01daee5`.
+This digest is an immutable pointer to the reviewed base (not a
+guarantee that the base is free of vulnerabilities). Updating it
+requires code review and exact-head CI; a mutable `latest` base is
+not accepted. Production availability for each CPU architecture,
+package CVEs and Node release support need a separate deployment
+review.
+
+The isolated CI generates a real CycloneDX 1.7 dependency SBOM via
+pinned `pnpm@11.24.0 sbom --lockfile-only` and verifies the built OCI
+image `docker inspect` contains the correct base, MIT license
+attribution, upstream revision, non-root runtime identity and no
+baked-in BRC admin/password/device tokens.
+`scripts/h15_brc_oci_receipt.py` fails closed if any of those
+conditions, SBOM contents, or exact upstream audit is missing.
+The artifact `h15-brc-oci-source-and-sbom` contains
+`sbom.cdx.json`, a checked `OCI_RECEIPT.json`,
+`UPSTREAM_AUDIT.json`, `NODE_BASE_DIGEST`, and `SHA256SUMS`.
+
+The CycloneDX inventory covers dependencies resolved by the pnpm
+lockfile; it is **not an OS-package inventory or a complete container
+image SBOM**. A separate image-layer scanner/SBOM, platform
+compatibility check, CVE triage and cryptographically signed image
+attestation are still required before publishing a release.
+A sha256-manifest checks artifact integrity after download, not
+authenticity of an unrelated mirror.
+
+No image is pushed to a public registry, no new listening
+socket is enabled on owner VPS and no remote device operation is
+authorized by these reproducibility checks.
+
 ## Target deployment (not yet activated)
 
 ```text
