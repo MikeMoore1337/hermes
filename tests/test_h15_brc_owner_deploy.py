@@ -109,7 +109,8 @@ class H15SqliteBackupTests(unittest.TestCase):
             fixed_name = "relay-20261019T150000123456Z.sqlite3"
             existing = target_dir / fixed_name
             existing.write_bytes(b"must-not-be-overwritten")
-            with patch.object(self.module.datetime, "now", return_value=fixed_now):
+            with patch.object(self.module, "datetime") as clock:
+                clock.now.return_value = fixed_now
                 with self.assertRaises(FileExistsError):
                     self.module.backup_sqlite(source, target_dir)
             self.assertEqual(existing.read_bytes(), b"must-not-be-overwritten")
