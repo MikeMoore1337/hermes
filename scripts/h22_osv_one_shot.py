@@ -122,6 +122,10 @@ def main():
         # Keep downloaded ZIPs immutable and give it only a disposable scratch copy.
         cache = root / "scratch-db"
         shutil.copytree(root / "db", cache)
+        # Host runner owns the files; scanner uses unprivileged uid 65534.
+        # Writability is limited to this disposable scratch copy on this runner.
+        for directory in (cache, *(p for p in cache.rglob("*") if p.is_dir())):
+            directory.chmod(0o777)
         out(step="db_scratch_prepared", disposable=True, source_archives_readonly=True)
         image = command(["docker", "pull", "ubuntu:24.04"], timeout=180)
         if image.returncode:
