@@ -183,10 +183,20 @@ def main():
             if scan.returncode not in (0, 1):
                 # Synthetic fixtures only. Replace filesystem paths and constrain diagnostics.
                 diagnostic = scan.stderr.decode("utf-8", errors="replace")
+                match = re.search(r"mkdir (/[^\\s:]+)", diagnostic)
+                if match:
+                    target = match.group(1)
+                    location = ("db" if target.startswith("/db/") or target == "/db" else
+                                "tmp" if target.startswith("/tmp/") or target == "/tmp" else
+                                "root-home" if target.startswith("/root/") else
+                                "fs-root" if target.startswith("/.") else "other")
+                else:
+                    location = "unknown"
                 diagnostic = re.sub(r"/(?:[A-Za-z0-9._-]+/)+[A-Za-z0-9._-]*", "<path>", diagnostic)
                 diagnostic = "".join(ch if ch.isprintable() else " " for ch in diagnostic)[:1200]
                 out(step="scan", case=name, status="INCONCLUSIVE", exit_code=scan.returncode,
-                    duration_s=elapsed, stderr_bytes=len(scan.stderr), stderr_hint=diagnostic)
+                    duration_s=elapsed, stderr_bytes=len(scan.stderr), stderr_hint=diagnostic,
+                    mkdir_location=location)
                 all_ok = False
                 continue
             try:
