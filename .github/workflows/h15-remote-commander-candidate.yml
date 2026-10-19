@@ -599,6 +599,8 @@ jobs:
           packages/relay/src/mcp/hermes-policy.ts
           packages/relay/src/mcp/invoke.ts
           packages/relay/src/mcp/server.ts
+          pnpm-lock.yaml
+          pnpm-workspace.yaml
           scripts/e2e-admin.mjs
           scripts/e2e-all.mjs
           scripts/e2e-oauth.mjs
