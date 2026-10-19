@@ -112,7 +112,7 @@ def build(*, directory: Path, inspect: Path) -> dict:
         or (image.get("Config") or {}).get("User") != "65534:65534"):
         raise BundleDenied("incorrect_linux_amd64_image")
     body = {
-        "schema": 1,
+        "schema": 2,
         "status": "OFFLINE_IMAGE_EXPORT_NOT_DEPLOYED",
         "image_id": oci["image_id"],
         "image_platform": "linux/amd64",
@@ -142,15 +142,23 @@ def verify(*, directory: Path, expected_archive_sha: str,
         raise BundleDenied("independent_pin_invalid")
     path = regular_file(directory, MANIFEST, 50_000)
     doc = read_json(path)
-    if set(doc) != {
+    base_fields = {
         "schema", "status", "image_id", "image_platform", "upstream_sha",
         "hermes_commit", "archive_file", "archive_bytes", "archive_sha256",
-        "oci_receipt_sha256", "sbom_sha256", "os_sbom_sha256",
-        "os_package_count", "owner_agents_paired",
+        "oci_receipt_sha256", "sbom_sha256", "owner_agents_paired",
         "production_mcp_enabled",
-    }:
+    }
+    # Legacy schema 1 artifacts remain independently verifiable for
+    # offline evaluation; only new schema 2 includes OS-layer evidence.
+    if doc.get("schema") == 1:
+        fields = base_fields
+    elif doc.get("schema") == 2:
+        fields = base_fields | {"os_sbom_sha256", "os_package_count"}
+    else:
+        raise BundleDenied("unsupported_manifest_schema")
+    if set(doc) != fields:
         raise BundleDenied("unexpected_manifest_schema")
-    if (doc["schema"] != 1 or doc["status"] != "OFFLINE_IMAGE_EXPORT_NOT_DEPLOYED"
+    if (doc["status"] != "OFFLINE_IMAGE_EXPORT_NOT_DEPLOYED"
         or doc["image_id"] != expected_image_id
         or doc["image_platform"] != "linux/amd64"
         or doc["hermes_commit"] != expected_hermes_sha
@@ -163,15 +171,15 @@ def verify(*, directory: Path, expected_archive_sha: str,
     archive = regular_file(directory, ARCHIVE, MAX_ARCHIVE_BYTES)
     receipt = read_json(regular_file(directory, RECEIPT, 200_000))
     sbom = regular_file(directory, SBOM, 50_000_000)
-    os_path = regular_file(directory, OS_SBOM, 20_000_000)
-    os_count = validate_os_sbom(read_json(os_path), expected_image_id)
+    os_path = regular_file(directory, OS_SBOM, 20_000_000) if doc["schema"] == 2 else None
+    os_count = validate_os_sbom(read_json(os_path), expected_image_id) if os_path else None
     validate_source_receipt(receipt)
     if (doc["archive_bytes"] != archive.stat().st_size
         or digest_file(archive) != expected_archive_sha
         or digest_file(directory / RECEIPT) != doc["oci_receipt_sha256"]
         or digest_file(sbom) != doc["sbom_sha256"]
-        or digest_file(os_path) != doc["os_sbom_sha256"]
-        or doc["os_package_count"] != os_count
+        or (os_path is not None and (digest_file(os_path) != doc["os_sbom_sha256"]
+                                     or doc["os_package_count"] != os_count))
         or receipt["image_id"] != expected_image_id
         or receipt["hermes_commit"] != expected_hermes_sha
         or receipt["cyclonedx_sha256"] != doc["sbom_sha256"]):
