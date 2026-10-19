@@ -80,6 +80,34 @@ SQLite DB and -wal/-shm as a rollback set, verify backup integrity,
 restore owner:group 0600, avoid replaying stale WAL/SHM, then validate
 OAuth/device status before enabling the public reverse proxy.
 
+## Actual OCI OS inventory and dedicated UID acceptance (next CI stage)
+
+The pinned H-15 candidate workflow now launches the actual patched BRC
+relay under UID 979/GID 975 in an isolated, ephemeral container with a
+nonpersistent scratch SQLite and no published ports or host volumes.
+The test verifies the process and database ownership, empty device list
+and service health. It does **not** run as the owner's host user, touch
+their persistent SQLite or authorize remote command execution.
+
+The same exact image is interrogated with Debian dpkg-query under
+network=none, read-only filesystem and no capabilities. The result is
+converted into a deterministic CycloneDX 1.5 OS-package inventory at
+os-packages.cdx.json. A fail-closed validator checks package records,
+duplicates, image digest, amd64 platform and pinned upstream source.
+The OS inventory is published alongside the existing pnpm dependency
+CycloneDX BOM and bound to an offline transfer manifest by SHA-256.
+
+New offline bundles use IMAGE_BUNDLE.json schema 2 and require the
+matching OS inventory. Legacy schema 1 bundles are still independently
+verifiable against their originally observed CI archive/image/source
+pins, but **carry no OS inventory**. Neither schema is production
+authorization: the OCI receipt explicitly says NOT_DEPLOYABLE.
+
+**The OS package inventory is NOT a CVE scanner or a signed build
+attestation.** Full CVE/fix review and verified release provenance are
+separate prerequisites. CI green validates integrity and sandbox
+behavior only for the disposable runner.
+
 ## Explicit NO-GO until separately approved
 
 - Test-only OCI image must be replaced by a provenance-verified
