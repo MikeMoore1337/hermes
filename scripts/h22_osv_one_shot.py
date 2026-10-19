@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 import platform
+import re
 import subprocess
 import sys
 import tempfile
@@ -178,8 +179,12 @@ def main():
             )
             elapsed = round(time.monotonic() - started, 2)
             if scan.returncode not in (0, 1):
+                # Synthetic fixtures only. Replace filesystem paths and constrain diagnostics.
+                diagnostic = scan.stderr.decode("utf-8", errors="replace")
+                diagnostic = re.sub(r"/(?:[A-Za-z0-9._-]+/)+[A-Za-z0-9._-]*", "<path>", diagnostic)
+                diagnostic = re.sub(r"[^\\x20-\\x7e]", " ", diagnostic)[:240]
                 out(step="scan", case=name, status="INCONCLUSIVE", exit_code=scan.returncode,
-                    duration_s=elapsed, stderr_bytes=len(scan.stderr))
+                    duration_s=elapsed, stderr_bytes=len(scan.stderr), stderr_hint=diagnostic)
                 all_ok = False
                 continue
             try:
