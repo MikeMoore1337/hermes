@@ -113,6 +113,7 @@ class H15CveTriageTests(unittest.TestCase):
         report, ledger = fixture()
         with self.assertRaises(ValueError):
             run(report, ledger, image="sha256:" + "b" * 64)
+        report["Metadata"]["ImageID"] = ledger["evidence"]["image_id"]
         with self.assertRaisesRegex(TriageError, "baseline_image_report_mismatch"):
             run(report, ledger, image=ledger["evidence"]["image_id"])
 
