@@ -12,6 +12,7 @@ on:
       - scripts/h15_brc_browser_csrf_e2e.mjs
       - scripts/h15_brc_gateway_policy_e2e.mjs
       - scripts/h15_brc_relay_ws_e2e.mjs
+      - scripts/h15_brc_two_wss_agents_e2e.mjs
       - scripts/h15_brc_sandbox_linux_e2e.mjs
       - scripts/h15_brc_oci_relay_smoke.mjs
       - scripts/h15_brc_oci_receipt.py
@@ -123,6 +124,7 @@ jobs:
           set -euo pipefail
           pnpm build
           node "$GITHUB_WORKSPACE/scripts/h15_brc_relay_ws_e2e.mjs"
+          node "$GITHUB_WORKSPACE/scripts/h15_brc_two_wss_agents_e2e.mjs"
           node "$GITHUB_WORKSPACE/scripts/h15_brc_gateway_policy_e2e.mjs"
           node "$GITHUB_WORKSPACE/scripts/h15_brc_browser_csrf_e2e.mjs"
           node --input-type=module <<'JS'
