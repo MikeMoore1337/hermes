@@ -108,6 +108,45 @@ attestation.** Full CVE/fix review and verified release provenance are
 separate prerequisites. CI green validates integrity and sandbox
 behavior only for the disposable runner.
 
+## CVE evidence from the actual BRC image (CI; not approval)
+
+The exact-pinned H-15 workflow runs Trivy v0.70.0 via pinned
+`aquasecurity/trivy-action` v0.36.0 commit
+`ed142fd0673e97e23eac54620cfb913e5ce36c25`.
+The scanner reads the **actually built local OCI image** from the
+ephemeral GitHub runner; it includes OS and application-package
+vulnerabilities and populates package extraction evidence. The
+untrusted vulnerability database is downloaded by the scanner on
+the CI runner, without credentials, deployment tokens, image
+publication or a separate paid service. The scanner must complete
+successfully; vulnerabilities are **not silently ignored** and do
+not cause test-result fabrication.
+
+A local, stdlib-only reviewer
+`scripts/h15_brc_trivy_review.py` verifies that the Trivy JSON is
+well-formed, reports a Debian container image with the **exact Docker
+image ID**, and contains actual extracted OS packages. It produces
+sanitized `trivy-review.json`: vulnerability counts by severity,
+OS/library extraction coverage and the raw Trivy report SHA-256.
+The raw report and summary are preserved in the existing H-15 CI
+evidence artifact and hashed into `SHA256SUMS`.
+No usernames, paths, CVE descriptions or secrets are copied into
+GitHub step summaries.
+
+**Interpreting results:**
+- `REVIEW_REQUIRED` means at least one finding. Each high/critical
+  record requires a version/fix/risk decision before an image can
+  be approved. Scans are not automatic patch commands.
+- `NO_FINDINGS_OBSERVED` means only no findings were reported by
+  this scanner and DB snapshot. It is **not** signed database
+  provenance, proof of completeness, or a production release GO.
+- `INCONCLUSIVE` (missing report, wrong image ID, malformed or
+  absent OS inventory, download failure) blocks CI evidence.
+- The relay image remains `CI_IMAGE_VERIFIED_NOT_DEPLOYABLE`
+  until a distinct release acceptance process and owner decision.
+  Neither scanning nor a merged PR authorizes a permanent container,
+  public Caddy reverse proxy, devices or command execution.
+
 ## Explicit NO-GO until separately approved
 
 - Test-only OCI image must be replaced by a provenance-verified

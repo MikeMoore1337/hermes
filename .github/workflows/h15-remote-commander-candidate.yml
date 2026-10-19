@@ -22,6 +22,8 @@ on:
       - scripts/h15_brc_oci_receipt.py
       - scripts/h15_brc_offline_image_bundle.py
       - scripts/h15_brc_os_inventory.py
+      - scripts/h15_brc_trivy_review.py
+      - tests/test_h15_brc_trivy_review.py
       - deploy/h15/Dockerfile.brc-relay
       - deploy/h15/stage-relay.sh
       - deploy/h15/load-verified-image.sh
@@ -439,6 +441,59 @@ jobs:
             sha256sum --check SHA256SUMS)
           echo "H15_OS_VULNERABILITY_SCAN=NOT_PERFORMED" >> "$GITHUB_STEP_SUMMARY"
           echo "H15_OS_RELEASE_APPROVED=NO" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Pin real local BRC image for read-only vulnerability scan
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="hermes-brc-relay-eval:${GITHUB_SHA:0:12}"
+          scan="hermes-brc-relay-scan:${GITHUB_SHA}"
+          docker tag "$image" "$scan"
+          test "$(docker image inspect --format '{{.Id}}' "$image")" = \
+               "$(docker image inspect --format '{{.Id}}' "$scan")"
+
+      - name: Scan actual built BRC OCI image with Trivy (CVE evidence only)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: hermes-brc-relay-scan:${{ github.sha }}
+          scan-type: image
+          scanners: vuln
+          vuln-type: os,library
+          list-all-pkgs: 'true'
+          format: json
+          output: ${{ runner.temp }}/h15-brc-oci-evidence/trivy-image.json
+          exit-code: '0'
+          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+          cache: 'false'
+          version: v0.70.0
+          timeout: 10m
+
+      - name: Validate image-bound vulnerability evidence (never automatic release GO)
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/h15-brc-oci-evidence"
+          image="hermes-brc-relay-scan:${GITHUB_SHA}"
+          test -s "$evidence/trivy-image.json"
+          image_id="$(docker image inspect --format '{{.Id}}' "$image")"
+          python3 "$GITHUB_WORKSPACE/scripts/h15_brc_trivy_review.py" \
+            --report "$evidence/trivy-image.json" \
+            --image-id "$image_id" \
+            --output "$evidence/trivy-review.json"
+          (
+            cd "$evidence"
+            sha256sum OCI_RECEIPT.json sbom.cdx.json os-packages.cdx.json \
+              trivy-image.json trivy-review.json UPSTREAM_AUDIT.json NODE_BASE_DIGEST > SHA256SUMS
+            sha256sum --check SHA256SUMS
+          )
+          echo "H15_TRIVY_IMAGE_SCAN_EVIDENCE=RECORDED" >> "$GITHUB_STEP_SUMMARY"
+          echo "H15_TRIVY_PRODUCTION_GO=NO" >> "$GITHUB_STEP_SUMMARY"
+          # Restore the original exact-one-tag OCI transfer assumption.
+          # The scanner alias is disposable and must not enter the export.
+          docker image rm "hermes-brc-relay-scan:${GITHUB_SHA}" >/dev/null
+          test "$(docker image inspect --format '{{json .RepoTags}}' \
+            "hermes-brc-relay-eval:${GITHUB_SHA:0:12}")" = \
+            "[\"hermes-brc-relay-eval:${GITHUB_SHA:0:12}\"]"
 
       - name: Retain isolated image provenance and CycloneDX SBOM
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
