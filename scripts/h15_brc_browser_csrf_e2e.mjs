@@ -6,6 +6,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { createServer as createTcpServer } from 'node:net';
 
 const root = process.cwd();
 const { buildRelay } = await import(
@@ -14,8 +15,17 @@ const { buildRelay } = await import(
 const dir = mkdtempSync(path.join(tmpdir(), 'hermes-brc-csrf-'));
 const secret = () => randomBytes(24).toString('hex');
 const password = secret();
+const port = await new Promise((resolve, reject) => {
+  const probe = createTcpServer();
+  probe.once('error', reject);
+  probe.listen(0, '127.0.0.1', () => {
+    const address = probe.address();
+    if (!address || typeof address === 'string') return reject(Error('PORT_PROBE_FAILED'));
+    probe.close(() => resolve(address.port));
+  });
+});
 const relay = buildRelay({
-  port: 0, host: '127.0.0.1', publicUrl: 'http://127.0.0.1',
+  port, host: '127.0.0.1', publicUrl: 'http://127.0.0.1:' + port,
   trustProxy: false, dbFile: path.join(dir, 'relay.sqlite'),
   sessionSecret: secret(), adminUser: 'cs-owner', adminPassword: password,
   relayVersion: 'csrf-test-only'
@@ -23,7 +33,7 @@ const relay = buildRelay({
 try {
   await new Promise((ok, fail) => {
     relay.http.once('error', fail);
-    relay.http.listen(0, '127.0.0.1', ok);
+    relay.http.listen(port, '127.0.0.1', ok);
   });
   const addr = relay.http.address();
   if (!addr || typeof addr === 'string') throw Error('CSRF_TEST_PORT_UNASSIGNED');
