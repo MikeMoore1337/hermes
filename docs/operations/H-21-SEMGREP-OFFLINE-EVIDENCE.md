@@ -187,3 +187,105 @@ Semgrep, а не заключение о защищённости проекто
 нужды в платном SaaS или ежедневной проверке ради самой проверки.
 Никаких изменений production runtime, H-01 timers, permissions,
 Cloudflare, YFC или Second Brain в рамках этого изменения.
+
+## 19.10.2026 — финальный измеренный pilot
+
+**Достоверность:** реальные Semgrep CE 1.181.0 Docker-прогоны на
+GitHub Actions, pinned image
+`sha256:c47e426f7f0cfa19af6d7877560d0a7135f683b8090ad0efc97c4ec7810dc435`.
+Network используется **только** при отдельном `docker pull`.
+Semgrep запускался с `--pull=never --network none --read-only`,
+UID 65534, без capabilities, `no-new-privileges`, 1 CPU, 1024 MiB,
+80 PIDs, tmpfs 160 MiB и `SEMGREP_SEND_METRICS=off`.
+В контейнер передавались только правила, исходники `scripts/` и
+`qa_advisor/` read-only. Ни vault, ни credentials, ни Docker socket,
+ни production runtime в эксперименте не участвовали.
+
+- [Run #39270541396](https://github.com/MikeMoore1337/hermes/actions/runs/39270541396):
+  настоящий `semgrep test /work` **5/5 PASS**. Общий job завершился
+  ERROR из-за опечатки `start/started` **после** тестов, до обоих scans.
+- [Run #39270993030](https://github.com/MikeMoore1337/hermes/actions/runs/39270993030):
+  **SUCCESS** на exact PR HEAD `917c45204bdf76fb6aca10189c9b0b4de9c95470`.
+  Настоящие offline `semgrep scan` для 29-case корпуса и Hermes.
+  Данные подтверждены ограниченным JSON reviewer и sanitized Actions logs;
+  raw JSON с фрагментами исходников не публиковался.
+
+### Mutation testing: 29 новых синтетических случаев
+
+| Правило | TP | FP | FN | TN |
+| --- | ---: | ---: | ---: | ---: |
+| shell-true | 3 | 1 | 2 | 2 |
+| shell-os-system | 1 | 1 | 0 | 1 |
+| tls-disable | 2 | 0 | 2 | 2 |
+| jwt-no-verify | 1 | 1 | 1 | 1 |
+| token-log | 3 | 0 | 3 | 2 |
+| **Итого** | **10** | **3** | **8** | **8** |
+
+- Synthetic **precision 76,92%**, recall **55,56%**. Это **не**
+  значения точности на реальном коде. Семантика безопасных статических
+  shell команд зависит от policy: в strict no-shell политике два
+  отмеченных FP могли бы считаться настоящими нарушениями.
+- False alarms: `jwt_diagnostics`, `os_static`, `shell_static_literal`.
+- Missed cases: `jwt_options_var`, `secret_fstring`,
+  `secret_getenv`, `secret_indirect`, `shell_dynamic_kwargs`,
+  `shell_literal_kwargs`, `tls_async`, `tls_session`.
+- Пять исходных rule suites (12 положительных/8 отрицательных
+  аннотаций) относятся к **отдельному** тесту, не должны смешиваться
+  арифметически с этими 29 мутациями.
+
+### Hermes scan, scope и стоимость
+
+На том же успешном запуске реально обработано **82 Python-файла**
+из `scripts/` и `qa_advisor/`: 0 findings, 0 errors,
+0 skipped rules, exit 0. `review_h21_semgrep_evidence` вернул
+`BOUNDED_SCAN_SCOPE_RECORDED_NO_GO`. Нулевой результат значит
+**только** отсутствие совпадений пяти узких правил, не отсутствие
+уязвимостей или ложноотрицательных случаев.
+
+Временные интервалы из GitHub Actions job logs (приблизительно):
+
+| Стадия | Время |
+| --- | ---: |
+| Pull закреплённого образа | 10 с |
+| Сканирование мутаций/скоринг | 236 с |
+| Scan Hermes/reviewer | 120 с |
+| Весь успешный workflow | ~6 мин 15 с |
+
+Runner: `ubuntu-24.04`, Semgrep в контейнере ограничен 1 CPU/1024 MiB.
+Peak RAM/CPU utilisation **NOT_MEASURED**; лимиты не являются
+измеренными пиками. Полная независимая attestation publisher
+**NOT_VERIFIED**. Результат и накладные расходы не оправдывают
+подключение тяжелого сканера на каждый PR.
+
+### Категории вне покрытия и сопоставление проектов
+
+- SSRF с `requests.get(untrusted_url, timeout=...)` не содержит
+  `verify=False`: нынешние правила не контролируют destination.
+- Отсутствие HMAC, replay-window, nonce и сравнение секретов в
+  webhook handlers не проверяются этими пятью правилами.
+- Авторизация tools, Safe Write, path traversal и supply-chain
+  CVE также **не покрываются**. Это вывод из содержимого ruleset,
+  а не отдельный выполненный scanner experiment для SSRF/HMAC.
+- YFC уже использует CodeQL security-extended/Trivy. Same-SHA,
+  same-scope incremental Semgrep-vs-CodeQL findings **NOT_VERIFIED**.
+  Не следует внедрять дублирующий сканер без доказанной добавочной пользы.
+- Second Brain имеет Ruff/mypy/pytest, но потенциальные Safe Write
+  правила требуют отдельного owner GO. Private vault не изучался.
+- Нет данных о precision на production коде; scanner не является
+  заменой действующим security tests или policy execution boundary.
+
+**Заключительное решение #188:**
+`Hermes=KEEP_OFFLINE`,
+`YFC=KEEP_CODEQL_TRIVY`,
+`Second Brain=DEFER_OWNER_GO`,
+`overall=REJECT_BROAD_ADOPTION`.
+
+**Research DONE**: воспроизводимый offline pilot проведён, измерены
+TP/FP/FN/TN и накладные расходы, документированы реальные пропуски,
+отдельные решения приняты. Это **не** security certification.
+Решение не добавлять Semgrep в обычный CI - конечный продукт
+исследования, а не нерешённый blocker. Новый внешний scanner,
+runtime permission или CI dependency не внедрён. Пересмотреть
+решение при наличии нового конкретного регрессионного сценария,
+который существующие тесты пропускают и который узкое правило
+Semgrep надёжно обнаруживает с приемлемыми накладными расходами.

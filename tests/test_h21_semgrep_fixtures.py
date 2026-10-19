@@ -22,7 +22,8 @@ CASES = {
 class SemgrepFixtureContractTests(unittest.TestCase):
     def test_all_rule_and_fixture_pairs_are_complete(self):
         self.assertEqual({p.stem for p in ROOT.glob("*.yaml")}, set(CASES))
-        self.assertEqual({p.stem for p in ROOT.glob("*.py")}, set(CASES))
+        self.assertEqual({p.stem for p in ROOT.glob("*.py")},
+                         set(CASES) | {"mutation_corpus", "score_mutations"})
 
     def test_rule_ids_and_positive_negative_assertions_align(self):
         for stem, (rule, positive, negative) in CASES.items():
