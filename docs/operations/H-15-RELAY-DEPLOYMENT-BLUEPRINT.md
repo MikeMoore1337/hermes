@@ -147,6 +147,36 @@ GitHub step summaries.
   Neither scanning nor a merged PR authorizes a permanent container,
   public Caddy reverse proxy, devices or command execution.
 
+## First narrow dependency security patch (CI only)
+
+The real Trivy run on BRC 2.0.2 found 80 HIGH/CRITICAL package
+records: 64 Debian and 16 Node. A first minimally scoped mitigation
+updates **only** two high-impact JS libraries in a disposable upstream
+checkout, preserving the exact pinned git source revision:
+
+- `proxy-addr` 2.0.7 → **2.0.8**, to address the reported critical
+  advisory in the HTTP/proxy parsing chain.
+- `@modelcontextprotocol/sdk` 1.30.0 → **1.31.0**, addressing the
+  reported HIGH MCP library advisory.
+
+`scripts/h15_brc_patch_dependencies.py` requires the original pinned
+checkout and the exact known pnpm-workspace.yaml contents. It adds
+fixed-version pnpm overrides and refuses unknown source changes.
+The isolated CI regenerates the lock with pnpm 11.24.0, then verifies
+a frozen re-install and **absence of the original vulnerable versions**
+before rebuilding or testing the relay. Updated lock/SBOM, source
+patches, full native OAuth MCP tests and actual rebuilt image Trivy
+scan remain tied to the CI receipt. The upstream git SHA stays the
+same, but the **derived patched build is not identical to upstream**.
+
+No broad npm audit --fix, unconstrained latest/upstream switching,
+automatic release approval, installed Docker image on owner VPS,
+public ingress or connected owner agents. The new image is still
+evaluation-only pending CVE triage, independently verified provenance,
+OAuth/device safeguards, and scoped owner authorization. OS package
+updates and additional Node packages require a separate reviewed
+step after the new scan.
+
 ## Explicit NO-GO until separately approved
 
 - Test-only OCI image must be replaced by a provenance-verified
