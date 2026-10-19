@@ -23,6 +23,9 @@ on:
       - scripts/h15_brc_offline_image_bundle.py
       - scripts/h15_brc_os_inventory.py
       - scripts/h15_brc_trivy_review.py
+      - scripts/h15_brc_cve_triage.py
+      - tests/test_h15_brc_cve_triage.py
+      - docs/security/h15-brc-cve-dispositions.json
       - scripts/h15_brc_patch_dependencies.py
       - tests/test_h15_brc_patch_dependencies.py
       - tests/test_h15_brc_runtime_perl_base.py
@@ -528,14 +531,22 @@ jobs:
             --report "$evidence/trivy-image.json" \
             --image-id "$image_id" \
             --output "$evidence/trivy-review.json"
+          # Source-linked, non-approving triage of every HIGH/CRITICAL ID.
+          # New IDs or changed source package scope remain explicitly INCOMPLETE.
+          python3 "$GITHUB_WORKSPACE/scripts/h15_brc_cve_triage.py" \
+            --report "$evidence/trivy-image.json" \
+            --ledger "$GITHUB_WORKSPACE/docs/security/h15-brc-cve-dispositions.json" \
+            --image-id "$image_id" \
+            --output "$evidence/trivy-triage.json"
           (
             cd "$evidence"
             sha256sum OCI_RECEIPT.json sbom.cdx.json os-packages.cdx.json \
-              trivy-image.json trivy-review.json UPSTREAM_AUDIT.json NODE_BASE_DIGEST > SHA256SUMS
+              trivy-image.json trivy-review.json trivy-triage.json UPSTREAM_AUDIT.json NODE_BASE_DIGEST > SHA256SUMS
             sha256sum --check SHA256SUMS
           )
           echo "H15_TRIVY_IMAGE_SCAN_EVIDENCE=RECORDED" >> "$GITHUB_STEP_SUMMARY"
           echo "H15_TRIVY_PRODUCTION_GO=NO" >> "$GITHUB_STEP_SUMMARY"
+          echo "H15_CVE_PRODUCTION_GO=NO" >> "$GITHUB_STEP_SUMMARY"
           # Restore the original exact-one-tag OCI transfer assumption.
           # The scanner alias is disposable and must not enter the export.
           docker image rm "hermes-brc-relay-scan:${GITHUB_SHA}" >/dev/null
