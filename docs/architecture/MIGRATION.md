@@ -2,6 +2,16 @@
 
 **Статус: план, не разрешение на миграцию.**
 
+**Решение по Issue #7 на 2026-10-19: `KEEP_CURRENT`.**
+[Архитектурная приёмка и evidence matrix](../decisions/H-07-news-runtime-ownership-2026-10-19.md).
+YFC остаётся владельцем специализированных news discovery/worker, release и
+scheduler, физически расположенных на выделенном Hermes VPS. Перенос в
+репозиторий Hermes Agent не выбран. Следующие пункты - **условный**
+runbook для будущей отдельно разрешённой миграции, а не инструкция
+активировать второй runtime. Новый read-only VPS receipt по состоянию на
+2026-10-19 отсутствует.
+
+
 ## Что сейчас остаётся в YFC
 
 Файлы `deploy/hermes-discovery/`, `deploy/hermes-editorial-worker/`, `scripts/hermes_*.py`, API intake, source registry, новости и публикация остаются там, где сейчас. Их нельзя копировать сюда как второй изменяемый источник истины.
