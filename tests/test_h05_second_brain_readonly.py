@@ -35,8 +35,9 @@ def payload(**overrides) -> bytes:
 
 
 def granted(**changes) -> MockGrant:
-    return issue_mock_grant(key=KEY, resource=RESOURCE,
-                            expires_at="2026-10-20T00:00:00Z", **changes)
+    opts = {"resource": RESOURCE, "expires_at": "2026-10-20T00:00:00Z"}
+    opts.update(changes)
+    return issue_mock_grant(key=KEY, **opts)
 
 
 class H05OfflineAdapterTests(unittest.TestCase):
