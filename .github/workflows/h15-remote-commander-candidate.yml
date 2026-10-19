@@ -15,6 +15,8 @@ on:
       - scripts/h15_brc_gateway_policy_e2e.mjs
       - scripts/h15_brc_relay_ws_e2e.mjs
       - scripts/h15_brc_two_wss_agents_e2e.mjs
+      - scripts/h15_brc_two_native_provision.mjs
+      - scripts/h15_brc_two_native_oauth_mcp_e2e.mjs
       - scripts/h15_brc_sandbox_linux_e2e.mjs
       - scripts/h15_brc_oci_relay_smoke.mjs
       - scripts/h15_brc_oci_receipt.py
@@ -223,6 +225,90 @@ jobs:
           echo "HERMES_BRC_RELAY_OCI_NONROOT_E2E=PASS" >> "$GITHUB_STEP_SUMMARY"
           echo "OCI_PUBLIC_PORTS=NONE" >> "$GITHUB_STEP_SUMMARY"
           echo "OCI_PRODUCTION_DEPLOY=NOT_EXECUTED" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Two real BRC agents in separate native Linux sandbox containers over full OAuth HTTP MCP
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="hermes-brc-relay-eval:${GITHUB_SHA:0:12}"
+          suffix="${GITHUB_RUN_ID}"
+          net="h15-ci-net-${suffix}"
+          relay="h15-ci-relay-${suffix}"
+          agent_a="h15-ci-agent-one-${suffix}"
+          agent_b="h15-ci-agent-two-${suffix}"
+          workspace_a="$RUNNER_TEMP/h15-native-agent-one"
+          workspace_b="$RUNNER_TEMP/h15-native-agent-two"
+          mkdir -p "$workspace_a" "$workspace_b"
+          printf 'real-ci-agent-one' > "$workspace_a/identity.txt"
+          printf 'real-ci-agent-two' > "$workspace_b/identity.txt"
+          chmod 0777 "$workspace_a" "$workspace_b"
+          chmod 0644 "$workspace_a/identity.txt" "$workspace_b/identity.txt"
+          docker network create --internal "$net" >/dev/null
+          cleanup() {
+            docker rm -f "$agent_a" "$agent_b" "$relay" >/dev/null 2>&1 || true
+            docker network rm "$net" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          admin_password="$(openssl rand -hex 32)"
+          session_secret="$(openssl rand -hex 32)"
+          docker run -d --name "$relay" --hostname ci-relay \
+            --network "$net" --network-alias ci-relay \
+            --read-only --user 65534:65534 --cap-drop ALL \
+            --security-opt no-new-privileges \
+            --pids-limit 100 --memory 768m --cpus 1 \
+            --tmpfs /state:rw,nosuid,nodev,uid=65534,gid=65534,size=64m \
+            --tmpfs /tmp:rw,nosuid,nodev,uid=65534,gid=65534,size=16m \
+            -e HOST=0.0.0.0 -e PORT=3000 \
+            -e PUBLIC_URL=http://localhost:3000 \
+            -e BRC_ADMIN_USER=ci-owner \
+            -e BRC_ADMIN_PASSWORD="$admin_password" \
+            -e BRC_SESSION_SECRET="$session_secret" \
+            -v "$GITHUB_WORKSPACE/scripts/h15_brc_two_native_provision.mjs:/opt/brc/h15-ci-provision.mjs:ro" \
+            -v "$GITHUB_WORKSPACE/scripts/h15_brc_two_native_oauth_mcp_e2e.mjs:/opt/brc/h15-ci-e2e.mjs:ro" \
+            "$image" >/dev/null
+          for i in $(seq 1 40); do
+            if docker exec "$relay" node -e "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" >/dev/null 2>&1; then break; fi
+            sleep 0.25
+          done
+          if [ "$(docker inspect --format '{{.State.Running}}' "$relay")" != "true" ]; then
+            echo "H15_CI_RELAY_EXITED_BEFORE_HEALTH=true"
+            docker logs --tail 30 "$relay" 2>&1
+            docker inspect --format 'relay_state={{.State.Status}} exit_code={{.State.ExitCode}} oom={{.State.OOMKilled}}' "$relay"
+            exit 1
+          fi
+          docker exec "$relay" node -e "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1))"
+          token_json="$(docker exec "$relay" node /opt/brc/h15-ci-provision.mjs)"
+          token_a="$(printf '%s' "$token_json" | python3 -c 'import json,sys;print(json.load(sys.stdin)["one"])')"
+          token_b="$(printf '%s' "$token_json" | python3 -c 'import json,sys;print(json.load(sys.stdin)["two"])')"
+          echo "::add-mask::$token_a"
+          echo "::add-mask::$token_b"
+          for name in "$agent_a" "$agent_b"; do
+            if [ "$name" = "$agent_a" ]; then
+              token="$token_a"; device="ci-native-one"; workspace="$workspace_a"
+            else
+              token="$token_b"; device="ci-native-two"; workspace="$workspace_b"
+            fi
+            docker run -d --name "$name" --network "$net" \
+              --read-only --user 65534:65534 --cap-drop ALL \
+              --security-opt no-new-privileges \
+              --pids-limit 64 --memory 512m --cpus 1 \
+              --tmpfs /tmp:rw,nosuid,nodev,uid=65534,gid=65534,size=16m \
+              -v "$workspace:/workspace:rw" \
+              -e HOME=/workspace -e BRC_HOME=/workspace/.brc \
+              -e BRC_RELAY=http://ci-relay:3000 \
+              -e BRC_DEVICE_ID="$device" -e BRC_NAME="$device" \
+              -e BRC_TOKEN="$token" \
+              "$image" node packages/agent/dist/cli.js --allow-dir /workspace >/dev/null
+          done
+          docker exec "$relay" node /opt/brc/h15-ci-e2e.mjs
+          for name in "$relay" "$agent_a" "$agent_b"; do
+            test "$(docker inspect --format '{{.Config.User}}' "$name")" = "65534:65534"
+            test "$(docker inspect --format '{{.HostConfig.Privileged}}' "$name")" = "false"
+            test -z "$(docker port "$name")"
+          done
+          test "$(docker network inspect --format '{{.Internal}}' "$net")" = "true"
+          echo "HERMES_BRC_TWO_NATIVE_OAUTH_MCP=PASS" >> "$GITHUB_STEP_SUMMARY"
+          echo "NATIVE_OWNERS_DEVICE_COMMAND_EXECUTION=NOT_ENABLED" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Immutable base + CycloneDX dependency SBOM + fail-closed OCI receipt
         shell: bash
