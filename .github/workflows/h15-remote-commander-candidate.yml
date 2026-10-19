@@ -259,7 +259,7 @@ jobs:
             --tmpfs /state:rw,nosuid,nodev,uid=65534,gid=65534,size=64m \
             --tmpfs /tmp:rw,nosuid,nodev,uid=65534,gid=65534,size=16m \
             -e HOST=0.0.0.0 -e PORT=3000 \
-            -e PUBLIC_URL=http://ci-relay:3000 \
+            -e PUBLIC_URL=http://localhost:3000 \
             -e BRC_ADMIN_USER=ci-owner \
             -e BRC_ADMIN_PASSWORD="$admin_password" \
             -e BRC_SESSION_SECRET="$session_secret" \
