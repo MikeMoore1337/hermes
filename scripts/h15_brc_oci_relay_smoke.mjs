@@ -46,7 +46,7 @@ const metadata = await (await fetch(base + '/.well-known/oauth-protected-resourc
 must(metadata.resource === base + '/mcp' &&
      Array.isArray(metadata.authorization_servers), 'OCI_OAUTH_RESOURCE_METADATA');
 
-const page = await fetch(base + '/admin');
+const page = await fetch(base + '/admin', { redirect: 'manual' });
 must(page.status === 302 && new URL(page.headers.get('location'), base).pathname === '/auth/login',
      'OCI_ADMIN_LOGIN_REQUIRED');
 
