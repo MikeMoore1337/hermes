@@ -144,6 +144,8 @@ def normalize_analytics(snapshot: object) -> dict[str, Any]:
     dims = result["dimensions"]
     if "sitemap" in dims:
         raise GscEvidenceError("analytics_dimensions_invalid")
+    if not dims and len(snapshot["rows"]) > 1:
+        raise GscEvidenceError("site_aggregate_ambiguous")
     rows: list[dict[str, Any]] = []
     seen: set[tuple[str, ...]] = set()
     for raw in snapshot["rows"]:
