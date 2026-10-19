@@ -72,7 +72,11 @@ class H15RestoreRehearsalTests(unittest.TestCase):
         snapshot = self.backup_module.backup_sqlite(self.database, self.backups)
         rehearsal = self.module.rehearse_restore(snapshot, self.scratch)
         self.assertEqual(rehearsal["tables_checked"], 1)
-        with sqlite3.connect(snapshot) as check:
+        self.assertFalse(Path(str(snapshot) + "-wal").exists())
+        # Opening a WAL-mode snapshot read/write would itself create a -wal
+        # sidecar. Inspect it immutably to preserve the real backup invariant.
+        with sqlite3.connect(snapshot.resolve().as_uri() + "?mode=ro&immutable=1",
+                             uri=True) as check:
             self.assertEqual(check.execute("SELECT count(*) FROM oauth_tokens").fetchone()[0], 2)
         self.assertFalse(Path(str(snapshot) + "-wal").exists())
         self.assertEqual(list(self.scratch.iterdir()), [])
