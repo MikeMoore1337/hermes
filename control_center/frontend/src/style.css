@@ -2,8 +2,9 @@
 *{box-sizing:border-box}body{margin:0}button,input,select{font:inherit}button{cursor:pointer}a{color:var(--blue);text-decoration:none}a:hover{text-decoration:underline}button:focus-visible,a:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid #76b4ff;outline-offset:3px}
 .sr-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;border:0;overflow:hidden;clip:rect(0,0,0,0)}
 /* #179: keyboard-only bypass block; preserves existing Atlas palette and layout. */
-.skip-link{position:fixed;z-index:2000;top:10px;left:12px;transform:translateY(calc(-100% - 32px));padding:11px 15px;border:2px solid #76b4ff;border-radius:6px;background:#0b1c32;color:#eaf1ff;font-size:13px;font-weight:600}
-.skip-link:focus-visible{transform:none;color:#fff;outline:2px solid #76b4ff;outline-offset:2px}
+/* Keep the keyboard-only bypass outside the header so it never covers the logo or navigation. */
+.skip-link{position:absolute;z-index:2000;top:-120px;left:12px;padding:11px 15px;border:2px solid #76b4ff;border-radius:6px;background:#0b1c32;color:#eaf1ff;font-size:13px;font-weight:600}
+.skip-link:focus-visible{position:relative;top:auto;left:auto;width:max-content;max-width:calc(100% - 24px);margin:8px 12px;color:#fff;outline:2px solid #76b4ff;outline-offset:2px}
 
 .shell{min-height:100vh;display:flex;flex-direction:column;background:radial-gradient(ellipse at 67% -10%,#0b2a50 0%,transparent 34%),var(--bg)}
 .site-header{height:88px;display:flex;gap:22px;align-items:center;border-bottom:1px solid #173454;background:#06111ef0;padding:0 24px;flex-shrink:0}
