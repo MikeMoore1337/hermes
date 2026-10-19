@@ -72,6 +72,57 @@ class GscAnalyticsTests(unittest.TestCase):
         self.assertEqual(to_h12_observations(r, query="недоступный запрос",
                                             intent="informational", as_of="2026-10-19"), [])
 
+    def test_full_h12_research_packet_defers_unverified_gsc_source(self):
+        from marketing.seo_research import build_packet
+
+        query = "калькулятор на раз"
+        snap = snapshot(["query"], [
+            {"query": query, "impressions": 1, "clicks": 0,
+             "ctr": 0, "position": 44},
+        ])
+        report = normalize_analytics(snap)
+        observations = to_h12_observations(
+            report, query=query, intent="informational", as_of="2026-10-19")
+        packet = build_packet({
+            "schema": "hermes-h12-seo-offline-input-v1",
+            "theme": "market_research",
+            "research_item": None,
+            "selected_query": query,
+            "as_of": "2026-10-19",
+            "site_gap": {
+                "site": "https://your-fitness-coach.ru",
+                "threshold": 0.75,
+                "pages": {},
+                "commercial": [],
+                "clusters": [{
+                    "cluster": query,
+                    "phrases": [query],
+                    "volume": None,
+                    "covered_by": None,
+                    "maybe_covered": False,
+                    "nearest": None,
+                }],
+            },
+            "observations": [{
+                "source": "google_search_console",
+                "source_type": "owner_export",
+                "observed_at": item["observed_at"],
+                "period_start": item["period_start"],
+                "period_end": item["period_end"],
+                "query": item["query"],
+                "search_intent": item["search_intent"],
+                "evidence_sha256": item["evidence_sha256"],
+                "owner_attested": False,
+                "limitations": item["limitations"],
+                **item["metrics"],
+            } for item in observations],
+        })
+        self.assertEqual(packet["status"], "NO_DATA")
+        self.assertIn("NO_FRESH_ATTESTED_SEARCH_DEMAND", packet["reasons"])
+        self.assertEqual(packet["evidence_kind"], "NO_CONFIRMED_DEMAND")
+        self.assertFalse(packet["publication_allowed"])
+        self.assertFalse(packet["yfc_write_allowed"])
+
     def test_page_query_bridge(self):
         row = dict(page_row(), query="жим лежа")
         r = normalize_analytics(snapshot(["page", "query"], [row]))
