@@ -130,6 +130,8 @@ case "$mode" in
   preflight|start)
     [[ $# -eq 2 ]] || fail USAGE_MODE_AND_IMAGE_SHA_REQUIRED
     need_root
+    [[ "$2" =~ ^sha256:[a-f0-9]{64}$ ]] || fail IMMUTABLE_IMAGE_ID_REQUIRED
+    [[ "$2" != "$EVALUATION_IMAGE" ]] || fail EVALUATION_IMAGE_NOT_PRODUCTION_APPROVED
     check_infrastructure
     check_image "$2"
     ! docker inspect --type container "$NAME" >/dev/null 2>&1 || fail SERVICE_ALREADY_EXISTS
