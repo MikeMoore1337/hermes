@@ -80,6 +80,43 @@ SQLite DB and -wal/-shm as a rollback set, verify backup integrity,
 restore owner:group 0600, avoid replaying stale WAL/SHM, then validate
 OAuth/device status before enabling the public reverse proxy.
 
+## Disposable SQLite backup restore rehearsal (dormant)
+
+`deploy/h15/rehearse-restore.py` validates one **already-created**
+`relay-*.sqlite3` backup without touching the active relay SQLite or
+its WAL/SHM files. The operator supplies both a snapshot path and a
+**separate 0700 scratch directory** owned by the calling account.
+The backup file must be a regular, non-symlinked owner-only file with
+no adjacent WAL/SHM sidecars.
+
+The script checks SQLite integrity and application tables, restores
+the snapshot **only** into a throwaway private directory using the
+SQLite online backup API, reopens the restored file independently,
+and compares schema/page metadata and the untouched source's SHA-256.
+The scratch copy is automatically deleted. Only PASS/NO-GO labels
+and the snapshot SHA-256 are printed; authentication/device records,
+table names and secret data are never printed. It does **not** perform
+the eventual production restore, select which owner backup to use,
+or modify Caddy.
+
+Read-only operator invocation **after a separate approval to inspect
+the snapshot**, while keeping the relay disabled:
+
+```bash
+python3 deploy/h15/rehearse-restore.py \
+  --snapshot /var/backups/hermes-brc-relay/<reviewed-relay-backup>.sqlite3 \
+  --scratch-dir /root/<private-0700-empty-scratch-dir>
+```
+
+This is deliberately not scheduled and not called by source-only CI
+on owner data. Offline tests use synthetic credentials and verify
+uncheckpointed SQLite WAL changes survive an atomic backup + restore,
+corrupted snapshots fail closed, no existing files are replaced,
+and scratch copies disappear on success or failure. A passing
+rehearsal is necessary but **not sufficient** for release:
+retention, encrypted off-host backup, owner-approved credential
+rotation, rollout rollback, and actual OAuth access tests remain.
+
 ## Actual OCI OS inventory and dedicated UID acceptance (next CI stage)
 
 The pinned H-15 candidate workflow now launches the actual patched BRC
