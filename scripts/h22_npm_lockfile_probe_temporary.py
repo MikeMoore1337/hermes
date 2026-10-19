@@ -147,8 +147,69 @@ def main():
                  packages_in_report=len(packages), total_findings=sum(
                      len(x.get("vulnerabilities", [])) for x in packages),
                  exit=result.returncode, status="PASS" if passed else "INCONCLUSIVE")
+        # Read-only, public lockfile comparison. Source refs are exact immutable SHAs.
+        public = [
+            ("Hermes", "79104b83136e03f33fec0a23494cd042848d3d0a",
+             "control_center/frontend/package-lock.json", "npm"),
+            ("YFC", "bc48d09c3415c4b146a0400efc18cb9031413d18",
+             "uv.lock", "PyPI"),
+            ("YFC", "bc48d09c3415c4b146a0400efc18cb9031413d18",
+             "frontend/package-lock.json", "npm"),
+            ("YFC", "bc48d09c3415c4b146a0400efc18cb9031413d18",
+             "frontend/scheduled-report/package-lock.json", "npm"),
+        ]
+        pypi_zip = dbroot / "osv-scalibr" / "PyPI" / "all.zip"
+        pypi_zip.parent.mkdir(parents=True)
+        pysha, pybytes = fetch(
+            "https://osv-vulnerabilities.storage.googleapis.com/PyPI/all.zip",
+            pypi_zip, 90_000_000)
+        emit(step="pypi_db", sha256=pysha, bytes=pybytes, snapshot_verified=False)
+        for index, (project, sha, path, ecosystem) in enumerate(public):
+            owner_repo = "MikeMoore1337/hermes" if project == "Hermes" else "MikeMoore1337/your-fitness-coach"
+            url = f"https://raw.githubusercontent.com/{owner_repo}/{sha}/{path}"
+            folder = fixture_dir / ("public-" + str(index))
+            folder.mkdir()
+            source = folder / pathlib.Path(path).name
+            lock_digest, lock_bytes = fetch(url, source, 8_000_000)
+            command = base + ["--entrypoint=/osv", image_id, "scan", "source",
+                              "--offline", "-L",
+                              "/input/" + folder.name + "/" + source.name,
+                              "--format=json", "--all-packages"]
+            scanned = run(command, timeout=120)
+            if scanned.returncode not in (0, 1):
+                overall = False
+                emit(step="project_scan", project=project, relative_path=path,
+                     source_sha=sha, status="INCONCLUSIVE", exit=scanned.returncode,
+                     lock_sha256=lock_digest, lock_bytes=lock_bytes)
+                continue
+            try:
+                report = json.loads(scanned.stdout)
+                results = report["results"]
+                packages = [p for group in results for p in group.get("packages", [])]
+                if not packages:
+                    raise ValueError("no_packages_extracted")
+                findings = []
+                for pkg in packages:
+                    p = pkg.get("package") or {}
+                    for v in pkg.get("vulnerabilities", []):
+                        names = [v.get("id"), *(v.get("aliases") or [])]
+                        ids = sorted({i for i in names if isinstance(i, str) and
+                                      (i.startswith("CVE-") or i.startswith("GHSA-"))})
+                        findings.append({"package": p.get("name"), "version": p.get("version"),
+                                         "ids": ids[:5]})
+                emit(step="project_scan", project=project, relative_path=path,
+                     source_sha=sha, lock_sha256=lock_digest, lock_bytes=lock_bytes,
+                     ecosystem=ecosystem, status="RESULTS_RECORDED",
+                     packages_with_result_entries=len(packages),
+                     vulnerability_entries=len(findings), sample_findings=findings[:12],
+                     exit=scanned.returncode)
+            except (KeyError, ValueError, TypeError):
+                overall = False
+                emit(step="project_scan", project=project, relative_path=path,
+                     source_sha=sha, status="INCONCLUSIVE",
+                     reason="invalid_or_empty_scan_output", exit=scanned.returncode)
         emit(step="summary", status="PASS" if overall else "INCONCLUSIVE",
-             ephemeral=True, prod_touched=False, project_lockfiles_read=False)
+             ephemeral=True, prod_touched=False, public_lockfiles_only=True, private_lockfiles_read=False)
         return 0 if overall else 2
 
 
