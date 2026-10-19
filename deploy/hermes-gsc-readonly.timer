@@ -1,0 +1,11 @@
+[Unit]
+Description=Hermes H-24 GSC read-only snapshot daily
+
+[Timer]
+OnCalendar=*-*-* 09:40:00 UTC
+RandomizedDelaySec=15m
+Persistent=true
+Unit=hermes-gsc-readonly.service
+
+[Install]
+WantedBy=timers.target
