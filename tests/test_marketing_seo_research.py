@@ -170,6 +170,8 @@ class H12OfflineResearchTests(unittest.TestCase):
             "observed_at": "2026-10-18", "period_start": "2026-10-01",
             "period_end": "2026-10-18", "query": QUERY,
             "search_intent": "informational", "country": "RU",
+            "wordstat_operator": "broad", "wordstat_region": "Russia",
+            "wordstat_device": "all",
             "search_volume": 31, "limitations": "Synthetic Wordstat count",
         }
         data["observations"] = [mock_search(), wordstat]
@@ -178,6 +180,45 @@ class H12OfflineResearchTests(unittest.TestCase):
         self.assertFalse(p["search_metrics_combined"])
         self.assertNotIn("search_volume", p["observations"][0]["metrics"])
         self.assertNotIn("impressions", p["observations"][1]["metrics"])
+
+    def test_market_brief_no_fake_science_source(self):
+        data = input_packet()
+        data["theme"] = "market_research"
+        data["research_item"] = None
+        data["observations"] = [mock_search()]
+        p = build_packet(data)
+        self.assertIsNone(p["research_brief"])
+        self.assertEqual(p["status"], "READY_FOR_REVIEW")
+        self.assertIn("Научный статус: NOT_PROVIDED", p["markdown"])
+        self.assertTrue(p["editorial"]["requires_expert_review"])
+        self.assertFalse(p["publication_allowed"])
+        data["research_item"] = input_packet()["research_item"]
+        with self.assertRaisesRegex(SeoResearchDenied, "market_research_cannot_claim_science"):
+            build_packet(data)
+
+    def test_wordstat_modes_are_distinct_and_required(self):
+        data = input_packet()
+        data["theme"] = "market_research"
+        data["research_item"] = None
+        first = {
+            "source": "yandex_wordstat", "source_type": "owner_export",
+            "observed_at": "2026-10-18", "period_start": "2026-10-01",
+            "period_end": "2026-10-18", "query": QUERY,
+            "search_intent": "informational", "country": "RU",
+            "wordstat_operator": "broad", "wordstat_region": "Russia",
+            "wordstat_device": "all", "search_volume": 31,
+            "limitations": "Owner export", "owner_attested": True,
+            "evidence_sha256": "a" * 64,
+        }
+        second = dict(first, wordstat_operator="quoted_fixed_word_count", search_volume=8)
+        data["observations"] = [first, second]
+        p = build_packet(data)
+        self.assertEqual(len(p["observations"]), 2)
+        self.assertIn("wordstat_mode=quoted_fixed_word_count", p["markdown"])
+        self.assertFalse(p["search_metrics_combined"])
+        del second["wordstat_operator"]
+        with self.assertRaisesRegex(SeoResearchDenied, "wordstat_context_required"):
+            build_packet(data)
 
     def test_conflicting_search_intent_requires_hold(self):
         data = input_packet()
