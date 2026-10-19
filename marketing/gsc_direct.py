@@ -106,8 +106,8 @@ def _gsc_timestamp(value: object) -> str:
     """Canonicalize RFC3339 datetimes (including explicit UTC offsets) to UTC Z."""
     if (type(value) is not str or len(value) > 48 or
             not re.fullmatch(
-                r"\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}"
-                r"(?:\\.\\d{1,9})?(?:Z|[+-]\\d{2}:\\d{2})", value)):
+                r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}"
+                r"(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})", value)):
         raise GscRuntimeError("sitemap_timestamp_invalid")
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
