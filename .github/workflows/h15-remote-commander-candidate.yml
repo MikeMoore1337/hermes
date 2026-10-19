@@ -276,8 +276,8 @@ jobs:
           test -s "$bundle/hermes-brc.patch"
           cat > "$bundle/EXPECTED_PATHS.txt" <<'PATHS'
           packages/agent/src/dispatcher.ts
-          packages/relay/src/device-hub.ts
           packages/relay/src/app.ts
+          packages/relay/src/device-hub.ts
           packages/relay/src/mcp/hermes-policy.ts
           packages/relay/src/mcp/invoke.ts
           packages/relay/src/mcp/server.ts
