@@ -376,6 +376,44 @@ have been reversed. Future operation IDs and dedicated destructive
 action confirmation still require explicit owner approval.
 No owner Windows/YFC device is paired or reconfigured by this step.
 
+### Full two real native agents with OAuth/PKCE and real tools (CI-only)
+
+The next isolated acceptance stage creates a private Docker
+`--internal` network with **no host-published ports**.
+The hardened, source-pinned BRC relay runs as UID 65534 with a
+throwaway SQLite DB and random test-only OAuth session secrets.
+A helper issues exactly two new dummy device tokens in that
+ephemeral DB, then starts two real compiled `brc-agent`
+processes in **separate non-root, read-only, no-capability
+containers**. Each agent sees one different disposable writable
+`/workspace` mount and its own config. Neither container mounts
+the owner's home directory, SSH keys, existing Hermes presence
+state, YFC production data or Docker socket.
+
+`scripts/h15_brc_two_native_oauth_mcp_e2e.mjs` authenticates a
+fresh OAuth client with real authorization code + PKCE S256,
+owner consent and a Bearer access token; exercises real HTTP
+`/mcp` `initialize`, `tools/list`, `list_devices`, and
+`tools/call` through both authenticated WSS devices. Assertions:
+two devices discovered; missing device ID rejected; independent
+read-only markers prove correct device routing; real file write
+then readback succeeds only in the first workspace; source-code
+write and host-private-key read fail at the container/kernel
+boundary; the second agent executes a bounded shell `echo`;
+remote config changes remain forbidden; pausing device two blocks
+its calls while device one stays functional; an invalid OAuth
+Bearer token is denied. All containers/networks are destroyed
+even after failed tests.
+
+This is an end-to-end *CI pilot*, **not** the owner's
+Windows/YFC/Hermes VPS, and not yet a real ChatGPT plugin
+invocation. It checks correct behaviour on disposable Linux
+sandboxes without granting access to unrelated user data.
+The actual owner pilot still needs explicit per-device directory
+and command scope approval, HTTPS/TLS with stable domain,
+real OAuth plugin entitlement and full Ops Watch/rollback
+acceptance. Existing presence heartbeat continues unchanged.
+
 ## Target deployment (not yet activated)
 
 ```text
