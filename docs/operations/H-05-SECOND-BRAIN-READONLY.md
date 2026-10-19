@@ -52,7 +52,7 @@ This is a public-code audit; it does not prove the completeness or current produ
 
 Run:
 ```bash
-python3 -m unittest -v tests.test_h05_second_brain_readonly
+python3 -m unittest discover -s tests -p test_h05_second_brain_readonly.py -v
 python3 -m unittest discover -s tests -v
 ```
 
