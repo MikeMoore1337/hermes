@@ -21,6 +21,7 @@ on:
       - scripts/h15_brc_oci_relay_smoke.mjs
       - scripts/h15_brc_oci_receipt.py
       - deploy/h15/Dockerfile.brc-relay
+      - deploy/h15/stage-relay.sh
       - tests/test_h15_remote_commander_candidate_audit.py
       - tests/test_h15_brc_apply_policy_patch.py
       - tests/test_h15_brc_harden_relay.py
@@ -29,6 +30,7 @@ on:
       - tests/test_h15_brc_harden_browser_csrf.py
       - tests/test_h15_brc_oci_relay_contract.py
       - tests/test_h15_brc_oci_receipt.py
+      - tests/test_h15_brc_offline_stage.py
       - docs/operations/H-15-SELFHOSTED-REMOTE-MCP.md
       - .github/workflows/h15-remote-commander-candidate.yml
 
@@ -51,7 +53,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m unittest -v tests.test_h15_remote_commander_candidate_audit tests.test_h15_brc_apply_policy_patch tests.test_h15_brc_harden_relay tests.test_h15_brc_harden_gateway tests.test_h15_brc_harden_reconnect tests.test_h15_brc_harden_browser_csrf tests.test_h15_brc_oci_relay_contract tests.test_h15_brc_oci_receipt
+          python3 -m unittest -v tests.test_h15_remote_commander_candidate_audit tests.test_h15_brc_apply_policy_patch tests.test_h15_brc_harden_relay tests.test_h15_brc_harden_gateway tests.test_h15_brc_harden_reconnect tests.test_h15_brc_harden_browser_csrf tests.test_h15_brc_oci_relay_contract tests.test_h15_brc_oci_receipt tests.test_h15_brc_offline_stage
 
       - name: Fetch exact upstream Git commit (not tag, latest or npm install)
         shell: bash
@@ -309,6 +311,35 @@ jobs:
           test "$(docker network inspect --format '{{.Internal}}' "$net")" = "true"
           echo "HERMES_BRC_TWO_NATIVE_OAUTH_MCP=PASS" >> "$GITHUB_STEP_SUMMARY"
           echo "NATIVE_OWNERS_DEVICE_COMMAND_EXECUTION=NOT_ENABLED" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Stage actual approved OCI relay offline, smoke and rollback (ephemeral CI)
+        shell: bash
+        run: |
+          set -euo pipefail
+          script="$GITHUB_WORKSPACE/deploy/h15/stage-relay.sh"
+          bash -n "$script"
+          image="hermes-brc-relay-eval:${GITHUB_SHA:0:12}"
+          image_id="$(docker image inspect --format '{{.Id}}' "$image")"
+          # Hard refuse mutable tags without modifying host Docker state.
+          if sudo bash "$script" preflight "$image" >/dev/null 2>&1; then
+            echo 'H15_STAGE_ACCEPTED_MUTABLE_TAG' >&2
+            exit 1
+          fi
+          sudo bash "$script" preflight "$image_id"
+          cleanup() { sudo bash "$script" rollback >/dev/null || true; }
+          trap cleanup EXIT
+          sudo bash "$script" status | grep -Fx 'H15_STAGE_STATUS=NOT_INSTALLED'
+          sudo bash "$script" start "$image_id"
+          sudo bash "$script" smoke
+          sudo bash "$script" status | grep -Fx 'H15_STAGE_STATUS=running'
+          test -z "$(docker port hermes-brc-stage-h15)"
+          test "$(docker inspect -f '{{.HostConfig.NetworkMode}}' hermes-brc-stage-h15)" = none
+          sudo bash "$script" rollback
+          sudo bash "$script" rollback
+          sudo bash "$script" status | grep -Fx 'H15_STAGE_STATUS=NOT_INSTALLED'
+          trap - EXIT
+          echo 'H15_STAGE_OFFLINE_INSTALL_SMOKE_ROLLBACK=PASS' >> "$GITHUB_STEP_SUMMARY"
+          echo 'H15_STAGE_REAL_VPS_MODIFIED=NO' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Immutable base + CycloneDX dependency SBOM + fail-closed OCI receipt
         shell: bash
