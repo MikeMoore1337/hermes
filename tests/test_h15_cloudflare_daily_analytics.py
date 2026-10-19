@@ -115,6 +115,92 @@ class DailyAnalyticsTests(unittest.TestCase):
             self.assertIn("already_collected",output.getvalue())
             self.assertIn("QUOTA_REMAINING=UNKNOWN",output.getvalue())
 
+    def test_empty_cloudflare_day_is_success_but_never_fabricates_zeros(self):
+        # A successful GraphQL response containing [] is not evidence of
+        # zero Neurons, nor a reason to destroy older measurements.
+        with TemporaryDirectory() as temp:
+            directory = Path(temp)
+            archive = directory / "advisory.json"
+            archive.write_text("existing archive must not change", encoding="utf-8")
+            archive.chmod(0o640)
+            original = Path.stat
+
+            def trusted_stat(path, *args, **kwargs):
+                metadata = original(path, *args, **kwargs)
+                if path == directory:
+                    return SimpleNamespace(st_uid=0, st_gid=os.getegid(),
+                                           st_mode=stat.S_IFDIR | 0o750)
+                if path == archive:
+                    return SimpleNamespace(st_uid=0, st_gid=os.getegid(),
+                                           st_mode=stat.S_IFREG | 0o640,
+                                           st_nlink=1)
+                return metadata
+
+            previous = (dt.datetime.now(dt.timezone.utc).date() -
+                        dt.timedelta(days=1)).isoformat()
+            with patch.object(collect.os, "geteuid", return_value=0), \
+                 patch.object(collect.grp, "getgrnam",
+                              return_value=SimpleNamespace(gr_gid=os.getegid())), \
+                 patch.object(collect.history, "OUTPUT", archive), \
+                 patch.object(collect.history, "read", return_value={
+                     "status": "historical_estimate",
+                     "days": [{"day": "2026-10-17"}]}), \
+                 patch.object(Path, "stat", trusted_stat), \
+                 patch.object(collect.probe, "load_credentials",
+                              return_value=("fake-token", "fake-account")), \
+                 patch.object(collect.probe, "inspect_confidence",
+                              return_value=("no_confirmed_samples", None)) as source, \
+                 patch.object(collect.history, "append") as write, \
+                 contextlib.redirect_stdout(StringIO()) as out:
+                self.assertEqual(collect.main(), 0)
+                source.assert_called_once()
+                write.assert_not_called()
+            self.assertEqual(archive.read_text(encoding="utf-8"),
+                             "existing archive must not change")
+            self.assertIn("CLOUDFLARE_ADVISORY_ARCHIVE=no_confirmed_samples",
+                          out.getvalue())
+            self.assertIn("OBSERVATION_DAY=" + previous, out.getvalue())
+            self.assertIn("HISTORY_UPDATED=false", out.getvalue())
+            self.assertIn("QUOTA_REMAINING=UNKNOWN", out.getvalue())
+            self.assertIn("BILLABLE_USAGE=NOT_VERIFIED", out.getvalue())
+            self.assertNotIn("estimate_neurons", out.getvalue())
+
+    def test_real_source_errors_still_return_failure(self):
+        with TemporaryDirectory() as temp:
+            directory = Path(temp)
+            archive = directory / "advisory.json"
+            original = Path.stat
+
+            def trusted_stat(path, *args, **kwargs):
+                metadata = original(path, *args, **kwargs)
+                if path == directory:
+                    return SimpleNamespace(st_uid=0, st_gid=os.getegid(),
+                                           st_mode=stat.S_IFDIR | 0o750)
+                return metadata
+
+            for source_status in (
+                    "unavailable", "throttled", "auth_required",
+                    "unsupported_or_denied", "unknown"):
+                with self.subTest(source_status=source_status), \
+                     patch.object(collect.os, "geteuid", return_value=0), \
+                     patch.object(collect.grp, "getgrnam",
+                                  return_value=SimpleNamespace(gr_gid=os.getegid())), \
+                     patch.object(collect.history, "OUTPUT", archive), \
+                     patch.object(collect.history, "read", return_value={
+                         "status": "unknown", "days": []}), \
+                     patch.object(Path, "stat", trusted_stat), \
+                     patch.object(collect.probe, "load_credentials",
+                                  return_value=("fake-token", "fake-account")), \
+                     patch.object(collect.probe, "inspect_confidence",
+                                  return_value=(source_status, None)), \
+                     patch.object(collect.history, "append") as write, \
+                     contextlib.redirect_stdout(StringIO()) as out:
+                    self.assertEqual(collect.main(), 1)
+                    write.assert_not_called()
+                    self.assertIn("CLOUDFLARE_ADVISORY_ARCHIVE=" + source_status,
+                                  out.getvalue())
+                    self.assertNotIn("HISTORY_UPDATED=false", out.getvalue())
+
     def test_unsafe_state_rejected_before_credentials_or_graphql(self):
         with patch.object(collect.os,"geteuid",return_value=0), \
              patch.object(collect.grp,"getgrnam",
