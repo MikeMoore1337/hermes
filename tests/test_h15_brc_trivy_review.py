@@ -50,6 +50,8 @@ class TrivyReviewTests(unittest.TestCase):
         self.assertEqual(output["os_packages_detected"], 88)
         self.assertEqual(output["language_packages_detected"], 1)
         self.assertEqual(output["high_critical_records"], 1)
+        self.assertEqual(output["high_critical_by_source"], {"os-pkgs": 1, "lang-pkgs": 0})
+        self.assertEqual(output["high_critical_with_fixed_version_claim"], {"os-pkgs": 1, "lang-pkgs": 0})
         self.assertFalse(output["production_release_approved"])
         self.assertFalse(output["public_mcp_enable_allowed"])
         self.assertFalse(output["owner_device_commands_allowed"])
