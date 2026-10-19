@@ -8,6 +8,8 @@ on:
       - scripts/h15_brc_apply_policy_patch.py
       - scripts/h15_brc_harden_relay.py
       - scripts/h15_brc_harden_gateway.py
+      - scripts/h15_brc_harden_browser_csrf.py
+      - scripts/h15_brc_browser_csrf_e2e.mjs
       - scripts/h15_brc_gateway_policy_e2e.mjs
       - scripts/h15_brc_relay_ws_e2e.mjs
       - scripts/h15_brc_sandbox_linux_e2e.mjs
@@ -15,6 +17,7 @@ on:
       - tests/test_h15_brc_apply_policy_patch.py
       - tests/test_h15_brc_harden_relay.py
       - tests/test_h15_brc_harden_gateway.py
+      - tests/test_h15_brc_harden_browser_csrf.py
       - docs/operations/H-15-SELFHOSTED-REMOTE-MCP.md
       - .github/workflows/h15-remote-commander-candidate.yml
 
@@ -37,7 +40,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m unittest -v tests.test_h15_remote_commander_candidate_audit tests.test_h15_brc_apply_policy_patch tests.test_h15_brc_harden_relay tests.test_h15_brc_harden_gateway
+          python3 -m unittest -v tests.test_h15_remote_commander_candidate_audit tests.test_h15_brc_apply_policy_patch tests.test_h15_brc_harden_relay tests.test_h15_brc_harden_gateway tests.test_h15_brc_harden_browser_csrf
 
       - name: Fetch exact upstream Git commit (not tag, latest or npm install)
         shell: bash
@@ -93,6 +96,13 @@ jobs:
           python3 -m scripts.h15_brc_harden_gateway \
             --source-dir "$RUNNER_TEMP/brc-upstream"
 
+      - name: Apply exact-pinned owner browser CSRF origin guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m scripts.h15_brc_harden_browser_csrf \
+            --source-dir "$RUNNER_TEMP/brc-upstream"
+
       - name: Apply Hermes policy to exact pinned agent (never production)
         shell: bash
         run: |
@@ -109,6 +119,7 @@ jobs:
           pnpm build
           node "$GITHUB_WORKSPACE/scripts/h15_brc_relay_ws_e2e.mjs"
           node "$GITHUB_WORKSPACE/scripts/h15_brc_gateway_policy_e2e.mjs"
+          node "$GITHUB_WORKSPACE/scripts/h15_brc_browser_csrf_e2e.mjs"
           node --input-type=module <<'JS'
           import { listTools, hasTool, callTool } from './packages/agent/dist/dispatcher.js';
           const denied = ['get_config', 'get_recent_tool_calls',
@@ -134,6 +145,7 @@ jobs:
           pnpm test
           echo "HERMES_PATCHED_MCP_POLICY=PASS (source-only, no live agent)" >> "$GITHUB_STEP_SUMMARY"
           echo "HERMES_PINNED_WSS_BEARER_ONLY=PASS" >> "$GITHUB_STEP_SUMMARY"
+          echo "HERMES_PINNED_BROWSER_CSRF=PASS" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Real native Linux sandbox denial with patched file and shell tools
         shell: bash
