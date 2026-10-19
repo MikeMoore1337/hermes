@@ -98,7 +98,7 @@ if ($LASTEXITCODE -ne 0) { throw "CHILD_PROCESS_FAILED" }
 
     $args = ('-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}" -Workspace "{1}" -PrivateDir "{2}" -ProtectedDir "{3}"' -f $runner,$workspace,$privateDir,$protectedDir)
     $action = New-ScheduledTaskAction -Execute $systemPowerShell -Argument $args -WorkingDirectory $workspace
-    $principal = New-ScheduledTaskPrincipal -UserId 'NT AUTHORITY\LOCAL SERVICE' -LogonType ServiceAccount -RunLevel LeastPrivilege
+    $principal = New-ScheduledTaskPrincipal -UserId 'NT AUTHORITY\LOCAL SERVICE' -LogonType ServiceAccount -RunLevel Limited
     $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 2) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
     Register-ScheduledTask -TaskName $taskName -Action $action -Principal $principal -Settings $settings | Out-Null
     $registered = $true
