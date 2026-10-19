@@ -3,7 +3,9 @@
 // complete a live call or revive stale presence. Runs offline in CI only.
 import { EventEmitter } from 'node:events';
 import assert from 'node:assert/strict';
-import { DeviceHub } from './packages/relay/dist/device-hub.js';
+import { pathToFileURL } from 'node:url';
+import path from 'node:path';
+const { DeviceHub } = await import(pathToFileURL(path.join(process.cwd(), 'packages/relay/dist/device-hub.js')).href);
 
 class Socket extends EventEmitter {
   constructor() {
