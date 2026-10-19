@@ -26,7 +26,8 @@ SOURCES = {
 COMMON = frozenset({
     "source", "source_type", "observed_at", "period_start", "period_end",
     "query", "page", "country", "language", "search_intent", "limitations",
-    "evidence_sha256", "owner_attested",
+    "evidence_sha256", "owner_attested", "wordstat_operator", "wordstat_region",
+    "wordstat_device",
 })
 INTENTS = frozenset({"informational", "navigational", "commercial", "transactional"})
 SAFE = re.compile(r"^[^<>{}|\x00-\x1f\x7f" + re.escape(r"\`") + r"]+$")
@@ -102,6 +103,13 @@ def normalize_observations(values: object, *, as_of: date) -> list[dict[str, Any
             raise SeoResearchDenied("source_not_admitted")
         if set(record) - COMMON - SOURCES[source]:
             raise SeoResearchDenied("observation_fields_invalid")
+        if source == "yandex_wordstat":
+            if (record.get("wordstat_operator") not in {"broad", "quoted_fixed_word_count"}
+                    or record.get("wordstat_region") != "Russia"
+                    or record.get("wordstat_device") not in {"all", "desktop", "mobile"}):
+                raise SeoResearchDenied("wordstat_context_required")
+        elif any(k in record for k in ("wordstat_operator", "wordstat_region", "wordstat_device")):
+            raise SeoResearchDenied("wordstat_context_not_applicable")
         kind = record.get("source_type")
         if kind not in ("synthetic_fixture", "owner_export"):
             raise SeoResearchDenied("source_type_invalid")
@@ -151,7 +159,9 @@ def normalize_observations(values: object, *, as_of: date) -> list[dict[str, Any
             expected = metrics["clicks"] / metrics["impressions"] if metrics["impressions"] else 0
             if abs(metrics["ctr"] - expected) > 0.01:
                 raise SeoResearchDenied("metric_inconsistent")
-        key = (source, kind, str(start), str(end), query.casefold(), str(page), str(country))
+        key = (source, kind, str(start), str(end), query.casefold(), str(page),
+               str(country), str(language), str(record.get("wordstat_operator")),
+               str(record.get("wordstat_region")), str(record.get("wordstat_device")))
         if key in seen:
             raise SeoResearchDenied("duplicate_observation")
         seen.add(key)
@@ -176,6 +186,9 @@ def normalize_observations(values: object, *, as_of: date) -> list[dict[str, Any
             normalized["country"] = country
         if language is not None:
             normalized["language"] = language
+        if source == "yandex_wordstat":
+            for field in ("wordstat_operator", "wordstat_region", "wordstat_device"):
+                normalized[field] = record[field]
         if digest is not None:
             normalized["evidence_sha256"] = digest
         results.append(normalized)
@@ -222,14 +235,19 @@ def build_packet(payload: object) -> dict[str, Any]:
     } or payload["schema"] != INPUT_SCHEMA:
         raise SeoResearchDenied("input_schema_invalid")
     theme = payload["theme"]
-    if type(theme) is not str or theme not in THEMES:
+    if type(theme) is not str or (theme not in THEMES and theme != "market_research"):
         raise SeoResearchDenied("theme_invalid")
     query = _text(payload["selected_query"], 120)
     as_of = _day(payload["as_of"])
-    try:
-        science = from_daily_item(payload["research_item"], theme=theme)
-    except ContentBriefError:
-        raise SeoResearchDenied("research_source_invalid") from None
+    if theme == "market_research":
+        if payload["research_item"] is not None:
+            raise SeoResearchDenied("market_research_cannot_claim_science")
+        science = None
+    else:
+        try:
+            science = from_daily_item(payload["research_item"], theme=theme)
+        except ContentBriefError:
+            raise SeoResearchDenied("research_source_invalid") from None
     gap = _gap_row(payload["site_gap"], query)
     observations = normalize_observations(payload["observations"], as_of=as_of)
     matching = [v for v in observations if v["query"].casefold() ==
@@ -241,7 +259,7 @@ def build_packet(payload: object) -> dict[str, Any]:
     positive = [v for v in fresh if v["metrics"].get("impressions", 0) > 0
                 or v["metrics"].get("search_volume", 0) > 0]
     reasons: list[str] = []
-    if science["status"] == "HOLD":
+    if science is not None and science["status"] == "HOLD":
         reasons.append("SCIENTIFIC_HOLD")
     if gap["covered_by"] or gap["maybe_covered"]:
         reasons.append("EXISTING_PAGE_REQUIRES_EDITORIAL_COMPARISON")
@@ -271,10 +289,10 @@ def build_packet(payload: object) -> dict[str, Any]:
         "site_gap": gap,
         "research_brief": science,
         "editorial": {
-            "working_h1": science["proposed_working_title"],
+            "working_h1": science["proposed_working_title"] if science else "SEO-тема: " + query,
             "h2": ["Что можно проверить по первоисточникам",
                    "Ограничения исследования", "Вопросы читателей"],
-            "questions": [science["proposed_question"]],
+            "questions": [science["proposed_question"]] if science else [],
             "suggested_internal_links": ([gap["nearest_url"]]
                                          if gap["nearest_url"] else []),
             "proposed_scientific_claims": [],
@@ -316,6 +334,9 @@ def render_markdown(packet: dict[str, Any]) -> str:
             " / " + v["period_start"] + "..." + v["period_end"] +
             " / quality=" + v["data_quality"] + " / " +
             json.dumps(v["metrics"], ensure_ascii=False, sort_keys=True) +
+            " / wordstat_mode=" + v.get("wordstat_operator", "NOT_APPLICABLE") +
+            " / region=" + v.get("wordstat_region", v.get("country", "NO_DATA")) +
+            " / device=" + v.get("wordstat_device", "NO_DATA") +
             " / sha256=" + (v.get("evidence_sha256") or "NO_DATA") +
             " / ограничения: " + v["limitations"]
         )
@@ -324,9 +345,9 @@ def render_markdown(packet: dict[str, Any]) -> str:
         "## Редакционное предложение",
         "H1: " + packet["editorial"]["working_h1"],
         *["H2: " + x for x in packet["editorial"]["h2"]],
-        "Вопрос читателя: " + science["proposed_question"],
-        "Связанный первоисточник: " + science["research_provenance"]["source_url"],
-        "Научный статус: " + science["status"],
+        "Вопрос читателя: " + (science["proposed_question"] if science else "NO_DATA"),
+        "Связанный первоисточник: " + (science["research_provenance"]["source_url"] if science else "NO_DATA"),
+        "Научный статус: " + (science["status"] if science else "NOT_PROVIDED"),
         "Проверка научных утверждений: требуется экспертная оценка.",
         "YFC owner READY: обязателен до любой публикации.",
         "Автопубликация и запись в YFC: запрещены.",
