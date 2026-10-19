@@ -488,6 +488,12 @@ jobs:
           )
           echo "H15_TRIVY_IMAGE_SCAN_EVIDENCE=RECORDED" >> "$GITHUB_STEP_SUMMARY"
           echo "H15_TRIVY_PRODUCTION_GO=NO" >> "$GITHUB_STEP_SUMMARY"
+          # Restore the original exact-one-tag OCI transfer assumption.
+          # The scanner alias is disposable and must not enter the export.
+          docker image rm "hermes-brc-relay-scan:${GITHUB_SHA}" >/dev/null
+          test "$(docker image inspect --format '{{json .RepoTags}}' \
+            "hermes-brc-relay-eval:${GITHUB_SHA:0:12}")" = \
+            "[\"hermes-brc-relay-eval:${GITHUB_SHA:0:12}\"]"
 
       - name: Retain isolated image provenance and CycloneDX SBOM
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
