@@ -116,8 +116,12 @@ def main() -> int:
             print("H15_BRC_DISPOSABLE_OVERRIDES=APPLIED")
         print("H15_BRC_UPSTREAM_REVISION=" + UPSTREAM_SHA)
         print("H15_BRC_PRODUCTION_APPROVED=NO")
-    except (AuditError, OSError, UnicodeError):
-        print("H15_BRC_DEPENDENCY_PATCH=REJECTED", file=sys.stderr)
+    except AuditError as exc:
+        # AuditError reasons are fixed control-plane codes, never user input.
+        print("H15_BRC_DEPENDENCY_PATCH=REJECTED_" + str(exc), file=sys.stderr)
+        return 2
+    except (OSError, UnicodeError):
+        print("H15_BRC_DEPENDENCY_PATCH=REJECTED_IO", file=sys.stderr)
         return 2
     return 0
 
