@@ -218,3 +218,43 @@ PyPI 36 468 536 байт, SHA256
 4. **Охват OSV:** настоящее сканирование и обнаружение в **обеих экосистемах доказаны**, но широкую обязательную интеграцию `REJECT_BROAD_ADOPTION` пока оставить: нужны решения о scope/dev/optional и независимая проверка DB/binary provenance. Сами эти шаги не блокируют другую разработку Hermes.
 
 **Статус #189: `PARTIAL`** по требованию полного охвата Second Brain и уточнению отличий существующих аудиторов. Этот отчёт исправляет ошибочные прежние предположения, но не даёт runtime GO, не закрывает #33 и не обновляет зависимости автоматически.
+
+
+## 19 октября 2026 - Second Brain: owner-approved public-code-only OSV pilot (H-22 completion)
+
+**Owner permission**: in the Hermes #189 continuation, read-only analysis of the public `MikeMoore1337/second-brain` code repository was explicitly approved. **No** access to `second-brain-vault`, any note content, credentials, connected private services, production filesystem or live runtime was requested or performed. No changes were made to the Second Brain repository or dependencies.
+
+[GitHub Actions #39305432698](https://github.com/MikeMoore1337/hermes/actions/runs/39305432698) on the temporary sandbox branch - **SUCCESS** (real OSV v2.7.0, Python/npm ZIP databases prepared on the public runner, then read-only public lockfiles mounted into Docker with `--network=none`, read-only root, non-root UID and CPU/RAM/PID/time bounds). This stage was only an experiment; the workflow and runner script must be removed **before** merging this report. The scanner did not send dependency information to the network. Freshness/publisher authenticity of full DB sets is not independently attested.
+
+Both source files were fetched using immutable Second Brain commit
+`e70cc82b4aa592909a74dbf66da3c88fed5ec90a`.
+
+| Source file | SHA256 | OSV package entries | OSV vulnerability entries | Scanner exit |
+| --- | --- | ---: | ---: | ---: |
+| `uv.lock` | `32c65d136190836749f382cd5979b4b3968ca3a05da96d4276fbc82476e70072` | 41 | 0 | 0 |
+| `web/package-lock.json` | `2e1d3865390a14ca7dbb28c14ad74707c4584acd2c1e168e85e0839fd8f461dd` | 516 | **9** | 1 |
+
+**Findings from the real npm lockfile:** nine OSV records, but only **six distinct advisories**; the first three repeat for two installed `brace-expansion` major versions. Inspection of `web/package-lock.json` shows that **every listed vulnerable package has `dev: true`**, so the findings concern dev/build tooling, not established installed production dependencies. This does not imply that there is no CI/development-machine attack surface.
+
+| npm package / installed version | Advisory, CVE and severity | Fixed version (same major) | Scope |
+| --- | --- | --- | --- |
+| `brace-expansion@2.1.4` and `@5.0.9` | [`GHSA-6j4f-fj2g-mc7p`](https://github.com/advisories/GHSA-6j4f-fj2g-mc7p), `CVE-2026-102276`, High, uncontrolled recursion DoS | `2.1.5`, `5.0.10` | both dev versions |
+| same | [`GHSA-q2hr-2g5m-vwhr`](https://github.com/advisories/GHSA-q2hr-2g5m-vwhr), `CVE-2026-102277`, Moderate, quadratic parser work | `2.1.7`, `5.0.12` | both dev versions |
+| same | [`GHSA-qhr7-859c-m2p7`](https://github.com/advisories/GHSA-qhr7-859c-m2p7), `CVE-2026-102278`, High, nested-recursion DoS | `2.1.6`, `5.0.11` | both dev versions |
+| `fast-uri@3.1.7` | [`GHSA-hrr3-gc8f-f4qj`](https://github.com/advisories/GHSA-hrr3-gc8f-f4qj), `CVE-2026-86472`, Moderate, host canonicalization discrepancy | `3.1.8` | dev |
+| `serialize-javascript@7.1.1` | [`GHSA-gfhx-hw2g-v5hg`](https://github.com/yahoo/serialize-javascript/security/advisories/GHSA-gfhx-hw2g-v5hg), `CVE-2026-97711`, XSS of embedded serialized functions, Low/Moderate by score version | `7.1.2` | dev |
+| `source-map-js@1.2.1` | [`GHSA-68fv-2mgg-jv7q`](https://github.com/advisories/GHSA-68fv-2mgg-jv7q), `CVE-2026-93749`, High, event-loop DoS | `1.2.2` | dev |
+
+For the three `brace-expansion` findings, **the maximum same-major version fixes all three**: 2.1.7 and 5.0.12 respectively. All version recommendations are advisory-based; no upgrade was installed, tested or applied in this H-22 experiment.
+
+**Overlap/gap with existing CI:** Second Brain `.github/workflows/ci.yml` installs pinned Python/npm dependencies and runs Ruff/mypy/pytest, frontend checks/build and other functional tests; no dedicated CVE/dependency audit was found in that inspected workflow. OSV provides new vulnerability information for **dev dependencies**. Prefer a small native `npm audit` check and targeted lockfile updates in a separate Second Brain task, subject to regression tests; do not import an always-running OSV service or a second agent runtime solely for this.
+
+### Final research decision for Issue #189
+
+- The requested **real** OSV v2.7.0 public-repo-only pilot now covers **all three** code repositories: Hermes, YFC and Second Brain; evidence is version-pinned and distinguishes actual scanner executions from preflight estimates.
+- Hermes: five Vite dev-server advisories (`vite@7.1.11`), fix candidate `>=7.3.5 <8` under separate reviewed dependency update.
+- YFC: three `aiohttp@3.14.3` advisories via optional `bot` dependency, fix candidate `>=3.14.4` after bot-runtime ownership/regression check; `uv.lock` SHA on last checked `master` matched the scanned historical SHA.
+- Second Brain: six unique npm dev/build advisories (nine affected-version entries), and no known OSV findings in 41 Python package entries. Actual exposure and current package fixes require targeted deployment-aware review.
+- Existing YFC `uv audit`/Trivy/npm audit use **different group/severity policies** from the all-package OSV pilot, so claiming that those scanners failed on identical inputs would be incorrect. No new global CI blocker without a matched-scope differential benchmark.
+- All source archive/report data is from a **fixed bounded snapshot**; this does not independently prove complete or future DB coverage, secure publisher attestation, or that every runtime remains free of issues.
+- The research/feasibility/real lockfile scanning and remediation-summary acceptance criteria for #189 are fulfilled. Targeted dependency remediation and optional native CI checks **belong to follow-up Issues in their owning repositories**, not this read-only security research Issue. `RESEARCH_COMPLETE`, `REJECT_BROAD_ADOPTION`, `KEEP_EXISTING_TOOLS`, `TARGETED_FIXES_RECOMMENDED`. No production scan, dependency upgrade or resident activation performed in H-22.
