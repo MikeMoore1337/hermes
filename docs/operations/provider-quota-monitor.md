@@ -683,3 +683,52 @@ Systemd failure is visible in `systemctl show ...service -p Result
 -p ExecMainStatus`; automated external notification delivery is a
 separate acceptance gate. No Free quota threshold (80/95/100%) alerts are
 generated from these sampled analytics numbers.
+
+
+## Stage 11 - real first timer run: valid empty Cloudflare samples (#295)
+
+The first **actual scheduled** daily timer activation occurred on
+2026-10-19 09:19:55 MSK. The original service ended with
+`Result=exit-code`, `ExecMainStatus=1` after seven seconds. The owner
+read the allowlisted sanitized journal status:
+`CLOUDFLARE_ADVISORY_ARCHIVE=no_confirmed_samples`.
+
+Source semantics: the Cloudflare GraphQL request completed successfully with
+a well-formed response and an **empty adaptive groups array** for
+2026-10-18 (UTC). This does **not** mean measured `0 Neurons`, zero billable
+usage, complete absence of account inference, or an available Free quota.
+It is a valid informational no-data result, **not** a transport/auth
+failure. The previous observed archive day 2026-10-17 was still intact and
+the verified Free quota used/remaining remained `null`.
+
+The corrected collector returns `exit 0` and emits the sanitized status
+`CLOUDFLARE_ADVISORY_ARCHIVE=no_confirmed_samples`,
+`OBSERVATION_DAY=YYYY-MM-DD`, `HISTORY_UPDATED=false`,
+`QUOTA_REMAINING=UNKNOWN`, `BILLABLE_USAGE=NOT_VERIFIED`
+for that specific source result **only**. No archive row, fake `0`
+observation, artificial estimated balance or fabricated confidence interval
+is created. Other Cloudflare statuses (`unavailable`, `throttled`,
+`auth_required`, `unsupported_or_denied`, `unknown`), validation
+errors, unsafe archive and failed writes remain nonzero failures. In the
+absence of samples, inspect the journal status and archive date separately:
+systemd `Result=success` means the scheduled information check completed,
+**not** that historical data were collected. A later run with confirmed
+data must still write an actual advisory row.
+
+For a read-only on-host audit, use an isolated child shell and restrict
+journal output to exactly the sanitized collector status:
+```bash
+bash -c '
+systemctl show hermes-cloudflare-analytics-advisory.timer -p LastTriggerUSec -p ActiveState -p UnitFileState --no-pager
+systemctl show hermes-cloudflare-analytics-advisory.service -p Result -p ExecMainStatus --no-pager
+journalctl -u hermes-cloudflare-analytics-advisory.service --since "today" --no-pager -o cat 2>/dev/null |
+  grep -E "^CLOUDFLARE_ADVISORY_ARCHIVE=[a-zA-Z0-9_]+$" || true
+'
+```
+
+Normal CI/CD deploys the amended collector to the active exact-SHA owner
+release. The existing systemd service and timer **do not need reinstalling**
+if unchanged. Do not enable a new paid service, broaden token scope, or
+restart the collector repeatedly as a substitute for source data.
+Issue #295 stays OPEN until the fixed, timer-invoked service completes with
+real on-host evidence and all other acceptance gates are satisfied.
