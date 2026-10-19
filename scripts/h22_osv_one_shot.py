@@ -16,6 +16,7 @@ import sys
 import tempfile
 import time
 import urllib.request
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -121,6 +122,14 @@ def main():
             directory.mkdir()
             sha, size, modified = download(URL_DB.format(ecosystem), directory / "all.zip", MAX_ZIP)
             metadata[ecosystem] = {"sha256": sha, "size": size, "last_modified": modified}
+            # Offline archive diagnostic: names only, never publish advisory contents.
+            with zipfile.ZipFile(directory / "all.zip") as archive:
+                names = archive.namelist()
+                target = ("GHSA-p6mc-m468-83gw" if ecosystem == "npm"
+                          else "GHSA-x84v-xcm2-53pg")
+                out(step="db_archive_inspection", ecosystem=ecosystem,
+                    is_zip=True, entries=len(names),
+                    target_advisory_filename_present=any(target in item for item in names))
         out(step="db_acquired", at_utc=datetime.now(timezone.utc).isoformat(),
             metadata=metadata, db_snapshot_verified=False)
         # OSV v2's local DB extractor creates cache entries under its DB root.
@@ -221,6 +230,12 @@ def main():
                 all_ok = False
                 continue
             ok = detected is expected and entries >= 1
+            if lock == "package-lock.json":
+                diag = scan.stderr.decode("utf-8", errors="replace")
+                diag = "".join(ch if ch.isprintable() else " " for ch in diag)[:500]
+                diag = re.sub(r"/(?:[A-Za-z0-9._-]+/)+[A-Za-z0-9._-]*", "<path>", diag)
+                out(step="npm_scanner_diagnostic", case=name, stderr_hint=diag,
+                    stderr_bytes=len(scan.stderr))
             all_ok &= ok
             out(step="scan", case=name, ecosystem="PyPI" if lock == "uv.lock" else "npm",
                 version=version, target_advisory_detected=detected,
