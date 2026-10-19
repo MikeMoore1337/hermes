@@ -1,0 +1,24 @@
+name: H-22 temporary Second Brain public-only OSV pilot
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - scripts/h22_second_brain_temporary.py
+      - .github/workflows/h22-second-brain-temporary.yml
+
+permissions:
+  contents: read
+
+jobs:
+  public-only-offline:
+    if: github.head_ref == 'experiment/h22-second-brain-public-scan'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Read repo with no persisted credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Public Second Brain lockfile-only, Docker network-none
+        run: python3 scripts/h22_second_brain_temporary.py
