@@ -62,6 +62,17 @@ class H15DependencyFixTests(unittest.TestCase):
             with self.assertRaisesRegex(AuditError, "unsafe_pnpm_workspace"):
                 apply(self.root)
 
+    def test_offline_patch_bundle_includes_lock_and_workspace(self):
+        root = Path(__file__).resolve().parents[1]
+        workflow = (root / ".github/workflows/h15-remote-commander-candidate.yml").read_text()
+        start = workflow.index("      - name: Build verified offline patch bundle")
+        end = workflow.index("      - name: Preserve owner-selfhosted MIT fork patch artifact", start)
+        section = workflow[start:end]
+        self.assertIn("          pnpm-lock.yaml\\n", section)
+        self.assertIn("          pnpm-workspace.yaml\\n", section)
+        self.assertIn('git -C "$replay" apply --check "$bundle/hermes-brc.patch"', section)
+        self.assertIn('cmp "$bundle/hermes-brc.patch" "$RUNNER_TEMP/replayed-brc.patch"', section)
+
     def test_pnpm_lock_must_contain_only_patched_versions(self):
         (self.root / "pnpm-workspace.yaml").write_text(PATCHED)
         path = self.root / "pnpm-lock.yaml"
