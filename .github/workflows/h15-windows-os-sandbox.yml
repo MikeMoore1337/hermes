@@ -1,0 +1,45 @@
+name: H-15 Windows native OS ACL isolation (CI only)
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - scripts/h15_windows_os_sandbox_e2e.ps1
+      - .github/workflows/h15-windows-os-sandbox.yml
+      - docs/operations/H-15-SELFHOSTED-REMOTE-MCP.md
+
+permissions:
+  contents: read
+
+jobs:
+  localservice-kernel-acl:
+    # Never run privileged local Windows Task Scheduler tests on fork code.
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: windows-2022
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Parse script as Windows PowerShell 5.1 without executing
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $errors = $null
+          $tokens = $null
+          $p = (Resolve-Path scripts/h15_windows_os_sandbox_e2e.ps1).Path
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            $p, [ref]$tokens, [ref]$errors
+          )
+          if ($errors.Count -ne 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            throw 'WINDOWS_NATIVE_SANDBOX_PARSE_FAILED'
+          }
+          Write-Output 'WINDOWS_NATIVE_SANDBOX_PARSE=PASS'
+      - name: Real Windows LocalService child PowerShell kernel ACL denials
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\scripts\h15_windows_os_sandbox_e2e.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'WINDOWS_NATIVE_ACL_NONZERO' }
+          Write-Output 'WINDOWS_NATIVE_OS_CI=PASS'
