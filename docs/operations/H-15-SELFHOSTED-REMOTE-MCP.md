@@ -382,6 +382,10 @@ The next isolated acceptance stage creates a private Docker
 `--internal` network with **no host-published ports**.
 The hardened, source-pinned BRC relay runs as UID 65534 with a
 throwaway SQLite DB and random test-only OAuth session secrets.
+The synthetic OAuth client executes inside the relay container against
+`http://localhost:3000`, the OAuth SDK's local-only HTTP exception;
+agents connect over the internal Docker DNS alias. A public client
+MUST use an approved TLS/HTTPS issuer and is not enabled here.
 A helper issues exactly two new dummy device tokens in that
 ephemeral DB, then starts two real compiled `brc-agent`
 processes in **separate non-root, read-only, no-capability
