@@ -127,7 +127,7 @@ def _database(path: Path) -> tuple[int, str]:
 def assess(binary: Path, db_root: Path, lockfile: Path) -> dict:
     ecosystem, packages, lock_sha = _lockfile(lockfile)
     _binary(binary)
-    db = db_root / "osv-scanner" / ecosystem / "all.zip"
+    db = db_root / "osv-scalibr" / ecosystem / "all.zip"
     entries, db_sha = _database(db)
     return {
         "status": "INCONCLUSIVE",
