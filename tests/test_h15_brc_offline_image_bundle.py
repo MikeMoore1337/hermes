@@ -22,6 +22,17 @@ class OfflineBundleTests(unittest.TestCase):
         self.payload.write_bytes(b"offline-only-ci-dummy-byte-stream")
         self.sbom = self.root / "sbom.cdx.json"
         self.sbom.write_text(json.dumps({"bomFormat": "CycloneDX", "components": [{"name": "pkg"}]}))
+        self.os_sbom = self.root / "os-packages.cdx.json"
+        self.os_sbom.write_text(json.dumps({
+            "bomFormat": "CycloneDX", "specVersion": "1.5",
+            "metadata": {"component": {"type": "container", "version": self.image_id}},
+            "components": [
+                {"type": "library", "bom-ref": f"pkg:deb/debian/lib{i}@1?arch=amd64",
+                 "purl": f"pkg:deb/debian/lib{i}@1?arch=amd64",
+                 "name": f"lib{i}", "version": "1"}
+                for i in range(40)
+            ],
+        }))
         self.receipt = self.root / "OCI_RECEIPT.json"
         self.receipt.write_text(json.dumps({
             "status": "CI_IMAGE_VERIFIED_NOT_DEPLOYABLE",
@@ -57,11 +68,42 @@ class OfflineBundleTests(unittest.TestCase):
         self.assertFalse(result["production_mcp_enabled"])
         self.assertEqual(result["status"], "OFFLINE_IMAGE_EXPORT_NOT_DEPLOYED")
 
+    def test_legacy_v1_bundle_remains_verifiable_without_os_bom(self):
+        self.create_and_verify()
+        path = self.root / "IMAGE_BUNDLE.json"
+        manifest = json.loads(path.read_text())
+        manifest["schema"] = 1
+        manifest.pop("os_sbom_sha256")
+        manifest.pop("os_package_count")
+        path.write_text(json.dumps(manifest))
+        self.os_sbom.unlink()
+        restored = verify(directory=self.root, expected_archive_sha=self.archive_sha,
+                          expected_image_id=self.image_id,
+                          expected_hermes_sha=self.hermes_sha)
+        self.assertEqual(restored["schema"], 1)
+        self.assertNotIn("os_package_count", restored)
+
     def test_reject_mismatched_independent_hash(self):
         build(directory=self.root, inspect=self.inspect)
         with self.assertRaisesRegex(BundleDenied, "manifest_independent_pin_mismatch"):
             verify(directory=self.root, expected_archive_sha="f" * 64,
                    expected_image_id=self.image_id, expected_hermes_sha=self.hermes_sha)
+
+    def test_reject_modified_os_sbom(self):
+        self.create_and_verify()
+        doc = json.loads(self.os_sbom.read_text())
+        doc["components"][0]["version"] = "fake"
+        self.os_sbom.write_text(json.dumps(doc))
+        with self.assertRaisesRegex(BundleDenied, "bundle_payload_digest_mismatch"):
+            verify(directory=self.root, expected_archive_sha=self.archive_sha,
+                   expected_image_id=self.image_id, expected_hermes_sha=self.hermes_sha)
+
+    def test_reject_os_sbom_with_wrong_image_id(self):
+        data = json.loads(self.os_sbom.read_text())
+        data["metadata"]["component"]["version"] = "sha256:" + "f" * 64
+        self.os_sbom.write_text(json.dumps(data))
+        with self.assertRaisesRegex(BundleDenied, "unverified_os_package_inventory"):
+            build(directory=self.root, inspect=self.inspect)
 
     def test_reject_modified_archive(self):
         self.create_and_verify()
