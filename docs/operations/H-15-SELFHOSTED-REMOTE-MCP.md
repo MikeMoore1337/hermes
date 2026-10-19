@@ -485,6 +485,89 @@ agent-specific shell/file boundaries. A distinct owner signoff is
 needed before allowing inbound ChatGPT MCP or any real command
 agent enrollment. Do not couple such a change to this offline stage.
 
+### Portable verified OCI image delivery (CI to offline Linux host)
+
+The original stage requires a **previously loaded exact Docker image ID**;
+a GitHub source patch or build log is not itself such an image.
+The pinned candidate workflow now exports the **actual tested**
+`linux/amd64` BRC relay Docker image into a compressed
+`h15-brc-relay-offline-oci-amd64` GitHub Actions artifact after
+the real OAuth→two-agent→MCP file/shell E2E, native Windows ACL,
+Linux sandbox, and OCI/SBOM validations have succeeded.
+The artifact contains:
+
+- `brc-relay.docker.tar.zst` — `docker image save` output
+  compressed with zstd; no registry publication.
+- `OCI_RECEIPT.json` and `sbom.cdx.json` — prior source/audit and
+  CycloneDX dependency records.
+- `IMAGE_BUNDLE.json` and `SHA256SUMS` — exact image ID, platform
+  `linux/amd64`, Hermes commit, immutable upstream SHA and content
+  checksums.
+
+In CI the archive is verified, the existing tested image tag is
+removed, and the archive is **loaded back through Docker**. CI
+requires its actual image ID to be identical to the original
+before repeating `stage-relay.sh start → smoke → rollback`.
+This is a real offline import smoke test, not an assumption that
+a tar file can be used.
+
+For a future *owner-approved*, no-network trial on a compatible
+`linux/amd64` host:
+
+1. Download the named archive from the **exact trusted GitHub Actions
+   run**, not a mirror. Artifacts have a **three-day retention
+   window** to limit CI storage usage.
+2. Independently copy all three pins from the GitHub Actions step
+   summary: `H15_BRC_OFFLINE_ARCHIVE_SHA256`,
+   `H15_BRC_OFFLINE_IMAGE_ID`, `H15_BRC_OFFLINE_SOURCE_SHA`.
+   **Never accept all pins solely from the artifact being checked**:
+   a forged archive could forge its own manifest and checksums.
+3. Extract the GitHub Actions artifact into a private local directory
+   without trusting any executable scripts inside it. Use the
+   canonical `deploy/h15/load-verified-image.sh` from the reviewed
+   Hermes repository.
+
+```bash
+BUNDLE=/root/h15-reviewed-image-artifact
+ARCHIVE_SHA=PUT_THE_64_HEX_GITHUB_ACTIONS_ARCHIVE_SHA_HERE
+IMAGE_ID=sha256:PUT_THE_64_HEX_GITHUB_ACTIONS_IMAGE_ID_HERE
+HERMES_SHA=PUT_THE_40_HEX_APPROVED_SOURCE_COMMIT_HERE
+
+# Hash/source/receipt verification does not require root or Docker:
+bash deploy/h15/load-verified-image.sh verify \
+  "$BUNDLE" "$ARCHIVE_SHA" "$IMAGE_ID" "$HERMES_SHA"
+
+# This command changes only the local Docker image store, not services:
+sudo bash deploy/h15/load-verified-image.sh load \
+  "$BUNDLE" "$ARCHIVE_SHA" "$IMAGE_ID" "$HERMES_SHA"
+
+# This is a separate optional offline-only staging action. Existing
+# production services, paired presence agents and host ports stay untouched.
+sudo bash deploy/h15/stage-relay.sh preflight "$IMAGE_ID"
+sudo bash deploy/h15/stage-relay.sh start "$IMAGE_ID"
+sudo bash deploy/h15/stage-relay.sh smoke
+sudo bash deploy/h15/stage-relay.sh rollback
+```
+
+`load-verified-image.sh` fails closed for mutable tags, mismatched
+independent archive/source/image pins, unexpected or symlinked files,
+altered or unapproved OCI receipts, wrong architecture, missing
+zstd, and bad compressed streams **before** invoking Docker load.
+After load, it rechecks the image ID, non-root identity, architecture
+and approved upstream revision. There is **no** `docker run`,
+network pull, new key, systemd change or device registration in the
+loader. The separate offline stage still has no network and no host
+mounts. Real VPS availability, local free resources and host-level
+image import remain unverified until an owner-approved live trial.
+
+**Security scope:** The archive SHA proves byte identity against
+the value independently observed in GitHub Actions. It does not
+constitute a cryptographically signed provenance attestation, and
+the CycloneDX file covers pnpm dependencies rather than every OS
+package. Public release, HTTPS/OAuth, scoped native host agents,
+backup, data retention and actual ChatGPT tool calls remain blocked
+by the separate production acceptance gates.
+
 ## Target deployment (not yet activated)
 
 ```text
