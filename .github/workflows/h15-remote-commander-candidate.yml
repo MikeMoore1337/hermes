@@ -20,8 +20,10 @@ on:
       - scripts/h15_brc_sandbox_linux_e2e.mjs
       - scripts/h15_brc_oci_relay_smoke.mjs
       - scripts/h15_brc_oci_receipt.py
+      - scripts/h15_brc_offline_image_bundle.py
       - deploy/h15/Dockerfile.brc-relay
       - deploy/h15/stage-relay.sh
+      - deploy/h15/load-verified-image.sh
       - tests/test_h15_remote_commander_candidate_audit.py
       - tests/test_h15_brc_apply_policy_patch.py
       - tests/test_h15_brc_harden_relay.py
@@ -31,6 +33,7 @@ on:
       - tests/test_h15_brc_oci_relay_contract.py
       - tests/test_h15_brc_oci_receipt.py
       - tests/test_h15_brc_offline_stage.py
+      - tests/test_h15_brc_offline_image_bundle.py
       - docs/operations/H-15-SELFHOSTED-REMOTE-MCP.md
       - .github/workflows/h15-remote-commander-candidate.yml
 
@@ -53,7 +56,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m unittest -v tests.test_h15_remote_commander_candidate_audit tests.test_h15_brc_apply_policy_patch tests.test_h15_brc_harden_relay tests.test_h15_brc_harden_gateway tests.test_h15_brc_harden_reconnect tests.test_h15_brc_harden_browser_csrf tests.test_h15_brc_oci_relay_contract tests.test_h15_brc_oci_receipt tests.test_h15_brc_offline_stage
+          python3 -m unittest -v tests.test_h15_remote_commander_candidate_audit tests.test_h15_brc_apply_policy_patch tests.test_h15_brc_harden_relay tests.test_h15_brc_harden_gateway tests.test_h15_brc_harden_reconnect tests.test_h15_brc_harden_browser_csrf tests.test_h15_brc_oci_relay_contract tests.test_h15_brc_oci_receipt tests.test_h15_brc_offline_stage tests.test_h15_brc_offline_image_bundle
 
       - name: Fetch exact upstream Git commit (not tag, latest or npm install)
         shell: bash
@@ -377,6 +380,62 @@ jobs:
           path: ${{ runner.temp }}/h15-brc-oci-evidence/
           if-no-files-found: error
           retention-days: 14
+
+      - name: Export real vetted relay OCI image as independently pinned offline archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v zstd >/dev/null || { echo 'ZSTD_REQUIRED_FOR_FREE_OFFLINE_EXPORT'; exit 1; }
+          image="hermes-brc-relay-eval:${GITHUB_SHA:0:12}"
+          bundle="$RUNNER_TEMP/h15-brc-verified-offline-image"
+          mkdir -p "$bundle"
+          # The image passed all full OAuth/MCP, native two-device and sandbox
+          # tests before this artifact can be created.
+          image_id="$(docker image inspect --format '{{.Id}}' "$image")"
+          test "$(docker image inspect --format '{{.Architecture}}' "$image")" = amd64
+          cp "$RUNNER_TEMP/h15-brc-oci-evidence/OCI_RECEIPT.json" "$bundle/"
+          cp "$RUNNER_TEMP/h15-brc-oci-evidence/sbom.cdx.json" "$bundle/"
+          docker image inspect "$image" > "$RUNNER_TEMP/h15-brc-export-inspect.json"
+          docker image save "$image" | zstd -T2 -3 -q -o "$bundle/brc-relay.docker.tar.zst"
+          zstd -tq "$bundle/brc-relay.docker.tar.zst"
+          python3 "$GITHUB_WORKSPACE/scripts/h15_brc_offline_image_bundle.py" build \
+            --directory "$bundle" \
+            --inspect "$RUNNER_TEMP/h15-brc-export-inspect.json"
+          archive_sha="$(sha256sum "$bundle/brc-relay.docker.tar.zst" | awk '{print $1}')"
+          bash "$GITHUB_WORKSPACE/deploy/h15/load-verified-image.sh" \
+            verify "$bundle" "$archive_sha" "$image_id" "$GITHUB_SHA"
+          (
+            cd "$bundle"
+            sha256sum brc-relay.docker.tar.zst OCI_RECEIPT.json sbom.cdx.json IMAGE_BUNDLE.json > SHA256SUMS
+            sha256sum --check SHA256SUMS
+          )
+          # Verify the exported artifact is an actual loadable image, rather
+          # than trusting only metadata or hashes of a non-working tar.
+          docker image rm "$image" >/dev/null
+          sudo bash "$GITHUB_WORKSPACE/deploy/h15/load-verified-image.sh" \
+            load "$bundle" "$archive_sha" "$image_id" "$GITHUB_SHA"
+          test "$(docker image inspect --format '{{.Id}}' "$image")" = "$image_id"
+          # Rehearse staging again from the IMPORTED image, not just the build.
+          script="$GITHUB_WORKSPACE/deploy/h15/stage-relay.sh"
+          trap 'sudo bash "$script" rollback >/dev/null 2>&1 || true' EXIT
+          sudo bash "$script" start "$image_id"
+          sudo bash "$script" smoke
+          sudo bash "$script" rollback
+          trap - EXIT
+          echo "H15_BRC_OFFLINE_IMAGE_EXPORT_IMPORT=PASS" >> "$GITHUB_STEP_SUMMARY"
+          echo "H15_BRC_OFFLINE_ARCHIVE_SHA256=$archive_sha" >> "$GITHUB_STEP_SUMMARY"
+          echo "H15_BRC_OFFLINE_IMAGE_ID=$image_id" >> "$GITHUB_STEP_SUMMARY"
+          echo "H15_BRC_OFFLINE_SOURCE_SHA=$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+          echo "H15_BRC_OFFLINE_IMAGE_PLATFORM=linux/amd64" >> "$GITHUB_STEP_SUMMARY"
+          echo "H15_BRC_OFFLINE_IMAGE_OWNER_VPS_MODIFIED=NO" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish sealed OCI transfer archive for optional owner offline stage
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: h15-brc-relay-offline-oci-amd64
+          path: ${{ runner.temp }}/h15-brc-verified-offline-image/
+          if-no-files-found: error
+          retention-days: 3
 
       - name: Build verified offline patch bundle for an owner-maintained MIT fork
         shell: bash
