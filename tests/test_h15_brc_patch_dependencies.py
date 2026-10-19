@@ -118,7 +118,6 @@ class H15DependencyFixTests(unittest.TestCase):
         fixed = (
             "  '@modelcontextprotocol/sdk@1.31.0':\n"
             "  proxy-addr@2.0.8:\n"
-            "  undici@6.28.1:\n"
             "  sharp@0.35.5:\n"
             "  brace-expansion@1.1.21:\n"
             "  brace-expansion@2.1.7:\n"
