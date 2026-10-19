@@ -85,7 +85,8 @@ def validate_lock(root: Path) -> None:
 
     for key, version in EXPECTED_VERSIONS.items():
         if not has_key(key, version):
-            raise AuditError("fixed_version_absent")
+            # Keys originate only from this checked-in static allowlist.
+            raise AuditError("fixed_version_absent_" + key.replace("@", "").replace("/", "_"))
     for version in BRACE_FIXED:
         if not has_key("brace-expansion", version):
             raise AuditError("fixed_brace_expansion_branch_absent")
