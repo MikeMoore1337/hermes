@@ -228,18 +228,14 @@ git init brc-hermes && cd brc-hermes
 git remote add upstream https://github.com/shahidx0x/better-remote-commander.git
 git fetch --no-tags upstream cbe511702dd0147650353c29ac6ab1decd8afda1
 git checkout --detach FETCH_HEAD
-sha256sum -c /path/to/artifact/SHA256SUMS
+(cd /path/to/artifact && sha256sum -c SHA256SUMS)
 git apply --check /path/to/artifact/hermes-brc.patch
 git apply /path/to/artifact/hermes-brc.patch
-corepack pnpm install --frozen-lockfile
-corepack pnpm build
-corepack pnpm test
+npm install --global pnpm@11.24.0
+pnpm install --frozen-lockfile
+pnpm build
+pnpm test
 ```
-
-The `sha256sum -c` command must run **from the artifact directory**
-(or with all files available at matching relative paths); the example
-should be adjusted to `(cd /path/to/artifact && sha256sum -c SHA256SUMS)`
-when rebuilding in a separate checkout.
 
 **Not yet an independently hosted GitHub fork or a runnable production
 image**. It is a reproducible, license-preserving patchset, not a
