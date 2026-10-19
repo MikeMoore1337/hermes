@@ -17,6 +17,9 @@ on:
       - scripts/h15_brc_two_wss_agents_e2e.mjs
       - scripts/h15_brc_two_native_provision.mjs
       - scripts/h15_brc_two_native_oauth_mcp_e2e.mjs
+      - scripts/h15_brc_zero_device_oauth_pilot.mjs
+      - deploy/h15/run-zero-device-oauth-pilot.sh
+      - tests/test_h15_brc_zero_device_oauth_pilot.py
       - scripts/h15_brc_sandbox_linux_e2e.mjs
       - scripts/h15_brc_oci_relay_smoke.mjs
       - scripts/h15_brc_oci_receipt.py
@@ -280,6 +283,12 @@ jobs:
             --volume "$GITHUB_WORKSPACE/scripts/h15_brc_oci_relay_smoke.mjs:/opt/brc/oci-relay-smoke.mjs:ro" \
             "$image" >/dev/null
           docker exec "$container" node /opt/brc/oci-relay-smoke.mjs
+          # OAuth-only PKCE/refresh/replay tests on the exact built image,
+          # zero devices, no MCP tool calls, no public traffic.
+          docker exec -i "$container" node --input-type=module - \
+            < "$GITHUB_WORKSPACE/scripts/h15_brc_zero_device_oauth_pilot.mjs"
+          echo "H15_CI_ZERO_DEVICE_OAUTH_PKCE=PASS" >> "$GITHUB_STEP_SUMMARY"
+          echo "H15_CI_OAUTH_DEVICE_COMMANDS=NONE" >> "$GITHUB_STEP_SUMMARY"
           # Strictly no published host ports and no outbound network.
           test -z "$(docker port "$container")"
           test "$(docker inspect --format '{{.HostConfig.NetworkMode}}' "$container")" = "none"
