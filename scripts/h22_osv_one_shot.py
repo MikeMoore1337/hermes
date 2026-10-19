@@ -105,7 +105,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix="h22-ephemeral-") as name:
         root = Path(name)
         binary = root / "osv-scanner"
-        db = root / "db" / "osv-scanner"
+        db = root / "db" / "osv-scalibr"
         fixtures = root / "fixtures"
         fixtures.mkdir()
         db.mkdir(parents=True)
