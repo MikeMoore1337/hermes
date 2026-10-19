@@ -1,6 +1,11 @@
 :root{font-family:Inter,"Segoe UI",Arial,sans-serif;color:#eaf1ff;background:#050c16;font-synthesis:none;text-rendering:optimizeLegibility;-webkit-font-smoothing:antialiased;--bg:#060d18;--surface:#0b1625;--raised:#101f32;--panel:#0b192a;--line:#214163;--line-dim:#1a314c;--blue:#4599ff;--soft:#91b6e7;--muted:#9aaac4;--white:#f2f6ff;--good:#65d3b0;--warn:#f6c06c;--bad:#ff7785}
 *{box-sizing:border-box}body{margin:0}button,input,select{font:inherit}button{cursor:pointer}a{color:var(--blue);text-decoration:none}a:hover{text-decoration:underline}button:focus-visible,a:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid #76b4ff;outline-offset:3px}
 .sr-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;border:0;overflow:hidden;clip:rect(0,0,0,0)}
+/* #179: keyboard-only bypass block; preserves existing Atlas palette and layout. */
+/* Keep the keyboard-only bypass outside the header so it never covers the logo or navigation. */
+.skip-link{position:absolute;z-index:2000;top:-120px;left:12px;padding:11px 15px;border:2px solid #76b4ff;border-radius:6px;background:#0b1c32;color:#eaf1ff;font-size:13px;font-weight:600}
+.skip-link:focus-visible{position:relative;top:auto;left:auto;width:max-content;max-width:calc(100% - 24px);margin:8px 12px;color:#fff;outline:2px solid #76b4ff;outline-offset:2px}
+
 .shell{min-height:100vh;display:flex;flex-direction:column;background:radial-gradient(ellipse at 67% -10%,#0b2a50 0%,transparent 34%),var(--bg)}
 .site-header{height:88px;display:flex;gap:22px;align-items:center;border-bottom:1px solid #173454;background:#06111ef0;padding:0 24px;flex-shrink:0}
 .brand{display:flex;align-items:center;gap:9px;min-width:max-content}.brand img{width:125px;height:65px;object-fit:contain;mix-blend-mode:normal}.brand-text{display:grid;gap:3px}.brand-text strong{font-family:Georgia,serif;font-size:21px;font-weight:500;letter-spacing:5px;color:#f0f3fe}.brand-text small{font-size:9px;letter-spacing:4px;color:#7bb8fa}

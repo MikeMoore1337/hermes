@@ -120,3 +120,12 @@ jobs:
           path: docs/ux/evidence/h15-ai-analytics/analytics-*.png
           if-no-files-found: ignore
           retention-days: 7
+
+      - name: Attach H-15 #179 skip-navigation keyboard evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: h15-skip-link-keyboard-before-after
+          path: docs/ux/evidence/h15-skip-link/*.png
+          if-no-files-found: ignore
+          retention-days: 7
