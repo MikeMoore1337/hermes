@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 import subprocess
+import re
 import sys
 
 from scripts.h15_remote_commander_candidate_audit import AuditError, UPSTREAM_SHA
@@ -67,15 +68,20 @@ def validate_lock(root: Path) -> None:
     raw = lock.read_text(encoding="utf-8")
     if not 3000 < len(raw) < 2_000_000:
         raise AuditError("unexpected_lockfile_length")
+    # pnpm YAML quotes scoped package keys (e.g. '@scope/name@1.31.0':)
+    # while unscoped keys can remain bare (proxy-addr@2.0.8:).
+    def has_key(name: str, version: str) -> bool:
+        key = re.escape(name + "@" + version)
+        return re.search(r"(?m)^  ['\\\"]?" + key + r"['\\\"]?:", raw) is not None
+
     for key, version in EXPECTED_VERSIONS.items():
-        new = key + "@" + version + ":"
-        if new not in raw:
+        if not has_key(key, version):
             raise AuditError("fixed_version_absent")
     for key, old in (
         ("@modelcontextprotocol/sdk", "1.30.0"),
         ("proxy-addr", "2.0.7"),
     ):
-        if key + "@" + old + ":" in raw:
+        if has_key(key, old):
             raise AuditError("vulnerable_version_remains")
     if (root / WORKSPACE).read_text(encoding="utf-8") != PATCHED:
         raise AuditError("dependency_override_missing")
