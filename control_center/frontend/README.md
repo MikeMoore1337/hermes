@@ -2,7 +2,7 @@
 
 Owner visual target (2026-10-16): C+B Atlas as the only main dashboard layout, using C+A sans-serif typography, and premium winged-H GitHub login page. The current OAuth start screen is explicitly a **preview**, not authentication.
 
-Для разработки и проверки новых экранов используйте [протокол UI evidence](../../../docs/ux/control-center-ui-evidence.md) и тест `qa/visual-evidence.spec.js`: он покрывает отрисованные состояния на синтетике, не требует production OAuth и не подменяет реальную проверку владельцем.
+Для разработки и проверки новых экранов используйте [протокол UI evidence](../../docs/ux/control-center-ui-evidence.md) и тест `qa/visual-evidence.spec.js`: он покрывает отрисованные состояния на синтетике, не требует production OAuth и не подменяет реальную проверку владельцем.
 
 ## Development
 
