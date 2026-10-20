@@ -146,7 +146,7 @@ class H01OpsContractTests(unittest.TestCase):
         timer = (root / "deploy/hermes-h01-ops-agent.timer").read_text(encoding="utf-8")
 
         def seconds(key, content, suffix=""):
-            match = re.search(rf"^{key}=(\\d+){suffix}$", content, re.MULTILINE)
+            match = re.search(rf"^{key}=(\d+){suffix}$", content, re.MULTILINE)
             self.assertIsNotNone(match, key)
             return int(match.group(1))
 
