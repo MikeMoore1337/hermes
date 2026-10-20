@@ -49,6 +49,15 @@ class PresenceTlsPreflightTests(unittest.TestCase):
         with self.assertRaisesRegex(PreflightError, "VERIFICATION_FAILED"):
             check(self.leaf, self.ca, self.key)
 
+    def test_cn_fallback_without_san_is_rejected(self) -> None:
+        root = self.leaf.parent
+        csr = root / "leaf.csr"
+        bare = root / "cn-only.pem"
+        openssl("x509", "-req", "-in", str(csr), "-CA", str(self.ca), "-CAkey",
+                str(self.ca_key), "-CAcreateserial", "-out", str(bare), "-days", "4")
+        with self.assertRaisesRegex(PreflightError, "SAN_MISSING"):
+            check(self.ca, bare, self.key)
+
     def test_different_private_key_is_rejected(self) -> None:
         other = self.key.parent / "other.key"
         openssl("genpkey", "-algorithm", "RSA", "-out", str(other),
