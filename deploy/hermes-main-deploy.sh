@@ -154,7 +154,7 @@ isolated_python scripts/check_markdown_links.py || die "markdown links failed"
 isolated_python -m unittest discover -s tests -q > "$work/tests.log" 2>&1 || {
   grep -E '^(FAIL:|ERROR:|FAILED|Ran [0-9]+ tests|OK( |$))' "$work/tests.log" |
     tail -20 >&2 || :
-  tail -3 "$work/tests.log" | sed -E 's/[^[:print:]]/?/g' >&2
+  echo "OFFLINE_UNIT_SUITE_FAILED_OR_TIMED_OUT" >&2
   die "non-root offline tests failed"
 }
 # WSS integration tests use a separate pinned CI venv; the isolated host
