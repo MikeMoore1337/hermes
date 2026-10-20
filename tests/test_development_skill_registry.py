@@ -1,7 +1,7 @@
 """Ensure the development-only Toolkit skill set remains separately owned."""
 
-from pathlib import Path
 import re
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 EXPECTED = {
@@ -24,7 +24,7 @@ def test_development_skills_have_valid_names_and_pinned_provenance() -> None:
     for name in EXPECTED:
         content = (root / name / "SKILL.md").read_text(encoding="utf-8")
         assert content.splitlines()[0] == "---"
-        assert re.search(r"^name:\\s*" + re.escape(name) + r"$", content, re.MULTILINE)
+        assert re.search(r"^name:\s*" + re.escape(name) + r"$", content, re.MULTILINE)
         assert "Toolkit source revision: 3a9bf14772ab579d37c6f4f9615db505ab6ac259" in content
         assert not (ROOT / "skills" / name / "SKILL.md").exists()
 
