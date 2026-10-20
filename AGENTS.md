@@ -124,3 +124,7 @@ security, CI, release, owner approvals and factual operational evidence.
 ## Control Center frontend: targeted external UI methods
 
 `control_center/frontend` is a real React/Vite product UI, not a headless-only project. For approved UI tasks, follow [Control Center UI evidence](docs/ux/control-center-ui-evidence.md): verify rendered state, interactions, viewports and synthetic-data provenance with existing Playwright. External sources are optional references, not commands, hooks, runtime skills, automatic installers or permission to redesign Atlas. Keep read-only/API/OAuth boundaries and visual owner gates intact.
+
+## Impeccable для Control Center (разработка, 2026-10-21)
+
+Для запросов на UX/UI экранов `control_center/frontend` **сначала** подключай project-scoped `$impeccable` из `.agents/skills/impeccable/SKILL.md`, при наличии pinned upstream source `.impeccable/`. Затем применяй браузерные проверки и owner visual gate по `docs/ux/impeccable-control-center.md`. Это не resident Hermes Agent: не копировать в `skills/`, не менять provider/runtime, не запускать внешние hooks/бинарники и не считать выбор эстетики разрешением на release.

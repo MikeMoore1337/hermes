@@ -7,7 +7,7 @@ Issue #440. Control Center **уже существует** как React 19/Vite 
 | Задача | Внешняя идея | Собственный инструмент | Решение |
 |---|---|---|---|
 | Визуальная проверка | `daymade/frontend-visual-qa`: захват конкретных состояний и размеров | `qa/accessibility.spec.js`, `qa/control-center.spec.js`, `qa/visual-evidence.spec.js` | Внедряем воспроизводимые Playwright evidence attachments, только синтетика |
-| Критика интерфейса | `pbakaus/impeccable`, `ibelick/ui-skills` | текущий Atlas C+B / C+A, UI QA | Справка при конкретном дефекте, не новый дизайн, не хуки |
+| Критика интерфейса | `pbakaus/impeccable` (теперь включён как development-only source в `.impeccable/`, см. `impeccable-control-center.md`), `ibelick/ui-skills` | текущий Atlas C+B / C+A, UI QA | Impeccable - основной критик в Codex для конкретного UI-дефекта; не новый дизайн, не hooks |
 | Анимация/производительность | `iart-ai/web-animation-skills`, `LottieFiles/motion-design-skill` | CSS + `prefers-reduced-motion`, accessibility tests | Проверять функциональную обратную связь и кадры, только при изменении motion |
 | React-компоненты | `shadcn-ui/ui`, `starc007/ui-components`, `motiondivision/motion` | существующие React/CSS и Lucide | Без новых зависимостей до подтверждённого пробела; отдельный прототип |
 | Исследования | `199-biotechnologies/claude-deep-research-skill` | `research_scout`, `research-verification` | Переносить методы атрибуции/проверки утверждений отдельно, без поисковых API и оркестратора |
@@ -30,5 +30,5 @@ Issue #440. Control Center **уже существует** как React 19/Vite 
 ## Границы
 
 - `AGENTS.md`, право владельца на визуальное утверждение, H-15 и политика read-only имеют приоритет над внешними советами. Никаких изменений `skills/`, `systemd`, провайдеров, серверных путей или продакшн-деплоя.
-- Не устанавливать всё из Superpowers/Impeccable/Taste, не запускать сторонние hooks/CLI, не добавлять платные API. Сначала фактический дефект, потом точечный метод.
+- Вместо установки множества навыков подключён только pinned исходник Impeccable как git submodule для Codex; не выполнять его сторонние hooks/CLI, не добавлять платные API. Сначала фактический дефект, потом точечный метод.
 - Источники - ссылки для самостоятельной проверки, **не копии файлов**: https://github.com/daymade/claude-code-skills/tree/main/frontend-visual-qa ; https://github.com/pbakaus/impeccable ; https://github.com/ibelick/ui-skills ; https://github.com/iart-ai/web-animation-skills ; https://github.com/vercel-labs/agent-browser.

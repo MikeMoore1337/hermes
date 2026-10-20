@@ -11,7 +11,11 @@
 | Исследовательский источник, научные новости | `research-verification` |
 | Версии API, JSON/events и интеграции YFC/Second Brain | `contract-testing` |
 | Затронутые компоненты/расписания/тесты | `change-impact-analysis` |
+| UX/UI Control Center (основная критика дизайна и полировка) | `impeccable` (pinned upstream, только разработка) |
 | Browser/Control Center сценарий | `browser-workflow-evidence` |
 | Проверка уже разрешённого выпуска | `release-safety` |
 
 Загружай только необходимые в задаче навыки, обычно 1-2; роли, controller и копии состояния не создаются. Текущий `skills/` - отдельная потенциальная runtime-поверхность и остаётся неизменным. Ни один из этих документов не активирует агента, не даёт токены, не исполняет команды и не разрешает платные API, production, публикацию или доступ к чужому vault. Для изменений с последствиями нужен самостоятельный Issue/CI/owner gate.
+
+
+Impeccable source доступен только после инициализации Git-подмодуля `.impeccable` (см. `../docs/ux/impeccable-control-center.md`). Это не runtime Hermes Agent и не новый разрешённый бинарник. Existing source Toolkit skills и owner approval первичны.
