@@ -3,7 +3,9 @@ Description=Hermes H-01 Ops AI analysis when verified incidents need context
 Documentation=https://github.com/MikeMoore1337/hermes/issues/33
 
 [Timer]
-OnActiveSec=35min
+# One periodic trigger: OnActiveSec in combination with OnUnitInactiveSec
+# caused 13-minute double starts and StartLimitBurst=2 rejection in production.
+# Keep this exact cadence aligned with the owner-applied 2026-10-19 fix.
 OnUnitInactiveSec=35min
 RandomizedDelaySec=3min
 Persistent=false
