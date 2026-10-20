@@ -18,6 +18,7 @@ import socket
 import ssl
 import stat
 import subprocess
+import time
 from typing import Callable
 
 from scripts.h15_presence_tls_preflight import PreflightError, check
@@ -179,17 +180,23 @@ def _switch(paths: RotationPaths, name: str, pointer: str = "active") -> None:
 def _probe(*, ca: Path, leaf: Path, port: int = PORT, hostname: str = "localhost") -> bool:
     ctx = ssl.create_default_context(cafile=str(ca))
     ctx.check_hostname = True
-    try:
-        with socket.create_connection(("127.0.0.1", port), timeout=3) as sock:
-            with ctx.wrap_socket(sock, server_hostname=hostname) as channel:
-                actual = channel.getpeercert(binary_form=True)
-                expected = subprocess.run(
-                    ["openssl", "x509", "-in", str(leaf), "-outform", "DER"],
-                    capture_output=True, check=True, timeout=3,
-                ).stdout
-                return channel.version() in ("TLSv1.2", "TLSv1.3") and actual == expected
-    except (OSError, ssl.SSLError, TimeoutError, subprocess.SubprocessError):
-        return False
+    # systemctl can mark a simple process active before it binds the port.
+    # Retry transport startup briefly, never a mismatched TLS identity.
+    for attempt in range(3):
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=3) as sock:
+                with ctx.wrap_socket(sock, server_hostname=hostname) as channel:
+                    actual = channel.getpeercert(binary_form=True)
+                    expected = subprocess.run(
+                        ["openssl", "x509", "-in", str(leaf), "-outform", "DER"],
+                        capture_output=True, check=True, timeout=3,
+                    ).stdout
+                    return channel.version() in ("TLSv1.2", "TLSv1.3") and actual == expected
+        except (OSError, ssl.SSLError, TimeoutError, subprocess.SubprocessError):
+            if attempt == 2:
+                return False
+            time.sleep(0.4)
+    return False
 
 
 def _restart(unit: str) -> bool:
