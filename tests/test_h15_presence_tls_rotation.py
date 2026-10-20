@@ -257,6 +257,26 @@ class RotationTests(unittest.TestCase):
         with self.assertRaises(PreflightError):
             check(self.ca, leaf, key, now=later)
 
+    def test_orphaned_temp_symlink_cannot_block_crash_recovery(self):
+        old = self.initial()
+        new = self.staged(1)
+        # This is a leftover deterministic tmp symlink from a killed process.
+        stale = self.paths.root / (".active-" + old)
+        stale.symlink_to("generations/" + old)
+        _write(self.paths.root / ".rollback-target", old.encode("ascii"),
+               uid=self.paths.owner_uid, gid=self.gid, mode=0o600)
+        _switch(self.paths, new)
+        self.assertEqual(recover(self.paths, gid=self.gid,
+                                 restart=lambda unit: True,
+                                 probe=lambda **kw: True), "ROTATION=RECOVERED")
+        self.assertEqual(_active_name(self.paths, gid=self.gid), old)
+
+    def test_not_yet_valid_ca_or_leaf_fails_at_evaluation_time(self):
+        leaf, key = self.certificates[0]
+        before_issuance = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=2)
+        with self.assertRaises(PreflightError):
+            check(self.ca, leaf, key, now=before_issuance)
+
     def test_real_loopback_tls_probe_checks_actual_der_not_only_ca(self):
         cert, key = self.certificates[0]
         wrong_cert, _ = self.certificates[1]
