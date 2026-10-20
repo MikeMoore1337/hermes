@@ -130,6 +130,18 @@ const exchangeBody = body({
   grant_type: 'authorization_code', code, code_verifier: verifier,
   client_id: reg.client_id, redirect_uri: redirect, resource: prm.resource,
 });
+// An invalid PKCE verifier must not redeem or consume a valid authorization code.
+const wrongVerifier = await safe(meta.token_endpoint, {
+  method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+  body: body({
+    grant_type: 'authorization_code', code,
+    code_verifier: b64(randomBytes(32)), client_id: reg.client_id,
+    redirect_uri: redirect, resource: prm.resource,
+  }),
+});
+must(wrongVerifier.status >= 400 && wrongVerifier.status < 500,
+     'WRONG_PKCE_VERIFIER_DENIED');
+
 const token = await readJson(await safe(meta.token_endpoint, {
   method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
   body: exchangeBody,
@@ -185,6 +197,60 @@ const reuse = await safe(meta.token_endpoint, {
   }),
 });
 must(reuse.status >= 400 && reuse.status < 500, 'OLD_REFRESH_TOKEN_REPLAY_DENIED');
+
+// Revocation requires client ownership: another dynamically registered client
+// must not revoke our access token. The endpoint deliberately returns 200 to
+// avoid leaking token existence (RFC 7009); verify by reusing the real token.
+must(typeof meta.revocation_endpoint === 'string', 'REVOCATION_ENDPOINT_ADVERTISED');
+const otherClient = await readJson(await safe(meta.registration_endpoint, {
+  method: 'POST', headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({
+    client_name: 'H15 unauthorized revocation client',
+    redirect_uris: [redirect],
+    grant_types: ['authorization_code', 'refresh_token'],
+    response_types: ['code'], token_endpoint_auth_method: 'none',
+  }),
+}));
+must(typeof otherClient.client_id === 'string' &&
+     otherClient.client_id !== reg.client_id, 'SEPARATE_OAUTH_CLIENT_REGISTERED');
+const revoke = (clientId, value, kind) => safe(meta.revocation_endpoint, {
+  method: 'POST',
+  headers: { 'content-type': 'application/x-www-form-urlencoded' },
+  body: body({ client_id: clientId, token: value, token_type_hint: kind }),
+});
+const foreignRevoke = await revoke(otherClient.client_id, refreshed.access_token, 'access_token');
+must(foreignRevoke.status === 200, 'FOREIGN_REVOKE_OPAQUE_RESPONSE');
+const stillAuthorized = await safe('/mcp', {
+  method: 'POST',
+  headers: { ...reqHeaders, authorization: 'Bearer ' + refreshed.access_token },
+  body: jsonRpcBody('initialize', {
+    protocolVersion: '2025-06-18', capabilities: {},
+    clientInfo: { name: 'h15-zero-device', version: '1' },
+  }, 4),
+});
+must(stillAuthorized.status === 200, 'FOREIGN_CLIENT_CANNOT_REVOKE_ACCESS');
+
+const ownAccessRevoke = await revoke(reg.client_id, refreshed.access_token, 'access_token');
+must(ownAccessRevoke.status === 200, 'ACCESS_TOKEN_REVOKE_ACCEPTED');
+const revokedAccess = await safe('/mcp', {
+  method: 'POST',
+  headers: { ...reqHeaders, authorization: 'Bearer ' + refreshed.access_token },
+  body: jsonRpcBody('initialize', {}, 5),
+});
+must(revokedAccess.status === 401, 'REVOKED_ACCESS_TOKEN_DENIED');
+
+const ownRefreshRevoke = await revoke(reg.client_id, refreshed.refresh_token, 'refresh_token');
+must(ownRefreshRevoke.status === 200, 'REFRESH_TOKEN_REVOKE_ACCEPTED');
+const revokedRefresh = await safe(meta.token_endpoint, {
+  method: 'POST',
+  headers: { 'content-type': 'application/x-www-form-urlencoded' },
+  body: body({
+    grant_type: 'refresh_token', refresh_token: refreshed.refresh_token,
+    client_id: reg.client_id,
+  }),
+});
+must(revokedRefresh.status >= 400 && revokedRefresh.status < 500,
+     'REVOKED_REFRESH_TOKEN_DENIED');
 
 const end = await readJson(await safe('/health'));
 must(end.devices === 0, 'ZERO_DEVICES_AFTER_OAUTH');
