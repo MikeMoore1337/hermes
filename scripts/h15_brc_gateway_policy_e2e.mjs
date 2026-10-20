@@ -6,8 +6,20 @@ import { pathToFileURL } from 'node:url';
 
 const root = process.cwd();
 const { liveTools } = await import(pathToFileURL(path.join(root, 'packages/relay/dist/mcp/server.js')).href);
+const { pinnedToolCatalog } = await import(pathToFileURL(path.join(root, 'packages/relay/dist/mcp/hermes-tool-catalog.js')).href);
 const { invokeTool } = await import(pathToFileURL(path.join(root, 'packages/relay/dist/mcp/invoke.js')).href);
 const { isPermittedRemoteTool } = await import(pathToFileURL(path.join(root, 'packages/relay/dist/mcp/hermes-policy.js')).href);
+
+// ChatGPT imports tool schemas before any device has been paired. That
+// discovery must not depend on online agents or allow malicious agent schemas.
+const pinned = pinnedToolCatalog();
+const pinnedNames = new Set(pinned.map(t => t.name));
+if (!['read_file', 'write_file', 'start_process'].every(t => pinnedNames.has(t)) ||
+    ['get_config', 'set_config_value', 'send_file_transfer', 'unexpected_future_exec'].some(t => pinnedNames.has(t)) ||
+    pinned.some(t => !t.inputSchema || typeof t.inputSchema !== 'object')) {
+  throw Error('CHATGPT_PRE_PAIR_STABLE_TOOLS_INVALID');
+}
+console.log('H15_CHATGPT_PRE_PAIR_STABLE_MCP_TOOLS=PASS');
 
 let forwarded = 0;
 let audited = 0;
