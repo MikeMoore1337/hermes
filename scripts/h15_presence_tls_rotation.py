@@ -14,6 +14,7 @@ import grp
 import hashlib
 import os
 from pathlib import Path
+import secrets
 import socket
 import ssl
 import stat
@@ -167,7 +168,9 @@ def _active_name(paths: RotationPaths, *, gid: int) -> str | None:
 def _switch(paths: RotationPaths, name: str, pointer: str = "active") -> None:
     if pointer not in ("active", "pending"):
         raise RotationError("INVALID_POINTER")
-    tmp = paths.root / ("." + pointer + "-" + name)
+    # Unique temp name: a power loss can strand an older uncommitted
+    # symlink; that must not prevent a later recovery attempt.
+    tmp = paths.root / ("." + pointer + "-" + name + "-" + secrets.token_hex(8))
     os.symlink("generations/" + name, tmp)
     try:
         os.replace(tmp, paths.root / pointer)
