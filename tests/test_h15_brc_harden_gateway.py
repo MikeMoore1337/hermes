@@ -5,11 +5,12 @@ import unittest
 from unittest.mock import patch
 
 from scripts.h15_brc_harden_gateway import (
-    apply, SERVER, INVOKE, POLICY, SERVER_IMPORT, SERVER_LIST, INVOKE_MARKER,
+    apply, SERVER, INVOKE, POLICY, CATALOG, SERVER_IMPORT, SERVER_LIST, INVOKE_MARKER,
+    STATIC_LIST_MARKER,
 )
 from scripts.h15_remote_commander_candidate_audit import AuditError
 
-SERVER_SOURCE = SERVER_IMPORT + "\n" + SERVER_LIST + "\n"
+SERVER_SOURCE = SERVER_IMPORT + "\n" + SERVER_LIST + "\n" + STATIC_LIST_MARKER + "\n"
 INVOKE_SOURCE = (
     "import { createHash } from 'node:crypto';\n"
     "export function invokeTool() {\n" + INVOKE_MARKER + "\n}\n"
@@ -37,7 +38,13 @@ class GatewayPolicyTests(unittest.TestCase):
         server = (self.root / SERVER).read_text(encoding="utf-8")
         invoke = (self.root / INVOKE).read_text(encoding="utf-8")
         policy = (self.root / POLICY).read_text(encoding="utf-8")
+        catalog = (self.root / CATALOG).read_text(encoding="utf-8")
         self.assertIn("isPermittedRemoteTool(t.name, {})", server)
+        self.assertIn("pinnedToolCatalog()", server)
+        self.assertIn("pinnedToolCatalog", catalog)
+        self.assertIn("compiledAgentSchema", catalog)
+        self.assertIn("isPermittedRemoteTool(t.name, {})", catalog)
+        self.assertIn("HERMES_PINNED_TOOL_CATALOG_MISSING_OR_DUPLICATE", catalog)
         self.assertIn("isPermittedRemoteTool(tool, args)", invoke)
         self.assertIn("HERMES_REMOTE_TOOL_DENIED", invoke)
         self.assertIn("args.isUrl === true", policy)
@@ -59,6 +66,7 @@ class GatewayPolicyTests(unittest.TestCase):
             apply(self.root)
         self.assertEqual(f.read_text(encoding="utf-8"), altered)
         self.assertFalse((self.root / POLICY).exists())
+        self.assertFalse((self.root / CATALOG).exists())
 
     def test_bad_sha_refused(self):
         with self.assertRaisesRegex(AuditError, "unreviewed_upstream_sha"):
