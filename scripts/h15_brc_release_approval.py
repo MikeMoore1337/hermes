@@ -63,16 +63,16 @@ def validate_decision(doc: dict, image_id: str) -> None:
         raise ApprovalDenied("invalid_residual_cve_review")
 
 
-def validate_private_file(path: Path, *, owner_uid: int = 0) -> None:
+def validate_private_file(path: Path, *, owner_uid: int = 0, owner_gid: int = 0) -> None:
     # lstat rejects symlinks instead of following them. The fixed production
     # parent is root:root 0700; the receipt is root:root 0600.
     parent = path.parent.lstat()
     file = path.lstat()
     if (not stat.S_ISDIR(parent.st_mode) or parent.st_uid != owner_uid
-            or parent.st_gid != 0 or stat.S_IMODE(parent.st_mode) != 0o700):
+            or parent.st_gid != owner_gid or stat.S_IMODE(parent.st_mode) != 0o700):
         raise ApprovalDenied("unsafe_approval_directory")
     if (not stat.S_ISREG(file.st_mode) or file.st_uid != owner_uid
-            or file.st_gid != 0 or stat.S_IMODE(file.st_mode) != 0o600
+            or file.st_gid != owner_gid or stat.S_IMODE(file.st_mode) != 0o600
             or not 1 <= file.st_size <= 8192):
         raise ApprovalDenied("unsafe_approval_file")
 
