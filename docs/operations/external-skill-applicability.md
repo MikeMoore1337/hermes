@@ -1,5 +1,8 @@
 # Внешние навыки UI и написания документации: решение для Hermes
 
+> **Актуализация 20.10.2026.** Ниже сохранено исходное историческое решение для headless-составляющих Hermes. Сейчас Hermes также имеет полноценный React/Vite **Control Center**, поэтому тезис об отсутствии UI устарел. Для UI задач действуют [современный протокол evidence](../ux/control-center-ui-evidence.md), существующий Atlas и Playwright. Это не разрешение ставить внешние скиллы в resident Agent или менять production.
+
+
 Issue: [#161](https://github.com/MikeMoore1337/hermes/issues/161).
 
 ## Что подходит сейчас
