@@ -140,13 +140,23 @@ isolated_python() {
     -p PrivateNetwork=yes -p NoNewPrivileges=yes \
     -p ProtectSystem=strict -p ProtectHome=yes -p PrivateTmp=yes \
     -p PrivateDevices=yes -p MemoryMax=1G -p TasksMax=128 \
-    -p RuntimeMaxSec=180 -E PYTHONDONTWRITEBYTECODE=1 \
+    -p RuntimeMaxSec=240 -E PYTHONDONTWRITEBYTECODE=1 \
     /usr/bin/python3 "$@"
 }
 isolated_python scripts/validate_repo.py || die "repo validation failed"
 isolated_python scripts/check_policy_index.py || die "policy check failed"
 isolated_python scripts/check_markdown_links.py || die "markdown links failed"
-isolated_python -m unittest discover -s tests -q > "$work/tests.log" 2>&1 || { tail -25 "$work/tests.log" >&2; die "non-root offline tests failed"; }
+# The 2-vCPU production host has twice reached the 180-second runtime
+# deadline while CI finished the same suite. Allow bounded headroom without
+# weakening DynamicUser, network isolation, memory or capability limits.
+# On failure, print only allowlisted unittest summary lines: the arbitrary
+# fixture stdout/HTTP payload stays in the root-only on-host test log.
+isolated_python -m unittest discover -s tests -q > "$work/tests.log" 2>&1 || {
+  grep -E '^(FAIL:|ERROR:|FAILED|Ran [0-9]+ tests|OK( |$))' "$work/tests.log" |
+    tail -20 >&2 || :
+  tail -3 "$work/tests.log" | sed -E 's/[^[:print:]]/?/g' >&2
+  die "non-root offline tests failed"
+}
 # WSS integration tests use a separate pinned CI venv; the isolated host
 # stdlib test run may legitimately report OK (skipped=N).
 grep -Eq '^OK( \(skipped=[0-9]+\))?$' "$work/tests.log" || die "unit test status missing"
