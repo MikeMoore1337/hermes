@@ -63,8 +63,8 @@ class PresenceTlsPreflightTests(unittest.TestCase):
         # absent EKU. Require an explicit serverAuth OID in addition.
         root = self.leaf.parent
         extension = root / "no-serverauth.ext"
-        extension.write_text("subjectAltName=DNS:localhost\\n"
-                             "basicConstraints=critical,CA:false\\n")
+        extension.write_text("subjectAltName=DNS:localhost\n"
+                             "basicConstraints=critical,CA:false\n")
         leaf = root / "no-serverauth.pem"
         openssl("x509", "-req", "-in", str(root / "leaf.csr"),
                 "-CA", str(self.ca), "-CAkey", str(self.ca_key),
