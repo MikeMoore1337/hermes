@@ -86,6 +86,14 @@ class RotationTests(unittest.TestCase):
         self.assertEqual(_pending_name(self.paths, gid=self.gid), new)
         self.assertEqual(_active_name(self.paths, gid=self.gid), old)
 
+    def test_active_generation_cannot_be_restaged_as_pending(self):
+        old = self.initial()
+        leaf, key = self.certificates[0]
+        with self.assertRaisesRegex(RotationError, "CANDIDATE_ALREADY_ACTIVE"):
+            stage(self.paths, leaf=leaf, key=key, gid=self.gid)
+        self.assertEqual(_active_name(self.paths, gid=self.gid), old)
+        self.assertIsNone(_pending_name(self.paths, gid=self.gid))
+
     def test_staging_retry_after_generation_published_before_pending_pointer(self):
         # Simulate a power loss just after rename(generation) but before
         # atomic publication of the pending symlink.
