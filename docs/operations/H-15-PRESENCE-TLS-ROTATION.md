@@ -20,7 +20,17 @@ seven-day pilot WSS identity, enroll devices or add command-execution access.
   replacement of one active symlink switches **both** files at once.
 - One pending candidate, an exclusive process lock, and a fsynced rollback
   marker prevent concurrency, accidental replays and unverified promotion
-  after interruption. On failure the previous pointer and service are restored.
+  after interruption.
+- Interrupted candidate staging is safely retryable with the **exact same**
+  pre-signed certificate and private key. A fully published but not yet
+  pending-linked generation is revalidated (permissions, trust chain, SAN,
+  expiry, exact source bytes) before publishing the pending pointer.
+  Partially copied `.incoming-*` directories have unique private names and
+  cannot block retries. They are never auto-deleted because they may contain
+  sensitive key material or forensic evidence. The owner should inspect and
+  securely remove orphaned staging directories separately after confirming
+  that no staging process is running. A mismatched existing generation is a
+  hard NO-GO, never an overwrite. On failure the previous pointer and service are restored.
 - After restart, verify a real loopback TLS handshake against the CA, hostname,
   TLS version, and **exact expected leaf DER**. systemctl active is insufficient.
 - Systemd unit/timer templates are supplied but disabled and not installed.
