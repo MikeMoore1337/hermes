@@ -86,6 +86,41 @@ class RotationTests(unittest.TestCase):
         self.assertEqual(_pending_name(self.paths, gid=self.gid), new)
         self.assertEqual(_active_name(self.paths, gid=self.gid), old)
 
+    def test_staging_retry_after_generation_published_before_pending_pointer(self):
+        # Simulate a power loss just after rename(generation) but before
+        # atomic publication of the pending symlink.
+        name = self.staged(0)
+        (self.paths.root / "pending").unlink()
+        leaf, key = self.certificates[0]
+        self.assertEqual(stage(self.paths, leaf=leaf, key=key, gid=self.gid), name)
+        self.assertEqual(_pending_name(self.paths, gid=self.gid), name)
+        self.assertEqual(len(list(self.paths.generations.glob("leaf-*"))), 1)
+
+    def test_stale_incoming_directory_does_not_block_staging_retry(self):
+        # Earlier deterministic .incoming path would make mkdir() fail
+        # forever after a process crash during candidate copy.
+        name = self.staged(0)
+        (self.paths.root / "pending").unlink()
+        (self.paths.generations / name / "cert.pem").unlink()
+        (self.paths.generations / name / "key.pem").unlink()
+        (self.paths.generations / name).rmdir()
+        stale = self.paths.generations / (".incoming-" + name)
+        stale.mkdir(mode=0o700)
+        (stale / "key.pem").write_text("private leftover test fixture")
+        leaf, key = self.certificates[0]
+        self.assertEqual(stage(self.paths, leaf=leaf, key=key, gid=self.gid), name)
+        self.assertEqual(_pending_name(self.paths, gid=self.gid), name)
+        self.assertTrue((stale / "key.pem").exists())
+
+    def test_staging_retry_rejects_mutated_existing_generation_key(self):
+        name = self.staged(0)
+        (self.paths.root / "pending").unlink()
+        (self.paths.generations / name / "key.pem").write_bytes(
+            self.certificates[1][1].read_bytes())
+        with self.assertRaisesRegex(RotationError, "STAGED_GENERATION_SOURCE_MISMATCH"):
+            self.staged(0)
+        self.assertIsNone(_pending_name(self.paths, gid=self.gid))
+
     def test_second_pending_is_rejected(self):
         self.initial()
         self.staged(1)
