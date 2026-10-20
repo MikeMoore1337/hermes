@@ -37,7 +37,9 @@ class H15DependencyFixTests(unittest.TestCase):
         self.assertEqual(result["packages"]["@modelcontextprotocol/sdk"], "1.31.0")
         self.assertEqual(result["packages"]["proxy-addr"], "2.0.8")
         self.assertEqual(result["packages"]["sharp"], "0.35.5")
+        self.assertEqual(result["packages"]["markdown-it"], "14.3.2")
         self.assertNotIn("undici", result["packages"])
+        self.assertIn("markdown-it: 14.3.2", PATCHED)
         for override in (
             "'brace-expansion@^1.0.0': 1.1.21",
             "'brace-expansion@^2.0.0': 2.1.7",
@@ -99,6 +101,7 @@ class H15DependencyFixTests(unittest.TestCase):
             "  '@modelcontextprotocol/sdk@1.31.0':\n"
             "  proxy-addr@2.0.8:\n"
             "  sharp@0.35.5:\n"
+            "  markdown-it@14.3.2:\n"
             "  brace-expansion@1.1.21:\n"
             "  brace-expansion@2.1.7:\n"
             "  brace-expansion@5.0.12:\n"
@@ -119,6 +122,7 @@ class H15DependencyFixTests(unittest.TestCase):
             "  '@modelcontextprotocol/sdk@1.31.0':\n"
             "  proxy-addr@2.0.8:\n"
             "  sharp@0.35.5:\n"
+            "  markdown-it@14.3.2:\n"
             "  brace-expansion@1.1.21:\n"
             "  brace-expansion@2.1.7:\n"
             "  brace-expansion@5.0.12:\n"
@@ -126,6 +130,7 @@ class H15DependencyFixTests(unittest.TestCase):
         )
         for package, version in (
             ("sharp", "0.34.5"),
+            ("markdown-it", "14.3.1"),
             ("brace-expansion", "1.1.18"),
             ("brace-expansion", "2.1.4"),
             ("brace-expansion", "5.0.9"),
