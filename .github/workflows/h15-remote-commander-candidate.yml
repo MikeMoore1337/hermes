@@ -19,6 +19,10 @@ on:
       - scripts/h15_brc_two_native_oauth_mcp_e2e.mjs
       - scripts/h15_brc_zero_device_oauth_pilot.mjs
       - deploy/h15/run-zero-device-oauth-pilot.sh
+      - deploy/h15/owner-relay.sh
+      - scripts/h15_brc_release_approval.py
+      - tests/test_h15_brc_release_approval.py
+      - tests/test_h15_brc_owner_deploy.py
       - tests/test_h15_brc_zero_device_oauth_pilot.py
       - scripts/h15_brc_sandbox_linux_e2e.mjs
       - scripts/h15_brc_oci_relay_smoke.mjs
@@ -73,7 +77,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m unittest -v tests.test_h15_remote_commander_candidate_audit tests.test_h15_brc_apply_policy_patch tests.test_h15_brc_harden_relay tests.test_h15_brc_harden_gateway tests.test_h15_brc_harden_reconnect tests.test_h15_brc_harden_browser_csrf tests.test_h15_brc_oci_relay_contract tests.test_h15_brc_oci_receipt tests.test_h15_brc_offline_stage tests.test_h15_brc_offline_image_bundle
+          python3 -m unittest -v tests.test_h15_remote_commander_candidate_audit tests.test_h15_brc_apply_policy_patch tests.test_h15_brc_harden_relay tests.test_h15_brc_harden_gateway tests.test_h15_brc_harden_reconnect tests.test_h15_brc_harden_browser_csrf tests.test_h15_brc_oci_relay_contract tests.test_h15_brc_oci_receipt tests.test_h15_brc_offline_stage tests.test_h15_brc_offline_image_bundle tests.test_h15_brc_owner_deploy tests.test_h15_brc_release_approval
 
       - name: Fetch exact upstream Git commit (not tag, latest or npm install)
         shell: bash
