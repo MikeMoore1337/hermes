@@ -58,6 +58,21 @@ class PresenceTlsPreflightTests(unittest.TestCase):
         with self.assertRaisesRegex(PreflightError, "SAN_MISSING"):
             check(self.ca, bare, self.key)
 
+    def test_serverauth_eku_missing_is_rejected(self) -> None:
+        # OpenSSL verify -purpose sslserver accepts leaf certificates with
+        # absent EKU. Require an explicit serverAuth OID in addition.
+        root = self.leaf.parent
+        extension = root / "no-serverauth.ext"
+        extension.write_text("subjectAltName=DNS:localhost\\n"
+                             "basicConstraints=critical,CA:false\\n")
+        leaf = root / "no-serverauth.pem"
+        openssl("x509", "-req", "-in", str(root / "leaf.csr"),
+                "-CA", str(self.ca), "-CAkey", str(self.ca_key),
+                "-CAcreateserial", "-out", str(leaf), "-days", "4",
+                "-extfile", str(extension))
+        with self.assertRaisesRegex(PreflightError, "SERVER_AUTH_EKU_REQUIRED"):
+            check(self.ca, leaf, self.key)
+
     def test_different_private_key_is_rejected(self) -> None:
         other = self.key.parent / "other.key"
         openssl("genpkey", "-algorithm", "RSA", "-out", str(other),
