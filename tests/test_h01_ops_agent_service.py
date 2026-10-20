@@ -132,6 +132,20 @@ class H01OpsContractTests(unittest.TestCase):
             saved = json.loads((state / "state.json").read_text(encoding="utf-8"))
             self.assertEqual(saved["last_status"], "agent_result_unverified")
 
+    def test_h01_model_timeout_is_accepted_by_bounded_runner(self):
+        """Regression: a timeout >180s is rejected before Docker ever starts."""
+        from scripts.bounded_subprocess import BoundedProcessError, run_bounded
+
+        # Exercise the real argument validator without executing subprocesses.
+        with patch("scripts.bounded_subprocess.subprocess.Popen", side_effect=OSError):
+            with self.assertRaisesRegex(BoundedProcessError, "^child_start_failed$"):
+                run_bounded(
+                    ["offline-preflight-only"],
+                    timeout=agent.MAX_DURATION_SECONDS,
+                    stdout_limit=64 * 1024,
+                    stderr_limit=16 * 1024,
+                )
+
     def test_single_timer_clock_does_not_exceed_hourly_start_limit(self):
         """Guard the *source* against the real double-trigger incident (#33).
 
