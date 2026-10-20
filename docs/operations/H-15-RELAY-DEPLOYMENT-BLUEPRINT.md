@@ -65,6 +65,52 @@ daemon inspection; a root-only env file does not prevent that. Keep
 Docker daemon access strictly privileged; production hardening should
 support reading secret files without putting secrets in environment.
 
+## Separate production image owner decision (fail closed)
+
+**A successful GitHub Actions workflow is not a production permission.**
+`owner-relay.sh preflight/start` now rejects every image by default unless
+`/etc/hermes-brc-relay/production-approval.json` exists and passes the
+strict standalone `scripts/h15_brc_release_approval.py` gate. The former
+single-image denylist was insufficient: a newly built evaluation image could
+otherwise pass generic OCI label checks.
+
+This JSON is a **manual owner decision** for exactly one immutable image ID;
+it is **not a digital signature or independent cryptographic provenance
+verification**. It must be created separately from CI, by the owner only,
+after comparing immutable CI evidence and reviewing residual CVE findings.
+No CI workflow, source-only deploy, preflight or test creates the file.
+A different image ID requires a new explicit decision. The file and
+parent directory must be regular, non-symlinked, owned `root:root` with
+modes `0600` and `0700` respectively.
+
+The exact fields are:
+
+| Field | Required value / source |
+| --- | --- |
+| `schema` | Integer `1` |
+| `decision` | `OWNER_ACCEPTED_RESIDUAL_CVE_RISK` (explicit owner decision only) |
+| `scope` | `INTERNAL_OAUTH_ONLY_NO_AGENTS_NO_PUBLIC_MCP` |
+| `image_id` | Exact locally loaded `sha256:<64 lower hex>`, independently matched to verified OCI artifact |
+| `upstream_sha` | Pinned BRC source `cbe511702dd0147650353c29ac6ab1decd8afda1` |
+| `hermes_commit` | Exact tested GitHub H-15 source commit SHA |
+| `oci_archive_sha256` | Original verified OCI archive SHA-256 |
+| `trivy_report_sha256` | Matching actual-image vulnerability report SHA-256 |
+| `cve_triage_sha256` | Matching source-linked CVE triage report SHA-256 |
+| `reviewed_residual_cve_ids` | Sorted distinct CVE IDs from the same reviewed image scan (empty only if the reviewed scan has none) |
+
+The owner must **independently compare the digest values to CI and the
+transferred files** before creating this attestation. The current parser
+checks that the decision is unambiguous, private and image-specific; it
+does not download, sign or independently rehash external CI artifacts.
+Do not treat the digest fields alone as external evidence of origin.
+
+This decision never enables the Caddy route, public MCP or agent enrollment,
+and does not override the existing denial of the known older evaluation
+image `sha256:4f0da80149db3670c3b0d14462e5609225b3718c09872f48e9ba584a4de0a7e6`.
+`start` still separately requires
+`H15_BRC_OWNER_APPROVED_OAUTH_ONLY=YES_OAUTH_ONLY_NO_AGENTS`.
+**No approval file has been issued by this repository change.**
+
 ## Atomic SQLite backups
 
 python3 deploy/h15/backup-relay.py uses the built-in SQLite online
