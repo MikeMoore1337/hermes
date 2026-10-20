@@ -33,6 +33,10 @@ class MainDeployContractTests(unittest.TestCase):
             'PrivateNetwork=yes',
             'ProtectSystem=strict',
             'NoNewPrivileges=yes',
+            'RuntimeMaxSec=240',
+            'MemoryMax=1G',
+            'TasksMax=128',
+            'OFFLINE_UNIT_SUITE_FAILED_OR_TIMED_OUT',
             'isolated_python scripts/validate_repo.py',
             'isolated_python scripts/check_policy_index.py',
             'isolated_python scripts/check_markdown_links.py',
@@ -42,6 +46,8 @@ class MainDeployContractTests(unittest.TestCase):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, script)
         self.assertNotIn('timeout 180s python3 -m unittest', script)
+        self.assertNotIn('RuntimeMaxSec=infinity', script)
+        self.assertNotIn('PrivateNetwork=no', script)
         self.assertNotIn('eval ', script)
         self.assertNotIn('systemctl enable', script)
         self.assertNotIn('hermes-agent-sandbox.service start', script)
