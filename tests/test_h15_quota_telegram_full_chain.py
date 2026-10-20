@@ -84,7 +84,7 @@ class QuotaTelegramFullChainTests(unittest.TestCase):
         # transport adapter and durable ACK used by the timer; only
         # credentials and network transport are replaced in-memory.
         def delivery(path, *, token, chat, now):
-            self.assertEqual(path, telegram_dispatch.SANDBOX_OUTBOX)
+            self.assertEqual(path, self.root)
             return telegram_sender.send_one(
                 self.root, token=token, chat=chat, now=now,
                 transport=self.transport,
@@ -92,10 +92,12 @@ class QuotaTelegramFullChainTests(unittest.TestCase):
         with patch.object(telegram_dispatch, "read_credentials",
                           return_value=(TOKEN, CHAT)), \
              patch.object(telegram_dispatch, "send_one",
-                          side_effect=delivery), \
-             patch.object(telegram_dispatch, "SANDBOX_OUTBOX", self.root):
+                          side_effect=delivery):
             for _ in range(15):
-                result = telegram_dispatch.dispatch_once()
+                # Default arguments are bound at function definition time;
+                # pass the isolated outbox explicitly rather than patching
+                # the production constant and accidentally opening /run.
+                result = telegram_dispatch.dispatch_once(self.root)
                 if result["status"] == "EMPTY_OR_LEASED":
                     return
                 self.assertEqual(result["status"], "ACCEPTED_BY_TELEGRAM")
