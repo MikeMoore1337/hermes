@@ -226,6 +226,8 @@ def stage(paths: RotationPaths, *, leaf: Path, key: Path, gid: int,
     output = paths.generations / name
     if _pending_name(paths, gid=gid) is not None:
         raise RotationError("PENDING_CANDIDATE_ALREADY_EXISTS")
+    if _active_name(paths, gid=gid) == name:
+        raise RotationError("CANDIDATE_ALREADY_ACTIVE")
     if output.exists() or output.is_symlink():
         # Crash after atomic generation publish, but before pending pointer:
         # safely resume only for an identical, still-valid certificate/key.
