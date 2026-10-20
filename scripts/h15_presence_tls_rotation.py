@@ -227,23 +227,37 @@ def stage(paths: RotationPaths, *, leaf: Path, key: Path, gid: int,
     if _pending_name(paths, gid=gid) is not None:
         raise RotationError("PENDING_CANDIDATE_ALREADY_EXISTS")
     if output.exists() or output.is_symlink():
-        raise RotationError("GENERATION_ALREADY_STAGED")
-    directory = paths.generations / (".incoming-" + name)
-    os.mkdir(directory, mode=0o700)
-    try:
-        os.chown(directory, paths.owner_uid, gid)
-        _write(directory / "cert.pem", cert_data, uid=paths.owner_uid, gid=gid, mode=0o640)
-        _write(directory / "key.pem", key_data, uid=paths.owner_uid, gid=gid, mode=0o640)
-        os.chmod(directory, 0o750)
-        check(paths.ca, directory / "cert.pem", directory / "key.pem",
-              hostname="localhost", min_valid_days=3, now=now, key_group_readable=True)
-        os.rename(directory, output)
-        _sync_dir(paths.generations)
-    finally:
-        if directory.exists():
-            for item in directory.iterdir():
-                item.unlink()
-            directory.rmdir()
+        # Crash after atomic generation publish, but before pending pointer:
+        # safely resume only for an identical, still-valid certificate/key.
+        # Never replace an existing generation or silently trust its key.
+        _validated_name(paths, name, gid=gid)
+        if (_file(output / "cert.pem") != cert_data
+                or _file(output / "key.pem") != key_data):
+            raise RotationError("STAGED_GENERATION_SOURCE_MISMATCH")
+        check(paths.ca, output / "cert.pem", output / "key.pem",
+              hostname="localhost", min_valid_days=3, now=now,
+              key_group_readable=True)
+    else:
+        # A killed process may strand a prior .incoming directory. Use a
+        # unique private name so this does not block a future owner retry.
+        # Leave stranded directories private for deliberate owner review.
+        directory = paths.generations / (
+            ".incoming-" + name + "-" + secrets.token_hex(8))
+        os.mkdir(directory, mode=0o700)
+        try:
+            os.chown(directory, paths.owner_uid, gid)
+            _write(directory / "cert.pem", cert_data, uid=paths.owner_uid, gid=gid, mode=0o640)
+            _write(directory / "key.pem", key_data, uid=paths.owner_uid, gid=gid, mode=0o640)
+            os.chmod(directory, 0o750)
+            check(paths.ca, directory / "cert.pem", directory / "key.pem",
+                  hostname="localhost", min_valid_days=3, now=now, key_group_readable=True)
+            os.rename(directory, output)
+            _sync_dir(paths.generations)
+        finally:
+            if directory.exists():
+                for item in directory.iterdir():
+                    item.unlink()
+                directory.rmdir()
     if _pending_name(paths, gid=gid) is not None:
         raise RotationError("PENDING_CANDIDATE_ALREADY_EXISTS")
     _switch(paths, name, pointer="pending")
