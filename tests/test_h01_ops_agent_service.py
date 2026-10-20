@@ -132,8 +132,13 @@ class H01OpsContractTests(unittest.TestCase):
             saved = json.loads((state / "state.json").read_text(encoding="utf-8"))
             self.assertEqual(saved["last_status"], "agent_result_unverified")
 
-    def test_install_smoke_and_timer_cannot_exhaust_hourly_start_limit(self):
-        """The real 2026-10-17 third start was blocked by a 2/hour systemd gate."""
+    def test_single_timer_clock_does_not_exceed_hourly_start_limit(self):
+        """Guard the *source* against the real double-trigger incident (#33).
+
+        OnActiveSec together with OnUnitInactiveSec produced starts only
+        13m31s apart and a start-limit-hit on the third attempted activation.
+        A test which models two clocks as a single clock misses this defect.
+        """
         import re
 
         root = Path(__file__).resolve().parents[1]
@@ -141,23 +146,29 @@ class H01OpsContractTests(unittest.TestCase):
         timer = (root / "deploy/hermes-h01-ops-agent.timer").read_text(encoding="utf-8")
 
         def seconds(key, content, suffix=""):
-            match = re.search(rf"^{key}=(\d+){suffix}$", content, re.MULTILINE)
+            match = re.search(rf"^{key}=(\\d+){suffix}$", content, re.MULTILINE)
             self.assertIsNotNone(match, key)
             return int(match.group(1))
 
         window = seconds("StartLimitIntervalSec", unit)
         burst = seconds("StartLimitBurst", unit)
-        initial = seconds("OnActiveSec", timer, "min") * 60
         repeat = seconds("OnUnitInactiveSec", timer, "min") * 60
-
-        self.assertEqual((window, burst), (3600, 2))
-        # An installer may run the one-shot once just before enabling the timer.
-        starts = [0, initial]
-        for _ in range(6):
-            starts.append(starts[-1] + repeat)
+        self.assertEqual((window, burst, repeat), (3600, 2, 2100))
+        # Exactly ONE monotonic clock must control periodic scheduling.
+        # Adding OnActiveSec or OnBootSec creates a second independent
+        # trigger and is a regression even if a simplistic simulation passes.
+        clocks = re.findall(r"^(On[A-Za-z]+Sec)=", timer, re.MULTILINE)
+        self.assertEqual(clocks, ["OnUnitInactiveSec"])
+        self.assertIn("RandomizedDelaySec=3min", timer)
+        self.assertIn("Persistent=false", timer)
+        starts = [n * repeat for n in range(8)]
         for index, end in enumerate(starts):
             in_window = sum(0 <= end - start < window for start in starts[:index + 1])
-            self.assertLessEqual(in_window, burst, f"run at {end}s exceeds start limit")
+            self.assertLessEqual(in_window, burst)
+
+        # Manual runs are NOT part of this scheduling proof. Owner/operator
+        # smoke runs during burn-in may still consume StartLimitBurst;
+        # never weaken the limiter or mark a live 24h window as PASS via CI.
 
     def test_unit_and_timer_never_run_scheduled_shell_as_model(self):
         root = Path(__file__).resolve().parents[1]
@@ -170,7 +181,7 @@ class H01OpsContractTests(unittest.TestCase):
         self.assertIn("StartLimitIntervalSec=3600", unit)
         self.assertIn("StartLimitBurst=2", unit)
         self.assertIn("OnUnitInactiveSec=35min", timer)
-        self.assertIn("OnActiveSec=35min", timer)
+        self.assertNotIn("OnActiveSec=", timer)
         self.assertNotIn("OnBootSec=", timer)
         self.assertIn("Persistent=false", timer)
         self.assertNotIn("ExecStart=/bin/sh", unit)
