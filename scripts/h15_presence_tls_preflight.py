@@ -70,6 +70,12 @@ def check(
     dns_names = re.findall(r"\bDNS:([^,\s]+)", san)
     if hostname.lower() not in {name.lower() for name in dns_names}:
         raise PreflightError("REQUIRED_DNS_SAN_MISSING")
+    # OpenSSL -purpose sslserver permits a leaf with no EKU at all.
+    # Require an explicit TLS serverAuth usage for the WSS identity.
+    eku = _openssl("x509", "-in", str(leaf), "-ext", "extendedKeyUsage", "-noout").decode("ascii")
+    if ("TLS Web Server Authentication" not in eku
+            and "1.3.6.1.5.5.7.3.1" not in eku):
+        raise PreflightError("SERVER_AUTH_EKU_REQUIRED")
     public_cert = _openssl("x509", "-in", str(leaf), "-pubkey", "-noout")
     public_key = _openssl("pkey", "-in", str(key), "-pubout")
     if public_cert != public_key:
