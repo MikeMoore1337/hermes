@@ -15,6 +15,7 @@ import subprocess
 DB = Path("/var/lib/hermes-device-fabric/devices.sqlite3")
 OPT_IN = Path("/var/lib/hermes-device-fabric/ops-watch-presence.json")
 CERT = Path("/var/lib/hermes-device-fabric/tls/cert.pem")
+ROTATED_CERT = CERT.parent / "active" / "cert.pem"
 DEVICES = ("windows-pc", "linux-vps")
 DELAY = {"windows-pc": timedelta(minutes=20),
          "linux-vps": timedelta(minutes=10)}
@@ -49,6 +50,16 @@ def certificate_status(cert: Path = CERT, opt_in: Path = OPT_IN, *,
                 {"schema", "devices", "enabled_at"} or
                 gate["schema"] != 1 or gate["devices"] != list(DEVICES)):
             return "unknown"
+        # After an explicitly approved service migration, follow only the
+        # root-managed "active" generation. Before migration retain the old
+        # direct certificate path and all existing expiry semantics.
+        if cert == CERT and (CERT.parent / "active").is_symlink():
+            target = (CERT.parent / "active").readlink().as_posix()
+            if (not target.startswith("generations/leaf-") or
+                    target.count("/") != 1 or len(target) != 49 or
+                    any(ch not in "0123456789abcdef" for ch in target[-32:])):
+                return "unknown"
+            cert = ROTATED_CERT
         if cert.is_symlink() or not cert.is_file() or cert.stat().st_size > 8192:
             return "unknown"
         result = subprocess.run(

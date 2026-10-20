@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily staged WSS leaf rotation (owner opt-in)
+
+[Timer]
+OnCalendar=*-*-* 04:00:00 UTC
+RandomizedDelaySec=3min
+Persistent=false
+AccuracySec=1min
+Unit=hermes-device-fabric-tls-rotation.service
+
+[Install]
+WantedBy=timers.target

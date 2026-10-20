@@ -18,14 +18,16 @@ class PreflightError(ValueError):
     pass
 
 
-def _regular(path: Path, *, private: bool = False, root_owned: bool = False) -> None:
+def _regular(path: Path, *, private: bool = False, root_owned: bool = False,
+             key_group_readable: bool = False) -> None:
     try:
         item = path.lstat()
     except OSError as exc:
         raise PreflightError("MISSING_OR_UNREADABLE_INPUT") from exc
     if not stat.S_ISREG(item.st_mode) or item.st_nlink != 1:
         raise PreflightError("NONREGULAR_OR_LINKED_FILE")
-    if private and stat.S_IMODE(item.st_mode) & 0o077:
+    mode = stat.S_IMODE(item.st_mode)
+    if private and (mode & 0o007 or (not key_group_readable and mode & 0o070)):
         raise PreflightError("PRIVATE_KEY_PERMISSIONS_UNSAFE")
     if root_owned and item.st_uid != 0:
         raise PreflightError("FILE_NOT_ROOT_OWNED")
@@ -46,6 +48,7 @@ def check(
     ca: Path, leaf: Path, key: Path, *, hostname: str = "localhost",
     min_valid_days: int = 2, root_owned: bool = False,
     now: dt.datetime | None = None,
+    key_group_readable: bool = False,
 ) -> str:
     if not hostname or any(ord(x) < 33 or ord(x) > 126 for x in hostname):
         raise PreflightError("INVALID_HOSTNAME")
@@ -55,10 +58,14 @@ def check(
         raise PreflightError("INPUT_FILES_MUST_DIFFER")
     _regular(ca, root_owned=root_owned)
     _regular(leaf, root_owned=root_owned)
-    _regular(key, private=True, root_owned=root_owned)
+    _regular(key, private=True, root_owned=root_owned,
+             key_group_readable=key_group_readable)
 
+    at = now or dt.datetime.now(dt.timezone.utc)
+    if at.tzinfo is None:
+        raise PreflightError("NAIVE_CURRENT_TIME")
     _openssl("verify", "-CAfile", str(ca), "-no-CApath", "-purpose", "sslserver",
-             "-verify_hostname", hostname, str(leaf))
+             "-verify_hostname", hostname, "-attime", str(int(at.timestamp())), str(leaf))
     san = _openssl("x509", "-in", str(leaf), "-ext", "subjectAltName", "-noout").decode("ascii")
     dns_names = re.findall(r"\bDNS:([^,\s]+)", san)
     if hostname.lower() not in {name.lower() for name in dns_names}:

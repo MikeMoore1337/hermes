@@ -1,0 +1,42 @@
+[Unit]
+Description=Hermes self-hosted device presence pilot (loopback WSS; no commands)
+Documentation=https://github.com/MikeMoore1337/hermes/issues/297
+After=network.target
+StartLimitIntervalSec=60s
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=hermes-device-fabric
+Group=hermes-device-fabric
+WorkingDirectory=@SOURCE@
+Environment=PYTHONPATH=@SOURCE@
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/var/lib/hermes-device-fabric/venv/bin/python -m device_fabric.service --db /var/lib/hermes-device-fabric/devices.sqlite3 --cert /var/lib/hermes-device-fabric/tls/active/cert.pem --key /var/lib/hermes-device-fabric/tls/active/key.pem --port 38177
+Restart=on-failure
+RestartSec=10s
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+IPAddressDeny=any
+IPAddressAllow=localhost
+ReadWritePaths=/var/lib/hermes-device-fabric
+UMask=0077
+TimeoutStartSec=15s
+TimeoutStopSec=10s
+MemoryMax=192M
+CPUQuota=25%
+TasksMax=32
+
+[Install]
+WantedBy=multi-user.target
