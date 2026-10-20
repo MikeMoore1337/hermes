@@ -394,23 +394,33 @@ def once(source: Path = SOURCE, target: Path = TARGET, observed: datetime | None
                                      "fingerprint": item["fingerprint"]})
                     active_codes.add(item["code"])
         # Missing/untrusted snapshots never prove recovery of a previously
-        # measured quota threshold. Keep the old incident until a fresh,
-        # explicitly confirmed good state or another measured threshold.
+        # confirmed quota incident, including authorization and stale-source
+        # incidents. Only an explicit new provider state may resolve one.
+        # A provider that disappears from an optional collector is UNKNOWN,
+        # not proof that the previous authentication failure was fixed.
         active_quota = {item["code"] for item in findings}
         signals = snapshot.get("quota_signals", {})
         for previous_item in previous:
             code = previous_item["code"]
-            if not code.startswith("quota_") or code in active_quota:
+            if not code.startswith(("quota_desktop_", "quota_github_")) or code in active_quota:
                 continue
             provider = "desktop_commander" if code.startswith("quota_desktop_") else "github_api"
             state = signals.get(provider, "unknown")
-            if state in ("unknown", "not_connected", "stale", "auth_required"):
-                if code.endswith(("_80", "_95", "_exhausted")):
-                    findings.append({"code": code,
-                                     "severity": "critical" if code.endswith("_exhausted")
-                                     else "warning",
-                                     "fingerprint": previous_item["fingerprint"]})
-                    active_quota.add(code)
+            unresolved_threshold = (
+                code.endswith(("_80", "_95", "_exhausted"))
+                and state in ("unknown", "not_connected", "stale", "auth_required")
+            )
+            unresolved_source = (
+                code.endswith(("_auth", "_stale"))
+                and state in ("unknown", "not_connected")
+            )
+            if unresolved_threshold or unresolved_source:
+                findings.append({
+                    "code": code,
+                    "severity": "critical" if code.endswith("_exhausted") else "warning",
+                    "fingerprint": previous_item["fingerprint"],
+                })
+                active_quota.add(code)
         # Unreadable or missing presence observations do not prove recovery.
         # Only a fresh authenticated ONLINE signal may resolve a prior outage.
         for item in previous:
