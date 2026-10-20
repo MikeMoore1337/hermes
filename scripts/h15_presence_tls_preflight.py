@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import os
+import re
 from pathlib import Path
 import stat
 import subprocess
@@ -58,6 +59,10 @@ def check(
 
     _openssl("verify", "-CAfile", str(ca), "-no-CApath", "-purpose", "sslserver",
              "-verify_hostname", hostname, str(leaf))
+    san = _openssl("x509", "-in", str(leaf), "-ext", "subjectAltName", "-noout").decode("ascii")
+    dns_names = re.findall(r"\bDNS:([^,\s]+)", san)
+    if hostname.lower() not in {name.lower() for name in dns_names}:
+        raise PreflightError("REQUIRED_DNS_SAN_MISSING")
     public_cert = _openssl("x509", "-in", str(leaf), "-pubkey", "-noout")
     public_key = _openssl("pkey", "-in", str(key), "-pubout")
     if public_cert != public_key:
