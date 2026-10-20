@@ -11,6 +11,7 @@
 | Исследовательский источник, научные новости | `research-verification` |
 | Версии API, JSON/events и интеграции YFC/Second Brain | `contract-testing` |
 | Затронутые компоненты/расписания/тесты | `change-impact-analysis` |
+| Комплексный аудит UX/UI Control Center и один дизайн-проект | `ux-ui-design-orchestra` - до трёх действительных read-only экспертиз либо последовательный режим, до визуального согласования |
 | UX/UI Control Center (основная критика дизайна и полировка) | `impeccable` (pinned upstream, только разработка) |
 | Browser/Control Center сценарий | `browser-workflow-evidence` |
 | Проверка уже разрешённого выпуска | `release-safety` |

@@ -128,3 +128,7 @@ security, CI, release, owner approvals and factual operational evidence.
 ## Impeccable для Control Center (разработка, 2026-10-21)
 
 Для запросов на UX/UI экранов `control_center/frontend` **сначала** подключай project-scoped `$impeccable` из `.agents/skills/impeccable/SKILL.md`, при наличии pinned upstream source `.impeccable/`. Затем применяй браузерные проверки и owner visual gate по `docs/ux/impeccable-control-center.md`. Это не resident Hermes Agent: не копировать в `skills/`, не менять provider/runtime, не запускать внешние hooks/бинарники и не считать выбор эстетики разрешением на release.
+
+## UX/UI Design Orchestra (Control Center only, 2026-10-21)
+
+For a multi-skill design audit of `control_center/frontend`, route to `$ux-ui-design-orchestra` in `.agents/skills/ux-ui-design-orchestra/SKILL.md`. Its default mode is read-only audit + one proposal + plan, **no frontend/UI edits before owner's «Принимаю»**. Max three real concurrent subagent reviews, sequential fallback if unsupported. Brand, synthetic/live evidence distinction, existing owner/CI/release gates and resident-agent runtime boundaries are unchanged. See `docs/ux/ux-ui-design-orchestra.md`.
