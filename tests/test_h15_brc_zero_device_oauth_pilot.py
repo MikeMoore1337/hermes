@@ -67,6 +67,10 @@ class ZeroDeviceOAuthPilotTests(unittest.TestCase):
         for expected in (
             "'initialize'", "AUTHORIZATION_CODE_REPLAY_DENIED",
             "OLD_REFRESH_TOKEN_REPLAY_DENIED", "INVALID_BEARER_DENIED",
+            "WRONG_PKCE_VERIFIER_DENIED",
+            "REVOCATION_ENDPOINT_ADVERTISED", "SEPARATE_OAUTH_CLIENT_REGISTERED",
+            "FOREIGN_CLIENT_CANNOT_REVOKE_ACCESS", "REVOKED_ACCESS_TOKEN_DENIED",
+            "REVOKED_REFRESH_TOKEN_DENIED",
             "ZERO_DEVICES_AFTER_OAUTH", "S256", "resource: prm.resource",
             "H15_OAUTH_ONLY_END_TO_END=PASS",
         ):
