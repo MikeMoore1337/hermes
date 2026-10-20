@@ -17,6 +17,10 @@ SECRETS=/etc/hermes-brc-relay/relay.env
 PUBLIC_URL=https://mcp.mikemoore.top
 UPSTREAM_SHA=cbe511702dd0147650353c29ac6ab1decd8afda1
 EVALUATION_IMAGE=sha256:4f0da80149db3670c3b0d14462e5609225b3718c09872f48e9ba584a4de0a7e6
+# An exact, root-only, manually issued owner decision, not a CI output.
+APPROVAL=/etc/hermes-brc-relay/production-approval.json
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+RELEASE_GATE="$SCRIPT_DIR/../../scripts/h15_brc_release_approval.py"
 
 fail() { echo "H15_BRC_DEPLOY_REFUSED=$1" >&2; exit 2; }
 need_root() { [[ "$EUID" -eq 0 ]] || fail ROOT_REQUIRED; }
@@ -76,6 +80,13 @@ check_infrastructure() {
   echo "H15_DEPLOY_HOST_PREFLIGHT=PASS"
   echo "H15_DEPLOY_RUNTIME_UID=$uid:$gid"
 }
+check_release_approval() {
+  local id="$1"
+  [[ -f "$RELEASE_GATE" && ! -L "$RELEASE_GATE" ]] ||
+    fail RELEASE_GATE_SCRIPT_MISSING
+  python3 "$RELEASE_GATE" --file "$APPROVAL" --image-id "$id" ||
+    fail OWNER_RELEASE_APPROVAL_REQUIRED
+}
 check_image() {
   local id="$1"
   [[ "$id" =~ ^sha256:[a-f0-9]{64}$ ]] || fail IMMUTABLE_IMAGE_ID_REQUIRED
@@ -132,6 +143,9 @@ case "$mode" in
     need_root
     [[ "$2" =~ ^sha256:[a-f0-9]{64}$ ]] || fail IMMUTABLE_IMAGE_ID_REQUIRED
     [[ "$2" != "$EVALUATION_IMAGE" ]] || fail EVALUATION_IMAGE_NOT_PRODUCTION_APPROVED
+    # Must refuse unapproved images before accessing Docker or host state.
+    # A CI success and an arbitrary sha256 are not a production admission.
+    check_release_approval "$2"
     check_infrastructure
     check_image "$2"
     ! docker inspect --type container "$NAME" >/dev/null 2>&1 || fail SERVICE_ALREADY_EXISTS
