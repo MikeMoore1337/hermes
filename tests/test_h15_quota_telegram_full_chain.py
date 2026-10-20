@@ -133,8 +133,12 @@ class QuotaTelegramFullChainTests(unittest.TestCase):
         self.drain_using_actual_dispatch()
 
         recovered = self.step(("ok", 5), ("ok", 5), 5)
+        # The previous confirmed GitHub 95% alarm is preserved across
+        # auth_required/stale evidence; only a fresh healthy observation
+        # may resolve it alongside the stale-source warning.
         self.assertEqual(set(recovered["changes"]["resolved"]), {
-            "ops:quota_desktop_exhausted", "ops:quota_github_stale"})
+            "ops:quota_desktop_exhausted", "ops:quota_github_stale",
+            "ops:quota_github_95"})
         self.drain_using_actual_dispatch()
         total = stats(self.root)
         self.assertEqual(total["total"], len(self.delivered))
