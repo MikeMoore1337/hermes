@@ -38,7 +38,7 @@ resident Hermes Agent: речь исключительно о Codex/ChatGPT/др
 который помогает разрабатывать код **этого репозитория**. Источник метода:
 [Toolkit QA Orchestra, PR #135](https://github.com/MikeMoore1337/ai-development-toolkit/pull/135)
 и [Feature Delivery Orchestra, PR #137](https://github.com/MikeMoore1337/ai-development-toolkit/pull/137).
-Оба PR объединены с `main` Toolkit 21.10.2026, но опубликованный выпуск
+Изменения обоих PR объединены с `main` Toolkit 21.10.2026, но опубликованный выпуск
 `v5.4.0` не содержит этих методов. Без подтверждённой загрузки навыков
 и реального следа вызова субагентов не утверждать, что методы исполняются
 или подключены к resident agent.
