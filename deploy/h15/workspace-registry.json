@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "scope": "owner-approved-public-sandbox-clones",
+  "devices": [
+    {
+      "key": "windows-sandbox",
+      "device_id": "h15-win-05be75515428",
+      "display_name": "H15 Windows permanent sandbox",
+      "platform": "linux/docker"
+    },
+    {
+      "key": "hermes-sandbox",
+      "device_id": "h15-hermes-ab005bc0e0ea",
+      "display_name": "H15 Hermes VPS sandbox",
+      "platform": "linux/docker"
+    },
+    {
+      "key": "yfc-sandbox",
+      "device_id": "h15-yfc-c6ee0d53e858",
+      "display_name": "H15 YFC VPS sandbox",
+      "platform": "linux/docker"
+    }
+  ],
+  "workspaces": [
+    {
+      "key": "hermes",
+      "aliases": [
+        "hermes",
+        "гермес"
+      ],
+      "device": "windows-sandbox",
+      "root": "/workspace/projects/hermes",
+      "origin": "https://github.com/MikeMoore1337/hermes.git",
+      "branch": "main",
+      "access": "sandbox-clone"
+    },
+    {
+      "key": "yfc",
+      "aliases": [
+        "yfc",
+        "your-fitness-coach",
+        "фитнес-тренер"
+      ],
+      "device": "windows-sandbox",
+      "root": "/workspace/projects/your-fitness-coach",
+      "origin": "https://github.com/MikeMoore1337/your-fitness-coach.git",
+      "branch": "master",
+      "access": "sandbox-clone"
+    },
+    {
+      "key": "second-brain",
+      "aliases": [
+        "second brain",
+        "second-brain",
+        "второй мозг"
+      ],
+      "device": "windows-sandbox",
+      "root": "/workspace/projects/second-brain",
+      "origin": "https://github.com/MikeMoore1337/second-brain.git",
+      "branch": "main",
+      "access": "public-source-only"
+    },
+    {
+      "key": "toolkit",
+      "aliases": [
+        "toolkit",
+        "ai-development-toolkit",
+        "adt"
+      ],
+      "device": "windows-sandbox",
+      "root": "/workspace/projects/ai-development-toolkit",
+      "origin": "https://github.com/MikeMoore1337/ai-development-toolkit.git",
+      "branch": "main",
+      "access": "read-only-reference"
+    }
+  ]
+}
