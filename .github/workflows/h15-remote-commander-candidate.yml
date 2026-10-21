@@ -8,6 +8,10 @@ on:
       - scripts/h15_brc_apply_policy_patch.py
       - scripts/h15_brc_harden_relay.py
       - scripts/h15_brc_harden_gateway.py
+      - scripts/h15_brc_workspace_gateway.py
+      - deploy/h15/hermes-workspaces.template.ts
+      - deploy/h15/workspace-registry.json
+      - tests/test_h15_brc_workspace_gateway.py
       - scripts/h15_brc_harden_reconnect.py
       - scripts/h15_brc_reconnect_socket_e2e.mjs
       - scripts/h15_brc_harden_browser_csrf.py
@@ -79,6 +83,12 @@ jobs:
           set -euo pipefail
           python3 -m unittest -v tests.test_h15_remote_commander_candidate_audit tests.test_h15_brc_apply_policy_patch tests.test_h15_brc_harden_relay tests.test_h15_brc_harden_gateway tests.test_h15_brc_harden_reconnect tests.test_h15_brc_harden_browser_csrf tests.test_h15_brc_oci_relay_contract tests.test_h15_brc_oci_receipt tests.test_h15_brc_offline_stage tests.test_h15_brc_offline_image_bundle tests.test_h15_brc_owner_deploy tests.test_h15_brc_release_approval
 
+      - name: Workspace resolver and gateway negative contracts (offline)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest -v tests.test_h15_workspace_router tests.test_h15_brc_workspace_gateway
+
       - name: Fetch exact upstream Git commit (not tag, latest or npm install)
         shell: bash
         run: |
@@ -133,6 +143,16 @@ jobs:
           python3 -m scripts.h15_brc_harden_gateway \
             --source-dir "$RUNNER_TEMP/brc-upstream"
 
+      - name: Add owner-scoped Hermes project discovery on the pinned relay (source only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m scripts.h15_brc_workspace_gateway \
+            --source-dir "$RUNNER_TEMP/brc-upstream" \
+            --registry deploy/h15/workspace-registry.json
+          test "$(git -C "$RUNNER_TEMP/brc-upstream" rev-parse HEAD)" = cbe511702dd0147650353c29ac6ab1decd8afda1
+          echo "H15_WORKSPACE_MCP_PATCH=PASS" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Fix stale/foreign WebSocket result replay at source-pinned relay DeviceHub
         shell: bash
         run: |
@@ -178,6 +198,22 @@ jobs:
         run: |
           set -euo pipefail
           pnpm build
+          node --input-type=module <<'JS'
+          import { listApprovedWorkspaces, resolveApprovedWorkspace } from './packages/relay/dist/mcp/hermes-workspaces.js';
+          const dev = { name: 'H15 Windows permanent sandbox', deviceId: 'h15-win-05be75515428', online: true, paused: false };
+          const assert = (value, name) => { if (!value) throw Error('H454_CI_FAIL:' + name); };
+          assert(listApprovedWorkspaces([dev]).workspaces.length === 4, 'catalog');
+          const yfc = resolveApprovedWorkspace({ project: 'YFC' }, [dev]);
+          assert(yfc.status === 'resolved' && yfc.root === '/workspace/projects/your-fitness-coach', 'yfc');
+          assert(yfc.git_verified === false && yfc.verification_required_before_write, 'no_false_git_verification');
+          assert(resolveApprovedWorkspace({ project: 'toolkit' }, [dev]).workspace === 'ai-development-toolkit', 'toolkit');
+          for (const input of [{ project: '../../private' }, { project: 'YFC', deviceId: 'forced' }, {}])
+            assert(resolveApprovedWorkspace(input, [dev]).status === 'refused', 'invalid_arguments');
+          for (const devices of [[], [{ ...dev, online: false }], [{ ...dev, paused: true }], [dev, dev]])
+            assert(resolveApprovedWorkspace({ project: 'YFC' }, devices).status === 'refused', 'invalid_device');
+          assert(listApprovedWorkspaces([]).workspaces.length === 0, 'tenant_isolation');
+          console.log('H15_WORKSPACE_MCP_PINNED_RELAY_TS_RUNTIME=PASS');
+          JS
           node "$GITHUB_WORKSPACE/scripts/h15_brc_relay_ws_e2e.mjs"
           node "$GITHUB_WORKSPACE/scripts/h15_brc_two_wss_agents_e2e.mjs"
           node "$GITHUB_WORKSPACE/scripts/h15_brc_gateway_policy_e2e.mjs"
