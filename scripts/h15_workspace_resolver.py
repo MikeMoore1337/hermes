@@ -109,11 +109,10 @@ def load_registry(path: Path = REGISTRY) -> dict:
             raise WorkspaceRefused("REGISTRY_DUPLICATE_WORKSPACE")
         seen_keys.add(w["key"])
         seen_roots.add(w["root"])
-        for alias in [w["key"], *w["aliases"]]:
-            normalized = alias.casefold()
-            if normalized in seen_aliases:
-                raise WorkspaceRefused("REGISTRY_DUPLICATE_ALIAS")
-            seen_aliases.add(normalized)
+        local_aliases = {alias.casefold() for alias in [w["key"], *w["aliases"]]}
+        if seen_aliases.intersection(local_aliases):
+            raise WorkspaceRefused("REGISTRY_DUPLICATE_ALIAS")
+        seen_aliases.update(local_aliases)
     return data
 
 
