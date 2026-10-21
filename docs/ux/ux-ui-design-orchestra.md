@@ -1,0 +1,9 @@
+# UX/UI Design Orchestra - Hermes Control Center
+
+Protocol: [Toolkit @ 0d3849e040e09b4e350e0bf97af66b4d107e94d6](https://github.com/MikeMoore1337/ai-development-toolkit/tree/0d3849e040e09b4e350e0bf97af66b4d107e94d6/.agents/skills/ux-ui-design-orchestra). The project-local `.agents/skills/ux-ui-design-orchestra/SKILL.md` is usable independently even when Toolkit is not present. Impeccable content in `.impeccable/` requires its already documented one-time git submodule checkout; no external launcher or hook should run automatically.
+
+Example request: «Проведи комплексный аудит UX/UI Control Center несколькими навыками. Предложи один дизайн в графитово-синей системе и план реализации. До моего «Принимаю» код не меняй».
+
+Read-only process: inspect approved design/React, establish exact revision and route/state/viewport; split up to three bounded specialist critiques (visual Impeccable, technical accessibility, optional Emil motion); use *actual subagent tools* or truthfully mark sequential work; merge into one issue/impact/evidence ledger and one compatible proposal. Use existing Playwright `control_center/frontend/qa/visual-evidence.spec.js` with **synthetic** data for actual screenshots when available; 320/393/768/1440 and focus/loading/error/reduced-motion are recommended checks. If unrun, status is NOT_RUN. No PNG/HTML created means VISUAL_PACKAGE_MISSING, not owner-ready evidence.
+
+Deliver one design direction, prioritized confirmed issues vs hypotheses, full review visuals when possible, components to change **later**, interaction/state test plan and an approval request. New composition -> explicit owner acceptance -> only then implementation in a separate task -> live AFTER evidence -> existing CI/release gate. Neither resident Hermes nor `skills/`, systemd, VPS, OAuth, real private telemetry, existing services or production is within scope. No paid APIs, background tasks, binaries, hooks, private data export or new CI owner.
