@@ -57,6 +57,12 @@ class GateTests(unittest.TestCase):
     def test_baked_secret_denied(self):
         c=image();c["Config"]["Env"].append("BRC_TOKEN=bad")
         with self.assertRaisesRegex(UpgradeDenied,"baked_secret"):candidate_gate(c,NEW)
+    def test_host_pid_or_ipc_namespace_denied(self):
+        for field, value in (("PidMode", "host"), ("IpcMode", "host"), ("UsernsMode", "host")):
+            with self.subTest(field=field):
+                c=current();c["HostConfig"][field]=value
+                with self.assertRaisesRegex(UpgradeDenied,"host_scope"):
+                    current_gate(c,NEW)
     def test_untrusted_pins_before_docker(self):
         with patch("scripts.h15_brc_upgrade_preflight.inspect") as docker:
             with self.assertRaisesRegex(UpgradeDenied,"untrusted_pins"):
