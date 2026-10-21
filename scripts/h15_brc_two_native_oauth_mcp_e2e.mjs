@@ -130,6 +130,43 @@ must(!tools.has('get_config') && !tools.has('send_file_transfer') &&
      'TWO_NATIVE_MCP_RESTRICTED_TOOLSET');
 const call = (name, args) => rpc('tools/call', { name, arguments: args });
 
+// #454: REAL authenticated OAuth HTTP MCP discovery/calls, not a direct TS unit call.
+// Device names and token are disposable CI fixtures. Git checkouts are never mounted.
+must(tools.has('list_workspaces') && tools.has('resolve_workspace'),
+     'H15_WORKSPACE_TOOLS_ADVERTISED_OVER_OAUTH_MCP');
+const workspaceList = await call('list_workspaces', {});
+const workspaceCatalog = JSON.parse(workspaceList.content?.[0]?.text ?? '{}');
+must(workspaceList.isError !== true && workspaceCatalog.status === 'catalog' &&
+     workspaceCatalog.workspaces?.length === 4 &&
+     workspaceCatalog.workspaces.every(w => w.scope === 'sandbox' && w.git_verified === false &&
+       w.deviceId === 'ci-native-one' && w.device_status === 'online'),
+     'H15_OWNER_SCOPED_WORKSPACE_CATALOG_OVER_OAUTH_MCP');
+for (const [alias, expected] of [
+  ['YFC', 'your-fitness-coach'],
+  ['toolkit', 'ai-development-toolkit'],
+  ['second brain', 'second-brain'],
+  ['hermes', 'hermes'],
+]) {
+  const result = await call('resolve_workspace', { project: alias });
+  const resolved = JSON.parse(result.content?.[0]?.text ?? '{}');
+  must(result.isError !== true && resolved.status === 'resolved' &&
+       resolved.workspace === expected && resolved.root === '/workspace/projects/' + expected &&
+       resolved.deviceId === 'ci-native-one' && resolved.git_verified === false &&
+       resolved.verification_required_before_write === true,
+       'H15_OAUTH_MCP_RESOLVE_' + expected.toUpperCase().replaceAll('-', '_'));
+}
+for (const args of [
+  { project: '../../host-private' },
+  { project: 'YFC', deviceId: 'ci-native-two' },
+  { project: '/workspace/projects/hermes' },
+  {},
+]) {
+  const result = await call('resolve_workspace', args);
+  const refused = JSON.parse(result.content?.[0]?.text ?? '{}');
+  must(result.isError === true && refused.status === 'refused',
+       'H15_OAUTH_MCP_WORKSPACE_INVALID_REQUEST_DENIED');
+}
+
 const list = await call('list_devices', {});
 const discovered = JSON.parse(list.content[0].text).devices;
 const ids = new Set(discovered.filter((x) => x.online).map((x) => x.deviceId));
@@ -203,10 +240,29 @@ const unaffected = await call('read_file', {
 must(unaffected.isError !== true && JSON.stringify(unaffected).includes('real-ci-agent-one'),
      'TWO_NATIVE_OTHER_DEVICE_UNAFFECTED');
 
+// Pausing the unrelated VPS agent must not alter the selected Windows workspace.
+const stillOnline = await call('resolve_workspace', { project: 'YFC' });
+must(stillOnline.isError !== true &&
+     JSON.parse(stillOnline.content?.[0]?.text ?? '{}').deviceId === 'ci-native-one',
+     'H15_OWNER_WORKSPACE_UNRELATED_DEVICE_PAUSE_UNAFFECTED');
+
 const malformedToken = await fetch(base + '/mcp', {
   method: 'POST',
   headers: { ...headers, authorization: 'Bearer denied-fixture' },
   body: JSON.stringify({ jsonrpc: '2.0', id: 99, method: 'tools/list', params: {} }),
 });
 must(malformedToken.status === 401, 'TWO_NATIVE_WRONG_OAUTH_TOKEN_REFUSED');
+// Pause the actual project device. The relay must refuse workspace resolution.
+const pauseWindows = await fetch(base + '/admin/device', {
+  method: 'POST', redirect: 'manual',
+  headers: { cookie, origin: base, 'content-type': 'application/x-www-form-urlencoded' },
+  body: form({ device_id: 'ci-native-one', action: 'pause' }),
+});
+must(pauseWindows.status === 302, 'H15_WORKSPACE_DEVICE_OWNER_PAUSE_APPLIED');
+const stoppedWorkspace = await call('resolve_workspace', { project: 'YFC' });
+must(stoppedWorkspace.isError === true &&
+     JSON.parse(stoppedWorkspace.content?.[0]?.text ?? '{}').reason === 'owner_device_unavailable',
+     'H15_WORKSPACE_PAUSED_OWNER_DEVICE_REFUSED');
+console.log('H15_OAUTH_MCP_WORKSPACE_ROUTING_E2E=PASS');
+
 console.log('HERMES_BRC_TWO_REAL_NATIVE_AGENTS_OAUTH_MCP_E2E=PASS');
