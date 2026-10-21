@@ -2,6 +2,17 @@ name: H-15 pinned Remote Commander candidate (isolated CI only)
 
 on:
   workflow_dispatch:
+  # Rebuild a source-pinned OCI candidate automatically at the actual
+  # merged main SHA. This produces artifacts only: NEVER updates live relay.
+  push:
+    branches: [main]
+    paths:
+      - scripts/h15_brc_workspace_gateway.py
+      - deploy/h15/hermes-workspaces.template.ts
+      - deploy/h15/workspace-registry.json
+      - scripts/h15_brc_two_native_provision.mjs
+      - scripts/h15_brc_two_native_oauth_mcp_e2e.mjs
+      - .github/workflows/h15-remote-commander-candidate.yml
   pull_request:
     paths:
       - scripts/h15_remote_commander_candidate_audit.py
@@ -68,7 +79,7 @@ permissions:
 jobs:
   candidate:
     # Never run external source alongside fork PR secrets or credentials.
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
