@@ -8,6 +8,8 @@ on:
     branches: [main]
     paths:
       - scripts/h15_brc_workspace_gateway.py
+      - scripts/h15_brc_upgrade_preflight.py
+      - tests/test_h15_brc_upgrade_preflight.py
       - deploy/h15/hermes-workspaces.template.ts
       - deploy/h15/workspace-registry.json
       - scripts/h15_brc_two_native_provision.mjs
@@ -20,6 +22,8 @@ on:
       - scripts/h15_brc_harden_relay.py
       - scripts/h15_brc_harden_gateway.py
       - scripts/h15_brc_workspace_gateway.py
+      - scripts/h15_brc_upgrade_preflight.py
+      - tests/test_h15_brc_upgrade_preflight.py
       - deploy/h15/hermes-workspaces.template.ts
       - deploy/h15/workspace-registry.json
       - tests/test_h15_brc_workspace_gateway.py
@@ -98,7 +102,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m unittest -v tests.test_h15_workspace_router tests.test_h15_brc_workspace_gateway
+          python3 -m unittest -v tests.test_h15_workspace_router tests.test_h15_brc_workspace_gateway tests.test_h15_brc_upgrade_preflight
 
       - name: Fetch exact upstream Git commit (not tag, latest or npm install)
         shell: bash
