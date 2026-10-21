@@ -18,6 +18,16 @@ class YfcInstallContractTests(unittest.TestCase):
                     subprocess.run(["bash", "-n", str(path)], check=False,
                                    capture_output=True).returncode, 0)
 
+    def test_yfc_bootstrap_shell_scripts_keep_lf_in_windows_checkout(self):
+        attributes = (ROOT / ".gitattributes").read_text().splitlines()
+        for name in (
+            "install-yfc-infrastructure-emitter.sh",
+            "install-hermes-yfc-pull.sh",
+            "hermes-yfc-metrics-emit.sh",
+        ):
+            with self.subTest(name=name):
+                self.assertIn(f"deploy/{name} text eol=lf", attributes)
+
     def test_remote_emitter_limits_access_to_one_forced_command(self):
         script = (ROOT / "deploy/install-yfc-infrastructure-emitter.sh").read_text()
         self.assertIn('user=hermes-infra-read', script)
