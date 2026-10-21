@@ -11,8 +11,9 @@ or a permission grant. The existing BRC image, ENTRYPOINT and CMD are inherited.
   image ID of the H-15 sandbox agent. No floating base tag or auto-pull.
 - Debian 12 Bookworm only. Git, Python 3, pip, venv and CA certificates come
   from Debian repository snapshots dated 2026-10-20 at **build time**. An installed Debian archive keyring authenticates the initial HTTP APT CA-certificate bootstrap; strict signed index checks remain enabled. Subsequent package installation uses HTTPS after the CA bundle is available.
-  The running agent gets no new network permissions. Snapshot availability,
-  image build and runtime execution are NOT_RUN as of this source-only PR.
+  The running agent gets no new network permissions. This **revised repository
+  Dockerfile** has not been rebuilt; a separate, owner-built image is documented
+  below. Live runtime activation remains NOT_RUN.
 - No automatic `npm install` or `pip install`, no additional credentials,
   and no change to container mounts, production services or Codex config.
 - Work only in an owner-approved sandbox copy under `/workspace/projects`.
