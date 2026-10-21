@@ -85,7 +85,10 @@ def current_gate(container: dict, candidate_id: str) -> str:
         deny("relay_state_mount_mismatch")
     if (not re.fullmatch(r"[1-9][0-9]*:[1-9][0-9]*", str(cfg.get("User", "")))
             or host.get("Devices") not in (None, [])
-            or host.get("Binds") not in (None, [])):
+            or host.get("Binds") not in (None, [])
+            or host.get("PidMode") not in (None, "")
+            or host.get("IpcMode") == "host"
+            or host.get("UsernsMode") == "host"):
         deny("relay_host_scope_mismatch")
     if (type(host.get("PidsLimit")) is not int or not 1 <= host["PidsLimit"] <= 128
             or type(host.get("Memory")) is not int or not 128*1024*1024 <= host["Memory"] <= 1024*1024*1024):
