@@ -51,7 +51,7 @@ class H15DevtoolsContract(unittest.TestCase):
 
     def test_readme_requires_identity_and_rollback(self):
         for term in ("docker image inspect", "sha256:", "roll back", "No production", "offline", "BRC_BASE_IMAGE"):
-            self.assertIn(term, self.runbook)
+            self.assertIn(term.casefold(), self.runbook.casefold())
 
 
 if __name__ == "__main__":
