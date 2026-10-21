@@ -5,6 +5,7 @@ FROM ${BRC_BASE_IMAGE}
 
 # Never change the inherited ENTRYPOINT, CMD, WORKDIR, or container mounts.
 # Only the separate build stage uses uid 0; the final runtime is non-root.
+# The initial HTTP bootstrap is APT-signed; use HTTPS after ca-certificates exists.
 USER 0:0
 RUN set -eu; \
     . /etc/os-release; \
@@ -12,7 +13,6 @@ RUN set -eu; \
     test "$VERSION_CODENAME" = bookworm; \
     test -s /usr/share/keyrings/debian-archive-keyring.gpg; \
     rm -f /etc/apt/sources.list.d/*.sources /etc/apt/sources.list.d/*.list; \
-    # Bootstrap Debian's CA bundle from a signed HTTP snapshot, then use HTTPS. \
     printf '%s\n' \
       'deb [signed-by=/usr/share/keyrings/debian-archive-keyring.gpg check-valid-until=no] http://snapshot.debian.org/archive/debian/20261020T000000Z bookworm main' \
       'deb [signed-by=/usr/share/keyrings/debian-archive-keyring.gpg check-valid-until=no] http://snapshot.debian.org/archive/debian-security/20261020T000000Z bookworm-security main' \
