@@ -94,7 +94,11 @@ try {
         $url = Repository-Origin $spec.Repo
         Write-Host "H15_WORKSPACE_CLONING=$($spec.Name)"
         # Limit history/bandwidth. Skip global credential helpers; no access to private vault.
-        Run-Git @('-c','credential.helper=','-c','core.hooksPath=NUL','clone','--depth','1','--single-branch','--no-tags','--filter=blob:none','--branch',$spec.Branch,'--',$url,$staging) 'PUBLIC_CLONE_FAILED'
+        # Shared Windows/Linux checkout: prevent Windows global autocrlf=true
+        # from creating CRLF worktrees which the Linux BRC Git sees as dirty.
+        # Affects only NEW staged clones; existing directories are untouched.
+        Run-Git @('-c','credential.helper=','-c','core.hooksPath=NUL','-c','core.autocrlf=false','clone','--depth','1','--single-branch','--no-tags','--filter=blob:none','--branch',$spec.Branch,'--',$url,$staging) 'PUBLIC_CLONE_FAILED'
+        Run-Git @('-C',$staging,'config','--local','core.autocrlf','false') 'LOCAL_LF_POLICY_FAILED'
         Verify-Clone $staging $spec
         # Never delete staging automatically after a failed git command: user can inspect it.
         if (Test-Path -LiteralPath $dest) { Fail 'DESTINATION_CREATED_CONCURRENTLY' }
