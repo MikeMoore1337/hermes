@@ -53,6 +53,16 @@ class WindowsWorkspaceTests(unittest.TestCase):
         self.assertNotIn('reset --hard', WORK)
         self.assertNotIn('Remove-Item -Recurse', WORK)
 
+    def test_new_clones_use_lf_for_windows_linux_interop(self):
+        self.assertIn("'core.autocrlf=false','clone'", WORK)
+        self.assertIn("'config','--local','core.autocrlf','false'", WORK)
+        self.assertIn("LOCAL_LF_POLICY_FAILED", WORK)
+        self.assertIn("existing directories are untouched", WORK)
+        self.assertIn("ALREADY_PRESENT_NO_OVERWRITE", WORK)
+        # A tool must not rewrite the existing Hermes checkout to fix CRLF.
+        self.assertNotIn("reset --hard", WORK)
+        self.assertNotIn("checkout -f", WORK)
+
     def test_second_brain_private_vault_excluded(self):
         self.assertIn('private Second Brain vault', WORK)
         self.assertIn('not syncs of uncommitted local changes', WORK)
