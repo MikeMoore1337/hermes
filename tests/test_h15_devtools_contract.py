@@ -25,13 +25,27 @@ class H15DevtoolsContract(unittest.TestCase):
         self.assertIn("64", self.runbook)
 
     def test_static_snapshot_only(self):
-        self.assertEqual(self.source.count("20261020T000000Z"), 2)
+        self.assertEqual(self.source.count("20261020T000000Z"), 4)
         self.assertIn("snapshot.debian.org/archive/debian/", self.source)
         self.assertIn("snapshot.debian.org/archive/debian-security/", self.source)
         self.assertIn('test "$ID" = debian', self.source)
         self.assertIn('test "$VERSION_CODENAME" = bookworm', self.source)
         self.assertNotIn("apt-get upgrade", self.source)
         self.assertNotIn("curl ", self.source)
+
+    def test_ca_bootstrap_uses_signed_repositories(self):
+        self.assertIn("signed-by=/usr/share/keyrings/debian-archive-keyring.gpg", self.source)
+        self.assertIn("test -s /usr/share/keyrings/debian-archive-keyring.gpg", self.source)
+        self.assertIn("APT::Update::Error-Mode=any", self.source)
+        self.assertNotIn("AllowInsecureRepositories", self.source)
+        self.assertNotIn("trusted=yes", self.source)
+        self.assertNotIn("Acquire::https::Verify-Peer=false", self.source)
+        http = self.source.index("http://snapshot.debian.org/archive/debian/")
+        ca = self.source.index("apt-get install -y --no-install-recommends ca-certificates")
+        https = self.source.index("https://snapshot.debian.org/archive/debian/")
+        self.assertLess(http, ca)
+        self.assertLess(ca, https)
+        self.assertIn("test -s /etc/ssl/certs/ca-certificates.crt", self.source)
 
     def test_minimal_dev_tools_only(self):
         self.assertIn("git python3 python3-pip python3-venv ca-certificates", self.source)
