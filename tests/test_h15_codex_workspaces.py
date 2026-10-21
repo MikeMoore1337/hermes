@@ -21,6 +21,8 @@ class CodexBrcMcpTests(unittest.TestCase):
         self.assertNotIn('Remove-Item -LiteralPath $ConfigPath', CODEX)
         self.assertIn('CODEX_HOME_LINK', CODEX)
         self.assertIn('CODEX_CONFIG_NOT_REGULAR', CODEX)
+        self.assertIn('EXISTING_HERMES_URL_MISMATCH', CODEX)
+        self.assertIn('Assert-HermesEndpoint', CODEX)
 
     def test_explicit_oauth_user_action(self):
         self.assertIn("'Login' {", CODEX)
