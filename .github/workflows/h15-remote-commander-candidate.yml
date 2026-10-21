@@ -435,9 +435,9 @@ jobs:
           echo "::add-mask::$token_b"
           for name in "$agent_a" "$agent_b"; do
             if [ "$name" = "$agent_a" ]; then
-              token="$token_a"; device="ci-native-one"; workspace="$workspace_a"
+              token="$token_a"; device="ci-native-one"; workspace="$workspace_a"; display_name="H15 Windows permanent sandbox"
             else
-              token="$token_b"; device="ci-native-two"; workspace="$workspace_b"
+              token="$token_b"; device="ci-native-two"; workspace="$workspace_b"; display_name="ci-native-two"
             fi
             docker run -d --name "$name" --network "$net" \
               --read-only --user 65534:65534 --cap-drop ALL \
@@ -447,7 +447,7 @@ jobs:
               -v "$workspace:/workspace:rw" \
               -e HOME=/workspace -e BRC_HOME=/workspace/.brc \
               -e BRC_RELAY=http://ci-relay:3000 \
-              -e BRC_DEVICE_ID="$device" -e BRC_NAME="$device" \
+              -e BRC_DEVICE_ID="$device" -e BRC_NAME="$display_name" \
               -e BRC_TOKEN="$token" \
               "$image" node packages/agent/dist/cli.js --allow-dir /workspace >/dev/null
           done
