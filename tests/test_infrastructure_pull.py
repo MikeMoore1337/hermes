@@ -40,6 +40,8 @@ class PullContract(unittest.TestCase):
         self.assertNotIn("other_sensitive_field", save.call_args.args[0]["metrics"])
         self.assertNotIn("network_interfaces", save.call_args.args[0]["metrics"])
         self.assertEqual(runner.call_args.kwargs["timeout"], 10)
+        self.assertEqual(runner.call_args.kwargs["encoding"], "utf-8")
+        self.assertEqual(runner.call_args.kwargs["errors"], "strict")
 
     def test_wrong_host_or_source_denied_before_write(self):
         for sample in (
@@ -66,6 +68,23 @@ class PullContract(unittest.TestCase):
                  patch.object(monitor, "save") as save, \
                  self.assertRaises(monitor.PullError):
                 monitor.pull(runner=Mock(return_value=fake))
+            save.assert_not_called()
+
+    def test_ssh_invalid_utf8_fails_closed_without_persisting_or_leaking(self):
+        bad_decode = UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+        for runner in (
+            Mock(side_effect=bad_decode),
+            Mock(return_value=Mock(
+                returncode=0, stdout="\ud800", stderr="PRIVATE-TOKEN")),
+        ):
+            with self.subTest(kind="decode" if runner.side_effect else "encode"), \
+                 patch.object(monitor, "endpoint", return_value=("example.test", 22)), \
+                 patch.object(monitor, "require_file"), \
+                 patch.object(monitor, "save") as save, \
+                 self.assertRaises(monitor.PullError) as caught:
+                monitor.pull(runner=runner)
+            self.assertEqual(str(caught.exception), "ssh_invalid_encoding")
+            self.assertEqual(runner.call_count, 1)
             save.assert_not_called()
 
     def test_network_timeout_and_failure(self):
