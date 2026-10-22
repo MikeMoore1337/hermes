@@ -74,7 +74,7 @@ def doctor():
             lambda: APPROVAL.exists() or APPROVAL.is_symlink()),
     }
     reachable = False
-    if programs["docker"] and checks["root"] and checks["host_docker_socket"]:
+    if programs["docker"] and checks["root"] and checks["host_docker_socket"] is True:
         try:
             result = subprocess.run(["docker", "info", "--format", "{{.ServerVersion}}"],
                                     capture_output=True, text=True, timeout=8)
