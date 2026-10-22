@@ -135,6 +135,43 @@ def run(source_dir: Path, deps_dir: Path | None = None) -> bool:
                     self.assertIsNone(k.claim_task(
                         db, a, ttl_seconds=120, claimer="owner-2"))
 
+            def test_force_exit_after_claim_preserves_running_state(self):
+                # Real synthetic Python child exits abruptly after a durable
+                # SQLite claim. This is NOT a crash of a running LLM worker.
+                with c.connect_closing(self.path) as db:
+                    task = k.create_task(db, title="synthetic crash",
+                                         workspace_kind="scratch")
+                child_program = (
+                    "import os,sys\n"
+                    "from pathlib import Path\n"
+                    "from hermes_cli import kanban_db as k, kanban_db_connect as c\n"
+                    "with c.connect_closing(Path(sys.argv[1])) as db:\n"
+                    "    if k.claim_task(db,sys.argv[2],ttl_seconds=120,"
+                    "claimer='synthetic-child') is None: os._exit(40)\n"
+                    "os._exit(29)\n"
+                )
+                local_env = {
+                    "PATH": os.environ.get("PATH", ""),
+                    "HOME": workspace,
+                    "HERMES_HOME": workspace,
+                    "HERMES_KANBAN_DB": str(self.path),
+                    "PYTHONDONTWRITEBYTECODE": "1",
+                    "PYTHONPATH": os.pathsep.join(
+                        [str(source_dir)] +
+                        ([str(deps_dir.resolve())] if deps_dir else [])),
+                }
+                crashed = subprocess.run(
+                    [sys.executable, "-B", "-c", child_program,
+                     str(self.path), task],
+                    cwd=str(source_dir), env=local_env, capture_output=True,
+                    timeout=20, check=False,
+                )
+                self.assertEqual(crashed.returncode, 29)
+                with c.connect_closing(self.path) as db:
+                    self.assertEqual(k.get_task(db, task).status, "running")
+                    self.assertIsNone(k.claim_task(
+                        db, task, ttl_seconds=120, claimer="after-crash"))
+
             def test_archived_parent_unblocks_unproven_child(self):
                 # Important native semantics: archived is a satisfied DAG
                 # dependency, NOT independent evidence of successful analysis.
