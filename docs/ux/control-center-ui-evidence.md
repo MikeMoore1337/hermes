@@ -23,6 +23,37 @@ Issue #440. Control Center **уже существует** как React 19/Vite 
 
 Остальной обычный QA: `npm --prefix control_center/frontend run test` и `npm --prefix control_center/frontend run build`. Если Chromium не установлен в тестовой машине, evidence = NOT_RUN, а не PASS; setup отдельный от production.
 
+## Ручной сбор снимков в GitHub Actions (необязательный)
+
+Вкладка Actions - **Hermes UI Visual Evidence (manual, synthetic)** -
+**Run workflow**. Отдельный `workflow_dispatch` исполняет только
+`control_center/frontend/qa/visual-evidence.spec.js` на выбранном commit
+SHA, используя штатный Playwright/Chromium, закреплённый `package-lock.json`
+и локальный Python webServer. Новый job **не добавлен в обязательные CI checks**
+и не выполняется автоматически при `push` или `pull_request`.
+
+После выполнения открыть Actions run - **Artifacts** -
+`hermes-h440-synthetic-ui-evidence`: архив содержит интерактивный
+Playwright HTML-отчёт, PNG (320/393/768/1440; состояние API 503; login-preview
+393/1440) и JSON-манифест наблюдений. Срок хранения: **7 дней**.
+Это **архив GitHub Actions**, а не отдельные постоянные публичные ссылки на
+PNG. При необходимости опубликовать стабильные отдельные изображения -
+выполнить отдельную приёмку и явно согласованную публикацию; данный
+процесс не выкладывает снимки в исходники или на VPS.
+
+Изоляция: сетевые запросы браузера ограничены
+`http://127.0.0.1:9133`. Запросы к внешним адресам или реальным
+`/auth/*` и `/api/auth/*` блокируются *до отправки* и приводят к
+ошибке теста. Другие `/api/*`, кроме явно подменённого
+`/api/overview`, возвращают синтетический 503 без обращения к API.
+Service workers выключены. Снимки и JSON фиксируют `synthetic_only`,
+сокращённое движение, ошибки страницы и отсутствие горизонтального overflow.
+
+**Проверять итог по конкретному Run/SHA**. До первого реального ручного
+запуска действие `workflow_dispatch` и архив = `NOT_RUN`, даже при
+успешной обычной UI регрессии. Автоматический UI CI отдельно подтверждает
+только прохождение `npm run test:e2e` на заданном SHA.
+
 ## Запись результата
 
 Для каждого изменённого UI состояния: exact SHA, URL/состояние, viewport, mocked/live marker, PNG, видимый результат операции, консольная ошибка, проверка фокуса и overflow, применимость reduced-motion. Сопоставить с утверждённым Atlas/брендом и существующими контрольными точками. Не считать synthetic результат тестом реального GitHub OAuth, телефона, VPS или Telegram. Не прикладывать снимки с токенами, cookies, именами реальных устройств, квотами и приватными данными.

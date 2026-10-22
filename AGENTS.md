@@ -123,7 +123,7 @@ security, CI, release, owner approvals and factual operational evidence.
 
 ## Control Center frontend: targeted external UI methods
 
-`control_center/frontend` is a real React/Vite product UI, not a headless-only project. For approved UI tasks, follow [Control Center UI evidence](docs/ux/control-center-ui-evidence.md): verify rendered state, interactions, viewports and synthetic-data provenance with existing Playwright. Other external sources remain optional references. The pinned Impeccable skill is a **development-only Codex UX/UI procedure**, not an executable hook, runtime skill, automatic installer, or permission to redesign Atlas. Keep read-only/API/OAuth boundaries and visual owner gates intact.
+`control_center/frontend` is a real React/Vite product UI, not a headless-only project. For approved UI tasks, follow [Control Center UI evidence](docs/ux/control-center-ui-evidence.md): verify rendered state, interactions, viewports and synthetic-data provenance with existing Playwright. A manual GitHub workflow `.github/workflows/control-center-visual-evidence.yml` captures synthetic-only screenshot evidence on demand; it is not a required check, not a design approval, and must never call owner OAuth or live monitoring APIs. Other external sources remain optional references. The pinned Impeccable skill is a **development-only Codex UX/UI procedure**, not an executable hook, runtime skill, automatic installer, or permission to redesign Atlas. Keep read-only/API/OAuth boundaries and visual owner gates intact.
 
 ## Impeccable для Control Center (разработка, 2026-10-21)
 

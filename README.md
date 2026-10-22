@@ -90,7 +90,7 @@ python3 -m unittest discover -s tests -v
 | **Правила работы в репозитории** | [AGENTS.md](AGENTS.md) · [принятые решения](docs/decisions/ADR-0002-workers-free-and-delivery-first.md) |
 | **Система и границы** | [Архитектура](docs/architecture/OVERVIEW.md) · [Ownership](docs/architecture/OWNERSHIP.md) · [Security](docs/security/THREAT_MODEL.md) |
 | **Разработка и поставка** | [Deployment](docs/operations/DEPLOYMENT.md) · [Дорожная карта](docs/roadmap/ROADMAP.md) |
-| **Испытания и качество** | [Offline-evals](evals/) · [Бенчмарк](hermes_benchmark/) · [GitHub Actions](.github/workflows/quality.yml) |
+| **Испытания и качество** | [Offline-evals](evals/) · [Бенчмарк](hermes_benchmark/) · [GitHub Actions](.github/workflows/quality.yml) · [Визуальная проверка Control Center](docs/ux/control-center-ui-evidence.md) |
 
 ## Как устроена работа
 
