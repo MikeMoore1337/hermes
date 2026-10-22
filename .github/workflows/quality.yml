@@ -67,6 +67,11 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m hermes_context_eval.core --sha "$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+      - name: H-477 ten bounded offline reasoning-state oracles (no LLM/devices)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m hermes_reasoning_eval.core --sha "$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
       - name: Preserve sanitized benchmark reports
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
