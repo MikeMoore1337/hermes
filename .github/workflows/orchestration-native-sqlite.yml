@@ -1,0 +1,71 @@
+name: Hermes orchestration pinned native SQLite (no models)
+
+# Opt-in by path or manual dispatch. No deploy or resident service.
+on:
+  pull_request:
+    paths:
+      - "scripts/orchestration_native_kanban_probe.py"
+      - "tests/test_orchestration_native_probe_pins.py"
+      - ".github/workflows/orchestration-native-sqlite.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pinned-native-sqlite:
+    # No running arbitrary fork contributions with a GitHub-token context.
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Check out exact proposed Hermes revision
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Check out pinned public upstream source without saved credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: NousResearch/hermes-agent
+          ref: d923a5eb487a17c0a68801bba9ef0f56c81040a8
+          path: .pinned-upstream
+          persist-credentials: false
+
+      - name: Verify ephemeral host and exact upstream SHA
+        env:
+          EXEC_ENV: ${{ runner.environment }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$EXEC_ENV" == "github-hosted" && "$RUNNER_OS" == "Linux" ]]
+          [[ "$(git -C .pinned-upstream rev-parse HEAD)" == "d923a5eb487a17c0a68801bba9ef0f56c81040a8" ]]
+
+      - name: Acquire only pinned public pure-wheel dependency
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/orchestration-native-deps"
+          cat > "$RUNNER_TEMP/orchestration-native-requirements.txt" <<'PINS'
+          ruamel.yaml==0.18.16 --hash=sha256:048f26d64245bae57a4f9ef6feb5b552a386830ef7a826f235ffb804c59efbba
+          PINS
+          python3 -m pip install --no-deps --only-binary=:all: --require-hashes \
+            --no-cache-dir --disable-pip-version-check \
+            -r "$RUNNER_TEMP/orchestration-native-requirements.txt" \
+            --target "$RUNNER_TEMP/orchestration-native-deps"
+
+      - name: Run original pinned Kanban via temporary SQLite (no model)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Drop ambient CI env; the pure probe uses only Git, Python, public
+          # source, an isolated dependency and temporary SQLite databases.
+          env -i \
+            PATH="$PATH" \
+            HOME="$RUNNER_TEMP" \
+            PYTHONDONTWRITEBYTECODE=1 \
+            PYTHONNOUSERSITE=1 \
+            python3 -B scripts/orchestration_native_kanban_probe.py \
+              --upstream-dir .pinned-upstream \
+              --deps-dir "$RUNNER_TEMP/orchestration-native-deps"
+          echo "NATIVE_SQLITE_ORCHESTRATION=PASS (no LLM, no worker service)" >> "$GITHUB_STEP_SUMMARY"
