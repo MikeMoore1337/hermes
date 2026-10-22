@@ -39,3 +39,23 @@ Hermes SSH source-deploy key.
 The current ChatGPT Hermes device is a Docker sandbox and cannot run
 this. No production BRC upgrade has happened just because this script
 exists or a GitHub Actions Docker fixture passed.
+
+## GitHub CLI diagnosis on the owner host
+
+`doctor` reports `checks.github_authenticated` for the **effective root
+identity**. `programs.gh=true` alone does not establish an authenticated
+session. If it is false, `prepare` fails closed with
+`github_cli_auth_required` *before* any OCI download or Docker load.
+
+Authorize `gh` locally as root via GitHub's browser/device flow, then run
+`sudo -H gh auth status` and `doctor` again. On a headless VPS, open
+`https://github.com/login/device` manually on a trusted workstation and
+complete the CLI's one-time approval there. Do not share device codes,
+tokens, or raw `gh auth status` output in issues/chat.
+
+The owner handoff prints **only fixed-format machine-readable refusal
+codes** from verified internal exceptions. Arbitrary exception messages,
+CLI output, Docker inspect data and credentials are not exposed. A refusal
+from `prepare` is not permission to retry `execute` or override the
+auth/provenance/host checks. The production relay remains untouched until
+the separately approved interactive cutover.
