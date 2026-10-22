@@ -40,7 +40,7 @@ function Header({view,setView,authMode,onLogout}){
    <div className="brand-divider" aria-hidden="true"/>
    <span className="header-subtitle">Центр наблюдения и управления <small>AI · АВТОМАТИЗАЦИЯ · КОНТРОЛЬ · БЕЗОПАСНОСТЬ</small></span>
    <div className="atlas-nav" role="navigation" aria-label="Основные разделы">
-     {nav.slice(0,5).map(k=><button key={k} type="button" className={view===k?"selected":""} aria-current={view===k?"page":undefined} onClick={()=>setView(k)}>{navName(k)}</button>)}
+     {["all","inbox","ops","research","qa","commander"].map(k=><button key={k} type="button" className={view===k?"selected":""} aria-current={view===k?"page":undefined} onClick={()=>setView(k)}>{navName(k)}</button>)}
    </div>
    <div className="header-tools">
     <InfoBadge tone="outline"><LockKeyhole size={13}/> Только чтение</InfoBadge>
