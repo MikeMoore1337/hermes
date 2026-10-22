@@ -105,6 +105,32 @@ class HandoffTests(unittest.TestCase):
             with self.assertRaisesRegex(h.HandoffDenied,"root_required"):
                 h.check_host()
 
+    def test_doctor_never_crashes_on_private_owner_permission_denial(self):
+        class NotTraversable:
+            def exists(self):
+                raise PermissionError("root-owned secrets are private")
+            def is_symlink(self):
+                raise PermissionError("root-owned secrets are private")
+        with patch.object(h, "APPROVAL", NotTraversable()), \
+             patch.object(h, "prepare") as prepare, \
+             patch.object(h, "transactional_main") as upgrade:
+            out=h.doctor()
+            self.assertEqual(out["status"], "READ_ONLY_HOST_DIAGNOSTIC")
+            self.assertEqual(out["checks"]["existing_approval"], "inaccessible")
+            self.assertFalse(out["service_changed"])
+            prepare.assert_not_called()
+            upgrade.assert_not_called()
+
+    def test_inaccessible_host_socket_does_not_attempt_docker(self):
+        with patch.object(h.Path, "is_socket", side_effect=PermissionError("denied")), \
+             patch.object(h.os, "geteuid", return_value=0), \
+             patch.object(h.shutil, "which", return_value="/usr/bin/docker"), \
+             patch.object(h.subprocess, "run") as dock:
+            out=h.doctor()
+            self.assertEqual(out["checks"]["host_docker_socket"], "inaccessible")
+            self.assertFalse(out["checks"]["docker_reachable"])
+            dock.assert_not_called()
+
     def test_doctor_never_changes_relay(self):
         with patch.object(h,"prepare") as p,patch.object(h,"transactional_main") as t,\
              patch.object(h.subprocess,"run") as runner:
