@@ -44,6 +44,7 @@ def check_plan(plan, grant, now, available_devices):
     if type(nodes) is not list or not 1 <= len(nodes) <= 3:
         raise Rejected("child_limit")
     node_ids = set()
+    total_child_steps = 0
     for node in nodes:
         if type(node) is not dict or set(node) != {
             "id", "device", "scopes", "tools", "expires", "max_steps"
@@ -65,6 +66,9 @@ def check_plan(plan, grant, now, available_devices):
             raise Rejected("node_expired")
         if type(node["max_steps"]) is not int or not 1 <= node["max_steps"] <= grant["max_steps"]:
             raise Rejected("node_budget")
+        total_child_steps += node["max_steps"]
+    if total_child_steps > grant["max_steps"]:
+        raise Rejected("aggregate_budget_escalation")
     if type(plan["edges"]) is not list:
         raise Rejected("edge_schema")
     incoming = {node_id: set() for node_id in node_ids}
