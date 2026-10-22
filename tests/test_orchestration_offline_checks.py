@@ -4,7 +4,9 @@ from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import unittest
 
-from scripts.orchestration_offline_checks import Rejected, check_handoff, check_plan
+from scripts.orchestration_offline_checks import (
+    Rejected, check_handoff, check_plan, eligible_after_verified_evidence,
+)
 
 REV = "a" * 40
 GRANT = {
@@ -65,6 +67,25 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(set(receipts), {"signal", "safety"})
         self.assertEqual(len(seen), 2)
         self.assertNotIn("review", receipts)  # QA input ready; QA not executed
+
+    def test_evidence_gate_blocks_archived_parent(self):
+        # Native Kanban marks an archived parent terminal; acceptance must
+        # still require that parent's independent evidence before QA is eligible.
+        plan = self.plan()
+        self.assertEqual(eligible_after_verified_evidence(plan, frozenset()),
+                         ("safety", "signal"))
+        self.assertEqual(eligible_after_verified_evidence(plan, frozenset({"safety"})),
+                         ("signal",))
+        self.assertEqual(eligible_after_verified_evidence(
+            plan, frozenset({"safety", "signal"})), ("review",))
+
+    def test_evidence_gate_rejects_unknown_task(self):
+        with self.assertRaisesRegex(Rejected, "unknown_evidence_node"):
+            eligible_after_verified_evidence(self.plan(), frozenset({"unknown"}))
+
+    def test_evidence_gate_requires_verified_set_type(self):
+        with self.assertRaisesRegex(Rejected, "eligibility_schema"):
+            eligible_after_verified_evidence(self.plan(), {"signal"})
 
     def test_cycle(self):
         self.rejects(lambda p: p["edges"].append(["review", "signal"]), "cycle")
