@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""#454: authenticated, exact-main BRC OCI download and offline verification.
+"""#454: authenticate and verify the newest reusable source-pinned BRC OCI.
 
 This runs on an explicitly authorized owner host. Never grants Docker to BRC.
-Default operation never loads an image or changes the live relay.
+Default operation never loads an image or changes the live relay. A prior
+candidate is allowed only when its source is a proven ancestor of main and
+the entire relevant BRC build/upgrade input scope is unchanged.
 """
 from __future__ import annotations
 import argparse
@@ -23,6 +25,22 @@ ARTIFACT="h15-brc-relay-offline-oci-amd64"
 SHA=re.compile(r"[0-9a-f]{40}\Z")
 IMAGE=re.compile(r"sha256:[0-9a-f]{64}\Z")
 HASH=re.compile(r"[0-9a-f]{64}\Z")
+# All BRC input and release-operator paths: err on the side of refusal.
+# We intentionally do not count independent unrelated quality.yml changes
+# as alterations of an already built OCI image.
+BRC_INPUT_PREFIXES=(
+    "deploy/h15/",
+    "scripts/h15_",
+    "tests/test_h15_",
+    "docs/security/h15-brc",
+)
+BRC_INPUT_EXACT={
+    ".github/workflows/h15-remote-commander-candidate.yml",
+    "pnpm-lock.yaml", "pnpm-workspace.yaml", "package.json",
+    "pyproject.toml", "uv.lock",
+}
+MAX_UNRELATED_COMMITS=80
+
 
 class StagingDenied(ValueError):
     pass
@@ -50,20 +68,60 @@ def api(endpoint):
         refuse("github_api_not_object")
     return obj
 
+def is_brc_input(path):
+    return (isinstance(path,str) and
+            (path in BRC_INPUT_EXACT or
+             any(path.startswith(prefix) for prefix in BRC_INPUT_PREFIXES)))
+
+def require_unchanged_brc_inputs(candidate, main):
+    """Confirm ancestry and untouched inputs; GitHub compare is the authority."""
+    if candidate == main:
+        return False
+    if not SHA.fullmatch(candidate) or not SHA.fullmatch(main):
+        refuse("invalid_lineage_sha")
+    result=api(f"repos/{REPO}/compare/{candidate}...{main}")
+    merge_base=(result.get("merge_base_commit") or {}).get("sha")
+    changes=result.get("files")
+    if (result.get("status")!="ahead" or merge_base!=candidate
+            or type(result.get("behind_by")) is not int or result["behind_by"]!=0
+            or type(result.get("ahead_by")) is not int
+            or not 1<=result["ahead_by"]<=MAX_UNRELATED_COMMITS
+            or not isinstance(changes,list)
+            or len(changes)>=300):
+        refuse("unverified_candidate_ancestry_or_truncated_diff")
+    for item in changes:
+        if not isinstance(item,dict):
+            refuse("invalid_compare_file")
+        filename=item.get("filename")
+        prior=item.get("previous_filename")
+        if not isinstance(filename,str) or not filename:
+            refuse("invalid_compare_filename")
+        if is_brc_input(filename) or (prior is not None and
+                                      (not isinstance(prior,str) or is_brc_input(prior))):
+            refuse("brc_input_modified_requires_fresh_candidate")
+    return True
+
 def discover():
     sha=(api(f"repos/{REPO}/branches/main").get("commit") or {}).get("sha")
     if not isinstance(sha,str) or SHA.fullmatch(sha) is None:
         refuse("main_sha_invalid")
     runs=api(f"repos/{REPO}/actions/workflows/{WORKFLOW}/runs?branch=main&event=push&per_page=60")
     eligible=[r for r in runs.get("workflow_runs",[]) if isinstance(r,dict)
-              and r.get("head_sha")==sha and r.get("head_branch")=="main"
+              and isinstance(r.get("head_sha"),str)
+              and SHA.fullmatch(r["head_sha"]) is not None
+              and r.get("head_branch")=="main"
               and r.get("event")=="push" and r.get("conclusion")=="success"
               and r.get("status")=="completed"
               and r.get("name")=="H-15 pinned Remote Commander candidate (isolated CI only)"
               and type(r.get("id")) is int and r["id"]>0]
     if not eligible:
-        refuse("successful_exact_main_candidate_missing")
-    selected=max(eligible,key=lambda r:r["id"])
+        refuse("successful_main_candidate_missing")
+    # An exact-current-main success wins even if a newer job record for
+    # another (e.g. stale/superseded) main SHA has a larger run ID.
+    exact=[r for r in eligible if r["head_sha"]==sha]
+    selected=max(exact or eligible,key=lambda r:r["id"])
+    source_sha=selected["head_sha"]
+    lineage_reuse=require_unchanged_brc_inputs(source_sha,sha)
     run_id=selected["id"]
     items=api(f"repos/{REPO}/actions/runs/{run_id}/artifacts")
     matching=[x for x in items.get("artifacts",[]) if isinstance(x,dict)
@@ -82,9 +140,10 @@ def discover():
         if pattern.fullmatch(value) is None:
             refuse("ci_log_pin_invalid")
         return value
-    return {"sha":sha,"run_id":run_id,"artifact_id":matching[0]["id"],
+    return {"sha":source_sha,"run_id":run_id,"artifact_id":matching[0]["id"],
             "image":evidence("H15_OFFLINE_BUNDLE_IMAGE_ID",IMAGE),
-            "archive":evidence("H15_OFFLINE_BUNDLE_ARCHIVE_SHA256",HASH)}
+            "archive":evidence("H15_OFFLINE_BUNDLE_ARCHIVE_SHA256",HASH),
+            "current_main_sha":sha,"ancestor_candidate_reused":lineage_reuse}
 
 def private(directory):
     if directory.is_symlink() or not directory.is_dir():
@@ -151,7 +210,10 @@ def stage(directory,entry,load=False):
         if preflight.get("status")!="PREFLIGHT_PASS":
             refuse("host_relay_preflight_incomplete")
         state="IMAGE_LOADED_PREFLIGHT_PASS_NO_CUTOVER"
-    return {"status":state,"source_sha":sha,"image_id":image,
+    return {"status":state,"source_sha":sha,
+            "current_main_sha":entry.get("current_main_sha",sha),
+            "ancestor_candidate_reused":entry.get("ancestor_candidate_reused",False),
+            "image_id":image,
             "archive_sha256":archive,"run_id":entry["run_id"],
             "artifact_id":entry["artifact_id"],"staging_dir":str(target),
             "reused":reused,"live_relay_changed":False}

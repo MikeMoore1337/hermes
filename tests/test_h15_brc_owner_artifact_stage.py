@@ -22,13 +22,78 @@ class StagingTests(unittest.TestCase):
                 {"artifacts":[ART]}]),patch.object(m,"run",return_value=(
                     f"H15_OFFLINE_BUNDLE_IMAGE_ID={IMAGE}\n"
                     f"H15_OFFLINE_BUNDLE_ARCHIVE_SHA256={HASH}\n")):
-            self.assertEqual(m.discover(),GOOD)
-    def test_no_latest_ci_refuse(self):
+            self.assertEqual(m.discover(),dict(GOOD,current_main_sha=SHA,
+                                                      ancestor_candidate_reused=False))
+    def test_no_main_candidate_refuse(self):
         with patch.object(m,"api",side_effect=[
-                {"commit":{"sha":SHA}},
-                {"workflow_runs":[dict(RUN,head_sha="0"*40)]}]):
-            with self.assertRaisesRegex(m.StagingDenied,"exact_main"):
+                {"commit":{"sha":SHA}}, {"workflow_runs":[]}]):
+            with self.assertRaisesRegex(m.StagingDenied,"successful_main"):
                 m.discover()
+    def test_old_candidate_allowed_only_if_ancestor_and_brc_unchanged(self):
+        current="d"*40
+        source_sha=SHA
+        unrelated={"status":"ahead","merge_base_commit":{"sha":source_sha},
+                   "ahead_by":9,"behind_by":0,
+                   "files":[{"filename":".github/workflows/quality.yml"},
+                            {"filename":"hermes_toolperf/core.py"}]}
+        with patch.object(m,"api",side_effect=[
+                {"commit":{"sha":current}},
+                {"workflow_runs":[RUN]},unrelated, {"artifacts":[ART]}]), \
+             patch.object(m,"run",return_value=(
+                    f"H15_OFFLINE_BUNDLE_IMAGE_ID={IMAGE}\n"
+                    f"H15_OFFLINE_BUNDLE_ARCHIVE_SHA256={HASH}\n")):
+            got=m.discover()
+        self.assertEqual(got["sha"],source_sha)
+        self.assertEqual(got["current_main_sha"],current)
+        self.assertTrue(got["ancestor_candidate_reused"])
+
+    def test_live_main_advanced_with_brc_edit_denied_before_download(self):
+        for modified in ("scripts/h15_brc_harden_relay.py",
+                         "deploy/h15/Dockerfile.brc-relay",
+                         "tests/test_h15_brc_owner_artifact_stage.py",
+                         ".github/workflows/h15-remote-commander-candidate.yml",
+                         "pnpm-lock.yaml"):
+            with self.subTest(modified=modified):
+                with patch.object(m,"api",side_effect=[
+                        {"commit":{"sha":"d"*40}},{"workflow_runs":[RUN]},
+                        {"status":"ahead","merge_base_commit":{"sha":SHA},
+                         "ahead_by":2,"behind_by":0,
+                         "files":[{"filename":modified}]}]), \
+                     patch.object(m,"run") as download:
+                    with self.assertRaisesRegex(m.StagingDenied,
+                                                "brc_input_modified"):
+                        m.discover()
+                    download.assert_not_called()
+
+    def test_rename_from_sensitive_path_denied(self):
+        with patch.object(m,"api",return_value={
+                "status":"ahead","merge_base_commit":{"sha":SHA},
+                "ahead_by":1,"behind_by":0,
+                "files":[{"filename":"unrelated-renamed.py",
+                          "previous_filename":"scripts/h15_brc_gateway.py"}]}):
+            with self.assertRaisesRegex(m.StagingDenied,"brc_input_modified"):
+                m.require_unchanged_brc_inputs(SHA,"d"*40)
+
+    def test_not_ancestor_or_diff_truncated_denied(self):
+        valid={"status":"ahead","merge_base_commit":{"sha":SHA},
+               "ahead_by":1,"behind_by":0,"files":[]}
+        cases=[dict(valid,status="diverged"),
+               dict(valid,merge_base_commit={"sha":"f"*40}),
+               dict(valid,behind_by=1),
+               dict(valid,ahead_by=81),
+               dict(valid,files=[{"filename":"harmless.txt"}]*300),
+               dict(valid,files=None)]
+        for condition in cases:
+            with self.subTest(condition=condition), \
+                 patch.object(m,"api",return_value=condition):
+                with self.assertRaisesRegex(m.StagingDenied,"ancestry"):
+                    m.require_unchanged_brc_inputs(SHA,"d"*40)
+
+    def test_exact_current_main_skips_compare(self):
+        with patch.object(m,"api") as api:
+            self.assertFalse(m.require_unchanged_brc_inputs(SHA,SHA))
+            api.assert_not_called()
+
     def test_expired_artifact_rejected(self):
         with patch.object(m,"api",side_effect=[
                 {"commit":{"sha":SHA}},
