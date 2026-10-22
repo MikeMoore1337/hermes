@@ -167,6 +167,8 @@
  .hc-side-title{padding:0 15px}.hc-side-title .hc-overline{display:none}
  .hc-side-title h2{font-size:13px;margin:0 0 8px}
  .hc-search,.hc-devices{display:none}
+ .hc-devices.hc-mobile-open{display:block;margin:4px 15px 12px;padding:14px;border:1px solid #2e5272;border-radius:9px;background:#0c2133}
+ .hc-devices.hc-mobile-open::before{display:none}
  .hc-projects{display:flex;overflow-x:auto;gap:9px;padding:4px 15px 12px;scroll-snap-type:x mandatory;scrollbar-width:none}
  .hc-projects::-webkit-scrollbar{display:none}
  .hc-project{min-width:192px;max-width:214px;min-height:70px;grid-template-columns:29px 1fr;padding:10px;background:#0c1d2e;
