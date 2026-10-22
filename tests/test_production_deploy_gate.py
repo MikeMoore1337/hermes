@@ -79,6 +79,11 @@ class SourceDeployGateTests(unittest.TestCase):
                              capture_output=True,text=True,timeout=15,env=env)
             return p.returncode,p.stdout,p.stderr,output.read_text()
 
+    def test_bash_syntax_of_real_gate(self):
+        p=subprocess.run(["bash","-n"],input=gate_shell(),
+                         capture_output=True,text=True)
+        self.assertEqual(p.returncode,0,p.stderr)
+
     def test_pending_ui_deferred_without_failed_release(self):
         code,stdout,stderr,out=self.run_gate()
         self.assertEqual(code,0,stderr)
