@@ -118,15 +118,15 @@ The optional probe itself performs **no download, package installation, inferenc
 
 ### Actual results
 
-An initial interactive native SQLite trial passed **12/12** checks, and the now-committed, independently repeatable `orchestration_native_kanban_probe.py` passed **10/10**, `NATIVE_PROBE_EXIT=0` on the same pinned upstream sources. The probe covers:
+An initial interactive native SQLite trial passed **12/12** checks, and the now-committed, independently repeatable `orchestration_native_kanban_probe.py` passed **11/11**, `NATIVE_PROBE_EXIT=0` on the same pinned upstream sources. The probe covers:
 - Native parent/child edges, two independent read-only tasks and QA dependency gate; QA result survives DB close/reopen.
 - Native `link_tasks` cycle rejection and missing/self parent rejection.
 - Native task `idempotency_key` deduplication.
 - Two real concurrent *Python SQLite callers* attempting the same native `claim_task`: **exactly one wins**; this is not concurrent LLM inference.
-- Reopen with a formerly claimed `running` task: a fresh plain `claim_task` does not duplicate the run; **this does not test timed-out lease recovery or a crashed process.**
+- Reopen with a formerly claimed `running` task: a fresh plain `claim_task` does not duplicate the run. Additionally, an isolated child Python process was **really terminated via `os._exit(29)` immediately after a native SQLite claim committed**; the parent process reopened the database and verified `status=running` and second claim denied. This is an actual crash of a synthetic Python test process, **not** a real LLM worker, production recovery, or timed-out lease recovery.
 - Explicitly blocked parent prevents premature QA; repeated `complete_task` cannot overwrite a `done` task.
 - **Crucial native behavior:** an `archived` parent with **no result** releases a child to `ready`. It is upstream's documented terminal-edge behavior, not proof of trustworthy execution. The synthetic [evidence-gated eligibility helper](../../scripts/orchestration_offline_checks.py) now requires externally verified parent IDs before considering QA eligible. The repository unit tests reject a missing archived parent's evidence. This helper cannot authenticate receipts or enforce real dispatcher admission.
 
 ### Acceptance boundary
 
-`PINNED_NATIVE_SQLITE_TESTED=YES` with DELETE journal and synthetic public task content. `WAL_RESTART/PROCESS_KILL_RECOVERY=NOT_RUN`, `REAL_MODEL_WORKERS=0`, `SIGNED_RECEIPTS=NOT_IMPLEMENTED`, `OS_TOOL_PERMISSION_ENFORCEMENT=NOT_VERIFIED`, `PAID_API_CALLS=0`, `SPEEDUP/TOKEN_SAVINGS=NOT_MEASURED`. No code here changes native upstream or authorizes resident production deployment. #474/#475 remain OPEN until the remaining live-admission gates are separately approved and tested.
+`PINNED_NATIVE_SQLITE_TESTED=YES` with DELETE journal and synthetic public task content. `WAL_RESTART/REAL_AGENT_PROCESS_KILL_RECOVERY=NOT_RUN`, `REAL_MODEL_WORKERS=0`, `SIGNED_RECEIPTS=NOT_IMPLEMENTED`, `OS_TOOL_PERMISSION_ENFORCEMENT=NOT_VERIFIED`, `PAID_API_CALLS=0`, `SPEEDUP/TOKEN_SAVINGS=NOT_MEASURED`. No code here changes native upstream or authorizes resident production deployment. #474/#475 remain OPEN until the remaining live-admission gates are separately approved and tested.
