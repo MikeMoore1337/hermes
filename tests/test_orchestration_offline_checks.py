@@ -1,5 +1,6 @@
 """Synthetic offline checks for Hermes delegation and Kanban DAG (#474/#475)."""
 import copy
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import unittest
 
@@ -39,6 +40,31 @@ class ContractTests(unittest.TestCase):
     def test_proper_order(self):
         self.assertEqual(check_plan(self.plan(), GRANT, 1000, DEVICES),
                          ("safety", "signal", "review"))
+
+    def test_two_synthetic_readers_feed_evidence_review(self):
+        # These are ordinary deterministic Python functions, NOT LLM subagents.
+        plan = self.plan()
+        order = check_plan(plan, GRANT, 1000, DEVICES)
+        self.assertEqual(order[-1], "review")
+        def read_only_job(node):
+            return node, (node + ":public-synthetic").encode()
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            worker_outputs = list(pool.map(read_only_job, ("signal", "safety")))
+        receipts = []
+        seen = set()
+        for node_id, payload in worker_outputs:
+            evidence_id = "proof-" + node_id
+            receipt = {
+                "node_id": node_id, "revision": REV, "evidence_id": evidence_id,
+                "sha256": hashlib.sha256(payload).hexdigest(),
+                "expires": 1500, "accepted": True,
+            }
+            receipts.append(check_handoff(payload, receipt, node_id=node_id,
+                                          revision=REV, evidence_id=evidence_id,
+                                          now=1000, seen=seen))
+        self.assertEqual(set(receipts), {"signal", "safety"})
+        self.assertEqual(len(seen), 2)
+        self.assertNotIn("review", receipts)  # QA input ready; QA not executed
 
     def test_cycle(self):
         self.rejects(lambda p: p["edges"].append(["review", "signal"]), "cycle")
