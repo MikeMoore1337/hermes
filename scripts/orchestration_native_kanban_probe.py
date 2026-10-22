@@ -241,6 +241,58 @@ def run(source_dir: Path, deps_dir: Path | None = None) -> bool:
                         db, task, reason="synthetic duplicate"))
                     self.assertEqual(k.get_task(db, task).status, "ready")
 
+            def test_native_refuses_signals_without_verified_local_pid(self):
+                # Actual live disposable OS child; NO signal is allowed for
+                # unverified/foreign/recycled identity. Never an LLM worker.
+                from hermes_cli import kanban_db_dispatch as dispatch
+                child = subprocess.Popen(
+                    [sys.executable, "-B", "-c", "import time; time.sleep(30)"],
+                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                sent = []
+                def forbid_signal(pid, sig):
+                    sent.append((pid, sig))
+                    self.fail("native signalled a non-verified child")
+                try:
+                    local_lock = k._host_prefix() + "synthetic-owner"
+                    # A bare, living PID is NOT permission to kill.
+                    unverified = dispatch._terminate_reclaimed_worker(
+                        child.pid, local_lock, signal_fn=forbid_signal,
+                        started_at=dispatch.UNVERIFIED_WORKER_FINGERPRINT)
+                    self.assertTrue(unverified["signal_refused"])
+                    self.assertFalse(unverified["termination_attempted"])
+                    self.assertFalse(unverified["terminated"])
+                    self.assertIsNone(child.poll())
+
+                    # Foreign host claims must not be interpreted as local.
+                    foreign = dispatch._terminate_reclaimed_worker(
+                        child.pid, "foreign-host:other", signal_fn=forbid_signal,
+                        started_at=None)
+                    self.assertFalse(foreign["host_local"])
+                    self.assertFalse(foreign["termination_attempted"])
+                    self.assertIsNone(child.poll())
+
+                    # Live PID with a fingerprint from a different process
+                    # instantiation must also be left untouched.
+                    fingerprint = dispatch._process_fingerprint(child.pid)
+                    self.assertIsNotNone(fingerprint)
+                    recycled = dispatch._terminate_reclaimed_worker(
+                        child.pid, local_lock, signal_fn=forbid_signal,
+                        started_at="different-instantiation|" + fingerprint)
+                    self.assertTrue(recycled["pid_recycled"])
+                    self.assertFalse(recycled["termination_attempted"])
+                    self.assertIsNone(child.poll())
+                    self.assertEqual(sent, [])
+                finally:
+                    if child.poll() is None:
+                        child.terminate()
+                    try:
+                        child.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        child.kill()
+                        child.wait(timeout=3)
+
             def test_archive_signals_only_verified_local_sleeper(self):
                 # Actual local OS signal to an inert child in an ephemeral
                 # runner. No model, provider, real worker or resident service.
