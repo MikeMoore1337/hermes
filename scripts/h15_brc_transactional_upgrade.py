@@ -170,8 +170,27 @@ def swap(image, old, baseline):
                 "rollback_container_retained": True, "sqlite_backup_retained": True}
     except (CutoverDenied, UpgradeDenied, OSError, ValueError) as exc:
         if not stopped:
-            raise CutoverDenied("STOP_FAILED_OLD_RELAY_NOT_CHANGED") from exc
+            # docker stop may have succeeded but its reply was lost.
+            # Never assume either stopped or running without inspecting.
+            try:
+                current = inspect(["container", "inspect", NAME])
+                demand(current.get("Image") == old and
+                       ((current.get("Config") or {}).get("Labels") or {}).get("com.hermes.scope") == "h15-brc-owner-relay",
+                       "STOP_RESULT_AMBIGUOUS")
+                if ((current.get("State") or {}).get("Running") is False):
+                    docker("start", NAME)
+                    demand(healthy(baseline, tries=40), "OLD_RELAY_RECONNECT_FAILED")
+            except (CutoverDenied, UpgradeDenied, OSError, ValueError) as uncertain:
+                raise CutoverDenied("STOP_RESULT_AMBIGUOUS_MANUAL_RECOVERY") from uncertain
+            raise CutoverDenied("STOP_FAILED_OR_UNCERTAIN_OLD_RELAY_RETAINED") from exc
         try:
+            if not renamed and exists(CHECKPOINT):
+                checkpoint = inspect(["container", "inspect", CHECKPOINT])
+                demand(checkpoint.get("Image") == old and
+                       (checkpoint.get("Config") or {}).get("User") == user and
+                       ((checkpoint.get("Config") or {}).get("Labels") or {}).get("com.hermes.scope") == "h15-brc-owner-relay",
+                       "FOREIGN_ROLLBACK_CHECKPOINT")
+                renamed = True
             if renamed:
                 if exists(NAME):
                     other = inspect(["container", "inspect", NAME])
