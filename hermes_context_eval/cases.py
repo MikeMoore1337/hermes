@@ -31,18 +31,14 @@ DEPLOY = {"op": "deploy", "result": "success", "sha": SHA,
 # The expected answer is separately authored: not computed by the summarizer.
 def _case(ident, category, events, *, owner="UNKNOWN", ci="UNKNOWN",
           merged="NO", deployed="NOT_VERIFIED", device="UNKNOWN",
-          warning=(), outstanding=("owner_review", "deploy_proof")):
+          warning=(), outstanding=("owner_review", "deploy_proof"), evidence=()):
     expected = {
         "issue": ISSUE, "branch": BRANCH, "sha": SHA,
         "owner": owner, "ci": ci, "merged": merged, "deployed": deployed,
         "device": device, "max_extra_cost": 0,
         "forbidden": ["paid_api", "codex_cli", "remote_shell"],
         "outstanding": list(outstanding), "warnings": list(warning),
-        "evidence": sorted({
-            e["proof"] for e in events if "proof" in e and (
-                e["op"] in ("ci", "merge", "deploy") and
-                e.get("sha") == SHA)
-        }),
+        "evidence": sorted(evidence),
     }
     return {"case_id": ident, "version": 1, "category": category,
             "events": events, "expected": expected}
@@ -52,15 +48,15 @@ CASES = [
     _case("cx-01-pending-release", "unverified_deployment",
           COMMON + [APPROVE, PASS, MERGE],
           owner="APPROVED", ci="PASS", merged="YES",
-          outstanding=("deploy_proof",)),
+          outstanding=("deploy_proof",), evidence=(URL_CI, URL_MERGE)),
     _case("cx-02-owner-revoked", "approval_revocation",
           COMMON + [APPROVE, PASS, MERGE, DENY],
           owner="DENIED", ci="PASS", merged="YES",
-          outstanding=("deploy_proof",)),
+          outstanding=("deploy_proof",), evidence=(URL_CI, URL_MERGE)),
     _case("cx-03-failed-ci", "false_positive_ci",
           COMMON + [APPROVE, FAIL, {"op": "claim", "kind": "ci", "value": "PASS"}],
           owner="APPROVED", ci="FAIL", warning=("UNVERIFIED_CI_CLAIM",),
-          outstanding=("deploy_proof",)),
+          outstanding=("deploy_proof",), evidence=(URL_CI,)),
     _case("cx-04-device-interrupted", "interrupted_execution",
           COMMON + [APPROVE, {"op": "device", "state": "interrupted"}],
           owner="APPROVED", device="INTERRUPTED",
@@ -83,10 +79,10 @@ CASES = [
                     {"op": "claim", "kind": "deploy", "value": "DEPLOYED"}],
           owner="APPROVED", ci="PASS", merged="YES",
           warning=("UNVERIFIED_DEPLOY_CLAIM",),
-          outstanding=("deploy_proof",)),
+          outstanding=("deploy_proof",), evidence=(URL_CI, URL_MERGE)),
     _case("cx-09-valid-deployment", "positive_verified_transition",
           COMMON + [APPROVE, PASS, MERGE, DEPLOY,
                     {"op": "outstanding", "items": []}],
           owner="APPROVED", ci="PASS", merged="YES", deployed="DEPLOYED",
-          outstanding=()),
+          outstanding=(), evidence=(URL_CI, URL_MERGE, URL_DEPLOY)),
 ]
