@@ -48,9 +48,24 @@ class StagingDenied(ValueError):
 def refuse(message):
     raise StagingDenied(message)
 
+def github_auth_ready():
+    """Read-only check for the GitHub CLI identity used by this process."""
+    if shutil.which("gh") is None:
+        return False
+    try:
+        result = subprocess.run(
+            ["gh", "auth", "status", "--hostname", "github.com"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=8,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0
+
 def run(*args, cap=3000000):
     if shutil.which("gh") is None:
         refuse("authenticated_github_cli_required")
+    if not github_auth_ready():
+        refuse("github_cli_auth_required")
     try:
         p=subprocess.run(["gh",*args],capture_output=True,text=True,timeout=150)
     except (OSError,subprocess.TimeoutExpired) as exc:
