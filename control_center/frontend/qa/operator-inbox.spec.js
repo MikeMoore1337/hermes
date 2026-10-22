@@ -110,7 +110,7 @@ test("stale/missing coverage does not render a healthy claim",async({page})=>{
  await openInbox(page);
  await expect(page.getByText("Нет подтверждённых сигналов")).toBeVisible();
  await expect(page.getByText(/Нулевая очередь не гарантирует/)).toBeVisible();
- await expect(page.getByText("Устарел")).toBeVisible();
+ await expect(page.getByText("Устарел",{exact:true})).toBeVisible();
  await page.screenshot({path:resolve(screenshots,"inbox-empty-stale-393.png"),fullPage:true});
  expect(leaks).toEqual([]);
 });
