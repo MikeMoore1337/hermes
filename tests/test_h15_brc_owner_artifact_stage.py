@@ -135,8 +135,10 @@ class StagingTests(unittest.TestCase):
             self.assertEqual(m.discover(),dict(GOOD,current_main_sha=SHA,
                                                       ancestor_candidate_reused=False))
     def test_no_main_candidate_refuse(self):
+        empty={"total_count":0,"workflow_runs":[]}
         with patch.object(m,"api",side_effect=[
-                {"commit":{"sha":SHA}}, {"total_count":0,"workflow_runs":[]}]):
+                {"commit":{"sha":SHA}},
+                *[empty for _ in range(m.MAX_CANDIDATE_LIST_ATTEMPTS)]]):
             with self.assertRaisesRegex(m.StagingDenied,"successful_main"):
                 m.discover()
     def test_old_candidate_allowed_only_if_ancestor_and_brc_unchanged(self):
