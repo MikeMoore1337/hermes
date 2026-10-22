@@ -70,6 +70,10 @@ class ToolCallContracts(unittest.TestCase):
             step=3, tool_call_id="call-test-0002")
         self.assertEqual(call(session, repeat_with_new_call)["reason"],
                          "DUPLICATE_IDEMPOTENCY")
+        bypass = fixture(step=4, tool_call_id="call-test-0003",
+                         idempotency_key="idem-test-0003")
+        self.assertEqual(call(session, bypass)["reason"],
+                         "UNRESOLVED_WRITE_BLOCKS_DISPATCH")
         self.assertEqual(len(session.effects), 1)
         self.assertEqual(session.files["docs/note.txt"], "new\n")
 
