@@ -7,11 +7,12 @@ import {groups,statuses,validSnapshot,counts,filterServices} from "./health.js";
 import "./style.css";
 import {registerPwa} from "./register-pwa.js";
 import CodexPanel from "./CodexPanel.jsx";
+import OperatorInbox from "./OperatorInbox.jsx";
 
 const ISSUE33="https://github.com/MikeMoore1337/hermes/issues/33";
 const ISSUE163="https://github.com/MikeMoore1337/hermes/issues/163";
 const UI_VERSION="0.2.0";
-const nav=["all","ops","research","qa","agent","codex"];
+const nav=["all","inbox","ops","research","qa","agent","codex"];
 const icons={news:Radio,ops:Activity,alerts:Signal,qa:ShieldCheck,
   research:Search,network:ShieldCheck,agent_bounded:Activity,agent:LockKeyhole};
 const formatTime=t=>{const d=new Date(t);return Number.isFinite(d.getTime())?d.toLocaleString("ru-RU",{day:"2-digit",month:"long",hour:"2-digit",minute:"2-digit"}):"нет данных";};
@@ -203,7 +204,7 @@ function OperatorApp({authMode,onLogout}){
   <Header view={view} setView={setView} authMode={authMode} onLogout={onLogout}/>
   <div className="body-layout">
    <main id="main-content" tabIndex={-1} className="dashboard-main">
-    <section className="atlas-hero"><div className="eyebrow">ОПЕРАЦИОННЫЙ КОНТУР H-15</div>
+    {view!=="inbox"&&<><section className="atlas-hero"><div className="eyebrow">ОПЕРАЦИОННЫЙ КОНТУР H-15</div>
        <h1>Система. Под наблюдением.</h1><p>Инвентаризация, контроль состояния и изоляция компонентов.
        <br/>Только проверенные данные systemd.</p>
        <div className="hero-meta">HERMES CONTROL CENTER / H-15 <span>РЕЖИМ: ТОЛЬКО ЧТЕНИЕ</span></div>
@@ -214,16 +215,17 @@ function OperatorApp({authMode,onLogout}){
      <StatTile title="ПОСЛЕДНИЙ СНИМОК" value={snapshot?"Получен":"Нет данных"} sub={now} icon={Database}/>
      <StatTile title="РЕЖИМ ДОСТУПА" value="Только чтение" sub="Команды управления отключены" icon={LockKeyhole}/>
     </section>
+    </>}
     <div className="atlas-section-nav"><Nav view={view} onView={setView}/><button className="refresh-button" onClick={reload} disabled={busy}><RefreshCw size={15} className={busy?"spin":""}/> Обновить</button></div>
-    {error&&<div className="inline-error" role="alert"><AlertTriangle size={17}/>{error}</div>}
-    <div className="operator-grid">
+    {view!=="inbox"&&error&&<div className="inline-error" role="alert"><AlertTriangle size={17}/>{error}</div>}
+    {view==="inbox"?<OperatorInbox/>:<div className="operator-grid">
      <div className="center-area">{view==="codex"?<CodexPanel/>:<>{view==="research"&&<ResearchPanel research={snapshot?.research}/>}<Registry snapshot={snapshot} view={view} search={search} setSearch={setSearch} filter={filter} setFilter={setFilter}/>{view==="all"&&<CodexPanel compact/>}</>}
       {view!=="codex"&&<section className="context-panel"><div><span className="eyebrow">ИСТОЧНИК</span><strong>systemd · защищённый снимок</strong><p>Разрешённый список {snapshot?.services?.length||"—"} компонентов, без приватных журналов и токенов.</p></div>
        <div><span className="eyebrow">РЕЖИМ</span><strong>Read-only</strong><p>Обновление интерфейса раз в минуту.</p></div>
        <a href={ISSUE163} target="_blank" rel="noopener noreferrer">Задача разработки <ExternalLink size={14}/></a></section>}
      </div>
      <SignalPanel snapshot={snapshot} error={error}/>
-    </div>
+    </div>}
    </main>
   </div>
   <footer className="footer">HERMES CONTROL CENTER <span>•</span> Сведения о systemd, не о результатах задач <span>•</span> <a href={ISSUE33} target="_blank" rel="noopener noreferrer">Политика допуска</a></footer>
