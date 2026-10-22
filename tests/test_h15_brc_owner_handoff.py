@@ -13,7 +13,7 @@ OLD = "sha256:" + "b" * 64
 SHA = "c" * 40
 ARCHIVE = "d" * 64
 PREPARED = {"status":"IMAGE_LOADED_PREFLIGHT_PASS_NO_CUTOVER",
-            "image_id":NEW,"source_sha":SHA,"archive_sha256":ARCHIVE,
+            "image_id":NEW,"runtime_image_id":NEW,"source_sha":SHA,"archive_sha256":ARCHIVE,
             "staging_dir":"/owner/oci/main-demo","live_relay_changed":False}
 
 
@@ -50,7 +50,7 @@ class HandoffTests(unittest.TestCase):
              patch.object(h.sys.stdout,"isatty",return_value=True),\
              patch.object(h,"check_host"),\
              patch.object(h,"prepare",return_value=dict(PREPARED)),\
-             patch.object(h,"admit",return_value={"status":"PREFLIGHT_PASS","current_image":OLD}),\
+             patch.object(h,"admit",return_value={"status":"PREFLIGHT_PASS","current_image":OLD,"candidate_image":NEW}),\
              patch("builtins.input",return_value="NO"),\
              patch.object(h,"temporary_approval") as approval,\
              patch.object(h,"transactional_main") as cutover:
@@ -59,12 +59,29 @@ class HandoffTests(unittest.TestCase):
             approval.assert_not_called()
             cutover.assert_not_called()
 
+    def test_runtime_identity_changes_between_prepare_and_execute_refuse(self):
+        with patch.object(h.sys.stdin,"isatty",return_value=True), \
+             patch.object(h.sys.stdout,"isatty",return_value=True), \
+             patch.object(h,"check_host"), \
+             patch.object(h,"prepare",return_value=dict(PREPARED)), \
+             patch.object(h,"admit",return_value={
+                 "status":"PREFLIGHT_PASS","current_image":OLD,
+                 "candidate_image":"sha256:"+"f"*64}), \
+             patch("builtins.input") as typed, \
+             patch.object(h,"temporary_approval") as approval, \
+             patch.object(h,"transactional_main") as cutover:
+            with self.assertRaisesRegex(h.HandoffDenied,"verified_runtime_image_changed"):
+                h.execute()
+            typed.assert_not_called()
+            approval.assert_not_called()
+            cutover.assert_not_called()
+
     def test_confirmed_operator_receives_exact_pins(self):
         with patch.object(h.sys.stdin,"isatty",return_value=True),\
              patch.object(h.sys.stdout,"isatty",return_value=True),\
              patch.object(h,"check_host"),\
              patch.object(h,"prepare",return_value=dict(PREPARED)),\
-             patch.object(h,"admit",return_value={"status":"PREFLIGHT_PASS","current_image":OLD}),\
+             patch.object(h,"admit",return_value={"status":"PREFLIGHT_PASS","current_image":OLD,"candidate_image":NEW}),\
              patch("builtins.input",return_value="APPLY BRC "+NEW[-12:]),\
              patch.object(h,"temporary_approval",return_value=nullcontext()) as approval,\
              patch.object(h,"transactional_main",return_value=0) as operator:
