@@ -9,6 +9,7 @@ from scripts import h15_brc_transactional_upgrade as m
 NEW="sha256:"+"2"*64
 OLD="sha256:"+"1"*64
 CID="a"*64
+RUNTIME="sha256:"+"3"*64
 def old():
     return {"Image": OLD, "Config": {"User": "979:975",
             "Labels": {"com.hermes.scope": "h15-brc-owner-relay"}}}
@@ -36,12 +37,27 @@ class CutoverContracts(unittest.TestCase):
     def test_plan_is_read_only(self):
         with patch.object(m.os,"geteuid",return_value=0), \
              patch.object(m,"lock",return_value=nullcontext()), \
-             patch.object(m,"admit",return_value={"current_image":OLD}), \
+             patch.object(m,"admit",return_value={"current_image":OLD,"candidate_image":RUNTIME}), \
              patch.object(m,"docker") as docker,patch.object(m,"approval_file") as approval:
             self.assertEqual(m.main(["plan","--bundle-dir","/x","--image",NEW,
                             "--archive-sha","b"*64,"--hermes-sha","a"*40]),0)
             approval.assert_not_called()
             docker.assert_not_called()
+    def test_cutover_uses_attested_runtime_id_but_approves_config_pin(self):
+        with patch.object(m.os,"geteuid",return_value=0), \
+             patch.object(m,"lock",return_value=nullcontext()), \
+             patch.object(m,"admit",return_value={"current_image":OLD,"candidate_image":RUNTIME}), \
+             patch.object(m,"approval_file") as approval, \
+             patch.object(m,"check_files"), \
+             patch.object(m,"devices",return_value=2), \
+             patch.object(m,"snapshot"), \
+             patch.object(m,"swap",return_value={"status":"SWITCHED_PENDING_LIVE_CLIENT_E2E"}) as switched:
+            self.assertEqual(m.main(["cutover","--bundle-dir","/x","--image",NEW,
+                             "--archive-sha","b"*64,"--hermes-sha","a"*40,
+                             "--execute"]),0)
+        approval.assert_called_once_with(NEW,OLD,"b"*64,"a"*40)
+        switched.assert_called_once_with(RUNTIME,OLD,2)
+
     def test_health_probe_is_direct_not_proxy_routed(self):
         from unittest.mock import MagicMock
         with patch.object(m,"build_opener") as factory:

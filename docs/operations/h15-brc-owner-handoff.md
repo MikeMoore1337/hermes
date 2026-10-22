@@ -20,6 +20,22 @@ owner-private backup directory, verifies its checksum/provenance, loads
 the image and performs the existing running-relay preflight.
 It does NOT stop/restart the relay or change OAuth, devices or SQLite.
 
+Docker image identity is version-dependent: classic Docker may identify the
+image by the CI-pinned OCI config digest, while Docker 29 with containerd
+may use the OCI manifest digest as its runtime image ID. The offline loader
+already verifies the imported image against the pinned archive. Preflight
+must separately verify the imported tag, digest, config and rootfs against
+that archive before accepting the manifest digest as the runtime ID.
+The CI config digest remains the independently pinned approval artifact;
+the attested runtime ID is the ONLY identifier used to start a container.
+Never substitute an unverified SHA or weaken the image/preflight gates.
+
+Multiple containers carrying the H15 owner-relay label are NOT evidence
+of a safe checkpoint to delete. The interactive cutover separately checks
+for a preexisting rollback checkpoint and refuses to overwrite it. If it
+exists, inspect the owner-host state without displaying secrets and resolve
+the checkpoint only through a separately reviewed recovery procedure.
+
 execute refuses every noninteractive/CI/MCP invocation before doing
 anything. It re-runs verified stage+preflight, displays the actual old
 and new immutable image IDs, and requires an exact owner-typed phrase.
