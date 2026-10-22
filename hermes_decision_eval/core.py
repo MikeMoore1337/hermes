@@ -131,7 +131,7 @@ def score(case, candidate):
 def choose(case, *, permutation=KEYS):
     """Preserve incumbent unless an eligible alternative has proven gain."""
     validate(case)
-    if tuple(sorted(permutation)) != tuple(sorted(KEYS):
+    if tuple(sorted(permutation)) != tuple(sorted(KEYS)):
         raise EvalError("INVALID_PERMUTATION")
     incumbent = score(case, case["candidates"]["A"])
     if not incumbent["eligible"]:
