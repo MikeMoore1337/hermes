@@ -10,6 +10,7 @@ on:
       - scripts/h15_brc_workspace_gateway.py
       - scripts/h15_brc_upgrade_preflight.py
       - scripts/h15_brc_transactional_upgrade.py
+      - scripts/h15_brc_transactional_docker_e2e.sh
       - tests/test_h15_brc_transactional_upgrade.py
       - tests/test_h15_brc_upgrade_preflight.py
       - deploy/h15/hermes-workspaces.template.ts
@@ -26,6 +27,7 @@ on:
       - scripts/h15_brc_workspace_gateway.py
       - scripts/h15_brc_upgrade_preflight.py
       - scripts/h15_brc_transactional_upgrade.py
+      - scripts/h15_brc_transactional_docker_e2e.sh
       - tests/test_h15_brc_transactional_upgrade.py
       - tests/test_h15_brc_upgrade_preflight.py
       - deploy/h15/hermes-workspaces.template.ts
@@ -718,6 +720,14 @@ jobs:
           echo "H15_BRC_OFFLINE_SOURCE_SHA=$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
           echo "H15_BRC_OFFLINE_IMAGE_PLATFORM=linux/amd64" >> "$GITHUB_STEP_SUMMARY"
           echo "H15_BRC_OFFLINE_IMAGE_OWNER_VPS_MODIFIED=NO" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Real disposable Docker relay upgrade, rollback, SQLite restore and device reconnect
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash "$GITHUB_WORKSPACE/scripts/h15_brc_transactional_docker_e2e.sh"
+          echo "H454_REAL_DOCKER_OWNER_CUTOVER_CI=PASS" >> "$GITHUB_STEP_SUMMARY"
+          echo "H454_OWNER_VPS_MODIFIED=NO" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Publish sealed OCI transfer archive for optional owner offline stage
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
