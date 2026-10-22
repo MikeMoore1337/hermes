@@ -40,6 +40,7 @@ BRC_INPUT_EXACT={
     "pyproject.toml", "uv.lock",
 }
 MAX_UNRELATED_COMMITS=80
+MAX_CANDIDATE_LIST_ATTEMPTS=4
 
 
 class StagingDenied(ValueError):
@@ -140,8 +141,23 @@ def discover():
     sha=(api(f"repos/{REPO}/branches/main").get("commit") or {}).get("sha")
     if not isinstance(sha,str) or SHA.fullmatch(sha) is None:
         refuse("main_sha_invalid")
-    runs=api(f"repos/{REPO}/actions/workflows/{WORKFLOW}/runs?branch=main&event=push&per_page=60")
-    eligible=[r for r in runs.get("workflow_runs",[]) if isinstance(r,dict)
+    endpoint=f"repos/{REPO}/actions/workflows/{WORKFLOW}/runs?branch=main&event=push&per_page=60"
+    # GitHub returned 11 successful main runs and then an empty list for
+    # the identical authorized endpoint during #454 owner-host staging.
+    # Retry only a structurally valid empty listing; never bypass identity,
+    # provenance, job-log, archive, or running-relay checks.
+    for _ in range(MAX_CANDIDATE_LIST_ATTEMPTS):
+        listing=api(endpoint)
+        rows=listing.get("workflow_runs")
+        count=listing.get("total_count")
+        if (not isinstance(rows,list) or type(count) is not int
+                or count < len(rows) or count < 0):
+            refuse("candidate_listing_invalid")
+        if rows:
+            break
+    else:
+        refuse("successful_main_candidate_missing")
+    eligible=[r for r in rows if isinstance(r,dict)
               and isinstance(r.get("head_sha"),str)
               and SHA.fullmatch(r["head_sha"]) is not None
               and r.get("head_branch")=="main"
