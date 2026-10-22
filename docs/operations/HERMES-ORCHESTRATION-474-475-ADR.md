@@ -59,7 +59,7 @@ Mandatory invariant checks before dispatch and before accepting a result:
 
 ## Rollback
 
-This change contains **one ADR, one inert offline checker and one unittest file**, with no services, model calls, schema migration, dependency install, or live runtime behavior to reverse. Revert these three files if the decision changes. A later native upstream version change or adapter activation needs its own tested rollback, not this document as a substitute.
+This change contains **one ADR, one inert offline checker, one unittest file and one optional native upstream smoke-probe**, with no services, model calls, schema migration, dependency install, or live runtime behavior to reverse. Revert these three files if the decision changes. A later native upstream version change or adapter activation needs its own tested rollback, not this document as a substitute.
 
 ## Native helper execution evidence (2026-10-22, Hermes BRC, no model calls)
 
@@ -91,3 +91,42 @@ On 2026-10-22, an isolated Hermes BRC Linux/Docker sandbox (Python 3.11.2) execu
 The pure `check_plan` preflight returns only an expected topological order; **it cannot execute that order**. `check_handoff` is a deliberately limited receipt-shape/digest fixture; it must **never** be used as a replacement for real signed/provider-attested evidence, durable replay protection or owner authorization. A runtime adapter must obtain independently attested grants and receipts, enforce OS/tool/network scopes, and implement the owner gates independently.
 
 The tests therefore improve repeatable **synthetic acceptance** and regression visibility for #474/#475 without converting either issue to LIVE_VERIFIED. The PR HEAD must pass GitHub CI again after adding these files. Production delivery remains subject to the existing Hermes main/production rules.
+
+
+## Exact pinned upstream native SQLite E2E — actually executed 2026-10-22
+
+### Origin and isolation
+
+- BRC: `h15-win-05be75515428`, reported platform **linux/docker**, Python **3.11.2**, local checkout `NousResearch/hermes-agent v0.22.2` (annotated tag **7b77e29eedd85a8497ce2821448dac7964dc46f6** peeled to commit **d923a5eb487a17c0a68801bba9ef0f56c81040a8**). The original source remained clean and unmodified.
+- `hermes_cli/kanban_db.py` original blob `36d5736f73ea708450e2e8306b6b0264c75d95cd`, `hermes_cli/kanban_db_graph.py` `e3a1f306c46d076069c4c80334e04b4440aa1d18`. These are independently checked by the new [optional probe](../../scripts/orchestration_native_kanban_probe.py) before importing upstream.
+- Only missing dependency `ruamel.yaml 0.18.16` was extracted to an **isolated sandbox directory** from the exact pure-Python wheel specified in upstream `uv.lock`; SHA256 `048f26d64245bae57a4f9ef6feb5b552a386830ef7a826f235ffb804c59efbba` verified before unpacking. No global/system/site-package install, no credential, no model API, no resident agent. Other optional provider plugins emitted missing `requests/httpx` import warnings but no request was executed.
+- Temporary SQLite files were created inside sandbox scratch / isolated Python `tempfile` directories, then removed. No production database, deployment, H-01, Telegram, external provider or private source touched.
+- Upstream detected **SQLite 3.40.1**, identified a WAL-reset corruption risk and intentionally ran `journal_mode=DELETE`. **Do not count these tests as WAL, production recovery, distributed coordinator, or installed runtime attestation.**
+
+### Reproducible command
+
+From a development/sandbox Python environment that already has the *exact pinned public upstream checkout and its required dependencies available* (no provider keys needed):
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 python3 -B \
+  scripts/orchestration_native_kanban_probe.py \
+  --upstream-dir /path/to/isolated/hermes-agent-v0.22.2 \
+  --deps-dir /path/to/isolated/pinned-python-deps
+```
+
+The optional probe itself performs **no download, package installation, inference, persistent worker start or network operation**. Its `--deps-dir` is optional if the upstream local Python dependencies already exist. An incompatible upstream SHA/blob exits **2** rather than quietly substituting a different version. Keep this separate from the normal no-extra-dependencies CI, which cannot claim a native integration run merely because these files exist.
+
+### Actual results
+
+An initial interactive native SQLite trial passed **12/12** checks, and the now-committed, independently repeatable `orchestration_native_kanban_probe.py` passed **10/10**, `NATIVE_PROBE_EXIT=0` on the same pinned upstream sources. The probe covers:
+- Native parent/child edges, two independent read-only tasks and QA dependency gate; QA result survives DB close/reopen.
+- Native `link_tasks` cycle rejection and missing/self parent rejection.
+- Native task `idempotency_key` deduplication.
+- Two real concurrent *Python SQLite callers* attempting the same native `claim_task`: **exactly one wins**; this is not concurrent LLM inference.
+- Reopen with a formerly claimed `running` task: a fresh plain `claim_task` does not duplicate the run; **this does not test timed-out lease recovery or a crashed process.**
+- Explicitly blocked parent prevents premature QA; repeated `complete_task` cannot overwrite a `done` task.
+- **Crucial native behavior:** an `archived` parent with **no result** releases a child to `ready`. It is upstream's documented terminal-edge behavior, not proof of trustworthy execution. The synthetic [evidence-gated eligibility helper](../../scripts/orchestration_offline_checks.py) now requires externally verified parent IDs before considering QA eligible. The repository unit tests reject a missing archived parent's evidence. This helper cannot authenticate receipts or enforce real dispatcher admission.
+
+### Acceptance boundary
+
+`PINNED_NATIVE_SQLITE_TESTED=YES` with DELETE journal and synthetic public task content. `WAL_RESTART/PROCESS_KILL_RECOVERY=NOT_RUN`, `REAL_MODEL_WORKERS=0`, `SIGNED_RECEIPTS=NOT_IMPLEMENTED`, `OS_TOOL_PERMISSION_ENFORCEMENT=NOT_VERIFIED`, `PAID_API_CALLS=0`, `SPEEDUP/TOKEN_SAVINGS=NOT_MEASURED`. No code here changes native upstream or authorizes resident production deployment. #474/#475 remain OPEN until the remaining live-admission gates are separately approved and tested.
