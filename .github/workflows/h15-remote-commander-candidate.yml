@@ -11,6 +11,8 @@ on:
       - scripts/h15_brc_upgrade_preflight.py
       - scripts/h15_brc_transactional_upgrade.py
       - scripts/h15_brc_owner_artifact_stage.py
+      - scripts/h15_brc_owner_handoff.py
+      - tests/test_h15_brc_owner_handoff.py
       - tests/test_h15_brc_owner_artifact_stage.py
       - scripts/h15_brc_transactional_docker_e2e.sh
       - tests/test_h15_brc_transactional_upgrade.py
@@ -30,6 +32,8 @@ on:
       - scripts/h15_brc_upgrade_preflight.py
       - scripts/h15_brc_transactional_upgrade.py
       - scripts/h15_brc_owner_artifact_stage.py
+      - scripts/h15_brc_owner_handoff.py
+      - tests/test_h15_brc_owner_handoff.py
       - tests/test_h15_brc_owner_artifact_stage.py
       - scripts/h15_brc_transactional_docker_e2e.sh
       - tests/test_h15_brc_transactional_upgrade.py
@@ -112,7 +116,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m unittest -v tests.test_h15_workspace_router tests.test_h15_brc_workspace_gateway tests.test_h15_brc_upgrade_preflight tests.test_h15_brc_transactional_upgrade tests.test_h15_brc_owner_artifact_stage
+          python3 -m unittest -v tests.test_h15_workspace_router tests.test_h15_brc_workspace_gateway tests.test_h15_brc_upgrade_preflight tests.test_h15_brc_transactional_upgrade tests.test_h15_brc_owner_artifact_stage tests.test_h15_brc_owner_handoff
 
       - name: Fetch exact upstream Git commit (not tag, latest or npm install)
         shell: bash
