@@ -1,5 +1,6 @@
 """Offline unit tests for exact-main OCI stage without any owner-host operations."""
 from pathlib import Path
+from types import SimpleNamespace
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
@@ -15,6 +16,25 @@ RUN={"id":123,"head_sha":SHA,"head_branch":"main","event":"push",
 ART={"name":m.ARTIFACT,"id":456,"expired":False,"size_in_bytes":110000000}
 
 class StagingTests(unittest.TestCase):
+    def test_missing_gh_auth_refuses_before_any_api_request(self):
+        with patch.object(m.shutil, "which", return_value="/usr/bin/gh"), \
+             patch.object(m.subprocess, "run",
+                          return_value=SimpleNamespace(returncode=1)) as cli:
+            with self.assertRaisesRegex(m.StagingDenied, "^github_cli_auth_required$"):
+                m.run("api", f"repos/{m.REPO}/branches/main")
+            cli.assert_called_once()
+            self.assertEqual(cli.call_args.args[0],
+                             ["gh", "auth", "status", "--hostname", "github.com"])
+
+    def test_authenticated_gh_cli_can_read_api(self):
+        result = SimpleNamespace(returncode=0, stdout='{"test":true}')
+        with patch.object(m.shutil, "which", return_value="/usr/bin/gh"), \
+             patch.object(m.subprocess, "run", return_value=result) as cli:
+            self.assertEqual(m.api(f"repos/{m.REPO}/branches/main"), {"test": True})
+            self.assertEqual(cli.call_count, 2)
+            self.assertEqual(cli.call_args_list[0].args[0][:3], ["gh", "auth", "status"])
+            self.assertEqual(cli.call_args_list[1].args[0][:2], ["gh", "api"])
+
     def test_exact_main_ci_log_pins(self):
         with patch.object(m,"api",side_effect=[
                 {"commit":{"sha":SHA}},

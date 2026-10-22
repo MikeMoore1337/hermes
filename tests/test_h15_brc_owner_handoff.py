@@ -1,6 +1,7 @@
 """Offline refusal/approval contracts for owner-host BRC handoff."""
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from io import StringIO
 from contextlib import nullcontext
 import json
 import unittest
@@ -105,6 +106,29 @@ class HandoffTests(unittest.TestCase):
             with self.assertRaisesRegex(h.HandoffDenied,"root_required"):
                 h.check_host()
 
+    def test_doctor_reports_missing_github_identity(self):
+        with patch.object(h, "github_auth_ready", return_value=False) as auth, \
+             patch.object(h.os, "geteuid", return_value=0), \
+             patch.object(h.shutil, "which", return_value="/usr/bin/gh"), \
+             patch.object(h.Path, "is_socket", return_value=False):
+            out = h.doctor()
+            self.assertFalse(out["checks"]["github_authenticated"])
+            self.assertFalse(out["service_changed"])
+            auth.assert_called_once_with()
+
+    def test_owner_handoff_preserves_only_safe_refusal_codes(self):
+        for message, expected in (
+            ("github_cli_auth_required", "github_cli_auth_required"),
+            ("untrusted token=secret", "existing_gate_refused"),
+        ):
+            with self.subTest(message=message):
+                output = StringIO()
+                with patch.object(h, "prepare", side_effect=h.StagingDenied(message)), \
+                     patch.object(h.sys, "stdout", output):
+                    self.assertEqual(h.main(["prepare"]), 2)
+                response = json.loads(output.getvalue())
+                self.assertEqual(response, {"status": "REFUSED", "reason": expected})
+
     def test_doctor_never_crashes_on_private_owner_permission_denial(self):
         class NotTraversable:
             def exists(self):
@@ -112,6 +136,7 @@ class HandoffTests(unittest.TestCase):
             def is_symlink(self):
                 raise PermissionError("root-owned secrets are private")
         with patch.object(h, "APPROVAL", NotTraversable()), \
+             patch.object(h, "github_auth_ready", return_value=False), \
              patch.object(h, "prepare") as prepare, \
              patch.object(h, "transactional_main") as upgrade:
             out=h.doctor()
@@ -125,6 +150,7 @@ class HandoffTests(unittest.TestCase):
         with patch.object(h.Path, "is_socket", side_effect=PermissionError("denied")), \
              patch.object(h.os, "geteuid", return_value=0), \
              patch.object(h.shutil, "which", return_value="/usr/bin/docker"), \
+             patch.object(h, "github_auth_ready", return_value=False), \
              patch.object(h.subprocess, "run") as dock:
             out=h.doctor()
             self.assertEqual(out["checks"]["host_docker_socket"], "inaccessible")
@@ -133,6 +159,7 @@ class HandoffTests(unittest.TestCase):
 
     def test_doctor_never_changes_relay(self):
         with patch.object(h,"prepare") as p,patch.object(h,"transactional_main") as t,\
+             patch.object(h, "github_auth_ready", return_value=True),\
              patch.object(h.subprocess,"run") as runner:
             result=h.doctor()
             self.assertFalse(result["service_changed"])
