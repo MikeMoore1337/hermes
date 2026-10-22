@@ -20,7 +20,16 @@ CITATION = re.compile(r"\[ref:(S[1-9][0-9]{0,2})\]")
 DOI = re.compile(r"(?i)\b10\.[0-9]{4,9}/[^\s\]\[<>),;]+")
 PMID = re.compile(r"(?i)\bPMID\s*:?\s*[0-9]{4,10}\b")
 NUMBER = re.compile(r"(?<!\w)[0-9]+(?:[.,][0-9]+)?(?!\w)")
+URL = re.compile(r"(?i)https?://[^\s\]\[<>),;]+")
 NEGATION = re.compile(r"(?iu)\bне\b")
+EPISTEMIC = re.compile(
+    r"(?iu)\b(?:возможно|вероятно|предварительн(?:ый|ая|ое|ые|о)|"
+    r"может|могут|некоторые|часть|все|каждый|только|лишь|предположительно)\b"
+)
+POPULATION = re.compile(
+    r"(?iu)\b(?:взрослые|дети|подростки|животные|мыши|крысы|"
+    r"пациенты|спортсмены|женщины|мужчины)\b"
+)
 CAUSAL = re.compile(
     r"(?iu)\b(?:доказали|доказал|доказано|доказывает|гарантирует|"
     r"приводит\s+к|вызывает|излечивает|лечит|устраняет)\b"
@@ -84,6 +93,19 @@ def _template_count(text: str) -> int:
     return sum(len(pattern.findall(text)) for pattern in TEMPLATES)
 
 
+def _distinct_sentence_markers(text: str, pattern: re.Pattern) -> Counter:
+    """Allow removing exact duplicate prose, not dropping a protected marker."""
+    unique = {
+        re.sub(r"\s+", " ",part).strip().casefold()
+        for part in re.split(r"(?<=[.!?])\s+|\n+", text)
+        if part.strip()
+    }
+    return Counter(
+        match.group(0).casefold().rstrip(".")
+        for sentence in unique for match in pattern.finditer(sentence)
+    )
+
+
 def compare(payload: Any) -> dict[str, Any]:
     """Compare two supplied synthetic drafts; never select a new truth."""
     if (type(payload) is not dict
@@ -127,8 +149,23 @@ def compare(payload: Any) -> dict[str, Any]:
         refusals.append("UNKNOWN_CITATION")
     if any(candidate_issues[code] > original_issues[code] for code in UNSAFE_CODES):
         refusals.append("NEW_EDITORIAL_RISK")
-    if len(NEGATION.findall(candidate)) != len(NEGATION.findall(original)):
+    if _distinct_sentence_markers(original, NEGATION) != _distinct_sentence_markers(candidate, NEGATION):
         refusals.append("NEGATION_CHANGED")
+    # A repeated identical sentence may be removed safely, but a changed
+    # qualifier, population or source URL must not be silently accepted.
+    for pattern, reason in (
+        (EPISTEMIC, "EPISTEMIC_QUALIFIER_CHANGED"),
+        (POPULATION, "STUDY_POPULATION_CHANGED"),
+        (URL, "SOURCE_URL_CHANGED"),
+    ):
+        if pattern is URL:
+            original_markers = Counter(x.casefold().rstrip(".") for x in pattern.findall(original))
+            candidate_markers = Counter(x.casefold().rstrip(".") for x in pattern.findall(candidate))
+        else:
+            original_markers = _distinct_sentence_markers(original, pattern)
+            candidate_markers = _distinct_sentence_markers(candidate, pattern)
+        if original_markers != candidate_markers:
+            refusals.append(reason)
     if len(CAUSAL.findall(candidate)) > len(CAUSAL.findall(original)):
         refusals.append("UNSUPPORTED_CAUSALITY_ADDED")
 
