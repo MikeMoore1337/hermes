@@ -14,7 +14,7 @@ import subprocess
 import tempfile
 import time
 from urllib.request import urlopen
-from scripts.h15_brc_upgrade_preflight import admit, inspect, UpgradeDenied
+from scripts.h15_brc_upgrade_preflight import admit, inspect, current_gate, UpgradeDenied
 
 NAME = "hermes-brc-relay"
 CHECKPOINT = "hermes-brc-relay-h454-rollback"
@@ -165,6 +165,8 @@ def swap(image, old, baseline):
                "CANDIDATE_RUNTIME_CHANGED")
         demand(healthy(baseline), "CANDIDATE_HEALTH_OR_RECONNECT_FAILED")
         docker("update", "--restart", "unless-stopped", NAME)
+        demand(current_gate(inspect(["container", "inspect", NAME]), old) == image,
+               "CANDIDATE_SECURITY_CONTRACT_MISMATCH")
         return {"status": "SWITCHED_PENDING_LIVE_CLIENT_E2E", "candidate_image": image,
                 "old_image": old, "checkpoint": CHECKPOINT,
                 "rollback_container_retained": True, "sqlite_backup_retained": True}
