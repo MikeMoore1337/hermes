@@ -16,6 +16,7 @@ RUN={"id":123,"head_sha":SHA,"head_branch":"main","event":"push",
 ART={"name":m.ARTIFACT,"id":456,"expired":False,"size_in_bytes":110000000}
 JOB={"id":789,"run_id":123,"name":"candidate","status":"completed","conclusion":"success"}
 JOBS={"total_count":1,"jobs":[JOB]}
+LIST={"total_count":1,"workflow_runs":[RUN]}
 
 class StagingTests(unittest.TestCase):
     def test_missing_gh_auth_refuses_before_any_api_request(self):
@@ -67,10 +68,67 @@ class StagingTests(unittest.TestCase):
                     m.candidate_job_log(123)
                 cli.assert_not_called()
 
+    def test_transient_empty_workflow_listing_retries_and_pins_provenance(self):
+        empty={"total_count":0,"workflow_runs":[]}
+        with patch.object(m,"api",side_effect=[
+                {"commit":{"sha":SHA}}, empty, empty, LIST,
+                {"artifacts":[ART]}, JOBS]) as endpoint, \
+             patch.object(m,"run",return_value=(
+                 f"H15_OFFLINE_BUNDLE_IMAGE_ID={IMAGE}\n"
+                 f"H15_OFFLINE_BUNDLE_ARCHIVE_SHA256={HASH}\n")):
+            result=m.discover()
+        self.assertEqual(result["run_id"],123)
+        self.assertEqual(result["sha"],SHA)
+        self.assertEqual(result["image"],IMAGE)
+        self.assertEqual(result["archive"],HASH)
+        self.assertEqual(endpoint.call_count,6)
+
+    def test_permanent_empty_workflow_listing_fails_closed_bounded(self):
+        empty={"total_count":0,"workflow_runs":[]}
+        with patch.object(m,"api",side_effect=[
+                {"commit":{"sha":SHA}},
+                *[empty for _ in range(m.MAX_CANDIDATE_LIST_ATTEMPTS)]]) as endpoint, \
+             patch.object(m,"run") as logs:
+            with self.assertRaisesRegex(
+                    m.StagingDenied,"^successful_main_candidate_missing$"):
+                m.discover()
+            self.assertEqual(endpoint.call_count,1+m.MAX_CANDIDATE_LIST_ATTEMPTS)
+            logs.assert_not_called()
+
+    def test_malformed_listing_fails_without_retries_or_download(self):
+        cases=(
+            {"workflow_runs":None,"total_count":0},
+            {"workflow_runs":[]},
+            {"workflow_runs":[],"total_count":True},
+            {"workflow_runs":[RUN],"total_count":0},
+        )
+        for malformed in cases:
+            with self.subTest(malformed=malformed), \
+                 patch.object(m,"api",side_effect=[
+                     {"commit":{"sha":SHA}}, malformed]) as endpoint, \
+                 patch.object(m,"run") as logs:
+                with self.assertRaisesRegex(
+                        m.StagingDenied,"^candidate_listing_invalid$"):
+                    m.discover()
+                self.assertEqual(endpoint.call_count,2)
+                logs.assert_not_called()
+
+    def test_nonempty_untrusted_runs_never_trigger_retry(self):
+        invalid=dict(RUN,conclusion="failure")
+        with patch.object(m,"api",side_effect=[
+                {"commit":{"sha":SHA}},
+                {"total_count":1,"workflow_runs":[invalid]}]) as endpoint, \
+             patch.object(m,"run") as logs:
+            with self.assertRaisesRegex(
+                    m.StagingDenied,"^successful_main_candidate_missing$"):
+                m.discover()
+            self.assertEqual(endpoint.call_count,2)
+            logs.assert_not_called()
+
     def test_exact_main_ci_log_pins(self):
         with patch.object(m,"api",side_effect=[
                 {"commit":{"sha":SHA}},
-                {"workflow_runs":[RUN,dict(RUN,head_sha="0"*40,id=999)]},
+                {"total_count":2,"workflow_runs":[RUN,dict(RUN,head_sha="0"*40,id=999)]},
                 {"artifacts":[ART]}, JOBS]),patch.object(m,"run",return_value=(
                     f"H15_OFFLINE_BUNDLE_IMAGE_ID={IMAGE}\n"
                     f"H15_OFFLINE_BUNDLE_ARCHIVE_SHA256={HASH}\n")):
@@ -78,7 +136,7 @@ class StagingTests(unittest.TestCase):
                                                       ancestor_candidate_reused=False))
     def test_no_main_candidate_refuse(self):
         with patch.object(m,"api",side_effect=[
-                {"commit":{"sha":SHA}}, {"workflow_runs":[]}]):
+                {"commit":{"sha":SHA}}, {"total_count":0,"workflow_runs":[]}]):
             with self.assertRaisesRegex(m.StagingDenied,"successful_main"):
                 m.discover()
     def test_old_candidate_allowed_only_if_ancestor_and_brc_unchanged(self):
@@ -90,7 +148,7 @@ class StagingTests(unittest.TestCase):
                             {"filename":"hermes_toolperf/core.py"}]}
         with patch.object(m,"api",side_effect=[
                 {"commit":{"sha":current}},
-                {"workflow_runs":[RUN]},unrelated, {"artifacts":[ART]}, JOBS]), \
+                LIST,unrelated, {"artifacts":[ART]}, JOBS]), \
              patch.object(m,"run",return_value=(
                     f"H15_OFFLINE_BUNDLE_IMAGE_ID={IMAGE}\n"
                     f"H15_OFFLINE_BUNDLE_ARCHIVE_SHA256={HASH}\n")):
@@ -107,7 +165,7 @@ class StagingTests(unittest.TestCase):
                          "pnpm-lock.yaml"):
             with self.subTest(modified=modified):
                 with patch.object(m,"api",side_effect=[
-                        {"commit":{"sha":"d"*40}},{"workflow_runs":[RUN]},
+                        {"commit":{"sha":"d"*40}},LIST,
                         {"status":"ahead","merge_base_commit":{"sha":SHA},
                          "ahead_by":2,"behind_by":0,
                          "files":[{"filename":modified}]}]), \
@@ -149,14 +207,14 @@ class StagingTests(unittest.TestCase):
     def test_expired_artifact_rejected(self):
         with patch.object(m,"api",side_effect=[
                 {"commit":{"sha":SHA}},
-                {"workflow_runs":[RUN]},
+                LIST,
                 {"artifacts":[dict(ART,expired=True)]}]):
             with self.assertRaisesRegex(m.StagingDenied,"expired"):
                 m.discover()
     def test_conflicting_ci_image_pins_rejected(self):
         with patch.object(m,"api",side_effect=[
                 {"commit":{"sha":SHA}},
-                {"workflow_runs":[RUN]},
+                LIST,
                 {"artifacts":[ART]}, JOBS]),patch.object(m,"run",return_value=(
                     f"H15_OFFLINE_BUNDLE_IMAGE_ID={IMAGE}\n"
                     f"H15_OFFLINE_BUNDLE_IMAGE_ID=sha256:{'e'*64}\n"
