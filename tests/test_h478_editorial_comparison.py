@@ -108,6 +108,40 @@ class EditorialComparisonTests(unittest.TestCase):
         ))
         self.assertIn("NEW_EDITORIAL_RISK", result["refusals"])
 
+    def test_uncertainty_hedge_loss_is_refused(self):
+        result = compare(pair(
+            "Возможно, наблюдение касается взрослых [ref:S1].",
+            "Наблюдение касается взрослых [ref:S1].",
+        ))
+        self.assertIn("EPISTEMIC_QUALIFIER_CHANGED", result["refusals"])
+
+    def test_some_to_all_quantifier_drift_is_refused(self):
+        result = compare(pair(
+            "Некоторые участники завершили наблюдение [ref:S1].",
+            "Все участники завершили наблюдение [ref:S1].",
+        ))
+        self.assertIn("EPISTEMIC_QUALIFIER_CHANGED", result["refusals"])
+
+    def test_study_population_drift_is_refused(self):
+        result = compare(pair(
+            "Взрослые участвовали в наблюдении [ref:S1].",
+            "Мыши участвовали в наблюдении [ref:S1].",
+        ))
+        self.assertIn("STUDY_POPULATION_CHANGED", result["refusals"])
+
+    def test_source_url_mutation_is_refused(self):
+        result = compare(pair(
+            "Условный источник https://example.org/alpha [ref:S1].",
+            "Условный источник https://example.org/beta [ref:S1].",
+        ))
+        self.assertIn("SOURCE_URL_CHANGED", result["refusals"])
+
+    def test_stable_qualifiers_and_population_no_false_change(self):
+        text = "Возможно, некоторые взрослые участвовали в наблюдении [ref:S1]."
+        result = compare(pair(text, text))
+        self.assertEqual("NO_CHANGE", result["status"])
+        self.assertEqual([], result["refusals"])
+
     def test_source_unavailable_and_invalid_scope_refused(self):
         for changed in (
             {"visibility": "PRIVATE"},
