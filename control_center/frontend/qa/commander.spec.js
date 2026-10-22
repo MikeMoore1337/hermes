@@ -27,6 +27,7 @@ test("approved Explorer renders project and distinct Windows/sandbox scopes",asy
   await page.locator(".hc-projects").getByRole("button",{name:new RegExp(label)}).click();
   await expect(page.locator(".hc-contexts")).toContainText(path);
  }
+ await page.locator(".hc-projects").getByRole("button",{name:/Second Brain/}).click();
  await page.getByRole("tab",{name:"Windows"}).click();
  await expect(page.locator(".hc-tabpanel")).toContainText("second-brain-workspace");
  await expect(page.locator(".hc-tabpanel")).toContainText("не предоставлен");
