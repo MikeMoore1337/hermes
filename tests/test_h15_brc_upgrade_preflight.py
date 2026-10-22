@@ -1,14 +1,18 @@
 """Offline source and Docker-identity refusal tests for H15 upgrade gate."""
+import io
 import json
 from pathlib import Path
 import unittest
 from unittest.mock import patch
-from scripts.h15_brc_upgrade_preflight import UpgradeDenied, admit, candidate_gate, current_gate, inspect
+from scripts.h15_brc_upgrade_preflight import UpgradeDenied, admit, candidate_gate, current_gate, inspect, candidate_runtime_image
 
 NEW="sha256:"+"2"*64
 OLD="sha256:"+"1"*64
+MANIFEST="sha256:"+"3"*64
+COMMIT="b"*40
+TAG="hermes-brc-relay-eval:"+COMMIT[:12]
 def image():
-    return {"Id":NEW,"Os":"linux","Architecture":"amd64",
+    return {"Id":NEW,"Os":"linux","Architecture":"amd64", "RepoTags":[TAG],
             "Config":{"User":"65534:65534","Cmd":["node","packages/relay/dist/cli.js"],
               "Labels":{"org.opencontainers.image.revision":"cbe511702dd0147650353c29ac6ab1decd8afda1",
                         "org.opencontainers.image.licenses":"MIT"},
@@ -31,6 +35,71 @@ class GateTests(unittest.TestCase):
     def test_good_old_and_new(self):
         self.assertEqual(current_gate(current(),NEW),OLD)
         candidate_gate(image(),NEW)
+    def test_classic_config_id_is_pinned_without_archive_redecompression(self):
+        with patch("scripts.h15_brc_upgrade_preflight.inspect",return_value=image()) as docker, \
+             patch("scripts.h15_brc_upgrade_preflight.subprocess.Popen") as unzip:
+            loaded, identity=candidate_runtime_image(Path("/safe"),NEW,COMMIT)
+        self.assertEqual(identity,NEW)
+        self.assertEqual(loaded["Id"],NEW)
+        docker.assert_called_once_with(["image","inspect",TAG])
+        unzip.assert_not_called()
+
+    def test_containerd_manifest_id_must_match_verified_oci_archive(self):
+        from unittest.mock import MagicMock
+        stored={**image(),"Id":MANIFEST,
+                "Descriptor":{"digest":MANIFEST,
+                              "mediaType":"application/vnd.oci.image.manifest.v1+json"}}
+        subprocess_result=MagicMock()
+        subprocess_result.stdout=io.BytesIO(b"synthetic-oci-archive")
+        subprocess_result.wait.return_value=0
+        subprocess_result.poll.return_value=0
+        with patch("scripts.h15_brc_upgrade_preflight.inspect",return_value=stored), \
+             patch("scripts.h15_brc_upgrade_preflight.subprocess.Popen",return_value=subprocess_result) as p, \
+             patch("scripts.h15_brc_upgrade_preflight.verify_loaded_tar",
+                   return_value=(MANIFEST,"containerd_manifest")) as verifier:
+            loaded, identity=candidate_runtime_image(Path("/trusted"),NEW,COMMIT)
+        self.assertEqual(identity,MANIFEST)
+        self.assertEqual(loaded["Id"],MANIFEST)
+        self.assertEqual(p.call_args.args[0],
+                         ["zstd","-dc","/trusted/brc-relay.docker.tar.zst"])
+        self.assertEqual(verifier.call_args.args[2:],(NEW,TAG))
+
+    def test_unverified_containerd_runtime_digest_cannot_pass(self):
+        from unittest.mock import MagicMock
+        stored={**image(),"Id":MANIFEST}
+        p=MagicMock()
+        p.stdout=io.BytesIO(b"synthetic-oci-archive")
+        p.wait.return_value=0
+        p.poll.return_value=0
+        with patch("scripts.h15_brc_upgrade_preflight.inspect",return_value=stored), \
+             patch("scripts.h15_brc_upgrade_preflight.subprocess.Popen",return_value=p), \
+             patch("scripts.h15_brc_upgrade_preflight.verify_loaded_tar",
+                   return_value=(NEW,"classic_config")):
+            with self.assertRaisesRegex(UpgradeDenied,"runtime_oci_attestation_failed"):
+                candidate_runtime_image(Path("/trusted"),NEW,COMMIT)
+
+    def test_untrusted_runtime_tag_fails_before_archive_open(self):
+        for actual in (None,"sha256:"+"c"*64):
+            record={**image(),"RepoTags":["foreign:latest"],"Id":actual}
+            with self.subTest(actual=actual), \
+                 patch("scripts.h15_brc_upgrade_preflight.inspect",return_value=record), \
+                 patch("scripts.h15_brc_upgrade_preflight.subprocess.Popen") as p:
+                with self.assertRaisesRegex(UpgradeDenied,"candidate_runtime_tag_or_id_mismatch"):
+                    candidate_runtime_image(Path("/trusted"),NEW,COMMIT)
+                p.assert_not_called()
+
+    def test_preflight_containerd_runtime_must_use_manifest_for_old_container_check(self):
+        with patch("scripts.h15_brc_upgrade_preflight.verify",
+                   return_value={"owner_agents_paired":False,"production_mcp_enabled":False}), \
+             patch("scripts.h15_brc_upgrade_preflight.candidate_runtime_image",
+                   return_value=({**image(),"Id":MANIFEST},MANIFEST)), \
+             patch("scripts.h15_brc_upgrade_preflight.inspect",return_value=current()), \
+             patch("scripts.h15_brc_upgrade_preflight.current_gate",return_value=OLD) as old_gate:
+            result=admit(Path("/trusted"),NEW,"a"*64,COMMIT)
+        self.assertEqual(result["candidate_image"],MANIFEST)
+        self.assertEqual(result["ci_config_image_id"],NEW)
+        self.assertEqual(old_gate.call_args.args[1],MANIFEST)
+
     def test_unowned_container(self):
         c=current();c["Config"]["Labels"]={}
         with self.assertRaisesRegex(UpgradeDenied,"foreign_container"):current_gate(c,NEW)
