@@ -7,12 +7,15 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
 import shutil
 import stat
 import subprocess
 import sys
 
-from scripts.h15_brc_owner_artifact_stage import discover, stage, StagingDenied
+from scripts.h15_brc_owner_artifact_stage import (
+    discover, stage, StagingDenied, github_auth_ready,
+)
 from scripts.h15_brc_upgrade_preflight import admit, UpgradeDenied
 from scripts.h15_brc_transactional_upgrade import (
     APPROVAL, CutoverDenied, main as transactional_main,
@@ -82,6 +85,9 @@ def doctor():
         except (OSError, subprocess.TimeoutExpired):
             pass
     checks["docker_reachable"] = reachable
+    checks["github_authenticated"] = (
+        github_auth_ready() if programs["gh"] and checks["root"] else False
+    )
     return {"status": "READ_ONLY_HOST_DIAGNOSTIC", "programs": programs,
             "checks": checks, "service_changed": False, "secrets_displayed": False}
 
@@ -190,7 +196,13 @@ def main(argv=None):
             prepare() if args.action == "prepare" else execute())
     except (HandoffDenied, StagingDenied, UpgradeDenied, CutoverDenied,
             OSError, ValueError, KeyError) as exc:
-        reason = str(exc) if isinstance(exc, HandoffDenied) else "existing_gate_refused"
+        # Surface only machine-readable refusal codes, never CLI output,
+        # Docker inspect contents, paths or exception-injected credentials.
+        reason = "existing_gate_refused"
+        if isinstance(exc, (HandoffDenied, StagingDenied, UpgradeDenied, CutoverDenied)):
+            code = str(exc)
+            if re.fullmatch(r"[a-z][a-z0-9_]{0,95}", code):
+                reason = code
         print(json.dumps({"status": "REFUSED", "reason": reason}, sort_keys=True))
         return 2
     print(json.dumps(answer, sort_keys=True))
