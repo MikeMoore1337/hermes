@@ -112,8 +112,14 @@ class CutoverContracts(unittest.TestCase):
             if args[-1]==m.CHECKPOINT:
                 return checkpoint
             return old()
+        state={"checkpoint_checks":0}
+        def present(name):
+            if name==m.CHECKPOINT:
+                state["checkpoint_checks"]+=1
+                return state["checkpoint_checks"]>1
+            return False
         with patch.object(m,"inspect",side_effect=lookup), \
-             patch.object(m,"exists",side_effect=lambda name:name==m.CHECKPOINT), \
+             patch.object(m,"exists",side_effect=present), \
              patch.object(m,"healthy",return_value=True), \
              patch.object(m,"docker",side_effect=command):
             with self.assertRaisesRegex(m.CutoverDenied,"OLD_RELAY_RESTORED"):
