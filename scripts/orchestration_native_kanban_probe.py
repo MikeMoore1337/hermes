@@ -241,6 +241,54 @@ def run(source_dir: Path, deps_dir: Path | None = None) -> bool:
                         db, task, reason="synthetic duplicate"))
                     self.assertEqual(k.get_task(db, task).status, "ready")
 
+            def test_archive_signals_only_verified_local_sleeper(self):
+                # Actual local OS signal to an inert child in an ephemeral
+                # runner. No model, provider, real worker or resident service.
+                from hermes_cli import kanban_db_dispatch as dispatch
+                with c.connect_closing(self.path) as db:
+                    task = k.create_task(
+                        db, title="ephemeral OS child", workspace_kind="scratch")
+                    claimed = k.claim_task(db, task, ttl_seconds=120)
+                    self.assertIsNotNone(claimed)
+                    child = subprocess.Popen(
+                        [sys.executable, "-B", "-c", "import time; time.sleep(30)"],
+                        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    delivered = []
+                    try:
+                        self.assertTrue(dispatch.adopt_worker_pid(
+                            db, task, claimed.current_run_id, child.pid))
+                        row = db.execute(
+                            "SELECT worker_pid, worker_started_at "
+                            "FROM tasks WHERE id=?", (task,)
+                        ).fetchone()
+                        self.assertEqual(row["worker_pid"], child.pid)
+                        # A real process fingerprint, not only a PID.
+                        self.assertIn("|", row["worker_started_at"])
+
+                        def signal_only_known_child(pid, signum):
+                            self.assertEqual(pid, child.pid)
+                            delivered.append(signum)
+                            os.kill(pid, signum)
+
+                        self.assertTrue(k.archive_task(
+                            db, task, signal_fn=signal_only_known_child))
+                        child.wait(timeout=8)
+                        self.assertTrue(delivered)
+                        self.assertNotEqual(child.returncode, 0)
+                        self.assertEqual(k.get_task(db, task).status, "archived")
+                        self.assertIsNone(k.claim_task(
+                            db, task, ttl_seconds=120, claimer="other"))
+                    finally:
+                        if child.poll() is None:
+                            child.terminate()
+                        try:
+                            child.wait(timeout=5)
+                        except subprocess.TimeoutExpired:
+                            child.kill()
+                            child.wait(timeout=3)
+
             def test_archived_running_task_is_terminal(self):
                 # Terminal archive is not proof of OS worker termination.
                 with c.connect_closing(self.path) as db:
