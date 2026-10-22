@@ -233,7 +233,7 @@ def markdown(report):
     lines = [
         "### H-26 offline tool performance (synthetic only)",
         "",
-        f"Exact SHA: \`{report['repository_sha'] or 'UNKNOWN'}\`; "
+        f"Exact SHA: `{report['repository_sha'] or 'UNKNOWN'}`; "
         f"fixtures: {report['task_count']}; candidate PASS: {report['candidate_passed']}.",
         "",
         "| Case | Baseline | Candidate | Calls B/C | Verdict |",
