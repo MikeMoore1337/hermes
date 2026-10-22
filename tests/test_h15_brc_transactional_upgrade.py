@@ -42,6 +42,19 @@ class CutoverContracts(unittest.TestCase):
                             "--archive-sha","b"*64,"--hermes-sha","a"*40]),0)
             approval.assert_not_called()
             docker.assert_not_called()
+    def test_health_probe_is_direct_not_proxy_routed(self):
+        from unittest.mock import MagicMock
+        with patch.object(m,"build_opener") as factory:
+            response=MagicMock()
+            response.__enter__.return_value=response
+            response.status=200
+            response.read.return_value=b'{"ok":true,"devices":3}'
+            factory.return_value.open.return_value=response
+            self.assertEqual(m.devices(),3)
+            self.assertEqual(factory.call_args.args[0].proxies,{})
+            self.assertEqual(factory.return_value.open.call_args.args[0],
+                             "http://172.29.251.2:3000/health")
+
     def test_no_host_paths_or_secrets_in_run(self):
         args=m.run_args(NEW,"979:975")
         for token in ("--read-only","--cap-drop","no-new-privileges",
