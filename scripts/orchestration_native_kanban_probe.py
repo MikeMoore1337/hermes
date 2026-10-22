@@ -26,15 +26,32 @@ PINNED_BLOBS = {
 
 
 def _verify_pinned_checkout(root: Path) -> None:
-    rev = subprocess.run(
-        ["git", "-C", str(root), "rev-parse", "HEAD"],
-        capture_output=True, text=True, check=True, timeout=8,
-    ).stdout.strip()
-    if rev != UPSTREAM_COMMIT:
+    """Reject changed tracked files and any untracked files before imports.
+
+    The pinned commit and two critical blob hashes alone are not proof that
+    Python cannot import a modified companion module from this checkout.
+    This check does not attest the Git remote, interpreter or dependencies.
+    """
+    root = root.resolve(strict=True)
+    git = ["git", "-c", f"safe.directory={root}", "-C", str(root)]
+
+    def checked(*args: str) -> str:
+        return subprocess.run(
+            [*git, *args], capture_output=True, text=True,
+            check=True, timeout=8,
+        ).stdout.strip()
+
+    top = Path(checked("rev-parse", "--show-toplevel")).resolve(strict=True)
+    if top != root:
+        raise RuntimeError("upstream_root_mismatch")
+    if checked("rev-parse", "HEAD") != UPSTREAM_COMMIT:
         raise RuntimeError("upstream_commit_mismatch")
+    if checked("status", "--porcelain=v1", "--untracked-files=all"):
+        raise RuntimeError("upstream_checkout_dirty")
+
     for relative, expected in PINNED_BLOBS.items():
         data = (root / relative).read_bytes()
-        blob = hashlib.sha1(("blob %d\0" % len(data)).encode() + data).hexdigest()
+        blob = hashlib.sha1(("blob %d\\0" % len(data)).encode() + data).hexdigest()
         if blob != expected:
             raise RuntimeError("upstream_blob_mismatch:" + relative)
 
