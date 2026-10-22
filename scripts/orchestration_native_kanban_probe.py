@@ -48,6 +48,11 @@ def _verify_pinned_checkout(root: Path) -> None:
         raise RuntimeError("upstream_commit_mismatch")
     if checked("status", "--porcelain=v1", "--untracked-files=all"):
         raise RuntimeError("upstream_checkout_dirty")
+    # Ignored Python sources and extension modules can still be imported,
+    # although git status suppresses them.
+    if checked("ls-files", "--others", "--ignored", "--exclude-standard", "--",
+               "*.py", "*.so", "*.pyd"):
+        raise RuntimeError("upstream_checkout_ignored_importables")
 
     for relative, expected in PINNED_BLOBS.items():
         data = (root / relative).read_bytes()
