@@ -81,8 +81,7 @@ done
 [[ "$ready" == 1 ]] || fail OLD_HEALTH
 
 # Issue only disposable one-device credentials, never owner secrets.
-tokens="$(docker exec -i "$name" node --input-type=module - <
-  "$GITHUB_WORKSPACE/scripts/h15_brc_two_native_provision.mjs")"
+tokens="$(docker exec -i "$name" node --input-type=module - < "$GITHUB_WORKSPACE/scripts/h15_brc_two_native_provision.mjs")"
 token="$(printf '%s' "$tokens" |
   python3 -c 'import sys,json;print(json.load(sys.stdin)["one"])')"
 [[ -n "$token" ]] || fail NO_CI_TOKEN
