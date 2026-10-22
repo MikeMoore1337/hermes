@@ -87,7 +87,7 @@ for(const width of [320,393,768,1440]){
   await expect(page.getByRole("button",{name:/Ops Watch/}).last()).toBeVisible();
   await expect(page.getByText("Нет данных",{exact:true}).first()).toBeVisible();
   await expect(page.getByRole("link",{name:/Открыть исходные сведения/})).toHaveAttribute("href","/api/overview");
-  await page.getByRole("button",{name:"Заблокировано"}).click();
+  await page.getByRole("button",{name:"Заблокировано",exact:true}).click();
   await expect(page.getByRole("button",{name:/Заблокированные задания/})).toBeVisible();
   await expect(page.getByRole("button",{name:/Ops Watch/})).toHaveCount(0);
   await page.getByRole("button",{name:"Все"}).click();
@@ -129,7 +129,7 @@ test("keyboard access and evidence links do not mutate state",async({page})=>{
  await page.getByRole("button",{name:/QA Advisor/}).click();
  await expect(page.getByRole("heading",{name:"QA Advisor"})).toBeVisible();
  await expect(page.getByText("Просмотр ничего не запускает")).toBeVisible();
- await page.getByRole("button",{name:"Заблокировано"}).focus();
+ await page.getByRole("button",{name:"Заблокировано",exact:true}).focus();
  await page.keyboard.press("Enter");
  await expect(page.getByRole("button",{name:/Заблокированные задания/})).toBeVisible();
  expect(leaks).toEqual([]);
