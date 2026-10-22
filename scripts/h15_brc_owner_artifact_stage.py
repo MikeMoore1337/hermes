@@ -241,6 +241,7 @@ def stage(directory,entry,load=False):
             if temp.exists():
                 shutil.rmtree(temp)
     state="VERIFIED_OFFLINE_ONLY"
+    runtime_image_id=None
     if load:
         if os.geteuid()!=0:
             refuse("root_required_to_load")
@@ -260,11 +261,14 @@ def stage(directory,entry,load=False):
             raise StagingDenied("host_relay_preflight_refused_after_safe_load") from exc
         if preflight.get("status")!="PREFLIGHT_PASS":
             refuse("host_relay_preflight_incomplete")
+        runtime_image_id=preflight.get("candidate_image")
+        if not isinstance(runtime_image_id,str) or not IMAGE.fullmatch(runtime_image_id):
+            refuse("runtime_image_id_invalid")
         state="IMAGE_LOADED_PREFLIGHT_PASS_NO_CUTOVER"
     return {"status":state,"source_sha":sha,
             "current_main_sha":entry.get("current_main_sha",sha),
             "ancestor_candidate_reused":entry.get("ancestor_candidate_reused",False),
-            "image_id":image,
+            "image_id":image,"runtime_image_id":runtime_image_id,
             "archive_sha256":archive,"run_id":entry["run_id"],
             "artifact_id":entry["artifact_id"],"staging_dir":str(target),
             "reused":reused,"live_relay_changed":False}
