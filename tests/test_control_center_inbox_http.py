@@ -74,7 +74,7 @@ class InboxHttpTests(unittest.TestCase):
         self.assertNotIn("hermes-ops-watch.timer", raw.decode())
         self.assertEqual(self.request(port, "/api/operator/inbox", method="HEAD")[2], b"")
         self.assertEqual(self.request(port, "/api/operator/inbox?refresh=true")[0], 404)
-        self.assertEqual(self.request(port, "/api/operator/inbox", method="POST")[0], 405)
+        self.assertEqual(self.request(port, "/api/operator/inbox", method="POST")[0], 501)
         self.assertEqual(self.request(port, "/api/operator/inbox", host="evil.example")[0], 400)
 
     def test_oauth_denied_before_sensitive_lookups(self):
