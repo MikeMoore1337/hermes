@@ -69,7 +69,8 @@ class CutoverContracts(unittest.TestCase):
         def command(*a,**kw):
             commands.append(a)
             return CID if a[0]=="run" else ""
-        with patch.object(m,"inspect",side_effect=[old(),new()]), \
+        with patch.object(m,"inspect",side_effect=[old(),new(),new()]), \
+             patch.object(m,"current_gate",return_value=NEW), \
              patch.object(m,"exists",return_value=False), \
              patch.object(m,"healthy",return_value=True), \
              patch.object(m,"docker",side_effect=command):
