@@ -61,6 +61,10 @@ are deliberate: a catalog entry does not attest the current Git tree.
 
 ## Remaining acceptance gates
 
+The [six-device/client parity matrix](h15-brc-parity-acceptance.md) separates
+live PASS, partial coverage and untested scenarios by device and tool.
+
+
 - Both clients' new native workspace discovery: **PASS**.
 - ChatGPT sandbox file/edit/search/move/process checks across Windows,
   Hermes VPS and YFC VPS sandboxes: **PASS**, using isolated temporary
