@@ -72,6 +72,11 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m hermes_reasoning_eval.core --sha "$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+      - name: H-476 pinned A/B/AB decisions (synthetic, no model or device)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m hermes_decision_eval.core --sha "$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
       - name: Preserve sanitized benchmark reports
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
