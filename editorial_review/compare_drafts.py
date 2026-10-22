@@ -93,6 +93,19 @@ def _template_count(text: str) -> int:
     return sum(len(pattern.findall(text)) for pattern in TEMPLATES)
 
 
+def _distinct_sentence_markers(text: str, pattern: re.Pattern) -> Counter:
+    """Allow removing exact duplicate prose, not dropping a protected marker."""
+    unique = {
+        re.sub(r"\s+", " ",part).strip().casefold()
+        for part in re.split(r"(?<=[.!?])\s+|\n+", text)
+        if part.strip()
+    }
+    return Counter(
+        match.group(0).casefold().rstrip(".")
+        for sentence in unique for match in pattern.finditer(sentence)
+    )
+
+
 def compare(payload: Any) -> dict[str, Any]:
     """Compare two supplied synthetic drafts; never select a new truth."""
     if (type(payload) is not dict
@@ -136,16 +149,21 @@ def compare(payload: Any) -> dict[str, Any]:
         refusals.append("UNKNOWN_CITATION")
     if any(candidate_issues[code] > original_issues[code] for code in UNSAFE_CODES):
         refusals.append("NEW_EDITORIAL_RISK")
-    if len(NEGATION.findall(candidate)) != len(NEGATION.findall(original)):
+    if _distinct_sentence_markers(original, NEGATION) != _distinct_sentence_markers(candidate, NEGATION):
         refusals.append("NEGATION_CHANGED")
-    # Same numbers/links do not prove an unchanged population or conclusion.
+    # A repeated identical sentence may be removed safely, but a changed
+    # qualifier, population or source URL must not be silently accepted.
     for pattern, reason in (
         (EPISTEMIC, "EPISTEMIC_QUALIFIER_CHANGED"),
         (POPULATION, "STUDY_POPULATION_CHANGED"),
         (URL, "SOURCE_URL_CHANGED"),
     ):
-        original_markers = Counter(x.casefold().rstrip(".") for x in pattern.findall(original))
-        candidate_markers = Counter(x.casefold().rstrip(".") for x in pattern.findall(candidate))
+        if pattern is URL:
+            original_markers = Counter(x.casefold().rstrip(".") for x in pattern.findall(original))
+            candidate_markers = Counter(x.casefold().rstrip(".") for x in pattern.findall(candidate))
+        else:
+            original_markers = _distinct_sentence_markers(original, pattern)
+            candidate_markers = _distinct_sentence_markers(candidate, pattern)
         if original_markers != candidate_markers:
             refusals.append(reason)
     if len(CAUSAL.findall(candidate)) > len(CAUSAL.findall(original)):
