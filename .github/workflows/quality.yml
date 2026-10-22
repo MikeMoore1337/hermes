@@ -52,6 +52,11 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m hermes_toolperf --sha "$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+      - name: H-480 pinned tool-call contract fixtures (offline, no devices)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m hermes_toolperf.call_cases >> "$GITHUB_STEP_SUMMARY"
       - name: Preserve sanitized benchmark reports
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
