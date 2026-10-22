@@ -105,7 +105,7 @@ export default function OperatorInbox(){
     <p>Нет подтверждённой сводки. Повторите чтение; автоматических действий не было.</p>
     <button type="button" onClick={reload}>Повторить проверку</button></div>}
   {phase==="ready"&&<>
-   <div className="oi-metrics" aria-label="Общая сводка">
+   <div className="oi-metrics" role="region" aria-label="Общая сводка">
     <Metric name="ВСЕГО СИГНАЛОВ" value={response.summary.total} subtitle="В доступных источниках" Icon={Inbox}/>
     <Metric name="КРИТИЧЕСКИЕ" value={response.summary.critical} subtitle="Требуют приоритетной проверки" tone="danger" Icon={AlertTriangle}/>
     <Metric name="ПРОВЕРИТЬ" value={response.summary.review} subtitle="Нет подтверждения нормы" tone="warn" Icon={Clock3}/>
