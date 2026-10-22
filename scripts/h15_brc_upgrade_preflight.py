@@ -72,7 +72,10 @@ def current_gate(container: dict, candidate_id: str) -> str:
             or host.get("CapDrop") != ["ALL"] or host.get("CapAdd") not in (None, [])
             or host.get("PortBindings") not in (None, {})
             or (host.get("RestartPolicy") or {}).get("Name") != "unless-stopped"
-            or "no-new-privileges" not in (host.get("SecurityOpt") or [])):
+            or not isinstance(host.get("SecurityOpt"), list)
+            or not host["SecurityOpt"]
+            or any(flag not in ("no-new-privileges", "no-new-privileges:true")
+                   for flag in host["SecurityOpt"])):
         deny("relay_security_contract_mismatch")
     if (set(nets) != {"hermes-brc-internal"}
             or nets["hermes-brc-internal"].get("IPAddress") != "172.29.251.2"):

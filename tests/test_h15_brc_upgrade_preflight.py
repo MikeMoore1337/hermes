@@ -42,6 +42,17 @@ class GateTests(unittest.TestCase):
     def test_extra_mount_denied(self):
         c=current();c["Mounts"].append({"Type":"bind","Source":"/root","Destination":"/host"})
         with self.assertRaisesRegex(UpgradeDenied,"mounts_not_single"):current_gate(c,NEW)
+    def test_docker_real_no_new_privileges_true_accepted(self):
+        c=current()
+        c["HostConfig"]["SecurityOpt"]=["no-new-privileges:true"]
+        self.assertEqual(current_gate(c,NEW),OLD)
+
+    def test_disabled_no_new_privileges_denied(self):
+        c=current()
+        c["HostConfig"]["SecurityOpt"]=["no-new-privileges:false"]
+        with self.assertRaisesRegex(UpgradeDenied,"security_contract"):
+            current_gate(c,NEW)
+
     def test_privileged_denied(self):
         c=current();c["HostConfig"]["Privileged"]=True
         with self.assertRaisesRegex(UpgradeDenied,"security_contract"):current_gate(c,NEW)
