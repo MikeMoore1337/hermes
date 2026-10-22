@@ -80,22 +80,12 @@ def pull(*, config_path: Path = DEFAULT_CONFIG, directory: Path = ROOT,
     require_file(KNOWN_HOSTS)
     try:
         proc = runner(command(host, port), timeout=10, check=False,
-                      capture_output=True, text=True, encoding="utf-8",
-                      errors="strict")
-    except UnicodeError as exc:
-        # Malformed remote output is untrusted; never surface its bytes or stderr.
-        raise PullError("ssh_invalid_encoding") from exc
+                      capture_output=True, text=True)
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise PullError("ssh_unavailable") from exc
     if proc.returncode != 0:
         raise PullError("ssh_denied")
-    if not isinstance(proc.stdout, str):
-        raise PullError("ssh_payload_invalid")
-    try:
-        size = len(proc.stdout.encode("utf-8", errors="strict"))
-    except UnicodeError as exc:
-        raise PullError("ssh_invalid_encoding") from exc
-    if size > MAX_SNAPSHOT:
+    if not isinstance(proc.stdout, str) or len(proc.stdout.encode("utf-8")) > MAX_SNAPSHOT:
         raise PullError("ssh_payload_oversized")
     try:
         raw = json.loads(proc.stdout)
