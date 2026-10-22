@@ -67,21 +67,44 @@ jobs:
         working-directory: control_center/frontend
         run: npm audit --omit=dev --audit-level=high
       - name: Python allowlist/API/OAuth security regression tests
-        run: python3 -m unittest tests.test_codex_usage tests.test_codex_analytics tests.test_codex_analytics_api tests.test_codex_policy_history tests.test_control_center tests.test_control_center_assets tests.test_control_center_oauth tests.test_control_center_broker tests.test_control_center_credentials tests.test_control_center_unix_http_integration -v
+        run: python3 -m unittest tests.test_codex_usage tests.test_codex_analytics tests.test_codex_analytics_api tests.test_codex_policy_history tests.test_control_center tests.test_control_center_operator_inbox tests.test_control_center_inbox_http tests.test_control_center_assets tests.test_control_center_oauth tests.test_control_center_broker tests.test_control_center_credentials tests.test_control_center_unix_http_integration -v
       - name: PWA manifest, SW and offline privacy tests
         run: python3 -m unittest tests.test_control_center_pwa -v
       - name: GitHub egress pin attestation negative tests
         run: python3 -m unittest tests.test_h15_oauth_egress_evidence -v
       - name: Caddy OAuth callback log policy regression tests
         run: python3 -m unittest tests.test_h15_caddy_callback_log_guard -v
-      - name: Install Chromium for frontend end-to-end regression
+      - name: Select existing runner Chrome or install Chromium for frontend QA
         working-directory: control_center/frontend
-        run: npx playwright install --with-deps chromium
+        shell: bash
+        run: |
+          set -euo pipefail
+          if command -v google-chrome-stable >/dev/null 2>&1; then
+            browser="$(command -v google-chrome-stable)"
+          elif command -v google-chrome >/dev/null 2>&1; then
+            browser="$(command -v google-chrome)"
+          else
+            npx playwright install --with-deps chromium
+            echo "BROWSER_SOURCE=playwright_pinned"
+            exit 0
+          fi
+          "$browser" --version
+          echo "HERMES_CHROMIUM_EXECUTABLE=$browser" >> "$GITHUB_ENV"
+          echo "BROWSER_SOURCE=runner_preinstalled"
       - name: Browser checks (approved Atlas, protected GitHub login, mobile)
         working-directory: control_center/frontend
         run: npm run test:e2e
       - name: Python per-provider, official Cloudflare billing and GitHub rate-limit contracts
         run: python3 -m unittest tests.test_provider_registry tests.test_cloudflare_billing tests.test_github_rate_limit tests.test_github_rate_history tests.test_provider_quota_ops_alerts -v
+
+      - name: Attach #468 approved mixed Inbox responsive synthetic evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: h15-operator-inbox-468-visual-evidence
+          path: control_center/frontend/.artifacts/468/inbox-*.png
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Attach #295 separate provider quota cards for visual approval
         if: always()

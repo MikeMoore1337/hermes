@@ -5,6 +5,7 @@ blocked:{label:"Не допущен",tone:"warn"},unexpected_active:{label:"За
 });
 export const groups=Object.freeze({
 all:{name:"Обзор",description:"Общее состояние инфраструктуры"},
+inbox:{name:"Operator Inbox",description:"Очередь внимания из известных read-only источников"},
 ops:{name:"Наблюдение",description:"Ops Watch, отправитель и сетевая защита"},
 research:{name:"Исследования",description:"Расписание Research Scout"},
 qa:{name:"QA и CI",description:"Наблюдение за проверками качества"},
