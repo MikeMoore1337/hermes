@@ -41,9 +41,12 @@ retained.
 | Negative host private-key read | PASS (EACCES) | PASS (EACCES) | PASS (EACCES) | NOT TESTED | NOT TESTED | NOT TESTED |
 | Non-root UID / no host Docker socket | PASS | PASS | PASS | NOT TESTED | NOT TESTED | NOT TESTED |
 | Protected-path write policy | PARTIAL (platform blocked attempted call) | PARTIAL (platform blocked attempted call) | PARTIAL (platform blocked attempted call) | NOT TESTED | NOT TESTED | NOT TESTED |
-| Multi-session interaction, cancellation and termination | NOT TESTED | NOT TESTED | NOT TESTED | NOT TESTED | NOT TESTED | NOT TESTED |
-| Large/binary file behavior and size limits | NOT TESTED | NOT TESTED | NOT TESTED | NOT TESTED | NOT TESTED | NOT TESTED |
-| Concurrent edits, conflict behavior, replay and timeout | NOT TESTED | NOT TESTED | NOT TESTED | NOT TESTED | NOT TESTED | NOT TESTED |
+| Two simultaneous interactive sessions (Node REPL) | PASS | PASS | PASS | NOT TESTED | NOT TESTED | NOT TESTED |
+| Targeted process termination and no residual sessions | PASS | PASS | PASS | NOT TESTED | NOT TESTED | NOT TESTED |
+| Binary 128 KiB: create, get_file_info, move, SHA-256, cleanup | PASS (process-backed bytes) | PASS (process-backed bytes) | PASS (process-backed bytes) | NOT TESTED | NOT TESTED | NOT TESTED |
+| Arbitrary MCP binary read/write and larger size limits | NOT TESTED | NOT TESTED | NOT TESTED | NOT TESTED | NOT TESTED | NOT TESTED |
+| Duplicate edit matching fails closed; unique edit succeeds | PASS | NOT TESTED | NOT TESTED | NOT TESTED | NOT TESTED | NOT TESTED |
+| Concurrent writes, stale session replay and timeout | NOT TESTED | NOT TESTED | NOT TESTED | NOT TESTED | NOT TESTED | NOT TESTED |
 
 **Clarifications:** the `list_workspaces` endpoint describes four **projects
 on the Windows sandbox**, not four mounted host folders and not separate
@@ -55,6 +58,42 @@ ownership` protection; using temporary
 allowed read-only verification without changing persistent Git config.
 `git fetch` was not run; remotes' latest HEADs remain unknown.
 
+## Advanced post-cutover ChatGPT live evidence (2026-10-22)
+
+These are real owner-connected Hermes MCP calls and isolated temporary files,
+not CI emulation. All three devices were online for these tests.
+
+- On each device, started **two independent** `node -i` sessions, used
+  `interact_with_process` to obtain separate per-device PASS markers,
+  verified two distinct active PIDs via `list_sessions`, exited both
+  REPLs with `.exit` and saw `No active sessions` for each device.
+- On each device, created a distinct deterministic **131,072-byte binary**
+  sandbox file through `node`, verified `get_file_info` reports
+  `isBinary=true` and exact size, renamed using the **MCP `move_file`
+  tool**, then independently computed SHA-256 before/after the rename
+  using Node and removed the fixture. Hashes remained identical, and
+  all three workspaces were clean of these temporary files. This does
+  **not** validate a dedicated MCP binary payload transfer protocol.
+- On each device, ran a bounded synthetic Node process with an active
+  event loop. Called **MCP `force_terminate`** using precisely the PID
+  returned by its `start_process`; the response confirmed termination
+  was initiated, and subsequent `list_sessions` reported no active
+  sessions. No other processes were signalled.
+- On Windows sandbox, attempted `edit_block` with one expected
+  replacement where two instances of the same string existed; the tool
+  rejected the edit (2 occurrences) and the full file remained
+  unchanged. A **uniquely scoped** replacement succeeded; both
+  resulting lines were verified, and the file was removed.
+- Runtime binaries are **not uniform**: `sh` and `node` exist on
+  all three devices; `git` and `python3` exist on Windows sandbox
+  but are **missing** from Hermes VPS and YFC VPS sandbox containers.
+  All three devices still run non-root (`UID=65534`) with no Docker
+  socket. Do not infer VPS host toolchain access from a sandbox shell.
+
+No production host access, package installation, Git modification,
+Codex CLI, paid API, reload or reboot was performed. Independent Codex
+file/process/binary coverage on both VPS sandboxes remains **NOT TESTED**.
+
 ## Remaining Desktop Commander replacement gaps
 
 | User goal / parity dimension | Hermes status | Required next acceptance |
@@ -64,7 +103,8 @@ allowed read-only verification without changing persistent Git config.
 | New-project onboarding with safe conflict handling | OPEN (#455) | Design, visual approval, backend authorization, negative E2E |
 | Per-device diagnostics and actionable recovery | OPEN (#455) | Freshness, offline/auth/stale distinction; no browser RCE |
 | Reboot/reconnect without another registration | OPEN (#445) | Maintenance-window Windows reboot/login evidence |
-| Cross-client 2 × 3 complete functional parity | PARTIAL | Real Codex calls on Hermes and YFC sandboxes, plus edge cases |
+| Cross-client 2 × 3 complete functional parity | PARTIAL | Real Codex calls on Hermes and YFC sandboxes; full binary MCP transfer, concurrency and failure cases remain unverified |
+| Nonuniform sandbox toolchain | GAP (VPS agents lack Git/Python) | Decide whether these two **sandbox** targets actually need development toolchains; if yes, use pinned image, non-root security gates and separate rollout |
 | Cost and isolation | Owner-hosted, no mandatory paid vendor relay | Model usage and host resource limits still apply |
 
 ## Release policy
