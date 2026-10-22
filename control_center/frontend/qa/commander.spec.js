@@ -41,6 +41,12 @@ for(const width of [320,393,768,1440]){
   await openCommander(page);
   await expect(page.locator(".hc-status-online")).toHaveCount(0);
   await expect(page.locator(".hc-map")).toBeVisible();
+  if(width<=393){
+    const devices=page.locator(".hc-mobilebar").getByRole("button",{name:"Устройства"});
+    await devices.click();await expect(devices).toHaveAttribute("aria-expanded","true");
+    await expect(page.locator("#hc-device-list")).toBeVisible();
+    await devices.click();await expect(devices).toHaveAttribute("aria-expanded","false");
+  }
   const layout=await page.evaluate(()=>({w:innerWidth,doc:document.documentElement.scrollWidth}));
   expect(layout.doc,"horizontal overflow").toBeLessThanOrEqual(layout.w+1);
   await page.getByRole("tab",{name:"Git"}).focus();
