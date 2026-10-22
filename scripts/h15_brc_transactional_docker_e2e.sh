@@ -103,6 +103,48 @@ for i in $(seq 1 80); do
 done
 [[ "$ready" == 1 ]] || fail CI_DEVICE_NOT_ONLINE
 
+# Independently exercise owner one-shot stage with the ACTUAL sealed OCI bytes
+# and REAL Docker CLI on this disposable GitHub-hosted daemon. Only the GitHub
+# download transport is replaced by a local fixture; no owner token is used.
+stage_root="$RUNNER_TEMP/h454-owner-stage"
+sudo install -d -m 0700 -o root -g root "$stage_root"
+sudo python3 - "$bundle" "$stage_root" "$new" "$archive_sha" "$GITHUB_SHA" <<'PY'
+import shutil
+import sys
+from pathlib import Path
+from unittest.mock import patch
+from scripts import h15_brc_owner_artifact_stage as stage
+
+bundle, target, image, digest, revision = (
+    Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3], sys.argv[4], sys.argv[5]
+)
+
+def source_from_local_fixture(*args, **kwargs):
+    assert args[:2] == ("run", "download")
+    assert "--dir" in args
+    output = Path(args[args.index("--dir") + 1])
+    for entry in bundle.iterdir():
+        assert entry.is_file() and not entry.is_symlink()
+        shutil.copy2(entry, output / entry.name)
+    return ""
+
+selection = {
+    "sha": revision, "run_id": 1, "artifact_id": 1,
+    "image": image, "archive": digest,
+}
+with patch.object(stage, "run", side_effect=source_from_local_fixture):
+    result = stage.stage(target, selection, load=True)
+assert result["status"] == "IMAGE_LOADED_PREFLIGHT_PASS_NO_CUTOVER"
+assert result["live_relay_changed"] is False and result["reused"] is False
+with patch.object(stage, "run", side_effect=RuntimeError("unexpected network")):
+    again = stage.stage(target, selection, load=False)
+assert again["reused"] is True and again["live_relay_changed"] is False
+PY
+[[ "$(docker inspect --format '{{.Image}}' "$name")" == "$old" ]] ||
+  fail STAGING_ALTERED_EXISTING_RELAY
+health 1 >/dev/null || fail STAGING_ALTERED_EXISTING_DEVICES
+echo "H454_REAL_DOCKER_OWNER_STAGING_LOAD_PREFLIGHT=PASS"
+
 sudo python3 -m scripts.h15_brc_transactional_upgrade plan \
   --bundle-dir "$bundle" --image "$new" --archive-sha "$archive_sha" \
   --hermes-sha "$GITHUB_SHA" |
