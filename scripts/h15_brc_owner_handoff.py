@@ -51,6 +51,14 @@ def check_host():
         refuse("host_docker_socket_unavailable")
 
 
+def status_of_path(predicate):
+    """Non-root quality jobs cannot traverse root:root 0700 owner directories."""
+    try:
+        return predicate()
+    except OSError:
+        return "inaccessible"
+
+
 def doctor():
     """Sanitized read-only diagnostics; never print secrets or Docker inspect."""
     names = ("docker", "gh", "zstd", "python3")
@@ -58,9 +66,12 @@ def doctor():
     checks = {
         "linux_amd64": platform.system() == "Linux" and platform.machine() == "x86_64",
         "root": os.geteuid() == 0,
-        "host_docker_socket": Path("/var/run/docker.sock").is_socket(),
-        "backup_directory_exists": BACKUP_ROOT.is_dir() and not BACKUP_ROOT.is_symlink(),
-        "existing_approval": APPROVAL.exists() or APPROVAL.is_symlink(),
+        "host_docker_socket": status_of_path(
+            lambda: Path("/var/run/docker.sock").is_socket()),
+        "backup_directory_exists": status_of_path(
+            lambda: BACKUP_ROOT.is_dir() and not BACKUP_ROOT.is_symlink()),
+        "existing_approval": status_of_path(
+            lambda: APPROVAL.exists() or APPROVAL.is_symlink()),
     }
     reachable = False
     if programs["docker"] and checks["root"] and checks["host_docker_socket"]:
