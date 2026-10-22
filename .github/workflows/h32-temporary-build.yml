@@ -1,0 +1,55 @@
+name: TEMP H-32 Inbox branch bundle builder
+
+on:
+  push:
+    branches:
+      - feat/468-approved-operator-inbox
+    paths:
+      - .github/workflows/h32-temporary-build.yml
+
+permissions:
+  contents: write
+
+jobs:
+  build-committed-web:
+    if: github.repository == 'MikeMoore1337/hermes' && github.ref == 'refs/heads/feat/468-approved-operator-inbox'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout dedicated feature branch only
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: feat/468-approved-operator-inbox
+          persist-credentials: true
+      - name: Install Node 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: control_center/frontend/package-lock.json
+      - name: Build pinned committed Atlas assets
+        working-directory: control_center/frontend
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run check
+          npm run test
+          npm run build
+      - name: Commit only generated web files into the same feature branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/feat/468-approved-operator-inbox"
+          test "$(git branch --show-current)" = "feat/468-approved-operator-inbox"
+          git add -- control_center/web
+          if git diff --cached --quiet; then
+            echo "BUNDLE_ALREADY_CURRENT"
+            exit 0
+          fi
+          git diff --cached --name-only | while IFS= read -r name; do
+            case "$name" in control_center/web/*) ;; *) echo "UNEXPECTED_STAGED_FILE"; exit 1;; esac
+          done
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "build(#468): synchronize checked-in Atlas bundle with approved inbox UI"
+          git push origin HEAD:refs/heads/feat/468-approved-operator-inbox
