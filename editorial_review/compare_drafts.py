@@ -20,7 +20,16 @@ CITATION = re.compile(r"\[ref:(S[1-9][0-9]{0,2})\]")
 DOI = re.compile(r"(?i)\b10\.[0-9]{4,9}/[^\s\]\[<>),;]+")
 PMID = re.compile(r"(?i)\bPMID\s*:?\s*[0-9]{4,10}\b")
 NUMBER = re.compile(r"(?<!\w)[0-9]+(?:[.,][0-9]+)?(?!\w)")
+URL = re.compile(r"(?i)https?://[^\s\]\[<>),;]+")
 NEGATION = re.compile(r"(?iu)\bне\b")
+EPISTEMIC = re.compile(
+    r"(?iu)\b(?:возможно|вероятно|предварительн(?:ый|ая|ое|ые|о)|"
+    r"может|могут|некоторые|часть|все|каждый|только|лишь|предположительно)\b"
+)
+POPULATION = re.compile(
+    r"(?iu)\b(?:взрослые|дети|подростки|животные|мыши|крысы|"
+    r"пациенты|спортсмены|женщины|мужчины)\b"
+)
 CAUSAL = re.compile(
     r"(?iu)\b(?:доказали|доказал|доказано|доказывает|гарантирует|"
     r"приводит\s+к|вызывает|излечивает|лечит|устраняет)\b"
@@ -129,6 +138,16 @@ def compare(payload: Any) -> dict[str, Any]:
         refusals.append("NEW_EDITORIAL_RISK")
     if len(NEGATION.findall(candidate)) != len(NEGATION.findall(original)):
         refusals.append("NEGATION_CHANGED")
+    # Same numbers/links do not prove an unchanged population or conclusion.
+    for pattern, reason in (
+        (EPISTEMIC, "EPISTEMIC_QUALIFIER_CHANGED"),
+        (POPULATION, "STUDY_POPULATION_CHANGED"),
+        (URL, "SOURCE_URL_CHANGED"),
+    ):
+        original_markers = Counter(x.casefold().rstrip(".") for x in pattern.findall(original))
+        candidate_markers = Counter(x.casefold().rstrip(".") for x in pattern.findall(candidate))
+        if original_markers != candidate_markers:
+            refusals.append(reason)
     if len(CAUSAL.findall(candidate)) > len(CAUSAL.findall(original)):
         refusals.append("UNSUPPORTED_CAUSALITY_ADDED")
 
