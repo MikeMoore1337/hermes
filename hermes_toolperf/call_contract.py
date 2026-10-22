@@ -98,6 +98,7 @@ class SyntheticSession:
         self.effects = []
         self.ledger = {}
         self.keys = set()
+        self.uncertain_write = False
         self.calls = 0
 
     def dispatch(self, raw, *, now=1700000000, ack_lost=False,
@@ -141,6 +142,10 @@ class SyntheticSession:
             if args["path"] not in self.files:
                 raise ContractDenied("FILE_NOT_ALLOWLISTED")
             if tool == "mock.write_file":
+                # Ambiguous effects require independent reconciliation. Changing
+                # a call ID or key must not bypass an unresolved prior write.
+                if self.uncertain_write:
+                    raise ContractDenied("UNRESOLVED_WRITE_BLOCKS_DISPATCH")
                 if (type(item["approval_id"]) is not str or
                         item["approval_id"] != self.approval_id or
                         not now < self.approval_expires_at):
@@ -178,6 +183,8 @@ class SyntheticSession:
                     raise ContractDenied("OUTPUT_LIMIT")
             if ack_lost:
                 self.ledger[call] = {"status": "UNKNOWN", "output": ""}
+                if tool == "mock.write_file":
+                    self.uncertain_write = True
                 return {"status": "UNKNOWN", "reason": "ACK_UNCERTAIN_NO_RETRY"}
             self.ledger[call] = {"status": "OK", "output": output}
             return {"status": "OK", "reason": "OK"}
