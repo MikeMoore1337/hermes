@@ -1,0 +1,146 @@
+{
+  "schema_version": 1,
+  "dataset": "h480-tool-calling-offline-negative-v1",
+  "cases": [
+    {
+      "id": "fc-01-schema",
+      "changes": {
+        "schema_version": 2
+      },
+      "expected_reason": "UNSUPPORTED_SCHEMA"
+    },
+    {
+      "id": "fc-02-unknown-envelope",
+      "changes": {
+        "request": "execute"
+      },
+      "expected_reason": "UNKNOWN_ENVELOPE_FIELD"
+    },
+    {
+      "id": "fc-03-type-boolean-step",
+      "changes": {
+        "step": true
+      },
+      "expected_reason": "INVALID_STEP"
+    },
+    {
+      "id": "fc-04-null-arguments",
+      "changes": {
+        "arguments": null
+      },
+      "expected_reason": "ARGUMENT_SCHEMA"
+    },
+    {
+      "id": "fc-05-unknown-argument",
+      "changes": {
+        "arguments": {
+          "path": "docs/note.txt",
+          "content": "new\n",
+          "alias": "sudo"
+        }
+      },
+      "expected_reason": "ARGUMENT_SCHEMA"
+    },
+    {
+      "id": "fc-06-tool-alias",
+      "changes": {
+        "tool": "mock.write_file_alias"
+      },
+      "expected_reason": "TOOL_NOT_ALLOWLISTED"
+    },
+    {
+      "id": "fc-07-device-scope",
+      "changes": {
+        "device_id": "other-device"
+      },
+      "expected_reason": "DEVICE_SCOPE_DENIED"
+    },
+    {
+      "id": "fc-08-data-scope",
+      "changes": {
+        "scope": "root"
+      },
+      "expected_reason": "DATA_SCOPE_DENIED"
+    },
+    {
+      "id": "fc-09-expired-deadline",
+      "changes": {
+        "deadline_epoch": 1699999999
+      },
+      "expected_reason": "EXPIRED_DEADLINE"
+    },
+    {
+      "id": "fc-10-nested-depth",
+      "changes": {
+        "depth": 2
+      },
+      "expected_reason": "DEPTH_LIMIT"
+    },
+    {
+      "id": "fc-11-approval",
+      "changes": {
+        "approval_id": null
+      },
+      "expected_reason": "APPROVAL_DENIED"
+    },
+    {
+      "id": "fc-12-argument-type",
+      "changes": {
+        "arguments": {
+          "path": "docs/note.txt",
+          "content": 777
+        }
+      },
+      "expected_reason": "ARGUMENT_TYPE"
+    },
+    {
+      "id": "fc-13-path-traversal",
+      "changes": {
+        "arguments": {
+          "path": "docs/../note.txt",
+          "content": "new\n"
+        }
+      },
+      "expected_reason": "INVALID_PATH"
+    },
+    {
+      "id": "fc-14-absolute-path",
+      "changes": {
+        "arguments": {
+          "path": "/etc/passwd",
+          "content": "new\n"
+        }
+      },
+      "expected_reason": "INVALID_PATH"
+    },
+    {
+      "id": "fc-15-oversized-output",
+      "changes": {
+        "arguments": {
+          "path": "docs/note.txt",
+          "content": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+        }
+      },
+      "expected_reason": "OUTPUT_LIMIT"
+    },
+    {
+      "id": "fc-16-duplicate-approval",
+      "changes": {
+        "approval_id": "grant-forged"
+      },
+      "expected_reason": "APPROVAL_DENIED"
+    },
+    {
+      "id": "fc-17-unknown-root-field",
+      "changes": {
+        "unexpected": true
+      },
+      "expected_reason": "UNKNOWN_ENVELOPE_FIELD"
+    },
+    {
+      "id": "fc-18-blank-payload",
+      "changes": {},
+      "expected_reason": "MALFORMED_JSON"
+    }
+  ]
+}
