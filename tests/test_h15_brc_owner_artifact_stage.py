@@ -14,6 +14,8 @@ RUN={"id":123,"head_sha":SHA,"head_branch":"main","event":"push",
      "conclusion":"success","status":"completed",
      "name":"H-15 pinned Remote Commander candidate (isolated CI only)"}
 ART={"name":m.ARTIFACT,"id":456,"expired":False,"size_in_bytes":110000000}
+JOB={"id":789,"run_id":123,"name":"candidate","status":"completed","conclusion":"success"}
+JOBS={"total_count":1,"jobs":[JOB]}
 
 class StagingTests(unittest.TestCase):
     def test_missing_gh_auth_refuses_before_any_api_request(self):
@@ -35,11 +37,41 @@ class StagingTests(unittest.TestCase):
             self.assertEqual(cli.call_args_list[0].args[0][:3], ["gh", "auth", "status"])
             self.assertEqual(cli.call_args_list[1].args[0][:2], ["gh", "api"])
 
+    def test_job_log_uses_actions_read_endpoint_not_run_view(self):
+        with patch.object(m,"api",return_value=JOBS) as endpoint, \
+             patch.object(m,"run",return_value=(
+                 f"H15_OFFLINE_BUNDLE_IMAGE_ID={IMAGE}\n"
+                 f"H15_OFFLINE_BUNDLE_ARCHIVE_SHA256={HASH}\n")) as cli:
+            log=m.candidate_job_log(123)
+        self.assertIn("H15_OFFLINE_BUNDLE_IMAGE_ID=", log)
+        endpoint.assert_called_once_with(
+            f"repos/{m.REPO}/actions/runs/123/jobs?filter=latest&per_page=100")
+        cli.assert_called_once_with(
+            "api",f"repos/{m.REPO}/actions/jobs/789/logs",cap=16000000)
+
+    def test_job_log_refuses_ambiguous_or_foreign_job(self):
+        cases=(
+            {"total_count":2,"jobs":[JOB, dict(JOB,id=999)]},
+            {"total_count":1,"jobs":[]},
+            {"total_count":1,"jobs":[dict(JOB,run_id=999)]},
+            {"total_count":1,"jobs":[dict(JOB,conclusion="failure")]},
+            {"total_count":1,"jobs":[dict(JOB,name="foreign")]},
+            {"total_count":1,"jobs":[dict(JOB,id="789")]},
+            {"total_count":True,"jobs":[JOB]},
+        )
+        for data in cases:
+            with self.subTest(data=data), \
+                 patch.object(m,"api",return_value=data), \
+                 patch.object(m,"run") as cli:
+                with self.assertRaisesRegex(m.StagingDenied,"ci_candidate_job"):
+                    m.candidate_job_log(123)
+                cli.assert_not_called()
+
     def test_exact_main_ci_log_pins(self):
         with patch.object(m,"api",side_effect=[
                 {"commit":{"sha":SHA}},
                 {"workflow_runs":[RUN,dict(RUN,head_sha="0"*40,id=999)]},
-                {"artifacts":[ART]}]),patch.object(m,"run",return_value=(
+                {"artifacts":[ART]}, JOBS]),patch.object(m,"run",return_value=(
                     f"H15_OFFLINE_BUNDLE_IMAGE_ID={IMAGE}\n"
                     f"H15_OFFLINE_BUNDLE_ARCHIVE_SHA256={HASH}\n")):
             self.assertEqual(m.discover(),dict(GOOD,current_main_sha=SHA,
@@ -58,7 +90,7 @@ class StagingTests(unittest.TestCase):
                             {"filename":"hermes_toolperf/core.py"}]}
         with patch.object(m,"api",side_effect=[
                 {"commit":{"sha":current}},
-                {"workflow_runs":[RUN]},unrelated, {"artifacts":[ART]}]), \
+                {"workflow_runs":[RUN]},unrelated, {"artifacts":[ART]}, JOBS]), \
              patch.object(m,"run",return_value=(
                     f"H15_OFFLINE_BUNDLE_IMAGE_ID={IMAGE}\n"
                     f"H15_OFFLINE_BUNDLE_ARCHIVE_SHA256={HASH}\n")):
@@ -125,7 +157,7 @@ class StagingTests(unittest.TestCase):
         with patch.object(m,"api",side_effect=[
                 {"commit":{"sha":SHA}},
                 {"workflow_runs":[RUN]},
-                {"artifacts":[ART]}]),patch.object(m,"run",return_value=(
+                {"artifacts":[ART]}, JOBS]),patch.object(m,"run",return_value=(
                     f"H15_OFFLINE_BUNDLE_IMAGE_ID={IMAGE}\n"
                     f"H15_OFFLINE_BUNDLE_IMAGE_ID=sha256:{'e'*64}\n"
                     f"H15_OFFLINE_BUNDLE_ARCHIVE_SHA256={HASH}\n")):
