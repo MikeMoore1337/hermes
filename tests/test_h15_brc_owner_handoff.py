@@ -106,13 +106,38 @@ class HandoffTests(unittest.TestCase):
                 h.check_host()
 
     def test_doctor_never_changes_relay(self):
+        # Hermetic unit test: the production host has a different /var,
+        # Docker socket and PATH from GitHub runners and CI sandbox users.
+        # Only read-only "docker info" may be called by the doctor.
         with patch.object(h,"prepare") as p,patch.object(h,"transactional_main") as t,\
-             patch.object(h.subprocess,"run") as runner:
+             patch.object(h.subprocess,"run") as runner,\
+             patch.object(h.os,"geteuid",return_value=0),\
+             patch.object(h.platform,"system",return_value="Linux"),\
+             patch.object(h.platform,"machine",return_value="x86_64"),\
+             patch.object(h.Path,"is_socket",return_value=True),\
+             patch.object(h.Path,"is_dir",return_value=True),\
+             patch.object(h.Path,"is_symlink",return_value=False),\
+             patch.object(h.shutil,"which",return_value="/usr/bin/docker"):
+            runner.return_value.returncode=0
             result=h.doctor()
             self.assertFalse(result["service_changed"])
+            self.assertFalse(result["secrets_displayed"])
+            self.assertTrue(result["checks"]["docker_reachable"])
             p.assert_not_called();t.assert_not_called()
-            for c in runner.call_args_list:
-                self.assertEqual(c.args[0][:2],["docker","info"])
+            runner.assert_called_once()
+            self.assertEqual(runner.call_args.args[0][:2],["docker","info"])
+
+    def test_doctor_without_host_access_is_read_only(self):
+        with patch.object(h,"prepare") as p,patch.object(h,"transactional_main") as t,\
+             patch.object(h.subprocess,"run") as runner,\
+             patch.object(h.os,"geteuid",return_value=65534),\
+             patch.object(h.Path,"is_socket",return_value=False):
+            result=h.doctor()
+            self.assertEqual(result["status"],"READ_ONLY_HOST_DIAGNOSTIC")
+            self.assertFalse(result["checks"]["docker_reachable"])
+            self.assertFalse(result["service_changed"])
+            runner.assert_not_called()
+            p.assert_not_called();t.assert_not_called()
 
 if __name__=="__main__":
     unittest.main()
