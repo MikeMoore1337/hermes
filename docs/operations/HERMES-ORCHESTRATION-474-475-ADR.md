@@ -148,3 +148,10 @@ To make this invariant regression-testable without starting a worker, `scripts/o
 Issue #474 requires detection of budget exhaustion. Limiting each child to the parent's `max_steps` separately is **not** enough: three children can each pass that comparison while their *combined reserved* steps exceed the total parent budget. The offline checker now rejects a plan when `sum(child.max_steps) > grant.max_steps`. The synthetic fixture reserves 4 + 4 + 5 = 13 steps against a maximum of 16. Three regressions cover the overflow when each individual child still fits, exact equality (13/13) and an undersized parent budget (12/13). The bound is evaluated before DAG acceptance.
 
 This is a conservative static admission invariant only. It does **not** meter actual token usage, provider-side billing, retries, concurrency or runtime steps, and it is not wired to native Hermes. A real executor would also need an atomic aggregate budget counter (and a previously authorized provider/usage gate) before any model request. No model was called to validate this policy. Recheck exact PR HEAD CI after these changes.
+
+
+## Identity type and empty approval regression (2026-10-22)
+
+During source-only review of the *synthetic* gate, a matching `approval_id=None` (or matching empty approval IDs) could satisfy the equality check. That falsely models an owner-approved operation when both plan and supplied grant are missing a real approval identifier. The checker now requires non-empty bounded ASCII approval IDs on **both** inputs *before* comparing them. It also validates producer node ID, revision SHA and receipt identity field types before comparing an evidence handoff. Seven new unit tests cover null/empty/whitespace owner IDs and missing/malformed receipt identities.
+
+This closes a **synthetic contract validation gap only**. A non-empty matching approval string is not authenticated owner consent; a receipt supplied by the same synthetic test is not a cryptographically trusted source. No new runtime enforcement, model spawn, native Kanban connection or production delivery is implied. Check CI on the **new** exact PR HEAD, not the earlier 2364-pass run.
