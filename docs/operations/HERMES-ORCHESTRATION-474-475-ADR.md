@@ -54,12 +54,12 @@ Mandatory invariant checks before dispatch and before accepting a result:
 
 - Isolated Hermes BRC sandbox, Python 3.11.2, current mounted checkout **cf9cb1dfccd1b2a2573f594360fd898a71f00b1f**: targeted tests under tests/test_codex_scheduler*.py executed **32/32 PASS**, no actual Codex CLI or paid inference; working tree clean. This test baseline is older than the proposed PR's 13db1a5 base, although the codex_scheduler.py blob matched at both SHAs. Results cover #271 safeguards, **not** real delegation or Kanban.
 - Public source comparison through GitHub at exact upstream revisions: SOURCE_REVIEW_COMPLETE. Real parent/child permission enforcement in a resident process, deterministic DAG negative tests against a newly scoped implementation and full A/B performance: NOT_RUN/NOT_MEASURED.
-- PR CI at its exact HEAD is required; successful documentation CI will prove only that documentation and existing checks are consistent.
+- PR CI at its exact HEAD is required; successful CI proves only the existing checks and the new **synthetic offline** contracts, not live agent execution or native upstream integration.
 - Follow-up implementation/activation is separately gated by #33, #62, #350, available zero-spend enforcement, isolated runtime proof and operator GO. Any future code must have an explicit one-owner authority map and rollback before use.
 
 ## Rollback
 
-This change is **one documentation file**, with no services, model calls, schema migration, dependency install, or runtime behavior to reverse. Revert the documentation commit if the decision changes. A later native upstream version change or adapter activation needs its own tested rollback, not this document as a substitute.
+This change contains **one ADR, one inert offline checker and one unittest file**, with no services, model calls, schema migration, dependency install, or live runtime behavior to reverse. Revert these three files if the decision changes. A later native upstream version change or adapter activation needs its own tested rollback, not this document as a substitute.
 
 ## Native helper execution evidence (2026-10-22, Hermes BRC, no model calls)
 
@@ -77,3 +77,17 @@ A fresh isolated Python 3.11.2 process on the `h15-win-05be75515428` **linux/doc
 **Revised safeguards for future #474/#475 work:** disallow empty-list ambiguity at the application boundary; explicitly authorize privileged orchestrator role; prohibit MCP auto-inheritance for minimally scoped children; compare **resolved actual tool names** and OS rights with the parent's enforced permission envelope; reject malformed/duplicate/bool DAG references before submitting to native API if application inputs are untrusted. Continue to cap independent children at three and prevent nested execution without a separate gate.
 
 **Boundary:** `NATIVE_HELPERS_OFFLINE_TESTED=YES`, `NATIVE_FULL_RUNTIME=NOT_RUN`, `MODEL_CALLS=0`, `NEW_B_AGENTS=0`, `PAIRED_A_B=NOT_MEASURED`, `PRODUCTION=NOT_TOUCHED`. This ADR remains a proposal and does not imply activating resident Hermes or installing external toolsets.
+
+## Reusable offline contract smoke (#474 / #475)
+
+The PR additionally includes `scripts/orchestration_offline_checks.py` and `tests/test_orchestration_offline_checks.py`. These are **deliberately inert** Python standard-library contracts, not a new dispatcher, durable journal or authorization server. Use:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 python3 -B -m unittest discover -s tests -p test_orchestration_offline_checks.py -v
+```
+
+On 2026-10-22, an isolated Hermes BRC Linux/Docker sandbox (Python 3.11.2) executed **26/26 PASS** against the staged copies, prior to committing files to the PR. Test cases cover correct two-input DAG order, cycle/self/unknown/duplicate/bool dependencies, expiration/approval/revision mismatch, scope and capability boundaries, step limits, unavailable devices, a three-node bound, schema rejection and evidence digest/identity/replay/expiry. **All inputs, grants, devices and trusted receipts were fabricated for deterministic testing.** The functions compare the supplied trusted receipt to a payload checksum but cannot authenticate the actual receipt issuer; the replay set is only in-memory. No actual LLM subagent, real device permission, model usage, native Kanban DB or dispatcher was exercised.
+
+The pure `check_plan` preflight returns only an expected topological order; **it cannot execute that order**. `check_handoff` is a deliberately limited receipt-shape/digest fixture; it must **never** be used as a replacement for real signed/provider-attested evidence, durable replay protection or owner authorization. A runtime adapter must obtain independently attested grants and receipts, enforce OS/tool/network scopes, and implement the owner gates independently.
+
+The tests therefore improve repeatable **synthetic acceptance** and regression visibility for #474/#475 without converting either issue to LIVE_VERIFIED. The PR HEAD must pass GitHub CI again after adding these files. Production delivery remains subject to the existing Hermes main/production rules.
