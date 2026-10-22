@@ -41,6 +41,10 @@ databases. Keep branch/PR/review and rollback controls.
 
 ## Remaining issue scope
 
+See the [evidence-based Desktop Commander parity matrix](h15-brc-parity-acceptance.md)
+for the live 2-clients × 3-devices scope and remaining failure-mode tests.
+
+
 The workspace discovery/resolution milestone is accepted for both real
 clients. Other #454 goals remain in progress:
 
