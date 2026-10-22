@@ -99,6 +99,28 @@ class CutoverContracts(unittest.TestCase):
         self.assertIn(("rm","-f",m.NAME),commands)
         self.assertIn(("rename",m.CHECKPOINT,m.NAME),commands)
         self.assertIn(("start",m.NAME),commands)
+    def test_rename_reply_lost_detects_owner_checkpoint_and_restores(self):
+        calls=[]
+        checkpoint={"Image":OLD,"Config":{"User":"979:975",
+                    "Labels":{"com.hermes.scope":"h15-brc-owner-relay"}}}
+        def command(*args,**kwargs):
+            calls.append(args)
+            if args[:2]==("rename",m.NAME):
+                raise m.CutoverDenied("DOCKER_OPERATION_UNAVAILABLE")
+            return ""
+        def lookup(args):
+            if args[-1]==m.CHECKPOINT:
+                return checkpoint
+            return old()
+        with patch.object(m,"inspect",side_effect=lookup), \
+             patch.object(m,"exists",side_effect=lambda name:name==m.CHECKPOINT), \
+             patch.object(m,"healthy",return_value=True), \
+             patch.object(m,"docker",side_effect=command):
+            with self.assertRaisesRegex(m.CutoverDenied,"OLD_RELAY_RESTORED"):
+                m.swap(NEW,OLD,3)
+        self.assertIn(("rename",m.CHECKPOINT,m.NAME),calls)
+        self.assertIn(("start",m.NAME),calls)
+
     def test_foreign_container_never_deleted(self):
         calls=[]
         def cmd(*a,**kw):
