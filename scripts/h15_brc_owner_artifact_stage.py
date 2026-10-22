@@ -15,6 +15,7 @@ import stat
 import subprocess
 import tempfile
 from scripts.h15_brc_offline_image_bundle import verify, BundleDenied
+from scripts.h15_brc_upgrade_preflight import admit, UpgradeDenied
 
 REPO="MikeMoore1337/hermes"
 WORKFLOW="h15-remote-commander-candidate.yml"
@@ -143,7 +144,13 @@ def stage(directory,entry,load=False):
             raise StagingDenied("image_load_unavailable") from exc
         if p.returncode or "H15_BRC_IMAGE_OFFLINE_LOAD=PASS" not in p.stdout:
             refuse("image_load_refused")
-        state="IMAGE_LOADED_RELAY_UNCHANGED"
+        try:
+            preflight=admit(target,image,archive,sha)
+        except (UpgradeDenied,OSError,ValueError) as exc:
+            raise StagingDenied("host_relay_preflight_refused_after_safe_load") from exc
+        if preflight.get("status")!="PREFLIGHT_PASS":
+            refuse("host_relay_preflight_incomplete")
+        state="IMAGE_LOADED_PREFLIGHT_PASS_NO_CUTOVER"
     return {"status":state,"source_sha":sha,"image_id":image,
             "archive_sha256":archive,"run_id":entry["run_id"],
             "artifact_id":entry["artifact_id"],"staging_dir":str(target),
