@@ -51,7 +51,7 @@ def _verify_pinned_checkout(root: Path) -> None:
 
     for relative, expected in PINNED_BLOBS.items():
         data = (root / relative).read_bytes()
-        blob = hashlib.sha1(("blob %d\\0" % len(data)).encode() + data).hexdigest()
+        blob = hashlib.sha1(("blob %d\0" % len(data)).encode() + data).hexdigest()
         if blob != expected:
             raise RuntimeError("upstream_blob_mismatch:" + relative)
 
