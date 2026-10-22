@@ -13,7 +13,7 @@ import stat
 import subprocess
 import tempfile
 import time
-from urllib.request import urlopen
+from urllib.request import build_opener, ProxyHandler
 from scripts.h15_brc_upgrade_preflight import admit, inspect, current_gate, UpgradeDenied
 
 NAME = "hermes-brc-relay"
@@ -111,7 +111,9 @@ def snapshot():
     return str(filename)
 
 def devices():
-    with urlopen("http://172.29.251.2:3000/health", timeout=3) as response:
+    # The internal bridge must never be routed through HTTP(S)_PROXY.
+    opener = build_opener(ProxyHandler({}))
+    with opener.open("http://172.29.251.2:3000/health", timeout=3) as response:
         body = json.loads(response.read(2048))
         demand(response.status == 200 and body.get("ok") is True
                and type(body.get("devices")) is int
