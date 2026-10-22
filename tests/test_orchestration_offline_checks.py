@@ -13,7 +13,7 @@ REV = "a" * 40
 GRANT = {
     "revision": REV, "approval_id": "synthetic-review",
     "scopes": ["source/hermes"], "tools": ["source_read", "evidence_read"],
-    "expires": 2000, "max_steps": 8,
+    "expires": 2000, "max_steps": 16,
 }
 NODES = [
     {"id": "signal", "device": "sandbox-a", "scopes": ["source/hermes"],
@@ -204,6 +204,23 @@ class ContractTests(unittest.TestCase):
 
     def test_budget(self):
         self.rejects(lambda p: p["nodes"][0].update(max_steps=99), "node_budget")
+
+    def test_aggregate_child_budget_rejected(self):
+        # Every child independently fits the grant, but their total does not.
+        self.rejects(
+            lambda p: (p["nodes"][0].update(max_steps=12),
+                       p["nodes"][1].update(max_steps=12)),
+            "aggregate_budget_escalation",
+        )
+
+    def test_exact_total_budget_is_accepted(self):
+        self.assertEqual(check_plan(self.plan(), dict(GRANT, max_steps=13),
+                                    1000, DEVICES),
+                         ("safety", "signal", "review"))
+
+    def test_parent_total_budget_shortfall_rejected(self):
+        self.rejects(lambda p: None, "aggregate_budget_escalation",
+                     grant=dict(GRANT, max_steps=12))
 
     def test_boolean_budget(self):
         self.rejects(lambda p: p["nodes"][0].update(max_steps=True), "node_budget")
