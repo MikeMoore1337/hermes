@@ -59,7 +59,7 @@ printf 'FROM %s\nLABEL com.hermes.ci.previous="yes"\n' "$image_tag" |
 old="$(docker image inspect --format '{{.Id}}' "h454-ci-old:$GITHUB_RUN_ID")"
 [[ "$old" != "$new" ]] || fail SAME_IMAGE
 
-docker run -d --name "$name" --label com.hermes.scope=h15-brc-owner-relay \
+sudo docker run -d --name "$name" --label com.hermes.scope=h15-brc-owner-relay \
   --network "$net" --ip 172.29.251.2 --read-only --user 979:975 \
   --cap-drop ALL --security-opt no-new-privileges --memory 512m --cpus 0.50 \
   --pids-limit 80 --restart unless-stopped --stop-timeout 20 \
