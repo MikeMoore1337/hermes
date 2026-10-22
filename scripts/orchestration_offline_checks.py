@@ -112,3 +112,30 @@ def check_handoff(payload, receipt, *, node_id, revision, evidence_id, now, seen
         raise Rejected("handoff_digest")
     seen.add(evidence_id)
     return node_id
+
+
+def eligible_after_verified_evidence(plan, verified_nodes):
+    """Return synthetically eligible nodes using externally verified evidence.
+
+    An upstream Kanban parent with state 'archived' is terminal for its DAG,
+    but that alone is NOT an accepted proof of successful task completion.
+    This helper does not authenticate receipts or dispatch work; its caller
+    must validate the plan and each evidence record independently.
+    """
+    if (type(plan) is not dict or set(plan) !=
+            {"revision", "approval_id", "nodes", "edges"}
+            or type(verified_nodes) is not frozenset
+            or any(type(n) is not str for n in verified_nodes)):
+        raise Rejected("eligibility_schema")
+    nodes = plan["nodes"]
+    edges = plan["edges"]
+    if type(nodes) is not list or type(edges) is not list:
+        raise Rejected("eligibility_schema")
+    ids = {node["id"] for node in nodes}
+    if not verified_nodes <= ids:
+        raise Rejected("unknown_evidence_node")
+    dependencies = {node_id: set() for node_id in ids}
+    for parent, child in edges:
+        dependencies[child].add(parent)
+    return tuple(sorted(node for node in ids - verified_nodes
+                        if dependencies[node] <= verified_nodes))
