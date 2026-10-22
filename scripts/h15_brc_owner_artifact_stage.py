@@ -116,6 +116,26 @@ def require_unchanged_brc_inputs(candidate, main):
             refuse("brc_input_modified_requires_fresh_candidate")
     return True
 
+def candidate_job_log(run_id):
+    """Fetch an authenticated Actions:read job log, not gh run view checks API."""
+    jobs = api(f"repos/{REPO}/actions/runs/{run_id}/jobs?filter=latest&per_page=100")
+    rows = jobs.get("jobs")
+    if (type(jobs.get("total_count")) is not int or jobs["total_count"] != 1
+            or not isinstance(rows, list) or len(rows) != 1):
+        refuse("ci_candidate_job_missing_or_ambiguous")
+    job = rows[0]
+    if (not isinstance(job, dict) or type(job.get("id")) is not int
+            or job["id"] <= 0 or job.get("name") != "candidate"
+            or job.get("status") != "completed"
+            or job.get("conclusion") != "success"
+            or job.get("run_id") != run_id):
+        refuse("ci_candidate_job_invalid")
+    # REST job logs require only repository Actions:read, including
+    # fine-grained PATs. gh run view may also query Checks:read.
+    return run("api", f"repos/{REPO}/actions/jobs/{job['id']}/logs",
+               cap=16000000)
+
+
 def discover():
     sha=(api(f"repos/{REPO}/branches/main").get("commit") or {}).get("sha")
     if not isinstance(sha,str) or SHA.fullmatch(sha) is None:
@@ -146,7 +166,7 @@ def discover():
               and type(x.get("id")) is int]
     if len(matching)!=1:
         refuse("exact_run_artifact_expired_or_ambiguous")
-    log=run("run","view",str(run_id),"--repo",REPO,"--log",cap=16000000)
+    log=candidate_job_log(run_id)
     def evidence(label,pattern):
         matches=set(re.findall(r"(?:^|\s)"+re.escape(label)+r"=([a-z0-9:]+)(?:\s|$)",log,re.M))
         if len(matches)!=1:
