@@ -68,7 +68,7 @@ def _valid_path(value):
         return False
     posix = PurePosixPath(value)
     return not posix.is_absolute() and all(
-        segment not in (".", "..") and not segment.startswith(".")
+        segment not in ("", ".", "..") and not segment.startswith(".")
         for segment in value.split("/")
     )
 
