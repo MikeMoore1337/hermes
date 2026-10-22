@@ -4,6 +4,29 @@ import { test, expect } from "@playwright/test";
 // values below are synthetic: never use owner cookies, tokens or production API.
 test.use({ serviceWorkers: "block" });
 
+// Fail closed before browser traffic reaches any account, OAuth callback,
+// external host or non-overview API. Evidence may contain only synthetic data.
+async function isolateEvidenceNetwork(page) {
+  const denied = [];
+  await page.route("**/*", (route) => {
+    const url = new URL(route.request().url());
+    const local = url.protocol === "http:" && url.hostname === "127.0.0.1" && url.port === "9133";
+    if (!local || url.pathname.startsWith("/auth/") || url.pathname.startsWith("/api/auth/")) {
+      denied.push(local ? "oauth_request" : "external_request");
+      return route.abort("blockedbyclient");
+    }
+    if (url.pathname.startsWith("/api/") && url.pathname !== "/api/overview") {
+      // Unknown APIs are intentionally unavailable, never proxied to the owner VPS.
+      return route.fulfill({
+        status: 503, contentType: "application/json",
+        body: JSON.stringify({ error: "synthetic_api_unavailable" }),
+      });
+    }
+    return route.continue();
+  });
+  return denied;
+}
+
 async function syntheticOverview(page, responseStatus = 200) {
   await page.route("**/api/overview", (route) => route.fulfill({
     status: responseStatus,
@@ -23,6 +46,7 @@ test("visual evidence: synthetic Control Center across representative viewports"
   test.setTimeout(180_000);
   const pageErrors = [];
   const observations = [];
+  const denied = await isolateEvidenceNetwork(page);
   page.on("pageerror", (error) => pageErrors.push(error.message));
   await syntheticOverview(page);
   await page.emulateMedia({ reducedMotion: "reduce" });
@@ -56,14 +80,19 @@ test("visual evidence: synthetic Control Center across representative viewports"
   }
 
   await testInfo.attach("visual-evidence-manifest.json", {
-    body: JSON.stringify({ schema: 1, observations, pageErrors }, null, 2),
+    body: JSON.stringify({
+      schema: 1, evidence_kind: "synthetic_only", observations,
+      denied_network_attempts: denied, pageErrors,
+    }, null, 2),
     contentType: "application/json",
   });
   expect(pageErrors, "Uncaught browser errors").toEqual([]);
+  expect(denied, "Unexpected OAuth or external network request").toEqual([]);
 });
 
 test("visual evidence: unavailable overview is explicit and contains no synthetic healthy row", async ({ page }, testInfo) => {
   const pageErrors = [];
+  const denied = await isolateEvidenceNetwork(page);
   page.on("pageerror", (error) => pageErrors.push(error.message));
   await syntheticOverview(page, 503);
   await page.setViewportSize({ width: 393, height: 844 });
@@ -76,4 +105,29 @@ test("visual evidence: unavailable overview is explicit and contains no syntheti
     contentType: "image/png",
   });
   expect(pageErrors, "Uncaught browser errors").toEqual([]);
+  expect(denied, "Unexpected OAuth or external network request").toEqual([]);
+});
+
+test("visual evidence: login preview remains non-interactive at mobile and desktop widths", async ({ page }, testInfo) => {
+  const denied = await isolateEvidenceNetwork(page);
+  const errors = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  for (const width of [393, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/?preview=login");
+    await expect(page.getByRole("heading", { name: "Вход в систему" })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Войти через GitHub/ })).toBeDisabled();
+    await expect(page.getByRole("table")).toHaveCount(0);
+    const layout = await page.evaluate(() => ({
+      viewport: innerWidth, document: document.documentElement.scrollWidth,
+    }));
+    expect(layout.document, "Login overflow").toBeLessThanOrEqual(layout.viewport + 1);
+    await testInfo.attach(`control-center-synthetic-login-${width}.png`, {
+      body: await page.screenshot({ fullPage: true, animations: "disabled" }),
+      contentType: "image/png",
+    });
+  }
+  expect(denied, "Unexpected OAuth or external network request").toEqual([]);
+  expect(errors, "Uncaught browser errors").toEqual([]);
 });
