@@ -93,7 +93,8 @@ class InboxTests(unittest.TestCase):
                 self.assertEqual(len(result["events"]), 1)
         bad = fixture()
         bad["services"].append(bad["services"][0].copy())
-        self.assertEqual(assemble(bad, None, now=NOW)["summary"]["total"], 1)
+        with self.assertRaisesRegex(InboxUnavailable, "overview_invalid"):
+            assemble(bad, None, now=NOW)
 
     def test_unknown_scheduler_source_stays_unavailable(self):
         for obj in (None, {}, scheduler(queue_state="not_configured"),
