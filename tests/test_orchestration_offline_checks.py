@@ -6,6 +6,7 @@ import unittest
 
 from scripts.orchestration_offline_checks import (
     Rejected, check_handoff, check_plan, eligible_after_verified_evidence,
+    synthetic_one_shot_recovery_gate,
 )
 
 REV = "a" * 40
@@ -38,6 +39,74 @@ class ContractTests(unittest.TestCase):
         change(plan)
         with self.assertRaisesRegex(Rejected, "^" + reason + "$"):
             check_plan(plan, GRANT if grant is None else grant, now, devices)
+
+
+    def test_one_shot_first_reservation_only(self):
+        state = {"approval_verified": True, "attempt_count": 0,
+                 "invocation_state": "never", "lease_expired": False}
+        self.assertEqual(synthetic_one_shot_recovery_gate(state),
+                         "ELIGIBLE_FIRST_RESERVATION_ONLY")
+
+    def test_recovery_missing_approval_denied(self):
+        state = {"approval_verified": False, "attempt_count": 0,
+                 "invocation_state": "never", "lease_expired": False}
+        self.assertEqual(synthetic_one_shot_recovery_gate(state),
+                         "DENY_NO_APPROVAL")
+
+    def test_expired_claim_never_implies_safe_retry(self):
+        state = {"approval_verified": True, "attempt_count": 0,
+                 "invocation_state": "never", "lease_expired": True}
+        self.assertEqual(synthetic_one_shot_recovery_gate(state),
+                         "BLOCK_MANUAL_REVIEW")
+
+    def test_reserved_not_retryable(self):
+        state = {"approval_verified": True, "attempt_count": 0,
+                 "invocation_state": "reserved", "lease_expired": False}
+        self.assertEqual(synthetic_one_shot_recovery_gate(state),
+                         "BLOCK_MANUAL_REVIEW")
+
+    def test_started_not_retryable(self):
+        state = {"approval_verified": True, "attempt_count": 1,
+                 "invocation_state": "started", "lease_expired": True}
+        self.assertEqual(synthetic_one_shot_recovery_gate(state),
+                         "BLOCK_MANUAL_REVIEW")
+
+    def test_uncertain_not_retryable(self):
+        state = {"approval_verified": True, "attempt_count": 1,
+                 "invocation_state": "uncertain", "lease_expired": True}
+        self.assertEqual(synthetic_one_shot_recovery_gate(state),
+                         "BLOCK_MANUAL_REVIEW")
+
+    def test_finished_not_retryable(self):
+        state = {"approval_verified": True, "attempt_count": 1,
+                 "invocation_state": "finished", "lease_expired": True}
+        self.assertEqual(synthetic_one_shot_recovery_gate(state),
+                         "BLOCK_MANUAL_REVIEW")
+
+    def test_any_prior_attempt_blocks_even_if_state_claims_never(self):
+        state = {"approval_verified": True, "attempt_count": 1,
+                 "invocation_state": "never", "lease_expired": False}
+        self.assertEqual(synthetic_one_shot_recovery_gate(state),
+                         "BLOCK_MANUAL_REVIEW")
+
+    def test_invalid_bool_attempts_rejected(self):
+        state = {"approval_verified": True, "attempt_count": True,
+                 "invocation_state": "never", "lease_expired": False}
+        with self.assertRaisesRegex(Rejected, "^recovery_attempts$"):
+            synthetic_one_shot_recovery_gate(state)
+
+    def test_unknown_invocation_state_rejected(self):
+        state = {"approval_verified": True, "attempt_count": 0,
+                 "invocation_state": "automatically_retry", "lease_expired": False}
+        with self.assertRaisesRegex(Rejected, "^recovery_invocation_state$"):
+            synthetic_one_shot_recovery_gate(state)
+
+    def test_untrusted_extra_recovery_field_rejected(self):
+        state = {"approval_verified": True, "attempt_count": 0,
+                 "invocation_state": "never", "lease_expired": False,
+                 "override_force_retry": True}
+        with self.assertRaisesRegex(Rejected, "^recovery_schema$"):
+            synthetic_one_shot_recovery_gate(state)
 
     def test_proper_order(self):
         self.assertEqual(check_plan(self.plan(), GRANT, 1000, DEVICES),
