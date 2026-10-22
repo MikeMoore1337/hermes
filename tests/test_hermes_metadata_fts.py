@@ -179,6 +179,29 @@ class MetadataFTSContractTests(unittest.TestCase):
         with self.assertRaisesRegex(IndexDenied, "STATUS_INVALID"):
             self.index.search("Проверка", project_id="hermes", status="success")
 
+    def test_expiry_tombstone_cap_denies_before_deleting_any_row(self):
+        from hermes_metadata_fts import core as mod
+
+        self.index.upsert(sample("H-demo-0017", "Old synthetic task", now=NOW))
+        self.index.upsert(sample("H-demo-0018", "Removed synthetic task", now=NOW))
+        self.assertTrue(self.index.remove("H-demo-0018"))
+        self.assertEqual(self.index.count(), 1)
+        self.index.now = NOW + (RETENTION_DAYS + 1) * DAY
+        new = sample("H-demo-0019", "Fresh synthetic task", now=self.index.now)
+        with patch.object(mod, "MAX_TOMBSTONES", 1):
+            with self.assertRaisesRegex(IndexDenied, "TOMBSTONES_EXHAUSTED"):
+                self.index.upsert(new)
+        self.assertEqual(self.index.count(), 1)
+        self.assertEqual(self.index.db.execute(
+            "SELECT title FROM tasks WHERE task_id=?", ("H-demo-0017",)
+        ).fetchone(), ("Old synthetic task",))
+        self.assertEqual(self.index.deleted_ids, {"H-demo-0018"})
+
+    def test_boolean_schema_version_is_not_valid(self):
+        row = sample("H-demo-0020", "Safe synthetic task", now=NOW)
+        with self.assertRaisesRegex(IndexDenied, "SCHEMA_VERSION"):
+            self.index.upsert({**row, "schema_version": True})
+
     def test_no_network_subprocess_or_real_files(self):
         with patch.object(socket.socket, "connect",
                           side_effect=AssertionError("network used")), \
