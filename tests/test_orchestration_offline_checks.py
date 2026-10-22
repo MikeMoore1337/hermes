@@ -171,6 +171,22 @@ class ContractTests(unittest.TestCase):
     def test_boolean_parent(self):
         self.rejects(lambda p: p["edges"].append([True, "review"]), "edge_schema")
 
+    def test_null_approval_is_not_an_owner_grant(self):
+        self.rejects(lambda p: p.update(approval_id=None),
+                     "grant_approval_invalid", grant=dict(GRANT, approval_id=None))
+
+    def test_empty_approval_is_not_an_owner_grant(self):
+        self.rejects(lambda p: p.update(approval_id=""),
+                     "grant_approval_invalid", grant=dict(GRANT, approval_id=""))
+
+    def test_whitespace_approval_is_not_an_owner_grant(self):
+        self.rejects(lambda p: p.update(approval_id="  "),
+                     "grant_approval_invalid", grant=dict(GRANT, approval_id="  "))
+
+    def test_empty_trusted_grant_approval_fails_even_with_valid_plan(self):
+        self.rejects(lambda p: None, "grant_approval_invalid",
+                     grant=dict(GRANT, approval_id=""))
+
     def test_bad_grant(self):
         self.rejects(lambda p: p.update(approval_id="other"), "grant_mismatch")
 
@@ -270,6 +286,27 @@ class ContractTests(unittest.TestCase):
         receipt = self.receipt()
         receipt["node_id"] = "unknown"
         with self.assertRaisesRegex(Rejected, "handoff_unverified"):
+            check_handoff(b"proof", receipt, node_id="signal", revision=REV,
+                          evidence_id="proof1", now=1000, seen=set())
+
+    def test_invalid_node_identity_in_receipt(self):
+        receipt = self.receipt()
+        receipt["node_id"] = None
+        with self.assertRaisesRegex(Rejected, "^handoff_identity_invalid$"):
+            check_handoff(b"proof", receipt, node_id=None, revision=REV,
+                          evidence_id="proof1", now=1000, seen=set())
+
+    def test_invalid_revision_identity_in_receipt(self):
+        receipt = self.receipt()
+        receipt["revision"] = None
+        with self.assertRaisesRegex(Rejected, "^handoff_identity_invalid$"):
+            check_handoff(b"proof", receipt, node_id="signal", revision=None,
+                          evidence_id="proof1", now=1000, seen=set())
+
+    def test_invalid_evidence_identity_in_receipt(self):
+        receipt = self.receipt()
+        receipt["evidence_id"] = True
+        with self.assertRaisesRegex(Rejected, "^handoff_identity_invalid$"):
             check_handoff(b"proof", receipt, node_id="signal", revision=REV,
                           evidence_id="proof1", now=1000, seen=set())
 
