@@ -194,6 +194,86 @@ def run(source_dir: Path, deps_dir: Path | None = None) -> bool:
                     self.assertIsNone(k.claim_task(
                         db, task, ttl_seconds=120, claimer="after-crash"))
 
+            def test_heartbeat_requires_exact_claim_owner(self):
+                with c.connect_closing(self.path) as db:
+                    task = k.create_task(
+                        db, title="heartbeat synthetic", workspace_kind="scratch")
+                    self.assertIsNotNone(k.claim_task(
+                        db, task, ttl_seconds=30, claimer="owner-A"))
+                    before = db.execute(
+                        "SELECT claim_expires FROM tasks WHERE id=?", (task,)
+                    ).fetchone()["claim_expires"]
+                    self.assertFalse(k.heartbeat_claim(
+                        db, task, claimer="wrong-owner", ttl_seconds=120))
+                    self.assertTrue(k.heartbeat_claim(
+                        db, task, claimer="owner-A", ttl_seconds=120))
+                    after = db.execute(
+                        "SELECT claim_expires FROM tasks WHERE id=?", (task,)
+                    ).fetchone()["claim_expires"]
+                    self.assertGreater(after, before)
+
+            def test_expired_no_worker_claim_requeues_once(self):
+                # This proves native task retry semantics; a real model
+                # adapter MUST separately block a repeated inference call.
+                with c.connect_closing(self.path) as db:
+                    task = k.create_task(
+                        db, title="expired synthetic", workspace_kind="scratch")
+                    self.assertIsNotNone(k.claim_task(
+                        db, task, ttl_seconds=120, claimer="owner-1"))
+                    db.execute(
+                        "UPDATE tasks SET claim_expires=0 WHERE id=?", (task,))
+                    self.assertEqual(k.release_stale_claims(db), 1)
+                    self.assertEqual(k.release_stale_claims(db), 0)
+                    self.assertEqual(k.get_task(db, task).status, "ready")
+                    self.assertIsNotNone(k.claim_task(
+                        db, task, ttl_seconds=120, claimer="owner-2"))
+
+            def test_manual_reclaim_idempotent_with_no_worker(self):
+                # No PID/OS signal is involved in this synthetic case.
+                with c.connect_closing(self.path) as db:
+                    task = k.create_task(
+                        db, title="operator synthetic", workspace_kind="scratch")
+                    self.assertIsNotNone(k.claim_task(
+                        db, task, ttl_seconds=120, claimer="owner-1"))
+                    self.assertTrue(k.reclaim_task(
+                        db, task, reason="synthetic cancel"))
+                    self.assertFalse(k.reclaim_task(
+                        db, task, reason="synthetic duplicate"))
+                    self.assertEqual(k.get_task(db, task).status, "ready")
+
+            def test_archived_running_task_is_terminal(self):
+                # Terminal archive is not proof of OS worker termination.
+                with c.connect_closing(self.path) as db:
+                    task = k.create_task(
+                        db, title="archived synthetic", workspace_kind="scratch")
+                    self.assertIsNotNone(k.claim_task(
+                        db, task, ttl_seconds=120, claimer="owner-1"))
+                    self.assertTrue(k.archive_task(db, task))
+                    self.assertFalse(k.archive_task(db, task))
+                    self.assertEqual(k.get_task(db, task).status, "archived")
+                    self.assertIsNone(k.claim_task(
+                        db, task, ttl_seconds=120, claimer="owner-2"))
+
+            def test_stale_run_id_cannot_complete_new_claim(self):
+                with c.connect_closing(self.path) as db:
+                    task = k.create_task(
+                        db, title="stale ownership", workspace_kind="scratch")
+                    old = k.claim_task(
+                        db, task, ttl_seconds=120, claimer="owner-1")
+                    self.assertIsNotNone(old)
+                    old_run_id = old.current_run_id
+                    self.assertTrue(k.reclaim_task(
+                        db, task, reason="synthetic restore"))
+                    new = k.claim_task(
+                        db, task, ttl_seconds=120, claimer="owner-2")
+                    self.assertIsNotNone(new)
+                    self.assertNotEqual(new.current_run_id, old_run_id)
+                    self.assertFalse(k.complete_task(
+                        db, task, result="stale result",
+                        expected_run_id=old_run_id,
+                        fire_lifecycle_hook=False))
+                    self.assertEqual(k.get_task(db, task).status, "running")
+
             def test_archived_parent_unblocks_unproven_child(self):
                 # Important native semantics: archived is a satisfied DAG
                 # dependency, NOT independent evidence of successful analysis.
