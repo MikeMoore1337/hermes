@@ -1,0 +1,125 @@
+{
+  "schema_version": 1,
+  "dataset": "h464-review-manifest-negative-v1",
+  "cases": [
+    {
+      "id": "pl-01-unsupported-schema",
+      "changes": {
+        "api_version": 2
+      },
+      "expected_reason": "UNSUPPORTED_VERSION"
+    },
+    {
+      "id": "pl-02-extra-field",
+      "changes": {
+        "command": "exec"
+      },
+      "expected_reason": "MANIFEST_SCHEMA"
+    },
+    {
+      "id": "pl-03-missing-license",
+      "changes": {
+        "license": null
+      },
+      "expected_reason": "LICENSE_REQUIRED"
+    },
+    {
+      "id": "pl-04-unknown-license",
+      "changes": {
+        "license": "UNKNOWN"
+      },
+      "expected_reason": "LICENSE_NOT_ALLOWLISTED"
+    },
+    {
+      "id": "pl-05-sha-mismatch",
+      "changes": {
+        "source_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "expected_reason": "REVIEW_PIN_MISMATCH"
+    },
+    {
+      "id": "pl-06-malformed-sha",
+      "changes": {
+        "source_commit": "main"
+      },
+      "expected_reason": "INVALID_SOURCE_SHA"
+    },
+    {
+      "id": "pl-07-extra-capability",
+      "changes": {
+        "capabilities": [
+          "research.read",
+          "shell.exec"
+        ]
+      },
+      "expected_reason": "CAPABILITY_NOT_ALLOWLISTED"
+    },
+    {
+      "id": "pl-08-write-effect",
+      "changes": {
+        "side_effects": [
+          "write"
+        ]
+      },
+      "expected_reason": "SIDE_EFFECTS_DENIED"
+    },
+    {
+      "id": "pl-09-overbroad-scope",
+      "changes": {
+        "data_scope": "private-vault"
+      },
+      "expected_reason": "DATA_SCOPE_NOT_ALLOWLISTED"
+    },
+    {
+      "id": "pl-10-policy-bypass",
+      "changes": {
+        "owner_policy": "automatic"
+      },
+      "expected_reason": "OWNER_POLICY_DENIED"
+    },
+    {
+      "id": "pl-11-optional-package",
+      "changes": {
+        "optional_dependencies": [
+          "pip:requests"
+        ]
+      },
+      "expected_reason": "OPTIONAL_DEPENDENCIES_DENIED"
+    },
+    {
+      "id": "pl-12-unknown-alias",
+      "changes": {
+        "id": "fake-research-reader"
+      },
+      "expected_reason": "ALIAS_NOT_REVIEWED"
+    },
+    {
+      "id": "pl-13-wrong-source",
+      "changes": {
+        "source_repo": "owner/unverified"
+      },
+      "expected_reason": "SOURCE_NOT_REVIEWED"
+    },
+    {
+      "id": "pl-14-null-capability",
+      "changes": {
+        "capabilities": null
+      },
+      "expected_reason": "CAPABILITY_NOT_ALLOWLISTED"
+    },
+    {
+      "id": "pl-15-boolean-version",
+      "changes": {
+        "api_version": true
+      },
+      "expected_reason": "UNSUPPORTED_VERSION"
+    },
+    {
+      "id": "pl-16-blank-license",
+      "changes": {
+        "license": ""
+      },
+      "expected_reason": "LICENSE_REQUIRED"
+    }
+  ]
+}
