@@ -3,7 +3,7 @@ name: Hermes production deploy
 on:
   workflow_dispatch:
   workflow_run:
-    workflows: ["Hermes repository checks"]
+    workflows: ["Hermes repository checks", "Hermes Control Center UI"]
     types: [completed]
     branches: [main]
 
@@ -45,23 +45,36 @@ jobs:
           if [[ "$ui_required" != true && "$ui_required" != false ]]; then
             echo "cannot determine UI check requirement" >&2; exit 1
           fi
-          for attempt in $(seq 1 30); do
+          # workflow_run notifications arrive independently for quality and UI.
+          # Never race a slow browser job. Defer safely, then re-enter on
+          # completion of the other required workflow for the EXACT SHA.
+          gate_ready=false
+          for attempt in $(seq 1 6); do
             runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$TARGET_SHA&branch=main&event=push&per_page=100")"
             quality="$(jq -r '[.workflow_runs[] | select(.name=="Hermes repository checks")] | first | .conclusion // "pending"' <<< "$runs")"
-            ui="$(jq -r '[.workflow_runs[] | select(.name=="Hermes Control Center UI")] | first | .conclusion // "missing"' <<< "$runs")"
+            ui="$(jq -r '[.workflow_runs[] | select(.name=="Hermes Control Center UI")] | first | .conclusion // "pending"' <<< "$runs")"
             if [[ "$quality" == success && ( "$ui_required" == false || "$ui" == success ) ]]; then
               echo "Exact SHA CI green: quality=$quality, UI=$ui, UI required=$ui_required"
+              gate_ready=true
               break
             fi
             if [[ "$quality" == failure || "$quality" == cancelled || "$quality" == timed_out ||
                   "$ui" == failure || "$ui" == cancelled || "$ui" == timed_out ]]; then
-              echo "CI gate failed: quality=$quality UI=$ui" >&2; exit 1
+              echo "CI gate failed: quality=$quality UI=$ui" >&2
+              exit 1
             fi
-            if [[ "$attempt" -eq 30 ]]; then
-              echo "CI gate timed out: quality=$quality UI=$ui" >&2; exit 1
-            fi
-            sleep 10
+            [[ "$attempt" -eq 6 ]] || sleep 10
           done
+          if [[ "$gate_ready" != true ]]; then
+            if [[ "$GITHUB_EVENT_NAME" == workflow_run ]]; then
+              echo "Required SHA-scoped check still pending: quality=$quality UI=$ui"
+              echo "Deployment deferred until its workflow_run completion."
+              echo "deploy=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "Manual dispatch refused: required SHA-scoped checks not green" >&2
+            exit 1
+          fi
           latest="$(gh api "repos/$GITHUB_REPOSITORY/branches/main" --jq .commit.sha)"
           if [[ "$latest" != "$TARGET_SHA" ]]; then
             echo "Superseded before deploy by $latest"
