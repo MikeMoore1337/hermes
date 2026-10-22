@@ -116,7 +116,10 @@ def discover():
               and type(r.get("id")) is int and r["id"]>0]
     if not eligible:
         refuse("successful_main_candidate_missing")
-    selected=max(eligible,key=lambda r:r["id"])
+    # An exact-current-main success wins even if a newer job record for
+    # another (e.g. stale/superseded) main SHA has a larger run ID.
+    exact=[r for r in eligible if r["head_sha"]==sha]
+    selected=max(exact or eligible,key=lambda r:r["id"])
     source_sha=selected["head_sha"]
     lineage_reuse=require_unchanged_brc_inputs(source_sha,sha)
     run_id=selected["id"]
