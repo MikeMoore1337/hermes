@@ -11,6 +11,7 @@ isolation, provider cancellation and authentic receipts before any model call.
 """
 from __future__ import annotations
 
+from contextlib import closing
 from pathlib import Path
 import re
 import sqlite3
@@ -37,9 +38,9 @@ def _require_id(value, pattern, name):
 
 def initialize_temporary_fixture(db_path: Path) -> None:
     """Create only the explicit test database path; no Hermes DB operations."""
-    if type(db_path) is not Path:
+    if not isinstance(db_path, Path):
         raise InvalidFixture("path")
-    with sqlite3.connect(db_path, timeout=5, isolation_level=None) as db:
+    with closing(sqlite3.connect(db_path, timeout=5, isolation_level=None)) as db:
         db.execute("PRAGMA journal_mode=DELETE")
         db.execute("PRAGMA synchronous=FULL")
         db.execute("BEGIN IMMEDIATE")
@@ -74,7 +75,7 @@ def reserve_once(
     changes. A timed-out or crashed caller must NOT delete it or automatically
     retry. A missing table fails closed instead of self-initializing a journal.
     """
-    if type(db_path) is not Path:
+    if not isinstance(db_path, Path):
         raise InvalidFixture("path")
     _require_id(operation_key, OPERATION, "operation_key")
     _require_id(revision, REVISION, "revision")
@@ -88,7 +89,7 @@ def reserve_once(
     if now >= grant_expires_at:
         return EXPIRED
 
-    with sqlite3.connect(db_path, timeout=5, isolation_level=None) as db:
+    with closing(sqlite3.connect(db_path, timeout=5, isolation_level=None)) as db:
         db.execute("PRAGMA busy_timeout=5000")
         db.execute("PRAGMA synchronous=FULL")
         db.execute("BEGIN IMMEDIATE")
@@ -109,13 +110,12 @@ def reserve_once(
 
 def read_record(db_path: Path, operation_key: str):
     """Independent readback; absence means 'unknown', not authorization."""
-    if type(db_path) is not Path:
+    if not isinstance(db_path, Path):
         raise InvalidFixture("path")
     _require_id(operation_key, OPERATION, "operation_key")
     # URI mode=ro avoids accidentally creating a new DB when evidence is gone.
-    import urllib.parse
-    uri = "file:" + urllib.parse.quote(str(db_path.resolve()), safe="/") + "?mode=ro"
-    with sqlite3.connect(uri, uri=True, timeout=5) as db:
+    uri = db_path.resolve().as_uri() + "?mode=ro"
+    with closing(sqlite3.connect(uri, uri=True, timeout=5)) as db:
         return db.execute(
             "SELECT operation_key, revision, approval_id, reserved_at "
             "FROM synthetic_pre_call_reservations WHERE operation_key=?",
