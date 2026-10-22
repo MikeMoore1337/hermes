@@ -18,6 +18,7 @@ function Pair({label,children,warn}){
 }
 export default function HermesCommander({onBack}){
  const [selected,setSelected]=useState("hermes"),[tab,setTab]=useState("overview");
+ const [mobileDevices,setMobileDevices]=useState(false);
  const [query,setQuery]=useState(""),[observation,setObservation]=useState(null);
  const [fault,setFault]=useState("Снимок BRC пока не подключён.");
  const [busy,setBusy]=useState(false),[copied,setCopied]=useState("");
@@ -65,7 +66,7 @@ export default function HermesCommander({onBack}){
        <em>Windows: путь указан, доступ не выдан</em></span></button>)}
      {!visible.length&&<p className="hc-empty">Ничего не найдено</p>}
     </nav>
-    <div className="hc-devices">
+    <div id="hc-device-list" className={"hc-devices"+(mobileDevices?" hc-mobile-open":"")}>
      <div className="hc-devices-title">Устройства <span>03</span></div>
      <ul>{commanderDevices.map((name,i)=>{
       const Icon=i===0?Monitor:Server;
@@ -157,7 +158,7 @@ export default function HermesCommander({onBack}){
   </div>
   <nav className="hc-mobilebar" aria-label="Мобильная навигация Commander">
    <button type="button" onClick={()=>document.querySelector(".hc-projects")?.scrollIntoView({block:"nearest"})}><FolderGit2 size={19}/> Проекты</button>
-   <button type="button" onClick={()=>document.querySelector(".hc-devices")?.scrollIntoView({block:"nearest"})}><Server size={19}/> Устройства</button>
+   <button type="button" aria-controls="hc-device-list" aria-expanded={mobileDevices} onClick={()=>{setMobileDevices(open=>!open);requestAnimationFrame(()=>document.getElementById("hc-device-list")?.scrollIntoView({block:"nearest"}));}}><Server size={19}/> Устройства</button>
    <button type="button" onClick={()=>document.querySelector(".hc-observe")?.scrollIntoView({block:"nearest"})}><Workflow size={19}/> Диагностика</button>
   </nav>
  </div>;
