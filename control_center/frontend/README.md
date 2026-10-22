@@ -4,6 +4,13 @@ Owner visual target (2026-10-16): C+B Atlas as the only main dashboard layout, u
 
 Для разработки и проверки новых экранов используйте [протокол UI evidence](../../docs/ux/control-center-ui-evidence.md) и тест `qa/visual-evidence.spec.js`: он покрывает отрисованные состояния на синтетике, не требует production OAuth и не подменяет реальную проверку владельцем.
 
+Для отдельной воспроизводимой галереи откройте Actions - 
+**Hermes UI Visual Evidence (manual, synthetic)** - Run workflow.
+Отчёт и PNG появятся в архиве `hermes-h440-synthetic-ui-evidence`
+(7 дней, synthetic-only, без OAuth и реальных данных).
+См. [протокол и границы](../../docs/ux/control-center-ui-evidence.md).
+Это необязательная проверка и не выпуск нового дизайна.
+
 ## Development
 
 ```sh
