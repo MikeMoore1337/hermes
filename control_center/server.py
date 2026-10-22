@@ -25,6 +25,7 @@ from control_center.github_rate_history import DB as GITHUB_HISTORY_DB, read as 
 from control_center.github_rate_history import HistoryUnavailable as GitHubHistoryUnavailable
 from control_center.provider_registry import registry as provider_quota_registry
 from control_center.snapshot import DEFAULT_OUTPUT
+from control_center.operator_inbox import assemble as build_operator_inbox, load_overview as load_inbox_overview, InboxUnavailable
 from control_center.codex_usage import DEFAULT_OUTPUT as CODEX_OUTPUT, read_snapshot, UsageError
 from control_center.codex_history import read as read_codex_history
 from control_center.codex_analytics import DEFAULT_DB as ANALYTICS_DB, read as read_codex_analytics
@@ -405,6 +406,33 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
                                         b'{"error":"scheduler_unavailable"}')
                 return self.respond(200, "application/json; charset=utf-8",
                                     json.dumps(data, separators=(",", ":")).encode())
+            if path in ("/api/operator/inbox", "/control-center/api/operator/inbox"):
+                # Reuse existing protected owner session / Caddy proxy boundary.
+                # No new public listener, mutation endpoint or per-request shell.
+                if config.mode == "github" and not oauth.authenticated(
+                        self._cookie(SESSION_COOKIE)):
+                    return self.respond(401, "application/json",
+                                        b'{"error":"authentication_required"}')
+                try:
+                    try:
+                        overview = load_inbox_overview(snapshot_path)
+                    except InboxUnavailable:
+                        overview = None
+                    try:
+                        quota = read_snapshot(codex_path)
+                    except UsageError:
+                        quota = None
+                    try:
+                        scheduler = read_scheduler_status(scheduler_path, quota_snapshot=quota)
+                    except StatusUnavailable:
+                        scheduler = None
+                    payload = build_operator_inbox(overview, scheduler)
+                except (InboxUnavailable, OSError, TypeError, ValueError):
+                    return self.respond(503, "application/json",
+                                        b'{"error":"inbox_unavailable"}')
+                return self.respond(200, "application/json; charset=utf-8",
+                                    json.dumps(payload, ensure_ascii=False,
+                                               separators=(",", ":")).encode("utf-8"))
             if path in ("/api/overview", "/control-center/api/overview"):
                 if config.mode == "github" and not oauth.authenticated(
                         self._cookie(SESSION_COOKIE)):
