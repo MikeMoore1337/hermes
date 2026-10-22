@@ -70,6 +70,8 @@ class MainDeployContractTests(unittest.TestCase):
         for fragment in (
             'workflow_run:',
             'workflow_dispatch:',
+            'workflows: ["Hermes repository checks", "Hermes Control Center UI"]',
+            'Deployment deferred until its workflow_run completion.',
             "github.event.workflow_run.conclusion == 'success'",
             "github.event.workflow_run.event == 'push'",
             'TARGET_SHA:',
