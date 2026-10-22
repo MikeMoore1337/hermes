@@ -74,9 +74,23 @@ jobs:
         run: python3 -m unittest tests.test_h15_oauth_egress_evidence -v
       - name: Caddy OAuth callback log policy regression tests
         run: python3 -m unittest tests.test_h15_caddy_callback_log_guard -v
-      - name: Install Chromium for frontend end-to-end regression
+      - name: Select existing runner Chrome or install Chromium for frontend QA
         working-directory: control_center/frontend
-        run: npx playwright install --with-deps chromium
+        shell: bash
+        run: |
+          set -euo pipefail
+          if command -v google-chrome-stable >/dev/null 2>&1; then
+            browser="$(command -v google-chrome-stable)"
+          elif command -v google-chrome >/dev/null 2>&1; then
+            browser="$(command -v google-chrome)"
+          else
+            npx playwright install --with-deps chromium
+            echo "BROWSER_SOURCE=playwright_pinned"
+            exit 0
+          fi
+          "$browser" --version
+          echo "HERMES_CHROMIUM_EXECUTABLE=$browser" >> "$GITHUB_ENV"
+          echo "BROWSER_SOURCE=runner_preinstalled"
       - name: Browser checks (approved Atlas, protected GitHub login, mobile)
         working-directory: control_center/frontend
         run: npm run test:e2e
