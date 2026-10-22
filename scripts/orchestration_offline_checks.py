@@ -139,3 +139,34 @@ def eligible_after_verified_evidence(plan, verified_nodes):
         dependencies[child].add(parent)
     return tuple(sorted(node for node in ids - verified_nodes
                         if dependencies[node] <= verified_nodes))
+
+
+def synthetic_one_shot_recovery_gate(state):
+    """Return a *simulated* decision, never permission to call a model.
+
+    Native Kanban may reclaim an expired run to the ready/review phase. A
+    model-capable adapter must maintain a separate durable, atomic pre-call
+    reservation and independently prove that NO prior inference was started.
+    This function does not read provider receipts, grant approvals, or a DB.
+    """
+    if type(state) is not dict or set(state) != {
+        "approval_verified", "attempt_count", "invocation_state", "lease_expired"
+    }:
+        raise Rejected("recovery_schema")
+    if type(state["approval_verified"]) is not bool:
+        raise Rejected("recovery_approval_type")
+    if type(state["attempt_count"]) is not int or state["attempt_count"] < 0:
+        raise Rejected("recovery_attempts")
+    if type(state["lease_expired"]) is not bool:
+        raise Rejected("recovery_lease_type")
+    if type(state["invocation_state"]) is not str or state["invocation_state"] not in {
+        "never", "reserved", "started", "uncertain", "finished"
+    }:
+        raise Rejected("recovery_invocation_state")
+    if not state["approval_verified"]:
+        return "DENY_NO_APPROVAL"
+    if (state["attempt_count"] != 0
+            or state["invocation_state"] != "never"
+            or state["lease_expired"]):
+        return "BLOCK_MANUAL_REVIEW"
+    return "ELIGIBLE_FIRST_RESERVATION_ONLY"
