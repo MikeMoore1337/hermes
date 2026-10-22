@@ -50,7 +50,7 @@ def _check_time(value: Any) -> int:
 def _validate(record: Any, now: int) -> dict:
     if type(record) is not dict or set(record) != FIELDS:
         raise IndexDenied("FIELD_ALLOWLIST")
-    if record["schema_version"] != 1:
+    if type(record["schema_version"]) is not int or record["schema_version"] != 1:
         raise IndexDenied("SCHEMA_VERSION")
     if (type(record["project_id"]) is not str or
             record["project_id"] != PROJECT or
