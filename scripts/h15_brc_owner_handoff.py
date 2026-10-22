@@ -164,10 +164,13 @@ def execute():
     admit_result = admit(Path(bundle), image, digest, original_sha)
     if admit_result.get("status") != "PREFLIGHT_PASS":
         refuse("live_relay_admission_failed")
+    if result.get("runtime_image_id") != admit_result.get("candidate_image"):
+        refuse("verified_runtime_image_changed")
     old = admit_result["current_image"]
     phrase = "APPLY BRC " + image[-12:]
     print("Existing relay will restart. Old container and SQLite backup retained.")
-    print("Image:", image, " Source:", original_sha, " Previous:", old)
+    print("OCI config:", image, " Runtime:", result["runtime_image_id"],
+          " Source:", original_sha, " Previous:", old)
     print("Confirm exactly:", phrase)
     try:
         answer = input("> ").strip()
@@ -182,7 +185,8 @@ def execute():
     if rc != 0:
         refuse("transactional_cutover_or_rollback_failed")
     return {"status": "CUTOVER_PENDING_BOTH_CLIENTS_E2E",
-            "candidate_image": image, "previous_image": old,
+            "candidate_image": result["runtime_image_id"],
+            "ci_config_image_id": image, "previous_image": old,
             "image_source_sha": original_sha, "original_container_retained": True,
             "actual_chatgpt_codex_mcp_verified": False}
 

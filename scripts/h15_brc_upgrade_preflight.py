@@ -6,7 +6,9 @@ import json
 from pathlib import Path
 import re
 import subprocess
+import tarfile
 from scripts.h15_brc_offline_image_bundle import verify, BundleDenied
+from scripts.h15_brc_loaded_identity import verify_loaded_tar, LoadedImageDenied
 
 IMAGE = re.compile(r"sha256:[a-f0-9]{64}\Z")
 HEX = re.compile(r"[a-f0-9]{64}\Z")
@@ -35,6 +37,48 @@ def inspect(command: list[str]) -> dict:
     if not isinstance(result, list) or len(result) != 1 or not isinstance(result[0], dict):
         deny("docker_inspect_shape")
     return result[0]
+
+def candidate_runtime_image(bundle: Path, config_id: str, hermes_sha: str) -> tuple[dict, str]:
+    """Resolve verified Docker runtime ID from independently pinned OCI config.
+
+    Classic Docker uses the config digest; containerd may use the manifest
+    digest. In the latter case, reverify the imported tag, config, descriptors
+    and rootfs layers against the independently pinned offline OCI archive.
+    """
+    tag = f"hermes-brc-relay-eval:{hermes_sha[:12]}"
+    image = inspect(["image", "inspect", tag])
+    actual = image.get("Id")
+    if image.get("RepoTags") != [tag] or not isinstance(actual, str) or not IMAGE.fullmatch(actual):
+        deny("candidate_runtime_tag_or_id_mismatch")
+    if actual == config_id:
+        return image, actual
+
+    try:
+        proc = subprocess.Popen(
+            ["zstd", "-dc", str(bundle / "brc-relay.docker.tar.zst")],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        )
+    except OSError as exc:
+        raise UpgradeDenied("runtime_oci_attestation_unavailable") from exc
+    try:
+        if proc.stdout is None:
+            deny("runtime_oci_attestation_unavailable")
+        verified_id, style = verify_loaded_tar(proc.stdout, image, config_id, tag)
+        if proc.wait(timeout=60) != 0:
+            deny("runtime_oci_attestation_failed")
+        if verified_id != actual or style != "containerd_manifest":
+            deny("runtime_oci_attestation_failed")
+    except (LoadedImageDenied, KeyError, OSError, ValueError, tarfile.TarError,
+            subprocess.TimeoutExpired) as exc:
+        raise UpgradeDenied("runtime_oci_attestation_failed") from exc
+    finally:
+        if proc.stdout is not None:
+            proc.stdout.close()
+        if proc.poll() is None:
+            proc.kill()
+        proc.wait()
+    return image, actual
+
 
 def candidate_gate(image: dict, expected: str):
     if (image.get("Id") != expected or image.get("Os") != "linux"
@@ -106,12 +150,13 @@ def admit(bundle: Path, image: str, archive_sha: str, hermes_sha: str) -> dict:
                          expected_image_id=image, expected_hermes_sha=hermes_sha)
     except (BundleDenied, OSError, ValueError, KeyError) as exc:
         raise UpgradeDenied("bundle_not_verified") from exc
-    candidate_gate(inspect(["image", "inspect", image]), image)
-    old = current_gate(inspect(["container", "inspect", "hermes-brc-relay"]), image)
+    imported, runtime_id = candidate_runtime_image(bundle, image, hermes_sha)
+    candidate_gate(imported, runtime_id)
+    old = current_gate(inspect(["container", "inspect", "hermes-brc-relay"]), runtime_id)
     if receipt.get("owner_agents_paired") is not False or receipt.get("production_mcp_enabled") is not False:
         deny("offline_receipt_wrong_scope")
-    return {"status":"PREFLIGHT_PASS", "current_image": old, "candidate_image": image,
-            "hermes_commit": hermes_sha, "bundle_verified":True,
+    return {"status":"PREFLIGHT_PASS", "current_image": old, "candidate_image": runtime_id,
+            "ci_config_image_id": image, "hermes_commit": hermes_sha, "bundle_verified":True,
             "secrets_displayed":False, "live_rollback_tested":False,
             "changes_performed":False, "deployment_approved":False}
 

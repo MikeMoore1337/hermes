@@ -1,8 +1,84 @@
-Hermes #454: Source-only relay MCP workspace tools.
+# Hermes BRC: native MCP workspace tools — live acceptance (#454)
 
-- list_workspaces: authenticated user-scoped discovery of the four approved sandbox projects.
-- resolve_workspace: accepts one project alias, returns actual paired online device ID and approved sandbox root; returns git_verified:false; clients must verify actual Git origin/branch before modification.
-- Requires pinned shahidx0x/better-remote-commander upstream cbe511702dd0147650353c29ac6ab1decd8afda1, already patched with Hermes dispatcher and gateway policies.
-- In a disposable checkout, run: python3 -m scripts.h15_brc_workspace_gateway --source-dir /path/to/pinned/hardened/brc --registry deploy/h15/workspace-registry.json
-- Patch is NOT a running deployment. No native Windows host access, new credentials, provider/model calls, Docker changes or permissions.
-- Run: python3 -m unittest discover -s tests -p test_h15_brc_workspace_gateway.py -v. Then verify actual pinned source build and live OAuth MCP tool discovery/negative tests prior to deployment. See Issue #454.
+## Delivery and evidence
+
+The verified source release `bbf316d7887bc0bdabb871a065da7f2bf2a833b1`
+was installed on the owner VPS via an owner-authorized transactional Docker
+cutover. The old image, rollback container and SQLite backup were retained.
+The pinned CI candidate [run 39821964343](https://github.com/MikeMoore1337/hermes/actions/runs/39821964343)
+compiled the **relay-native** workspace tools and proved OAuth MCP tool
+advertisement, owner-scoped routing and negative requests. This is not just
+a stand-alone Python CLI patch.
+
+Actual **ChatGPT and Codex clients both called** `list_workspaces` and
+`resolve_workspace(project="YFC")` over Hermes MCP in fresh sessions on
+2026-10-22. Recorded evidence is in [#454](https://github.com/MikeMoore1337/hermes/issues/454):
+[ChatGPT](https://github.com/MikeMoore1337/hermes/issues/454#issuecomment-6349129129)
+and [Codex](https://github.com/MikeMoore1337/hermes/issues/454#issuecomment-6349223554).
+
+The MCP catalog has four public **sandbox** projects:
+
+| Workspace | Branch | Approved root |
+| --- | --- | --- |
+| hermes | main | `/workspace/projects/hermes` |
+| your-fitness-coach (YFC) | master | `/workspace/projects/your-fitness-coach` |
+| second-brain | main | `/workspace/projects/second-brain` |
+| ai-development-toolkit (Toolkit) | main | `/workspace/projects/ai-development-toolkit` |
+
+The authenticated MCP tools select the unique online, unpaused
+`H15 Windows permanent sandbox` from live user-owned device discovery.
+They do **not** grant extra filesystem permissions, mount Windows-native
+folders or reach either production VPS host. The returned
+`git_verified=false` and `verification_required_before_write=true`
+are deliberate: a catalog entry does not attest the current Git tree.
+
+## Safe use in ChatGPT or Codex
+
+1. In a fresh client session, call `list_workspaces`, then
+   `resolve_workspace` with an approved alias (for example `YFC`).
+2. Take the returned `deviceId` and `root`; do not guess them. Actual
+   device availability changes. New tools may require the client to reload
+   the MCP tool schema after a relay update.
+3. **Before modifying a workspace**, read Git origin, current branch, HEAD
+   and working-tree status using the returned device. Example for YFC:
+
+   ```sh
+   root=/workspace/projects/your-fitness-coach
+   git -c "safe.directory=$root" -C "$root" remote -v
+   git -c "safe.directory=$root" -C "$root" branch --show-current
+   git -c "safe.directory=$root" -C "$root" rev-parse HEAD
+   git -c "safe.directory=$root" -C "$root" status --short --branch
+   ```
+
+   `-c safe.directory=<exact verified root>` is per-command only, not
+   `git config --global`; Codex observed `dubious ownership` on the
+   first unqualified attempt and passed after using this scoped override.
+   No fetch was performed in that evidence; comparison with the current
+   remote GitHub tip is **not verified**.
+4. Write only in the approved sandbox checkout, after Git verification,
+   normal protected-branch/PR rules and task authorization. Do not
+   confuse these clones with original local Windows folders.
+
+## Remaining acceptance gates
+
+The [six-device/client parity matrix](h15-brc-parity-acceptance.md) separates
+live PASS, partial coverage and untested scenarios by device and tool.
+
+
+- Both clients' new native workspace discovery: **PASS**.
+- ChatGPT sandbox file/edit/search/move/process checks across Windows,
+  Hermes VPS and YFC VPS sandboxes: **PASS**, using isolated temporary
+  files; all temporary files removed.
+- Codex file/process proof for YFC Git verification: **PASS**. Complete
+  2-clients × 3-devices parity/negative matrix: **INCOMPLETE**.
+- New-project onboarding and Control Center workflow: **OPEN** (#455,
+  visual approval required before UI implementation).
+- Windows login/reboot and outage recovery: **OPEN** (#445; do not perform
+  unapproved reboot).
+- Native original Windows directories: **NOT AUTHORIZED**; requires an
+  explicit per-path owner approval. Neither secret paths, production
+  credentials, private Second Brain vault nor Docker socket are mounted.
+
+No Codex CLI, paid API or new host privileges are required for these
+workspace MCP tools. Keep [#454](https://github.com/MikeMoore1337/hermes/issues/454)
+open until its full acceptance matrix is satisfied.

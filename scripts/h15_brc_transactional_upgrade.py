@@ -225,8 +225,9 @@ def main(argv=None):
         with lock():
             v = admit(a.bundle_dir, a.image, a.archive_sha, a.hermes_sha)
             old = v["current_image"]
+            runtime_id = v["candidate_image"]
             if a.mode == "plan":
-                out = {"status": "PLAN_ONLY", "candidate_image": a.image,
+                out = {"status": "PLAN_ONLY", "candidate_image": runtime_id,
                        "previous_image": old, "changed": False}
             else:
                 approval_file(a.image, old, a.archive_sha, a.hermes_sha)
@@ -234,7 +235,7 @@ def main(argv=None):
                 baseline = devices()
                 demand(baseline >= 1, "NO_BASELINE_DEVICES")
                 snapshot()
-                out = swap(a.image, old, baseline)
+                out = swap(runtime_id, old, baseline)
     except (CutoverDenied, UpgradeDenied, OSError, ValueError, KeyError) as exc:
         print(json.dumps({"status":"REFUSED",
                           "reason":str(exc) if isinstance(exc,CutoverDenied) else type(exc).__name__},
