@@ -37,7 +37,7 @@ cleanup() {
   docker rm -f "$agent" "$name" "$checkpoint" >/dev/null 2>&1 || true
   docker network rm "$net" >/dev/null 2>&1 || true
   sudo rm -rf -- "$state" "$secrets" "$backups"
-  rm -rf -- "$workspace"
+  sudo rm -rf -- "$workspace"
 }
 trap cleanup EXIT
 sudo install -d -m 700 -o 979 -g 975 "$state"
@@ -134,8 +134,7 @@ done
 [[ "$ready" == 1 ]] || fail ROLLBACK_DEVICE_NOT_RECONNECTED
 echo "H454_REAL_DOCKER_FAILED_UPGRADE_ROLLBACK=PASS"
 
-python3 - "$new" "$old" "$archive_sha" "$GITHUB_SHA" <<'PY' |
-  sudo tee "$secrets/relay-upgrade-approval.json" >/dev/null
+python3 - "$new" "$old" "$archive_sha" "$GITHUB_SHA" <<'PY' | sudo tee "$secrets/relay-upgrade-approval.json" >/dev/null
 import json,sys
 print(json.dumps({
     "schema":1,"decision":"OWNER_APPROVED_LIVE_BRC_RELAY_CUTOVER",
