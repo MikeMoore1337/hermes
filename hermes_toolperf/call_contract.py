@@ -141,6 +141,11 @@ class SyntheticSession:
                 raise ContractDenied("INVALID_PATH")
             if args["path"] not in self.files:
                 raise ContractDenied("FILE_NOT_ALLOWLISTED")
+            key, call = item["idempotency_key"], item["tool_call_id"]
+            if call in self.ledger:
+                raise ContractDenied("DUPLICATE_TOOL_CALL")
+            if key in self.keys:
+                raise ContractDenied("DUPLICATE_IDEMPOTENCY")
             if tool == "mock.write_file":
                 # Ambiguous effects require independent reconciliation. Changing
                 # a call ID or key must not bypass an unresolved prior write.
@@ -162,11 +167,6 @@ class SyntheticSession:
             elif item["approval_id"] is not None:
                 raise ContractDenied("READ_APPROVAL_MUST_BE_NULL")
 
-            key, call = item["idempotency_key"], item["tool_call_id"]
-            if call in self.ledger:
-                raise ContractDenied("DUPLICATE_TOOL_CALL")
-            if key in self.keys:
-                raise ContractDenied("DUPLICATE_IDEMPOTENCY")
             self.keys.add(key)
             if cancelled:
                 self.ledger[call] = {"status": "CANCELLED", "output": ""}
