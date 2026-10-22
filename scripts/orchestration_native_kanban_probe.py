@@ -241,6 +241,51 @@ def run(source_dir: Path, deps_dir: Path | None = None) -> bool:
                         db, task, reason="synthetic duplicate"))
                     self.assertEqual(k.get_task(db, task).status, "ready")
 
+            def test_expired_claim_keeps_alive_verified_local_worker(self):
+                # Expired SQLite TTL is not permission to duplicate work when
+                # its fingerprinted local OS subprocess remains alive.
+                from hermes_cli import kanban_db_dispatch as dispatch
+                with c.connect_closing(self.path) as db:
+                    task = k.create_task(
+                        db, title="live-lease protection", workspace_kind="scratch")
+                    claimed = k.claim_task(db, task, ttl_seconds=120)
+                    self.assertIsNotNone(claimed)
+                    child = subprocess.Popen(
+                        [sys.executable, "-B", "-c", "import time; time.sleep(30)"],
+                        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    try:
+                        self.assertTrue(dispatch.adopt_worker_pid(
+                            db, task, claimed.current_run_id, child.pid))
+                        evidence = db.execute(
+                            "SELECT claim_lock, worker_started_at FROM tasks WHERE id=?",
+                            (task,)
+                        ).fetchone()
+                        self.assertTrue(evidence["claim_lock"].startswith(
+                            k._host_prefix()))
+                        self.assertIn("|", evidence["worker_started_at"])
+                        db.execute(
+                            "UPDATE tasks SET claim_expires=0 WHERE id=?", (task,))
+                        self.assertEqual(k.release_stale_claims(db), 0)
+                        after = k.get_task(db, task)
+                        self.assertEqual(after.status, "running")
+                        self.assertIsNone(k.claim_task(
+                            db, task, ttl_seconds=120, claimer="second-claimer"))
+                        self.assertIsNone(child.poll())
+                        self.assertGreater(
+                            db.execute("SELECT claim_expires FROM tasks "
+                                       "WHERE id=?", (task,)).fetchone()[0],
+                            0)
+                    finally:
+                        if child.poll() is None:
+                            child.terminate()
+                        try:
+                            child.wait(timeout=5)
+                        except subprocess.TimeoutExpired:
+                            child.kill()
+                            child.wait(timeout=3)
+
             def test_native_refuses_signals_without_verified_local_pid(self):
                 # Actual live disposable OS child; NO signal is allowed for
                 # unverified/foreign/recycled identity. Never an LLM worker.
