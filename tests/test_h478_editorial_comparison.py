@@ -142,6 +142,23 @@ class EditorialComparisonTests(unittest.TestCase):
         self.assertEqual("NO_CHANGE", result["status"])
         self.assertEqual([], result["refusals"])
 
+    def test_distinct_qualifier_loss_still_refused(self):
+        result = compare(pair(
+            "Возможно, результат предварительный [ref:S1]. Вероятно, наблюдение ограничено.",
+            "Результат предварительный [ref:S1]. Вероятно, наблюдение ограничено.",
+        ))
+        self.assertEqual("REFUSED", result["status"])
+        self.assertIn("EPISTEMIC_QUALIFIER_CHANGED", result["refusals"])
+
+    def test_removal_of_exact_repeated_negated_sentence_is_allowed_for_review(self):
+        result = compare(pair(
+            "Метод не доказан. Метод не доказан. Источник [ref:S1].",
+            "Метод не доказан. Источник [ref:S1].",
+        ))
+        self.assertEqual("REVIEW_CANDIDATE", result["status"])
+        self.assertIn("FEWER_EXACT_REPETITIONS", result["signals"])
+        self.assertNotIn("NEGATION_CHANGED", result["refusals"])
+
     def test_source_unavailable_and_invalid_scope_refused(self):
         for changed in (
             {"visibility": "PRIVATE"},
