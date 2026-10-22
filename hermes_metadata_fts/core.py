@@ -131,12 +131,15 @@ class SyntheticIndex:
         cutoff = self.now - RETENTION_DAYS * DAY
         ids = [r[0] for r in self.db.execute(
             "SELECT task_id FROM tasks WHERE ts < ?", (cutoff,)).fetchall()]
+        # Reserve all tombstones BEFORE deleting any indexed record.
+        # Otherwise hitting the cap would erase source/index rows without
+        # recording a replay denial for their task IDs.
+        if len(self.deleted_ids) + len(ids) > MAX_TOMBSTONES:
+            raise IndexDenied("TOMBSTONES_EXHAUSTED")
         with self.db:
             for task_id in ids:
                 self._erase(task_id)
-        # In this synthetic-only index expiration intentionally forbids replay.
-        if len(self.deleted_ids) + len(ids) > MAX_TOMBSTONES:
-            raise IndexDenied("TOMBSTONES_EXHAUSTED")
+        # In this synthetic-only index expiration forbids same-instance replay.
         self.deleted_ids.update(ids)
 
     def _erase(self, task_id: str):
