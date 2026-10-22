@@ -90,7 +90,7 @@ def assemble(overview: dict | None, scheduler: dict | None, *, now: dt.datetime 
         for item in raw:
             if (not isinstance(item, dict) or not isinstance(item.get("id"), str)
                     or item["id"] not in LABELS or item["id"] in names
-                    or item.get("state") not in ALLOWED_STATES
+                    or not isinstance(item.get("state"), str) or item["state"] not in ALLOWED_STATES
                     or not isinstance(item.get("unit"), str)
                     or item["unit"] != next(unit for key, _label, unit, _kind in UNITS if key == item["id"])):
                 valid = False
