@@ -73,7 +73,7 @@ class MetadataFTSContractTests(unittest.TestCase):
         self.assertEqual(res[0]["revision"], 2)
         self.assertEqual(res[0]["status"], "stale")
         with self.assertRaisesRegex(IndexDenied, "REVISION_CONFLICT"):
-            self.index.upsert({**a, "title": "Подмена"})
+            self.index.upsert({**newer, "title": "Подмена"})
         with self.assertRaisesRegex(IndexDenied, "STALE_REVISION"):
             self.index.upsert(a)
 
