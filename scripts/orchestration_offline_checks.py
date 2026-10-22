@@ -9,6 +9,7 @@ import re
 
 SHA = re.compile(r"[0-9a-f]{40}\Z")
 IDENT = re.compile(r"[A-Za-z][A-Za-z0-9_-]{0,63}\Z")
+APPROVAL = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}\Z")
 READ_ONLY = frozenset({"source_read", "evidence_read"})
 
 
@@ -28,6 +29,11 @@ def check_plan(plan, grant, now, available_devices):
         raise Rejected("input_schema")
     if type(plan["revision"]) is not str or not SHA.fullmatch(plan["revision"]):
         raise Rejected("revision_invalid")
+    if (type(plan["approval_id"]) is not str
+            or not APPROVAL.fullmatch(plan["approval_id"])
+            or type(grant["approval_id"]) is not str
+            or not APPROVAL.fullmatch(grant["approval_id"])):
+        raise Rejected("grant_approval_invalid")
     if plan["revision"] != grant["revision"] or plan["approval_id"] != grant["approval_id"]:
         raise Rejected("grant_mismatch")
     if type(grant["expires"]) is not int or grant["expires"] <= now:
@@ -104,6 +110,15 @@ def check_handoff(payload, receipt, *, node_id, revision, evidence_id, now, seen
         "node_id", "revision", "evidence_id", "sha256", "expires", "accepted"
     }:
         raise Rejected("receipt_schema")
+    if (type(node_id) is not str or not IDENT.fullmatch(node_id)
+            or type(revision) is not str or not SHA.fullmatch(revision)
+            or type(receipt["node_id"]) is not str
+            or not IDENT.fullmatch(receipt["node_id"])
+            or type(receipt["revision"]) is not str
+            or not SHA.fullmatch(receipt["revision"])
+            or type(receipt["evidence_id"]) is not str
+            or not IDENT.fullmatch(receipt["evidence_id"])):
+        raise Rejected("handoff_identity_invalid")
     if (type(evidence_id) is not str or not IDENT.fullmatch(evidence_id)
             or evidence_id in seen):
         raise Rejected("handoff_duplicate")
