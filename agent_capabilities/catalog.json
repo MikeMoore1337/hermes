@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "capabilities": [
+    {
+      "id": "qa-read-private-ci",
+      "agent": "qa-advisor",
+      "integration_id": "github-hermes-private-actions",
+      "action": "read_ci_metadata",
+      "data_scope": "private_repo_metadata",
+      "permissions": [
+        "Actions:read"
+      ],
+      "source_revision": "NOT_VERIFIED",
+      "availability": "NOT_VERIFIED",
+      "cost_policy": "zero_spend_only"
+    },
+    {
+      "id": "research-check-doi",
+      "agent": "research-scout",
+      "integration_id": "crossref-public-doi",
+      "action": "read_public_doi",
+      "data_scope": "public_metadata",
+      "permissions": [],
+      "source_revision": "NOT_VERIFIED",
+      "availability": "NOT_VERIFIED",
+      "cost_policy": "zero_spend_only"
+    },
+    {
+      "id": "ops-private-owner-notification",
+      "agent": "ops-watch",
+      "integration_id": "telegram-ops-watch-owner",
+      "action": "owner_notification",
+      "data_scope": "private_owner_only",
+      "permissions": [
+        "sendMessage:verified_private_chat"
+      ],
+      "source_revision": "NOT_VERIFIED",
+      "availability": "NOT_VERIFIED",
+      "cost_policy": "zero_spend_only"
+    }
+  ]
+}
