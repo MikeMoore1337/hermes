@@ -81,6 +81,18 @@ class StagingTests(unittest.TestCase):
                 with self.assertRaisesRegex(m.StagingDenied,"invalid_pinned"):
                     m.stage(root,dict(GOOD,image="latest"))
                 client.assert_not_called()
+    def test_explicit_root_load_requires_real_host_preflight(self):
+        with TemporaryDirectory() as tmp:
+            root=Path(tmp);root.chmod(0o700)
+            command=type("P",(),{"returncode":0,
+                   "stdout":"H15_BRC_IMAGE_OFFLINE_LOAD=PASS","stderr":""})()
+            with patch.object(m,"run",return_value=""),                 patch.object(m,"verify",return_value={}),                 patch.object(m.os,"geteuid",return_value=0),                 patch.object(m,"private",return_value=None),                 patch.object(m,"admit",return_value={"status":"PREFLIGHT_PASS"}) as checked,                 patch.object(m.subprocess,"run",return_value=command):
+                # No Docker host in this test: only explicit loader call mocked.
+                with patch.object(m.Path,"is_file",return_value=True):
+                    result=m.stage(root,GOOD,load=True)
+                self.assertEqual(result["status"],"IMAGE_LOADED_PREFLIGHT_PASS_NO_CUTOVER")
+                checked.assert_called_once()
+
     def test_load_not_allowed_as_unprivileged(self):
         with TemporaryDirectory() as tmp:
             root=Path(tmp);root.chmod(0o700)
