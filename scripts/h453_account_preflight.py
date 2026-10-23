@@ -22,8 +22,8 @@ from agent_budget.pilot import (
 from scripts.cloudflare_text_probe import ProbeError, read_env
 
 
-def prepare(*, remaining: int, workers_free: bool, no_gateways: bool,
-            output: Path, write: bool = False) -> dict[str, object]:
+def prepare(*, remaining: int, checked_at: str, workers_free: bool,
+            no_gateways: bool, output: Path, write: bool = False) -> dict[str, object]:
     if not workers_free or not no_gateways:
         raise PilotError("owner_dashboard_confirmation_required")
     if type(remaining) is not int:
@@ -39,7 +39,7 @@ def prepare(*, remaining: int, workers_free: bool, no_gateways: bool,
         "model": PRIMARY_MODEL,
         "daily_neurons_remaining": remaining,
         "ai_gateway_unified_billing": False,
-        "checked_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        "checked_at": checked_at,  # dashboard observation time, never forged from current process time
     }
     validate_account_status(proof)
     if not write:
@@ -78,6 +78,7 @@ def prepare(*, remaining: int, workers_free: bool, no_gateways: bool,
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="H-453 free-only local admission; no inference")
     parser.add_argument("--remaining-neurons", required=True, type=int)
+    parser.add_argument("--dashboard-checked-at", required=True)
     parser.add_argument("--confirm-workers-free", action="store_true")
     parser.add_argument("--confirm-no-ai-gateways", action="store_true")
     parser.add_argument("--output", type=Path, required=True)
@@ -86,6 +87,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         result = prepare(
             remaining=args.remaining_neurons,
+            checked_at=args.dashboard_checked_at,
             workers_free=args.confirm_workers_free,
             no_gateways=args.confirm_no_ai_gateways,
             output=args.output,

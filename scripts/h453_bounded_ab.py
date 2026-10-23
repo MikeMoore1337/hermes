@@ -22,6 +22,7 @@ from agent_budget.pilot import (
     _write_json_atomic, load_account_status,
 )
 from ops_watch.incident_advisor import AdvisorOutputError, evaluate_result, validate_result
+from scripts.cloudflare_text_probe import ProbeError, read_env
 
 CASES = ("ops:provider_http_429", "ops:healthy_no_publications")
 ROLES = ("signal", "safety")
@@ -34,7 +35,21 @@ ROLE_HINTS = {
 
 
 def _client(attestation: dict[str, object]) -> CloudflareFreeProvider:
-    return CloudflareFreeProvider.from_environment(attestation)
+    token = os.environ.get("CLOUDFLARE_WORKERS_AI_API_TOKEN", "")
+    endpoint = os.environ.get("CLOUDFLARE_WORKERS_AI_BASE_URL", "")
+    if token or endpoint:
+        # Never combine stale half-configured environment with disk credentials.
+        if not token or not endpoint:
+            raise PilotError("partial_cloudflare_environment_denied")
+        return CloudflareFreeProvider.from_environment(attestation)
+    # Existing on-host, permission-checked probe reads exactly two key=value
+    # entries from /var/lib/hermes-agent/.env; no shell source and no echo.
+    try:
+        token, endpoint = read_env()
+    except ProbeError:
+        raise PilotError("host_credentials_not_available") from None
+    return CloudflareFreeProvider(token=token, base_url=endpoint,
+                                  account_status=attestation)
 
 
 def _one(role: str, prompt: str, context: dict[str, object], client: CloudflareFreeProvider) -> dict[str, object]:

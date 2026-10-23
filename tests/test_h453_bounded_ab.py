@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -13,6 +14,7 @@ from unittest.mock import patch
 from agent_budget.pilot import ModelResponse, PilotError, _prepared_case
 from ops_watch.incident_advisor import mock_result
 from scripts import h453_bounded_ab as ab
+from scripts.cloudflare_text_probe import ProbeError
 
 
 class FakeClient:
@@ -138,6 +140,31 @@ class BoundedComparisonTests(unittest.TestCase):
         self.assertEqual(receipt["requests_reserved"], 3)
         self.assertEqual(receipt["actual_provider_requests"], "NOT_VERIFIED")
         self.assertEqual(json.loads(self.state.read_text())["calls"], 3)
+
+    def test_strict_host_credential_file_supports_bound_client(self):
+        account_id = "b" * 32
+        self.attestation["account_id_sha256"] = hashlib.sha256(account_id.encode()).hexdigest()
+        endpoint = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1"
+        with patch.dict(os.environ, {}, clear=True):
+            with patch.object(ab, "read_env", return_value=("a" * 32, endpoint)) as reader:
+                client = ab._client(self.attestation)
+        reader.assert_called_once()
+        self.assertEqual(client.base_url, endpoint)
+        self.assertEqual(client.calls, 0)
+
+    def test_missing_host_credentials_refused_before_any_model(self):
+        with patch.dict(os.environ, {}, clear=True):
+            with patch.object(ab, "read_env", side_effect=ProbeError("credentials_missing")):
+                with self.assertRaisesRegex(PilotError, "host_credentials_not_available"):
+                    ab._client(self.attestation)
+
+    def test_partial_env_refused_without_file_fallback(self):
+        with patch.dict(os.environ, {"CLOUDFLARE_WORKERS_AI_API_TOKEN": "a" * 32,
+                                    "CLOUDFLARE_WORKERS_AI_BASE_URL": ""}, clear=True):
+            with patch.object(ab, "read_env") as reader:
+                with self.assertRaisesRegex(PilotError, "partial_cloudflare_environment_denied"):
+                    ab._client(self.attestation)
+                reader.assert_not_called()
 
     def test_existing_evidence_is_never_overwritten(self):
         self.output.write_text("immutable", encoding="utf-8")

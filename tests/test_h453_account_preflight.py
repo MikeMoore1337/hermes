@@ -1,6 +1,7 @@
 """H-453 free-account local attestation regression, no secrets or network."""
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import os
@@ -23,8 +24,8 @@ class OwnerAccountPreflightTests(unittest.TestCase):
         self.output = Path(self.temp.name) / "private" / "account-status.json"
 
     def prepare(self, **kwargs):
-        defaults = dict(remaining=10000, workers_free=True, no_gateways=True,
-                        output=self.output, write=True)
+        defaults = dict(remaining=10000, checked_at=datetime.now(UTC).isoformat(),
+                        workers_free=True, no_gateways=True, output=self.output, write=True)
         defaults.update(kwargs)
         with patch.object(preflight, "read_env", return_value=(FAKE_TOKEN, ENDPOINT)) as env:
             outcome = preflight.prepare(**defaults)
@@ -64,6 +65,12 @@ class OwnerAccountPreflightTests(unittest.TestCase):
             self.prepare(remaining=999)
         self.assertFalse(self.output.exists())
 
+    def test_stale_dashboard_observation_denied(self):
+        old = (datetime.now(UTC) - timedelta(hours=2)).isoformat()
+        with self.assertRaisesRegex(PilotError, "account_status_stale_or_future"):
+            self.prepare(checked_at=old)
+        self.assertFalse(self.output.exists())
+
     def test_out_of_range_quota_denied(self):
         with self.assertRaisesRegex(PilotError, "account_quota_invalid"):
             self.prepare(remaining=10001)
@@ -94,8 +101,8 @@ class OwnerAccountPreflightTests(unittest.TestCase):
     def test_no_credentials_fails_closed(self):
         with patch.object(preflight, "read_env", side_effect=ProbeError("credentials_missing")):
             with self.assertRaisesRegex(ProbeError, "credentials_missing"):
-                preflight.prepare(remaining=10000, workers_free=True,
-                                  no_gateways=True, output=self.output, write=True)
+                preflight.prepare(remaining=10000, checked_at=datetime.now(UTC).isoformat(),
+                                  workers_free=True, no_gateways=True, output=self.output, write=True)
         self.assertFalse(self.output.exists())
 
 
