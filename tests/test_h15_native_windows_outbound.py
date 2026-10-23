@@ -200,6 +200,19 @@ class OutboundReadOnlyTests(unittest.TestCase):
                         outbound.run_session(settings(), connector)
                 run.assert_not_called()
 
+    def test_frame_rejects_duplicate_keys_nonfinite_and_binary_noise(self):
+        for raw in [
+            '{"type":"call","type":"welcome"}',
+            '{"type":"ping","ts":NaN}',
+            '{"type":"ping","ts":Infinity}',
+            '{"type":"ping","args":{"project":"hermes","project":"private"}}',
+            b'\xff',
+            '[]',
+        ]:
+            with self.subTest(raw=str(raw)[:30]):
+                with self.assertRaises(outbound.NativeTransportDenied):
+                    outbound.decode_frame(raw)
+
     def test_no_sensitive_transport_exception_leak(self):
         class FailConnect:
             def __call__(self, *_args, **_kwargs):
