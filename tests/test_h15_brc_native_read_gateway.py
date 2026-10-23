@@ -149,6 +149,9 @@ const ctx={userId:'owner-A',clientId:'chatgpt'};
  assert.equal((await invokeOwnerNativeRead(hub,store,ctx,'native_file_read',{project:'hermes',relative:'README.md'})).isError,true);
  hub.call=async()=>({isError:false,content:[{type:'text',text:JSON.stringify({...verified,path:'C:\\private'})}]});
  assert.equal((await invokeOwnerNativeRead(hub,store,ctx,'native_file_read',{project:'hermes',relative:'README.md'})).isError,true);
+ hub.call=async()=>({isError:false,content:[{type:'text',text:JSON.stringify(verified)}]});
+ store.audit=()=>{throw Error('AUDIT_DB_OFFLINE_SECRET')};
+ assert.equal((await invokeOwnerNativeRead(hub,store,ctx,'native_file_read',{project:'hermes',relative:'README.md'})).isError,true);
  console.log('H454_OWNER_NATIVE_RELAY_TS_RUNTIME=PASS');
 })().catch(e=>{console.error(e);process.exitCode=1});
 """
