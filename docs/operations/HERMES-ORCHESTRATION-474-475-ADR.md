@@ -164,3 +164,184 @@ Previous `_verify_pinned_checkout` validated the Git HEAD and two critical blob 
 Seven independent **local fake Git fixture tests** under `tests/test_orchestration_native_probe_pins.py` cover a clean repository, modified companion file, added Python source, ignored Python source, wrong HEAD, wrong critical blob and nested directory alias. These standard-library tests can run in existing offline CI **without cloning NousResearch**. They validate that the probe refuses contaminated source; they do not execute the upstream Kanban suite.
 
 **Residual provenance limits:** Git's ignored bytecode or arbitrary external `PYTHONPATH` modules, local interpreter, dependencies and Git remote are not cryptographically attested. Pinned Git SHA is not an image/provisioning supply-chain proof. The optional native probe still requires independent clean public upstream staging and a separately pinned local dependency source; this PR does **not** install or activate any LLM agents. The exact HEAD quality CI must be checked after adding these tests; do not promote an offline fixture to production assurance.
+
+## Native OS-local cancellation extension (#474/#475, 2026-10-22)
+
+A follow-up **separate** from merged PR #504 adds an opt-in pinned native Kanban probe scenario: create a temporary SQLite task, native `claim_task` with a host-local claim, start a short-lived *inert* Python sleeper, bind its actual process ID and restart-stable fingerprint via native `kanban_db_dispatch.adopt_worker_pid`, then archive the task with native `archive_task`. A test-controlled `signal_fn` refuses to send any signal to a PID other than this exact sleeper; the process is terminated and reaped in `finally` even on assertion failure. Assert verified fingerprint, an observed OS termination signal, child exit, terminal `archived` state and refusal to claim it again.
+
+This is an **actual ephemeral Linux OS process-termination experiment** when verified by the new pinned GitHub workflow, not an LLM-worker experiment. It never uses model/provider credentials, live user data, persistent services, or target project production. A successful test may establish only that native local archive signals its own verified disposable child with the chosen process fingerprint in that runner. It cannot prove cancellation of a real LLM request, provider billing cancellation, protection on Windows/macOS, lossless handoff, or multi-device production enforcement. Do not update status to PASS before inspecting the exact-head native CI log.
+
+
+**BRC cold-mount preflight (2026-10-23):** a separately downloaded exact upstream v0.22.2 checkout on H15 Windows-mounted Linux sandbox initially hit the strict 8-second `git status --porcelain` process timeout even though a second unchanged run verified all 19 native cases. Native probe now allows up to 30 seconds *only* for Git status / ignored-file inventory; HEAD and pinned blob comparisons, dirty-tree rejection and all OS/SQLite safety checks are unchanged. This is robustness for slow mounts, **not** approval for inference or a change to native runtime. Confirm the new exact-head CI after this edit.
+
+### OS cancellation negative controls (separate PR #510)
+
+The new native probe also exercises **an actual living disposable Linux process** against upstream `kanban_db_dispatch._terminate_reclaimed_worker` in three *negative* situations: an `UNVERIFIED_WORKER_FINGERPRINT`, a claim-lock belonging to a foreign host, and a recycled/foreign process-start fingerprint. The injected signal callback is deliberately fail-on-use, and the child is verified alive after each refusal, then terminated in `finally` by the test itself. This checks a specific fail-closed boundary of the **pinned original upstream code**, not permissions to execute a model.
+
+**Important distinction:** refusal to signal an unverified live PID is a safety property against killing unrelated OS processes, **not** proof of successful user-requested cancellation. Such a live child may require manual containment; native archival alone does not prove it stopped or that external provider billing ceased. No claims about Windows/macOS, cross-device workers or zero-cost provider retries. The separate exact-head native CI must show all negative cases PASS before treating this as observed evidence.
+
+
+### Real local TTL expiry with a living fingerprinted child (#474/#475)
+
+The pinned native runner additionally creates and registers its own inert Linux sleeper using `claim_task` and `adopt_worker_pid`, then simulates an expired SQLite `claim_expires` **without killing the process**. The native `release_stale_claims` must keep the task `running`, extend the existing lease and refuse a second `claim_task`, because the original fingerprinted worker is still alive. In the complementary *no-worker* test, expired TTL does become retryable. Together those two cases distinguish **lease expiry from actual death** and reveal the native decision rule without invoking any LLM.
+
+The same runner exercises native signal refusal for unverified, foreign-host and wrong/recycled process identities. This is correct protection against killing someone else's process, but an unverified *live* task cannot be reported as successfully cancelled: an operator must reconcile the surviving child before any replacement. No case here attests genuine provider-side cancellation, costs, or production H-01. For CI, compare only an exact pinned upstream run; a green synthetic gate alone is insufficient.
+
+## Durable single-attempt model-call boundary: offline feasibility experiment (#474/#475, 2026-10-23)
+
+**Observed native gap:** upstream Kanban `release_stale_claims` can make an expired/crashed task ready again. Such a transition **is not proof that a previous provider/model invocation never started**. The source-only `synthetic_one_shot_recovery_gate` has no crash-durable state. A practical, falsifiable feasibility experiment is required before choosing a live adapter.
+
+The new standalone `scripts/orchestration_pre_call_reservation_probe.py` is **test-only**, not imported by the native scheduler, does not queue jobs, and exposes **no LLM/API execution**. Its small, temporary SQLite table is keyed by a stable logical `operation_key` instead of volatile run ID, approval or revision. `reserve_once` validates identifier types and expiry, then uses `BEGIN IMMEDIATE` plus a single `INSERT ... ON CONFLICT DO NOTHING` transaction and commit. An existing row blocks all repeats, including changed approval or source revision. Reservations have **no automatic TTL cleanup**; a crash after commit, even before the provider call, intentionally blocks until a human independently reconciles it. This trades possible nonexecution for no unsafe automatic duplicate inference. SQLite `DELETE` journal and `synchronous=FULL` are explicitly used for the research fixture.
+
+`tests/test_orchestration_pre_call_reservation_probe.py` tests first/repeated attempt, changed approval/revision, missing/expired owner-grant *simulation*, malformed identity, SQLite error fail-closed, 8-way concurrent reservations on separate connections, a force-exiting **separate Python process** after committed reservation, readback/reopen, and replay under a later renewed synthetic approval. Every test uses its own disposable local DB; no cost-bearing provider, secret, VPS, external device, or real user record is read.
+
+**Do not promote this artifact into production.** In particular `grant_verified=True` is merely a caller-supplied flag, **not** authenticated owner permission; `FIRST_ONLY` means an internal test reservation succeeded, **not** authorization to call a model. No binding to native `current_run_id`, H-01, delegation, MCP/OS tool rights, signed receipt, provider acknowledgment/cancellation, actual billing cap, multi-device storage, HA durability, or power-loss recovery is implemented. A real version would need design/review of lifecycle, production storage and privilege boundaries, recovery and cancellation semantics, independently verified provider evidence, and separate owner/security GO. This is not a second competing job queue.
+
+**Acceptance here is narrow:** concurrent and post-crash evidence proves that the *offline fixture* refuses a repeat after a committed first intent. It does **not** prove exactly-once external execution, and in particular cannot tell whether an uncertain network request was submitted or paid for.
+
+
+### Signed test grant and handoff bound to a single reservation (#474/#475)
+
+The research branch also includes `scripts/orchestration_authenticated_handoff_probe.py` and `tests/test_orchestration_authenticated_handoff_probe.py`. This **does not** create an authenticated production owner or authorize model calls. It demonstrates two *separately keyed test HMAC-SHA256* envelopes:
+
+- A synthetic grant fixes an audience, revision, **stable logical operation key**, test approval ID, independent producer/consumer roles, **research-device binding**, source/evidence scopes, a subset of **read-only tools**, a positive step budget, and issued/expiry timestamps. After strict schema, type, scope, time, audience and constant-time signature verification, `reserve_with_synthetic_grant` calls the existing separate **once-only SQLite test reservation**. Mutating operation identity, revision, grant validity or scopes cannot pass a previously generated signature.
+- A synthetic evidence receipt fixes that same operation key and revision, expected producer and consumer, **native-like run ID supplied by the test** (not queried from Kanban), evidence receipt ID, payload SHA-256, issued/expiry timestamps and a **different test HMAC key**. A verified receipt can mark a parent as evidenced for the existing synthetic `eligible_after_verified_evidence` helper. Merely marking upstream Kanban state `archived` still provides **no receipt** and may not satisfy this research gate.
+
+Additional stdlib tests exercise wrong/expired/tampered grants, unexpected extra fields, requested write permissions, out-of-scope source, wrong device, excessive/boolean step counts, wrong test key, wrong audience, forged payload/receipt, run and consumer mismatch, one-time evidence ID replay and synthetic DAG dependency gating.
+
+**Critical limitations:** HMAC keys in the unit tests are public fixture literals; caller possession of the HMAC verification key also allows signing, so the code deliberately provides **no independent real owner identity**, delegation key hierarchy, device attestation, secret storage or production authorization. `verify_synthetic_evidence` alone uses an in-memory `seen_receipts` set and is **not crash-durable**; the separately tested `accept_signed_evidence_once` uses a persistent research-only SQLite ledger. A forged `operation_key` from a caller with signing-key access would create another independent operation, not prevent duplicate billing. Real on-wire MCP permissions, producer origin and provider ACK/payment evidence remain unverified. This experiment must not be imported into live Hermes workers as an approval mechanism or treated as satisfying #33/#350.
+
+
+### Crash-durable signed evidence acceptance (research-only, #474/#475)
+
+The additional synthetic `accept_signed_evidence_once` path verifies the **test-signed** evidence envelope and source digest *before* recording its receipt in the same disposable SQLite file as the research reservation. A committed record has both `receipt_id` and **unique `operation_key`** constraints. Within one `BEGIN IMMEDIATE` transaction it requires an existing, matching `operation_key + revision` pre-call reservation; unreserved, wrong-revision, expired, unsigned or forged evidence cannot become an accepted result. The ledger has **no automatic TTL deletion**. Two receipts for the same operation, or the same receipt after restarting the interpreter, are rejected.
+
+The new offline negative cases include 8 concurrent connections attempting to record the same signed receipt (exactly one winner), another valid signed receipt using a different receipt ID for the same operation (refused), missing prerequisite reservation, forged signature (no DB write), expired evidence (no write), missing ledger (error, fail-closed), and a separate Python subprocess that commits the signed receipt then exits abruptly `os._exit(29)`; readback and replay rejection survive that crash.
+
+**Remaining trust limits:** `record_verified_evidence_once` is callable inside a standalone test module without authentication; signature verification is only mandatory when going through the test wrapper. The public HMAC fixture keys are not protected producer keys, and the `run_id` is caller-supplied rather than verified against a native worker. The fixture's temporary SQLite file is neither shared across devices nor a production receipt service, and the tests do not simulate power loss, file tampering, provider signatures or external action receipts. This closes only an **offline crash-replay test gap**, not native Kanban approval or provider exactly-once guarantees.
+
+
+## Actual pinned native delegate toolset contract tests (23.10.2026)
+
+The optional pinned native runner now imports and **executes the original**
+`tools/delegate_tool_toolsets.py` resolver and
+`tools/delegate_tool_config.py` against synthetic inert parent objects,
+alongside the existing original native Kanban SQLite/OS tests. It checks the
+exact pinned public upstream SHA `d923a5eb487a17c0a68801bba9ef0f56c81040a8`
+before imports. Only the config *input* (`_cfg`) is patched to supply
+deterministic local choices. There is **no AIAgent/model creation, MCP
+connection, provider call, private tool or installed runtime execution**.
+
+Security-relevant **observed native semantics**, not proof of exploitation:
+- A nonempty explicit request is reduced to parent-available toolsets, and
+  inherited parent-disabled toolsets remain disabled for the leaf role.
+- `toolsets=[]` follows the same implicit inheritance branch as
+  `toolsets=None`, **not** a zero-tool permission.
+- If the native `inherit_mcp_toolsets` setting is omitted, its default is
+  **true**: MCP capability names belonging to the parent are appended even
+  when the explicit requested subset contains only `web`. Setting it
+  `false` prevents this append **for nonempty explicit requests**.
+- Even with `inherit_mcp_toolsets=false`, an omitted/empty child request
+  copies inherited parent MCP capabilities. Therefore, that setting alone
+  is insufficient to enforce a read-only child.
+- Native effective role `orchestrator` unconditionally appends
+  `delegation`, even when the parent offers only `web`, and clears the
+  inherited `delegation` deny. Critically, `_build_child_agent` derives
+  this role from trusted `delegation.orchestrator_enabled` and
+  `delegation.max_spawn_depth` plus actual child depth; the task's `role`
+  argument is **legacy/ignored for capabilities**. Default spawn depth 1
+  produces leaf children; a larger depth with orchestration enabled can
+  grant further delegation. Do not use a model-supplied `role=leaf` as
+  evidence of a leaf security boundary.
+- The production-facing upstream `delegate_task` path calls
+  `_build_children`, which unconditionally passes `toolsets=None` into
+  `_build_child_preserving_parent_tools`. As a result, tests proving
+  `_resolve_child_toolsets(..., ["web"], "leaf")` can narrow permissions
+  **do not demonstrate that the public native delegation path supplies this
+  nonempty request**. Setting `inherit_mcp_toolsets=false` does not
+  narrow the implicit `None` branch.
+
+**Pilot admission decision: NO_GO** for native live Hermes subagents
+until a separately enforced, narrowly scoped **parent tool/OS/MCP/network
+capability envelope** is verified, or a reviewed trusted native adapter can
+pass and enforce an explicit nonempty child allowlist. Verify
+`orchestrator_enabled=false`, `max_spawn_depth=1`, the child effective
+role, resolved tool names, OS permissions, actual independent identities,
+provider usage and evidence provenance. Neither model-supplied
+`role=leaf`, `toolsets=[]`, nor `inherit_mcp_toolsets=false` alone
+provides this guarantee. An ADR, an unverified external wrapper or synthetic
+HMAC cannot authorize any live model call. No second dispatcher/queue should
+be created to bypass these checks.
+
+**Evidence classification:** the observed `delegate_task` parameter flow
+and ignored `role` are **PINNED_SOURCE_REVIEW**, while effective toolset
+resolution and configuration defaults are **NATIVE_OFFLINE_TEST**. The full
+real `AIAgent` child construction, OS-enforced rights, provider and MCP
+calls are **NOT_RUN / NOT_VERIFIED**.
+
+The source-level native test is independent of real delegated AI execution:
+`NATIVE_TOOLSET_RESOLVER_TESTED=YES`, `EFFECTIVE_OS_RIGHTS=NOT_VERIFIED`,
+`LIVE_DELEGATE_TASK=NOT_RUN`, `LIVE_A_B=NOT_RUN`,
+`PROVIDER_USAGE=NOT_MEASURED`, `PRODUCTION=UNTOUCHED`.
+
+No new agent, resident service, API token, paid model, runtime integration,
+production DB or second queue is part of this PR. Rollback is reverting the
+optional original-upstream native probe additions.
+
+
+## Final research disposition (2026-10-23)
+
+**#474 research decision: REUSE_UPSTREAM + DEFER live activation.**
+No second AI loop or separately privileged child executor is justified.
+The pinned v0.22.2 native implementation is usable as a design reference,
+but the public `delegate_task` child builder inherits parent toolsets
+(`toolsets=None`); configuration and source review alone do not prove that
+effective native/OS/MCP rights are a subset of an operator-approved envelope.
+
+**#475 research decision: REUSE_UPSTREAM Kanban + NO_NEW_DAG/QUEUE.**
+Native SQLite/DAG contracts and negative tests cover cycles, dependencies,
+leases, duplicate handoffs, crash/restart, cancellation and replay within
+offline fixtures. The existing #271 approved job journal remains authoritative
+for its own executor. There is no evidence that a new production Kanban API,
+schema migration, UI or orchestrator is warranted now.
+
+**Exact completed evidence, not live admission:**
+- PR #515 at `e123e5b9178b464ebaac41175ea5ac1d9779262d`:
+  [native CI #39968576478](https://github.com/MikeMoore1337/hermes/actions/runs/39968576478)
+  **29/29 PASS** and [quality CI #39968576492](https://github.com/MikeMoore1337/hermes/actions/runs/39968576492)
+  **2608/2608 PASS**. Additional native checks cover pinned source AST,
+  configuration defaults, and actual helper functions; they never spawn an
+  external AI worker.
+- An additional read-only sandbox attempt to import the complete original
+  `run_agent.AIAgent` on `h15-win-05be75515428` (Linux/Docker, Python
+  3.11.2) stopped with missing `python-dotenv`; `requests`, `httpx`,
+  `openai`, `pydantic` and `mcp` were also absent. This is a **sandbox
+  dependency gap**, not a failure in upstream delegation and not a test of
+  the resident Hermes deployment. No new packages were installed.
+- The H15 Hermes device is another isolated `uid=65534` sandbox rather
+  than a trusted production-shell identity; its absence of the expected
+  `/opt/hermes-agent-owner` path is not evidence of the real VPS state.
+
+**Operator decision: NO_GO for live orchestration until** a trusted
+executor proves (1) the installed pinned image/source identity and actual
+OS/MCP rights, (2) restricted parent privileges and flat child spawning,
+(3) independent producer/consumer identities and evidence receipts,
+(4) free-tier account eligibility and externally verified zero-spend
+budget, and (5) rollback/cancellation on the real owner-controlled host.
+Until then, `REAL_DELEGATE_TASK=NOT_RUN`,
+`REAL_AGENT_AB=NOT_RUN`, `COST/TIME_SAVINGS=NOT_MEASURED`.
+
+**Delivery and rollback:** PR #515 is an offline research artifact with
+six changed paths (one ADR, three isolated probes and two probe test files),
+not a production feature. Merging into `main` could trigger the current
+`.github/workflows/production-deploy.yml` after a successful push CI,
+even when the change is research-only. Therefore **do not merge as an
+automatic release**; review a separately approved no-deploy delivery path
+if repository publication is required. Revert PR #515's branch changes to
+undo this research package; no running agents, services, schema or tokens
+have been added.
+
+**Research phase disposition: completed with DEFER/NO_GO recommendation.**
+The implementation/activation and real A/B acceptance phase is not complete.
+Avoid recurring superficial upstream tests until an actual trusted executor
+or documented dependency change makes real verification possible.
