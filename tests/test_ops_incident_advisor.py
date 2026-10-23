@@ -57,8 +57,8 @@ class IncidentAdvisorTests(unittest.TestCase):
         prompt = build_prompt(context)
         self.assertEqual(prompt.count("BEGIN_APPROVED_TEXT"), 1)
         self.assertEqual(prompt.count("END_APPROVED_TEXT"), 1)
-        text = prompt.split("BEGIN_APPROVED_TEXT\\n", 1)[1].split(
-            "\\nEND_APPROVED_TEXT", 1
+        text = prompt.split("BEGIN_APPROVED_TEXT\n", 1)[1].split(
+            "\nEND_APPROVED_TEXT", 1
         )[0]
         allowed = json.loads(text)
         expected = mock_result(context)
