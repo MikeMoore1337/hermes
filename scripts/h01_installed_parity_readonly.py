@@ -60,8 +60,8 @@ def _source(owner: Path, marker: Path) -> tuple[str, str | None]:
     # Fail closed if concurrent deployment changed the marker mid-snapshot.
     if _read_regular(marker, 128).decode("ascii", "strict").strip() != sha:
         raise EvidenceUnavailable("deployment_changed_during_probe")
-    return ("MATCH" if hashlib.sha256(installed).digest() ==
-            hashlib.sha256(expected).digest()), sha
+    matching = hashlib.sha256(installed).digest() == hashlib.sha256(expected).digest()
+    return ("MATCH" if matching else "DRIFT"), sha
 
 
 def _reservation(path: Path) -> dict[str, object]:
