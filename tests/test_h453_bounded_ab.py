@@ -99,13 +99,21 @@ class BoundedComparisonTests(unittest.TestCase):
         with self.assertRaisesRegex(PilotError, "cost_not_verified_zero"):
             self.invoke(fake_cost=None)
         self.assertEqual(json.loads(self.state.read_text())["calls"], 3)
-        self.assertFalse(self.output.exists())
+        receipt = json.loads(self.output.read_text())
+        self.assertEqual(receipt["status"], "BLOCKED")
+        self.assertEqual(receipt["stage"], "A_MAY_HAVE_REQUESTED")
+        self.assertEqual(receipt["actual_provider_requests"], "NOT_VERIFIED")
+        self.assertEqual(receipt["provider_cost_usd"], "NOT_MEASURED")
+        self.assertEqual(receipt["automatic_retries"], 0)
 
     def test_nonzero_cost_blocks_parallel_before_calls(self):
         with self.assertRaisesRegex(PilotError, "cost_not_verified_zero"):
             self.invoke(fake_cost=0.1)
         self.assertEqual(json.loads(self.state.read_text())["calls"], 3)
-        self.assertFalse(self.output.exists())
+        receipt = json.loads(self.output.read_text())
+        self.assertEqual(receipt["status"], "BLOCKED")
+        self.assertEqual(receipt["stage"], "A_MAY_HAVE_REQUESTED")
+        self.assertEqual(receipt["failure_reason"], "cost_not_verified_zero")
 
     def test_wrong_case_is_refused_before_file_read(self):
         with self.assertRaisesRegex(PilotError, "case_not_allowlisted"):
@@ -113,6 +121,23 @@ class BoundedComparisonTests(unittest.TestCase):
                 ab.run(case="research:unexpected", account_status=self.account,
                        state=self.state, output=self.output, owner_approved=True)
         self.assertFalse(self.state.exists())
+
+    def test_parallel_child_failure_creates_uncertain_b_receipt(self):
+        class ChildError:
+            def complete(self, prompt):
+                raise PilotError("provider_http_429", attempts=1)
+        clients = [FakeClient(self.output_json), FakeClient(self.output_json), ChildError()]
+        with patch.object(ab, "_client", side_effect=clients):
+            with patch.dict(os.environ, {"HERMES_AI_LIVE_APPROVED": "1"}):
+                with self.assertRaisesRegex(PilotError, "provider_http_429"):
+                    ab.run(case=ab.CASES[0], account_status=self.account,
+                           state=self.state, output=self.output, owner_approved=True)
+        receipt = json.loads(self.output.read_text())
+        self.assertEqual(receipt["status"], "BLOCKED")
+        self.assertEqual(receipt["stage"], "B_MAY_HAVE_REQUESTED")
+        self.assertEqual(receipt["requests_reserved"], 3)
+        self.assertEqual(receipt["actual_provider_requests"], "NOT_VERIFIED")
+        self.assertEqual(json.loads(self.state.read_text())["calls"], 3)
 
     def test_existing_evidence_is_never_overwritten(self):
         self.output.write_text("immutable", encoding="utf-8")

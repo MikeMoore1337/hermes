@@ -21,7 +21,7 @@ from agent_budget.pilot import (
     QUOTA_RESERVE_NEURONS, _load_state, _prepared_case, _run_lock,
     _write_json_atomic, load_account_status,
 )
-from ops_watch.incident_advisor import evaluate_result, validate_result
+from ops_watch.incident_advisor import AdvisorOutputError, evaluate_result, validate_result
 
 CASES = ("ops:provider_http_429", "ops:healthy_no_publications")
 ROLES = ("signal", "safety")
@@ -90,36 +90,56 @@ def run(*, case: str, account_status: Path, state: Path, output: Path, owner_app
         ledger["calls"] += 3
         # Durable debit before any possible request; no retry or refund on error.
         _write_json_atomic(state, ledger)
-        started = time.perf_counter()
-        single = _one("single", prompt, context, clients[0])
-        after_single = time.perf_counter()
-        with ThreadPoolExecutor(max_workers=2, thread_name_prefix="h453-readonly") as pool:
-            jobs = [pool.submit(_one, role, prompt, context, clients[i + 1])
-                    for i, role in enumerate(ROLES)]
-            # Collect both outcomes; no second attempts after any error.
-            children = [job.result() for job in jobs]
-        elapsed = time.perf_counter() - started
-        report = {
-            "schema": SCHEMA,
-            "case": case,
-            "case_id": case_id,
-            "provenance": provenance,
-            "model": "@cf/openai/gpt-oss-20b",
-            "execution": "LIVE_TOOL_FREE_REQUESTS_NOT_NATIVE_DELEGATION",
-            "provider_dispatches_reserved": 3,
-            "automatic_retries": 0,
-            "agent_tools_enabled": False,
-            "a_single": single,
-            "b_independent_requests": children,
-            "metrics": {
-                "a_wall_seconds": round(after_single - started, 6),
-                "b_wall_seconds": round(elapsed - (after_single - started), 6),
-                "total_wall_seconds": round(elapsed, 6),
-                "usage_source": "PROVIDER_RESPONSE_IF_REPORTED",
-            },
-        }
-        _write_json_atomic(output, report)
-        return report
+        stage = "A_MAY_HAVE_REQUESTED"
+        try:
+            started = time.perf_counter()
+            single = _one("single", prompt, context, clients[0])
+            after_single = time.perf_counter()
+            stage = "B_MAY_HAVE_REQUESTED"
+            with ThreadPoolExecutor(max_workers=2, thread_name_prefix="h453-readonly") as pool:
+                jobs = [pool.submit(_one, role, prompt, context, clients[i + 1])
+                        for i, role in enumerate(ROLES)]
+                # Collect both outcomes; no second attempts after any error.
+                children = [job.result() for job in jobs]
+            elapsed = time.perf_counter() - started
+            report = {
+                "schema": SCHEMA,
+                "case": case,
+                "case_id": case_id,
+                "provenance": provenance,
+                "model": "@cf/openai/gpt-oss-20b",
+                "execution": "LIVE_TOOL_FREE_REQUESTS_NOT_NATIVE_DELEGATION",
+                "provider_dispatches_reserved": 3,
+                "automatic_retries": 0,
+                "agent_tools_enabled": False,
+                "a_single": single,
+                "b_independent_requests": children,
+                "metrics": {
+                    "a_wall_seconds": round(after_single - started, 6),
+                    "b_wall_seconds": round(elapsed - (after_single - started), 6),
+                    "total_wall_seconds": round(elapsed, 6),
+                    "usage_source": "PROVIDER_RESPONSE_IF_REPORTED",
+                },
+            }
+            _write_json_atomic(output, report)
+            return report
+        except (PilotError, AdvisorOutputError) as exc:
+            # After durable debit, preserve the blocked attempt even if the
+            # first response has unknown cost or either child fails. No
+            # unverified claim of how many remote requests were billed.
+            _write_json_atomic(output, {
+                "schema": SCHEMA,
+                "case": case,
+                "status": "BLOCKED",
+                "stage": stage,
+                "requests_reserved": 3,
+                "actual_provider_requests": "NOT_VERIFIED",
+                "provider_cost_usd": "NOT_MEASURED",
+                "failure_type": type(exc).__name__,
+                "failure_reason": str(exc),
+                "automatic_retries": 0,
+            })
+            raise
 
 
 def main(argv: list[str] | None = None) -> int:
