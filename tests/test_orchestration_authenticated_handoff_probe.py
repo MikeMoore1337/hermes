@@ -26,6 +26,8 @@ def signed_grant():
         revision=REV, approval_id="synthetic-owner-approval",
         producer="safety-review", consumer="qa-review",
         allowed_tools=["source_read", "evidence_read"],
+        scopes=["source:hermes", "evidence:hermes"],
+        device="research-linux", max_steps=3,
         issued_at=1000, expires_at=2000,
     )
 
@@ -61,7 +63,9 @@ class SignedResearchContracts(unittest.TestCase):
         values = dict(
             db_path=self.db, grant=g, signature=sig,
             test_grant_key=GRANT_TEST_KEY, now=1200,
-            requested_tools=("source_read",))
+            requested_tools=("source_read",),
+            requested_scopes=("source:hermes",),
+            requested_device="research-linux", requested_steps=1)
         values.update(kwargs)
         return reserve_with_synthetic_grant(**values)
 
@@ -148,6 +152,36 @@ class SignedResearchContracts(unittest.TestCase):
                     self.reserve(g)
         self.assertIsNone(read_record(self.db, "stable-operation-1"))
 
+    def test_requested_scope_escalation_rejected(self):
+        with self.assertRaisesRegex(Rejected, "requested_scope_escalation"):
+            self.reserve(requested_scopes=("source:other",))
+        self.assertIsNone(read_record(self.db, "stable-operation-1"))
+
+    def test_grant_scope_escalation_rejected(self):
+        g = signed_grant()
+        g["scopes"] = ["source:hermes", "source:foreign-repo"]
+        with self.assertRaisesRegex(Rejected, "scopes_invalid"):
+            self.reserve(g)
+
+    def test_wrong_device_rejected(self):
+        with self.assertRaisesRegex(Rejected, "device_mismatch"):
+            self.reserve(requested_device="unknown-device")
+        self.assertIsNone(read_record(self.db, "stable-operation-1"))
+
+    def test_over_budget_and_bool_steps_rejected(self):
+        for requested in (4, True, 0):
+            with self.subTest(requested=requested):
+                with self.assertRaisesRegex(Rejected, "step_budget_escalation"):
+                    self.reserve(requested_steps=requested)
+        self.assertIsNone(read_record(self.db, "stable-operation-1"))
+
+    def test_signed_device_change_rejected(self):
+        g = signed_grant()
+        original_signature = self.sign_grant(g)
+        g["device"] = "other-device"
+        with self.assertRaisesRegex(Rejected, "signature_mismatch"):
+            self.reserve(g, original_signature, requested_device="other-device")
+
     def test_same_producer_and_consumer_rejected(self):
         g = signed_grant()
         g["consumer"] = "safety-review"
@@ -158,7 +192,9 @@ class SignedResearchContracts(unittest.TestCase):
         g = signed_grant()
         with self.assertRaisesRegex(Rejected, "test_key_invalid"):
             verify_synthetic_grant(g, self.sign_grant(g), test_grant_key=b"small",
-                                   now=1200, requested_tools=("source_read",))
+                                   now=1200, requested_tools=("source_read",),
+                                   requested_scopes=("source:hermes",),
+                                   requested_device="research-linux", requested_steps=1)
 
     def test_valid_evidence_then_replay_rejected(self):
         r = signed_receipt()
