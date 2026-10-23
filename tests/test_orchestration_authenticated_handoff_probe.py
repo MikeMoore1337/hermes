@@ -5,6 +5,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
+from scripts.orchestration_offline_checks import eligible_after_verified_evidence
 from scripts.orchestration_pre_call_reservation_probe import (
     FIRST_ONLY, REPLAY_BLOCKED, initialize_temporary_fixture, read_record,
 )
@@ -193,6 +194,39 @@ class SignedResearchContracts(unittest.TestCase):
         wrong = issue_synthetic_signature(r, test_key=GRANT_TEST_KEY)
         with self.assertRaisesRegex(Rejected, "signature_mismatch"):
             self.evidence(r, signature=wrong)
+
+    def test_signed_evidence_not_archived_status_unlocks_synthetic_dag(self):
+        # The real native Kanban archive status is NOT a signed success
+        # receipt. Only verified evidence may be passed to this helper.
+        plan = dict(
+            revision=REV, approval_id="synthetic-owner-approval",
+            nodes=[{"id": "safety-review"}, {"id": "qa-review"}],
+            edges=[["safety-review", "qa-review"]],
+        )
+        self.assertEqual(
+            eligible_after_verified_evidence(plan, frozenset()),
+            ("safety-review",))
+        signed_parent = self.evidence()
+        self.assertEqual(signed_parent, "safety-review")
+        self.assertEqual(
+            eligible_after_verified_evidence(plan, frozenset({signed_parent})),
+            ("qa-review",))
+
+    def test_nonstring_grant_tool_fails_closed(self):
+        grant = signed_grant()
+        grant["allowed_tools"] = ["source_read", ["nested_invalid_tool"]]
+        with self.assertRaisesRegex(Rejected, "toolset_invalid"):
+            self.reserve(grant)
+        self.assertIsNone(read_record(self.db, "stable-operation-1"))
+
+    def test_receipt_rejects_forged_signature_after_payload_change(self):
+        receipt = signed_receipt()
+        signature = self.sign_receipt(receipt)
+        receipt["sha256"] = hashlib.sha256(b"forged").hexdigest()
+        with self.assertRaisesRegex(Rejected, "evidence_digest_invalid"):
+            self.evidence(receipt, signature=signature)
+        with self.assertRaisesRegex(Rejected, "signature_mismatch"):
+            self.evidence(receipt, signature=signature, contents=b"forged")
 
     def test_valid_evidence_not_sufficient_for_a_new_model_call(self):
         r = signed_receipt()
