@@ -38,7 +38,10 @@ def _verify_pinned_checkout(root: Path) -> None:
     def checked(*args: str) -> str:
         return subprocess.run(
             [*git, *args], capture_output=True, text=True,
-            check=True, timeout=8,
+            # Mounted Windows workspaces can need >8s for a cold tracked-tree
+            # scan. Preserve strict fail-closed status/pin checks; allow only
+            # the expensive inventory commands a bounded 30-second window.
+            check=True, timeout=30 if args[0] in ("status", "ls-files") else 8,
         ).stdout.strip()
 
     top = Path(checked("rev-parse", "--show-toplevel")).resolve(strict=True)
