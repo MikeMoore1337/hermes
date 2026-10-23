@@ -219,3 +219,49 @@ The additional synthetic `accept_signed_evidence_once` path verifies the **test-
 The new offline negative cases include 8 concurrent connections attempting to record the same signed receipt (exactly one winner), another valid signed receipt using a different receipt ID for the same operation (refused), missing prerequisite reservation, forged signature (no DB write), expired evidence (no write), missing ledger (error, fail-closed), and a separate Python subprocess that commits the signed receipt then exits abruptly `os._exit(29)`; readback and replay rejection survive that crash.
 
 **Remaining trust limits:** `record_verified_evidence_once` is callable inside a standalone test module without authentication; signature verification is only mandatory when going through the test wrapper. The public HMAC fixture keys are not protected producer keys, and the `run_id` is caller-supplied rather than verified against a native worker. The fixture's temporary SQLite file is neither shared across devices nor a production receipt service, and the tests do not simulate power loss, file tampering, provider signatures or external action receipts. This closes only an **offline crash-replay test gap**, not native Kanban approval or provider exactly-once guarantees.
+
+
+## Actual pinned native delegate toolset contract tests (23.10.2026)
+
+The optional pinned native runner now imports and **executes the original**
+`tools/delegate_tool_toolsets.py` resolver and
+`tools/delegate_tool_config.py` against synthetic inert parent objects,
+alongside the existing original native Kanban SQLite/OS tests. It checks the
+exact pinned public upstream SHA `d923a5eb487a17c0a68801bba9ef0f56c81040a8`
+before imports. Only the config *input* (`_cfg`) is patched to supply
+deterministic local choices. There is **no AIAgent/model creation, MCP
+connection, provider call, private tool or installed runtime execution**.
+
+Security-relevant **observed native semantics**, not proof of exploitation:
+- A nonempty explicit request is reduced to parent-available toolsets, and
+  inherited parent-disabled toolsets remain disabled for the leaf role.
+- `toolsets=[]` follows the same implicit inheritance branch as
+  `toolsets=None`, **not** a zero-tool permission.
+- If the native `inherit_mcp_toolsets` setting is omitted, its default is
+  **true**: MCP capability names belonging to the parent are appended even
+  when the explicit requested subset contains only `web`. Setting it
+  `false` prevents this append **for nonempty explicit requests**.
+- Even with `inherit_mcp_toolsets=false`, an omitted/empty child request
+  copies inherited parent MCP capabilities. Therefore, that setting alone
+  is insufficient to enforce a read-only child.
+- Native effective role `orchestrator` unconditionally appends the
+  `delegation` toolset, even when its parent only offers `web`, and it
+  removes an inherited `delegation` disabled marker. Such a role **must not**
+  be admitted solely from untrusted task input.
+
+**Pilot admission decision: NO_GO** for live Hermes subagents until a
+trusted external gate establishes a *nonempty explicit positive allowlist*,
+`inherit_mcp_toolsets=false`, `role=leaf`, native toolset/tool-name
+verification, parent-child permission subset (including OS/filesystem and
+network), and authenticated provenance/evidence. A policy document or synthetic
+HMAC is not the external enforcement. Without a verified native admission
+point, stop rather than build a second dispatcher or infer implicit scopes.
+
+The source-level native test is independent of real delegated AI execution:
+`NATIVE_TOOLSET_RESOLVER_TESTED=YES`, `EFFECTIVE_OS_RIGHTS=NOT_VERIFIED`,
+`LIVE_DELEGATE_TASK=NOT_RUN`, `LIVE_A_B=NOT_RUN`,
+`PROVIDER_USAGE=NOT_MEASURED`, `PRODUCTION=UNTOUCHED`.
+
+No new agent, resident service, API token, paid model, runtime integration,
+production DB or second queue is part of this PR. Rollback is reverting the
+optional original-upstream native probe additions.
