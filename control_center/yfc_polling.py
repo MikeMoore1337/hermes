@@ -41,7 +41,8 @@ def sanitize(raw: object, *, now: datetime | None = None) -> dict:
         return _empty()
     status = raw.get("status")
     event = raw.get("evidence")
-    if status not in EVENTS or event not in EVENTS[status]:
+    if (not isinstance(status, str) or not isinstance(event, str)
+            or status not in EVENTS or event not in EVENTS[status]):
         return _empty()
     date = raw.get("observed_at")
     if not isinstance(date, str) or len(date) > 40:
