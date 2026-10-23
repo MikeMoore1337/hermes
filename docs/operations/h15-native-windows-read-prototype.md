@@ -42,11 +42,15 @@ consistent cleanup, and generic denials without leaking host paths.
 `tests/test_native_windows_policy.py` covers the earlier four-root owner
 approval contract.
 
-**This is NOT proof of functioning native Windows handles.** On an actual
-Windows machine, separately confirm Python version, P/Invoke bindings,
-reparse point semantics, ACLs, long/case-variant DOS paths, 8.3 aliases,
-concurrent rename and Windows Defender/file-lock behavior. Do not deploy
-a read service or make a network-accessible endpoint on these test results.
+**Real Windows CI evidence (synthetic only):** an isolated GitHub-hosted
+`windows-2022` runner executes `tests.test_h15_native_windows_read_on_win`
+with actual `CreateFileW` / `ReadFile` / `GetFinalPathNameByHandleW` against
+throwaway temporary files. [Windows run 39903584684](https://github.com/MikeMoore1337/hermes/actions/runs/39903584684)
+completed **SUCCESS**. This validates the Win32 handle calls on that runner,
+**not access to the owner's PC**. Separately validate native-owner machine
+OS identity/ACLs, junction ancestry, 8.3 aliases, concurrent renames and
+Windows Defender/file-lock behavior before any installation or MCP exposure.
+Do not deploy a resident read service on CI evidence alone.
 
 The current Hermes MCP connected device remains a sandbox:
 `platform=linux/docker`, not an original Windows filesystem broker.
