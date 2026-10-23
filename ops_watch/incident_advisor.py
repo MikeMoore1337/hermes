@@ -420,10 +420,10 @@ def build_prompt(context: Mapping[str, object]) -> str:
         "probable_cause.summary переписывай ДОСЛОВНО из каталога ниже, "
         "без перефразирования. Элементы checks и recommendation выбирай "
         "только из разрешённых там же точных строк; любые новые утверждения "
-        "будут отклонены. Поле evidence выбирай только из evidence_catalog.\\n"
-        "BEGIN_APPROVED_TEXT\\n"
+        "будут отклонены. Поле evidence выбирай только из evidence_catalog.\n"
+        "BEGIN_APPROVED_TEXT\n"
         + allowed_json
-        + "\\nEND_APPROVED_TEXT"
+        + "\nEND_APPROVED_TEXT"
     )
 
 
