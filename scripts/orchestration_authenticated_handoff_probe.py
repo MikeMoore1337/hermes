@@ -95,8 +95,9 @@ def verify_synthetic_grant(payload, signature, *, test_grant_key: bytes, now: in
     if not _valid_ident(payload["approval_id"]):
         raise Rejected("approval_invalid")
     tools = payload["allowed_tools"]
-    if (type(tools) is not list or not tools or len(tools) != len(set(tools))
+    if (type(tools) is not list or not tools
             or any(type(t) is not str for t in tools)
+            or len(tools) != len(set(tools))
             or not set(tools) <= ALLOWED_TOOLS):
         raise Rejected("toolset_invalid")
     if (type(requested_tools) is not tuple or not requested_tools
