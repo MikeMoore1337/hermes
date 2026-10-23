@@ -8,11 +8,13 @@ import "./style.css";
 import {registerPwa} from "./register-pwa.js";
 import CodexPanel from "./CodexPanel.jsx";
 import OperatorInbox from "./OperatorInbox.jsx";
+import HermesCommander from "./HermesCommander.jsx";
 
 const ISSUE33="https://github.com/MikeMoore1337/hermes/issues/33";
 const ISSUE163="https://github.com/MikeMoore1337/hermes/issues/163";
 const UI_VERSION="0.2.0";
-const nav=["all","inbox","ops","research","qa","agent","codex"];
+const nav=["all","inbox","commander","ops","research","qa","agent","codex"];
+const navName=key=>key==="commander"?"Hermes Commander":groups[key].name;
 const icons={news:Radio,ops:Activity,alerts:Signal,qa:ShieldCheck,
   research:Search,network:ShieldCheck,agent_bounded:Activity,agent:LockKeyhole};
 const formatTime=t=>{const d=new Date(t);return Number.isFinite(d.getTime())?d.toLocaleString("ru-RU",{day:"2-digit",month:"long",hour:"2-digit",minute:"2-digit"}):"нет данных";};
@@ -28,7 +30,7 @@ function State({value}){const p=statuses[value]||statuses.unknown;return <span c
 function Nav({view,onView,mode}){
  return <nav className="nav-list" aria-label="Разделы управления">
  {nav.map((key,i)=><button key={key} type="button" className={"nav-link"+(view===key?" is-active":"")} aria-current={view===key?"page":undefined} onClick={()=>onView(key)}>
-   <span className="nav-number">{String(i+1).padStart(2,"0")}</span><span>{groups[key].name}</span>
+   <span className="nav-number">{String(i+1).padStart(2,"0")}</span><span>{navName(key)}</span>
  </button>)}
  </nav>;
 }
@@ -38,7 +40,7 @@ function Header({view,setView,authMode,onLogout}){
    <div className="brand-divider" aria-hidden="true"/>
    <span className="header-subtitle">Центр наблюдения и управления <small>AI · АВТОМАТИЗАЦИЯ · КОНТРОЛЬ · БЕЗОПАСНОСТЬ</small></span>
    <div className="atlas-nav" role="navigation" aria-label="Основные разделы">
-     {nav.slice(0,5).map(k=><button key={k} type="button" className={view===k?"selected":""} aria-current={view===k?"page":undefined} onClick={()=>setView(k)}>{groups[k].name}</button>)}
+     {["all","inbox","ops","research","qa","commander"].map(k=><button key={k} type="button" className={view===k?"selected":""} aria-current={view===k?"page":undefined} onClick={()=>setView(k)}>{navName(k)}</button>)}
    </div>
    <div className="header-tools">
     <InfoBadge tone="outline"><LockKeyhole size={13}/> Только чтение</InfoBadge>
@@ -199,6 +201,7 @@ function OperatorApp({authMode,onLogout}){
  },[]);
  const stats=counts(snapshot?.services||[]);
  const now=snapshot?formatTime(snapshot.generated_at):"Нет данных";
+ if(view==="commander")return <HermesCommander onBack={()=>setView("all")}/>;
  return <div className="shell theme-atlas">
   <a href="#main-content" className="skip-link">Перейти к основному содержимому</a>
   <Header view={view} setView={setView} authMode={authMode} onLogout={onLogout}/>
