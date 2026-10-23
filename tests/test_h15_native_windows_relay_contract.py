@@ -31,14 +31,13 @@ class NativeContractTests(unittest.TestCase):
                          ["native_file_stat", "native_file_read"])
         self.assertEqual(frame["tools"], list(TOOLS))
 
-    def test_owner_only_discovery_and_generic_catalog_dedupe_are_pinned(self):
+    def test_native_dispatch_uses_isolated_non_generic_route(self):
         relay = RELAY.read_text(encoding="utf-8")
         gateway = GATEWAY.read_text(encoding="utf-8")
-        self.assertIn("export function listOwnerNativeReadTools", relay)
-        self.assertIn("eligibleDevice(hub, store, owner) ? NATIVE_TOOLS : []", relay)
-        self.assertIn("GENERIC_LIST", gateway)
-        self.assertIn("FILTERED_LIST", gateway)
-        self.assertIn("...listOwnerNativeReadTools(hub, store, ctx.userId)", gateway)
+        self.assertIn("export const NATIVE_TOOLS", relay)
+        self.assertIn("...NATIVE_TOOLS", gateway)
+        self.assertIn("NATIVE_CALL + CALL", gateway)
+        self.assertIn("...pinnedToolCatalog()", (ROOT / "scripts/h15_brc_workspace_gateway.py").read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":
