@@ -202,6 +202,36 @@ class BoundedComparisonTests(unittest.TestCase):
         self.assertNotIn("SECRET-SHOULD-NOT-LEAK", self.output.read_text())
         self.assertEqual(json.loads(self.state.read_text())["calls"], 3)
 
+    def test_report_publication_is_exclusive_and_durable(self):
+        # In the live path the candidate file is fully written and fsynced
+        # before the atomic no-clobber link creates the final report.
+        ab._publish_report_once(self.output, {"status": "PASS"})
+        self.assertEqual(json.loads(self.output.read_text()), {"status": "PASS"})
+        self.assertEqual(self.output.stat().st_mode & 0o777, 0o600)
+        self.assertFalse(list(self.output.parent.glob("output.json.*")))
+        with self.assertRaisesRegex(ab.ReportPublicationError, "h453_evidence_target_exists"):
+            ab._publish_report_once(self.output, {"status": "SHOULD_NOT_REPLACE"})
+        self.assertEqual(json.loads(self.output.read_text()), {"status": "PASS"})
+
+    def test_late_created_report_is_not_clobbered_after_quota_debit(self):
+        # Simulate a second writer creating the target only at the final
+        # publication boundary, AFTER admission and fake model completions.
+        original_link = os.link
+        attempts = []
+
+        def racing_link(source, target):
+            attempts.append((source, target))
+            Path(target).write_text("other-process-evidence", encoding="utf-8")
+            return original_link(source, target)
+
+        with patch.object(ab.os, "link", side_effect=racing_link):
+            with self.assertRaisesRegex(ab.ReportPublicationError, "h453_evidence_target_exists"):
+                self.invoke()
+        self.assertEqual(len(attempts), 1)
+        self.assertEqual(self.output.read_text(), "other-process-evidence")
+        self.assertEqual(json.loads(self.state.read_text())["calls"], 3)
+        self.assertFalse(list(self.output.parent.glob("output.json.*")))
+
     def test_existing_evidence_is_never_overwritten(self):
         self.output.write_text("immutable", encoding="utf-8")
         with self.assertRaisesRegex(PilotError, "unsafe_state_output"):
