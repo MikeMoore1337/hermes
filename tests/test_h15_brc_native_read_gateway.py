@@ -7,8 +7,7 @@ import unittest
 from unittest.mock import patch
 
 from scripts.h15_brc_native_read_gateway import (
-    apply, MCP, IMPORT, LIST, CALL, NATIVE_IMPORT, NATIVE_CALL,
-    GENERIC_LIST, FILTERED_LIST
+    apply, MCP, IMPORT, LIST, CALL, NATIVE_IMPORT, NATIVE_CALL
 )
 from scripts.h15_remote_commander_candidate_audit import AuditError
 
@@ -21,7 +20,7 @@ class NativeReadGatewayTests(unittest.TestCase):
         self.folder.mkdir(parents=True)
         self.server = self.folder / "server.ts"
         self.server.write_text(
-            IMPORT + "\n" + GENERIC_LIST + "\n" + LIST + "\n" + CALL + "\n", encoding="utf-8")
+            IMPORT + "\n" + LIST + "\n" + CALL + "\n", encoding="utf-8")
         for f in ("hermes-workspaces.ts","hermes-policy.ts",
                   "hermes-tool-catalog.ts","invoke.ts"):
             (self.folder / f).write_text("export {};\n", encoding="utf-8")
@@ -35,13 +34,10 @@ class NativeReadGatewayTests(unittest.TestCase):
         self.assertFalse(result["production_activation"])
         actual = self.server.read_text()
         self.assertIn(NATIVE_IMPORT, actual)
-        self.assertIn("...listOwnerNativeReadTools(hub, store, ctx.userId)", actual)
-        self.assertIn(FILTERED_LIST, actual)
-        self.assertNotIn(GENERIC_LIST + "\n", actual)
+        self.assertIn("...NATIVE_TOOLS", actual)
         self.assertEqual(actual.count(NATIVE_CALL), 1)
         self.assertLess(actual.index(NATIVE_CALL), actual.index(CALL))
         self.assertIn("invokeOwnerNativeRead", (self.folder / "hermes-native-read.ts").read_text())
-        self.assertIn("export function listOwnerNativeReadTools", (self.folder / "hermes-native-read.ts").read_text())
         self.assertNotIn("deviceId: { type", (self.folder / "hermes-native-read.ts").read_text())
 
     def test_double_patch_denied_without_further_modifications(self):
@@ -112,7 +108,7 @@ class NativeReadGatewayTests(unittest.TestCase):
         program = r"""
 const assert=require('node:assert/strict');
 const crypto=require('node:crypto');
-const {NATIVE_TOOLS,invokeOwnerNativeRead,listOwnerNativeReadTools}=require(process.argv[1]);
+const {NATIVE_TOOLS,invokeOwnerNativeRead}=require(process.argv[1]);
 const good={device_id:'h15-native-abcdefgh',name:'H15 Windows native read-only',
  platform:'win32',paused:0};
 const agent={ownerId:'owner-A', info:{deviceId:good.device_id,name:good.name,platform:'win32'},
@@ -128,9 +124,6 @@ let hub={get(id){return id===good.device_id?agent:undefined},
  async call(id,name,args){calls++;return {isError:false,content:[{type:'text',text:JSON.stringify(verified)}]}}};
 const ctx={userId:'owner-A',clientId:'chatgpt'};
 (async()=>{
- assert.equal(listOwnerNativeReadTools({get:()=>undefined},store,'owner-A').length,0);
- assert.equal(listOwnerNativeReadTools(hub,store,'owner-A').length,2);
- assert.equal(listOwnerNativeReadTools(hub,store,'another-owner').length,0);
  assert.deepEqual(NATIVE_TOOLS.map(t=>t.name),['native_file_stat','native_file_read']);
  const ok=await invokeOwnerNativeRead(hub,store,ctx,'native_file_read',{project:'hermes',relative:'README.md'});
  assert.equal(ok.isError,false);assert.equal(calls,1);assert.equal(logs.length,1);
