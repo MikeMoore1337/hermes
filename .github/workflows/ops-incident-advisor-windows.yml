@@ -1,0 +1,31 @@
+name: Ops Incident Advisor Windows portability
+
+on:
+  pull_request:
+    paths:
+      - ops_watch/incident_advisor.py
+      - ops_watch/advisor_comparison.py
+      - tests/test_ops_incident_advisor.py
+      - tests/test_ops_advisor_comparison.py
+      - .github/workflows/ops-incident-advisor-windows.yml
+
+permissions:
+  contents: read
+
+jobs:
+  windows-portability:
+    runs-on: windows-2022
+    timeout-minutes: 6
+    steps:
+      - name: Check out PR merge candidate
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Offline advisor contract on actual Windows runner
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          py -3 -m unittest discover -s tests -p 'test_ops_incident_advisor.py' -v
+          if ($LASTEXITCODE -ne 0) { throw 'INCIDENT_ADVISOR_WINDOWS_FAILED' }
+          py -3 -m unittest discover -s tests -p 'test_ops_advisor_comparison.py' -v
+          if ($LASTEXITCODE -ne 0) { throw 'ADVISOR_COMPARISON_WINDOWS_FAILED' }
