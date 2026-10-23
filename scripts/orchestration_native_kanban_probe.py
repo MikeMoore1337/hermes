@@ -530,7 +530,10 @@ def run(source_dir: Path, deps_dir: Path | None = None) -> bool:
 
         print("UPSTREAM_NATIVE_COMMIT_VERIFIED", UPSTREAM_COMMIT, flush=True)
         print("SQLITE_ENGINE", sqlite3.sqlite_version, flush=True)
-        suite = unittest.TestSuite([\n            unittest.defaultTestLoader.loadTestsFromTestCase(NativeKanbanTests),\n            unittest.defaultTestLoader.loadTestsFromTestCase(NativeDelegationToolsetsTests),\n        ])
+        suite = unittest.TestSuite([
+            unittest.defaultTestLoader.loadTestsFromTestCase(NativeKanbanTests),
+            unittest.defaultTestLoader.loadTestsFromTestCase(NativeDelegationToolsetsTests),
+        ])
         result = unittest.TextTestRunner(verbosity=2).run(suite)
         return result.wasSuccessful()
 
