@@ -110,10 +110,15 @@ export async function invokeOwnerNativeRead(
       safe = validatedResult(raw, safeArgs, read ? 'read' : 'stat');
     }
   } catch { /* Never forward agent error, filepath, output, or credentials. */ }
-  store.audit({ ts: started, user_id: ctx.userId, device_id: deviceId,
-    client: ctx.clientId, tool: name, args_hash: argsHash,
-    ok: safe ? 1 : 0, ms: Date.now() - started,
-    error: safe ? null : 'NATIVE_READ_DENIED' });
+  try {
+    store.audit({ ts: started, user_id: ctx.userId, device_id: deviceId,
+      client: ctx.clientId, tool: name, args_hash: argsHash,
+      ok: safe ? 1 : 0, ms: Date.now() - started,
+      error: safe ? null : 'NATIVE_READ_DENIED' });
+  } catch {
+    // No audit trail => no sensitive original-host data leaves this relay.
+    return DENY;
+  }
   return safe ? { content: [{ type: 'text' as const, text: JSON.stringify(safe) }],
     isError: false } : DENY;
 }
