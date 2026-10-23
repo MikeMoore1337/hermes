@@ -7,6 +7,7 @@ on:
       - scripts/h15_native_windows_mcp_stdio.py
       - scripts/h15_native_windows_outbound.py
       - scripts/h15_native_windows_ssh_identity.ps1
+      - tests/h15_native_windows_ssh_verify_smoke.ps1
       - tests/test_h15_native_windows_outbound.py
       - tests/test_h15_native_windows_relay_contract.py
       - scripts/h15_brc_native_read_gate_patch.py
@@ -54,6 +55,12 @@ jobs:
           # A deliberately rejected subprocess exits 2. Reset the parent
           # runner's LASTEXITCODE only after asserting that exact denial.
           $global:LASTEXITCODE = 0
+      - name: Verify encrypted key and restrictive ACL on disposable Windows fixtures
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests/h15_native_windows_ssh_verify_smoke.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'H454_NATIVE_SSH_VERIFY_SYNTHETIC_FAILED' }
       - name: Run actual Windows CreateFile / handle E2E on synthetic runner files
         shell: pwsh
         run: |

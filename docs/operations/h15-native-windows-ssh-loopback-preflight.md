@@ -95,6 +95,37 @@ Hermes VPS `sshd` found and listening, owner-reported internal
 BRC container running in `hermes-brc-internal`. These are
 **prerequisites only**, not authenticated native transport proof.
 
+## REQUIRED post-passphrase owner check (read-only, no network)
+
+**MANDATORY:** After changing the private SSH key passphrase, do not infer
+readiness from command success alone. The operator now has a read-only
+`-Mode Verify` that checks the OpenSSH private key cipher and the Windows
+NTFS ACL, emitting only three status markers (no key contents).
+On original Windows, running the command itself still requires a separate
+scoped owner approval:
+
+```powershell
+powershell.exe -NoProfile -File .\scripts\h15_native_windows_ssh_identity.ps1 -Mode Verify
+```
+
+Proceed only with exactly:
+
+```text
+PRIVATE_KEY_ENCRYPTION=PASS
+PRIVATE_KEY_ACL=PASS
+SECURITY_INSPECTION=COMPLETE
+```
+
+`PRIVATE_KEY_ENCRYPTION=FAIL` denotes an unencrypted `none` cipher;
+`NOT_VERIFIED` denotes unknown/unreadable/malformed key. An unsafe
+ACL yields `NEEDS_REVIEW`. Non-PASS exits 2 and blocks pairing.
+This check does not prove the remembered passphrase can unlock the key,
+that the public and private keys match, the server host-key identity,
+or the restrictions of the future dedicated VPS forward-only account.
+
+Windows CI checks synthetic, temporary AES-encrypted keys, broad-ACL
+denials and malformed-key denials; never accesses original Windows files.
+Do not automatically change permissions or keys after verification failures.
 ## Pre-activation checks (all NOT_RUN)
 
 1. **Read-only owner VPS network inspection:** verify actual private relay
