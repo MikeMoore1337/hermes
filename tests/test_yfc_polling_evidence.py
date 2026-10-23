@@ -54,6 +54,8 @@ class PollingEvidenceTests(unittest.TestCase):
             {**evidence(), "observed_at": (NOW + timedelta(minutes=4)).isoformat()},
             {**evidence(), "secret": "do-not-leak"},
             {**evidence(), "status": "unhealthy"},
+            {**evidence(), "status": []},
+            {**evidence(), "evidence": []},
         ]
         for data in candidates:
             with self.subTest(data=str(data)[:40]):
@@ -90,12 +92,8 @@ class PollingEvidenceTests(unittest.TestCase):
             root = Path(directory)
             snapshot = fixture("yfc", now=NOW)
             snapshot["polling_health"] = evidence("unhealthy", "getupdates_error")
-            with patch("control_center.infrastructure.dt.datetime") as clock:
-                clock.now.return_value = NOW
-                # Do not need synthetic host filesystem writes at historical time;
-                # use validated() and a current proof in the persistence test below.
-                from control_center.infrastructure import _validated
-                checked = _validated(snapshot, "yfc", NOW)
+            from control_center.infrastructure import _validated
+            checked = _validated(snapshot, "yfc", NOW)
             self.assertEqual(checked["polling_health"]["status"], "unhealthy")
             self.assertEqual(_validated(snapshot, "yfc", NOW + timedelta(minutes=3))[
                 "polling_health"]["status"], "stale")
