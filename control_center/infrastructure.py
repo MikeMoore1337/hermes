@@ -280,6 +280,18 @@ def _validated(raw: object, host: str, now: dt.datetime) -> dict:
         raise ValueError("invalid numeric metric")
     if any(not 0 <= m[k] <= 100 for k in ("ram_used_percent", "disk_used_percent")):
         raise ValueError("invalid percent")
+    # These four counters and their rounded percentages come from the same
+    # procfs/statvfs sample. Reject contradictory values before persistence,
+    # display or Ops Watch consumers can interpret a fabricated low percent as
+    # healthy. The collector rounds to one decimal; allow its 0.1% precision.
+    for prefix in ("ram", "disk"):
+        total = m[prefix + "_total_bytes"]
+        used = m[prefix + "_used_bytes"]
+        percent = m[prefix + "_used_percent"]
+        if (type(total) is not int or type(used) is not int
+                or not 0 < total < 10**18 or not 0 <= used <= total
+                or abs(percent - 100 * used / total) > 0.11):
+            raise ValueError("inconsistent capacity metrics")
     cpu = m.get("cpu_used_percent")
     if cpu is not None and (not isinstance(cpu, (int, float)) or isinstance(cpu, bool)
                             or not 0 <= cpu <= 100):
