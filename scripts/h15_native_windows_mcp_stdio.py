@@ -12,8 +12,12 @@ process until a separately approved authenticated transport is implemented.
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
+import hashlib
 import json
 import os
+import re
 import sys
 from typing import Any, BinaryIO
 
@@ -116,6 +120,39 @@ def _params_exact(params: dict[str, Any], *keys: str) -> bool:
     return set(params) == set(keys)
 
 
+def _sanitized_result(value: object, project: str, relative: str,
+                      operation: str) -> dict[str, Any]:
+    """Output validation prevents a buggy native adapter widening tool scope."""
+    if not isinstance(value, dict):
+        raise ProtocolRefused("invalid_native_output")
+    base = {"status", "project", "relative", "action", "kind", "size_bytes"}
+    expected = base if operation == "stat" else base | {"encoding", "sha256", "data"}
+    if (set(value) != expected or value["status"] != "ok"
+        or value["project"] != project or value["relative"] != relative
+        or value["action"] != operation
+        or value["kind"] not in ("file", "directory")):
+        raise ProtocolRefused("invalid_native_output")
+    size = value["size_bytes"]
+    if type(size) is not int or size < 0 or size > 2**53 - 1:
+        if not (operation == "stat" and value["kind"] == "directory" and size is None):
+            raise ProtocolRefused("invalid_native_size")
+    if operation == "read":
+        if (value["kind"] != "file" or size > native.MAX_FILE_BYTES
+            or value["encoding"] != "base64"
+            or not isinstance(value["data"], str)
+            or len(value["data"]) > 4 * ((native.MAX_FILE_BYTES + 2) // 3)
+            or not isinstance(value["sha256"], str)
+            or not re.fullmatch(r"[0-9a-f]{64}", value["sha256"])):
+            raise ProtocolRefused("invalid_native_content")
+        try:
+            data = base64.b64decode(value["data"], validate=True)
+        except (binascii.Error, ValueError):
+            raise ProtocolRefused("invalid_native_content") from None
+        if len(data) != size or hashlib.sha256(data).hexdigest() != value["sha256"]:
+            raise ProtocolRefused("native_content_integrity_failed")
+    return value
+
+
 class McpSession:
     """Connection-local handshake, rate budget and dispatch. No state on disk."""
 
@@ -172,7 +209,8 @@ class McpSession:
             # The Win32 helper is the actual per-handle scope check. No
             # ProcessRunner, shell, pathlib.read_bytes or native path fallback.
             result = native.handle_native_request(project, relative, operation)
-        except (native.NativeReadRefused, OSError, ValueError):
+            result = _sanitized_result(result, project, relative, operation)
+        except (native.NativeReadRefused, ProtocolRefused, OSError, ValueError):
             return _tool_error(identifier)
         return _ok(identifier, {
             "content": [{"type": "text",
