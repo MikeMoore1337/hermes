@@ -107,11 +107,44 @@ if (-not (Test-Path -LiteralPath $privatePath -PathType Leaf) -or
     -not (Test-Path -LiteralPath $publicPath -PathType Leaf)) {
     Deny 'KEYPAIR_NOT_CREATED'
 }
-# Do not claim protection until post-generation OS ACL and non-empty
-# passphrase have been independently verified. Never echo private material.
+# Verify the private key container cipher without decrypting it or echoing
+# any secret. Never accept an empty-passphrase OpenSSH key.
+try {
+    $pem = [System.IO.File]::ReadAllLines($privatePath)
+    if ($pem.Length -lt 3 -or
+        $pem[0] -ne '-----BEGIN OPENSSH PRIVATE KEY-----' -or
+        $pem[$pem.Length - 1] -ne '-----END OPENSSH PRIVATE KEY-----') {
+        throw 'INVALID_OPENSSH_PRIVATE_FORMAT'
+    }
+    $body = ($pem[1..($pem.Length - 2)] -join '')
+    $data = [Convert]::FromBase64String($body)
+    $magic = [Text.Encoding]::ASCII.GetBytes("openssh-key-v1`0")
+    if ($data.Length -lt ($magic.Length + 8)) { throw 'SHORT_KEY' }
+    for ($i = 0; $i -lt $magic.Length; $i++) {
+        if ($data[$i] -ne $magic[$i]) { throw 'INVALID_KEY_MAGIC' }
+    }
+    $at = $magic.Length
+    $length = ([int]$data[$at] -shl 24) -bor
+              ([int]$data[$at + 1] -shl 16) -bor
+              ([int]$data[$at + 2] -shl 8) -bor
+              [int]$data[$at + 3]
+    if ($length -lt 1 -or $length -gt 64 -or
+        $data.Length -lt ($at + 4 + $length)) {
+        throw 'INVALID_CIPHER_LENGTH'
+    }
+    $cipher = [Text.Encoding]::ASCII.GetString($data, $at + 4, $length)
+    if ($cipher -eq 'none') {
+        Deny 'UNENCRYPTED_PRIVATE_KEY_OWNER_MUST_REMEDIATE_MANUALLY'
+    }
+    if ($cipher -notin @('aes256-ctr', 'aes256-gcm@openssh.com')) {
+        throw 'UNEXPECTED_CIPHER'
+    }
+} catch {
+    Deny 'PRIVATE_KEY_ENCRYPTION_NOT_VERIFIED_REVIEW_MANUALLY'
+}
 Write-Output 'KEYPAIR_CREATED=PASS'
 Write-Output 'PRIVATE_KEY_ACL=NOT_VERIFIED'
-Write-Output 'PASSPHRASE_ENCRYPTION=NOT_VERIFIED'
+Write-Output 'PASSPHRASE_ENCRYPTION=PASS'
 Write-Output 'VPS_AUTHORIZED_KEYS=NOT_MODIFIED'
 Write-Output 'TUNNEL=NOT_STARTED'
 Write-Output 'H454_SSH_IDENTITY=CREATED_PENDING_SECURITY_REVIEW'
