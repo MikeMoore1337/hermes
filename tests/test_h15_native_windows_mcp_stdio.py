@@ -231,8 +231,9 @@ class NativeWindowsMcpStdioTests(unittest.TestCase):
         self.assertEqual(len(mcp.TOOLS), 2)
         self.assertEqual({t["name"] for t in mcp.TOOLS},
                          {"native_file_read", "native_file_stat"})
-        self.assertNotIn("execute", json.dumps(mcp.TOOLS))
-        self.assertNotIn("write", json.dumps(mcp.TOOLS))
+        self.assertTrue(all(t["name"] not in ("execute", "write", "start_process")
+                            and set(t["inputSchema"]["properties"]) == {"project", "relative"}
+                            for t in mcp.TOOLS))
 
 
 if __name__ == "__main__":
