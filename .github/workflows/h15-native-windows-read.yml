@@ -1,0 +1,42 @@
+name: H-15 native Windows read handle CI (synthetic only)
+
+on:
+  pull_request:
+    paths:
+      - scripts/h15_native_windows_read.py
+      - control_center/native_windows_policy.py
+      - tests/test_h15_native_windows_read.py
+      - tests/test_h15_native_windows_read_on_win.py
+      - .github/workflows/h15-native-windows-read.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  win32-handle-synthetic:
+    # Only repository-owned PRs: never run native Win32 fixtures from forks.
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: windows-2022
+    timeout-minutes: 8
+    steps:
+      - name: Checkout exact submitted tree without credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Run actual Windows CreateFile / handle E2E on synthetic runner files
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          if ($env:RUNNER_OS -ne "Windows") { throw "WINDOWS_RUNNER_REQUIRED" }
+          python --version
+          python -B -m unittest -v tests.test_h15_native_windows_read_on_win
+          if ($LASTEXITCODE -ne 0) { throw "WIN32_HANDLE_E2E_FAIL" }
+          Write-Output "H454_NATIVE_WIN32_SYNTHETIC=PASS"
+      - name: Recheck owner scope and negative request contract
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          python -B -m unittest -v tests.test_h15_native_windows_read tests.test_native_windows_policy
+          if ($LASTEXITCODE -ne 0) { throw "NATIVE_READ_CONTRACT_FAIL" }
+          Write-Output "H454_OWNER_SCOPE_CONTRACT=PASS"
