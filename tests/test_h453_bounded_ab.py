@@ -166,6 +166,42 @@ class BoundedComparisonTests(unittest.TestCase):
                     ab._client(self.attestation)
                 reader.assert_not_called()
 
+    def test_unexpected_baseline_error_does_not_lose_uncertain_receipt(self):
+        class ExplodingClient:
+            def complete(self, prompt):
+                raise RuntimeError("SECRET-SHOULD-NOT-LEAK")
+        clients = [ExplodingClient(), FakeClient(self.output_json), FakeClient(self.output_json)]
+        with patch.object(ab, "_client", side_effect=clients):
+            with patch.dict(os.environ, {"HERMES_AI_LIVE_APPROVED": "1"}):
+                with self.assertRaisesRegex(PilotError, "unexpected_internal_error"):
+                    ab.run(case=ab.CASES[0], account_status=self.account,
+                           state=self.state, output=self.output, owner_approved=True)
+        record = json.loads(self.output.read_text())
+        self.assertEqual(record["stage"], "A_MAY_HAVE_REQUESTED")
+        self.assertEqual(record["status"], "BLOCKED")
+        self.assertEqual(record["failure_type"], "RuntimeError")
+        self.assertEqual(record["failure_reason"], "unexpected_internal_error")
+        self.assertEqual(record["actual_provider_requests"], "NOT_VERIFIED")
+        self.assertNotIn("SECRET-SHOULD-NOT-LEAK", self.output.read_text())
+        self.assertEqual(json.loads(self.state.read_text())["calls"], 3)
+
+    def test_unexpected_parallel_error_blocks_all_retries(self):
+        class ExplodingClient:
+            def complete(self, prompt):
+                raise RuntimeError("SECRET-SHOULD-NOT-LEAK")
+        clients = [FakeClient(self.output_json), ExplodingClient(), FakeClient(self.output_json)]
+        with patch.object(ab, "_client", side_effect=clients):
+            with patch.dict(os.environ, {"HERMES_AI_LIVE_APPROVED": "1"}):
+                with self.assertRaisesRegex(PilotError, "unexpected_internal_error"):
+                    ab.run(case=ab.CASES[0], account_status=self.account,
+                           state=self.state, output=self.output, owner_approved=True)
+        record = json.loads(self.output.read_text())
+        self.assertEqual(record["stage"], "B_MAY_HAVE_REQUESTED")
+        self.assertEqual(record["status"], "BLOCKED")
+        self.assertEqual(record["automatic_retries"], 0)
+        self.assertNotIn("SECRET-SHOULD-NOT-LEAK", self.output.read_text())
+        self.assertEqual(json.loads(self.state.read_text())["calls"], 3)
+
     def test_existing_evidence_is_never_overwritten(self):
         self.output.write_text("immutable", encoding="utf-8")
         with self.assertRaisesRegex(PilotError, "unsafe_state_output"):

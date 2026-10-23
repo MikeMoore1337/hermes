@@ -138,10 +138,12 @@ def run(*, case: str, account_status: Path, state: Path, output: Path, owner_app
             }
             _write_json_atomic(output, report)
             return report
-        except (PilotError, AdvisorOutputError) as exc:
-            # After durable debit, preserve the blocked attempt even if the
-            # first response has unknown cost or either child fails. No
-            # unverified claim of how many remote requests were billed.
+        except Exception as exc:
+            # Once a request may have started, even an unexpected internal
+            # failure must leave durable uncertainty evidence and no retry.
+            # Do not serialize arbitrary exception text from the provider:
+            # third-party exception messages may include secrets or URLs.
+            known = isinstance(exc, (PilotError, AdvisorOutputError))
             _write_json_atomic(output, {
                 "schema": SCHEMA,
                 "case": case,
@@ -151,9 +153,11 @@ def run(*, case: str, account_status: Path, state: Path, output: Path, owner_app
                 "actual_provider_requests": "NOT_VERIFIED",
                 "provider_cost_usd": "NOT_MEASURED",
                 "failure_type": type(exc).__name__,
-                "failure_reason": str(exc),
+                "failure_reason": str(exc) if known else "unexpected_internal_error",
                 "automatic_retries": 0,
             })
+            if not known:
+                raise PilotError("unexpected_internal_error") from None
             raise
 
 
