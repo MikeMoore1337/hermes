@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - scripts/h15_native_windows_read.py
+      - scripts/h15_native_windows_mcp_stdio.py
+      - tests/test_h15_native_windows_mcp_stdio.py
       - control_center/native_windows_policy.py
       - tests/test_h15_native_windows_read.py
       - tests/test_h15_native_windows_read_on_win.py
@@ -37,6 +39,6 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          python -B -m unittest -v tests.test_h15_native_windows_read tests.test_native_windows_policy
+          python -B -m unittest -v tests.test_h15_native_windows_read tests.test_native_windows_policy tests.test_h15_native_windows_mcp_stdio
           if ($LASTEXITCODE -ne 0) { throw "NATIVE_READ_CONTRACT_FAIL" }
           Write-Output "H454_OWNER_SCOPE_CONTRACT=PASS"
