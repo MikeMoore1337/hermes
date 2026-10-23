@@ -16,7 +16,9 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 UPSTREAM_COMMIT = "d923a5eb487a17c0a68801bba9ef0f56c81040a8"
 PINNED_BLOBS = {
@@ -38,7 +40,10 @@ def _verify_pinned_checkout(root: Path) -> None:
     def checked(*args: str) -> str:
         return subprocess.run(
             [*git, *args], capture_output=True, text=True,
-            check=True, timeout=8,
+            # Mounted Windows workspaces can need >8s for a cold tracked-tree
+            # scan. Preserve strict fail-closed status/pin checks; allow only
+            # the expensive inventory commands a bounded 30-second window.
+            check=True, timeout=30 if args[0] in ("status", "ls-files") else 8,
         ).stdout.strip()
 
     top = Path(checked("rev-parse", "--show-toplevel")).resolve(strict=True)
@@ -73,6 +78,8 @@ def run(source_dir: Path, deps_dir: Path | None = None) -> bool:
         os.environ["HERMES_KANBAN_DB"] = str(Path(workspace) / "root.sqlite")
         from hermes_cli import kanban_db as k
         from hermes_cli import kanban_db_connect as c
+        from tools import delegate_tool_toolsets as dt
+        from tools import delegate_tool_config as dc
 
         class NativeKanbanTests(unittest.TestCase):
             def setUp(self):
@@ -241,6 +248,151 @@ def run(source_dir: Path, deps_dir: Path | None = None) -> bool:
                         db, task, reason="synthetic duplicate"))
                     self.assertEqual(k.get_task(db, task).status, "ready")
 
+            def test_expired_claim_keeps_alive_verified_local_worker(self):
+                # Expired SQLite TTL is not permission to duplicate work when
+                # its fingerprinted local OS subprocess remains alive.
+                from hermes_cli import kanban_db_dispatch as dispatch
+                with c.connect_closing(self.path) as db:
+                    task = k.create_task(
+                        db, title="live-lease protection", workspace_kind="scratch")
+                    claimed = k.claim_task(db, task, ttl_seconds=120)
+                    self.assertIsNotNone(claimed)
+                    child = subprocess.Popen(
+                        [sys.executable, "-B", "-c", "import time; time.sleep(30)"],
+                        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    try:
+                        self.assertTrue(dispatch.adopt_worker_pid(
+                            db, task, claimed.current_run_id, child.pid))
+                        evidence = db.execute(
+                            "SELECT claim_lock, worker_started_at FROM tasks WHERE id=?",
+                            (task,)
+                        ).fetchone()
+                        self.assertTrue(evidence["claim_lock"].startswith(
+                            k._host_prefix()))
+                        self.assertIn("|", evidence["worker_started_at"])
+                        db.execute(
+                            "UPDATE tasks SET claim_expires=0 WHERE id=?", (task,))
+                        self.assertEqual(k.release_stale_claims(db), 0)
+                        after = k.get_task(db, task)
+                        self.assertEqual(after.status, "running")
+                        self.assertIsNone(k.claim_task(
+                            db, task, ttl_seconds=120, claimer="second-claimer"))
+                        self.assertIsNone(child.poll())
+                        self.assertGreater(
+                            db.execute("SELECT claim_expires FROM tasks "
+                                       "WHERE id=?", (task,)).fetchone()[0],
+                            0)
+                    finally:
+                        if child.poll() is None:
+                            child.terminate()
+                        try:
+                            child.wait(timeout=5)
+                        except subprocess.TimeoutExpired:
+                            child.kill()
+                            child.wait(timeout=3)
+
+            def test_native_refuses_signals_without_verified_local_pid(self):
+                # Actual live disposable OS child; NO signal is allowed for
+                # unverified/foreign/recycled identity. Never an LLM worker.
+                from hermes_cli import kanban_db_dispatch as dispatch
+                child = subprocess.Popen(
+                    [sys.executable, "-B", "-c", "import time; time.sleep(30)"],
+                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                sent = []
+                def forbid_signal(pid, sig):
+                    sent.append((pid, sig))
+                    self.fail("native signalled a non-verified child")
+                try:
+                    local_lock = k._host_prefix() + "synthetic-owner"
+                    # A bare, living PID is NOT permission to kill.
+                    unverified = dispatch._terminate_reclaimed_worker(
+                        child.pid, local_lock, signal_fn=forbid_signal,
+                        started_at=dispatch.UNVERIFIED_WORKER_FINGERPRINT)
+                    self.assertTrue(unverified["signal_refused"])
+                    self.assertFalse(unverified["termination_attempted"])
+                    self.assertFalse(unverified["terminated"])
+                    self.assertIsNone(child.poll())
+
+                    # Foreign host claims must not be interpreted as local.
+                    foreign = dispatch._terminate_reclaimed_worker(
+                        child.pid, "foreign-host:other", signal_fn=forbid_signal,
+                        started_at=None)
+                    self.assertFalse(foreign["host_local"])
+                    self.assertFalse(foreign["termination_attempted"])
+                    self.assertIsNone(child.poll())
+
+                    # Live PID with a fingerprint from a different process
+                    # instantiation must also be left untouched.
+                    fingerprint = dispatch._process_fingerprint(child.pid)
+                    self.assertIsNotNone(fingerprint)
+                    recycled = dispatch._terminate_reclaimed_worker(
+                        child.pid, local_lock, signal_fn=forbid_signal,
+                        started_at="different-instantiation|" + fingerprint)
+                    self.assertTrue(recycled["pid_recycled"])
+                    self.assertFalse(recycled["termination_attempted"])
+                    self.assertIsNone(child.poll())
+                    self.assertEqual(sent, [])
+                finally:
+                    if child.poll() is None:
+                        child.terminate()
+                    try:
+                        child.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        child.kill()
+                        child.wait(timeout=3)
+
+            def test_archive_signals_only_verified_local_sleeper(self):
+                # Actual local OS signal to an inert child in an ephemeral
+                # runner. No model, provider, real worker or resident service.
+                from hermes_cli import kanban_db_dispatch as dispatch
+                with c.connect_closing(self.path) as db:
+                    task = k.create_task(
+                        db, title="ephemeral OS child", workspace_kind="scratch")
+                    claimed = k.claim_task(db, task, ttl_seconds=120)
+                    self.assertIsNotNone(claimed)
+                    child = subprocess.Popen(
+                        [sys.executable, "-B", "-c", "import time; time.sleep(30)"],
+                        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    delivered = []
+                    try:
+                        self.assertTrue(dispatch.adopt_worker_pid(
+                            db, task, claimed.current_run_id, child.pid))
+                        row = db.execute(
+                            "SELECT worker_pid, worker_started_at "
+                            "FROM tasks WHERE id=?", (task,)
+                        ).fetchone()
+                        self.assertEqual(row["worker_pid"], child.pid)
+                        # A real process fingerprint, not only a PID.
+                        self.assertIn("|", row["worker_started_at"])
+
+                        def signal_only_known_child(pid, signum):
+                            self.assertEqual(pid, child.pid)
+                            delivered.append(signum)
+                            os.kill(pid, signum)
+
+                        self.assertTrue(k.archive_task(
+                            db, task, signal_fn=signal_only_known_child))
+                        child.wait(timeout=8)
+                        self.assertTrue(delivered)
+                        self.assertNotEqual(child.returncode, 0)
+                        self.assertEqual(k.get_task(db, task).status, "archived")
+                        self.assertIsNone(k.claim_task(
+                            db, task, ttl_seconds=120, claimer="other"))
+                    finally:
+                        if child.poll() is None:
+                            child.terminate()
+                        try:
+                            child.wait(timeout=5)
+                        except subprocess.TimeoutExpired:
+                            child.kill()
+                            child.wait(timeout=3)
+
             def test_archived_running_task_is_terminal(self):
                 # Terminal archive is not proof of OS worker termination.
                 with c.connect_closing(self.path) as db:
@@ -312,9 +464,97 @@ def run(source_dir: Path, deps_dir: Path | None = None) -> bool:
                     self.assertIn(db.execute("PRAGMA journal_mode").fetchone()[0],
                                   {"wal", "delete"})
 
+        class NativeDelegationToolsetsTests(unittest.TestCase):
+            """Execute the real pinned upstream resolver with inert parent objects.
+
+            Tests actual Python function bodies with no AIAgent/LLM dispatch.
+            Patching only configuration input prevents loading paid providers
+            and credentials. Results reveal admission hazards, not OS rights.
+            """
+
+            def parent(self, enabled=("web",), disabled=()):
+                return SimpleNamespace(
+                    enabled_toolsets=list(enabled),
+                    disabled_toolsets=list(disabled),
+                )
+
+            def test_explicit_child_request_cannot_add_non_parent_toolset(self):
+                with patch.object(dc, "_cfg", return_value={"inherit_mcp_toolsets": False}):
+                    enabled, disabled = dt._resolve_child_toolsets(
+                        self.parent(enabled=("web",)), ["terminal", "web"],
+                        "leaf")
+                self.assertEqual(enabled, ["web"])
+                self.assertNotIn("delegation", enabled)
+                self.assertIn("kanban", disabled)
+
+            def test_parent_disabled_toolset_passes_to_child(self):
+                with patch.object(dc, "_cfg", return_value={"inherit_mcp_toolsets": False}):
+                    enabled, disabled = dt._resolve_child_toolsets(
+                        self.parent(enabled=("web", "file"), disabled=("file",)),
+                        ["web"], "leaf")
+                self.assertEqual(enabled, ["web"])
+                self.assertIn("file", disabled)
+
+            def test_empty_explicit_toolsets_do_not_mean_no_tools(self):
+                parent = self.parent(enabled=("web", "terminal"))
+                with patch.object(dc, "_cfg", return_value={"inherit_mcp_toolsets": False}):
+                    unspecified, _ = dt._resolve_child_toolsets(parent, None, "leaf")
+                    empty, _ = dt._resolve_child_toolsets(parent, [], "leaf")
+                self.assertEqual(empty, unspecified)
+                self.assertEqual(set(empty), {"web", "terminal"})
+
+            def test_orchestrator_role_adds_delegation_outside_parent(self):
+                # Upstream role exception is NOT a safe child-rights assertion.
+                with patch.object(dc, "_cfg", return_value={"inherit_mcp_toolsets": False}):
+                    enabled, _ = dt._resolve_child_toolsets(
+                        self.parent(enabled=("web",)), ["web"], "orchestrator")
+                self.assertIn("delegation", enabled)
+
+            def test_default_config_inherits_parent_mcp_despite_narrow_request(self):
+                # Native config defaults to inheritance. Textual child scopes
+                # cannot be trusted to exclude MCP on their own.
+                with patch.object(dc, "_cfg", return_value={}):
+                    self.assertTrue(dc._get_inherit_mcp_toolsets())
+                    enabled, _ = dt._resolve_child_toolsets(
+                        self.parent(enabled=("web", "mcp-synthetic")),
+                        ["web"], "leaf")
+                self.assertEqual(enabled, ["web", "mcp-synthetic"])
+
+            def test_disabled_delegation_does_not_constrain_orchestrator(self):
+                # Caller-side authorization must reject privileged roles:
+                # native role handling intentionally clears this inherited deny.
+                with patch.object(dc, "_cfg", return_value={"inherit_mcp_toolsets": False}):
+                    enabled, disabled = dt._resolve_child_toolsets(
+                        self.parent(enabled=("web",), disabled=("delegation",)),
+                        ["web"], "orchestrator")
+                self.assertIn("delegation", enabled)
+                self.assertNotIn("delegation", disabled)
+
+            def test_disabled_mcp_inheritance_does_not_restrict_implicit_toolsets(self):
+                # A strict read-only pilot must pass a nonempty positive
+                # allowlist. False inheritance alone does NOT narrow the
+                # unspecific/empty-request branch, which copies parent tools.
+                parent = self.parent(enabled=("web", "mcp-synthetic"))
+                with patch.object(dc, "_cfg", return_value={"inherit_mcp_toolsets": False}):
+                    none_enabled, _ = dt._resolve_child_toolsets(parent, None, "leaf")
+                    empty_enabled, _ = dt._resolve_child_toolsets(parent, [], "leaf")
+                self.assertIn("mcp-synthetic", none_enabled)
+                self.assertIn("mcp-synthetic", empty_enabled)
+
+            def test_explicit_disabled_mcp_inheritance_is_narrow(self):
+                with patch.object(dc, "_cfg", return_value={"inherit_mcp_toolsets": False}):
+                    self.assertFalse(dc._get_inherit_mcp_toolsets())
+                    enabled, _ = dt._resolve_child_toolsets(
+                        self.parent(enabled=("web", "mcp-synthetic")),
+                        ["web"], "leaf")
+                self.assertEqual(enabled, ["web"])
+
         print("UPSTREAM_NATIVE_COMMIT_VERIFIED", UPSTREAM_COMMIT, flush=True)
         print("SQLITE_ENGINE", sqlite3.sqlite_version, flush=True)
-        suite = unittest.defaultTestLoader.loadTestsFromTestCase(NativeKanbanTests)
+        suite = unittest.TestSuite([
+            unittest.defaultTestLoader.loadTestsFromTestCase(NativeKanbanTests),
+            unittest.defaultTestLoader.loadTestsFromTestCase(NativeDelegationToolsetsTests),
+        ])
         result = unittest.TextTestRunner(verbosity=2).run(suite)
         return result.wasSuccessful()
 
