@@ -24,6 +24,7 @@ TOPICS = {
 }
 MAX_BYTES = 96 * 1024
 MAX_HITS = 12
+MIN_POINTS = 10
 
 
 class PublicSearchError(ValueError):
@@ -55,7 +56,7 @@ def _fetch(query: str, cutoff_epoch: int) -> bytes:
     args = urlencode({
         "query": query,
         "tags": "story",
-        "numericFilters": f"created_at_i>={cutoff_epoch}",
+        "numericFilters": f"created_at_i>={cutoff_epoch},points>=10",
         "hitsPerPage": MAX_HITS,
         "page": 0,
     })
@@ -113,7 +114,7 @@ def normalize_results(payload: bytes, *, now: datetime) -> list[dict]:
                 or int(identifier) <= 0 or not isinstance(title, str)
                 or not title.strip() or len(title) > 180
                 or any(ord(c) < 32 or ord(c) == 127 for c in title)
-                or type(points) is not int or not 0 <= points <= 100000
+                or type(points) is not int or not MIN_POINTS <= points <= 100000
                 or type(date) is not int or not 0 < date <= int(now.timestamp())):
             continue
         try:
@@ -147,6 +148,7 @@ def run(topic: str, *, now: datetime, transport=None) -> dict:
     digest["topic"] = topic
     digest["source"] = "HN_ALGOLIA_PUBLIC_SEARCH_NOT_AUTHORITATIVE"
     digest["search_limit"] = MAX_HITS
+    digest["minimum_points"] = MIN_POINTS
     digest["observed_count"] = len(records)
     digest["network_requests"] = 1 if transport is None else 0
     digest["completeness"] = "SAMPLE_ONLY_NOT_FULL_30_DAY_COVERAGE"
