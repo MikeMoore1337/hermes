@@ -65,11 +65,6 @@ function eligibleDevice(hub: DeviceHub, store: SqliteStore, owner: string) {
       || online.tools.some(t => !NAMES.includes(t.name as typeof NAMES[number]))) return null;
   return online.info.deviceId;
 }
-/** No native tools in other users' catalog or when the paired agent is offline. */
-export function listOwnerNativeReadTools(hub: DeviceHub, store: SqliteStore, owner: string) {
-  return eligibleDevice(hub, store, owner) ? NATIVE_TOOLS : [];
-}
-
 function validatedResult(value: unknown, a: {project: string; relative: string},
                          operation: 'read' | 'stat') {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
