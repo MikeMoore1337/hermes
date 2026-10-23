@@ -85,7 +85,15 @@ def decode_frame(raw: str | bytes) -> dict[str, Any]:
     if not isinstance(raw, (bytes, str)) or len(raw) > MAX_INCOMING:
         raise NativeTransportDenied("frame_size_invalid")
     try:
-        value = json.loads(raw)
+        def unique(items):
+            result = {}
+            for key, value in items:
+                if key in result:
+                    raise ValueError("duplicate_key")
+                result[key] = value
+            return result
+        value = json.loads(raw, object_pairs_hook=unique,
+                           parse_constant=lambda _: (_ for _ in ()).throw(ValueError("invalid_constant")))
     except (UnicodeError, ValueError, RecursionError) as exc:
         raise NativeTransportDenied("frame_json_invalid") from exc
     if not isinstance(value, dict) or type(value.get("type")) is not str:
