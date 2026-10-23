@@ -81,6 +81,29 @@ def _levels(rows: list[tuple[datetime, dict[str, float | None]]],
     return result
 
 
+
+def _polling_status(value: object, now: datetime) -> str:
+    """Only a fresh and provenance-bound getUpdates outcome is evidence."""
+    if not isinstance(value, dict) or set(value) != {
+        "schema", "source_host", "status", "observed_at", "evidence",
+    }:
+        return "unknown"
+    if value["schema"] != 1 or value["source_host"] != "yfc":
+        return "unknown"
+    status = value["status"]
+    event = value["evidence"]
+    if not ((status == "healthy" and event == "getupdates_success") or
+            (status == "unhealthy" and event in ("getupdates_error", "polling_conflict"))):
+        return "unknown"
+    try:
+        stamp = _date(value["observed_at"])
+    except (ValueError, TypeError, OverflowError):
+        return "unknown"
+    if -MAX_FUTURE <= now - stamp <= timedelta(seconds=120):
+        return status
+    return "unknown"
+
+
 def observe(directory: Path = ROOT, *, now: datetime | None = None) -> dict[str, Any]:
     """Return two bounded statuses; never expose raw CPU, paths, SSH or secrets."""
     at = now or datetime.now(UTC)
@@ -136,6 +159,10 @@ def observe(directory: Path = ROOT, *, now: datetime | None = None) -> dict[str,
             else:
                 levels = _levels(_history(directory, host, at), at)
                 result[host] = {"status": "online", "levels": levels}
+                if host == "yfc":
+                    polling = _polling_status(raw.get("polling_health"), at)
+                    if polling in ("healthy", "unhealthy"):
+                        result[host]["bot_polling"] = polling
         except (OSError, ValueError, UnicodeError, TypeError, sqlite3.Error,
                 OverflowError):
             # Invalid or inaccessible data must not erase a confirmed incident.

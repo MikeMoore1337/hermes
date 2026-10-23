@@ -161,11 +161,15 @@ def analyze(snapshot: Mapping[str, Any], *, now: datetime) -> list[dict[str, str
         worker = _state(yfc, "worker", status)
         # Docker Up не равно подтверждённому Telegram polling heartbeat.
         polling = _state(yfc, "bot_polling", status)
+        provenance = _state(yfc, "polling_provenance", frozenset({
+            "verified", "unverified", "unknown",
+        }))
         if backend == "unhealthy":
             found.append(_finding("backend_unhealthy", "critical"))
         if worker == "unhealthy":
             found.append(_finding("worker_unhealthy", "warning"))
-        if backend == "healthy" and polling == "unhealthy":
+        if polling == "unhealthy" and (backend == "healthy" or provenance == "verified"):
+            # A fresh attested getUpdates error is independent of backend health.
             found.append(_finding("telegram_polling_down", "critical"))
 
     if data.get("actions") is not None:
