@@ -7,7 +7,7 @@ import json
 import unittest
 
 from marketing.yandex_webmaster import (
-    WebmasterDenied, read_plan, normalize_export, INPUT_SCHEMA, HOST,
+    WebmasterDenied, read_plan, normalize_export, classify_http_status, INPUT_SCHEMA, HOST,
 )
 
 DAY = date(2026, 10, 23)
@@ -71,6 +71,8 @@ class YandexWebmasterOfflineTests(unittest.TestCase):
                             for x in p["requests"]))
         self.assertIn("order_by=TOTAL_SHOWS", p["requests"][2]["url"])
         self.assertIn("limit=50", p["requests"][2]["url"])
+        self.assertIn("query_indicator=TOTAL_CLICKS", p["requests"][2]["url"])
+        self.assertIn("query_indicator=AVG_SHOW_POSITION", p["requests"][3]["url"])
         self.assertNotIn("wordstat", json.dumps(p).lower())
         self.assertNotIn("recrawl", json.dumps(p).lower())
         self.assertNotIn("Bearer", json.dumps(p))
@@ -240,6 +242,63 @@ class YandexWebmasterOfflineTests(unittest.TestCase):
         sample["owner_attested"] = False
         r = normalize_export(sample, as_of=DAY)
         self.assertFalse(r["authorization_verified"])
+
+    def test_http_statuses_are_denials_not_zero_and_never_retry(self):
+        expected = {200: "RESPONSE_REQUIRES_VALIDATION",
+                    401: "AUTH_REQUIRED", 403: "ACCESS_DENIED",
+                    404: "HOST_NOT_VERIFIED_OR_UNAVAILABLE",
+                    429: "RATE_LIMITED", 500: "UPSTREAM_UNAVAILABLE",
+                    503: "UPSTREAM_UNAVAILABLE"}
+        for code, status in expected.items():
+            with self.subTest(code=code):
+                result = classify_http_status(code)
+                self.assertEqual(status, result["status"])
+                self.assertEqual(0, result["retries"])
+                self.assertFalse(result["fallback_paid"])
+                self.assertFalse(result["live_api_verified"])
+        for bad in (True, "429", None, -1, 999):
+            with self.assertRaises(WebmasterDenied):
+                classify_http_status(bad)
+
+    def test_h12_market_research_packet_reuses_existing_contract(self):
+        from marketing.seo_research import build_packet
+        source = normalize_export(fixture(), as_of=DAY)
+        selected = "восстановление после тренировки"
+        result = build_packet({
+            "schema": "hermes-h12-seo-offline-input-v1",
+            "theme": "market_research",
+            "selected_query": selected,
+            "as_of": "2026-10-23",
+            "research_item": None,
+            "site_gap": {
+                "site": "https://your-fitness-coach.ru",
+                "clusters": [{
+                    "cluster": selected, "phrases": [selected],
+                    "volume": None, "covered_by": None,
+                    "maybe_covered": False, "nearest": None,
+                }],
+            },
+            "observations": source["seo_research_observations"],
+        })
+        self.assertEqual(1, len(result["observations"]))
+        self.assertEqual("yandex_webmaster", result["observations"][0]["source"])
+        self.assertEqual("SYNTHETIC_ONLY", result["evidence_kind"])
+        self.assertFalse(result["publication_allowed"])
+        self.assertFalse(result["search_metrics_combined"])
+        self.assertFalse(result["live_api_used"])
+
+    def test_clicks_without_impressions_not_interpreted_as_zero_impressions(self):
+        sample = fixture()
+        sample["popular"]["queries"][0]["indicators"] = {"TOTAL_CLICKS": 5}
+        report = normalize_export(sample, as_of=DAY)
+        self.assertEqual([], report["seo_research_observations"])
+        self.assertEqual(1, report["popular_coverage"]["returned_rows"])
+
+    def test_huge_numeric_counter_fails_closed_without_overflow(self):
+        sample = fixture()
+        sample["popular"]["queries"][0]["indicators"]["TOTAL_SHOWS"] = 10**1000
+        with self.assertRaises(WebmasterDenied):
+            normalize_export(sample, as_of=DAY)
 
     def test_no_page_or_region_inference_and_no_wordstat_mixing(self):
         r = normalize_export(fixture(), as_of=DAY)
