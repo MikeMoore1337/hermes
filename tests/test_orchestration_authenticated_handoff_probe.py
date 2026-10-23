@@ -1,16 +1,23 @@
 """Test-only owner-like HMAC and handoff evidence checks for #474/#475."""
 import copy
 import hashlib
+import sqlite3
+import subprocess
+import sys
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import tempfile
 import unittest
 
 from scripts.orchestration_offline_checks import eligible_after_verified_evidence
 from scripts.orchestration_pre_call_reservation_probe import (
-    FIRST_ONLY, REPLAY_BLOCKED, initialize_temporary_fixture, read_record,
+    FIRST_ONLY, REPLAY_BLOCKED, InvalidFixture, initialize_temporary_fixture,
+    read_record, read_evidence_record,
 )
 from scripts.orchestration_authenticated_handoff_probe import (
-    AUDIENCE, Rejected, issue_synthetic_signature, reserve_with_synthetic_grant,
+    AUDIENCE, Rejected, accept_signed_evidence_once, issue_synthetic_signature,
+    reserve_with_synthetic_grant,
     verify_synthetic_evidence, verify_synthetic_grant,
 )
 
@@ -81,6 +88,118 @@ class SignedResearchContracts(unittest.TestCase):
             expected_run_id=21, now=1200, seen_receipts=set())
         values.update(kwargs)
         return verify_synthetic_evidence(**values)
+
+    def durable_evidence(self, receipt=None, signature=None,
+                         contents=b"verified synthetic payload", **kwargs):
+        r = signed_receipt(contents) if receipt is None else receipt
+        sig = signature if signature is not None else self.sign_receipt(r)
+        values = dict(
+            db_path=self.db, receipt=r, signature=sig, payload=contents,
+            test_evidence_key=EVIDENCE_TEST_KEY,
+            operation_key="stable-operation-1", revision=REV,
+            expected_producer="safety-review", expected_consumer="qa-review",
+            expected_run_id=21, now=1200)
+        values.update(kwargs)
+        return accept_signed_evidence_once(**values)
+
+    def test_durable_receipt_requires_matching_reserved_operation(self):
+        with self.assertRaisesRegex(InvalidFixture,
+                                    "missing_matching_reservation"):
+            self.durable_evidence()
+        self.assertIsNone(read_evidence_record(self.db, "evidence-21"))
+
+    def test_durable_receipt_accepted_once_even_after_reopen(self):
+        self.assertEqual(self.reserve(), FIRST_ONLY)
+        self.assertEqual(self.durable_evidence(), "safety-review")
+        record = read_evidence_record(self.db, "evidence-21")
+        self.assertEqual(record[0:2], ("evidence-21", "stable-operation-1"))
+        with self.assertRaisesRegex(Rejected, "receipt_replay_durable"):
+            self.durable_evidence()
+        self.assertEqual(read_evidence_record(self.db, "evidence-21"), record)
+
+    def test_second_signed_receipt_same_operation_rejected(self):
+        self.assertEqual(self.reserve(), FIRST_ONLY)
+        self.durable_evidence()
+        alternative = signed_receipt()
+        alternative["receipt_id"] = "another-evidence-id"
+        with self.assertRaisesRegex(Rejected, "receipt_replay_durable"):
+            self.durable_evidence(alternative)
+        self.assertIsNone(read_evidence_record(self.db, "another-evidence-id"))
+
+    def test_unauthenticated_receipt_leaves_no_durable_record(self):
+        self.assertEqual(self.reserve(), FIRST_ONLY)
+        valid = signed_receipt()
+        bad_sig = self.sign_receipt(valid)
+        valid["receipt_id"] = "tampered-receipt-id"
+        with self.assertRaisesRegex(Rejected, "signature_mismatch"):
+            self.durable_evidence(valid, bad_sig)
+        self.assertIsNone(read_evidence_record(self.db, "tampered-receipt-id"))
+        self.assertEqual(self.durable_evidence(), "safety-review")
+
+    def test_concurrent_durable_receipt_has_one_winner(self):
+        self.assertEqual(self.reserve(), FIRST_ONLY)
+        barrier = threading.Barrier(8)
+        def worker(_):
+            barrier.wait(timeout=8)
+            try:
+                return self.durable_evidence()
+            except Rejected as error:
+                return str(error)
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            results = list(pool.map(worker, range(8)))
+        self.assertEqual(results.count("safety-review"), 1)
+        self.assertEqual(results.count("receipt_replay_durable"), 7)
+        with sqlite3.connect(self.db) as db:
+            self.assertEqual(db.execute(
+                "SELECT COUNT(*) FROM synthetic_evidence_acceptances"
+            ).fetchone()[0], 1)
+
+    def test_evidence_crash_after_commit_blocks_second_process(self):
+        self.assertEqual(self.reserve(), FIRST_ONLY)
+        child_source = (
+            "import os,sys\n"
+            "from pathlib import Path\n"
+            "from scripts.orchestration_authenticated_handoff_probe import "
+            "accept_signed_evidence_once,issue_synthetic_signature\n"
+            "import hashlib\n"
+            "content=b'verified synthetic payload'\n"
+            "receipt=dict(version=1,audience='hermes-orchestration-research-v1',"
+            "operation_key='stable-operation-1',revision='a'*40,"
+            "producer='safety-review',consumer='qa-review',run_id=21,"
+            "receipt_id='evidence-21',sha256=hashlib.sha256(content).hexdigest(),"
+            "issued_at=1010,expires_at=1600)\n"
+            "key=b'evidence-test-key-independent-of-owner'*2\n"
+            "sign=issue_synthetic_signature(receipt,test_key=key)\n"
+            "assert accept_signed_evidence_once(Path(sys.argv[1]),"
+            "receipt,sign,content,test_evidence_key=key,"
+            "operation_key='stable-operation-1',revision='a'*40,"
+            "expected_producer='safety-review',expected_consumer='qa-review',"
+            "expected_run_id=21,now=1200)=='safety-review'\n"
+            "os._exit(29)\n"
+        )
+        completed = subprocess.run(
+            [sys.executable, "-B", "-c", child_source, str(self.db)],
+            cwd=str(Path(__file__).resolve().parents[1]),
+            capture_output=True, timeout=12, check=False,
+        )
+        self.assertEqual(completed.returncode, 29,
+                         completed.stderr.decode(errors="replace"))
+        self.assertIsNotNone(read_evidence_record(self.db, "evidence-21"))
+        with self.assertRaisesRegex(Rejected, "receipt_replay_durable"):
+            self.durable_evidence()
+
+    def test_expired_receipt_does_not_create_persistent_acceptance(self):
+        self.assertEqual(self.reserve(), FIRST_ONLY)
+        with self.assertRaisesRegex(Rejected, "time_invalid"):
+            self.durable_evidence(now=1600)
+        self.assertIsNone(read_evidence_record(self.db, "evidence-21"))
+
+    def test_durable_acceptance_fails_closed_without_ledger(self):
+        self.assertEqual(self.reserve(), FIRST_ONLY)
+        with sqlite3.connect(self.db) as db:
+            db.execute("DROP TABLE synthetic_evidence_acceptances")
+        with self.assertRaises(sqlite3.OperationalError):
+            self.durable_evidence()
 
     def test_signed_grant_reserves_once_only(self):
         self.assertEqual(self.reserve(), FIRST_ONLY)
