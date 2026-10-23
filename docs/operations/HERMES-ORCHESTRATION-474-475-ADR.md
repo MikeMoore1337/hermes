@@ -165,6 +165,25 @@ Seven independent **local fake Git fixture tests** under `tests/test_orchestrati
 
 **Residual provenance limits:** Git's ignored bytecode or arbitrary external `PYTHONPATH` modules, local interpreter, dependencies and Git remote are not cryptographically attested. Pinned Git SHA is not an image/provisioning supply-chain proof. The optional native probe still requires independent clean public upstream staging and a separately pinned local dependency source; this PR does **not** install or activate any LLM agents. The exact HEAD quality CI must be checked after adding these tests; do not promote an offline fixture to production assurance.
 
+## Native OS-local cancellation extension (#474/#475, 2026-10-22)
+
+A follow-up **separate** from merged PR #504 adds an opt-in pinned native Kanban probe scenario: create a temporary SQLite task, native `claim_task` with a host-local claim, start a short-lived *inert* Python sleeper, bind its actual process ID and restart-stable fingerprint via native `kanban_db_dispatch.adopt_worker_pid`, then archive the task with native `archive_task`. A test-controlled `signal_fn` refuses to send any signal to a PID other than this exact sleeper; the process is terminated and reaped in `finally` even on assertion failure. Assert verified fingerprint, an observed OS termination signal, child exit, terminal `archived` state and refusal to claim it again.
+
+This is an **actual ephemeral Linux OS process-termination experiment** when verified by the new pinned GitHub workflow, not an LLM-worker experiment. It never uses model/provider credentials, live user data, persistent services, or target project production. A successful test may establish only that native local archive signals its own verified disposable child with the chosen process fingerprint in that runner. It cannot prove cancellation of a real LLM request, provider billing cancellation, protection on Windows/macOS, lossless handoff, or multi-device production enforcement. Do not update status to PASS before inspecting the exact-head native CI log.
+
+
+### OS cancellation negative controls (separate PR #510)
+
+The new native probe also exercises **an actual living disposable Linux process** against upstream `kanban_db_dispatch._terminate_reclaimed_worker` in three *negative* situations: an `UNVERIFIED_WORKER_FINGERPRINT`, a claim-lock belonging to a foreign host, and a recycled/foreign process-start fingerprint. The injected signal callback is deliberately fail-on-use, and the child is verified alive after each refusal, then terminated in `finally` by the test itself. This checks a specific fail-closed boundary of the **pinned original upstream code**, not permissions to execute a model.
+
+**Important distinction:** refusal to signal an unverified live PID is a safety property against killing unrelated OS processes, **not** proof of successful user-requested cancellation. Such a live child may require manual containment; native archival alone does not prove it stopped or that external provider billing ceased. No claims about Windows/macOS, cross-device workers or zero-cost provider retries. The separate exact-head native CI must show all negative cases PASS before treating this as observed evidence.
+
+
+### Real local TTL expiry with a living fingerprinted child (#474/#475)
+
+The pinned native runner additionally creates and registers its own inert Linux sleeper using `claim_task` and `adopt_worker_pid`, then simulates an expired SQLite `claim_expires` **without killing the process**. The native `release_stale_claims` must keep the task `running`, extend the existing lease and refuse a second `claim_task`, because the original fingerprinted worker is still alive. In the complementary *no-worker* test, expired TTL does become retryable. Together those two cases distinguish **lease expiry from actual death** and reveal the native decision rule without invoking any LLM.
+
+The same runner exercises native signal refusal for unverified, foreign-host and wrong/recycled process identities. This is correct protection against killing someone else's process, but an unverified *live* task cannot be reported as successfully cancelled: an operator must reconcile the surviving child before any replacement. No case here attests genuine provider-side cancellation, costs, or production H-01. For CI, compare only an exact pinned upstream run; a green synthetic gate alone is insufficient.
 
 ## Durable single-attempt model-call boundary: offline feasibility experiment (#474/#475, 2026-10-23)
 

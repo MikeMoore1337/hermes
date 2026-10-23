@@ -83,6 +83,25 @@ Explicit approval is required for: new model/provider or potential charges, exte
 
 Read-only public-source research, local tests and documentation within an approved Issue are permitted. Do not interpret documentation as permission to install or deploy.
 
+## Original Windows project folders: owner permission (2026-10-23)
+
+**Mandatory for all assistants and clients:** the owner authorized reading only
+the four exact native roots named in
+[H-15 native Windows approval](docs/operations/h15-native-windows-approval.md).
+For **any** write, create, delete, rename, or command/process execution
+within the original Windows folders, first describe the concrete project,
+operation/path/command, purpose and effects, and obtain a **separate
+explicit approval**. Even a nominally read-only shell command requires
+approval for native Windows execution. No blanket approval or delegation to
+an MCP parameter; private Second Brain vault and parent workspace remain
+out of scope. Sandbox clones and original Windows folders are not the same.
+
+The read permission is an **owner decision, not an implemented host bridge**:
+existing Hermes BRC exposes sandbox worktrees. Do not claim native original
+folder reads until Windows OS-level access and negative tests are proven.
+Use the fail-closed native policy classification without treating it as an OS
+security boundary.
+
 ## Security
 
 Deny by default. Explicitly separate tool permissions, OS permissions, network egress, data scopes, secrets, execution time and resource budgets. Configuration text alone is not an enforced security boundary. Do not place tokens, account data, customer details, SSH endpoints or private vault materials in tracked files, logs or fixtures.

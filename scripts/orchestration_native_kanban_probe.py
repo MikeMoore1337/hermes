@@ -241,6 +241,151 @@ def run(source_dir: Path, deps_dir: Path | None = None) -> bool:
                         db, task, reason="synthetic duplicate"))
                     self.assertEqual(k.get_task(db, task).status, "ready")
 
+            def test_expired_claim_keeps_alive_verified_local_worker(self):
+                # Expired SQLite TTL is not permission to duplicate work when
+                # its fingerprinted local OS subprocess remains alive.
+                from hermes_cli import kanban_db_dispatch as dispatch
+                with c.connect_closing(self.path) as db:
+                    task = k.create_task(
+                        db, title="live-lease protection", workspace_kind="scratch")
+                    claimed = k.claim_task(db, task, ttl_seconds=120)
+                    self.assertIsNotNone(claimed)
+                    child = subprocess.Popen(
+                        [sys.executable, "-B", "-c", "import time; time.sleep(30)"],
+                        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    try:
+                        self.assertTrue(dispatch.adopt_worker_pid(
+                            db, task, claimed.current_run_id, child.pid))
+                        evidence = db.execute(
+                            "SELECT claim_lock, worker_started_at FROM tasks WHERE id=?",
+                            (task,)
+                        ).fetchone()
+                        self.assertTrue(evidence["claim_lock"].startswith(
+                            k._host_prefix()))
+                        self.assertIn("|", evidence["worker_started_at"])
+                        db.execute(
+                            "UPDATE tasks SET claim_expires=0 WHERE id=?", (task,))
+                        self.assertEqual(k.release_stale_claims(db), 0)
+                        after = k.get_task(db, task)
+                        self.assertEqual(after.status, "running")
+                        self.assertIsNone(k.claim_task(
+                            db, task, ttl_seconds=120, claimer="second-claimer"))
+                        self.assertIsNone(child.poll())
+                        self.assertGreater(
+                            db.execute("SELECT claim_expires FROM tasks "
+                                       "WHERE id=?", (task,)).fetchone()[0],
+                            0)
+                    finally:
+                        if child.poll() is None:
+                            child.terminate()
+                        try:
+                            child.wait(timeout=5)
+                        except subprocess.TimeoutExpired:
+                            child.kill()
+                            child.wait(timeout=3)
+
+            def test_native_refuses_signals_without_verified_local_pid(self):
+                # Actual live disposable OS child; NO signal is allowed for
+                # unverified/foreign/recycled identity. Never an LLM worker.
+                from hermes_cli import kanban_db_dispatch as dispatch
+                child = subprocess.Popen(
+                    [sys.executable, "-B", "-c", "import time; time.sleep(30)"],
+                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                sent = []
+                def forbid_signal(pid, sig):
+                    sent.append((pid, sig))
+                    self.fail("native signalled a non-verified child")
+                try:
+                    local_lock = k._host_prefix() + "synthetic-owner"
+                    # A bare, living PID is NOT permission to kill.
+                    unverified = dispatch._terminate_reclaimed_worker(
+                        child.pid, local_lock, signal_fn=forbid_signal,
+                        started_at=dispatch.UNVERIFIED_WORKER_FINGERPRINT)
+                    self.assertTrue(unverified["signal_refused"])
+                    self.assertFalse(unverified["termination_attempted"])
+                    self.assertFalse(unverified["terminated"])
+                    self.assertIsNone(child.poll())
+
+                    # Foreign host claims must not be interpreted as local.
+                    foreign = dispatch._terminate_reclaimed_worker(
+                        child.pid, "foreign-host:other", signal_fn=forbid_signal,
+                        started_at=None)
+                    self.assertFalse(foreign["host_local"])
+                    self.assertFalse(foreign["termination_attempted"])
+                    self.assertIsNone(child.poll())
+
+                    # Live PID with a fingerprint from a different process
+                    # instantiation must also be left untouched.
+                    fingerprint = dispatch._process_fingerprint(child.pid)
+                    self.assertIsNotNone(fingerprint)
+                    recycled = dispatch._terminate_reclaimed_worker(
+                        child.pid, local_lock, signal_fn=forbid_signal,
+                        started_at="different-instantiation|" + fingerprint)
+                    self.assertTrue(recycled["pid_recycled"])
+                    self.assertFalse(recycled["termination_attempted"])
+                    self.assertIsNone(child.poll())
+                    self.assertEqual(sent, [])
+                finally:
+                    if child.poll() is None:
+                        child.terminate()
+                    try:
+                        child.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        child.kill()
+                        child.wait(timeout=3)
+
+            def test_archive_signals_only_verified_local_sleeper(self):
+                # Actual local OS signal to an inert child in an ephemeral
+                # runner. No model, provider, real worker or resident service.
+                from hermes_cli import kanban_db_dispatch as dispatch
+                with c.connect_closing(self.path) as db:
+                    task = k.create_task(
+                        db, title="ephemeral OS child", workspace_kind="scratch")
+                    claimed = k.claim_task(db, task, ttl_seconds=120)
+                    self.assertIsNotNone(claimed)
+                    child = subprocess.Popen(
+                        [sys.executable, "-B", "-c", "import time; time.sleep(30)"],
+                        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    delivered = []
+                    try:
+                        self.assertTrue(dispatch.adopt_worker_pid(
+                            db, task, claimed.current_run_id, child.pid))
+                        row = db.execute(
+                            "SELECT worker_pid, worker_started_at "
+                            "FROM tasks WHERE id=?", (task,)
+                        ).fetchone()
+                        self.assertEqual(row["worker_pid"], child.pid)
+                        # A real process fingerprint, not only a PID.
+                        self.assertIn("|", row["worker_started_at"])
+
+                        def signal_only_known_child(pid, signum):
+                            self.assertEqual(pid, child.pid)
+                            delivered.append(signum)
+                            os.kill(pid, signum)
+
+                        self.assertTrue(k.archive_task(
+                            db, task, signal_fn=signal_only_known_child))
+                        child.wait(timeout=8)
+                        self.assertTrue(delivered)
+                        self.assertNotEqual(child.returncode, 0)
+                        self.assertEqual(k.get_task(db, task).status, "archived")
+                        self.assertIsNone(k.claim_task(
+                            db, task, ttl_seconds=120, claimer="other"))
+                    finally:
+                        if child.poll() is None:
+                            child.terminate()
+                        try:
+                            child.wait(timeout=5)
+                        except subprocess.TimeoutExpired:
+                            child.kill()
+                            child.wait(timeout=3)
+
             def test_archived_running_task_is_terminal(self):
                 # Terminal archive is not proof of OS worker termination.
                 with c.connect_closing(self.path) as db:
