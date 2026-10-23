@@ -125,6 +125,62 @@ class OutboundReadOnlyTests(unittest.TestCase):
             with self.subTest(url=url), self.assertRaises(outbound.NativeTransportDenied):
                 outbound.parse_settings(url, "h15-native-readonly-12345", "a"*48)
 
+    def test_tunneled_loopback_requires_explicit_mode_and_literal_ipv4(self):
+        url = "ws://127.0.0.1:38183/ws"
+        with self.assertRaises(outbound.NativeTransportDenied):
+            outbound.parse_settings(url, "h15-native-readonly-12345", "a"*48)
+        conf = outbound.parse_settings(
+            url, "h15-native-readonly-12345", "a"*48,
+            tunneled_loopback=True)
+        self.assertEqual(conf.websocket_url, url)
+        self.assertEqual(conf.device_id, "h15-native-readonly-12345")
+        with self.assertRaises(outbound.NativeTransportDenied):
+            outbound.parse_settings(
+                "wss://hermes.mikemoore.top/ws", "h15-native-readonly-12345",
+                "a"*48, tunneled_loopback=True)
+        with self.assertRaises(outbound.NativeTransportDenied):
+            outbound.parse_settings(
+                "ws://127.0.0.1:38183/ws", "bad-device-id", "bad",
+                tunneled_loopback=True)
+
+    def test_tunneled_loopback_rejects_network_and_url_tricks(self):
+        invalid = [
+            "ws://localhost:38183/ws", "ws://[::1]:38183/ws",
+            "ws://0.0.0.0:38183/ws", "ws://127.0.0.2:38183/ws",
+            "ws://127.0.0.1:80/ws", "ws://127.0.0.1:65536/ws",
+            "ws://127.0.0.1/ws", "ws://127.0.0.1:38183/",
+            "ws://127.0.0.1:38183/ws?token=x",
+            "ws://127.0.0.1:38183/ws#fragment",
+            "ws://user:secret@127.0.0.1:38183/ws",
+            "ws://127.0.0.1:038183/ws",
+            "ws://127.0.0.1:38183/ws\\n", "ws://127.0.0.1:38183/ws ",
+            "wss://127.0.0.1:38183/ws",
+            "https://127.0.0.1:38183/ws",
+            "ws://127.0.0.1:38183/ws/../ws",
+            "ws://127.0.0.1.evil.com:38183/ws",
+        ]
+        for url in invalid:
+            with self.subTest(url=url), self.assertRaises(outbound.NativeTransportDenied):
+                outbound.parse_settings(
+                    url, "h15-native-readonly-12345", "a"*48,
+                    tunneled_loopback=True)
+
+    def test_tunneled_loopback_socket_still_only_advertises_read(self):
+        cfg = outbound.parse_settings(
+            "ws://127.0.0.1:38183/ws", "h15-native-readonly-12345", "a"*48,
+            tunneled_loopback=True)
+        connector = FakeConnector([welcome(), call("id-1", name="start_process"),
+                                   call("id-2", name="native_file_stat")])
+        with patch.object(mcp.native, "handle_native_request",
+                          return_value=payload(operation="stat")) as reader:
+            self.assertEqual(outbound.run_session(cfg, connector), "idle_timeout")
+        reader.assert_called_once_with("hermes", "README.md", "stat")
+        self.assertEqual(connector.invocations[0][0], cfg.websocket_url)
+        self.assertIsNone(connector.invocations[0][1]["proxy"])
+        self.assertEqual([tool["name"] for tool in connector.ws.sent[0]["tools"]],
+                         ["native_file_stat", "native_file_read"])
+        self.assertEqual(len([x for x in connector.ws.sent if x["type"] == "result"]), 1)
+
     def test_refuses_bad_device_tokens_and_ids(self):
         for device, token in [
             ("", "a"*48), ("../../something", "a"*48),
