@@ -235,6 +235,14 @@ def _write_state(path: Path, data: dict[str, object]) -> None:
             os.fsync(stream.fileno())
         os.chmod(name, 0o600)
         os.replace(name, path)
+        # fsync(file) alone does not make the renamed reservation durable
+        # across sudden power loss. The journaled no-retry decision must be
+        # recoverable before model_once can launch a provider request.
+        dir_fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
     finally:
         if os.path.exists(name):
             os.unlink(name)
