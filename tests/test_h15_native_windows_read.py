@@ -148,7 +148,7 @@ class NativeWindowsReadTests(unittest.TestCase):
                 with patch.object(broker, "_winapi", return_value=mock):
                     with self.assertRaises(broker.NativeReadRefused):
                         broker.handle_native_request("hermes", "README.md", "read")
-                self.assertEqual(len(mock.closed), 2)
+                self.assertEqual(set(mock.closed), set(mock.handles))
 
     def test_maximum_read_bytes_enforced_even_when_file_grows(self):
         big = FakeWin32(data=b"z" * (broker.MAX_FILE_BYTES + 1))
@@ -156,6 +156,8 @@ class NativeWindowsReadTests(unittest.TestCase):
             with self.assertRaisesRegex(broker.NativeReadRefused, "too_large"):
                 broker.handle_native_request("hermes", "README.md", "read")
         growth = FakeWin32(data=b"x" * (broker.MAX_FILE_BYTES + 1))
+        growth.handles[2000] = "file"
+        growth.offsets[2000] = 0
         with patch.object(broker, "_winapi", return_value=growth):
             with self.assertRaises(broker.NativeReadRefused):
                 broker._read_file_handle(growth, 2000, initial_size=1)
