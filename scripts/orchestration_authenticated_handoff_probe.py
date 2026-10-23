@@ -18,10 +18,12 @@ IDENT = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}\Z")
 MAC = re.compile(r"[0-9a-f]{64}\Z")
 AUDIENCE = "hermes-orchestration-research-v1"
 ALLOWED_TOOLS = frozenset({"source_read", "evidence_read"})
+ALLOWED_SCOPES = frozenset({"source:hermes", "evidence:hermes"})
 
 GRANT_FIELDS = frozenset({
     "version", "audience", "operation_key", "revision", "approval_id",
-    "producer", "consumer", "allowed_tools", "issued_at", "expires_at",
+    "producer", "consumer", "device", "allowed_tools", "scopes",
+    "max_steps", "issued_at", "expires_at",
 })
 EVIDENCE_FIELDS = frozenset({
     "version", "audience", "operation_key", "revision", "producer",
@@ -90,7 +92,9 @@ def _verify_sig(payload: dict, signature: str, key: bytes):
 
 
 def verify_synthetic_grant(payload, signature, *, test_grant_key: bytes, now: int,
-                           requested_tools: tuple[str, ...]):
+                           requested_tools: tuple[str, ...],
+                           requested_scopes: tuple[str, ...],
+                           requested_device: str, requested_steps: int):
     _check_shared(payload, GRANT_FIELDS, now)
     if not _valid_ident(payload["approval_id"]):
         raise Rejected("approval_invalid")
@@ -104,6 +108,23 @@ def verify_synthetic_grant(payload, signature, *, test_grant_key: bytes, now: in
             or any(type(t) is not str for t in requested_tools)
             or not set(requested_tools) <= set(tools)):
         raise Rejected("requested_tool_escalation")
+    scopes = payload["scopes"]
+    if (type(scopes) is not list or not scopes
+            or any(type(scope) is not str for scope in scopes)
+            or len(scopes) != len(set(scopes))
+            or not set(scopes) <= ALLOWED_SCOPES):
+        raise Rejected("scopes_invalid")
+    if (type(requested_scopes) is not tuple or not requested_scopes
+            or any(type(scope) is not str for scope in requested_scopes)
+            or not set(requested_scopes) <= set(scopes)):
+        raise Rejected("requested_scope_escalation")
+    if (not _valid_ident(payload["device"])
+            or requested_device != payload["device"]):
+        raise Rejected("device_mismatch")
+    if (type(payload["max_steps"]) is not int or payload["max_steps"] < 1
+            or type(requested_steps) is not int
+            or not 1 <= requested_steps <= payload["max_steps"]):
+        raise Rejected("step_budget_escalation")
     _verify_sig(payload, signature, test_grant_key)
     return dict(payload)
 
@@ -111,11 +132,14 @@ def verify_synthetic_grant(payload, signature, *, test_grant_key: bytes, now: in
 def reserve_with_synthetic_grant(
     db_path: Path, grant: dict, signature: str, *, test_grant_key: bytes,
     now: int, requested_tools: tuple[str, ...],
+    requested_scopes: tuple[str, ...], requested_device: str,
+    requested_steps: int,
 ) -> str:
     """Verify an offline signed grant BEFORE the irreversible test-only insert."""
     verified = verify_synthetic_grant(
         grant, signature, test_grant_key=test_grant_key, now=now,
-        requested_tools=requested_tools)
+        requested_tools=requested_tools, requested_scopes=requested_scopes,
+        requested_device=requested_device, requested_steps=requested_steps)
     return reserve_once(
         db_path, operation_key=verified["operation_key"],
         revision=verified["revision"], approval_id=verified["approval_id"],
