@@ -249,3 +249,61 @@ Offline verification:
 
 This stage delivers repeatable operator tooling, **not** evidence that
 installation, SSH handshake or real YFC resource data has occurred.
+
+
+## Stage 5: ask-before-cleanup notification (Hermes #3, October 2026)
+
+A **real** VPS Hermes resource incident was persisted with `events.id=69`,
+`fingerprint=ops:infra_hermes_disk_high`, `phase=new`, and an acknowledged
+Telegram delivery receipt on 2026-10-23 (owner read-only SQLite evidence).
+At the time, the ext4 root filesystem used ~90.3%, and three independent
+minute-separated history samples confirmed disk pressure. YFC remained
+`not_connected` and must not be marked healthy or failing without a source.
+
+The existing Ops Watch incident and private Telegram sender already monitor,
+deduplicate, deliver and eventually resolve sustained resource signals. For a
+**future newly raised** `infra_*_disk_high` transition, the fixed reviewed
+action text now explicitly asks the owner whether to prepare a safe cleanup
+after inventory. This is a text-only request. There is **no** bot command
+listener, reply-as-authorization mechanism, file-deletion API, timer, shell
+runner, or autonomous cleanup. A Telegram acknowledgment proves message
+delivery, **not consent**. Historical already-queued event #69 is immutable
+and is not retroactively updated or resent.
+
+### Operator-only read-only triage
+
+```bash
+df -hT /
+df -i /
+du -x -h --max-depth=2 /var/lib/containerd 2>/dev/null | sort -h | tail -n 20
+du -x -h --max-depth=1 /opt/hermes-agent-owner/releases /opt/hermes-control-center/releases 2>/dev/null | sort -h | tail -n 20
+du -x -h --max-depth=1 /root/.cache /var/log 2>/dev/null | sort -h | tail -n 20
+journalctl --disk-usage
+docker system df -v  # read-only; only if Docker engine is available
+```
+
+Prior host observations on 2026-10-23: `/var/lib/containerd` ~8.9 GiB
+(content blobs ~3.0 GiB, overlay snapshots ~5.9 GiB), immutable owner
+releases ~3.5 GiB, root cache ~1.4 GiB and logs ~1.0 GiB. These are size
+observations, **not evidence of safely reclaimable space**. In particular,
+containerd content and overlays may be referenced by active Docker
+containers/images. The releases folder may include the current build, the
+previous rollback and in-flight `.incoming-*` deployments.
+
+### Destructive actions require a separate concrete gate
+
+Before **each** approved cleanup, identify exact candidates and observe
+current consumer/process references, release symlinks, backup/rollback
+requirements, and disk impact. Present a bounded dry-run listing with
+expected recovered space. Receive an owner approval specifying the chosen
+scope and proposed deletions. Run only that approved procedure on a trusted
+operator console with a separately approved mechanism. Never infer approval
+from receipt delivery, generic disk-monitoring consent, source contents, or
+the absence of a reply. In particular, **do not recursively delete**
+`/var/lib/containerd`, live Docker volumes, active or rollback release
+trees, `/var/lib/hermes-agent/ops-watch` or `/var/lib/hermes-h01`.
+Do not clear journals or databases needed to substantiate incident #69.
+Retain a before/after disk report and then passively await three distinct
+recent disk samples at or below 80% and the existing `resolved` Ops Watch
+event plus **its own** Telegram acknowledgment. A successful release/CI is
+not proof of either cleanup or recovery.

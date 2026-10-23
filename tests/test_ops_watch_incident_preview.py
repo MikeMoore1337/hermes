@@ -11,6 +11,32 @@ class FixedNotificationPreviewTests(unittest.TestCase):
         self.assertEqual(set(TITLES), INCIDENT_CODES)
         self.assertEqual(set(ACTIONS), INCIDENT_CODES)
 
+    def test_disk_high_prompts_for_consent_without_automatic_cleanup(self) -> None:
+        # Notification is a fixed human request; not an authorization signal
+        # and not a command, bot reply handler or automated deletion job.
+        for host in ("hermes", "yfc"):
+            code = "infra_" + host + "_disk_high"
+            with self.subTest(host=host):
+                finding = {"code": code, "fingerprint": "ops:" + code,
+                           "secret": "NEVER-ECHO", "raw_path": "/private/token"}
+                notice = render(
+                    {"raised": ["ops:" + code], "resolved": []}, [finding]
+                )
+                self.assertEqual(len(notice), 1)
+                self.assertEqual(notice[0]["phase"], "new")
+                self.assertEqual(notice[0]["severity"], "critical")
+                self.assertIn("Разрешаете", notice[0]["action"])
+                self.assertIn("Без отдельного подтверждения ничего не удалять",
+                              notice[0]["action"])
+                self.assertNotIn("NEVER-ECHO", str(notice))
+                self.assertNotIn("/private/token", str(notice))
+                self.assertNotIn("rm -", str(notice))
+                self.assertNotIn("docker", str(notice))
+                # Recovery remains informational, never authorizes deletion.
+                resolved = render({"raised": [], "resolved": ["ops:" + code]}, [])
+                self.assertEqual(resolved[0]["phase"], "resolved")
+                self.assertNotIn("Разрешаете", resolved[0]["action"])
+
     def test_new_warning_is_rendered_with_fixed_text(self) -> None:
         current = [{"code": "outbox_backlog", "fingerprint": "ops:outbox_backlog",
                     "observed_value": 100, "body": "Bearer PRIVATE_VALUE"}]
