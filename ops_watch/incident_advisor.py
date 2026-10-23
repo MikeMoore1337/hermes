@@ -78,6 +78,98 @@ PRIORITIES = frozenset({"critical", "high", "medium", "low"})
 STATUSES = frozenset({"active", "resolved", "insufficient_data"})
 UNCERTAINTIES = frozenset({"low", "medium", "high"})
 TOKEN = re.compile(r"[A-Za-z0-9_.:-]{1,64}\Z")
+REPEAT_WINDOW = re.compile(r"[1-9][0-9]{0,2}[smhd]\Z")
+# Closed vocabulary for model-facing event facts. New stable adapter signals
+# must be reviewed and explicitly added; token-shaped strings are not trusted.
+SAFE_COMPONENTS = frozenset({
+    "alert-sender",
+    "backend",
+    "codex-usage",
+    "desktop-commander",
+    "device-linux",
+    "device-windows",
+    "device-wss",
+    "github-actions",
+    "github-token",
+    "network-guard",
+    "news-discovery",
+    "news-timer",
+    "ops-monitor",
+    "ops-outbox",
+    "provider",
+    "telegram-polling",
+    "vps-hermes",
+    "vps-yfc",
+    "worker",
+    "hermes-discovery.timer",
+    "hermes-ops",
+    "hermes-ops-alerts",
+    "main-ci",
+    "news-pipeline",
+    "timer",
+    "unknown",
+    "workers-ai",
+})
+SAFE_ERROR_CODES = frozenset({
+    "ALERT_SENDER_DISABLED",
+    "ALERT_SENDER_INACTIVE",
+    "ALERT_SENDER_MISSING",
+    "BACKEND_UNHEALTHY",
+    "CI_FAILURE",
+    "CODEX_AUTH_REQUIRED",
+    "CODEX_QUOTA_EXHAUSTED",
+    "CODEX_QUOTA_LOW",
+    "CODEX_QUOTA_STALE",
+    "DC_AUTH_REQUIRED",
+    "DC_QUOTA_80",
+    "DC_QUOTA_95",
+    "DC_QUOTA_EXHAUSTED",
+    "DC_STALE",
+    "DEPLOY_FAILURE",
+    "DISCOVERY_STALLED",
+    "GH_QUOTA_80",
+    "GH_QUOTA_95",
+    "GH_QUOTA_AUTH",
+    "GH_QUOTA_EXHAUSTED",
+    "GH_QUOTA_STALE",
+    "GUARD_DISABLED",
+    "GUARD_INACTIVE",
+    "GUARD_MISSING",
+    "HERMES_CPU_HIGH",
+    "HERMES_DISK_HIGH",
+    "HERMES_METRICS_UNAVAILABLE",
+    "HERMES_RAM_HIGH",
+    "HTTP_429",
+    "LINUX_PRESENCE_OFFLINE",
+    "MULTIPLE_ACTIVE_CODES",
+    "NO_NEW_PUBLICATIONS",
+    "QUEUE_AGE_LIMIT",
+    "QUEUE_BACKLOG",
+    "QUEUE_DRAIN_FAILURE",
+    "RECOVERY_CONFIRMED",
+    "SNAPSHOT_STALE",
+    "SYSTEMD_RESULT_FAILED",
+    "SYSTEMD_TIMER_DISABLED",
+    "SYSTEMD_TIMER_INACTIVE",
+    "TELEGRAM_POLLING_DOWN",
+    "TELEGRAM_SEND_TIMEOUT",
+    "UNKNOWN",
+    "UNKNOWN_ERROR_CODE",
+    "WINDOWS_PRESENCE_OFFLINE",
+    "WORKER_UNHEALTHY",
+    "WSS_CERT_EXPIRED",
+    "WSS_CERT_EXPIRING",
+    "YFC_CPU_HIGH",
+    "YFC_DISK_HIGH",
+    "YFC_METRICS_UNAVAILABLE",
+    "YFC_RAM_HIGH",
+})
+SAFE_PROVIDER_CHECK = "Сверить окно ограничения без нового запроса."
+SAFE_PROVIDER_RECOMMENDATIONS = frozenset({
+    "Проверить состояние бесплатной квоты без нового запроса и передать оператору.",
+    "Проверить сигнал операционно; автоматических действий не делать.",
+})
+
 FORBIDDEN_OUTPUT = re.compile(
     r"(?:\b(?:shell|deploy|rollback|executed|published)\b|"
     r"перезапущ\w*|развернут\w*|опубликован\w*|отправлен\w*|"
@@ -171,8 +263,14 @@ def _metadata(value: Any) -> dict[str, object]:
         raise AdvisorInputError("invalid_technical_metadata")
     result: dict[str, object] = {}
     for key, item in value.items():
-        if key in {"component", "repeat_window"}:
-            result[key] = _token(item, key)
+        if key == "component":
+            if type(item) is not str or item not in SAFE_COMPONENTS:
+                raise AdvisorInputError("invalid_component")
+            result[key] = item
+        elif key == "repeat_window":
+            if type(item) is not str or not REPEAT_WINDOW.fullmatch(item):
+                raise AdvisorInputError("invalid_repeat_window")
+            result[key] = item
         elif key == "environment":
             result[key] = _choice(item, key, frozenset({"local", "synthetic", "test"}))
         elif key == "active_codes":
@@ -207,6 +305,8 @@ def prepare_context(event: Mapping[str, Any]) -> dict[str, object]:
     detected_at = _timestamp(event["detected_at"], "detected_at")
     service_state = _choice(event["service_state"], "service_state", SERVICE_STATES)
     error_code = _token(event["error_code"], "error_code")
+    if error_code not in SAFE_ERROR_CODES:
+        raise AdvisorInputError("invalid_error_code")
     repeat_count = event["repeat_count"]
     if type(repeat_count) is not int or not 0 <= repeat_count <= 1_000_000:
         raise AdvisorInputError("invalid_repeat_count")
@@ -215,6 +315,16 @@ def prepare_context(event: Mapping[str, Any]) -> dict[str, object]:
         raise AdvisorInputError("invalid_previous_similar")
     recovery_state = _choice(event["recovery_state"], "recovery_state", RECOVERY_STATES)
     metadata = _metadata(event["technical_metadata"])
+    active_codes = metadata.get("active_codes", [])
+    if recovery_state == "recovered":
+        if service_state != "healthy" or active_codes:
+            raise AdvisorInputError("inconsistent_recovery_state")
+    elif service_state == "healthy" and recovery_state == "active":
+        raise AdvisorInputError("inconsistent_recovery_state")
+    if incident_type == "healthy_no_publications" and (
+        service_state != "healthy" or recovery_state != "not_applicable" or active_codes
+    ):
+        raise AdvisorInputError("inconsistent_healthy_no_publications")
 
     incident = {
         "incident_type": incident_type,
@@ -377,6 +487,25 @@ def validate_result(raw: str | Mapping[str, Any], context: Mapping[str, object])
         raise AdvisorOutputError("impact_overstates_event")
     if any(UNSAFE_CHECK.search(check) for check in result["checks"]):
         raise AdvisorOutputError("unsafe_diagnostic_check")
+    # An unconstrained narrative is not evidence-bound: regex-only filters
+    # cannot prove that invented logs, causes or actions are true.
+    # Accept only context-derived statements. Unknown prose fails closed.
+    expected = mock_result(context)
+    for field in ("what_happened", "impact"):
+        if result[field] != expected[field]:
+            raise AdvisorOutputError("unsupported_output_claim")
+    if result["probable_cause"]["summary"] != expected["probable_cause"]["summary"]:
+        raise AdvisorOutputError("unsupported_output_claim")
+    safe_checks = set(expected["checks"])
+    if incident["incident_type"] == "provider_rate_limited":
+        safe_checks.add(SAFE_PROVIDER_CHECK)
+    if not set(result["checks"]).issubset(safe_checks):
+        raise AdvisorOutputError("unapproved_diagnostic_check")
+    recommendations = {expected["recommendation"]}
+    if incident["incident_type"] == "provider_rate_limited":
+        recommendations.update(SAFE_PROVIDER_RECOMMENDATIONS)
+    if result["recommendation"] not in recommendations:
+        raise AdvisorOutputError("unapproved_recommendation")
     return result
 
 
@@ -442,6 +571,9 @@ def mock_result(context: Mapping[str, object]) -> dict[str, object]:
     elif error_code == "TELEGRAM_SEND_TIMEOUT":
         cause = "Вероятен таймаут транспорта отправителя; точная причина сетью или Telegram не доказана."
         uncertainty = "medium"
+    elif incident_type == "healthy_no_publications":
+        cause = "Новых публикаций нет; исправность служб указана во входных фактах, сбой не подтверждён."
+        uncertainty = "high"
     elif error_code == "SYSTEMD_RESULT_FAILED":
         cause = "Вероятен сбой запуска таймера systemd; причина в событии не раскрыта."
         uncertainty = "high"
