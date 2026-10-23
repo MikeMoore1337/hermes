@@ -339,6 +339,13 @@ def once(source: Path = SOURCE, target: Path = TARGET, observed: datetime | None
         if infrastructure_dir is not None:
             snapshot["infrastructure"] = infrastructure_observe(
                 directory=infrastructure_dir, now=now)
+            # Attested getUpdates evidence only; VPS online != backend/polling healthy.
+            polling = snapshot["infrastructure"]["yfc"].get("bot_polling")
+            if polling in ("healthy", "unhealthy"):
+                snapshot["yfc"] = {
+                    "backend": "unknown", "worker": "unknown",
+                    "bot_polling": polling, "polling_provenance": "verified",
+                }
         if quota_paths is not None:
             snapshot["quota_signals"] = quota_observe(now=now, paths=quota_paths)
         if device_fabric_db is not None and device_fabric_opt_in is not None:
@@ -393,6 +400,20 @@ def once(source: Path = SOURCE, target: Path = TARGET, observed: datetime | None
                                          "_unavailable", "_disk_high")) else "warning",
                                      "fingerprint": item["fingerprint"]})
                     active_codes.add(item["code"])
+        # Losing the proof is not recovery. Keep a previously verified outage
+        # active until a fresh, independently verified successful getUpdates.
+        yfc = snapshot.get("yfc")
+        verified_recovered = (isinstance(yfc, dict) and
+                              yfc.get("polling_provenance") == "verified" and
+                              yfc.get("bot_polling") == "healthy")
+        if not verified_recovered and not any(
+                f["code"] == "telegram_polling_down" for f in findings):
+            for item in previous:
+                if item["code"] == "telegram_polling_down":
+                    findings.append({"code": "telegram_polling_down",
+                                     "severity": "critical",
+                                     "fingerprint": "ops:telegram_polling_down"})
+                    break
         # Missing/untrusted snapshots never prove recovery of a previously
         # confirmed quota incident, including authorization and stale-source
         # incidents. Only an explicit new provider state may resolve one.
