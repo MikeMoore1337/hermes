@@ -21,6 +21,7 @@ OUTPUT_SCHEMA = "hermes-h24-yandex-webmaster-offline-report-v1"
 MAX_QUERY_ROWS = 50
 MAX_DAYS = 32
 MAX_SITEMAPS = 20
+MAX_INPUT_BYTES = 65536
 DEVICES = frozenset({"ALL", "DESKTOP", "MOBILE_AND_TABLET", "MOBILE", "TABLET"})
 INDICATORS = {
     "TOTAL_SHOWS": "impressions",
@@ -51,7 +52,7 @@ def _count(value: Any) -> int:
     # Yandex sometimes serializes counters as JSON double or decimal text.
     if type(value) is str and re.fullmatch(r"0|[1-9][0-9]{0,9}", value):
         value = int(value)
-    if type(value) in (int, float) and math.isfinite(value) and 0 <= value <= 2_147_483_647 and float(value).is_integer():
+    if type(value) in (int, float) and 0 <= value <= 2_147_483_647 and math.isfinite(value) and float(value).is_integer():
         return int(value)
     raise WebmasterDenied("counter_invalid")
 
@@ -159,7 +160,7 @@ def _popular(source: Any, *, start: date, end: date) -> tuple[list[dict[str, Any
                  "truncated": count > len(rows)}
 
 
-def _sitemaps(source: Any) -> list[dict[str, Any]]:
+def _sitemaps(source: Any, *, as_of: date) -> list[dict[str, Any]]:
     if type(source) is not dict or set(source) != {"sitemaps"} or type(source["sitemaps"]) is not list or len(source["sitemaps"]) > MAX_SITEMAPS:
         raise WebmasterDenied("sitemaps_invalid")
     result, seen = [], set()
@@ -171,11 +172,24 @@ def _sitemaps(source: Any) -> list[dict[str, Any]]:
         uri = row["sitemap_url"]
         if type(uri) is not str or len(uri) > 300:
             raise WebmasterDenied("sitemap_row_invalid")
-        address = urlsplit(uri)
-        if (address.scheme != "https" or address.hostname != "your-fitness-coach.ru"
-                or address.username is not None or address.password is not None
-                or address.port not in (None, 443) or address.query or address.fragment):
-            raise WebmasterDenied("sitemap_url_invalid")
+        try:
+            address = urlsplit(uri)
+            if (address.scheme != "https" or address.hostname != "your-fitness-coach.ru"
+                    or address.username is not None or address.password is not None
+                    or address.port not in (None, 443) or address.query or address.fragment):
+                raise WebmasterDenied("sitemap_url_invalid")
+        except ValueError:
+            raise WebmasterDenied("sitemap_url_invalid") from None
+        accessed = row["last_access_date"]
+        if accessed is not None:
+            if type(accessed) is not str or len(accessed) > 40:
+                raise WebmasterDenied("sitemap_date_invalid")
+            try:
+                stamp = datetime.fromisoformat(accessed.replace(",", "."))
+            except ValueError:
+                raise WebmasterDenied("sitemap_date_invalid") from None
+            if stamp.tzinfo is None or stamp.date() > as_of:
+                raise WebmasterDenied("sitemap_date_invalid")
         sid = row["sitemap_id"]
         if type(sid) is not str or not re.fullmatch(r"[A-Za-z0-9:_-]{1,80}", sid) or sid in seen:
             raise WebmasterDenied("sitemap_row_invalid")
@@ -185,6 +199,7 @@ def _sitemaps(source: Any) -> list[dict[str, Any]]:
                 or type(row["sitemap_type"]) is not str or row["sitemap_type"] not in {"SITEMAP", "INDEX_SITEMAP"}):
             raise WebmasterDenied("sitemap_row_invalid")
         result.append({"sitemap_id": sid, "url": uri,
+                       "last_access_date": str(stamp.date()) if accessed is not None else None,
                        "errors": _count(row["errors_count"]),
                        "urls": _count(row["urls_count"]),
                        "children": _count(row["children_count"]),
@@ -214,16 +229,12 @@ def normalize_export(payload: Any, *, as_of: date) -> dict[str, Any]:
         raise WebmasterDenied("export_period_invalid")
     source = payload["popular"]
     parsed, coverage = _popular(source, start=start, end=end) if source is not None else ([], None)
-    try:
-        digest = hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode("utf-8")).hexdigest()
-    except (TypeError, ValueError, UnicodeError):
-        raise WebmasterDenied("export_hash_invalid") from None
     observations = []
     for item in parsed:
         metrics = {key: val for key, val in item["metrics"].items()
                    if key in {"impressions", "clicks", "ctr", "average_position"}}
-        if not metrics:
-            continue  # Click-only average position is not #64's search-impression evidence.
+        if not metrics or ("clicks" in metrics and "impressions" not in metrics):
+            continue  # Never treat missing impressions as zero in existing #64.
         row = {"source": "yandex_webmaster", "source_type": kind,
                "observed_at": str(observed),
                "period_start": coverage["period_start"],
@@ -232,17 +243,28 @@ def normalize_export(payload: Any, *, as_of: date) -> dict[str, Any]:
                "limitations": "Yandex Webmaster popular query export, capped 50 rows; not full site demand, no page/region dimension",
                **metrics}
         if kind == "owner_export":
-            row.update({"evidence_sha256": digest, "owner_attested": attested})
+            row["owner_attested"] = attested
         observations.append(row)
-    try:
-        normalized = normalize_observations(observations, as_of=as_of)
-    except SeoResearchDenied:
-        raise WebmasterDenied("seo_packet_denied") from None
     general = (_series(payload["all_history"], allowed=frozenset(INDICATORS), as_of=as_of)
                if payload["all_history"] is not None else None)
     indexing = (_series(payload["index_history"], allowed=HTTP_CODES, as_of=as_of)
                 if payload["index_history"] is not None else None)
-    sitemaps = _sitemaps(payload["sitemaps"]) if payload["sitemaps"] is not None else None
+    sitemaps = _sitemaps(payload["sitemaps"], as_of=as_of) if payload["sitemaps"] is not None else None
+    try:
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"),
+                             ensure_ascii=False, allow_nan=False).encode("utf-8")
+    except (TypeError, ValueError, UnicodeError):
+        raise WebmasterDenied("export_hash_invalid") from None
+    if len(encoded) > MAX_INPUT_BYTES:
+        raise WebmasterDenied("export_size_limit")
+    digest = hashlib.sha256(encoded).hexdigest()
+    for row in observations:
+        if kind == "owner_export":
+            row["evidence_sha256"] = digest
+    try:
+        normalized = normalize_observations(observations, as_of=as_of)
+    except SeoResearchDenied:
+        raise WebmasterDenied("seo_packet_denied") from None
     return {
         "schema": OUTPUT_SCHEMA, "status": "OFFLINE_SOURCE_NOT_PROVIDER_VERIFIED",
         "source": "yandex_webmaster", "source_type": kind,
