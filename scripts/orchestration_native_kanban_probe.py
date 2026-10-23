@@ -16,7 +16,9 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 UPSTREAM_COMMIT = "d923a5eb487a17c0a68801bba9ef0f56c81040a8"
 PINNED_BLOBS = {
@@ -76,6 +78,8 @@ def run(source_dir: Path, deps_dir: Path | None = None) -> bool:
         os.environ["HERMES_KANBAN_DB"] = str(Path(workspace) / "root.sqlite")
         from hermes_cli import kanban_db as k
         from hermes_cli import kanban_db_connect as c
+        from tools import delegate_tool_toolsets as dt
+        from tools import delegate_tool_config as dc
 
         class NativeKanbanTests(unittest.TestCase):
             def setUp(self):
@@ -460,9 +464,73 @@ def run(source_dir: Path, deps_dir: Path | None = None) -> bool:
                     self.assertIn(db.execute("PRAGMA journal_mode").fetchone()[0],
                                   {"wal", "delete"})
 
+        class NativeDelegationToolsetsTests(unittest.TestCase):
+            """Execute the real pinned upstream resolver with inert parent objects.
+
+            Tests actual Python function bodies with no AIAgent/LLM dispatch.
+            Patching only configuration input prevents loading paid providers
+            and credentials. Results reveal admission hazards, not OS rights.
+            """
+
+            def parent(self, enabled=("web",), disabled=()):
+                return SimpleNamespace(
+                    enabled_toolsets=list(enabled),
+                    disabled_toolsets=list(disabled),
+                )
+
+            def test_explicit_child_request_cannot_add_non_parent_toolset(self):
+                with patch.object(dc, "_cfg", return_value={"inherit_mcp_toolsets": False}):
+                    enabled, disabled = dt._resolve_child_toolsets(
+                        self.parent(enabled=("web",)), ["terminal", "web"],
+                        "leaf")
+                self.assertEqual(enabled, ["web"])
+                self.assertNotIn("delegation", enabled)
+                self.assertIn("kanban", disabled)
+
+            def test_parent_disabled_toolset_passes_to_child(self):
+                with patch.object(dc, "_cfg", return_value={"inherit_mcp_toolsets": False}):
+                    enabled, disabled = dt._resolve_child_toolsets(
+                        self.parent(enabled=("web", "file"), disabled=("file",)),
+                        ["web"], "leaf")
+                self.assertEqual(enabled, ["web"])
+                self.assertIn("file", disabled)
+
+            def test_empty_explicit_toolsets_do_not_mean_no_tools(self):
+                parent = self.parent(enabled=("web", "terminal"))
+                with patch.object(dc, "_cfg", return_value={"inherit_mcp_toolsets": False}):
+                    unspecified, _ = dt._resolve_child_toolsets(parent, None, "leaf")
+                    empty, _ = dt._resolve_child_toolsets(parent, [], "leaf")
+                self.assertEqual(empty, unspecified)
+                self.assertEqual(set(empty), {"web", "terminal"})
+
+            def test_orchestrator_role_adds_delegation_outside_parent(self):
+                # Upstream role exception is NOT a safe child-rights assertion.
+                with patch.object(dc, "_cfg", return_value={"inherit_mcp_toolsets": False}):
+                    enabled, _ = dt._resolve_child_toolsets(
+                        self.parent(enabled=("web",)), ["web"], "orchestrator")
+                self.assertIn("delegation", enabled)
+
+            def test_default_config_inherits_parent_mcp_despite_narrow_request(self):
+                # Native config defaults to inheritance. Textual child scopes
+                # cannot be trusted to exclude MCP on their own.
+                with patch.object(dc, "_cfg", return_value={}):
+                    self.assertTrue(dc._get_inherit_mcp_toolsets())
+                    enabled, _ = dt._resolve_child_toolsets(
+                        self.parent(enabled=("web", "mcp-synthetic")),
+                        ["web"], "leaf")
+                self.assertEqual(enabled, ["web", "mcp-synthetic"])
+
+            def test_explicit_disabled_mcp_inheritance_is_narrow(self):
+                with patch.object(dc, "_cfg", return_value={"inherit_mcp_toolsets": False}):
+                    self.assertFalse(dc._get_inherit_mcp_toolsets())
+                    enabled, _ = dt._resolve_child_toolsets(
+                        self.parent(enabled=("web", "mcp-synthetic")),
+                        ["web"], "leaf")
+                self.assertEqual(enabled, ["web"])
+
         print("UPSTREAM_NATIVE_COMMIT_VERIFIED", UPSTREAM_COMMIT, flush=True)
         print("SQLITE_ENGINE", sqlite3.sqlite_version, flush=True)
-        suite = unittest.defaultTestLoader.loadTestsFromTestCase(NativeKanbanTests)
+        suite = unittest.TestSuite([\n            unittest.defaultTestLoader.loadTestsFromTestCase(NativeKanbanTests),\n            unittest.defaultTestLoader.loadTestsFromTestCase(NativeDelegationToolsetsTests),\n        ])
         result = unittest.TextTestRunner(verbosity=2).run(suite)
         return result.wasSuccessful()
 
