@@ -244,18 +244,40 @@ Security-relevant **observed native semantics**, not proof of exploitation:
 - Even with `inherit_mcp_toolsets=false`, an omitted/empty child request
   copies inherited parent MCP capabilities. Therefore, that setting alone
   is insufficient to enforce a read-only child.
-- Native effective role `orchestrator` unconditionally appends the
-  `delegation` toolset, even when its parent only offers `web`, and it
-  removes an inherited `delegation` disabled marker. Such a role **must not**
-  be admitted solely from untrusted task input.
+- Native effective role `orchestrator` unconditionally appends
+  `delegation`, even when the parent offers only `web`, and clears the
+  inherited `delegation` deny. Critically, `_build_child_agent` derives
+  this role from trusted `delegation.orchestrator_enabled` and
+  `delegation.max_spawn_depth` plus actual child depth; the task's `role`
+  argument is **legacy/ignored for capabilities**. Default spawn depth 1
+  produces leaf children; a larger depth with orchestration enabled can
+  grant further delegation. Do not use a model-supplied `role=leaf` as
+  evidence of a leaf security boundary.
+- The production-facing upstream `delegate_task` path calls
+  `_build_children`, which unconditionally passes `toolsets=None` into
+  `_build_child_preserving_parent_tools`. As a result, tests proving
+  `_resolve_child_toolsets(..., ["web"], "leaf")` can narrow permissions
+  **do not demonstrate that the public native delegation path supplies this
+  nonempty request**. Setting `inherit_mcp_toolsets=false` does not
+  narrow the implicit `None` branch.
 
-**Pilot admission decision: NO_GO** for live Hermes subagents until a
-trusted external gate establishes a *nonempty explicit positive allowlist*,
-`inherit_mcp_toolsets=false`, `role=leaf`, native toolset/tool-name
-verification, parent-child permission subset (including OS/filesystem and
-network), and authenticated provenance/evidence. A policy document or synthetic
-HMAC is not the external enforcement. Without a verified native admission
-point, stop rather than build a second dispatcher or infer implicit scopes.
+**Pilot admission decision: NO_GO** for native live Hermes subagents
+until a separately enforced, narrowly scoped **parent tool/OS/MCP/network
+capability envelope** is verified, or a reviewed trusted native adapter can
+pass and enforce an explicit nonempty child allowlist. Verify
+`orchestrator_enabled=false`, `max_spawn_depth=1`, the child effective
+role, resolved tool names, OS permissions, actual independent identities,
+provider usage and evidence provenance. Neither model-supplied
+`role=leaf`, `toolsets=[]`, nor `inherit_mcp_toolsets=false` alone
+provides this guarantee. An ADR, an unverified external wrapper or synthetic
+HMAC cannot authorize any live model call. No second dispatcher/queue should
+be created to bypass these checks.
+
+**Evidence classification:** the observed `delegate_task` parameter flow
+and ignored `role` are **PINNED_SOURCE_REVIEW**, while effective toolset
+resolution and configuration defaults are **NATIVE_OFFLINE_TEST**. The full
+real `AIAgent` child construction, OS-enforced rights, provider and MCP
+calls are **NOT_RUN / NOT_VERIFIED**.
 
 The source-level native test is independent of real delegated AI execution:
 `NATIVE_TOOLSET_RESOLVER_TESTED=YES`, `EFFECTIVE_OS_RIGHTS=NOT_VERIFIED`,
