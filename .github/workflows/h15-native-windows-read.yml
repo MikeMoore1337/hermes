@@ -51,6 +51,9 @@ jobs:
               throw 'IDENTITY_SCRIPT_UNAUTHORIZED_GENERATE_NOT_DENIED'
           }
           Write-Output 'H454_NATIVE_WINDOWS_SSH_OPERATOR_DENY=PASS'
+          # A deliberately rejected subprocess exits 2. Reset the parent
+          # runner's LASTEXITCODE only after asserting that exact denial.
+          $global:LASTEXITCODE = 0
       - name: Run actual Windows CreateFile / handle E2E on synthetic runner files
         shell: pwsh
         run: |
