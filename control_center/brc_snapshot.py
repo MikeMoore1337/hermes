@@ -6,6 +6,8 @@ proof of command execution. Never expose raw device IDs or vendor secrets.
 from __future__ import annotations
 
 import datetime as dt
+import json
+from pathlib import Path
 import re
 
 SCHEMA = 1
@@ -111,3 +113,77 @@ def normalize(devices: object, catalog: object, *, now_ms: int) -> dict:
             "status": status, "execution_verified": False,
             "onboarding_enabled": False, "native_host_access": False,
             "devices": output, "workspaces": result}
+
+
+# Optional sanitized snapshot produced only by a separately authorized collector.
+# No raw device credentials, OAuth tokens, host paths, or MCP commands may be read.
+DEFAULT_OUTPUT = Path("/var/lib/hermes-brc-observer/status.json")
+MAX_SNAPSHOT_BYTES = 16384
+
+def read_snapshot(path: Path = DEFAULT_OUTPUT, *, now: dt.datetime | None = None) -> dict:
+    """Read an owner-authenticated collector's already sanitized public snapshot.
+
+    Missing, stale, foreign or overbroad files fail closed. This is a
+    metadata reader only; it does not start a collector or authorize tools.
+    """
+    path = Path(path)
+    try:
+        if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_SNAPSHOT_BYTES:
+            _reject("snapshot_unavailable")
+        raw = path.read_bytes()
+        if len(raw) > MAX_SNAPSHOT_BYTES:
+            _reject("snapshot_oversize")
+        value = json.loads(raw)
+    except (OSError, ValueError, UnicodeError) as exc:
+        raise SnapshotRejected("snapshot_unavailable") from exc
+    fields = {"schema", "source", "observed_at", "status", "execution_verified",
+              "native_host_access", "onboarding_enabled", "devices", "workspaces"}
+    if (not isinstance(value, dict) or set(value) != fields
+        or type(value["schema"]) is not int or value["schema"] != SCHEMA
+        or value["source"] != SOURCE
+        or any(value[k] is not False for k in
+               ("execution_verified", "native_host_access", "onboarding_enabled"))):
+        _reject("invalid_snapshot_schema")
+    time_text = value["observed_at"]
+    if not isinstance(time_text, str) or not 19 <= len(time_text) <= 35:
+        _reject("invalid_observation_time")
+    try:
+        when = dt.datetime.fromisoformat(time_text.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise SnapshotRejected("invalid_observation_time") from exc
+    if when.tzinfo is None:
+        _reject("invalid_observation_timezone")
+    now_utc = (now or dt.datetime.now(dt.timezone.utc)).astimezone(dt.timezone.utc)
+    delta = (now_utc - when.astimezone(dt.timezone.utc)).total_seconds()
+    if delta > STALE_AFTER_MS / 1000 or delta < -(CLOCK_SKEW_MS / 1000):
+        _reject("snapshot_stale_or_future")
+    records = value["devices"]
+    if not isinstance(records, list) or len(records) != len(DEVICES):
+        _reject("invalid_snapshot_devices")
+    for i, d in enumerate(records):
+        if (not isinstance(d, dict)
+            or set(d) != {"name", "status", "last_seen_age_seconds", "command_execution"}
+            or d["name"] != DEVICES[i]
+            or d["status"] not in ("online", "offline", "paused", "stale")
+            or type(d["last_seen_age_seconds"]) is not int
+            or not 0 <= d["last_seen_age_seconds"] <= 86400
+            or d["command_execution"] != "not_verified"):
+            _reject("invalid_snapshot_device")
+    online = sum(d["status"] == "online" for d in records)
+    aggregate = "online" if online == len(DEVICES) else "partial" if online else "unavailable"
+    if value["status"] != aggregate:
+        _reject("snapshot_inconsistent_status")
+    projects = value["workspaces"]
+    if not isinstance(projects, list) or len(projects) != len(PROJECTS):
+        _reject("invalid_snapshot_workspaces")
+    ready = records[0]["status"] == "online"
+    for entry, (name, branch) in zip(projects, PROJECTS.items()):
+        if (not isinstance(entry, dict)
+            or set(entry) != {"name", "root", "branch", "git_verified", "state"}
+            or entry["name"] != name
+            or entry["root"] != "/workspace/projects/" + name
+            or entry["branch"] != branch
+            or entry["git_verified"] is not False
+            or entry["state"] != ("reachable_not_git_verified" if ready else "not_ready")):
+            _reject("invalid_snapshot_workspace")
+    return value
