@@ -39,6 +39,7 @@ class PublicHNProbeTests(unittest.TestCase):
         self.assertEqual(1, len(count))
         self.assertEqual("AI agents", count[0][0])
         self.assertEqual(2, result["observed_count"])
+        self.assertEqual(10, result["minimum_points"])
         self.assertEqual(0, result["network_requests"])
         self.assertEqual("SAMPLE_ONLY_NOT_FULL_30_DAY_COVERAGE", result["completeness"])
         self.assertEqual(["124", "123"],
@@ -63,6 +64,7 @@ class PublicHNProbeTests(unittest.TestCase):
             story("yes"),
             story("999", title="evil\ncommand"),
             story("100", points=True),
+            story("105", points=9),
             story("101", points=-8),
             story("102", created_at_i=int((NOW + timedelta(days=1)).timestamp())),
             story("103", created_at_i=int((NOW - timedelta(days=31)).timestamp())),
