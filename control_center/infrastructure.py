@@ -156,7 +156,7 @@ def collect(host: str, *, proc: Path = Path("/proc"), mount: Path = Path("/"),
     after = (proc / "stat").read_text(encoding="ascii").splitlines()[0]
     elapsed = time.monotonic() - started
     dev_after = (proc / "net/dev").read_text(encoding="ascii")
-    return build(
+    snapshot = build(
         host, before=before, after=after,
         meminfo=(proc / "meminfo").read_text(encoding="ascii"),
         loadavg=(proc / "loadavg").read_text(encoding="ascii"),
@@ -165,6 +165,10 @@ def collect(host: str, *, proc: Path = Path("/proc"), mount: Path = Path("/"),
         dev=dev_after, dev_before=dev_before, elapsed_seconds=elapsed,
         cores=os.cpu_count(),
     )
+    if host == "yfc":
+        from control_center.yfc_polling import read_local
+        snapshot["polling_health"] = read_local()
+    return snapshot
 
 
 def _write_atomic(path: Path, payload: dict) -> None:
@@ -233,6 +237,8 @@ def save(snapshot: dict, directory: Path = ROOT, *, group: str | None = None) ->
             "received_at": dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z"),
             "metrics": checked["metrics"],
         }
+        if host == "yfc" and "polling_health" in checked:
+            sanitized["polling_health"] = checked["polling_health"]
         _write_atomic(current, sanitized)
         if group is not None:
             os.chown(current, 0, gid)
@@ -328,12 +334,17 @@ def _validated(raw: object, host: str, now: dt.datetime) -> dict:
             raise ValueError("invalid network rate")
         cleaned_net[key] = {"rx_bytes_per_second": recv, "tx_bytes_per_second": sent}
     safe["network_rates"] = cleaned_net
-    return {
+    result = {
         "host": host, "name": HOSTS[host],
         "status": "offline" if now - date > OFFLINE_AFTER else
                   "stale" if now - date > STALE_AFTER else "online",
         "observed_at": canonical_time, "metrics": safe,
     }
+    if host == "yfc" and "polling_health" in raw:
+        from control_center.yfc_polling import sanitize
+        # Revalidate on every read: a previously healthy report becomes stale.
+        result["polling_health"] = sanitize(raw["polling_health"], now=now)
+    return result
 
 
 def hosts(directory: Path = ROOT, now: dt.datetime | None = None) -> dict:
