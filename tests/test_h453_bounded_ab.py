@@ -128,6 +128,13 @@ class BoundedComparisonTests(unittest.TestCase):
                        state=self.state, output=self.account, owner_approved=True)
         self.assertFalse(self.state.exists())
 
+    def test_account_evidence_cannot_be_state(self):
+        with self.assertRaisesRegex(PilotError, "unsafe_state_output"):
+            with patch.dict(os.environ, {"HERMES_AI_LIVE_APPROVED": "1"}):
+                ab.run(case=ab.CASES[0], account_status=self.account,
+                       state=self.account, output=self.output, owner_approved=True)
+        self.assertFalse(self.output.exists())
+
     def test_same_state_and_output_denied(self):
         with self.assertRaisesRegex(PilotError, "unsafe_state_output"):
             with patch.dict(os.environ, {"HERMES_AI_LIVE_APPROVED": "1"}):

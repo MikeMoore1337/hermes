@@ -70,6 +70,7 @@ def run(*, case: str, account_status: Path, state: Path, output: Path, owner_app
     if case not in CASES:
         raise PilotError("case_not_allowlisted")
     if (state.resolve() == output.resolve() or account_status.resolve() == output.resolve()
+            or account_status.resolve() == state.resolve()
             or output.is_symlink() or state.is_symlink() or output.exists()):
         raise PilotError("unsafe_state_output")
     attestation = load_account_status(account_status)
