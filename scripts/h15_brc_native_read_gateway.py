@@ -15,13 +15,15 @@ MCP = Path("packages/relay/src/mcp")
 IMPORT = "import { LIST_WORKSPACES_TOOL, RESOLVE_WORKSPACE_TOOL, listApprovedWorkspaces, resolveApprovedWorkspace } from './hermes-workspaces.js';"
 LIST = ("      LIST_WORKSPACES_TOOL, RESOLVE_WORKSPACE_TOOL] };")
 CALL = "    const out = await invokeTool(hub, store, ctx, name, args as Record<string, unknown> | undefined);"
-NATIVE_IMPORT = "import { NATIVE_TOOLS, invokeOwnerNativeRead } from './hermes-native-read.js';"
+NATIVE_IMPORT = "import { listOwnerNativeReadTools, invokeOwnerNativeRead } from './hermes-native-read.js';"
+GENERIC_LIST = "...tools,"
+FILTERED_LIST = "...tools.filter(t => t.name !== 'native_file_read' && t.name !== 'native_file_stat'),"
 NATIVE_CALL = """    if (name === 'native_file_read' || name === 'native_file_stat') {
       // No generic deviceId dispatch, no shell grants, no unpaired host reads.
       return await invokeOwnerNativeRead(hub, store, ctx, name, args);
     }
 """
-NATIVE_LIST = "      LIST_WORKSPACES_TOOL, RESOLVE_WORKSPACE_TOOL, ...NATIVE_TOOLS] };"
+NATIVE_LIST = "      LIST_WORKSPACES_TOOL, RESOLVE_WORKSPACE_TOOL, ...listOwnerNativeReadTools(hub, store, ctx.userId)] };"
 
 def apply(root: Path, *, sha: str = UPSTREAM_SHA) -> dict[str, object]:
     if sha != UPSTREAM_SHA:
@@ -41,16 +43,17 @@ def apply(root: Path, *, sha: str = UPSTREAM_SHA) -> dict[str, object]:
         raise AuditError("native_relay_source_not_ready")
     original = server.read_text(encoding="utf-8")
     code = template.read_text(encoding="utf-8")
-    if any(original.count(marker) != 1 for marker in (IMPORT, LIST, CALL)):
+    if any(original.count(marker) != 1 for marker in (IMPORT, LIST, CALL, GENERIC_LIST)):
         raise AuditError("native_relay_marker_drift")
     if (NATIVE_IMPORT in original or NATIVE_CALL in original
-        or "NATIVE_TOOLS" in original or "invokeOwnerNativeRead" in original
+        or "listOwnerNativeReadTools" in original or "invokeOwnerNativeRead" in original
         or not all(s in code for s in
-                   ("export const NATIVE_TOOLS", "export async function invokeOwnerNativeRead",
+                   ("export const NATIVE_TOOLS", "export function listOwnerNativeReadTools", "export async function invokeOwnerNativeRead",
                     "eligibleDevice", "store.audit", "validatedResult", "timeoutMs: 8000"))
         or "start_process" in code or "write_file" in code):
         raise AuditError("native_relay_guard_missing")
     updated = (original.replace(IMPORT, IMPORT + "\n" + NATIVE_IMPORT)
+               .replace(GENERIC_LIST, FILTERED_LIST)
                .replace(LIST, NATIVE_LIST)
                .replace(CALL, NATIVE_CALL + CALL))
     if updated == original or updated.count("return await invokeOwnerNativeRead(") != 1:
