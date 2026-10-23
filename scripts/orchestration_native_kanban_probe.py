@@ -8,6 +8,7 @@ Python dependencies; has no network/install/production execution path.
 from __future__ import annotations
 
 import argparse
+import ast
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import os
@@ -531,15 +532,68 @@ def run(source_dir: Path, deps_dir: Path | None = None) -> bool:
                 self.assertNotIn("delegation", disabled)
 
             def test_disabled_mcp_inheritance_does_not_restrict_implicit_toolsets(self):
-                # A strict read-only pilot must pass a nonempty positive
-                # allowlist. False inheritance alone does NOT narrow the
-                # unspecific/empty-request branch, which copies parent tools.
+                # Disabling inheritance only helps for explicit nonempty
+                # requests. Native delegate_task itself uses toolsets=None,
+                # so the public path does not exercise the safe subcase.
                 parent = self.parent(enabled=("web", "mcp-synthetic"))
                 with patch.object(dc, "_cfg", return_value={"inherit_mcp_toolsets": False}):
                     none_enabled, _ = dt._resolve_child_toolsets(parent, None, "leaf")
                     empty_enabled, _ = dt._resolve_child_toolsets(parent, [], "leaf")
                 self.assertIn("mcp-synthetic", none_enabled)
                 self.assertIn("mcp-synthetic", empty_enabled)
+
+            def test_upstream_public_delegate_path_passes_no_child_allowlist(self):
+                # Source-shape assertion on the independently pinned original
+                # implementation. Not an executed native child or runtime gate.
+                tree = ast.parse(
+                    (source_dir / "tools/delegate_tool.py").read_text(encoding="utf-8"))
+                build = next(
+                    node for node in tree.body
+                    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                    and node.name == "_build_children")
+                calls = [
+                    node for node in ast.walk(build)
+                    if isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Name)
+                    and node.func.id == "_build_child_preserving_parent_tools"
+                ]
+                self.assertEqual(len(calls), 1)
+                allowlists = [kw.value for kw in calls[0].keywords if kw.arg == "toolsets"]
+                self.assertEqual(len(allowlists), 1)
+                self.assertIsInstance(allowlists[0], ast.Constant)
+                self.assertIsNone(allowlists[0].value)
+
+            def test_upstream_child_effective_role_is_depth_derived(self):
+                # Do not mistake a user-visible "leaf" role parameter for
+                # a native security control: this parameter is ignored.
+                tree = ast.parse(
+                    (source_dir / "tools/delegate_tool.py").read_text(encoding="utf-8"))
+                build = next(
+                    node for node in tree.body
+                    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                    and node.name == "_build_child_agent")
+                self.assertFalse(any(
+                    isinstance(node, ast.Name) and node.id == "role"
+                    and isinstance(node.ctx, ast.Load)
+                    for node in ast.walk(build)))
+                role_assignments = [
+                    node.value for node in ast.walk(build)
+                    if isinstance(node, ast.Assign)
+                    and any(isinstance(t, ast.Name) and t.id == "effective_role"
+                            for t in node.targets)
+                ]
+                self.assertEqual(len(role_assignments), 1)
+                self.assertIsInstance(role_assignments[0], ast.IfExp)
+                role_condition = ast.unparse(role_assignments[0].test)
+                self.assertIn("_get_orchestrator_enabled()", role_condition)
+                self.assertIn("child_depth < max_spawn", role_condition)
+                with patch.object(dc, "_cfg", return_value={}):
+                    self.assertEqual(dc._get_max_spawn_depth(), 1)
+                    self.assertTrue(dc._get_orchestrator_enabled())
+                with patch.object(dc, "_cfg", return_value={
+                    "max_spawn_depth": 2, "orchestrator_enabled": False}):
+                    self.assertEqual(dc._get_max_spawn_depth(), 2)
+                    self.assertFalse(dc._get_orchestrator_enabled())
 
             def test_explicit_disabled_mcp_inheritance_is_narrow(self):
                 with patch.object(dc, "_cfg", return_value={"inherit_mcp_toolsets": False}):
