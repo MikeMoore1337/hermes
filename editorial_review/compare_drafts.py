@@ -106,6 +106,24 @@ def _distinct_sentence_markers(text: str, pattern: re.Pattern) -> Counter:
     )
 
 
+def _cited_sentence_context(text: str) -> Counter:
+    """Conservatively bind references to cited sentences, not just totals.
+
+    Only listed nonfactual boilerplate may be removed around a citation.
+    Other edits to a cited sentence require separate human verification.
+    """
+    result = Counter()
+    for part in re.split(r"(?<=[.!?])\s+|\n+", text):
+        if not CITATION.search(part):
+            continue
+        normalized = part.casefold()
+        for pattern in TEMPLATES:
+            normalized = pattern.sub("", normalized)
+        normalized = re.sub(r"\s+", " ", normalized).strip(" \t,;:")
+        result[normalized] += 1
+    return result
+
+
 def compare(payload: Any) -> dict[str, Any]:
     """Compare two supplied synthetic drafts; never select a new truth."""
     if (type(payload) is not dict
@@ -147,6 +165,8 @@ def compare(payload: Any) -> dict[str, Any]:
             refusals.append(reason)
     if original_issues["UNKNOWN_CITATION"] or candidate_issues["UNKNOWN_CITATION"]:
         refusals.append("UNKNOWN_CITATION")
+    if _cited_sentence_context(original) != _cited_sentence_context(candidate):
+        refusals.append("CITED_CLAIM_CONTEXT_CHANGED")
     if any(candidate_issues[code] > original_issues[code] for code in UNSAFE_CODES):
         refusals.append("NEW_EDITORIAL_RISK")
     if _distinct_sentence_markers(original, NEGATION) != _distinct_sentence_markers(candidate, NEGATION):
