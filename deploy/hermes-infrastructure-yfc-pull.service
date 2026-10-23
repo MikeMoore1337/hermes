@@ -21,7 +21,9 @@ ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true
 RestrictSUIDSGID=true
-CapabilityBoundingSet=
+# Saving the root-owned snapshot requires changing its group to hermes-control.
+# Keep only CAP_CHOWN; no network administration or DAC override capabilities.
+CapabilityBoundingSet=CAP_CHOWN
 AmbientCapabilities=
 LockPersonality=true
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX

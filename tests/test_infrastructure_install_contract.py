@@ -50,6 +50,21 @@ class YfcInstallContractTests(unittest.TestCase):
         self.assertNotIn("ssh-keyscan", script)
         self.assertNotIn("StrictHostKeyChecking=no", script)
 
+    def test_yfc_pull_preserves_least_privilege_with_group_ownership_capability(self):
+        unit = (ROOT / "deploy/hermes-infrastructure-yfc-pull.service").read_text()
+        settings = dict(
+            line.split("=", 1) for line in unit.splitlines()
+            if "=" in line and not line.startswith("#")
+        )
+        # infrastructure.save() chowns each snapshot to hermes-control.
+        # Root without CAP_CHOWN cannot complete this under systemd.
+        self.assertEqual(settings["User"], "root")
+        self.assertEqual(settings["CapabilityBoundingSet"], "CAP_CHOWN")
+        self.assertEqual(settings["AmbientCapabilities"], "")
+        self.assertEqual(settings["NoNewPrivileges"], "true")
+        self.assertEqual(settings["ProtectSystem"], "strict")
+        self.assertEqual(settings["ReadWritePaths"], "/var/lib/hermes-control-center")
+
     def test_no_password_or_agent_dependency_in_remote_ssh_unit(self):
         unit = (ROOT / "deploy/hermes-infrastructure-yfc-pull.service").read_text()
         self.assertIn("IPAddressDeny", (ROOT / "deploy/hermes-infrastructure-collector.service").read_text())
