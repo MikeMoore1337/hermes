@@ -56,8 +56,13 @@ def digest(value: Any) -> str:
 
 
 def _path(path: str) -> Path:
+    # Require one unambiguous POSIX spelling for every fixture file. Otherwise
+    # "src//task.txt" and "src/task.txt" can refer to the same file but have
+    # different allowlist/evidence identities.
+    if not isinstance(path, str) or not path or chr(0) in path:
+        raise BenchmarkError("invalid_fixture_path")
     p = PurePosixPath(path)
-    if (not path or not isinstance(path, str) or p.is_absolute()
+    if (not p.parts or p.is_absolute() or p.as_posix() != path
             or any(part in (".", "..") for part in p.parts)
             or "\\" in path or ":" in path or p.parts[0].startswith(".")):
         raise BenchmarkError("invalid_fixture_path")
