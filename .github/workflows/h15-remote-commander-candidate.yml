@@ -8,6 +8,9 @@ on:
     branches: [main]
     paths:
       - scripts/h15_brc_workspace_gateway.py
+      - scripts/h15_brc_native_read_gateway.py
+      - deploy/h15/hermes-native-read.template.ts
+      - tests/test_h15_brc_native_read_gateway.py
       - scripts/h15_brc_upgrade_preflight.py
       - scripts/h15_brc_transactional_upgrade.py
       - scripts/h15_brc_owner_artifact_stage.py
@@ -29,6 +32,9 @@ on:
       - scripts/h15_brc_harden_relay.py
       - scripts/h15_brc_harden_gateway.py
       - scripts/h15_brc_workspace_gateway.py
+      - scripts/h15_brc_native_read_gateway.py
+      - deploy/h15/hermes-native-read.template.ts
+      - tests/test_h15_brc_native_read_gateway.py
       - scripts/h15_brc_upgrade_preflight.py
       - scripts/h15_brc_transactional_upgrade.py
       - scripts/h15_brc_owner_artifact_stage.py
@@ -116,7 +122,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m unittest -v tests.test_h15_workspace_router tests.test_h15_brc_workspace_gateway tests.test_h15_brc_upgrade_preflight tests.test_h15_brc_transactional_upgrade tests.test_h15_brc_owner_artifact_stage tests.test_h15_brc_owner_handoff
+          python3 -m unittest -v tests.test_h15_workspace_router tests.test_h15_brc_workspace_gateway tests.test_h15_brc_upgrade_preflight tests.test_h15_brc_transactional_upgrade tests.test_h15_brc_owner_artifact_stage tests.test_h15_brc_owner_handoff tests.test_h15_brc_native_read_gateway
 
       - name: Fetch exact upstream Git commit (not tag, latest or npm install)
         shell: bash
@@ -181,6 +187,15 @@ jobs:
             --registry deploy/h15/workspace-registry.json
           test "$(git -C "$RUNNER_TEMP/brc-upstream" rev-parse HEAD)" = cbe511702dd0147650353c29ac6ab1decd8afda1
           echo "H15_WORKSPACE_MCP_PATCH=PASS" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Add isolated original Windows read-only MCP route to pinned relay (offline candidate only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m scripts.h15_brc_native_read_gateway --source-dir "$RUNNER_TEMP/brc-upstream"
+          test "$(git -C "$RUNNER_TEMP/brc-upstream" rev-parse HEAD)" = cbe511702dd0147650353c29ac6ab1decd8afda1
+          grep -q 'invokeOwnerNativeRead' "$RUNNER_TEMP/brc-upstream/packages/relay/src/mcp/server.ts"
+          echo "H454_NATIVE_READ_RELAY_PATCH=SOURCE_ONLY" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Fix stale/foreign WebSocket result replay at source-pinned relay DeviceHub
         shell: bash
