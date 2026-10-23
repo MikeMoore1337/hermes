@@ -348,3 +348,71 @@ of space reclaimed or the <=80% recovery threshold. Keep all Docker/containerd,
 incident and provenance data untouched. A successful cleanup requires independent
 `df` verification and **natural** Ops Watch `resolved` event + Telegram ACK;
 no synthetic alerts are generated.
+
+
+## Stage 6: YFC Telegram polling proof (opt-in, owner-gated)
+
+This is **different** from VPS/CPU metrics and Docker `Up`. Only the
+existing bot's completed Telegram `getUpdates` call produces
+`getupdates_success`. A thrown request or polling conflict produces
+`getupdates_error` / `polling_conflict`; startup and shutdown are
+`unknown`. There are **no extra Telegram calls**, second polling owner,
+tokens, user IDs, webhook, Docker socket, or new Hermes background timer.
+
+The YFC application [Hermes #294-linked PR](https://github.com/MikeMoore1337/your-fitness-coach/pull/1181)
+ships this producer **disabled by default**. The existing single bot lock,
+blue/green deployment, retry/backoff and CAP-drop are unchanged.
+
+Owner-only activation on the **actual YFC host** (not a BRC sandbox):
+
+1. Confirm the production bot image is the reviewed, deployed YFC code with
+   `fitminiapp_bot.polling_health`. Before activation inspect ownership of
+   `/var/lib/hermes-infra-read/polling` and ensure it is not a symlink. This
+   isolated bind folder must be `uid=10001` (bot image's `appuser`),
+   `gid=$(id -g hermes-infra-read)`, directory mode `2750`, under the
+   dedicated reader home. It must not contain Telegram tokens or other app
+   files; the existing `bot_polling_lock` volume is intentionally **not**
+   shared with the SSH reader. Root may create/chown this *specific*
+   directory only after reviewing its current state. Do not chown the
+   existing Docker volume or the reader's entire home.
+2. Set `BOT_POLLING_HEALTH_PATH=/run/yfc-polling-status/polling.json` in
+   the **existing YFC deployment environment** (not in git). Its Compose
+   path `BOT_POLLING_HEALTH_HOST_DIR` defaults to
+   `/var/lib/hermes-infra-read/polling`. Redeploy only the existing bot
+   through the established, protected YFC release procedure; never start
+   a duplicate bot or bypass the shared polling lock.
+3. On YFC, verify the fixed status file is a regular, non-symlink file
+   `uid=10001`, group `hermes-infra-read`, mode `0640`; the initial
+   status is unknown until at least one **real** `getUpdates` completes.
+   Do not use `docker ps` to claim `healthy`. Check a fresh successful
+   `observed_at`; no raw bot/log payload should be pasted into tickets.
+4. After the Hermes code ships via an exact SHA production deploy,
+   re-run `deploy/install-yfc-infrastructure-emitter.sh` from a **new**
+   pinned, clean Hermes checkout at that SHA and the *same* previously
+   accepted public key. It creates a distinct immutable collector release
+   and switches the pointer after an unprivileged local smoke. **Do not**
+   re-run the Hermes root SSH-key installer or rotate credentials.
+   If the exact immutable release already exists, stop and inspect instead
+   of re-running the installer.
+5. The existing Hermes minute-timer fetches the extended bounded payload.
+   Its `infrastructure_pull` accepts only source `yfc`, recognized event,
+   verified status, timezone and a maximum 120-second age; unsupported,
+   malformed, missing, expired or permission-denied proof remains
+   `unknown` / `stale` / `not_connected`.
+   Ops Watch maps a **fresh authenticated polling failure** to the
+   existing `telegram_polling_down` fingerprint and preserves an active
+   alert when evidence goes missing; only *fresh verified success* may
+   recover the polling-specific alert.
+6. Acceptance is three independent fresh reads of a *real* successful
+   polling status, two distinct live VPS resource cards, existing
+   owner-only HTTP API 401 without session and offline negative alerts
+   tests. Do not manufacture a Telegram failure or deliver a synthetic
+   Telegram notification in production. The real failure notification
+   cannot be marked verified until a natural incident produces a receipt.
+
+Owner rollback: unset `BOT_POLLING_HEALTH_PATH` and redeploy the existing
+bot using the normal release procedure (no new bot instance). The
+resource SSH collector, host-card history, and other YFC services continue
+normally. The reader treats absent/expired bot status as unknown, **not**
+healthy. Neither disabling the source nor removing evidence may
+automatically resolve a previously verified failure.
