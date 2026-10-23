@@ -53,6 +53,18 @@ def initialize_temporary_fixture(db_path: Path) -> None:
                     reserved_at INTEGER NOT NULL
                 )
             """)
+            db.execute("""
+                CREATE TABLE IF NOT EXISTS synthetic_evidence_acceptances (
+                    receipt_id TEXT PRIMARY KEY NOT NULL,
+                    operation_key TEXT UNIQUE NOT NULL,
+                    revision TEXT NOT NULL,
+                    producer TEXT NOT NULL,
+                    consumer TEXT NOT NULL,
+                    run_id INTEGER NOT NULL,
+                    payload_sha256 TEXT NOT NULL,
+                    accepted_at INTEGER NOT NULL
+                )
+            """)
             db.execute("COMMIT")
         except BaseException:
             db.execute("ROLLBACK")
@@ -120,4 +132,71 @@ def read_record(db_path: Path, operation_key: str):
             "SELECT operation_key, revision, approval_id, reserved_at "
             "FROM synthetic_pre_call_reservations WHERE operation_key=?",
             (operation_key,),
+        ).fetchone()
+
+
+def record_verified_evidence_once(
+    db_path: Path, *, receipt_id: str, operation_key: str, revision: str,
+    producer: str, consumer: str, run_id: int, payload_sha256: str, now: int,
+) -> bool:
+    """Test-only atomic acceptance. Caller MUST verify signed envelope first.
+
+    Receipt identity and logical operation are each unique. A matching
+    pre-call reservation is mandatory. NO delete, TTL reuse or queueing.
+    This callable alone does NOT authenticate an owner or evidence producer.
+    """
+    if not isinstance(db_path, Path):
+        raise InvalidFixture("path")
+    for name, value in (("receipt_id", receipt_id),
+                        ("operation_key", operation_key),
+                        ("producer", producer), ("consumer", consumer)):
+        _require_id(value, OPERATION, name)
+    _require_id(revision, REVISION, "revision")
+    if producer == consumer:
+        raise InvalidFixture("independent_roles")
+    if (type(run_id) is not int or run_id < 1 or type(now) is not int
+            or type(payload_sha256) is not str
+            or not re.fullmatch(r"[0-9a-f]{64}", payload_sha256)):
+        raise InvalidFixture("evidence_schema")
+    with closing(sqlite3.connect(db_path, timeout=5, isolation_level=None)) as db:
+        db.execute("PRAGMA busy_timeout=5000")
+        db.execute("PRAGMA synchronous=FULL")
+        db.execute("BEGIN IMMEDIATE")
+        try:
+            reservation = db.execute(
+                "SELECT 1 FROM synthetic_pre_call_reservations "
+                "WHERE operation_key=? AND revision=?",
+                (operation_key, revision),
+            ).fetchone()
+            if reservation is None:
+                raise InvalidFixture("missing_matching_reservation")
+            db.execute(
+                "INSERT INTO synthetic_evidence_acceptances "
+                "(receipt_id, operation_key, revision, producer, consumer, "
+                " run_id, payload_sha256, accepted_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT DO NOTHING",
+                (receipt_id, operation_key, revision, producer, consumer,
+                 run_id, payload_sha256, now),
+            )
+            accepted = db.execute("SELECT changes()").fetchone()[0] == 1
+            db.execute("COMMIT")
+        except BaseException:
+            db.execute("ROLLBACK")
+            raise
+    return accepted
+
+
+def read_evidence_record(db_path: Path, receipt_id: str):
+    """Crash-stable test readback: never create missing files implicitly."""
+    if not isinstance(db_path, Path):
+        raise InvalidFixture("path")
+    _require_id(receipt_id, OPERATION, "receipt_id")
+    uri = db_path.resolve().as_uri() + "?mode=ro"
+    with closing(sqlite3.connect(uri, uri=True, timeout=5)) as db:
+        return db.execute(
+            "SELECT receipt_id, operation_key, revision, producer, consumer, "
+            "run_id, payload_sha256, accepted_at "
+            "FROM synthetic_evidence_acceptances WHERE receipt_id=?",
+            (receipt_id,),
         ).fetchone()
