@@ -287,3 +287,61 @@ The source-level native test is independent of real delegated AI execution:
 No new agent, resident service, API token, paid model, runtime integration,
 production DB or second queue is part of this PR. Rollback is reverting the
 optional original-upstream native probe additions.
+
+
+## Final research disposition (2026-10-23)
+
+**#474 research decision: REUSE_UPSTREAM + DEFER live activation.**
+No second AI loop or separately privileged child executor is justified.
+The pinned v0.22.2 native implementation is usable as a design reference,
+but the public `delegate_task` child builder inherits parent toolsets
+(`toolsets=None`); configuration and source review alone do not prove that
+effective native/OS/MCP rights are a subset of an operator-approved envelope.
+
+**#475 research decision: REUSE_UPSTREAM Kanban + NO_NEW_DAG/QUEUE.**
+Native SQLite/DAG contracts and negative tests cover cycles, dependencies,
+leases, duplicate handoffs, crash/restart, cancellation and replay within
+offline fixtures. The existing #271 approved job journal remains authoritative
+for its own executor. There is no evidence that a new production Kanban API,
+schema migration, UI or orchestrator is warranted now.
+
+**Exact completed evidence, not live admission:**
+- PR #515 at `e123e5b9178b464ebaac41175ea5ac1d9779262d`:
+  [native CI #39968576478](https://github.com/MikeMoore1337/hermes/actions/runs/39968576478)
+  **29/29 PASS** and [quality CI #39968576492](https://github.com/MikeMoore1337/hermes/actions/runs/39968576492)
+  **2608/2608 PASS**. Additional native checks cover pinned source AST,
+  configuration defaults, and actual helper functions; they never spawn an
+  external AI worker.
+- An additional read-only sandbox attempt to import the complete original
+  `run_agent.AIAgent` on `h15-win-05be75515428` (Linux/Docker, Python
+  3.11.2) stopped with missing `python-dotenv`; `requests`, `httpx`,
+  `openai`, `pydantic` and `mcp` were also absent. This is a **sandbox
+  dependency gap**, not a failure in upstream delegation and not a test of
+  the resident Hermes deployment. No new packages were installed.
+- The H15 Hermes device is another isolated `uid=65534` sandbox rather
+  than a trusted production-shell identity; its absence of the expected
+  `/opt/hermes-agent-owner` path is not evidence of the real VPS state.
+
+**Operator decision: NO_GO for live orchestration until** a trusted
+executor proves (1) the installed pinned image/source identity and actual
+OS/MCP rights, (2) restricted parent privileges and flat child spawning,
+(3) independent producer/consumer identities and evidence receipts,
+(4) free-tier account eligibility and externally verified zero-spend
+budget, and (5) rollback/cancellation on the real owner-controlled host.
+Until then, `REAL_DELEGATE_TASK=NOT_RUN`,
+`REAL_AGENT_AB=NOT_RUN`, `COST/TIME_SAVINGS=NOT_MEASURED`.
+
+**Delivery and rollback:** PR #515 is an offline research artifact with
+six changed paths (one ADR, three isolated probes and two probe test files),
+not a production feature. Merging into `main` could trigger the current
+`.github/workflows/production-deploy.yml` after a successful push CI,
+even when the change is research-only. Therefore **do not merge as an
+automatic release**; review a separately approved no-deploy delivery path
+if repository publication is required. Revert PR #515's branch changes to
+undo this research package; no running agents, services, schema or tokens
+have been added.
+
+**Research phase disposition: completed with DEFER/NO_GO recommendation.**
+The implementation/activation and real A/B acceptance phase is not complete.
+Avoid recurring superficial upstream tests until an actual trusted executor
+or documented dependency change makes real verification possible.
