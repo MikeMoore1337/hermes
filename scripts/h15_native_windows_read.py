@@ -214,6 +214,8 @@ def handle_native_request(project: str, relative: str, operation: str) -> dict:
             ):
                 raise NativeReadRefused("target_redirected")
             is_directory = bool(info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+            if not is_directory and info.nNumberOfLinks != 1:
+                raise NativeReadRefused("hardlink_denied")
             size = (info.nFileSizeHigh << 32) | info.nFileSizeLow
             result = {"status": "ok", "project": project,
                       "relative": relative, "action": operation,
