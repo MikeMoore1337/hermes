@@ -103,8 +103,8 @@ export default function HermesCommander({onBack}){
        <div className="hc-path"><code>{project.windowsPath}</code>
         <button type="button" aria-label="Скопировать путь Windows" title="Скопировать путь" onClick={()=>copy(project.windowsPath,"windows")}>{copied==="windows"?<Check size={16}/>:<Clipboard size={16}/>}</button></div>
        {project.parentWorkspace&&<p className="hc-parent">Родительский workspace: <code>{project.parentWorkspace}</code></p>}
-       <p>Путь известен, но не проверен на устройстве и не предоставляет доступ к Windows.</p>
-       <footer>Права <strong>Чтение, запись и исполнение не разрешены</strong></footer>
+       <p>Путь утверждён для чтения. Нативное подключение Windows пока не активировано; запись и команды требуют отдельного согласования.</p>
+       <footer>Права <strong>Чтение согласовано, но не подключено · изменения и команды по отдельному одобрению</strong></footer>
       </article>
      </div>
     </section>
@@ -131,7 +131,7 @@ export default function HermesCommander({onBack}){
        {tab==="windows"&&<>
         <Pair label="Исходная папка"><code>{project.windowsPath}</code></Pair>
         {project.parentWorkspace&&<Pair label="Родительский каталог"><code>{project.parentWorkspace}</code></Pair>}
-        <Pair label="Разрешения" warn>Доступ пока не предоставлен.</Pair>
+        <Pair label="Разрешения" warn>Чтение согласовано, но технический доступ не предоставлен; запись и команды — по отдельному аппруву.</Pair>
         <Pair label="Ограничения">Приватный vault, другие каталоги и весь диск D: не включены.</Pair>
        </>}
        </dl>
@@ -142,7 +142,7 @@ export default function HermesCommander({onBack}){
       <ol><li><b>1</b><span>Найти каталог через <code>resolve_workspace</code></span></li>
        <li><b>2</b><span>Проверить origin, ветку и рабочее дерево</span></li>
        <li><b>3</b><span>Работать только в утверждённом sandbox</span></li></ol>
-      <p><ShieldCheck size={16}/> Исходные папки Windows требуют отдельного OS-допуска.</p>
+      <p><ShieldCheck size={16}/> Чтение оригинальных папок согласовано; безопасный OS-доступ ещё не подключён.</p>
       <a href={issue} target="_blank" rel="noopener noreferrer">Задача #455 <ExternalLink size={14}/></a>
      </aside>
     </div>

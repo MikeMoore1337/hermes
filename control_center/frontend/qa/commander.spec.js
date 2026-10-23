@@ -22,6 +22,7 @@ test("approved Explorer renders project and distinct Windows/sandbox scopes",asy
  await expect(page.locator(".hc-map")).toContainText("/workspace/projects/hermes");
  await expect(page.locator(".hc-map")).toContainText("D:\\Pet-projects\\hermes");
  await expect(page.locator(".hc-map")).toContainText("НЕ ПОДКЛЮЧЁН");
+ await expect(page.locator(".hc-map")).toContainText("Чтение согласовано, но не подключено");
  await expect(page.locator(".hc-observe")).toContainText("503");
  for(const [label,path] of projects){
   await page.locator(".hc-projects").getByRole("button",{name:new RegExp(label)}).click();
