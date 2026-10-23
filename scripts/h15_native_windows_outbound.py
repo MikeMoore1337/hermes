@@ -24,7 +24,7 @@ from scripts.h15_native_windows_mcp_stdio import (
 )
 
 HOST = "hermes.mikemoore.top"
-DEVICE_NAME = "H15 Windows original read-only"
+DEVICE_NAME = "H15 Windows native read-only"
 WIRE_VERSION = 1
 MAX_INCOMING = 8192
 MAX_CALLS = 16
