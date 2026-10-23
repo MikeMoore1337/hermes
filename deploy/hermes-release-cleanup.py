@@ -143,8 +143,9 @@ def main() -> int:
         if current != UI / ("main-" + sha):
             raise RuntimeError("current release mismatch")
         receipt = AGENT / ("main-" + sha) / ".deployment-receipt.txt"
+        receipt_at_start = receipt.read_text()
         fields = dict(
-            line.split("=", 1) for line in receipt.read_text().splitlines()
+            line.split("=", 1) for line in receipt_at_start.splitlines()
             if "=" in line
         )
         previous = Path(fields.get("PREVIOUS_UI", ""))
@@ -179,7 +180,10 @@ def main() -> int:
         if (STATE.read_text().strip() != sha
                 or (UI.parent / "current").resolve(strict=True) != current):
             raise RuntimeError("active release changed")
-        next_paths, _ = candidates_for(AGENT, UI, protected, backup)
+        if receipt.read_text() != receipt_at_start:
+            raise RuntimeError("active release receipt changed")
+        latest_pins = {sha, previous.name[5:]} | config_pins() | live_pins()
+        next_paths, _ = candidates_for(AGENT, UI, latest_pins, backup)
         if paths != next_paths:
             raise RuntimeError("cleanup candidates changed")
         removed = 0
