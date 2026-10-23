@@ -520,6 +520,27 @@ def run(source_dir: Path, deps_dir: Path | None = None) -> bool:
                         ["web"], "leaf")
                 self.assertEqual(enabled, ["web", "mcp-synthetic"])
 
+            def test_disabled_delegation_does_not_constrain_orchestrator(self):
+                # Caller-side authorization must reject privileged roles:
+                # native role handling intentionally clears this inherited deny.
+                with patch.object(dc, "_cfg", return_value={"inherit_mcp_toolsets": False}):
+                    enabled, disabled = dt._resolve_child_toolsets(
+                        self.parent(enabled=("web",), disabled=("delegation",)),
+                        ["web"], "orchestrator")
+                self.assertIn("delegation", enabled)
+                self.assertNotIn("delegation", disabled)
+
+            def test_disabled_mcp_inheritance_does_not_restrict_implicit_toolsets(self):
+                # A strict read-only pilot must pass a nonempty positive
+                # allowlist. False inheritance alone does NOT narrow the
+                # unspecific/empty-request branch, which copies parent tools.
+                parent = self.parent(enabled=("web", "mcp-synthetic"))
+                with patch.object(dc, "_cfg", return_value={"inherit_mcp_toolsets": False}):
+                    none_enabled, _ = dt._resolve_child_toolsets(parent, None, "leaf")
+                    empty_enabled, _ = dt._resolve_child_toolsets(parent, [], "leaf")
+                self.assertIn("mcp-synthetic", none_enabled)
+                self.assertIn("mcp-synthetic", empty_enabled)
+
             def test_explicit_disabled_mcp_inheritance_is_narrow(self):
                 with patch.object(dc, "_cfg", return_value={"inherit_mcp_toolsets": False}):
                     self.assertFalse(dc._get_inherit_mcp_toolsets())
