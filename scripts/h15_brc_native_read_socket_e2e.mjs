@@ -14,8 +14,10 @@ const requireRelay = createRequire(path.join(cwd, 'packages/relay/package.json')
 const WebSocket = requireRelay('ws');
 const { buildRelay } = await import(pathToFileURL(path.join(cwd, 'packages/relay/dist/app.js')).href);
 const { invokeTool } = await import(pathToFileURL(path.join(cwd, 'packages/relay/dist/mcp/invoke.js')).href);
-const { NATIVE_TOOLS, invokeOwnerNativeRead, listOwnerNativeReadTools } =
+const { NATIVE_TOOLS, invokeOwnerNativeRead } =
   await import(pathToFileURL(path.join(cwd, 'packages/relay/dist/mcp/hermes-native-read.js')).href);
+
+const { pinnedToolCatalog } = await import(pathToFileURL(path.join(cwd, 'packages/relay/dist/mcp/hermes-tool-catalog.js')).href);
 
 const DEVICE_NAME = 'H15 Windows native read-only';
 const DEVICE_ID = 'h15-native-ci-read-12345678';
@@ -65,8 +67,8 @@ try {
     });
     return obj;
   };
-  assert(listOwnerNativeReadTools(relay.hub, relay.store, owner.id).length === 0,
-    'NATIVE_DISCOVERY_ABSENT_WITHOUT_LIVE_AGENT');
+  const beforePairing = await invokeOwnerNativeRead(relay.hub, relay.store, ctx, 'native_file_stat', args);
+  assert(beforePairing.isError === true, 'NATIVE_PREPAIR_DISPATCH_DENIED');
   socket = new WebSocket('ws://127.0.0.1:' + address.port + '/ws', {
     headers: { Authorization: 'Bearer ' + token },
   });
@@ -90,10 +92,8 @@ try {
     tools: NATIVE_TOOLS,
   }));
   assert(await until(() => !!relay.hub.get(DEVICE_ID)), 'NATIVE_WSS_OWNER_PAIRED');
-  assert(listOwnerNativeReadTools(relay.hub, relay.store, owner.id).length === 2,
-    'NATIVE_DISCOVERY_OWNER_TWO');
-  assert(listOwnerNativeReadTools(relay.hub, relay.store, 'wrong-owner').length === 0,
-    'NATIVE_DISCOVERY_CROSS_OWNER_DENIED');
+  assert(!pinnedToolCatalog().some(t => t.name === 'native_file_read' || t.name === 'native_file_stat'),
+    'NATIVE_GENERIC_CATALOG_NO_DUPLICATES');
   const ok = await invokeOwnerNativeRead(relay.hub, relay.store, ctx, 'native_file_read', args);
   assert(ok.isError === false && JSON.parse(ok.content[0].text).data === 'YWJj' && calls === 1,
     'NATIVE_WSS_RELAY_READ_AND_DIGEST_PASS');
@@ -127,8 +127,6 @@ try {
   relay.store.setDevicePaused(DEVICE_ID, false);
   socket.close(1000);
   assert(await until(() => !relay.hub.get(DEVICE_ID)), 'NATIVE_DISCONNECT_OBSERVED');
-  assert(listOwnerNativeReadTools(relay.hub, relay.store, owner.id).length === 0,
-    'NATIVE_DISCOVERY_REMOVED_AFTER_DISCONNECT');
   const offline = await invokeOwnerNativeRead(relay.hub, relay.store, ctx, 'native_file_stat', args);
   assert(offline.isError === true, 'NATIVE_OFFLINE_DENIED');
   console.log('H454_NATIVE_READ_RELAY_SYNTHETIC_SOCKET_E2E=PASS');
