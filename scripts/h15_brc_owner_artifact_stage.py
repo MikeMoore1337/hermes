@@ -141,7 +141,7 @@ def discover():
     sha=(api(f"repos/{REPO}/branches/main").get("commit") or {}).get("sha")
     if not isinstance(sha,str) or SHA.fullmatch(sha) is None:
         refuse("main_sha_invalid")
-    endpoint=f"repos/{REPO}/actions/workflows/{WORKFLOW}/runs?branch=main&event=push&per_page=60"
+    endpoint=f"repos/{REPO}/actions/workflows/{WORKFLOW}/runs?branch=main&per_page=60"
     # GitHub returned 11 successful main runs and then an empty list for
     # the identical authorized endpoint during #454 owner-host staging.
     # Retry only a structurally valid empty listing; never bypass identity,
@@ -161,12 +161,16 @@ def discover():
               and isinstance(r.get("head_sha"),str)
               and SHA.fullmatch(r["head_sha"]) is not None
               and r.get("head_branch")=="main"
-              and r.get("event")=="push" and r.get("conclusion")=="success"
+              and (r.get("event")=="push" or
+                   (r.get("event")=="workflow_dispatch" and r["head_sha"]==sha))
+              and r.get("conclusion")=="success"
               and r.get("status")=="completed"
               and r.get("name")=="H-15 pinned Remote Commander candidate (isolated CI only)"
               and type(r.get("id")) is int and r["id"]>0]
     if not eligible:
         refuse("successful_main_candidate_missing")
+    # A manually dispatched workflow is eligible ONLY at the exact current
+    # main commit; stale dispatches must never bypass ancestry checks.
     # An exact-current-main success wins even if a newer job record for
     # another (e.g. stale/superseded) main SHA has a larger run ID.
     exact=[r for r in eligible if r["head_sha"]==sha]

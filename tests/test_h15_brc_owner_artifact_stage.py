@@ -134,6 +134,45 @@ class StagingTests(unittest.TestCase):
                     f"H15_OFFLINE_BUNDLE_ARCHIVE_SHA256={HASH}\n")):
             self.assertEqual(m.discover(),dict(GOOD,current_main_sha=SHA,
                                                       ancestor_candidate_reused=False))
+    def test_current_main_dispatch_candidate_admitted(self):
+        dispatched = dict(RUN, event="workflow_dispatch", id=123)
+        with patch.object(m, "api", side_effect=[
+                {"commit": {"sha": SHA}},
+                {"total_count": 1, "workflow_runs": [dispatched]},
+                {"artifacts": [ART]}, JOBS]), \
+             patch.object(m, "run", return_value=(
+                 f"H15_OFFLINE_BUNDLE_IMAGE_ID={IMAGE}\n"
+                 f"H15_OFFLINE_BUNDLE_ARCHIVE_SHA256={HASH}\n")):
+            result = m.discover()
+        self.assertEqual(result["sha"], SHA)
+        self.assertFalse(result["ancestor_candidate_reused"])
+        self.assertEqual(result["run_id"], 123)
+
+    def test_stale_dispatch_candidate_rejected_before_download(self):
+        old_dispatch = dict(RUN, event="workflow_dispatch", id=123)
+        with patch.object(m, "api", side_effect=[
+                {"commit": {"sha": "d" * 40}},
+                {"total_count": 1, "workflow_runs": [old_dispatch]}]) as api, \
+             patch.object(m, "run") as downloaded:
+            with self.assertRaisesRegex(
+                    m.StagingDenied, "^successful_main_candidate_missing$"):
+                m.discover()
+            self.assertEqual(api.call_count, 2)
+            downloaded.assert_not_called()
+
+    def test_foreign_event_or_branch_not_eligible(self):
+        for candidate in (dict(RUN, event="pull_request"),
+                          dict(RUN, event="workflow_dispatch", head_branch="other")):
+            with self.subTest(candidate=candidate), \
+                 patch.object(m, "api", side_effect=[
+                     {"commit": {"sha": SHA}},
+                     {"total_count": 1, "workflow_runs": [candidate]}]), \
+                 patch.object(m, "run") as downloaded:
+                with self.assertRaisesRegex(
+                        m.StagingDenied, "^successful_main_candidate_missing$"):
+                    m.discover()
+                downloaded.assert_not_called()
+
     def test_no_main_candidate_refuse(self):
         empty={"total_count":0,"workflow_runs":[]}
         with patch.object(m,"api",side_effect=[
