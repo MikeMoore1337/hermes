@@ -307,3 +307,44 @@ Retain a before/after disk report and then passively await three distinct
 recent disk samples at or below 80% and the existing `resolved` Ops Watch
 event plus **its own** Telegram acknowledgment. A successful release/CI is
 not proof of either cleanup or recovery.
+
+
+### Trusted one-shot release cleanup helper (no automatic action)
+
+An earlier operator-pasted Python snippet displayed 581 candidate directories (~3.5 GiB)
+but stopped **before deletion** while trying to switch a combined read/write
+`/dev/tty` stream to input: `UnsupportedOperation: File or stream is not seekable`.
+The host remained on the expected release, critical timers remained active, and
+the stored main/backup directory counts were unchanged at the next read.
+
+To avoid repeated 200-line mobile terminal pastes, use the repo-shipped
+`deploy/hermes-release-cleanup.py` from a **verified pinned main release** on
+the dedicated **Hermes** host `vps1777112993` (never on the YFC host).
+Dry-run is the default, with no deletion:
+
+```bash
+sha="$(cat /var/lib/hermes-main-deploy/last-success.sha)"
+python3 -B "/opt/hermes-agent-owner/releases/main-$sha/deploy/hermes-release-cleanup.py"
+```
+
+Only after reviewing its output and current rollback references, opt in to a
+separate invocation with `--apply`:
+
+```bash
+python3 -B "/opt/hermes-agent-owner/releases/main-$sha/deploy/hermes-release-cleanup.py" --apply
+```
+
+The tool requires an interactive TTY and **exactly** `DELETE <candidate_count>`
+typed on that console. It opens `/dev/tty` read-only and refuses wrong
+hostname/UID, unexpected active SHA, missing rollback backup, a competing
+deployment lock, symlinks or nested mountpoints, and an in-flight
+`.incoming-*` tree. It protects twelve newest revisions per tree, the active
+and previous UI release, further pins from systemd/configuration and live
+process paths, and associated saved backups. The deploy lock stays held
+through inspection and deletion. Dry-run and cancellation remove nothing.
+
+The expected ~3.5 GiB is only the observed candidate estimate, not a guarantee
+of space reclaimed or the <=80% recovery threshold. Keep all Docker/containerd,
+incident and provenance data untouched. A successful cleanup requires independent
+`df` verification and **natural** Ops Watch `resolved` event + Telegram ACK;
+no synthetic alerts are generated.
