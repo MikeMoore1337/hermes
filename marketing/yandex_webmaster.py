@@ -291,6 +291,7 @@ def normalize_export(payload: Any, *, as_of: date) -> dict[str, Any]:
         "owner_attested": attested, "evidence_sha256": digest,
         "observed_at": str(observed), "requested_period": [str(start), str(end)],
         "device": payload["device"], "popular_coverage": coverage,
+        "seo_research_input_observations": observations,
         "seo_research_observations": normalized,
         "site_history": general, "indexing_http_status_history": indexing,
         "sitemaps": sitemaps, "page_metrics_available": False,
