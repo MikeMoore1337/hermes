@@ -84,7 +84,33 @@ $publicPath = "$privatePath.pub"
 
 $directory = Get-Item -LiteralPath $sshDir -Force -ErrorAction SilentlyContinue
 if ($null -eq $directory) {
-    if ($Mode -eq 'Verify') {
+    if ($Mode -eq 'Preflight') {
+        Write-Output 'SSH_DIRECTORY=ABSENT'
+        Write-Output 'H454_SSH_IDENTITY=NOT_READY'
+        exit 0
+    }
+    Deny 'SSH_DIRECTORY_ABSENT_NO_AUTOCREATE'
+}
+if (-not $directory.PSIsContainer -or
+    ($directory.Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
+    Deny 'SSH_DIRECTORY_UNSAFE'
+}
+$private = Get-Item -LiteralPath $privatePath -Force -ErrorAction SilentlyContinue
+$public = Get-Item -LiteralPath $publicPath -Force -ErrorAction SilentlyContinue
+foreach ($item in @($private, $public)) {
+    if ($null -ne $item -and
+        ($item.PSIsContainer -or
+         ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint))) {
+        Deny 'IDENTITY_PATH_UNSAFE'
+    }
+}
+
+$keygen = Join-Path $env:WINDIR 'System32\OpenSSH\ssh-keygen.exe'
+if (-not (Test-Path -LiteralPath $keygen -PathType Leaf)) {
+    Deny 'PINNED_SYSTEM_SSH_KEYGEN_MISSING'
+}
+
+if ($Mode -eq 'Verify') {
     # No ssh-keygen invocation, passphrase prompt, file mutation or network.
     # Keep both checks independent and return only bounded status markers.
     $cryptoStatus = 'NOT_VERIFIED'
@@ -119,32 +145,6 @@ if ($null -eq $directory) {
         exit 2
     }
     exit 0
-}
-
-if ($Mode -eq 'Preflight') {
-        Write-Output 'SSH_DIRECTORY=ABSENT'
-        Write-Output 'H454_SSH_IDENTITY=NOT_READY'
-        exit 0
-    }
-    Deny 'SSH_DIRECTORY_ABSENT_NO_AUTOCREATE'
-}
-if (-not $directory.PSIsContainer -or
-    ($directory.Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
-    Deny 'SSH_DIRECTORY_UNSAFE'
-}
-$private = Get-Item -LiteralPath $privatePath -Force -ErrorAction SilentlyContinue
-$public = Get-Item -LiteralPath $publicPath -Force -ErrorAction SilentlyContinue
-foreach ($item in @($private, $public)) {
-    if ($null -ne $item -and
-        ($item.PSIsContainer -or
-         ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint))) {
-        Deny 'IDENTITY_PATH_UNSAFE'
-    }
-}
-
-$keygen = Join-Path $env:WINDIR 'System32\OpenSSH\ssh-keygen.exe'
-if (-not (Test-Path -LiteralPath $keygen -PathType Leaf)) {
-    Deny 'PINNED_SYSTEM_SSH_KEYGEN_MISSING'
 }
 
 if ($Mode -eq 'Preflight') {
