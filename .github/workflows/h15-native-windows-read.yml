@@ -6,6 +6,7 @@ on:
       - scripts/h15_native_windows_read.py
       - scripts/h15_native_windows_mcp_stdio.py
       - scripts/h15_native_windows_outbound.py
+      - scripts/h15_native_windows_ssh_identity.ps1
       - tests/test_h15_native_windows_outbound.py
       - tests/test_h15_native_windows_relay_contract.py
       - scripts/h15_brc_native_read_gate_patch.py
@@ -32,6 +33,24 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
+      - name: Check native SSH key operator parser and owner-approval fail-closed
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $target = Join-Path $env:GITHUB_WORKSPACE 'scripts/h15_native_windows_ssh_identity.ps1'
+          $tokens = $null
+          $errorsFound = $null
+          [System.Management.Automation.Language.Parser]::ParseFile($target, [ref]$tokens, [ref]$errorsFound) | Out-Null
+          if (@($errorsFound).Count -ne 0) { throw 'IDENTITY_SCRIPT_PS_PARSER_FAILED' }
+          & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $target -Mode Preflight
+          if ($LASTEXITCODE -ne 0) { throw 'IDENTITY_SCRIPT_READONLY_PREFLIGHT_FAILED' }
+          # Deliberately no OwnerApproved; must fail before key creation.
+          $output = & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $target -Mode Generate
+          if ($LASTEXITCODE -ne 2 -or
+              ($output -join " ") -notmatch 'EXPLICIT_OWNER_APPROVAL_REQUIRED') {
+              throw 'IDENTITY_SCRIPT_UNAUTHORIZED_GENERATE_NOT_DENIED'
+          }
+          Write-Output 'H454_NATIVE_WINDOWS_SSH_OPERATOR_DENY=PASS'
       - name: Run actual Windows CreateFile / handle E2E on synthetic runner files
         shell: pwsh
         run: |
