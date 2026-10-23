@@ -13,6 +13,7 @@ import json
 import os
 from pathlib import Path
 import sys
+import tempfile
 import time
 from uuid import uuid4
 
@@ -79,6 +80,49 @@ def _one(role: str, prompt: str, context: dict[str, object], client: CloudflareF
     }
 
 
+
+class ReportPublicationError(PilotError):
+    """The experiment receipt cannot be safely published; debit stays consumed."""
+
+
+def _publish_report_once(path: Path, record: dict[str, object]) -> None:
+    """Durable atomic no-clobber publication, including against a late creator.
+
+    os.replace() is atomic but silently overwrites another process's evidence.
+    A hard link publishes a fully fsynced temporary file only if target is
+    absent; FileExistsError leaves the other process's file untouched.
+    This is a local POSIX evidence guard, NOT distributed identity proof.
+    """
+    temporary = None
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd, temporary = tempfile.mkstemp(prefix=path.name + ".", dir=path.parent)
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as stream:
+            json.dump(record, stream, ensure_ascii=False, sort_keys=True)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        try:
+            os.link(temporary, path)
+        except FileExistsError:
+            raise ReportPublicationError("h453_evidence_target_exists") from None
+        if os.name == "posix":
+            directory_fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+    except OSError:
+        raise ReportPublicationError("h453_evidence_publish_failed") from None
+    finally:
+        if temporary is not None:
+            try:
+                os.unlink(temporary)
+            except FileNotFoundError:
+                pass
+
+
+
 def run(*, case: str, account_status: Path, state: Path, output: Path, owner_approved: bool) -> dict[str, object]:
     if not owner_approved or os.getenv("HERMES_AI_LIVE_APPROVED") != "1":
         raise PilotError("owner_approval_required")
@@ -136,15 +180,19 @@ def run(*, case: str, account_status: Path, state: Path, output: Path, owner_app
                     "usage_source": "PROVIDER_RESPONSE_IF_REPORTED",
                 },
             }
-            _write_json_atomic(output, report)
+            _publish_report_once(output, report)
             return report
+        except ReportPublicationError:
+            # Late target creation or publication failure is never a reason
+            # to overwrite the other evidence or to retry any model call.
+            raise
         except Exception as exc:
             # Once a request may have started, even an unexpected internal
             # failure must leave durable uncertainty evidence and no retry.
             # Do not serialize arbitrary exception text from the provider:
             # third-party exception messages may include secrets or URLs.
             known = isinstance(exc, (PilotError, AdvisorOutputError))
-            _write_json_atomic(output, {
+            _publish_report_once(output, {
                 "schema": SCHEMA,
                 "case": case,
                 "status": "BLOCKED",
