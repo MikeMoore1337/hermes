@@ -83,7 +83,7 @@ class NativeReadGatewayTests(unittest.TestCase):
         (source_root / "store").mkdir(exist_ok=True)
         (source_root / "device-hub.ts").write_text(
             "export class DeviceHub {\n"
-            " get(id: string): any { return undefined; }\n"
+            " get(id: string): {ownerId:string;info:{deviceId:string;name:string;platform:string};tools:{name:string}[]} | undefined { return undefined; }\n"
             " call(id: string, t: string, a: any, o: any): Promise<any> { return Promise.reject(); }\n"
             "}\n")
         (source_root / "store/sqlite.ts").write_text(
