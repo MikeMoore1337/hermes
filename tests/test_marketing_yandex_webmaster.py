@@ -278,8 +278,9 @@ class YandexWebmasterOfflineTests(unittest.TestCase):
                     "maybe_covered": False, "nearest": None,
                 }],
             },
-            "observations": source["seo_research_observations"],
+            "observations": source["seo_research_input_observations"],
         })
+        self.assertEqual(1, len(source["seo_research_observations"]))
         self.assertEqual(1, len(result["observations"]))
         self.assertEqual("yandex_webmaster", result["observations"][0]["source"])
         self.assertEqual("SYNTHETIC_ONLY", result["evidence_kind"])
