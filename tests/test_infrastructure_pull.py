@@ -43,6 +43,21 @@ class PullContract(unittest.TestCase):
         self.assertEqual(runner.call_args.kwargs["encoding"], "utf-8")
         self.assertEqual(runner.call_args.kwargs["errors"], "strict")
 
+    def test_yfc_remote_false_green_ram_and_disk_denied_before_save(self):
+        for field in ("ram_used_percent", "disk_used_percent"):
+            sample = fixture("yfc")
+            sample["metrics"][field] = 0
+            runner = Mock(return_value=Mock(returncode=0, stdout=json.dumps(sample)))
+            with self.subTest(field=field), \
+                 patch.object(monitor, "endpoint", return_value=("example.test", 22)), \
+                 patch.object(monitor, "require_file"), \
+                 patch.object(monitor, "save") as save, \
+                 self.assertRaises(monitor.PullError) as caught:
+                monitor.pull(runner=runner)
+            self.assertEqual(str(caught.exception), "invalid_or_out_of_order_remote_snapshot")
+            self.assertEqual(runner.call_count, 1)
+            save.assert_not_called()
+
     def test_wrong_host_or_source_denied_before_write(self):
         for sample in (
             fixture("hermes"),
