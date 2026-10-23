@@ -124,6 +124,24 @@ def read_plan(*, user_id: int, host_id: str, start: str, end: str, device: str =
     }
 
 
+def classify_http_status(code: Any) -> dict[str, Any]:
+    """No retries, fallback, credential disclosure or inferred data."""
+    if type(code) is not int or not 100 <= code <= 599:
+        raise WebmasterDenied("http_status_invalid")
+    state = (
+        "RESPONSE_REQUIRES_VALIDATION" if code == 200 else
+        "AUTH_REQUIRED" if code == 401 else
+        "ACCESS_DENIED" if code == 403 else
+        "HOST_NOT_VERIFIED_OR_UNAVAILABLE" if code == 404 else
+        "RATE_LIMITED" if code == 429 else
+        "UPSTREAM_UNAVAILABLE" if code >= 500 else
+        "UNSUPPORTED_HTTP_STATUS"
+    )
+    return {"status": state, "http_status": code, "retries": 0,
+            "live_api_verified": False, "fallback_paid": False,
+            "network_calls": 0}
+
+
 def _popular(source: Any, *, start: date, end: date) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     if type(source) is not dict or set(source) != {"queries", "date_from", "date_to", "count"}:
         raise WebmasterDenied("popular_schema_invalid")
