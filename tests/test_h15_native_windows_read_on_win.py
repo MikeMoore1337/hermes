@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import json
 import os
 from pathlib import Path
 import tempfile
@@ -13,6 +14,7 @@ import unittest
 from unittest.mock import patch
 
 from scripts import h15_native_windows_read as broker
+from scripts import h15_native_windows_mcp_stdio as mcp
 
 
 @unittest.skipUnless(os.name == "nt", "real Win32 API required")
@@ -51,6 +53,28 @@ class NativeWindowsReadOnRunnerTests(unittest.TestCase):
         directory = broker.handle_native_request("hermes", "", "stat")
         self.assertEqual(directory["kind"], "directory")
         self.assertNotIn("data", directory)
+
+    def test_win32_handle_read_via_real_mcp_dispatch(self):
+        session = mcp.McpSession()
+        init = session.handle({
+            "jsonrpc": "2.0", "id": 1, "method": "initialize",
+            "params": {"protocolVersion": mcp.PROTOCOL,
+                       "capabilities": {}, "clientInfo": {}}
+        })
+        self.assertEqual(init["result"]["protocolVersion"], mcp.PROTOCOL)
+        response = session.handle({"jsonrpc": "2.0", "id": 2,
+            "method": "tools/call", "params": {
+                "name": "native_file_read",
+                "arguments": {"project": "hermes", "relative": r"src\safe.py"}}})
+        self.assertFalse(response["result"]["isError"])
+        body = json.loads(response["result"]["content"][0]["text"])
+        self.assertEqual(base64.b64decode(body["data"]), self.data)
+        self.assertEqual(body["sha256"], hashlib.sha256(self.data).hexdigest())
+        denial = session.handle({"jsonrpc": "2.0", "id": 3,
+            "method": "tools/call", "params": {
+                "name": "native_file_read",
+                "arguments": {"project": "hermes", "relative": r"..\private.py"}}})
+        self.assertTrue(denial["result"]["isError"])
 
     def test_actual_outside_path_and_oversized_file_denied(self):
         with self.assertRaises(broker.NativeReadRefused):
