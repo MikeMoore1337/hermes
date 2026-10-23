@@ -41,12 +41,20 @@ class EditorialComparisonTests(unittest.TestCase):
         self.assertEqual(result["status"], "REVIEW_CANDIDATE")
         self.assertIn("FEWER_EXACT_REPETITIONS", result["signals"])
 
-    def test_shorter_text_without_proven_signal_stays_no_change(self):
+    def test_shorter_uncited_text_without_proven_signal_stays_no_change(self):
+        result = compare(pair(
+            "Результаты предварительные и требуют дальнейшего изучения. Источник [ref:S1].",
+            "Результаты предварительные. Источник [ref:S1].",
+        ))
+        self.assertEqual(result["status"], "NO_CHANGE")
+
+    def test_shorter_cited_claim_requires_manual_source_review(self):
         result = compare(pair(
             "Результаты предварительные и требуют дальнейшего изучения [ref:S1].",
             "Результаты предварительные [ref:S1].",
         ))
-        self.assertEqual(result["status"], "NO_CHANGE")
+        self.assertEqual(result["status"], "REFUSED")
+        self.assertIn("CITED_CLAIM_CONTEXT_CHANGED", result["refusals"])
 
     def test_changed_percentage_is_refused(self):
         result = compare(pair(
@@ -55,6 +63,35 @@ class EditorialComparisonTests(unittest.TestCase):
         ))
         self.assertEqual(result["status"], "REFUSED")
         self.assertIn("NUMERIC_FACTS_CHANGED", result["refusals"])
+
+    def test_swapped_valid_citations_are_refused_even_if_counts_match(self):
+        result = compare(pair(
+            "В первой группе было 10% ответов [ref:S1]. Во второй группе было 20% [ref:S2].",
+            "В первой группе было 10% ответов [ref:S2]. Во второй группе было 20% [ref:S1].",
+            source_ids=["S1", "S2"],
+        ))
+        self.assertEqual(result["status"], "REFUSED")
+        self.assertIn("CITED_CLAIM_CONTEXT_CHANGED", result["refusals"])
+        self.assertNotIn("CITATIONS_CHANGED", result["refusals"])
+        self.assertNotIn("NUMERIC_FACTS_CHANGED", result["refusals"])
+        self.assertFalse(result["citation_sentence_alignment_verified"])
+
+    def test_swapped_sources_across_nonnumeric_claims_refused(self):
+        result = compare(pair(
+            "Один метод исследовали [ref:S1]. Другой метод ограничен [ref:S2].",
+            "Один метод исследовали [ref:S2]. Другой метод ограничен [ref:S1].",
+            source_ids=["S1", "S2"],
+        ))
+        self.assertIn("CITED_CLAIM_CONTEXT_CHANGED", result["refusals"])
+
+    def test_reordering_whole_unchanged_cited_sentences_is_not_drift(self):
+        result = compare(pair(
+            "Первую гипотезу рассмотрели [ref:S1]. Вторую гипотезу изучили [ref:S2].",
+            "Вторую гипотезу изучили [ref:S2]. Первую гипотезу рассмотрели [ref:S1].",
+            source_ids=["S1", "S2"],
+        ))
+        self.assertEqual("NO_CHANGE", result["status"])
+        self.assertEqual([], result["refusals"])
 
     def test_doi_mutation_is_refused(self):
         result = compare(pair(
