@@ -132,6 +132,61 @@ class H01OpsContractTests(unittest.TestCase):
             saved = json.loads((state / "state.json").read_text(encoding="utf-8"))
             self.assertEqual(saved["last_status"], "agent_result_unverified")
 
+    def test_reservation_syncs_parent_directory_after_atomic_replace(self):
+        """File fsync plus rename alone is not a durable crash-safe reservation."""
+        import stat
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root / "state.json"
+            original_fsync = os.fsync
+            original_replace = os.replace
+            order = []
+
+            def observed_fsync(fd):
+                mode = os.fstat(fd).st_mode
+                order.append("directory_sync" if stat.S_ISDIR(mode) else "file_sync")
+                return original_fsync(fd)
+
+            def observed_replace(source, dest):
+                order.append("replace")
+                return original_replace(source, dest)
+
+            with patch.object(agent.os, "fsync", side_effect=observed_fsync), \
+                 patch.object(agent.os, "replace", side_effect=observed_replace):
+                agent._write_state(path, {
+                    "utc_date": "2026-10-23", "calls": 1,
+                    "last_event_id": 38, "last_status": "RESERVED_NO_RETRY",
+                })
+            self.assertEqual(order, ["file_sync", "replace", "directory_sync"])
+            self.assertEqual(json.loads(path.read_text(encoding="utf-8"))["calls"], 1)
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(sorted(p.name for p in root.iterdir()), ["state.json"])
+
+    def test_failed_directory_sync_denies_model_request(self):
+        """Do not make an AI call after reservation durability becomes uncertain."""
+        import stat
+
+        with tempfile.TemporaryDirectory() as tmp:
+            state = Path(tmp) / "agent"
+            original_fsync = os.fsync
+
+            def fail_directory_sync(fd):
+                if stat.S_ISDIR(os.fstat(fd).st_mode):
+                    raise OSError("simulated_parent_fsync_error")
+                return original_fsync(fd)
+
+            with patch.object(agent, "STATE", state), \
+                 patch.object(agent, "verify_host"), \
+                 patch.object(agent, "verify_credentials"), \
+                 patch.object(agent, "safe_image", return_value="sha256:" + "a" * 64), \
+                 patch.object(agent, "read_events", return_value=[candidate()]), \
+                 patch.object(agent, "model_once") as provider, \
+                 patch.object(agent.os, "fsync", side_effect=fail_directory_sync):
+                with self.assertRaisesRegex(OSError, "simulated_parent_fsync_error"):
+                    agent.run()
+            provider.assert_not_called()
+
     def test_h01_model_timeout_is_accepted_by_bounded_runner(self):
         """Regression: a timeout >180s is rejected before Docker ever starts."""
         from scripts.bounded_subprocess import BoundedProcessError, run_bounded
