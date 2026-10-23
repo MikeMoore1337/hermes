@@ -102,6 +102,7 @@ def read_plan(*, user_id: int, host_id: str, start: str, end: str, device: str =
         raise WebmasterDenied("read_plan_invalid")
     h = f"/user/{user_id}/hosts/{quote(host_id, safe='')}"
     window = {"date_from": start, "date_to": end}
+    query_fields = ("TOTAL_SHOWS", "TOTAL_CLICKS", "AVG_SHOW_POSITION", "AVG_CLICK_POSITION")
     return {
         "schema": "hermes-h24-yandex-webmaster-get-plan-v1",
         "status": "PLAN_ONLY_NO_REQUESTS", "authorization": "NOT_GRANTED",
@@ -111,9 +112,10 @@ def read_plan(*, user_id: int, host_id: str, start: str, end: str, device: str =
             {"method": "GET", "url": BASE + f"/user/{user_id}/hosts"},
             {"method": "GET", "url": BASE + h + "/search-queries/popular?" + urlencode({
                 **window, "order_by": "TOTAL_SHOWS", "device_type_indicator": device,
-                "limit": 50})},
+                "query_indicator": query_fields, "limit": 50}, doseq=True)},
             {"method": "GET", "url": BASE + h + "/search-queries/all/history?" + urlencode({
-                **window, "device_type_indicator": device})},
+                **window, "device_type_indicator": device, "query_indicator": query_fields},
+                doseq=True)},
             {"method": "GET", "url": BASE + h + "/indexing/history?" + urlencode(window)},
             {"method": "GET", "url": BASE + h + "/sitemaps?" + urlencode({"limit": 20})},
         ],
