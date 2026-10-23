@@ -52,6 +52,25 @@ class IncidentAdvisorTests(unittest.TestCase):
         self.assertIn("Не предлагай повторные запросы", prompt)
         self.assertIn("платный тариф", prompt)
 
+    def test_approved_prompt_catalog_matches_strict_validator(self) -> None:
+        context = prepare_context(SCENARIOS["provider_http_429"])
+        prompt = build_prompt(context)
+        self.assertEqual(prompt.count("BEGIN_APPROVED_TEXT"), 1)
+        self.assertEqual(prompt.count("END_APPROVED_TEXT"), 1)
+        text = prompt.split("BEGIN_APPROVED_TEXT\\n", 1)[1].split(
+            "\\nEND_APPROVED_TEXT", 1
+        )[0]
+        allowed = json.loads(text)
+        expected = mock_result(context)
+        self.assertEqual(allowed["what_happened"], expected["what_happened"])
+        self.assertEqual(allowed["impact"], expected["impact"])
+        self.assertEqual(
+            allowed["probable_cause_summary"], expected["probable_cause"]["summary"]
+        )
+        self.assertIn(expected["recommendation"], allowed["recommendations"])
+        self.assertTrue(set(expected["checks"]).issubset(set(allowed["checks"])))
+        self.assertEqual(validate_result(expected, context)["status"], "active")
+
     def test_mock_result_is_valid_and_reproducible(self) -> None:
         context = prepare_context(SCENARIOS["telegram_sender_down"])
         first = validate_result(json.dumps(mock_result(context), ensure_ascii=False), context)
