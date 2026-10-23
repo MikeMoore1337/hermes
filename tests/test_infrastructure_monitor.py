@@ -137,6 +137,45 @@ class CollectorTests(unittest.TestCase):
             Path(root, "hermes.json").write_text(json.dumps(value))
             self.assertEqual(hosts(Path(root))["hosts"][0]["status"], "unknown")
 
+    def test_inconsistent_capacity_never_appears_healthy_or_is_saved(self):
+        # Percentages are untrusted unless they agree with byte counters.
+        # Each case individually looks superficially numeric and bounded.
+        changes = (
+            ("ram_used_percent", 0),
+            ("disk_used_percent", 0),
+            ("ram_total_bytes", 0),
+            ("disk_total_bytes", 0),
+            ("ram_used_bytes", 200_000_000),
+            ("disk_used_bytes", 2_000_000),
+            ("ram_used_bytes", -1),
+            ("disk_used_bytes", -1),
+            ("ram_total_bytes", 100000.0),
+            ("disk_used_bytes", True),
+        )
+        for field, bogus in changes:
+            with self.subTest(field=field, bogus=bogus), \
+                 tempfile.TemporaryDirectory() as root:
+                folder = Path(root)
+                sample = fixture()
+                sample["metrics"][field] = bogus
+                (folder / "hermes.json").write_text(json.dumps(sample))
+                self.assertEqual(hosts(folder)["hosts"][0]["status"], "unknown")
+                # Refuse to ingest the same forgery into current state/history.
+                (folder / "hermes.json").unlink()
+                with self.assertRaises(ValueError):
+                    save(sample, folder)
+                self.assertFalse((folder / "hermes.json").exists())
+                self.assertFalse((folder / "history.sqlite3").exists())
+
+    def test_capacity_percent_accepts_collector_rounding(self):
+        with tempfile.TemporaryDirectory() as root:
+            sample = fixture()
+            # Exactly one decimal is the native procfs collector precision.
+            sample["metrics"]["ram_used_bytes"] -= 13
+            sample["metrics"]["disk_used_bytes"] -= 1
+            save(sample, Path(root))
+            self.assertEqual(hosts(Path(root))["hosts"][0]["status"], "online")
+
     def test_symlink_snapshot_refused(self):
         with tempfile.TemporaryDirectory() as root:
             folder = Path(root)
