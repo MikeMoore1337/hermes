@@ -24,6 +24,7 @@ from scripts.h15_native_windows_mcp_stdio import (
 )
 
 HOST = "hermes.mikemoore.top"
+LOOPBACK = "127.0.0.1"
 DEVICE_NAME = "H15 Windows native read-only"
 WIRE_VERSION = 1
 MAX_INCOMING = 8192
@@ -44,18 +45,34 @@ class Settings:
     device_token: str
 
 
-def parse_settings(relay_url: str, device_id: str, token: str) -> Settings:
-    """Explicit single-origin TLS policy, no credentials in URL or HTTP redirects."""
-    if not isinstance(relay_url, str) or len(relay_url) > 256:
+def parse_settings(relay_url: str, device_id: str, token: str,
+                   *, tunneled_loopback: bool = False) -> Settings:
+    """Pin the transport: public TLS or explicitly requested local SSH forward.
+
+    Loopback is NOT evidence that the expected SSH tunnel exists. Never enable
+    this mode without a separately approved, identity-verified local SSH
+    forward and a short-lived owner-scoped device credential.
+    """
+    if (not isinstance(relay_url, str) or len(relay_url) > 256
+        or any(ord(c) < 33 or ord(c) > 126 for c in relay_url)
+        or "?" in relay_url or "#" in relay_url or "@" in relay_url):
         raise NativeTransportDenied("invalid_relay")
     try:
         uri = urlsplit(relay_url)
         port = uri.port
     except ValueError as exc:
         raise NativeTransportDenied("invalid_relay") from exc
-    if (uri.scheme != "wss" or uri.hostname != HOST
-        or port not in (None, 443) or uri.username or uri.password
-        or uri.query or uri.fragment or uri.path != "/ws"):
+    if tunneled_loopback:
+        allowed = (uri.scheme == "ws" and uri.hostname == LOOPBACK
+                   and port is not None and 1024 <= port <= 65535
+                   and uri.netloc == f"{LOOPBACK}:{port}"
+                   and uri.path == "/ws")
+    else:
+        allowed = (uri.scheme == "wss" and uri.hostname == HOST
+                   and port in (None, 443)
+                   and uri.netloc in (HOST, f"{HOST}:443")
+                   and uri.path == "/ws")
+    if not allowed:
         raise NativeTransportDenied("relay_not_allowlisted")
     if type(device_id) is not str or not DEVICE_ID.fullmatch(device_id):
         raise NativeTransportDenied("invalid_device")
@@ -209,15 +226,21 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Dormant outbound native read-only BRC device")
     parser.add_argument("--single-session", action="store_true",
                         help="Native Windows launch requires specific owner approval")
+    parser.add_argument("--tunneled-loopback", action="store_true",
+                        help="Use only a previously owner-approved and verified SSH local forward")
     opts = parser.parse_args(argv)
     if not opts.single_session or os.name != "nt":
         return 2
     # Never allow an unpaired session, arbitrary public URLs or plaintext ws.
     try:
+        if opts.tunneled_loopback and os.environ.get("HERMES_NATIVE_BRC_WSS"):
+            raise NativeTransportDenied("ambiguous_transport")
         config = parse_settings(
-            os.environ.get("HERMES_NATIVE_BRC_WSS", ""),
+            os.environ.get("HERMES_NATIVE_BRC_LOOPBACK", "") if opts.tunneled_loopback
+            else os.environ.get("HERMES_NATIVE_BRC_WSS", ""),
             os.environ.get("HERMES_NATIVE_BRC_DEVICE_ID", ""),
             os.environ.get("HERMES_NATIVE_BRC_TOKEN", ""),
+            tunneled_loopback=opts.tunneled_loopback,
         )
         # Deferred import permits offline protocol testing without installing
         # a package or opening any remote connection.
