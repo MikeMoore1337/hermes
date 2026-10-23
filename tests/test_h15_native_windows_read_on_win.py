@@ -19,7 +19,9 @@ from scripts import h15_native_windows_read as broker
 class NativeWindowsReadOnRunnerTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix="h454-ci-windows-")
-        base = Path(self.tmp.name)
+        # Hosted runner TEMP can be reached through a junction/drive alias;
+        # use the physically resolved synthetic root for strict handle checks.
+        base = Path(self.tmp.name).resolve(strict=True)
         self.root = base / "hermes-code"
         self.root.mkdir()
         self.outside = base / "private-canary"
