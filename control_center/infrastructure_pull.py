@@ -108,6 +108,8 @@ def pull(*, config_path: Path = DEFAULT_CONFIG, directory: Path = ROOT,
         # Explicitly do not forward provider data, arbitrary keys or interface names.
         sanitized = {"schema": 1, "host": "yfc", "source": "linux_procfs_local",
                      "observed_at": checked["observed_at"], "metrics": checked["metrics"]}
+        if "polling_health" in checked:
+            sanitized["polling_health"] = checked["polling_health"]
         save(sanitized, directory, group="hermes-control")
         return {"host": "yfc", "status": "received", "observed_at": checked["observed_at"]}
     except (ValueError, TypeError, KeyError) as exc:
