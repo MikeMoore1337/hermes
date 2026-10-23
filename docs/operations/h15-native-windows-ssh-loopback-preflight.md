@@ -35,6 +35,66 @@ proofs. Prefer authenticated TLS end-to-end in a later iteration where
 operationally feasible. This is a design tradeoff, not a proof of production
 readiness.
 
+## Owner-side dedicated SSH key operator (#454)
+
+`scripts/h15_native_windows_ssh_identity.ps1` is **dormant source code**.
+It only targets two new files in the owner's Windows user profile:
+`%USERPROFILE%\\.ssh\\hermes_h454_native_read_ed25519` and the matching
+`.pub`. It does not touch existing `config`, `known_hosts`, running
+SSH processes, VPS SSH rules, owner project trees or Docker workspaces.
+No SSH key or passphrase is ever sent to ChatGPT or GitHub.
+
+Windows PowerShell 5.1 usage **after inspecting the exact committed source**:
+
+```powershell
+# Pure read-only check, no key creation
+powershell.exe -NoProfile -File .\\scripts\\h15_native_windows_ssh_identity.ps1 -Mode Preflight
+
+# ONLY after specific owner approval for creating the TWO new keypair files:
+powershell.exe -NoProfile -File .\\scripts\\h15_native_windows_ssh_identity.ps1 -Mode Generate -OwnerApproved
+
+# Show public SHA256 fingerprint only, never private material:
+powershell.exe -NoProfile -File .\\scripts\\h15_native_windows_ssh_identity.ps1 -Mode Fingerprint
+```
+
+`Generate` never overwrites a preexisting private/public file, refuses
+reparse points, requires interactive non-empty passphrase (the operator
+checks the resulting OpenSSH cipher is not `none`), and does not print
+private material. If the operator reports `REFUSED` or
+`...NOT_VERIFIED...`, stop rather than retrying or deleting files.
+The key's Windows NTFS ACL remains **NOT_VERIFIED** until independently
+checked; creating it does not make it safe for native relay pairing.
+
+A **new dedicated remote SSH account** is needed. Even though the owner
+reported global `AllowTcpForwarding=yes` / `PermitOpen=any`, a key
+without scoped SSHD/account/authorized_keys enforcement is **not ready**.
+Require server-side **local forwarding only** with exactly
+`PermitOpen 172.29.251.2:3000` for the new account/key; deny remote
+forwarding, shell/exec, agent/X11 forwarding, PTY and other TCP targets.
+Do not reuse the existing Windows sandbox key, credentials or SSH session.
+Validate effective `sshd -T -C user=<dedicated-user>,host=<verified-host>,addr=<verified-client>`
+**without printing private credentials**; ensure any `Match` rule is
+actually effective for the target user. The global `sshd -T` output
+alone cannot prove it.
+
+The eventual client local forward is **not approved or launched** here:
+`-F none -N -T -L 127.0.0.1:38183:172.29.251.2:3000`, with
+specific new `-i` identity, verified `known_hosts`,
+`StrictHostKeyChecking=yes`, `ExitOnForwardFailure=yes`, no
+credentials on command line and no dynamic/remote forwarding. Do not
+open a public WebSocket. A local listener PID must be attributed to the
+intended SSH process **before** any bearer token is placed in a
+native agent process. The SSH destination itself must be independently
+proved reachable from the approved remote account, not inferred merely
+from the BRC Docker sandbox's 401 response.
+
+Owner-preflight evidence on 2026-10-23: Python 3.14.8 PASS,
+`ssh.exe` PASS, `.ssh/config` and `known_hosts` PRESENT, one
+unrelated existing ssh process, local port 38183 FREE;
+Hermes VPS `sshd` found and listening, owner-reported internal
+BRC container running in `hermes-brc-internal`. These are
+**prerequisites only**, not authenticated native transport proof.
+
 ## Pre-activation checks (all NOT_RUN)
 
 1. **Read-only owner VPS network inspection:** verify actual private relay
