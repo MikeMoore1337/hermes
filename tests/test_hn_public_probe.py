@@ -75,6 +75,16 @@ class PublicHNProbeTests(unittest.TestCase):
         self.assertEqual("https://news.ycombinator.com/item?id=123", result[0]["url"])
         self.assertNotIn("www.example.com", json.dumps(result))
 
+    def test_existing_research_scout_deliberately_excludes_hn_discussions(self):
+        from research_scout.core import EvidenceError, safe_source_url
+        with self.assertRaises(EvidenceError):
+            safe_source_url("https://news.ycombinator.com/item?id=123")
+        result = run("ai-agents", now=NOW,
+                     transport=lambda *_: response(story("123")))
+        self.assertEqual("https://news.ycombinator.com/item?id=123",
+                         result["items"][0]["url"])
+        self.assertFalse(result["items"][0]["scientific_evidence"])
+
     def test_no_execute_never_fetches(self):
         with patch("content_research.hn_public_probe._fetch", side_effect=AssertionError("network")):
             self.assertEqual(0, main(["--topic", "ai-agents"]))
