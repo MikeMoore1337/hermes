@@ -5,6 +5,12 @@ on:
     paths:
       - scripts/h15_native_windows_read.py
       - scripts/h15_native_windows_mcp_stdio.py
+      - scripts/h15_native_windows_outbound.py
+      - tests/test_h15_native_windows_outbound.py
+      - tests/test_h15_native_windows_relay_contract.py
+      - scripts/h15_brc_native_read_gate_patch.py
+      - deploy/h15/hermes-native-read-gate.template.ts
+      - tests/test_h15_brc_native_read_gate_patch.py
       - tests/test_h15_native_windows_mcp_stdio.py
       - control_center/native_windows_policy.py
       - tests/test_h15_native_windows_read.py
@@ -35,10 +41,37 @@ jobs:
           python -B -m unittest -v tests.test_h15_native_windows_read_on_win
           if ($LASTEXITCODE -ne 0) { throw "WIN32_HANDLE_E2E_FAIL" }
           Write-Output "H454_NATIVE_WIN32_SYNTHETIC=PASS"
+      - name: Compile native relay gate and verify owner/device fail closed
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $env:RUNNER_TEMP 'h454-native-relay-ts'
+          npm exec --yes --package=typescript@5.9.3 -- tsc --strict --target ES2022 --module commonjs --skipLibCheck --outDir $out deploy/h15/hermes-native-read-gate.template.ts
+          if ($LASTEXITCODE -ne 0) { throw 'NATIVE_RELAY_TYPESCRIPT_COMPILE_FAILED' }
+          $module = Join-Path $out 'hermes-native-read-gate.template.js'
+          if (-not (Test-Path -LiteralPath $module)) { throw 'NATIVE_GATE_OUTPUT_MISSING' }
+          $nodeTest = @'
+          const assert = require('node:assert/strict');
+          const a = require(process.argv[1]);
+          delete process.env.HERMES_NATIVE_READ_DEVICE_ID;
+          assert.equal(a.originalWindowsReadToolCatalog().length, 0);
+          process.env.HERMES_NATIVE_READ_DEVICE_ID = 'h15-native-readonly-1234';
+          assert.equal(a.originalWindowsReadToolCatalog().length, 2);
+          const d = { deviceId: 'h15-native-readonly-1234', name: 'H15 Windows native read-only', platform: 'win32' };
+          const tools = [{name:'native_file_read'},{name:'native_file_stat'}];
+          assert.equal(a.isNativeOriginalDevice(d.deviceId, true, d, tools), true);
+          assert.equal(a.isNativeOriginalDevice(d.deviceId, false, d, tools), false);
+          assert.equal(a.isNativeOriginalDevice(d.deviceId, true, d, [...tools,{name:'start_process'}]), false);
+          assert.equal(a.isNativeOriginalReadRequest('native_file_read', {project:'hermes',relative:'README.md'}), true);
+          assert.equal(a.isNativeOriginalReadRequest('native_file_read', {project:'hermes',relative:'..\\private.md'}), false);
+          console.log('H454_RELAY_NATIVE_DEVICE_GATE=PASS');
+          '@
+          node -e $nodeTest $module
+          if ($LASTEXITCODE -ne 0) { throw 'NATIVE_GATE_RUNTIME_FAILED' }
       - name: Recheck owner scope and negative request contract
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          python -B -m unittest -v tests.test_h15_native_windows_read tests.test_native_windows_policy tests.test_h15_native_windows_mcp_stdio
+          python -B -m unittest -v tests.test_h15_native_windows_read tests.test_native_windows_policy tests.test_h15_native_windows_mcp_stdio tests.test_h15_native_windows_outbound tests.test_h15_native_windows_relay_contract tests.test_h15_brc_native_read_gate_patch
           if ($LASTEXITCODE -ne 0) { throw "NATIVE_READ_CONTRACT_FAIL" }
           Write-Output "H454_OWNER_SCOPE_CONTRACT=PASS"
