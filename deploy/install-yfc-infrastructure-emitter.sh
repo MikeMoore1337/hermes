@@ -21,7 +21,7 @@ public_key_pattern='^ssh-ed25519[[:space:]][A-Za-z0-9+/=]+([[:space:]][A-Za-z0-9
 [[ "$public_key" =~ $public_key_pattern ]] || die unsupported_key
 /usr/bin/ssh-keygen -lf "$pub" >/dev/null 2>&1 || die malformed_public_key
 
-for name in control_center/infrastructure.py control_center/__init__.py deploy/hermes-yfc-metrics-emit.sh; do
+for name in control_center/infrastructure.py control_center/yfc_polling.py control_center/__init__.py deploy/hermes-yfc-metrics-emit.sh; do
   [[ -f "$checkout/$name" && ! -L "$checkout/$name" ]] || die missing_or_symlink_source
 done
 [[ "$(git -C "$checkout" rev-parse --verify HEAD)" == "$sha" ]] || die revision_mismatch
@@ -58,6 +58,8 @@ install -o root -g root -m 0644 \
   "$checkout/control_center/__init__.py" "$release/control_center/__init__.py"
 install -o root -g root -m 0644 \
   "$checkout/control_center/infrastructure.py" "$release/control_center/infrastructure.py"
+install -o root -g root -m 0644 \
+  "$checkout/control_center/yfc_polling.py" "$release/control_center/yfc_polling.py"
 install -d -o root -g root -m 0755 /usr/local/libexec
 install -o root -g root -m 0755 "$checkout/deploy/hermes-yfc-metrics-emit.sh" \
   /usr/local/libexec/hermes-yfc-metrics-emit
