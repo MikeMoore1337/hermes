@@ -4,7 +4,7 @@
  * alone; pair this with owner-bound device token and OS read-only identity.
  */
 declare const process: { env: Record<string, string | undefined> };
-const EXPECTED_NAME = 'H15 Windows original read-only';
+const EXPECTED_NAME = 'H15 Windows native read-only';
 const ID = /^[A-Za-z0-9_-]{8,128}$/;
 const PROJECTS = new Set(['hermes', 'your-fitness-coach', 'second-brain',
                           'ai-development-toolkit']);

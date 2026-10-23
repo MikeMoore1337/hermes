@@ -11,6 +11,9 @@ on:
       - scripts/h15_brc_native_read_gateway.py
       - deploy/h15/hermes-native-read.template.ts
       - tests/test_h15_brc_native_read_gateway.py
+      - tests/test_h15_native_windows_relay_contract.py
+      - scripts/h15_brc_native_read_socket_e2e.mjs
+      - scripts/h15_native_windows_outbound.py
       - scripts/h15_brc_upgrade_preflight.py
       - scripts/h15_brc_transactional_upgrade.py
       - scripts/h15_brc_owner_artifact_stage.py
@@ -35,6 +38,9 @@ on:
       - scripts/h15_brc_native_read_gateway.py
       - deploy/h15/hermes-native-read.template.ts
       - tests/test_h15_brc_native_read_gateway.py
+      - tests/test_h15_native_windows_relay_contract.py
+      - scripts/h15_brc_native_read_socket_e2e.mjs
+      - scripts/h15_native_windows_outbound.py
       - scripts/h15_brc_upgrade_preflight.py
       - scripts/h15_brc_transactional_upgrade.py
       - scripts/h15_brc_owner_artifact_stage.py
@@ -122,7 +128,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m unittest -v tests.test_h15_workspace_router tests.test_h15_brc_workspace_gateway tests.test_h15_brc_upgrade_preflight tests.test_h15_brc_transactional_upgrade tests.test_h15_brc_owner_artifact_stage tests.test_h15_brc_owner_handoff tests.test_h15_brc_native_read_gateway
+          python3 -m unittest -v tests.test_h15_workspace_router tests.test_h15_brc_workspace_gateway tests.test_h15_brc_upgrade_preflight tests.test_h15_brc_transactional_upgrade tests.test_h15_brc_owner_artifact_stage tests.test_h15_brc_owner_handoff tests.test_h15_brc_native_read_gateway tests.test_h15_native_windows_relay_contract
 
       - name: Fetch exact upstream Git commit (not tag, latest or npm install)
         shell: bash
@@ -260,6 +266,7 @@ jobs:
           JS
           node "$GITHUB_WORKSPACE/scripts/h15_brc_relay_ws_e2e.mjs"
           node "$GITHUB_WORKSPACE/scripts/h15_brc_two_wss_agents_e2e.mjs"
+          node "$GITHUB_WORKSPACE/scripts/h15_brc_native_read_socket_e2e.mjs"
           node "$GITHUB_WORKSPACE/scripts/h15_brc_gateway_policy_e2e.mjs"
           node "$GITHUB_WORKSPACE/scripts/h15_brc_reconnect_socket_e2e.mjs"
           node "$GITHUB_WORKSPACE/scripts/h15_brc_browser_csrf_e2e.mjs"

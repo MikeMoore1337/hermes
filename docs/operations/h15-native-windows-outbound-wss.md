@@ -14,6 +14,7 @@ root denied; this proof does not include remote MCP transport.
   No ws://, arbitrary domains, URL tokens, or redirect fallback.
   **The production BRC WSS hostname and route must be checked separately
   before approval of a live connection.**
+- Device identity must exactly match the isolated #528 relay route: `H15 Windows native read-only`. The older #526 source-only gate is not a second independently deployable route.
 - Uses upstream BRC wire version 1, owner-paired device bearer token in
   Authorization header and X-BRC-Protocol: 1. Hello announces unique native
   device name and ONLY two tools: native_file_stat and native_file_read.
