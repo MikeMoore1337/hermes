@@ -15,6 +15,7 @@ from unittest.mock import patch
 
 from scripts import h15_native_windows_read as broker
 from scripts import h15_native_windows_mcp_stdio as mcp
+from scripts import h15_native_windows_outbound as outbound
 
 
 @unittest.skipUnless(os.name == "nt", "real Win32 API required")
@@ -75,6 +76,40 @@ class NativeWindowsReadOnRunnerTests(unittest.TestCase):
                 "name": "native_file_read",
                 "arguments": {"project": "hermes", "relative": r"..\private.py"}}})
         self.assertTrue(denial["result"]["isError"])
+
+    def test_actual_win32_read_via_authenticated_wss_adapter(self):
+        class SyntheticSocket:
+            def __init__(self):
+                self.events = [
+                    {"type": "welcome", "protocol": 1, "relayVersion": "test",
+                     "serverTime": 1792745662222},
+                    {"type": "call", "id": "one", "tool": "native_file_read",
+                     "args": {"project": "hermes", "relative": r"src\safe.py"}},
+                ]
+                self.responses = []
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return None
+            def send(self, value):
+                self.responses.append(json.loads(value))
+            def recv(self, timeout=None):
+                if not self.events:
+                    raise TimeoutError
+                return json.dumps(self.events.pop(0))
+        socket = SyntheticSocket()
+        settings = outbound.parse_settings(
+            "wss://hermes.mikemoore.top/ws", "native-ci-win-handle-123", "x"*40)
+        outcome = outbound.run_session(settings, lambda *_args, **_kwargs: socket)
+        self.assertEqual(outcome, "idle_timeout")
+        self.assertEqual(socket.responses[0]["type"], "hello")
+        self.assertEqual(socket.responses[0]["device"]["platform"], "win32")
+        response = socket.responses[1]
+        self.assertEqual(response["type"], "result")
+        self.assertFalse(response["result"]["isError"])
+        body = json.loads(response["result"]["content"][0]["text"])
+        self.assertEqual(base64.b64decode(body["data"]), self.data)
+        self.assertEqual(body["sha256"], hashlib.sha256(self.data).hexdigest())
 
     def test_actual_outside_path_and_oversized_file_denied(self):
         with self.assertRaises(broker.NativeReadRefused):
