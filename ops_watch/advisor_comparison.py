@@ -81,7 +81,7 @@ def compare_scenarios(*, include_mock: bool = False) -> list[dict[str, Any]]:
     """Use one fixed set for rules and Advisor; live providers are never called."""
     rows: list[dict[str, Any]] = []
     for name, event in SCENARIOS.items():
-        if name in {"invalid_input", "prompt_injection"}:
+        if name in {"invalid_input", "prompt_injection", "contradictory_state"}:
             continue
         context = prepare_context(event)
         mock = mock_result(context) if include_mock else None
