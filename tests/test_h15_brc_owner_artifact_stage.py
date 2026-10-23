@@ -141,8 +141,8 @@ class StagingTests(unittest.TestCase):
                 {"total_count": 1, "workflow_runs": [dispatched]},
                 {"artifacts": [ART]}, JOBS]), \
              patch.object(m, "run", return_value=(
-                 f"H15_OFFLINE_BUNDLE_IMAGE_ID={IMAGE}\\n"
-                 f"H15_OFFLINE_BUNDLE_ARCHIVE_SHA256={HASH}\\n")):
+                 f"H15_OFFLINE_BUNDLE_IMAGE_ID={IMAGE}\n"
+                 f"H15_OFFLINE_BUNDLE_ARCHIVE_SHA256={HASH}\n")):
             result = m.discover()
         self.assertEqual(result["sha"], SHA)
         self.assertFalse(result["ancestor_candidate_reused"])
