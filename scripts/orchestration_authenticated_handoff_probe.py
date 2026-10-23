@@ -11,7 +11,9 @@ import json
 from pathlib import Path
 import re
 
-from scripts.orchestration_pre_call_reservation_probe import reserve_once
+from scripts.orchestration_pre_call_reservation_probe import (
+    record_verified_evidence_once, reserve_once,
+)
 
 SHA = re.compile(r"[0-9a-f]{40}\Z")
 IDENT = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}\Z")
@@ -178,3 +180,35 @@ def verify_synthetic_evidence(
     _verify_sig(receipt, signature, test_evidence_key)
     seen_receipts.add(receipt["receipt_id"])
     return receipt["producer"]
+
+
+def accept_signed_evidence_once(
+    db_path: Path, receipt, signature: str, payload: bytes, *,
+    test_evidence_key: bytes, operation_key: str, revision: str,
+    expected_producer: str, expected_consumer: str, expected_run_id: int,
+    now: int,
+) -> str:
+    """Test-only signed receipt verification followed by atomic SQLite accept.
+
+    A new in-memory set is intentionally insufficient for crash-safe replay.
+    Only the persistent research ledger determines whether this receipt or
+    logical operation was already accepted. No native Kanban dispatch or
+    producer authorization is performed.
+    """
+    producer = verify_synthetic_evidence(
+        receipt, signature, payload, test_evidence_key=test_evidence_key,
+        operation_key=operation_key, revision=revision,
+        expected_producer=expected_producer,
+        expected_consumer=expected_consumer, expected_run_id=expected_run_id,
+        now=now, seen_receipts=set(),
+    )
+    accepted = record_verified_evidence_once(
+        db_path, receipt_id=receipt["receipt_id"],
+        operation_key=receipt["operation_key"],
+        revision=receipt["revision"], producer=receipt["producer"],
+        consumer=receipt["consumer"], run_id=receipt["run_id"],
+        payload_sha256=receipt["sha256"], now=now,
+    )
+    if not accepted:
+        raise Rejected("receipt_replay_durable")
+    return producer
