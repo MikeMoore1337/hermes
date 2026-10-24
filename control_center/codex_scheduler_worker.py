@@ -141,9 +141,26 @@ def host_ready() -> bool:
         available_mib = fields["MemAvailable"] // 1024
         used_swap_mib = max(0, fields["SwapTotal"] - fields["SwapFree"]) // 1024
         disk_free_mib = shutil.disk_usage(STATE_DIR).free // (1024 * 1024)
-        return (available_mib >= 1056 and used_swap_mib <= 1024
-                and os.getloadavg()[0] <= 1.5 and disk_free_mib >= 5120)
+        checks = {
+            "memory": available_mib >= 1056,
+            "swap": used_swap_mib <= 1024,
+            "cpu_load": os.getloadavg()[0] <= 1.5,
+            "disk": disk_free_mib >= 5120,
+        }
+        rejected = [name for name, passed in checks.items() if not passed]
+        if rejected:
+            # This receipt is emitted at the exact admission sample. Do not
+            # publish live host values, paths, task content or CLI details.
+            print(json.dumps({
+                "event": "codex_scheduler_capacity_deferral",
+                "failed_checks": rejected,
+            }, sort_keys=True), file=sys.stderr, flush=True)
+        return not rejected
     except (OSError, KeyError, ValueError):
+        print(json.dumps({
+            "event": "codex_scheduler_capacity_deferral",
+            "failed_checks": ["measurement_unavailable"],
+        }, sort_keys=True), file=sys.stderr, flush=True)
         return False
 
 

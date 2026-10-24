@@ -4,6 +4,31 @@ Status: production source release delivered by #274; opt-in worker follow-up #27
 Dependencies: #255 quota monitor/policy; #2/#33 H-01 burn-in; #272 analytics;
 #273 offline benchmark. Nothing here restarts or reconfigures H-01.
 
+## Exact-time capacity deferral diagnosis (2026-10-25)
+
+A separately authorized new `inspect` canary was prepared after the first
+historical `blocked/uncertain` job was reconciled to `reviewed`. The
+one-shot scheduler systemd service returned success with
+`{"mode":"deferred","reason":"host_capacity"}` **before writing a
+new job or invoking Codex**. Current host resources later passed all gates
+(free disk 5630 MiB, fresh quota `ALLOW`), but that later reading cannot
+show which host threshold failed **at the instant of the deferral**.
+
+On future host-capacity deferrals, the worker also writes one sanitized
+`codex_scheduler_capacity_deferral` JSON marker to stderr/journal, listing
+only fixed failed-check labels (`memory`, `swap`, `cpu_load`, `disk`)
+or `measurement_unavailable`. It does not report raw gauges, secrets, task
+instructions, paths or model output. **The admission thresholds, worker
+return value, default-disabled behavior and no-auto-retry guarantees are
+unchanged.**
+
+The previous v3 owner script's one-shot marker stays consumed, even though
+the worker returned `deferred` before inference. Do not reuse that marker,
+erase it, start the service again against the same grant, or assume
+the original incident's attempted inference can be replayed. Before any
+new operator-approved grant, check fresh disk/CPU headroom and `ALLOW`
+quota; preserve the earlier attempt and marker as audit evidence.
+
 ## Cgroup v2 root controller-file compatibility (2026-10-24)
 
 A root-operated, zero-inference probe using the hardened systemd sandbox

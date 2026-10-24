@@ -1,5 +1,8 @@
 """H-15: synthetic-only checks for the opt-in production scheduler tick."""
 from datetime import datetime, timedelta, timezone
+from contextlib import redirect_stderr
+from io import StringIO
+from types import SimpleNamespace
 import json
 import os
 from pathlib import Path
@@ -116,6 +119,38 @@ class WorkerRuntimeTests(unittest.TestCase):
         self.assertEqual(self.invoke(True)["decision"], "UNKNOWN")
         with journal._connect() as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0], 1)
+
+    def test_capacity_gate_reports_only_failed_static_checks(self):
+        mem = (
+            "MemAvailable: 2000000 kB\n"
+            "SwapTotal: 2000000 kB\n"
+            "SwapFree: 2000000 kB\n"
+        )
+        output = StringIO()
+        with patch.object(worker.Path, "read_text", return_value=mem), \
+             patch.object(worker.shutil, "disk_usage",
+                          return_value=SimpleNamespace(free=4995 * 1024 * 1024)), \
+             patch.object(worker.os, "getloadavg", return_value=(1.6, 0.0, 0.0)), \
+             redirect_stderr(output):
+            self.assertFalse(worker.host_ready())
+        self.assertEqual(json.loads(output.getvalue()), {
+            "event": "codex_scheduler_capacity_deferral",
+            "failed_checks": ["cpu_load", "disk"],
+        })
+        self.assertNotIn("4995", output.getvalue())
+        self.assertNotIn("2000000", output.getvalue())
+
+    def test_capacity_unreadable_is_fail_closed_and_redacted(self):
+        output = StringIO()
+        with patch.object(worker.Path, "read_text", side_effect=OSError(
+            "private_host_path_should_not_appear"
+        )), redirect_stderr(output):
+            self.assertFalse(worker.host_ready())
+        self.assertEqual(json.loads(output.getvalue()), {
+            "event": "codex_scheduler_capacity_deferral",
+            "failed_checks": ["measurement_unavailable"],
+        })
+        self.assertNotIn("private_host_path", output.getvalue())
 
     def test_host_pressure_defers_without_claiming(self):
         self.grant()
