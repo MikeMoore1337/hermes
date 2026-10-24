@@ -1,11 +1,12 @@
 # Hermes Commander: workspace routing and client acceptance (#454)
 
-**Current state (2026-10-22):** the owner-authorized Hermes BRC Docker relay
+**Current state (2026-10-24):** the owner-authorized Hermes BRC Docker relay
 is deployed with authenticated native MCP tools `list_workspaces` and
 `resolve_workspace`. Their presence was verified via exact pinned OCI CI,
-then by **real ChatGPT and Codex client calls**. This supersedes the
-earlier source-only routing milestone. It does **not** constitute full
-Desktop Commander parity or native Windows host access.
+then by **real ChatGPT and Codex client calls**. Baseline 2-client ×
+3-sandbox file/edit/search/move/Node isolation E2E PASS; additional
+onboarding/recovery remains OPEN. Original Windows READ-only E2E passed
+separately and the temporary credential was revoked; no native host write/exec.
 
 See [native MCP workspace contract and live evidence](h15-brc-workspaces-mcp.md),
 including the exact source SHA, CI run, both client acceptance records,
@@ -48,14 +49,17 @@ for the live 2-clients × 3-devices scope and remaining failure-mode tests.
 The workspace discovery/resolution milestone is accepted for both real
 clients. Other #454 goals remain in progress:
 
-- Complete the required 2-client × 3-device file, edit, search, process,
-  failure and conflict scenarios; capture live traces and known gaps.
-- Implement onboarding/device-health UX via #455 only after the required
-  owner visual approval. Do not replace the legacy UI in advance.
+- Baseline 2-client × 3-sandbox file/edit/search/Node/cleanup PASS (2026-10-24).
+  Remaining scope: extended binary payload, concurrent-write/replay/failure
+  scenarios and runtime availability differences. See #454 evidence.
+- Complete #455 authenticated metadata collector and onboarding; the
+  owner already accepted the scoped Project Explorer layout, but no broader
+  unapproved UI modification or host permission is implied.
 - Verify device/agent reconnect, safe self-heal and Windows login/reboot
   recovery under an approved maintenance window (#445).
-- Optional native Windows-folder access requires a separate explicit
-  owner-approved list of paths and operations.
+- Exactly four native original Windows folders were approved for READ-only
+  E2E, and the one-shot read agent is now paused with token revoked. Every
+  future host command, write or re-enrollment requires a separate owner gate.
 
 See [#454](https://github.com/MikeMoore1337/hermes/issues/454) for the
 authoritative full acceptance criteria and linked E2E evidence.
