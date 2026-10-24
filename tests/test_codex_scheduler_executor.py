@@ -56,7 +56,9 @@ class OfficialAdapterTests(TestCase):
         process = MagicMock()
         process.returncode = 0
         popen.return_value = process
-        okay, reference = self.adapter(enabled=True).execute(self.job)
+        adapter = self.adapter(enabled=True)
+        okay, reference = adapter.execute(self.job)
+        self.assertEqual(adapter.last_phase, "wait")
         self.assertTrue(okay)
         self.assertRegex(reference, "^sha256:[0-9a-f]{64}$")
         argv = popen.call_args.args[0]
@@ -78,10 +80,12 @@ class OfficialAdapterTests(TestCase):
         for bound in (None, 768 * 1024 * 1024):
             with self.subTest(bound=bound):
                 self.cgroup_mock.return_value = bound
+                adapter = self.adapter(enabled=True)
                 with self.assertRaisesRegex(
                     ValidationError, "memory_cgroup_unverified"
                 ):
-                    self.adapter(enabled=True).execute(self.job)
+                    adapter.execute(self.job)
+                self.assertEqual(adapter.last_phase, "preflight")
         popen.assert_not_called()
 
     def test_effective_cgroup_memory_max_including_parent_limits(self):
@@ -147,6 +151,7 @@ class OfficialAdapterTests(TestCase):
         jid = "12345678-1111-2222-3333-123456789abc"
         success, receipt = adapter.execute({**self.job, "job_id": jid})
         self.assertTrue(success)
+        self.assertEqual(adapter.last_phase, "complete")
         self.assertTrue(receipt.startswith("artifact:" + jid + ":"))
         stored = list(artifacts.glob("*.jsonl"))
         self.assertEqual(len(stored), 1)
