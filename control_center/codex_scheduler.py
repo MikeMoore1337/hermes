@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import re
 import sqlite3
+import sys
 import time
 from typing import Callable, Protocol
 from uuid import uuid4
@@ -498,6 +499,49 @@ class Scheduler:
             return removed
 
 
+_SAFE_EXECUTOR_CODES = frozenset({
+    "live_worker_not_authorized",
+    "trusted_execution_plan_missing",
+    "official_codex_cli_missing",
+    "isolated_codex_home_missing",
+    "execution_scope_invalid",
+    "memory_cgroup_unverified",
+    "writable_git_checkout_required",
+    "artifact_job_id_invalid",
+    "artifact_directory_missing",
+    "artifact_directory_permissions",
+    "artifact_already_exists",
+    "codex_timeout_outcome_uncertain",
+    "codex_output_limit",
+})
+_SAFE_EXECUTOR_PHASES = frozenset({
+    "not_started", "preflight", "spawn", "wait", "artifact", "complete",
+})
+_SAFE_EXECUTOR_CLASSES = frozenset({
+    "ValidationError", "RuntimeError", "OSError", "PermissionError",
+    "FileNotFoundError", "TimeoutExpired", "SubprocessError",
+})
+
+
+def _report_executor_failure(exc: Exception, executor: Executor) -> None:
+    """Privacy-preserving incident marker; never log raw exception or prompts."""
+    phase = getattr(executor, "last_phase", "unknown")
+    if phase not in _SAFE_EXECUTOR_PHASES:
+        phase = "unknown"
+    kind = type(exc).__name__
+    if kind not in _SAFE_EXECUTOR_CLASSES:
+        kind = "other"
+    reason = str(exc)
+    if reason not in _SAFE_EXECUTOR_CODES:
+        reason = "redacted"
+    print(_json({
+        "event": "codex_executor_failure",
+        "phase": phase,
+        "class": kind,
+        "code": reason,
+    }), file=sys.stderr, flush=True)
+
+
 class QuotaWorker:
     """Single synthetic/live-neutral tick. No daemon or timer is installed."""
     def __init__(self, scheduler: Scheduler, snapshot: Callable[[], dict | None],
@@ -523,6 +567,11 @@ class QuotaWorker:
             saved = self.scheduler.finish(jid, self.worker_id, token,
                                           succeeded=bool(succeeded), result_ref=result_ref)
             return {"job_id": jid, "decision": saved["status"]}
-        except Exception:
+        except Exception as exc:
+            # Persist the fail-closed latch before attempting any logging.
             self.scheduler.fail_uncertain(jid, self.worker_id, token)
+            try:
+                _report_executor_failure(exc, self.executor)
+            except Exception:
+                pass  # Diagnostic failure must never permit a replay.
             return {"job_id": jid, "decision": "BLOCKED", "reason": "executor_outcome_unknown"}
