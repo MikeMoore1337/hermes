@@ -829,7 +829,12 @@ jobs:
           git -C "$candidate" worktree add --detach "$replay" cbe511702dd0147650353c29ac6ab1decd8afda1
           git -C "$replay" apply --check "$bundle/hermes-brc.patch"
           git -C "$replay" apply "$bundle/hermes-brc.patch"
-          git -C "$replay" add -N packages/relay/src/mcp/hermes-policy.ts
+          git -C "$replay" add -N \
+            packages/relay/src/hermes-brc-observer.ts \
+            packages/relay/src/mcp/hermes-policy.ts \
+            packages/relay/src/mcp/hermes-tool-catalog.ts \
+            packages/relay/src/mcp/hermes-workspaces.ts \
+            packages/relay/src/mcp/hermes-native-read.ts
           git -C "$replay" diff --check HEAD
           git -C "$replay" diff --binary HEAD > "$RUNNER_TEMP/replayed-brc.patch"
           cmp "$bundle/hermes-brc.patch" "$RUNNER_TEMP/replayed-brc.patch"
