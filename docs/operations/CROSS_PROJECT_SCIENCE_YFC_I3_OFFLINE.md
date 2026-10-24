@@ -1,0 +1,37 @@
+# I3 — офлайн-проверка научного handoff в редакционный контур YFC
+
+**Статус:** только HOLD / без автоматической отправки. Связанные задачи: Hermes [#558](https://github.com/MikeMoore1337/hermes/issues/558), научная экспертиза [#317](https://github.com/MikeMoore1337/hermes/issues/317). Владельцем публикации и методических решений остаётся YFC.
+
+## Фактический контракт
+
+В Hermes `research_scout.science_handoff` уже существует канонический `hermes-science-expert-handoff-v1`: четыре фиксированных PMID, исходные DOI и **19 незакрытых научных проверок**. Это подготовка вопросов для независимого эксперта, а не научно одобренные тезисы. Издательское correction для PMID `42771055` / DOI `10.1007/s00520-026-11251-3` отдельно известно (correction DOI `10.1007/s00520-026-11294-6`), но независимо не пересчитано.
+
+В YFC есть **два разных** контракта, которые нельзя отождествлять:
+
+- `HermesEditorialIntakeRequest`, `hermes-editorial-intake-v2`, `POST /api/v1/hermes/editorial/intake`: поток новостей, HMAC, allowlisted news source, published_at/freshness, source content hash, генерация текста и редакционные проверки. Это **не** интерфейс приёмки научно подтверждённых claim-level решений; запрещено выдавать старую научную публикацию за свежую новость или подменять авторство/статус проверки.
+- `HermesWebArticleIntakeRequest`, `hermes-web-article-intake-v1`: полный long-form web-article candidate с `claims`, `sources` и `claim_source_matrix` (`pending|verified|blocked`), независимым редакторским жизненным циклом и отдельными ограничениями. Это наиболее подходящая *будущая* поверхностная точка согласования YFC; **одиночный научный тезис не соответствует полной схеме запроса**, а заполнение `review_status=verified` только по данным Hermes недопустимо.
+
+Это **не предложение вводить новый API/очередь/издатель**. Дальнейший реальный маршрут сначала согласуется с YFC и отдельным научным редактором.
+
+## Что делает код
+
+`python3 -m research_scout.yfc_editorial_preflight` формирует локальный, bounded JSON `hermes-i3-yfc-science-preflight-v1` на основе текущего канонического Hermes handoff. Он проверяет exact четыре PMID, DOI, 19 gate ID, source refs, статус независимого эксперта и отсутствие разрешений на публикацию.
+
+Результат сейчас **всегда HOLD**, `yfc_request_payload=null`, `claim_level_contract_compatible=false`, `publication_allowed=false`, `network_calls=0`. Отдельно возвращаются source-bound PMID/DOI и отметки `NOT_RECHECKED_LIVE`, `NOT_VERIFIED`. Дата генерации H-03 пакета **не означает** актуальную проверку издателя. Вывод не содержит полных текстов, медицинских рекомендаций, данных пользователя или токенов.
+
+Если исходный handoff изменился, появляется новый неподдерживаемый источник, известная correction потеряна или кто-то внёс в данные `reviewer_approval=true`/ложный `editorial_approval`, код возвращает санитарную ошибку `science_handoff_not_authorized`. Он **не может** самостоятельно признать новый экспертный пакет одобренным: необходим отдельный PR/контракт с доказательствами независимой научной приёмки.
+
+## Проверки и условия выхода
+
+`python3 -m unittest tests.test_integration_i3_science_yfc -v`
+
+Тесты проверяют четыре источника/19 HOLD, сохранение correction, несовместимость новостной и claim-level схем, отсутствие запроса в YFC, негативные self-reported approvals, изменение DOI/PMID/версии/ссылки, секреты в полях и сетевой вызов.
+
+Для **реального I3** ещё требуются:
+
+1. Независимая экспертиза конкретного тезиса в Hermes #317: оригинал + версия, DOI/PMID, популяция, endpoints/effect/CI, bias/uncertainty, лицензия, notices, дата проверки и реальный reviewer signoff. Пока все 19 открыты, состояние HOLD.
+2. Решение редактора YFC о маршруте в существующий `hermes-web-article-intake-v1`, ожидаемом asset и source-to-claim matrix. Не обходить `candidate_id`, skill/version, HMAC и server-side проверки; не публиковать и не менять YFC код без отдельного разрешения.
+3. Офлайн отрицательные тесты для подписанного и проверенного claim-level примера после #317; затем явный owner approval перед любым внешним POST/production-активацией.
+4. Проверить actual YFC intake acceptance и редакторский review в разрешённой среде; история proof с exact SHA, человеческим review и no auto publication.
+
+Даже успешный CI и выкладка **этой offline подготовки** не доказывают квалифицированную научную экспертизу, существование service permission или приём YFC. Никаких новых фоновых служб, сетевых секретов, расписаний и платных API.
