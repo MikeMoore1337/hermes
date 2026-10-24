@@ -26,6 +26,31 @@ automatic H-01 coordination, or publicly accessible submission API is added.
 
 ## Versioned task and owner approval
 
+### H-15 #271: Node/V8 resource guard (24.10.2026)
+
+On the actual Hermes VPS, official `codex-cli 0.163.0` exited with SIGTRAP
+(`-5`) on **both non-inference** `--version` and `exec --help` when
+`RLIMIT_AS=256MiB` was applied. An address-space limit is not a physical
+RAM cap for Node/V8. The old executor incorrectly treated this as the
+approved per-task resident memory bound.
+
+The corrected executor no longer applies `RLIMIT_AS`. It requires a
+readable Linux cgroup-v2 `memory.max` in the running process's hierarchy,
+including ancestors, whose **effective** limit is at most the immutable
+job's `max_memory_mb`. Missing, unlimited or oversized cgroup limits block
+the model *before spawning Codex*. The reviewed systemd unit now enforces
+`MemoryAccounting=true` and `MemoryMax=256M` for the initial `inspect`
+canary. `RLIMIT_CPU`, `RLIMIT_FSIZE`, process group timeout, fixed CLI
+argv, immutable grants, quota and H-01 safeguards remain unchanged.
+
+This fixes the misleading virtual-memory guard, **not** evidence that the
+real CLI has completed a canary under 256 MiB physical RAM. A root-authorized
+operator must update only the scheduler's installed unit after merged
+source delivery, keep the timer disabled and verify physical cgroup
+compatibility without inference before the first real task. Do not loosen
+the hard cap or silently re-pin repository scope on a new deployment.
+
+
 Submission schema v1 has *exactly* these fields: schema_version=1,
 requested_at, expires_at, initiator, approval_id, repository,
 allowed_operations (subset inspect/test/patch/prepare_pr), model, effort,
@@ -189,8 +214,15 @@ Do not change that boundary or put a generic privileged SSH key in GitHub Action
    deploy SSH key), verify the new release's `deploy/hermes-codex-scheduler.*`
    files and install them under `/etc/systemd/system/` as root:root 0644.
    The unit reuses existing `hermes-codex` OS identity and
-   `hermes-control` group. It has a 768MiB cgroup memory ceiling, 45% CPU
-   quota, and no privileges or writable source directories.
+   `hermes-control` group. Starting with the H-15 #271 memory fix, it has
+   a strict **256 MiB physical-RAM** cgroup-v2 `MemoryMax=256M` ceiling,
+   45% CPU quota, and no privileges or writable source directories.
+   The scheduler executor checks that the effective inherited cgroup ceiling
+   is finite and does not exceed the approved per-job memory budget before
+   launching CLI. A direct shell invocation without such a bound is refused.
+   The systemd unit is not replaced automatically by production CD; the
+   existing installed unit must be updated from the reviewed exact release
+   with its timer **disabled**, before any live job.
 4. Under root, create `/etc/hermes-codex-scheduler/grants` owned by
    root:hermes-control and mode 0750, and `runtime.json` owned by
    root:hermes-control and mode 0640. Copy the disabled example, replace
@@ -213,6 +245,11 @@ Do not change that boundary or put a generic privileged SSH key in GitHub Action
    and instruction limited to read-only inspection of the reviewed Hermes
    repository. Make the request expiry at or before grant expiry. Do not
    include shell scripts, destructive actions, publishing, or PR writes.
+   The 256 MiB hard cgroup limit covers the worker **and** CLI; first verify
+   `codex --version` and `codex exec --help` under an *equivalent systemd
+   memory cgroup*, with **zero model calls**. If Node.js cannot start under
+   this physical-RAM cap, report BLOCKED; do not raise an approved memory
+   budget or invoke the live canary without a new explicit owner grant.
 8. First validate and test a synthetic quota-deferred tick. After explicit
    `"enabled":true` and a fresh ALLOW snapshot, permit a **single**
    observable live canary and verify one attempt, exit status, artifact

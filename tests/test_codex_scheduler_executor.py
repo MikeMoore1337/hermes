@@ -5,12 +5,21 @@ from unittest import TestCase
 from unittest.mock import patch, MagicMock
 
 from control_center.codex_scheduler import ValidationError
-from control_center.codex_scheduler_executor import OfficialCodexExecutor
+from control_center.codex_scheduler_executor import (
+    OfficialCodexExecutor, _effective_cgroup_memory_max,
+)
 
 
 class OfficialAdapterTests(TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
+        # CI never grants real model calls; simulate the trusted unit's
+        # Linux cgroup-v2 256 MiB physical-memory hard limit.
+        self.cgroup_patch = patch(
+            "control_center.codex_scheduler_executor._effective_cgroup_memory_max",
+            return_value=256 * 1024 * 1024)
+        self.cgroup_mock = self.cgroup_patch.start()
+        self.addCleanup(self.cgroup_patch.stop)
         root = Path(self.temp.name)
         self.repo = root / "repo"
         self.repo.mkdir()
@@ -65,6 +74,43 @@ class OfficialAdapterTests(TestCase):
                          b"Review approved synthetic issue.")
 
     @patch("control_center.codex_scheduler_executor.subprocess.Popen")
+    def test_unverified_or_oversized_memory_cgroup_blocks_all_execution(self, popen):
+        for bound in (None, 768 * 1024 * 1024):
+            with self.subTest(bound=bound):
+                self.cgroup_mock.return_value = bound
+                with self.assertRaisesRegex(
+                    ValidationError, "memory_cgroup_unverified"
+                ):
+                    self.adapter(enabled=True).execute(self.job)
+        popen.assert_not_called()
+
+    def test_effective_cgroup_memory_max_including_parent_limits(self):
+        from control_center import codex_scheduler_executor as module
+        cgroot = Path(self.temp.name) / "cgroup"
+        child = cgroot / "system.slice" / "hermes-codex-scheduler.service"
+        child.mkdir(parents=True)
+        (cgroot / "memory.max").write_text("max\n")
+        (cgroot / "system.slice" / "memory.max").write_text(
+            str(512 * 1024 * 1024))
+        (child / "memory.max").write_text(str(256 * 1024 * 1024))
+        proc = Path(self.temp.name) / "proc-cgroup"
+        proc.write_text("0::/system.slice/hermes-codex-scheduler.service\n")
+        with patch.object(module, "_CGROUP_ROOT", cgroot), patch.object(
+            module, "_PROC_CGROUP", proc
+        ):
+            # A stricter child limit wins.
+            self.assertEqual(_effective_cgroup_memory_max(),
+                             256 * 1024 * 1024)
+            (child / "memory.max").write_text("max\n")
+            # An inherited parent cap remains mandatory.
+            self.assertEqual(_effective_cgroup_memory_max(),
+                             512 * 1024 * 1024)
+            (cgroot / "system.slice" / "memory.max").write_text("max\n")
+            self.assertIsNone(_effective_cgroup_memory_max())
+            (child / "memory.max").write_text("invalid\n")
+            self.assertIsNone(_effective_cgroup_memory_max())
+
+    @patch("control_center.codex_scheduler_executor.subprocess.Popen")
     def test_patch_requires_a_real_git_checkout(self, popen):
         writable = {**self.job, "allowed_operations": ["patch"]}
         with self.assertRaisesRegex(ValidationError, "writable_git_checkout_required"):
@@ -116,6 +162,13 @@ class OfficialAdapterTests(TestCase):
         with self.assertRaises(ValidationError):
             self.adapter(enabled=True).execute(malformed)
         popen.assert_not_called()
+
+    def test_installed_unit_has_real_256m_hard_cap(self):
+        unit = (Path(__file__).resolve().parents[1] /
+                "deploy/hermes-codex-scheduler.service").read_text()
+        self.assertIn("MemoryAccounting=true", unit)
+        self.assertIn("MemoryMax=256M", unit)
+        self.assertIn("NoNewPrivileges=true", unit)
 
     def test_deploys_in_existing_control_center_package(self):
         root = Path(__file__).resolve().parents[1]
