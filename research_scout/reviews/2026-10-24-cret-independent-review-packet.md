@@ -108,3 +108,40 @@ EVIDENCE_POINTERS=<exact sections/tables/protocol versions>
 **Сохранённые научные ограничения:** C2/С3 требуют квалифицированной оценки RoB 2 для crossover, проверки незафиксированной модели и оригинального statistical analysis plan (если существует); C4 — только узкое source-bound описание наблюдения. Полная независимая рецензия и YFC editorial approval **не подтверждены**, `APPROVED_CLAIM_TEXT=NONE`, `PUBLICATION_ALLOWED=false`, `YFC_REQUEST_PAYLOAD=null`, `C1_C2_C3_C4_C5=HOLD`.
 
 **Новые доказательные ссылки фиксируются на дату 24.10.2026**, не являются гарантией актуального будущего статуса публикации/регистрации. Никаких новых сервисов, загрузки приватных данных, платных API и изменений YFC production.
+
+
+## 8. Новый C1/C2/C3 finding: протокол статистического анализа и публикация (24.10.2026)
+
+**Статус:** `SECONDARY_REGISTRY_SNAPSHOT_OBSERVED / PRIMARY_HISTORY_NOT_OBSERVED / POTENTIAL_ANALYSIS_PLAN_DEVIATION / HOLD`. Это дополнительная независимая сверка **текстов**, не статистический пересчёт, не экспертиза RoB 2 и не подтверждённое нарушение preregistration.
+
+### Источники, глубина и период
+
+- **Вторичная копия регистрационной записи:** [MedPath NCT06906146](https://trial.medpath.com/clinical-trial/e4eca6573ce90ff3/nct06906146-capacitive-resistive-electric-transfer-muscle-recovery-athletes), секции `Study Overview` и `Records & Identifiers`, получена 24.10.2026. Сайт маркирует `First Posted: 2 Apr 2025`, `Last updated: 2 Apr 2025`, но это **не независимо удостоверенная версия** реестра. В пределах той же копии prose говорит `double-blind`, а структурированное поле `Masking` — `Single (Investigator)`.
+- **Вторая вторичная копия:** [Veeva CTV](https://ctv.veeva.com/study/capacitive-resistive-electric-transfer-therapy-on-muscle-recovery), секция `About`: воспроизводит формулировку о planned `linear mixed model` / `one-way mixed ANOVA` и `estimated sample size approximately 50`. Совпадение зеркал не создаёт двух независимых первоисточников: они могут дублировать один registry snapshot.
+- **Публикация:** [PubMed 42733310](https://pubmed.ncbi.nlm.nih.gov/42733310/) и [PMC13572906](https://pmc.ncbi.nlm.nih.gov/articles/PMC13572906/), раздел `Statistical Analyses`, результаты и ограничения; source reading ранее задокументирован в §2–4 данного пакета.
+- **Официальная версия для сравнения:** [ClinicalTrials.gov study NCT06906146](https://clinicaltrials.gov/study/NCT06906146?tab=history), `/api/v2/studies/NCT06906146`, `/api/int/studies/NCT06906146/history` и `.../history/0`. Повторные точечные попытки чтения из web и разрешённого Hermes BRC sandbox 24.10.2026 **НЕ вернули содержимое** (недоступность/URLError). Историческую исходную версию и её дату нельзя аттестовать по зеркалу.
+
+### Сопоставление, без категорических выводов
+
+| Предмет | Текст вторичных копий записи | Опубликованное исследование | Статус |
+| --- | --- | --- | --- |
+| Участники | Estimated `N≈50`, текст `25 per group` | `N=25` **уникальных** участников crossover, каждый прошёл оба условия | `POTENTIAL_DISCREPANCY`; не выводить арифметически 50 независимых vs 25 или «мощность упала вдвое» |
+| Маскировка | Prose: `double-blind`; structured: `Single (Investigator)` | `single-blind`, по описанию — ослепление участников | `CONTRADICTORY_REGISTRY_COPY`; выяснить exact masked roles и ход изменений |
+| План анализа | `linear mixed model`, `one-way mixed ANOVA`, `Greenhouse–Geisser` при нарушении sphericity | В публикации приведены парные тесты `Wilcoxon`; отдельная корректировка `period/sequence/carryover` не показана | **`POTENTIAL_ANALYSIS_PLAN_DEVIATION`**. Решение обоснованности смены метода — только по официальному версии протокола и SAP |
+| Вторичные сравнения | `Bonferroni` post-hoc для значимых эффектов | Приведены некорректированные exploratory различия по нескольким secondary endpoints | **`MULTIPLICITY_REVIEW_REQUIRED`**, перечень семейств тестов и плановых поправок отдельно проверить |
+| Population для анализа | `intention-to-treat` для всех первоначально включённых | Нет независимо подтверждённого сверенного учёта originally enrolled vs analyzed, требуется анализ CONSORT | `ITT_CONCORDANCE_NOT_VERIFIED` |
+| Primary outcome | Blood lactate примерно 1 час после Wingate | Blood lactate 60min после Wingate, `p=0.029` | `PRIMARY_ENDPOINT_TEXT_BROADLY_ALIGNED` **лишь по доступным описаниям**, не вывод о соответствии всего SAP |
+
+**Важная квалификация:** переиспользование слова `one-way mixed ANOVA` в вторичном registry text само по себе не доказывает, что именно эта модель была окончательно предрегистрационной или статистически применимой. Наличие Wilcoxon в статье может быть обосновано распределением данных — для научного вывода нужна подписанная и датированная первоначальная версия протокола/плана анализа, а также объяснение авторов. Никакого утверждения о misconduct, умышленной подмене endpoint или retraction.
+
+### Запрос недостающих материалов (подготовлен, НЕ отправлен)
+
+Владелец либо независимый квалифицированный рецензент может запросить у ответственного исследователя/спонсора **без персональных данных участников**:
+
+1. Ссылки на официальные первоначальную и актуальную версии `NCT06906146`, с историей timestamped amendments и исходным analysis plan/SAP.
+2. Разъяснение `N≈50` и опубликованного crossover `N=25`, расчёта статистической мощности **по paired design**, фактического screened/enrolled/analyzed и причин изменения (если оно было).
+3. Какие роли реально были masked, когда и почему записи `double-blind / Single (Investigator) / participant-blind` расходятся.
+4. Почему вместо описанных LMM/ANOVA/Greenhouse–Geisser/Bonferroni/ITT были использованы опубликованные Wilcoxon analyses, какой метод применялся к primary и secondary outcomes, как учитывались period/sequence/carryover и multiplicity.
+5. Агрегированные парные данные или воспроизводимые summary tables без PII для независимого re-analysis первичного outcome, а также версию protocol/SAP и информацию о publisher notices.
+
+**Следующий критерий C1–C3:** прилагается оригинальный версионированный регистрационный документ/протокол, независимый reviewer фиксирует фактически проверенные пункты и объясняет каждый residual uncertainty. До этого `C1=HOLD`, `C2=HOLD`, `C3=HOLD`, `C4=HOLD`, `C5=HOLD`; `EXPERT_APPROVAL=0/5`, `YFC_REQUEST_PAYLOAD=null`, `PUBLICATION_ALLOWED=false`.
