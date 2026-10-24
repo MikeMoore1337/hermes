@@ -1,0 +1,13 @@
+[Unit]
+Description=Poll sanitized local Hermes BRC observations without MCP credentials (#455)
+
+[Timer]
+OnBootSec=45s
+OnUnitActiveSec=30s
+AccuracySec=10s
+RandomizedDelaySec=5s
+Persistent=false
+Unit=hermes-brc-observer-bridge.service
+
+[Install]
+WantedBy=timers.target
