@@ -1,0 +1,33 @@
+[Unit]
+Description=Hermes BRC sanitized local observation bridge (#455)
+After=hermes-control-center.service
+ConditionPathExists=/var/lib/hermes-brc-relay/.hermes-brc-observer-enable
+
+[Service]
+Type=oneshot
+User=hermes-brc-relay
+Group=hermes-control
+WorkingDirectory=/opt/hermes-control-center/current
+ExecStart=/usr/bin/python3 -B -m control_center.brc_snapshot_bridge
+Environment=PYTHONUNBUFFERED=1
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+ReadOnlyPaths=/var/lib/hermes-brc-relay
+ReadWritePaths=/var/lib/hermes-brc-observer
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX
+IPAddressDeny=any
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0027
+TimeoutStartSec=10
+MemoryMax=64M
+CPUQuota=15%
+TasksMax=8
