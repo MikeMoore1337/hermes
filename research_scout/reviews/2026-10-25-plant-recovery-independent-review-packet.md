@@ -77,3 +77,25 @@ EVIDENCE_POINTERS=<original sections, tables and versions>
 Публичные источники на 25.10.2026: PubMed DOI/PMID, первичный систематический обзор в PMC и MDPI §§2–5, article license CC BY; PROSPERO full record **UNAVAILABLE**, 36 оригиналов **NOT_INDEPENDENTLY_RETRIEVED/READ**, AMSTAR 2 **NOT_RUN**, notice/license for downstream tables **UNKNOWN**. Нет доступа к частным медицинским записям, платных научных API, новой службе/воркеру, импорту YFC, Telegram/Second Brain публикаций.
 
 **Результат пилота:** `PREPARATORY_REVIEW_DELIVERED`; `SCIENTIFIC_APPROVAL=0/5`; `RECOMMEND_SPECIFIC_PRODUCT=NO`; `CLAIM_TRANSFER_TO_YFC=BLOCKED`.
+
+
+## 7. Контроль первичного РКИ: гранатовый сок, результаты вместо пересказа обзора
+
+**Дата чтения первичного источника:** 25.10.2026. **Контрольный trial:** Rezaei et al., *Individual responses to pomegranate juice on recovery from exercise-induced muscle damage in collegiate male volleyball players*, *Journal of the International Society of Sports Nutrition* 2026;23(1):2642149, DOI [10.1080/15502783.2026.2642149](https://doi.org/10.1080/15502783.2026.2642149), [PMID 42015544](https://pubmed.ncbi.nlm.nih.gov/42015544/), [PMCID PMC13104005](https://pmc.ncbi.nlm.nih.gov/articles/PMC13104005/). Первичная статья доступна [на сайте издателя](https://www.tandfonline.com/doi/abs/10.1080/15502783.2026.2642149). Это **одна из 36 первичных работ**, отмечена как Rezaei et al. [51] в таблице 1 обзорной публикации.
+
+### Отдельные, проверяемые сведения первичного исследования
+
+| Параметр | Источниковое наблюдение (самоотчёт авторов) | Методологическая оговорка |
+| --- | --- | --- |
+| Дизайн | Рандомизированный double-blind placebo-controlled crossover; **14 мужчин-волейболистов** Tier-3 (все завершили). 7 участников в каждой последовательности, washout **7 дней**, envelope concealment описано | Очень узкая мужская выборка, риск sequence/period/carryover без отдельного доступного независимого reanalysis |
+| Питание | Натуральный гранатовый сок **1000 мл** (500 мл накануне, 500 мл за 2 часа) vs matched placebo | **Описание вмешательства, НЕ рекомендуемая доза**; не сравнивать напрямую с другими ягодами/формами |
+| Exercise challenge | 200 максимальных вертикальных прыжков с жилетом 10% массы тела | Лабораторная модель повреждения, не повседневная нагрузка широкого YFC |
+| Прямая функция | Прыжок, сила хвата, бросок медицинбола, wall squat, показатели изокинетической/изометрической силы в baseline и 48 часов | **Нет статистически значимых межусловных преимуществ** POMj над placebo ни для одной групповой функциональной/изокинетической точки |
+| DOMS/боль | VAS baseline/0/12/24/48 h | Время имело эффект p=0,001; **межусловных различий нет** — нельзя выводить снижение боли гранатом |
+| Within-arm contrast | Knee extensor peak torque 180°/s увеличился относительно baseline в группе POMj, p=0,002 | Межусловное сравнение placebo: **p=1,000**; внутригрупповое улучшение само по себе не свидетельствует о превосходстве вмешательства |
+| SWC responder | Авторы сообщают около 86% vs 64% responders для RPT, 79% vs 71% для APT по отдельным high-velocity показателям, SWC=0,2×baseline SD | Исследовательский индивидуальный анализ, **не воспроизведённая доказанная эффективность**, нет независимых 95% CI для responder advantage; малая выборка, множественные оценки |
+| Публикационная версия | Первичная PDF-версия издателя содержит уведомление о **minor corrections** без влияния на научное содержание по заявлению издателя; текст статьи доступен по DOI | Точный version-to-version diff и Crossmark notices **не проверены независимо**; нельзя делать вывод, что исправлений вовсе нет |
+
+**Отдельная проверка trial vs обзор:** авторы систематического обзора корректно описали отсутствие межусловного группового преимущества и показали SWC responder наблюдения как отдельные exploratory данные. Это **одно source-to-source сопоставление**, а не независимая проверка всех 36 исследований. Для P1 исходное значение `ORIGINAL_TRIALS_READ_BY_AI=1/36` (**не** `independently_rated=1/36`); для P3 `TRIAL_RESULT_SOURCE_CHECK=1`, `INDEPENDENT_EFFECT_CI_RECALC=0`. Научный рецензент должен подтвердить версию статьи, сырые данные, подходящий RoB 2 и статистику эффектов.
+
+**Решение для YFC не меняется:** `DO_NOT_RECOMMEND_POMEGRANATE_AS_RECOVERY_PROTOCOL` — не назначать гранатовый сок, дозы и схему приема на основании этого результата. Нельзя делать обратный вывод о доказанном нулевом эффекте, равно как выдавать SWC responder-анализ за подтверждение индивидуальной пользы. `P1=HOLD`, `P2=HOLD`, `P3=HOLD`, `P4=HOLD`, `P5=HOLD`; `SCIENTIFIC_EXPERT_SIGNOFF=NOT_RUN`, `YFC_REQUEST_PAYLOAD=null`.
