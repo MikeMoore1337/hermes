@@ -65,6 +65,7 @@ for(const mutate of fails){
 }
 // Deliberately reject forged hello claims, wrong labels and other OS
 // types. Only the genuine platform=linux is accepted for these devices.
+connected = names.map((name,i)=>({deviceId:id[i],name,platform:'linux',lastSeen:now-1000}));
 for(const wrongPlatform of ['win32','darwin','linux/docker','freebsd','']) {
   connected = [ {...connected[0], platform:wrongPlatform} ];
   rows = names.map(mkRow);
