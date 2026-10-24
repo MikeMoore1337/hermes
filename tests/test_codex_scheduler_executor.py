@@ -163,6 +163,13 @@ class OfficialAdapterTests(TestCase):
             self.adapter(enabled=True).execute(malformed)
         popen.assert_not_called()
 
+    def test_installed_unit_has_real_256m_hard_cap(self):
+        unit = (Path(__file__).resolve().parents[1] /
+                "deploy/hermes-codex-scheduler.service").read_text()
+        self.assertIn("MemoryAccounting=true", unit)
+        self.assertIn("MemoryMax=256M", unit)
+        self.assertIn("NoNewPrivileges=true", unit)
+
     def test_deploys_in_existing_control_center_package(self):
         root = Path(__file__).resolve().parents[1]
         for path in ("codex_scheduler.py", "codex_scheduler_status.py",
