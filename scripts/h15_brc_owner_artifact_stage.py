@@ -161,18 +161,17 @@ def discover():
               and isinstance(r.get("head_sha"),str)
               and SHA.fullmatch(r["head_sha"]) is not None
               and r.get("head_branch")=="main"
-              and (r.get("event")=="push" or
-                   (r.get("event")=="workflow_dispatch" and r["head_sha"]==sha))
+              and r.get("event") in ("push", "workflow_dispatch")
               and r.get("conclusion")=="success"
               and r.get("status")=="completed"
               and r.get("name")=="H-15 pinned Remote Commander candidate (isolated CI only)"
               and type(r.get("id")) is int and r["id"]>0]
     if not eligible:
         refuse("successful_main_candidate_missing")
-    # A manually dispatched workflow is eligible ONLY at the exact current
-    # main commit; stale dispatches must never bypass ancestry checks.
-    # An exact-current-main success wins even if a newer job record for
-    # another (e.g. stale/superseded) main SHA has a larger run ID.
+    # Manual dispatch and push builds share the strict ancestry/BRC-input
+    # gate below. A former-main dispatch remains usable after unrelated commits,
+    # but must not bypass any changed build or operator input.
+    # An exact-current-main success wins even if a newer historical run exists.
     exact=[r for r in eligible if r["head_sha"]==sha]
     selected=max(exact or eligible,key=lambda r:r["id"])
     source_sha=selected["head_sha"]

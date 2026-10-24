@@ -148,16 +148,64 @@ class StagingTests(unittest.TestCase):
         self.assertFalse(result["ancestor_candidate_reused"])
         self.assertEqual(result["run_id"], 123)
 
-    def test_stale_dispatch_candidate_rejected_before_download(self):
-        old_dispatch = dict(RUN, event="workflow_dispatch", id=123)
+    def test_prior_main_dispatch_reused_only_with_unchanged_brc_inputs(self):
+        # Reproduces #454: a valid manual OCI completed at main, then main
+        # advanced only through unrelated scheduler files before owner prepare.
+        current = "d" * 40
+        dispatched = dict(RUN, event="workflow_dispatch", id=123)
+        unrelated = {
+            "status": "ahead", "merge_base_commit": {"sha": SHA},
+            "behind_by": 0, "ahead_by": 6,
+            "files": [{"filename": "control_center/codex_scheduler_executor.py"},
+                      {"filename": "tests/test_codex_scheduler_executor.py"}],
+        }
+        with patch.object(m, "api", side_effect=[
+                {"commit": {"sha": current}},
+                {"total_count": 1, "workflow_runs": [dispatched]},
+                unrelated, {"artifacts": [ART]}, JOBS]) as endpoint, \
+             patch.object(m, "run", return_value=(
+                 f"H15_OFFLINE_BUNDLE_IMAGE_ID={IMAGE}\n"
+                 f"H15_OFFLINE_BUNDLE_ARCHIVE_SHA256={HASH}\n")):
+            result = m.discover()
+        self.assertEqual(result["sha"], SHA)
+        self.assertEqual(result["current_main_sha"], current)
+        self.assertEqual(result["run_id"], 123)
+        self.assertTrue(result["ancestor_candidate_reused"])
+        self.assertEqual(endpoint.call_count, 5)
+
+    def test_prior_main_dispatch_with_brc_edit_still_refuses_before_artifact(self):
+        dispatched = dict(RUN, event="workflow_dispatch", id=123)
+        changed = {
+            "status": "ahead", "merge_base_commit": {"sha": SHA},
+            "behind_by": 0, "ahead_by": 1,
+            "files": [{"filename": "scripts/h15_brc_owner_private_pair.py"}],
+        }
         with patch.object(m, "api", side_effect=[
                 {"commit": {"sha": "d" * 40}},
-                {"total_count": 1, "workflow_runs": [old_dispatch]}]) as api, \
+                {"total_count": 1, "workflow_runs": [dispatched]},
+                changed]) as endpoint, \
              patch.object(m, "run") as downloaded:
             with self.assertRaisesRegex(
-                    m.StagingDenied, "^successful_main_candidate_missing$"):
+                    m.StagingDenied, "^brc_input_modified_requires_fresh_candidate$"):
                 m.discover()
-            self.assertEqual(api.call_count, 2)
+            self.assertEqual(endpoint.call_count, 3)
+            downloaded.assert_not_called()
+
+    def test_prior_main_dispatch_with_diverged_history_still_refuses(self):
+        dispatched = dict(RUN, event="workflow_dispatch", id=123)
+        diverged = {
+            "status": "diverged", "merge_base_commit": {"sha": "f" * 40},
+            "behind_by": 1, "ahead_by": 2, "files": [],
+        }
+        with patch.object(m, "api", side_effect=[
+                {"commit": {"sha": "d" * 40}},
+                {"total_count": 1, "workflow_runs": [dispatched]},
+                diverged]) as endpoint, \
+             patch.object(m, "run") as downloaded:
+            with self.assertRaisesRegex(
+                    m.StagingDenied, "^unverified_candidate_ancestry_or_truncated_diff$"):
+                m.discover()
+            self.assertEqual(endpoint.call_count, 3)
             downloaded.assert_not_called()
 
     def test_foreign_event_or_branch_not_eligible(self):
