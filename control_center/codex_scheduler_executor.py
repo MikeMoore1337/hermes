@@ -71,8 +71,12 @@ class OfficialCodexExecutor:
         self.binary = Path(binary)
         self.enabled = enabled
         self.artifact_dir = Path(artifact_dir) if artifact_dir is not None else None
+        # Fixed-label diagnostic only. Never store task prompts, CLI stderr,
+        # credentials or raw exception details in the operator journal.
+        self.last_phase = "not_started"
 
     def execute(self, job: dict) -> tuple[bool, str | None]:
+        self.last_phase = "preflight"
         if self.enabled is not True:
             raise ValidationError("live_worker_not_authorized")
         repo = job["repository"]
@@ -123,10 +127,12 @@ class OfficialCodexExecutor:
             size = limits["max_output_bytes"]
             resource.setrlimit(resource.RLIMIT_FSIZE, (size, size))
         with tempfile.TemporaryFile() as output:
+            self.last_phase = "spawn"
             proc = subprocess.Popen(
                 argv, cwd=root, env=env, stdin=subprocess.PIPE, stdout=output,
                 stderr=subprocess.DEVNULL, start_new_session=True,
                 preexec_fn=resources, close_fds=True)
+            self.last_phase = "wait"
             try:
                 proc.communicate(input=prompt.encode("utf-8"),
                                  timeout=limits["max_runtime_seconds"])
@@ -145,6 +151,7 @@ class OfficialCodexExecutor:
                 return True, "sha256:" + digest
             # Persist before the queue commits succeeded. A crash here is
             # intentionally uncertain and must never cause a second inference.
+            self.last_phase = "artifact"
             jid = job.get("job_id")
             if not isinstance(jid, str) or not re.fullmatch(r"[a-zA-Z0-9-]{1,64}", jid):
                 raise ValidationError("artifact_job_id_invalid")
@@ -176,4 +183,5 @@ class OfficialCodexExecutor:
             finally:
                 if tmp_name and os.path.exists(tmp_name):
                     os.unlink(tmp_name)
+            self.last_phase = "complete"
             return True, "artifact:" + jid + ":" + digest

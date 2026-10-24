@@ -4,6 +4,34 @@ Status: production source release delivered by #274; opt-in worker follow-up #27
 Dependencies: #255 quota monitor/policy; #2/#33 H-01 burn-in; #272 analytics;
 #273 offline benchmark. Nothing here restarts or reconfigures H-01.
 
+## Stage-4 production canary incident (2026-10-24)
+
+A single approved read-only `inspect` run was reserved at
+`2026-10-24T16:39:21Z` and the scheduler returned
+`blocked / uncertain / executor_outcome_unknown` within approximately
+one second. Its SQLite row holds `attempt_count=1`, no successful result
+reference, and no durable output artifact. The scheduler timer remained
+disabled, the worker runtime returned to `enabled=false`, and the H-01
+timer remained active. The process was no longer running during read-only
+inspection. No OOM evidence was seen in the sampled kernel journal, but
+this **does not prove** no remote Codex request occurred.
+
+The original fail-closed journal deliberately collapsed all executor
+exceptions into the same code, so the original failure phase **cannot be
+reconstructed from the old log**. Do **not** remove this job's uncertainty
+latch, renew its grant, replay the job, or infer from `systemctl start`
+exit code 0 that the model succeeded.
+
+The subsequent diagnostic-only source change emits one bounded structured
+operator event `codex_executor_failure` **after** persisting the
+uncertainty latch. Only fixed phase labels, exception-class names from
+an allowlist, and pre-approved static error codes may appear; raw exception
+messages, prompts, model stdout/stderr, credentials and paths are excluded.
+This instrumentation is prospective only; it does not clear or explain
+the already blocked job. Before considering a *separately authorized*
+new canary, use a no-inference sandbox probe to inspect effective cgroup
+limits and access inside an equivalent systemd confinement.
+
 ## Architecture and data boundaries
 
 Existing control_center.codex_usage (official CLI app-server, five-minute

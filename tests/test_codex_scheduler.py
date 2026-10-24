@@ -1,5 +1,8 @@
 """H-15 #271: synthetic, no Codex CLI, network, credentials or billed inference."""
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import redirect_stderr
+from io import StringIO
+import json
 from datetime import datetime, timedelta, timezone
 import sqlite3
 import tempfile
@@ -244,6 +247,46 @@ class TaskTests(unittest.TestCase):
         self.assertEqual(self.queue.get(second["job_id"])["status"], "blocked")
         self.assertEqual(broken.calls, 1)
         self.assertIsNone(self.queue.claim("synthetic-worker-01"))
+
+    def test_redacted_executor_journal_never_exposes_exception_text(self):
+        job = self.create()
+        private = "SECRET_PROMPT_AND_ACCESS_TOKEN"
+        broken = MockExecutor(RuntimeError(private))
+        broken.last_phase = "artifact"
+        capture = StringIO()
+        with redirect_stderr(capture):
+            result = self.worker(executor=broken)[0].tick()
+        self.assertEqual(result["decision"], "BLOCKED")
+        marker = json.loads(capture.getvalue().strip())
+        self.assertEqual(marker, {
+            "event": "codex_executor_failure",
+            "phase": "artifact",
+            "class": "RuntimeError",
+            "code": "redacted",
+        })
+        self.assertNotIn(private, capture.getvalue())
+        state = self.queue.get(job["job_id"])
+        self.assertEqual(state["status"], "blocked")
+        self.assertEqual(state["invocation_state"], "uncertain")
+        self.assertEqual(state["attempt_count"], 1)
+        self.assertIsNone(self.worker(executor=MockExecutor())[0].tick())
+
+    def test_known_executor_preflight_error_reports_only_static_code(self):
+        self.create()
+        broken = MockExecutor(ValidationError("memory_cgroup_unverified"))
+        broken.last_phase = "preflight"
+        capture = StringIO()
+        with redirect_stderr(capture):
+            self.assertEqual(
+                self.worker(executor=broken)[0].tick()["decision"], "BLOCKED"
+            )
+        self.assertEqual(json.loads(capture.getvalue().strip()), {
+            "event": "codex_executor_failure",
+            "phase": "preflight",
+            "class": "ValidationError",
+            "code": "memory_cgroup_unverified",
+        })
+        self.assertEqual(broken.calls, 1)
 
     def test_cancel_deferred_and_storage_errors_fail_closed(self):
         job = self.create()
