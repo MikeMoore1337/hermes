@@ -16,10 +16,18 @@ const mkRow = (name, i) => ({
 });
 let rows = names.map(mkRow);
 let connected = rows.map((r,i)=>({deviceId:r.device_id,name:r.name,
-  platform:r.platform,lastSeen:now-1000,hostname:'private',agentVersion:'test'}));
+  platform:'linux',lastSeen:now-1000,hostname:'private',agentVersion:'test'}));
 const store = {listDevices(u){return u === 'owner'?rows:[]}};
 const hub = {list(u){return u === 'owner'?connected:[]}};
 const good = sanitizedLiveObservation(hub,store,'owner',now);
+// Regression from actual owner production incident: SQLite stores the
+// deployed sandbox class linux/docker, but brc-agent hello uses Node's
+// process.platform = linux. The live projection MUST refresh in this state.
+assert.equal(rows[0].platform,'linux/docker');
+assert.equal(connected[0].platform,'linux');
+const next = sanitizedLiveObservation(hub,store,'owner',now+30000);
+assert.equal(next.status,'online');
+assert.equal(next.devices[0].last_seen_age_seconds,31);
 assert.equal(good.status,'online');
 assert.deepEqual(good.devices.map(d=>d.name),names);
 assert.equal(good.workspaces.length,4);
@@ -55,5 +63,18 @@ for(const mutate of fails){
   rows = names.map(mkRow); mutate();
   assert.throws(()=>sanitizedLiveObservation(hub,store,'owner',now));
 }
+// Deliberately reject forged hello claims, wrong labels and other OS
+// types. Only the genuine platform=linux is accepted for these devices.
+for(const wrongPlatform of ['win32','darwin','linux/docker','freebsd','']) {
+  connected = [ {...connected[0], platform:wrongPlatform} ];
+  rows = names.map(mkRow);
+  assert.throws(()=>sanitizedLiveObservation(hub,store,'owner',now), /forged_hello/);
+}
+connected = [{...connected[0],name:'FORGED NAME',platform:'linux'}];
+assert.throws(()=>sanitizedLiveObservation(hub,store,'owner',now), /forged_hello/);
+connected = names.map((name,i)=>({deviceId:id[i],name,platform:'linux',lastSeen:now-1000}));
+rows = names.map(mkRow);
+rows[0] = {...rows[0],platform:'linux'};
+assert.throws(()=>sanitizedLiveObservation(hub,store,'owner',now), /unapproved_device/);
 assert.equal(observerEnabled('/tmp/untrusted-marker'),false);
 console.log('H455_PINNED_LIVE_OBSERVER_PROJECTION=PASS');
