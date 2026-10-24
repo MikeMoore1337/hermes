@@ -48,7 +48,19 @@ def _effective_cgroup_memory_max() -> int | None:
                 current = current / part
                 if current.is_symlink():
                     return None
-            value = (current / "memory.max").read_text(encoding="ascii").strip()
+            target = current / "memory.max"
+            if target.is_symlink():
+                return None
+            try:
+                value = target.read_text(encoding="ascii").strip()
+            except FileNotFoundError:
+                # The root of a cgroup-v2 mount has no memory.max on some
+                # kernels. This is normal, but missing controller files at
+                # *any descendant*, including this process's cgroup, are
+                # untrusted and must fail closed.
+                if part is None:
+                    continue
+                return None
             if value == "max":
                 continue
             if not value.isdecimal() or int(value) <= 0:

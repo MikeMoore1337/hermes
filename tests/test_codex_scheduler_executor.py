@@ -114,6 +114,50 @@ class OfficialAdapterTests(TestCase):
             (child / "memory.max").write_text("invalid\n")
             self.assertIsNone(_effective_cgroup_memory_max())
 
+    def test_cgroup_v2_root_without_memory_max_requires_real_descendant_limit(self):
+        # Mirrors the actual production systemd sandbox:
+        # /sys/fs/cgroup/memory.max is absent, system.slice=max, unit=256 MiB.
+        from control_center import codex_scheduler_executor as module
+        root = Path(self.temp.name) / "cgroup-v2"
+        parent = root / "system.slice"
+        leaf = parent / "h271-probe.service"
+        leaf.mkdir(parents=True)
+        proc = Path(self.temp.name) / "proc-cgroup-root-absent"
+        proc.write_text("0::/system.slice/h271-probe.service\n")
+        (parent / "memory.max").write_text("max\n")
+        leaf_limit = leaf / "memory.max"
+        leaf_limit.write_text(str(256 * 1024 * 1024) + "\n")
+        self.assertFalse((root / "memory.max").exists())
+
+        with patch.object(module, "_CGROUP_ROOT", root), patch.object(
+            module, "_PROC_CGROUP", proc
+        ):
+            # Missing root file is normal; real, finite leaf bound is trusted.
+            self.assertEqual(_effective_cgroup_memory_max(),
+                             256 * 1024 * 1024)
+            # The leaf may inherit a finite cap from a verified ancestor.
+            (parent / "memory.max").write_text(str(192 * 1024 * 1024))
+            self.assertEqual(_effective_cgroup_memory_max(),
+                             192 * 1024 * 1024)
+            (parent / "memory.max").write_text("max")
+            leaf_limit.write_text("max")
+            # No finite bound anywhere still fails closed.
+            self.assertIsNone(_effective_cgroup_memory_max())
+            leaf_limit.unlink()
+            # Missing leaf file must NEVER be treated as a missing root file.
+            self.assertIsNone(_effective_cgroup_memory_max())
+            leaf_limit.write_text(str(256 * 1024 * 1024))
+            (parent / "memory.max").unlink()
+            # Intermediate missing file is also unacceptable.
+            self.assertIsNone(_effective_cgroup_memory_max())
+            (parent / "memory.max").write_text("max")
+            (root / "memory.max").write_text("not_a_limit")
+            self.assertIsNone(_effective_cgroup_memory_max())
+            (root / "memory.max").unlink()
+            # A path consisting only of the mount root with no limit is unbounded.
+            proc.write_text("0::/\n")
+            self.assertIsNone(_effective_cgroup_memory_max())
+
     @patch("control_center.codex_scheduler_executor.subprocess.Popen")
     def test_patch_requires_a_real_git_checkout(self, popen):
         writable = {**self.job, "allowed_operations": ["patch"]}
