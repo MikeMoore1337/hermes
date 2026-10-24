@@ -69,15 +69,20 @@ live PASS, partial coverage and untested scenarios by device and tool.
 - ChatGPT sandbox file/edit/search/move/process checks across Windows,
   Hermes VPS and YFC VPS sandboxes: **PASS**, using isolated temporary
   files; all temporary files removed.
-- Codex file/process proof for YFC Git verification: **PASS**. Complete
-  2-clients × 3-devices parity/negative matrix: **INCOMPLETE**.
+- Independent Codex 3-sandbox write/read/edit/search/move/Node/cleanup
+  E2E: **PASS** on 2026-10-24; exact scoped Git verification PASS for all
+  four Windows sandbox clones. See [owner-reported client trace](https://github.com/MikeMoore1337/hermes/issues/454#issuecomment-6388962086).
+  Advanced binary/concurrency/reconnect tests remain incomplete.
 - New-project onboarding and Control Center workflow: **OPEN** (#455,
   visual approval required before UI implementation).
 - Windows login/reboot and outage recovery: **OPEN** (#445; do not perform
   unapproved reboot).
-- Native original Windows directories: **NOT AUTHORIZED**; requires an
-  explicit per-path owner approval. Neither secret paths, production
-  credentials, private Second Brain vault nor Docker socket are mounted.
+- Original Windows read-only access was separately owner-approved for
+  exactly four specified project roots and **live E2E PASS in both clients**.
+  Its one-shot bearer was then revoked and native device paused/offline.
+  Re-enabling requires fresh owner authorization. Native Windows writes,
+  commands, private vault, production credentials and Docker socket remain
+  denied without individual scoped approval.
 
 No Codex CLI, paid API or new host privileges are required for these
 workspace MCP tools. Keep [#454](https://github.com/MikeMoore1337/hermes/issues/454)

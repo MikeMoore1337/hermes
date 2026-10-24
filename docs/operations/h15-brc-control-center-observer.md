@@ -5,9 +5,13 @@
 `control_center/brc_snapshot.py` is a **pure, read-only, fail-closed**
 normalizer for owner-authorized Hermes MCP `list_devices` and
 `list_workspaces` JSON objects. It performs **no network calls, credential
-reads, filesystem writes, device actions or model/provider calls**. No route,
-poller, dashboard component, onboarding wizard, agent, systemd timer or host
-mount is activated by this change.
+reads, filesystem writes, device actions or model/provider calls**. No route, poller, dashboard component, onboarding wizard, agent, systemd
+timer or host mount is activated by this change. The associated
+`control_center/brc_snapshot_writer.py` is only a bounded, atomic,
+non-root, sanitized snapshot publishing primitive. It **does not poll MCP,
+read credentials, register devices, schedule itself or activate the UI**.
+Its input must be supplied by a separately owner-authorized authenticated
+metadata collector; raw bearer tokens and original host content are forbidden.
 
 Only a separately approved/authenticated collector may supply the raw
 MCP results. **Never reuse a ChatGPT OAuth session in a server process**.
@@ -52,7 +56,13 @@ do not use this module as an OS-level security boundary.
    and desktop/mobile previews; obtain owner's visual acceptance before
    implementing Control Center views.
 2. Independently authorize and implement an owner-scoped metadata
-   collector/endpoint with timeouts, sanitized snapshots and safe storage.
+   collector with bounded timeouts that supplies **real** `list_devices`
+   and `list_workspaces` through a dedicated identity, never reused
+   ChatGPT OAuth credentials. Pass its validated responses to
+   `publish_snapshot` as a non-root writer in a pre-provisioned
+   service-owned, non-world/group-writable directory; the writer creates
+   only atomic `status.json`, never an OS directory or credential.
+   This is not live until a real collector and owner host acceptance PASS.
 3. Only then implement read-only Control Center devices/workspaces health;
    keep the existing Desktop Commander widget for rollback until live QA.
 4. Explicit onboarding flow for a **new public sandbox repo** must not
