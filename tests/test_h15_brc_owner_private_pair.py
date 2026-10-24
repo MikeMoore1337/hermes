@@ -97,10 +97,10 @@ class ApprovalTests(unittest.TestCase):
                  os.fdopen(os.dup(slave), "w", encoding="ascii", buffering=1) as writer:
                 self.assertFalse(reader.seekable())
                 self.assertFalse(writer.seekable())
-                os.write(master, b"ABCD-2345\\n".replace(b"\\n", b"\n"))
+                os.write(master, b"ABCD-2345" + bytes((10,)))
                 self.assertEqual(prompt_tty(reader, writer, "Enter code: ", 64),
                                  "ABCD-2345")
-                os.write(master, b"APPROVE H454 ABCD-2345\\n".replace(b"\\n", b"\n"))
+                os.write(master, b"APPROVE H454 ABCD-2345" + bytes((10,)))
                 self.assertEqual(prompt_tty(reader, writer, "Confirm: ", 128),
                                  "APPROVE H454 ABCD-2345")
         finally:
