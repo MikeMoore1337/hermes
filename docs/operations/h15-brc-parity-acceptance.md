@@ -1,6 +1,6 @@
 # Hermes Commander vs Desktop Commander: evidence-based parity matrix (#454)
 
-**Status:** partial acceptance as of 2026-10-22. This is a record of
+**Status:** baseline 2-client × 3-sandbox parity accepted on 2026-10-24; broader Desktop Commander replacement remains open. This is a record of
 **observed** MCP calls, not a claim of full Desktop Commander parity.
 Hermes BRC is an owner-hosted relay with sandboxed clients. The preexisting
 Desktop Commander feature list is the *parity target*; its current backend
@@ -30,16 +30,16 @@ retained.
 
 | Capability | ChatGPT Windows sandbox | ChatGPT Hermes VPS sandbox | ChatGPT YFC VPS sandbox | Codex Windows sandbox | Codex Hermes VPS sandbox | Codex YFC VPS sandbox |
 | --- | --- | --- | --- | --- | --- | --- |
-| Paired online device discovery | PASS | PASS | PASS | PARTIAL | NOT TESTED | NOT TESTED |
+| Paired online device discovery | PASS | PASS | PASS | PASS | PASS | PASS |
 | `list_workspaces` + `resolve_workspace(YFC)` | PASS | N/A (routes to Windows) | N/A (routes to Windows) | PASS | N/A (routes to Windows) | N/A (routes to Windows) |
-| Read/write/edit one ephemeral sandbox file | PASS | PASS | PASS | NOT TESTED | NOT TESTED | NOT TESTED |
-| Content search against ephemeral file | PASS | PASS | PASS | NOT TESTED | NOT TESTED | NOT TESTED |
-| File move + metadata + cleanup | PASS | PASS | PASS | NOT TESTED | NOT TESTED | NOT TESTED |
-| Start isolated process | PASS | PASS | PASS | PASS (Git command) | NOT TESTED | NOT TESTED |
-| Process output + exit code | PARTIAL | PARTIAL | PARTIAL | PASS (Git verification) | NOT TESTED | NOT TESTED |
-| Git origin, branch, tracked status | PASS (four worktrees via local resolver) | N/A | N/A | PASS (YFC) | N/A | N/A |
+| Read/write/edit one ephemeral sandbox file | PASS | PASS | PASS | PASS | PASS | PASS |
+| Content search against ephemeral file | PASS | PASS | PASS | PASS (targeted) | PASS | PASS |
+| File move + metadata + cleanup | PASS | PASS | PASS | PASS | PASS | PASS |
+| Start isolated process | PASS | PASS | PASS | PASS (Node) | PASS (Node) | PASS (Node) |
+| Process output + exit code | PARTIAL | PARTIAL | PARTIAL | PASS (Node exit 0) | PASS (Node exit 0) | PASS (Node exit 0) |
+| Git origin, branch, tracked status | PASS (four Windows worktrees) | N/A | N/A | PASS (all four Windows worktrees) | N/A | N/A |
 | Negative host private-key read | PASS (EACCES) | PASS (EACCES) | PASS (EACCES) | NOT TESTED | NOT TESTED | NOT TESTED |
-| Non-root UID / no host Docker socket | PASS | PASS | PASS | NOT TESTED | NOT TESTED | NOT TESTED |
+| Non-root UID / no host Docker socket | PASS | PASS | PASS | PARTIAL (shared host assurance) | PARTIAL | PARTIAL |
 | Protected-path write policy | PARTIAL (platform blocked attempted call) | PARTIAL (platform blocked attempted call) | PARTIAL (platform blocked attempted call) | NOT TESTED | NOT TESTED | NOT TESTED |
 | Two simultaneous interactive sessions (Node REPL) | PASS | PASS | PASS | NOT TESTED | NOT TESTED | NOT TESTED |
 | Targeted process termination and no residual sessions | PASS | PASS | PASS | NOT TESTED | NOT TESTED | NOT TESTED |
@@ -91,19 +91,20 @@ not CI emulation. All three devices were online for these tests.
   socket. Do not infer VPS host toolchain access from a sandbox shell.
 
 No production host access, package installation, Git modification,
-Codex CLI, paid API, reload or reboot was performed. Independent Codex
-file/process/binary coverage on both VPS sandboxes remains **NOT TESTED**.
+Codex CLI, paid API, reload or reboot was performed in the earlier tests.
+New Codex basic file/search/process E2E on both VPS sandboxes was later
+**PASS on 2026-10-24**; larger binary and concurrent-write tests remain NOT TESTED.
 
 ## Remaining Desktop Commander replacement gaps
 
 | User goal / parity dimension | Hermes status | Required next acceptance |
 | --- | --- | --- |
 | Project selection without memorizing `deviceId` | PASS for four allowlisted sandbox clones via native tools in both clients | Expand catalog only through separately approved onboarding |
-| Original Windows filesystem / native process access | GATED: sandbox-only by design | Owner provides exact allowed directories/operations; never auto-mount a whole drive or private vault |
+| Original Windows filesystem / native process access | Native **READ-only** four original project roots PASS from ChatGPT and Codex, then bearer REVOKED and device PAUSED; host commands/write NOT AUTHORIZED without fresh per-operation owner approval | Never auto-enable native access or mount a whole drive/private vault |
 | New-project onboarding with safe conflict handling | OPEN (#455) | Design, visual approval, backend authorization, negative E2E |
 | Per-device diagnostics and actionable recovery | OPEN (#455) | Freshness, offline/auth/stale distinction; no browser RCE |
 | Reboot/reconnect without another registration | OPEN (#445) | Maintenance-window Windows reboot/login evidence |
-| Cross-client 2 × 3 complete functional parity | PARTIAL | Real Codex calls on Hermes and YFC sandboxes; full binary MCP transfer, concurrency and failure cases remain unverified |
+| Cross-client 2 × 3 complete functional parity | **PASS baseline** file/edit/search/move/process/isolation for both clients; extended binary, concurrency and replay NOT TESTED | Preserve advanced performance and failure-mode checks separately |
 | Nonuniform sandbox toolchain | GAP (VPS agents lack Git/Python) | Decide whether these two **sandbox** targets actually need development toolchains; if yes, use pinned image, non-root security gates and separate rollout |
 | Cost and isolation | Owner-hosted, no mandatory paid vendor relay | Model usage and host resource limits still apply |
 
@@ -132,10 +133,17 @@ test path. No arbitrary host paths or project worktrees were changed.
 The read/write proof applies only to these **sandbox** roots; it does not
 grant native Windows write/execute or VPS production privileges.
 
-**Independent Codex 3-device complete parity remains NOT TESTED in this
-latest run.** Owner-supplied Codex native Windows read-only proof does not
-substitute for Codex write/edit/search/process checks on all sandbox devices.
-Windows reboot/login recovery remains gated by owner maintenance approval.
+**Independent Codex 3-device baseline parity PASS on 2026-10-24.** The owner
+ran actual Codex MCP calls on all three devices for write/read, unique edit,
+targeted search, move/stat/read, Node process with exit 0, denied
+`/host-private` listing, fixture deletion and no active process sessions.
+All four Windows sandbox Git origins/branches and tracked status were verified
+using per-command `-c safe.directory=<exact resolved root>`; no persistent Git
+configuration changes. [Codex acceptance receipt](https://github.com/MikeMoore1337/hermes/issues/454#issuecomment-6388962086).
+Two broad Windows search attempts returned zero matches before a direct exact-file
+search succeeded. Completed search-session metadata may remain temporarily even
+when no search is running. Binary transfer, concurrent-write/replay and Windows
+reboot/login recovery remain outside this accepted baseline.
 
 ### Observer compatibility after optional native Windows registration
 
