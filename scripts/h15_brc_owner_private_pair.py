@@ -115,14 +115,22 @@ def host_db_preflight() -> pwd.struct_passwd:
     return identity
 
 
+def prompt_tty(reader, writer, message: str, limit: int) -> str:
+    """Prompt over separate non-seekable character streams (never r+ on /dev/tty)."""
+    writer.write(message)
+    writer.flush()
+    return reader.readline(limit).strip()
+
+
 def main() -> int:
     try:
         identity = host_db_preflight()
         # Open TTY while privileged; drop to the relay's own UID/GID BEFORE
         # opening SQLite, so WAL sidecars can never become root-owned.
-        with open("/dev/tty", "r+", encoding="ascii", buffering=1) as tty:
-            tty.write("Enter a FRESH Windows pairing code (not a bearer token): ")
-            raw = tty.readline(64).strip()
+        with open("/dev/tty", "r", encoding="ascii") as tty_reader, \
+             open("/dev/tty", "w", encoding="ascii", buffering=1) as tty_writer:
+            raw = prompt_tty(tty_reader, tty_writer,
+                             "Enter a FRESH Windows pairing code (not a bearer token): ", 64)
             if not CODE.fullmatch(raw):
                 raise PairDenied("INVALID_PAIRING_CODE_FORMAT")
             os.setgroups([])
@@ -144,8 +152,8 @@ def main() -> int:
                 print("PENDING_OWNER=" + OWNER)
                 print("PENDING_TTL_SECONDS=" + str(seconds))
                 print("TOKEN_ISSUED=NO")
-                tty.write(f"Confirm exactly: APPROVE H454 {raw}\n> ")
-                confirm = tty.readline(128).strip()
+                confirm = prompt_tty(tty_reader, tty_writer,
+                                     f"Confirm exactly: APPROVE H454 {raw}\n> ", 128)
                 if confirm != f"APPROVE H454 {raw}":
                     raise PairDenied("OWNER_CONFIRMATION_DENIED")
                 approve(conn, raw, row)
