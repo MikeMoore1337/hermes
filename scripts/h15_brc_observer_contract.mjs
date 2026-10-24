@@ -1,7 +1,11 @@
 // #455: exercise REAL pinned TypeScript observer module after upstream pnpm build.
 // No /state mount, no production access, no tokens, no network listeners.
 import assert from 'node:assert/strict';
-import { sanitizedLiveObservation, observerEnabled } from '../packages/relay/dist/hermes-brc-observer.js';
+import { pathToFileURL } from 'node:url';
+if (process.argv.length !== 3 || !process.argv[2].endsWith('/packages/relay/dist/hermes-brc-observer.js')) {
+  throw Error('BRC_OBSERVER_COMPILED_SOURCE_REQUIRED');
+}
+const { sanitizedLiveObservation, observerEnabled } = await import(pathToFileURL(process.argv[2]).href);
 
 const now = 1792872000000;
 const names = ['H15 Windows permanent sandbox', 'H15 Hermes VPS sandbox', 'H15 YFC VPS sandbox'];
