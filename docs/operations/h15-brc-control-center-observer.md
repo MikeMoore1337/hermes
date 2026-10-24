@@ -17,9 +17,13 @@ Keep legacy Desktop Commander sources explicitly separate.
 
 ## Normalized output
 
-Input: one device listing of exactly the three explicitly approved
-Hermes sandbox identities with bounded opaque IDs, true boolean
-presence fields, and `lastSeen` integer Unix milliseconds; one owner
+Input: one device listing containing exactly the three explicitly approved
+Hermes sandbox identities **and optionally one previously approved restricted
+native Win32 read-only device**. That fourth identity and platform are checked
+against the known owner-scoped registration, then discarded from the public
+three-sandbox observation. Unknown fourth devices fail closed. All devices
+require bounded IDs, true boolean presence fields and `lastSeen` integer
+Unix milliseconds; one owner
 catalog of exactly four known public workspace identities with exact
 origin, branch and `/workspace/projects/<repository>` roots.
 
