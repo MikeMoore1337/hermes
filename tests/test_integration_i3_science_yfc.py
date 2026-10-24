@@ -72,6 +72,31 @@ class ScienceEditorialPreflightTests(unittest.TestCase):
                 ):
                     assess_science_handoff(candidate)
 
+    def test_each_study_rejects_self_reported_approval_or_claim_forwarding(self) -> None:
+        """A single altered source, including the plant review, must not unlock I3."""
+        self.assertEqual(
+            {item["pmid"] for item in self.source["studies"]},
+            {"42840492", "42771055", "42797032", "42733310"},
+        )
+        for source in self.source["studies"]:
+            for variant in ("reviewer", "editor", "publication", "gate"):
+                candidate = copy.deepcopy(self.source)
+                study = next(
+                    row for row in candidate["studies"]
+                    if row["pmid"] == source["pmid"]
+                )
+                if variant == "reviewer":
+                    study["reviewer_approval"] = True
+                elif variant == "editor":
+                    study["gates"][0]["editorial_approval"] = True
+                elif variant == "publication":
+                    study["publication_allowed"] = True
+                else:
+                    study["gates"][0]["review_state"] = "VERIFIED"
+                with self.subTest(pmid=source["pmid"], variant=variant):
+                    with self.assertRaises(SciencePreflightRefused):
+                        assess_science_handoff(candidate)
+
     def test_source_doi_gate_and_notice_spoofing_rejected(self) -> None:
         mutations = (
             lambda p: p["studies"][0].update(doi="10.0000/fake"),
