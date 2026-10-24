@@ -2,13 +2,17 @@
 
 Uses temporary scratch data; never touches /var/lib/hermes-brc-relay.
 """
+import os
 import sqlite3
 import tempfile
 import time
 import unittest
+
+if os.name == "posix":
+    import pty
 from pathlib import Path
 
-from scripts.h15_brc_owner_private_pair import approve, find_pending, PairDenied, DEVICE
+from scripts.h15_brc_owner_private_pair import approve, find_pending, PairDenied, DEVICE, prompt_tty
 
 SCHEMA = """
 CREATE TABLE users (id TEXT PRIMARY KEY, username TEXT UNIQUE NOT NULL);
@@ -83,6 +87,25 @@ class ApprovalTests(unittest.TestCase):
             approve(self.db, "ABCD-2345", row)
         self.assertEqual(self.db.execute(
             "SELECT approved FROM device_codes").fetchone()[0], 0)
+
+    @unittest.skipUnless(os.name == "posix", "requires real POSIX PTY")
+    def test_nonseekable_tty_prompt(self):
+        """Real PTY streams are non-seekable: separate r and w must work."""
+        master, slave = pty.openpty()
+        try:
+            with os.fdopen(os.dup(slave), "r", encoding="ascii") as reader, \
+                 os.fdopen(os.dup(slave), "w", encoding="ascii", buffering=1) as writer:
+                self.assertFalse(reader.seekable())
+                self.assertFalse(writer.seekable())
+                os.write(master, b"ABCD-2345" + bytes((10,)))
+                self.assertEqual(prompt_tty(reader, writer, "Enter code: ", 64),
+                                 "ABCD-2345")
+                os.write(master, b"APPROVE H454 ABCD-2345" + bytes((10,)))
+                self.assertEqual(prompt_tty(reader, writer, "Confirm: ", 128),
+                                 "APPROVE H454 ABCD-2345")
+        finally:
+            os.close(master)
+            os.close(slave)
 
     def test_denied_request(self):
         self.db.execute("UPDATE device_codes SET denied=1")
