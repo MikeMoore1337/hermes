@@ -20,6 +20,15 @@ ADAPTER_SCHEMA = "hermes-ops-watch-advisor-event-v1"
 MAX_EVENTS = 50
 PROVENANCES = frozenset({"synthetic", "anonymized_copy", "readonly_snapshot"})
 
+# The historical event journal stores the reviewed action text immutably.
+# Narrowly accept only the two pre-ask-before-cleanup disk actions that were
+# emitted before the preview copy changed; other legacy or arbitrary text
+# must continue failing closed. No old incident is rewritten or reprocessed.
+LEGACY_DISK_ACTIONS = {
+    "infra_hermes_disk_high": "Проверить диск VPS Hermes без автоматического удаления данных",
+    "infra_yfc_disk_high": "Проверить диск VPS YFC без автоматического удаления данных",
+}
+
 # The source journal stores stable incident codes, not free-form root causes.
 CODE_MAPPING: dict[str, tuple[str, str, str, str]] = {
     "snapshot_stale": ("monitoring_stale", "SNAPSHOT_STALE", "unknown", "ops-monitor"),
@@ -117,8 +126,12 @@ def _row(row: Mapping[str, Any]) -> dict[str, Any]:
         expected_title = resolved_title(code)
         expected_action = resolved_action(code)
         expected_severity = "resolved"
+    action_matches = row["action"] == expected_action or (
+        phase == "new" and code in LEGACY_DISK_ACTIONS
+        and row["action"] == LEGACY_DISK_ACTIONS[code]
+    )
     if (phase not in {"new", "resolved"} or row["severity"] != expected_severity
-            or row["title"] != expected_title or row["action"] != expected_action):
+            or row["title"] != expected_title or not action_matches):
         raise AdvisorAdapterError("event_record_invalid")
     return {
         "id": event_id,

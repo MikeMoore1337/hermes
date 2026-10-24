@@ -149,6 +149,39 @@ class OpsWatchAdvisorAdapterTests(unittest.TestCase):
             with self.assertRaisesRegex(AdvisorAdapterError, "event_record_invalid"):
                 read_events(self.directory, provenance="readonly_snapshot")
 
+    def test_legacy_disk_action_in_immutable_history_is_read_only(self) -> None:
+        old_action = adapter.LEGACY_DISK_ACTIONS["infra_hermes_disk_high"]
+        legacy = self.row(69, "infra_hermes_disk_high")
+        legacy["action"] = old_action
+        current = self.row(70, "infra_hermes_disk_high")
+        with patch.object(adapter, "inspect", return_value=[current, legacy]):
+            projected = read_events(self.directory, provenance="readonly_snapshot")
+        self.assertEqual([item["event_id"] for item in projected], [70, 69])
+        self.assertEqual([item["analysis"]["decision"] for item in projected],
+                         ["RULES_ONLY", "RULES_ONLY"])
+        self.assertEqual(legacy["action"], old_action)
+        self.assertFalse((self.directory / "incidents.sqlite3").exists())
+
+    def test_legacy_action_only_allowed_for_matching_disk_new_event(self) -> None:
+        for code in ("infra_hermes_disk_high", "infra_yfc_disk_high"):
+            historical = self.row(69, code)
+            historical["action"] = adapter.LEGACY_DISK_ACTIONS[code]
+            with self.subTest(code=code):
+                self.assertEqual(self.read(
+                    [historical], provenance="readonly_snapshot",
+                )[0]["event_id"], 69)
+                wrong = self.row(69, "ci_failed")
+                wrong["action"] = historical["action"]
+                with self.assertRaisesRegex(AdvisorAdapterError, "event_record_invalid"):
+                    self.read([wrong], provenance="readonly_snapshot")
+                forged = dict(historical, action=historical["action"] + " / altered")
+                with self.assertRaisesRegex(AdvisorAdapterError, "event_record_invalid"):
+                    self.read([forged], provenance="readonly_snapshot")
+                resolved = self.row(69, code, "resolved")
+                resolved["action"] = historical["action"]
+                with self.assertRaisesRegex(AdvisorAdapterError, "event_record_invalid"):
+                    self.read([resolved], provenance="readonly_snapshot")
+
     def test_event_selection_and_provenance_are_explicit(self) -> None:
         with patch.object(adapter, "inspect", return_value=[self.row(1, "ci_failed")]):
             with self.assertRaisesRegex(AdvisorAdapterError, "event_not_found"):
