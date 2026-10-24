@@ -22,21 +22,14 @@ class SnapshotWriterTests(unittest.TestCase):
         self.parent.mkdir(mode=0o700)
         self.path = self.parent / "status.json"
         self.owner_uid = self.parent.stat().st_uid
-        self.uid_patch = patch("control_center.brc_snapshot_writer.os.geteuid",
-                               return_value=self.owner_uid if self.owner_uid != 0 else 1001)
+        if self.owner_uid == 0:
+            self.skipTest("filesystem-owner integration requires non-root runner")
+        self.uid_patch = patch(
+            "control_center.brc_snapshot_writer.os.geteuid",
+            return_value=self.owner_uid,
+        )
         self.uid_patch.start()
         self.addCleanup(self.uid_patch.stop)
-        if self.owner_uid == 0:
-            # In rare root-runner tests, simulate a service-owned directory.
-            self.uid_patch.stop()
-            self.uid_patch = patch("control_center.brc_snapshot_writer.os.geteuid",
-                                   return_value=1001)
-            self.uid_patch.start()
-            with patch("control_center.brc_snapshot_writer.Path.lstat") as fake:
-                # Root-runner file identity differs from the simulated user:
-                # rely on ordinary Actions non-root runner for filesystem tests.
-                pass
-            self.skipTest("filesystem ownership acceptance requires non-root runner")
 
     def tearDown(self):
         self.temp.cleanup()
