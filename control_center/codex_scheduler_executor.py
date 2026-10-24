@@ -10,13 +10,54 @@ import hashlib
 import os
 import re
 import shutil
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import resource
 import signal
 import subprocess
 import tempfile
 
 from .codex_scheduler import ValidationError, _limits, _ops
+
+_CGROUP_ROOT = Path("/sys/fs/cgroup")
+_PROC_CGROUP = Path("/proc/self/cgroup")
+
+
+def _effective_cgroup_memory_max() -> int | None:
+    """Effective Linux cgroup-v2 physical memory cap, including ancestors.
+
+    RLIMIT_AS is unsuitable for Node/V8: it may reserve vast virtual address
+    ranges without consuming equivalent RAM. Require a real cgroup memory.max.
+    """
+    try:
+        records = [
+            line.partition("::")[2]
+            for line in _PROC_CGROUP.read_text(encoding="ascii").splitlines()
+            if line.startswith("0::")
+        ]
+        if len(records) != 1 or not records[0].startswith("/"):
+            return None
+        parts = PurePosixPath(records[0]).parts[1:]
+        if any(part in (".", "..") for part in parts):
+            return None
+        current = _CGROUP_ROOT
+        if not current.is_dir() or current.is_symlink():
+            return None
+        ceiling = None
+        for part in (None, *parts):
+            if part is not None:
+                current = current / part
+                if current.is_symlink():
+                    return None
+            value = (current / "memory.max").read_text(encoding="ascii").strip()
+            if value == "max":
+                continue
+            if not value.isdecimal() or int(value) <= 0:
+                return None
+            limit = int(value)
+            ceiling = limit if ceiling is None else min(ceiling, limit)
+        return ceiling
+    except (OSError, UnicodeError, ValueError):
+        return None
 
 
 class OfficialCodexExecutor:
@@ -50,6 +91,12 @@ class OfficialCodexExecutor:
         limits = _limits(job["resource_limits"])
         if not ops or job["effort"] not in ("low", "medium", "high"):
             raise ValidationError("execution_scope_invalid")
+        # Refuse to run if the actual RAM cgroup is absent or looser than
+        # the immutable, owner-approved per-job memory budget.
+        physical_ceiling = _effective_cgroup_memory_max()
+        if (physical_ceiling is None or
+                physical_ceiling > limits["max_memory_mb"] * 1024 * 1024):
+            raise ValidationError("memory_cgroup_unverified")
         sandbox = "workspace-write" if "patch" in ops or "prepare_pr" in ops else "read-only"
         # No job JSON field is ever executed as a program or shell fragment.
         # Production CD uses immutable git-archive releases (no .git directory).
@@ -71,8 +118,8 @@ class OfficialCodexExecutor:
             resource.setrlimit(resource.RLIMIT_CPU,
                                (limits["max_runtime_seconds"] + 5,
                                 limits["max_runtime_seconds"] + 5))
-            memory = limits["max_memory_mb"] * 1024 * 1024
-            resource.setrlimit(resource.RLIMIT_AS, (memory, memory))
+            # The trusted service's cgroup MemoryMax enforces physical RAM.
+            # RLIMIT_AS would instead crash Node/V8 on virtual reservations.
             size = limits["max_output_bytes"]
             resource.setrlimit(resource.RLIMIT_FSIZE, (size, size))
         with tempfile.TemporaryFile() as output:
