@@ -68,6 +68,76 @@ class BrcSnapshotTests(unittest.TestCase):
         self.assertEqual(result["status"], "unavailable")
         self.assertTrue(all(w["state"] == "not_ready" for w in result["workspaces"]))
 
+
+    def test_four_devices_with_restricted_native_reader_still_publish_three_sandboxes(self):
+        dev, cat = fixtures()
+        # A real owner-controlled native Win32 device can be registered, paused
+        # and offline without changing the permanent workspace capabilities.
+        dev["devices"].append({
+            "name": "H15 Windows native read-only",
+            "deviceId": "h454-win-01335a1f6e6705b4",
+            "platform": "win32",
+            "online": False,
+            "paused": True,
+            "lastSeen": NOW - 25000,
+            "token_hash": "SENSITIVE_SENTINEL",
+        })
+        output = normalize(dev, cat, now_ms=NOW)
+        self.assertEqual([d["name"] for d in output["devices"]], list(DEVICES))
+        self.assertEqual(output["status"], "online")
+        self.assertFalse(output["native_host_access"])
+        self.assertFalse(output["execution_verified"])
+        self.assertFalse(output["onboarding_enabled"])
+        self.assertNotIn("h454-win-", json.dumps(output))
+        self.assertNotIn("SENSITIVE_SENTINEL", json.dumps(output))
+
+        # Online native presence is not proof of command execution or
+        # authorization, and must never leak into workspace routing.
+        dev["devices"][-1]["paused"] = False
+        dev["devices"][-1]["online"] = True
+        output = normalize(dev, cat, now_ms=NOW)
+        self.assertEqual(len(output["devices"]), 3)
+        self.assertFalse(output["native_host_access"])
+
+    def test_unknown_or_forged_fourth_device_is_refused(self):
+        dev, cat = fixtures()
+        native = {
+            "name": "H15 Windows native read-only",
+            "deviceId": "h454-win-01335a1f6e6705b4",
+            "platform": "win32",
+            "online": False,
+            "paused": True,
+            "lastSeen": NOW - 1000,
+        }
+        dev["devices"].append(native)
+        scenarios = [
+            ("foreign name", "name", "Unapproved Device"),
+            ("foreign device", "deviceId", "h454-win-foreign123"),
+            ("forged platform", "platform", "linux/docker"),
+            ("invalid status", "paused", "false"),
+            ("future lastSeen", "lastSeen", NOW + 90000),
+            ("duplicate name", "name", DEVICES[0]),
+            ("duplicate id", "deviceId", DEVICE_IDS[0]),
+        ]
+        for label, key, value in scenarios:
+            with self.subTest(label=label):
+                data = copy.deepcopy(dev)
+                data["devices"][-1][key] = value
+                with self.assertRaises(SnapshotRejected):
+                    normalize(data, cat, now_ms=NOW)
+
+    def test_reject_native_device_without_required_sandbox(self):
+        dev, cat = fixtures()
+        dev["devices"].pop(1)
+        dev["devices"].append({
+            "name": "H15 Windows native read-only",
+            "deviceId": "h454-win-01335a1f6e6705b4",
+            "platform": "win32",
+            "online": False, "paused": True, "lastSeen": NOW,
+        })
+        with self.assertRaises(SnapshotRejected):
+            normalize(dev, cat, now_ms=NOW)
+
     def test_reject_malformed_devices(self):
         a, b = fixtures()
         cases = [

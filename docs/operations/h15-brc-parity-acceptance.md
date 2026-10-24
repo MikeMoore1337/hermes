@@ -107,6 +107,49 @@ file/process/binary coverage on both VPS sandboxes remains **NOT TESTED**.
 | Nonuniform sandbox toolchain | GAP (VPS agents lack Git/Python) | Decide whether these two **sandbox** targets actually need development toolchains; if yes, use pinned image, non-root security gates and separate rollout |
 | Cost and isolation | Owner-hosted, no mandatory paid vendor relay | Model usage and host resource limits still apply |
 
+
+## Live ChatGPT 3-device functional smoke (2026-10-24)
+
+New *actual Hermes MCP calls* (not synthetic upstream CI) were made in ChatGPT
+against three distinct existing online/unpaused sandbox devices. Every test
+used an isolated temporary file under `/workspace`, outside Git repositories:
+
+| Operation | Windows sandbox | Hermes VPS sandbox | YFC VPS sandbox |
+| --- | --- | --- | --- |
+| `write_file` + `read_file` exact marker | PASS | PASS | PASS |
+| `edit_block` expected one replacement | PASS | PASS | PASS |
+| `start_search` / `get_more_search_results` exact content | PASS | PASS | PASS |
+| `move_file` / `get_file_info` / read-after-move | PASS | PASS | PASS |
+| `start_process` Node isolated byte-level check | PASS | PASS | PASS |
+| Temporary file deleted and `get_file_info` returns ENOENT | PASS | PASS | PASS |
+| `list_sessions` after process exit: no active sessions | PASS | PASS | PASS |
+| `/host-private` not mounted in sandbox (process predicate) | PASS | PASS | PASS |
+
+The marker `needle_before_<device>` was changed uniquely to
+`needle_AFTER_<device>` and found through the real content-search APIs.
+The process checked the moved file before deleting precisely that single
+test path. No arbitrary host paths or project worktrees were changed.
+The read/write proof applies only to these **sandbox** roots; it does not
+grant native Windows write/execute or VPS production privileges.
+
+**Independent Codex 3-device complete parity remains NOT TESTED in this
+latest run.** Owner-supplied Codex native Windows read-only proof does not
+substitute for Codex write/edit/search/process checks on all sandbox devices.
+Windows reboot/login recovery remains gated by owner maintenance approval.
+
+### Observer compatibility after optional native Windows registration
+
+The owner-paired original Windows read-only device can appear as an additional
+fourth row in authenticated `list_devices` even after its temporary bearer
+has been revoked. Existing BRC observer output is explicitly limited to
+the three permanent sandbox devices and must **not** report the native
+device as a fourth workspace or infer owner host permission. The observer
+now validates exactly the known optional Win32 identity, refuses unknown
+fourth devices and duplicate IDs, and excludes native identity/token data
+from the sanitized display-only snapshot. Offline/paused native reader
+must not break the ordinary three-sandbox status dashboard.
+This is a backend compatibility safeguard, not a Control Center UI activation.
+
 ## Release policy
 
 Keep [#454](https://github.com/MikeMoore1337/hermes/issues/454)

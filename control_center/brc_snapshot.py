@@ -26,6 +26,11 @@ PROJECTS = {
     "ai-development-toolkit": "main",
 }
 WINDOWS = DEVICES[0]
+# A separately owner-approved, currently disabled original Windows reader is
+# registered alongside the three permanent sandboxes. It is NOT a fourth
+# workspace target and must never grant host permissions through this snapshot.
+NATIVE_READER_NAME = "H15 Windows native read-only"
+NATIVE_READER_ID = "h454-win-01335a1f6e6705b4"
 DEVICE_ID = re.compile(r"^[A-Za-z0-9_-]{8,128}$")
 
 
@@ -48,7 +53,7 @@ def normalize(devices: object, catalog: object, *, now_ms: int) -> dict:
     if not isinstance(devices, dict) or set(devices) != {"devices"}:
         _reject("invalid_device_envelope")
     raw = devices["devices"]
-    if not isinstance(raw, list) or len(raw) != len(DEVICES):
+    if not isinstance(raw, list) or len(raw) not in (len(DEVICES), len(DEVICES) + 1):
         _reject("invalid_device_count")
     seen_names, seen_ids = set(), set()
     ids, output = {}, []
@@ -56,10 +61,14 @@ def normalize(devices: object, catalog: object, *, now_ms: int) -> dict:
         if not isinstance(row, dict):
             _reject("invalid_device")
         name, identifier = row.get("name"), row.get("deviceId")
-        if (name not in DEVICES or name in seen_names or
+        if (name not in (*DEVICES, NATIVE_READER_NAME) or name in seen_names or
             not isinstance(identifier, str) or not DEVICE_ID.fullmatch(identifier) or
             identifier in seen_ids):
             _reject("invalid_device_identity")
+        if name == NATIVE_READER_NAME and (
+            identifier != NATIVE_READER_ID or row.get("platform") != "win32"
+        ):
+            _reject("invalid_native_reader_identity")
         seen_names.add(name)
         seen_ids.add(identifier)
         ids[name] = identifier
@@ -69,12 +78,18 @@ def normalize(devices: object, catalog: object, *, now_ms: int) -> dict:
         if type(stamp) is not int or stamp < 0 or stamp > now_ms + CLOCK_SKEW_MS:
             _reject("invalid_last_seen")
         age = max(0, now_ms - stamp)
+        # Validate the native reader exactly, then exclude it from the three
+        # sandbox observation and project list. It is never host access approval.
+        if name == NATIVE_READER_NAME:
+            continue
         status = ("paused" if row["paused"] else
                   "offline" if not row["online"] else
                   "stale" if age > STALE_AFTER_MS else "online")
         output.append({"name": name, "status": status,
                        "last_seen_age_seconds": age // 1000,
                        "command_execution": "not_verified"})
+    if len(output) != len(DEVICES):
+        _reject("invalid_device_count")
     output.sort(key=lambda row: DEVICES.index(row["name"]))
     windows_online = output[0]["status"] == "online"
 
