@@ -74,7 +74,12 @@ export function sanitizedLiveObservation(
   const devices = SANDBOXES.map(name => {
     const row = byName.get(name)!;
     const connected = live.get(row.device_id);
-    if (connected && (connected.name !== name || connected.platform !== 'linux/docker'))
+    // The owner registry uses a trusted deployment classification
+    // ('linux/docker'), while the real agent hello reports Node.js
+    // process.platform ('linux'). Requiring the registry string for hello
+    // rejects every actual connected sandbox after a successful boot-only
+    // snapshot. Preserve BOTH strict checks; never accept arbitrary platforms.
+    if (connected && (connected.name !== name || connected.platform !== 'linux'))
       throw Error('forged_hello');
     const last = connected?.lastSeen ?? row.last_seen ?? 0;
     const age = Math.min(86400, Math.max(0, Math.floor((now - last) / 1000)));
