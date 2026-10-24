@@ -4,6 +4,27 @@ Status: production source release delivered by #274; opt-in worker follow-up #27
 Dependencies: #255 quota monitor/policy; #2/#33 H-01 burn-in; #272 analytics;
 #273 offline benchmark. Nothing here restarts or reconfigures H-01.
 
+## Cgroup v2 root controller-file compatibility (2026-10-24)
+
+A root-operated, zero-inference probe using the hardened systemd sandbox
+confirmed the immediate memory admission failure. `/proc/self/cgroup` gave
+`/system.slice/hermes-h271-cgroup-inspect-1513525.service`;
+`/sys/fs/cgroup/memory.max` returned `FileNotFoundError`, while
+`/sys/fs/cgroup/system.slice/memory.max` was `max` and the unit's
+`memory.max` was **268435456 bytes (256 MiB)**. The original executor
+incorrectly rejected a legitimate cgroup-v2 mount-root that lacks a
+`memory.max` file and returned `None`, despite a finite leaf limit.
+All read-only repository, binary, auth, and artifact-write checks passed.
+
+The correction permits **only** `FileNotFoundError` at the mount root while
+continuing to verify each descendant (including the service's own cgroup)
+and the effective minimum numeric RAM cap. An absent descendant controller
+file, invalid value, symlink, permission error, or an unlimited hierarchy
+still fails closed. There is no change to `MemoryMax=256M`, model quotas,
+the old blocked job, or any timer. After protected CI and CD, validate the
+new function with a **non-inference** read-only probe under the actual
+systemd sandbox before considering any *new* separately authorized job.
+
 ## Stage-4 production canary incident (2026-10-24)
 
 A single approved read-only `inspect` run was reserved at
