@@ -793,8 +793,13 @@ jobs:
           bundle="$RUNNER_TEMP/hermes-brc-pinned-source"
           replay="$RUNNER_TEMP/brc-replay"
           mkdir -p "$bundle"
-          # Include the newly added gateway policy file in git diff.
-          git -C "$candidate" add -N packages/relay/src/mcp/hermes-policy.ts
+          # Include every generated, untracked owner extension in this replayable patch.
+          git -C "$candidate" add -N \
+            packages/relay/src/hermes-brc-observer.ts \
+            packages/relay/src/mcp/hermes-policy.ts \
+            packages/relay/src/mcp/hermes-tool-catalog.ts \
+            packages/relay/src/mcp/hermes-workspaces.ts \
+            packages/relay/src/mcp/hermes-native-read.ts
           git -C "$candidate" diff --check HEAD
           git -C "$candidate" diff --binary HEAD > "$bundle/hermes-brc.patch"
           test -s "$bundle/hermes-brc.patch"
@@ -802,7 +807,11 @@ jobs:
           packages/agent/src/dispatcher.ts
           packages/relay/src/app.ts
           packages/relay/src/device-hub.ts
+          packages/relay/src/hermes-brc-observer.ts
+          packages/relay/src/mcp/hermes-native-read.ts
           packages/relay/src/mcp/hermes-policy.ts
+          packages/relay/src/mcp/hermes-tool-catalog.ts
+          packages/relay/src/mcp/hermes-workspaces.ts
           packages/relay/src/mcp/invoke.ts
           packages/relay/src/mcp/server.ts
           pnpm-lock.yaml
