@@ -10,6 +10,10 @@ on:
       - scripts/h15_brc_workspace_gateway.py
       - scripts/h15_brc_native_read_gateway.py
       - deploy/h15/hermes-native-read.template.ts
+      - deploy/h15/hermes-brc-observer.template.ts
+      - scripts/h15_brc_observer_gateway.py
+      - scripts/h15_brc_observer_contract.mjs
+      - tests/test_h15_brc_observer_gateway.py
       - tests/test_h15_brc_native_read_gateway.py
       - tests/test_h15_native_windows_relay_contract.py
       - scripts/h15_brc_native_read_socket_e2e.mjs
@@ -37,6 +41,10 @@ on:
       - scripts/h15_brc_workspace_gateway.py
       - scripts/h15_brc_native_read_gateway.py
       - deploy/h15/hermes-native-read.template.ts
+      - deploy/h15/hermes-brc-observer.template.ts
+      - scripts/h15_brc_observer_gateway.py
+      - scripts/h15_brc_observer_contract.mjs
+      - tests/test_h15_brc_observer_gateway.py
       - tests/test_h15_brc_native_read_gateway.py
       - tests/test_h15_native_windows_relay_contract.py
       - scripts/h15_brc_native_read_socket_e2e.mjs
@@ -203,6 +211,15 @@ jobs:
           grep -q 'invokeOwnerNativeRead' "$RUNNER_TEMP/brc-upstream/packages/relay/src/mcp/server.ts"
           echo "H454_NATIVE_READ_RELAY_PATCH=SOURCE_ONLY" >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Patch owner-only relay local observation (disabled without private marker)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest -v tests.test_h15_brc_observer_gateway
+          python3 -m scripts.h15_brc_observer_gateway --source-dir "$RUNNER_TEMP/brc-upstream"
+          test "$(git -C "$RUNNER_TEMP/brc-upstream" rev-parse HEAD)" = cbe511702dd0147650353c29ac6ab1decd8afda1
+          echo "H455_OBSERVER_PATCH=SOURCE_ONLY" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Fix stale/foreign WebSocket result replay at source-pinned relay DeviceHub
         shell: bash
         run: |
@@ -248,6 +265,7 @@ jobs:
         run: |
           set -euo pipefail
           pnpm build
+          node "$GITHUB_WORKSPACE/scripts/h15_brc_observer_contract.mjs" "$RUNNER_TEMP/brc-upstream/packages/relay/dist/hermes-brc-observer.js"
           node --input-type=module <<'JS'
           import { listApprovedWorkspaces, resolveApprovedWorkspace } from './packages/relay/dist/mcp/hermes-workspaces.js';
           const dev = { name: 'H15 Windows permanent sandbox', deviceId: 'h15-win-05be75515428', online: true, paused: false };
