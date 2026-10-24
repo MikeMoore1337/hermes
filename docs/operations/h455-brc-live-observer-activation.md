@@ -80,6 +80,45 @@ new project mounts.
    by the existing perimeter. Negative: stale file returns HTTP 503;
    native win32 is still paused/offline and absent from public 3-device view.
 
+## Corrective refresh after live platform mismatch (2026-10-25)
+
+Original relay observer snapshot passed initial publication while the three
+sandboxes were reconnecting, then periodic refresh failed 23 times in 15
+minutes. Sanitized source was >600 s stale, with all sandbox devices marked
+offline, while real ChatGPT MCP `list_devices` independently showed all three
+online/unpaused. **Root cause verified in pinned upstream source:** the
+trusted registry class is `linux/docker`, whereas the original BRC
+`packages/agent/src/transport/ws-client.ts` hello sends
+`platform: process.platform` = `linux`. The observer previously demanded
+`linux/docker` from both, throwing `forged_hello` for legitimate agents.
+`read_snapshot` correctly refused a snapshot over 300 seconds old.
+
+Fix: maintain the exact trusted `linux/docker` registry-class check,
+but demand exactly `linux` for every live connected sandbox hello. Exact
+device ID, hello name and owner binding remain mandatory. A pinned compiled
+TypeScript regression uses the real hello value and rejects `win32`,
+`darwin`, `linux/docker` and forged names; never disable security
+checks or relax snapshot freshness.
+
+Live runtime cutover MUST NOT reuse the already occupied H454/H455 rollback
+slots. Use `scripts.h455_brc_observer_refresh_cutover` for the unique
+`hermes-brc-relay-h455-refresh-rollback` checkpoint. This wrapper retains
+the existing transactional operator approval schema, OCI validation, backup,
+rehearsed restore and rollback behavior. Candidate OCI must be newly
+built from the exact corrected main commit and fully reverified.
+
+The current approval JSON from the first cutover is **old and pinned to the
+former image**. It must be replaced only after strict stat/type/ownership,
+no-symlink and old exact-byte contract checks, using an owner-controlled,
+atomic file replacement, and only then execute the corrective cutover.
+Never reuse the original approval file as-is; it will fail the pinned
+operator. The enabled observer marker and precreated 0750 output directory
+already exist; do not create or reset them a second time. Systemd bridge
+units are still absent. Do not install them until two sanitized observations
+show actual 30-second refresh, age <300 seconds, all three sandbox statuses
+online, and JSON passes `read_snapshot` with owner metadata unchanged.
+Retain old H454, first H455, and new corrective rollback checkpoints.
+
 ## Safe rollback
 
 1. Stop/disable **only** the new observer timer; remove only the exact opt-in
