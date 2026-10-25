@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#060d18">
+<meta name="description" content="Hermes BRC — безопасный просмотр изолированных рабочих пространств">
+<link rel="icon" type="image/png" href="/favicon.png">
+<link rel="stylesheet" href="/hermes-brc.css">
+<script src="/hermes-brc.js" defer></script>
+<title>Рабочие пространства · Hermes BRC</title>
+</head>
+<body>
+<a href="#brc-main" class="skip">Перейти к рабочим пространствам</a>
+<div class="brc-shell">
+<aside class="brc-rail" aria-label="Навигация">
+ <div class="brc-brand"><span class="brc-monogram" aria-hidden="true">H</span><span class="brc-brand-text">HERMES<small>CONTROL CENTER</small></span></div>
+ <span class="brc-navhead">НАВИГАЦИЯ</span>
+ <nav class="brc-nav" aria-label="Разделы панели">
+   <a href="/" title="Обзор"><span aria-hidden="true">◇</span><span class="brc-navlabel">Обзор</span></a>
+   <a href="/hermes-brc" class="active" aria-current="page" title="Hermes BRC"><span aria-hidden="true">⌘</span><span class="brc-navlabel">Hermes BRC</span></a>
+ </nav>
+ <p class="brc-sidefoot"><b>SELF-HOSTED · H-15</b>Снимок из изолированного Hermes BRC. Выбор проекта не предоставляет новых прав.</p>
+</aside>
+<main class="brc-page" id="brc-main">
+ <header class="brc-top"><div class="brc-crumb">Control Center / <b>Hermes BRC</b></div><span class="brc-readonly">Только чтение</span></header>
+ <section class="brc-content" aria-labelledby="brc-title">
+ <div class="brc-eyebrow">H-15 / УПРАВЛЕНИЕ КОНТЕКСТОМ</div>
+ <div class="brc-hero"><div><h1 id="brc-title">Рабочие пространства</h1><p>Сначала проект — затем устройство и границы разрешённого доступа.</p></div><div class="brc-observed">Последнее наблюдение<strong id="brc-time">Нет проверенного снимка</strong></div></div>
+ <div class="brc-statusline" aria-live="polite" aria-atomic="true">
+   <div class="brc-health"><span id="brc-health-dot" class="brc-dot muted" aria-hidden="true"></span><div><strong id="brc-health">Hermes BRC · данные недоступны</strong><small>Self-hosted · только проверенный API</small></div></div>
+   <div class="brc-smallstat"><b id="brc-device-count">—</b> устройства</div>
+   <div class="brc-smallstat"><b id="brc-project-count">—</b> проекта</div>
+   <div class="brc-smallstat"><b class="warning">—</b> E2E команд</div>
+   <button id="brc-refresh" class="brc-refresh" type="button">Обновить</button>
+ </div>
+ <div id="brc-error" class="brc-error" role="alert" hidden>Свежий снимок BRC недоступен. Отображаются только подтверждённые границы доступа.</div>
+ <div class="brc-workgrid">
+  <section class="brc-panel" aria-labelledby="brc-projects-head">
+   <h2 class="brc-panel-label" id="brc-projects-head">ВЫБРАТЬ ПРОЕКТ</h2>
+   <p class="brc-panel-hint">Четыре изолированных sandbox-каталога. Переключение не выдаёт прав.</p>
+   <div class="brc-projects" id="brc-projects" role="group" aria-label="Рабочие пространства">
+      <button class="brc-project selected" type="button" data-project="hermes" aria-pressed="true"><strong>Hermes Agent</strong><small>main · Git не проверен</small></button>
+      <button class="brc-project" type="button" data-project="your-fitness-coach" aria-pressed="false"><strong>Your Fitness Coach</strong><small>master · Git не проверен</small></button>
+      <button class="brc-project" type="button" data-project="second-brain" aria-pressed="false"><strong>Second Brain</strong><small>main · Git не проверен</small></button>
+      <button class="brc-project" type="button" data-project="ai-development-toolkit" aria-pressed="false"><strong>AI Development Toolkit</strong><small>main · Git не проверен</small></button>
+   </div>
+   <div class="brc-project-foot"><strong>Каталог проектов</strong><p>Наличие пути не подтверждает Git HEAD, чистоту репозитория или права записи.</p></div>
+  </section>
+  <section class="brc-panel brc-detail" aria-labelledby="brc-selected-name">
+    <header class="brc-detail-head"><div><span class="brc-eyebrow">ВЫБРАННЫЙ КОНТЕКСТ</span><h2 id="brc-selected-name">Hermes Agent</h2><p id="brc-selected-caption">Рабочее пространство Hermes</p></div><span id="brc-selected-state" class="brc-state unknown">НЕ ПРОВЕРЕНО</span></header>
+    <div class="brc-pathwrap"><div class="brc-fieldlabel">РАЗРЕШЁННЫЙ ПУТЬ В SANDBOX</div><div class="brc-path"><code id="brc-path">/workspace/projects/hermes</code><button id="brc-copy" type="button">Копировать</button></div></div>
+    <dl class="brc-facts">
+      <div><dt>Устройство</dt><dd>Windows sandbox</dd></div>
+      <div><dt>Ветка каталога</dt><dd id="brc-branch">main</dd></div>
+      <div><dt>Git HEAD / clean</dt><dd class="warning">Не проверено</dd></div>
+      <div><dt>Выполнение команд</dt><dd class="warning">Не подтверждено</dd></div>
+    </dl>
+    <footer class="brc-detail-foot"><p>Новые монтирования и изменение конфигурации <b>не разрешены</b>.</p><button type="button" disabled>Проверить инструменты · недоступно</button></footer>
+  </section>
+ </div>
+ <div class="brc-bottomgrid">
+  <section class="brc-panel" aria-labelledby="brc-devices-head">
+   <div class="brc-section-head"><h2 id="brc-devices-head">ПОДКЛЮЧЁННЫЕ УСТРОЙСТВА</h2><span id="brc-devices-label">Нет данных</span></div>
+   <ul class="brc-devices" id="brc-devices" aria-label="Статусы устройств"><li>Загрузка защищённого снимка…</li></ul>
+  </section>
+  <section class="brc-panel" aria-labelledby="brc-access-head">
+   <div class="brc-section-head"><h2 id="brc-access-head">ГРАНИЦЫ ДОСТУПА</h2></div>
+   <dl class="brc-access">
+    <div><dt>Чтение статусов</dt><dd id="brc-read-access">Нет данных</dd></div>
+    <div><dt>Выполнение команд</dt><dd class="warning">Не проверено</dd></div>
+    <div><dt>Оригинальный Windows</dt><dd class="denied">Закрыт</dd></div>
+    <div><dt>Подключение новых проектов</dt><dd class="warning">Не допущено</dd></div>
+   </dl>
+  </section>
+ </div>
+ </section>
+ <footer class="brc-footer"><div><small>HERMES BRC / РАБОЧИЕ КОНТЕКСТЫ</small><strong>Только подтверждённая телеметрия</strong></div><p>Online не означает право или успешное выполнение команды. <a href="/">К основному Control Center</a></p></footer>
+</main>
+</div>
+</body>
+</html>
