@@ -55,7 +55,7 @@ class CPanelHttpTests(unittest.TestCase):
         self.assertEqual(headers["Cache-Control"], "no-store")
         self.assertIn(b"brc-workgrid", body)
         self.assertIn(b"/hermes-brc.js", body)
-        self.assertIn(b"style-src 'self'", headers["Content-Security-Policy"])
+        self.assertIn("style-src 'self'", headers["Content-Security-Policy"])
         self.assertNotIn(b"demo-token", body)
 
     def test_static_assets_are_exact_and_do_not_add_execution_apis(self):
