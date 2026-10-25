@@ -57,3 +57,53 @@ root denied; this proof does not include remote MCP transport.
   temporary CI files. It is not proof of the owner's live BRC pairing.
 
 No Codex CLI, paid AI, other service activation or live host effects.
+
+
+## Optional bounded reconnect (source-only, owner-gated)
+
+The existing `scripts/h15_native_windows_outbound.py` now supports
+`--bounded-reconnect` as a **separate mutually exclusive mode** from
+`--single-session`, for a separately approved native Win32 process.
+It keeps the existing outbound BRC WebSocket and device identity; there
+is no new MCP server, public listener, token refresh or Codex CLI.
+
+- Exactly five **sequential**, independently authenticated read-only
+  connections at most, with backoff of 1, 2, 4, 8 seconds (15 seconds
+  total sleep budget). Retries `transport_failed` and `idle_timeout`.
+- A fatal relay rejection, invalid welcome, malformed frame, or protocol
+  error stops without retry. No fallback to other domains or transports.
+  If the retry budget is reached the command exits nonzero. It does
+  **not** present an exhausted retry as successful connectivity.
+- A session exhausted by its call budget ends the process; never
+  automatically reset that budget by reconnecting. Each new transport
+  session constructs a new local read-only MCP session, but does not
+  queue or replay any previous tool request. During a single supervised
+  process lifetime, a bounded in-memory request-ID ledger is preserved
+  across reconnects; relay redelivery of an already handled ID is refused
+  before reaching the file adapter. This ledger is **not durable across
+  OS/process restarts**, so mutating commands must remain unavailable
+  until a separately reviewed persistent idempotency receipt exists.
+- A runtime guard requires the tool catalog to contain **only**
+  `native_file_read` and `native_file_stat`. If commands/write tools
+  are introduced in the future, this supervisor **fails closed** until
+  a separate durable receipt/idempotency policy is implemented and
+  explicitly accepted. The transport remains unusable on Linux.
+- `--bounded-reconnect` is not configured as an automatic startup.
+  The existing original Windows native reader is currently
+  **offline and paused**. No local token/key, Task Scheduler, Windows
+  logon/startup task, SSH tunnel, ACL or original project file is
+  modified by merging this source.
+
+**Critical limitation:** a bounded in-process reconnect is **not**
+recovery after reboot or a revoked/expired pairing token. Windows
+auto-start still requires an owner-approved user-scoped credential
+lifecycle (OS-protected storage or re-pair), a logged-on task with
+non-admin identity and deny-by-default access, a host-specific
+recovery/rollback plan and actual 2-client E2E. The current tool
+catalog cannot perform native edits or execute PowerShell/npm/Git.
+Never advertise these capabilities based on this change alone.
+
+Offline tests:
+```sh
+python3 -B -m unittest tests.test_h15_native_windows_reconnect -v
+```

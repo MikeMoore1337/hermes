@@ -15,6 +15,7 @@ import json
 import os
 import re
 import sys
+import time
 from dataclasses import dataclass
 from typing import Any, Callable
 from urllib.parse import urlsplit
@@ -30,6 +31,9 @@ WIRE_VERSION = 1
 MAX_INCOMING = 8192
 MAX_CALLS = 16
 MAX_SEEN_IDS = 64
+MAX_RECONNECT_ATTEMPTS = 5
+RECONNECT_DELAYS = (1, 2, 4, 8)
+READONLY_NAMES = frozenset({'native_file_stat', 'native_file_read'})
 DEVICE_ID = re.compile(r"^[A-Za-z0-9_-]{8,128}$")
 TOKEN = re.compile(r"^[A-Za-z0-9_.~-]{24,1024}$")
 
@@ -147,7 +151,8 @@ def safe_call(session: McpSession, message: dict[str, Any],
     return {"type": "result", "id": ident, "result": rpc["result"]}
 
 
-def run_session(config: Settings, connector: Callable[..., Any]) -> str:
+def run_session(config: Settings, connector: Callable[..., Any],
+                *, seen_ids: set[str] | None = None) -> str:
     """One authenticated outbound TLS socket, one bounded local tool session.
 
     The connector is injected for offline tests. Production uses the
@@ -161,7 +166,7 @@ def run_session(config: Settings, connector: Callable[..., Any]) -> str:
     })
     if not isinstance(init, dict) or "result" not in init:
         raise NativeTransportDenied("internal_mcp_init_failed")
-    seen: set[str] = set()
+    seen: set[str] = seen_ids if seen_ids is not None else set()
     sent = 0
     try:
         connection = connector(
@@ -222,14 +227,49 @@ def run_session(config: Settings, connector: Callable[..., Any]) -> str:
         raise NativeTransportDenied("transport_failed") from None
 
 
+def run_bounded_reconnect(
+    config: Settings, connector: Callable[..., Any],
+    *, pause: Callable[[float], Any] = time.sleep,
+) -> str:
+    """At most five sequential *read-only* sessions, no queued call replay.
+
+    Authentication stays with the existing paired device credential; there
+    is no token refresh, new registration, daemon or background task.
+    Nothing is persisted. On restart owner-scoped re-pair may be required.
+    Fatal protocol/relay refusal does NOT get retried.
+    """
+    if {tool.get("name") for tool in TOOLS} != READONLY_NAMES or len(TOOLS) != 2:
+        raise NativeTransportDenied("reconnect_requires_readonly_catalog")
+    seen_ids: set[str] = set()
+    for index in range(MAX_RECONNECT_ATTEMPTS):
+        try:
+            # Preserve prior in-process request IDs over a connection reset;
+            # a relay redelivery must not dispatch the same ID twice.
+            end = run_session(config, connector, seen_ids=seen_ids)
+        except NativeTransportDenied as exc:
+            if str(exc) != "transport_failed":
+                raise
+            end = "transport_failed"
+        if end not in ("idle_timeout", "transport_failed"):
+            return end
+        if index == MAX_RECONNECT_ATTEMPTS - 1:
+            return "reconnect_budget_exhausted"
+        # Bound duration and prevent an uncontrolled tight connection loop.
+        pause(RECONNECT_DELAYS[index])
+    return "reconnect_budget_exhausted"
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Dormant outbound native read-only BRC device")
-    parser.add_argument("--single-session", action="store_true",
-                        help="Native Windows launch requires specific owner approval")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--single-session", action="store_true",
+                      help="Native Windows launch requires specific owner approval")
+    mode.add_argument("--bounded-reconnect", action="store_true",
+                      help="Up to five read-only reconnects, explicit host owner approval")
     parser.add_argument("--tunneled-loopback", action="store_true",
                         help="Use only a previously owner-approved and verified SSH local forward")
     opts = parser.parse_args(argv)
-    if not opts.single_session or os.name != "nt":
+    if not (opts.single_session or opts.bounded_reconnect) or os.name != "nt":
         return 2
     # Never allow an unpaired session, arbitrary public URLs or plaintext ws.
     try:
@@ -245,7 +285,11 @@ def main(argv: list[str] | None = None) -> int:
         # Deferred import permits offline protocol testing without installing
         # a package or opening any remote connection.
         from websockets.sync.client import connect
-        run_session(config, connect)
+        outcome = (run_bounded_reconnect(config, connect) if opts.bounded_reconnect
+                   else run_session(config, connect))
+        if outcome == "reconnect_budget_exhausted":
+            print("H454_NATIVE_READ_RECONNECT=EXHAUSTED", file=sys.stderr)
+            return 2
     except (ImportError, NativeTransportDenied):
         print("H454_NATIVE_READ_BRIDGE=REFUSED", file=sys.stderr)
         return 2
