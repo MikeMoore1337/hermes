@@ -101,39 +101,34 @@ release SHA штатной процедурой. Не останавливать
 scheduler #271 или H-01 #33; не удалять их history/journals.
 
 
-## Production source inventory - read-only, separate from activation (#272)
+## Read-only проверка источника на production (#272)
 
-A bounded **metadata-only** preflight is available at
-\`scripts/h272_source_preflight_readonly.py\`. It enumerates at most 3,000
-Codex rollout files (bounded directory scans) in the existing
-\`/var/lib/hermes-codex-usage/auth/sessions/YYYY/MM/DD\` tree and inspects only
-file type, owner, byte size and readability under the **actual**
-\`hermes-codex\` identity. No JSONL bodies, SQLite, credentials or
-\`auth.json\` are opened; no shell, Codex CLI, inference or systemd operation
-is executed by the validator. Filenames, private paths and identifiers are
-not printed.
+Добавлен ограниченный скрипт `scripts/h272_source_preflight_readonly.py`.
+Он работает от имени существующего `hermes-codex` и читает **только
+метаданные файлов** в `CODEX_HOME/sessions/YYYY/MM/DD`: тип, владельца,
+размер и доступность. Число rollout-файлов ограничено 3000, обход каждой
+директории ограничен 3500 записями. Не открывает содержимое JSONL,
+`auth.json`, SQLite, не запускает Codex, shell, сервисы или модель.
+Имена файлов и приватные пути в результат не попадают.
 
-After confirming the installed production release is current, a separately
-authorized owner can execute this from its source directory:
+После отдельного согласования чтения на настоящем VPS и подтверждения
+корректного SHA установленного релиза владелец выполняет:
 
-\`\`\`sh
+```bash
 sha="$(cat /var/lib/hermes-main-deploy/last-success.sha)"
 cd "/opt/hermes-agent-owner/releases/main-$sha"
 runuser -u hermes-codex -- /usr/bin/python3 -B -m scripts.h272_source_preflight_readonly
-\`\`\`
+```
 
-\`H272_READONLY_PREFLIGHT=METADATA_PASS_RUNTIME_NOT_APPROVED\` means only
-that a compatible **filename/layout/permissions metadata** sample exists.
-\`HOLD_*\` means inspection failed closed, including missing source, bad
-owner, symlink, unexpected filename, lack of access or bounds exceeded.
-Neither outcome proves that real JSONL payloads match the collector schema,
-nor establishes current CLI version, isolated systemd filesystem access,
-provider-verified tokens, API quality or H-01 continuity. Those checks and
-the analytics collector/timer activation remain **separate owner gates**.
+`H272_READONLY_PREFLIGHT=METADATA_PASS_RUNTIME_NOT_APPROVED` подтверждает
+только структуру и доступность метаданных от имени нужной учётной записи.
+`HOLD_*` означает безопасный отказ: источник отсутствует, нет файлов,
+неверные права, symlink, некорректное имя файла или превышен лимит.
+Результат **не подтверждает** формат содержимого JSONL, версию Codex CLI,
+фактические usage-метрики, качество API, полную изоляцию systemd или
+непрерывность H-01. Это отдельные этапы приёмки.
 
-The helper never runs the collector and does not install or enable
-\`hermes-codex-analytics.timer\`. \`SESSION_CONTENT_READ=NO\`,
-\`MODEL_CALLS_ADDED=0\` and \`CHANGES_PERFORMED=NO\` are source-level
-no-side-effects guarantees, **not** runtime acceptance evidence until the
-owner-host command and its results are independently observed. Offline test:
-\`python3 -m unittest tests.test_h272_source_preflight -v\`.
+Скрипт не активирует `hermes-codex-analytics.timer`.
+Операционный допуск и разрешение владельца на включение нового таймера
+остаются обязательными. Локальные синтетические тесты:
+`python3 -m unittest tests.test_h272_source_preflight -v`.
