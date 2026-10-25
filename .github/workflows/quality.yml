@@ -34,6 +34,8 @@ jobs:
             echo "VPS unittest banner mismatch: required exact OK" >&2
             exit 1
           }
+      - name: H-454 guarded BRC sandbox write contracts (Node, offline)
+        run: node --test tests/h454_guarded_sandbox_write.test.mjs
       - name: H-19 synthetic AI policy fixtures (Node standard library; no LLM)
         run: node --test evals/promptfoo_offline/policy.test.cjs
       - name: H-19 adversarial trace verifier (40 pinned scenarios; no AI)
