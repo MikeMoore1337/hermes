@@ -152,12 +152,20 @@ class OfficialCodexExecutor:
                 os.killpg(proc.pid, signal.SIGKILL)
                 proc.wait(timeout=5)
                 raise RuntimeError("codex_timeout_outcome_uncertain") from exc
-            if output.tell() > limits["max_output_bytes"]:
+            size = output.tell()
+            if size > limits["max_output_bytes"]:
                 raise RuntimeError("codex_output_limit")
-            output.seek(0)
-            digest = hashlib.sha256(output.read()).hexdigest()
             if proc.returncode != 0:
                 return False, None
+            # An exit code of zero is not proof that Codex produced a turn.
+            # Production #271 once accepted a SHA256-bound *empty* artifact.
+            # The invocation may already have consumed quota: block manual
+            # review through QuotaWorker instead of retrying automatically.
+            if size == 0:
+                self.last_phase = "empty_stdout"
+                raise RuntimeError("codex_empty_stdout_outcome_uncertain")
+            output.seek(0)
+            digest = hashlib.sha256(output.read()).hexdigest()
             if self.artifact_dir is None:
                 # Compatibility with offline fake-executor tests only.
                 return True, "sha256:" + digest
