@@ -8,7 +8,6 @@ import "./style.css";
 import {registerPwa} from "./register-pwa.js";
 import CodexPanel from "./CodexPanel.jsx";
 import OperatorInbox from "./OperatorInbox.jsx";
-import HermesCommander from "./HermesCommander.jsx";
 
 const ISSUE33="https://github.com/MikeMoore1337/hermes/issues/33";
 const ISSUE163="https://github.com/MikeMoore1337/hermes/issues/163";
@@ -29,7 +28,7 @@ function InfoBadge({children,tone=""}){return <span className={"badge "+tone}>{c
 function State({value}){const p=statuses[value]||statuses.unknown;return <span className={"state state-"+p.tone}><i aria-hidden="true"/>{p.label}</span>;}
 function Nav({view,onView,mode}){
  return <nav className="nav-list" aria-label="Разделы управления">
- {nav.map((key,i)=><button key={key} type="button" className={"nav-link"+(view===key?" is-active":"")} aria-current={view===key?"page":undefined} onClick={()=>onView(key)}>
+ {nav.map((key,i)=><button key={key} type="button" className={"nav-link"+(view===key?" is-active":"")} aria-current={view===key?"page":undefined} onClick={()=>key==="commander"?window.location.assign("/hermes-brc"):onView(key)}>
    <span className="nav-number">{String(i+1).padStart(2,"0")}</span><span>{navName(key)}</span>
  </button>)}
  </nav>;
@@ -40,7 +39,7 @@ function Header({view,setView,authMode,onLogout}){
    <div className="brand-divider" aria-hidden="true"/>
    <span className="header-subtitle">Центр наблюдения и управления <small>AI · АВТОМАТИЗАЦИЯ · КОНТРОЛЬ · БЕЗОПАСНОСТЬ</small></span>
    <div className="atlas-nav" role="navigation" aria-label="Основные разделы">
-     {["all","inbox","ops","research","qa","commander"].map(k=><button key={k} type="button" className={view===k?"selected":""} aria-current={view===k?"page":undefined} onClick={()=>setView(k)}>{navName(k)}</button>)}
+     {["all","inbox","ops","research","qa","commander"].map(k=><button key={k} type="button" className={view===k?"selected":""} aria-current={view===k?"page":undefined} onClick={()=>k==="commander"?window.location.assign("/hermes-brc"):setView(k)}>{navName(k)}</button>)}
    </div>
    <div className="header-tools">
     <InfoBadge tone="outline"><LockKeyhole size={13}/> Только чтение</InfoBadge>
@@ -201,7 +200,6 @@ function OperatorApp({authMode,onLogout}){
  },[]);
  const stats=counts(snapshot?.services||[]);
  const now=snapshot?formatTime(snapshot.generated_at):"Нет данных";
- if(view==="commander")return <HermesCommander onBack={()=>setView("all")}/>;
  return <div className="shell theme-atlas">
   <a href="#main-content" className="skip-link">Перейти к основному содержимому</a>
   <Header view={view} setView={setView} authMode={authMode} onLogout={onLogout}/>
