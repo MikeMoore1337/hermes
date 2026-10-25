@@ -71,6 +71,7 @@ class H272ExecUsageTests(unittest.TestCase):
             "reasoning_output": 17,
         })
         self.assertEqual(result["quality"], "cli_reported_not_provider_verified")
+        self.assertEqual(result["model"], "gpt-6.1-sol")
         self.assertIsNone(result["actual_spend_usd"])
         self.assertEqual(result["turns_observed"], 1)
         self.assertNotIn(self.secret, repr(result))
