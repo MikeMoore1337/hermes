@@ -43,31 +43,31 @@
 
 ### Факты, независимо перепроверенные по открытым первичным публикациям
 
-- [Nguyen et al., PMID 42797032, DOI 10.3390/nu18183049](https://pubmed.ncbi.nlm.nih.gov/42797032/): нарративный обзор 36 неоднородных вмешательств; авторы сообщают отдельные сигналы по субъективной болезненности, но не устойчивую функциональную пользу и не рекомендуют конкретную дозировку. [Публикация издателя](https://www.mdpi.com/2072-6643/18/18/3049) и [журнал версий](https://www.mdpi.com/2072-6643/18/18/3049/notes) доступны; это **проверка текста источника, а не независимая AMSTAR 2/RoB**. Заявленная авторами регистрация PROSPERO \`CRD420261369778\` не подтверждена чтением полного официального протокола и версий: \`UNKNOWN\`.
+- [Nguyen et al., PMID 42797032, DOI 10.3390/nu18183049](https://pubmed.ncbi.nlm.nih.gov/42797032/): нарративный обзор 36 неоднородных вмешательств; авторы сообщают отдельные сигналы по субъективной болезненности, но не устойчивую функциональную пользу и не рекомендуют конкретную дозировку. [Публикация издателя](https://www.mdpi.com/2072-6643/18/18/3049) и [журнал версий](https://www.mdpi.com/2072-6643/18/18/3049/notes) доступны; это **проверка текста источника, а не независимая AMSTAR 2/RoB**. Заявленная авторами регистрация PROSPERO `CRD420261369778` не подтверждена чтением полного официального протокола и версий: `UNKNOWN`.
 - [Xu et al., PMID 42666369, DOI 10.3389/fnut.2026.1857527](https://pubmed.ncbi.nlm.nih.gov/42666369/): отдельный сетевой метаанализ 30 RCT/595 участников, с результатами низкой определённости для субъективной DOMS и без уверенного преимущества по силе. [Оригинальный издатель](https://www.frontiersin.org/journals/nutrition/articles/10.3389/fnut.2026.1857527/full). Его [PROSPERO CRD420261340555](https://www.crd.york.ac.uk/PROSPERO/view/CRD420261340555) наблюдался в публичном источнике; просмотр всех исторических изменений/приложений и сравнение с публикацией не завершены.
-- Пересечение первичных испытаний между Nguyen и Xu **не подсчитано**; 36 + 30 **нельзя** интерпретировать как 66 независимых испытаний. Ветвление по дозировкам или клиническим исходам остаётся \`NOT_APPROVED\`.
-- Все пять P1–P5 в #317 остаются \`HOLD\`, независимое квалифицированное экспертное заключение \`0/5\`; для I3 \`APPROVED_CLAIM=NONE\`.
+- Пересечение первичных испытаний между Nguyen и Xu **не подсчитано**; 36 + 30 **нельзя** интерпретировать как 66 независимых испытаний. Ветвление по дозировкам или клиническим исходам остаётся `NOT_APPROVED`.
+- Все пять P1–P5 в #317 остаются `HOLD`, независимое квалифицированное экспертное заключение `0/5`; для I3 `APPROVED_CLAIM=NONE`.
 
 ### Действительный редакционный контракт YFC
 
-Проверено **read-only** по YFC \`master@605fe95b5c6643427d13edbc5bd48733809ee95b\`, исходники:
-[\`schemas/articles.py\`](https://github.com/MikeMoore1337/your-fitness-coach/blob/605fe95b5c6643427d13edbc5bd48733809ee95b/backend/fitminiapp_api/schemas/articles.py) и
-[\`services/web_articles.py\`](https://github.com/MikeMoore1337/your-fitness-coach/blob/605fe95b5c6643427d13edbc5bd48733809ee95b/backend/fitminiapp_api/services/web_articles.py).
+Проверено **read-only** по YFC `master@605fe95b5c6643427d13edbc5bd48733809ee95b`, исходники:
+[`schemas/articles.py`](https://github.com/MikeMoore1337/your-fitness-coach/blob/605fe95b5c6643427d13edbc5bd48733809ee95b/backend/fitminiapp_api/schemas/articles.py) и
+[`services/web_articles.py`](https://github.com/MikeMoore1337/your-fitness-coach/blob/605fe95b5c6643427d13edbc5bd48733809ee95b/backend/fitminiapp_api/services/web_articles.py).
 
-1. \`hermes-web-article-intake-v1\` принимает **полную статью**, не один claim: \`article.claims[]\`, \`article.sources[]\`, \`article.claim_source_matrix[]\`; матрица покрывает каждый claim ровно один раз и ссылается только на существующие \`source_id\`. Для \`article_kind=evidence_review\` минимум **два источника**.
-2. \`claim_source_matrix[].review_status\` допускает \`pending|verified|blocked\`, но автоматическое присвоение \`verified\` из DOI, AI-анализа, CI, source handoff или самоутверждения Hermes **запрещено**. Источник может частично поддерживать тезис или не поддерживать его; расхождения не маскировать.
-3. Для \`risk_level=high|critical\` \`domain_reviewer\` обязателен уже на уровне схемы. Для чувствительных тем (\`sports_nutrition\`, \`dietary_supplements\` и др.) сервер сохраняет отдельный блокер редакторской проверки. Приём \`article_status=review\` / \`status=accepted\` не означает \`published\`.
-4. Исходящий запрос требует \`candidate_id\`, \`idempotency_key\`, \`request_nonce\`, \`research_version\`, \`provenance\`, текущие версии skill и отдельный существующий серверный HMAC/permission boundary. **Не генерировать сетевой request** до квалифицированной научной проверки + конкретного решения редактора YFC + отдельного owner GO.
+1. `hermes-web-article-intake-v1` принимает **полную статью**, не один claim: `article.claims[]`, `article.sources[]`, `article.claim_source_matrix[]`; матрица покрывает каждый claim ровно один раз и ссылается только на существующие `source_id`. Для `article_kind=evidence_review` минимум **два источника**.
+2. `claim_source_matrix[].review_status` допускает `pending|verified|blocked`, но автоматическое присвоение `verified` из DOI, AI-анализа, CI, source handoff или самоутверждения Hermes **запрещено**. Источник может частично поддерживать тезис или не поддерживать его; расхождения не маскировать.
+3. Для `risk_level=high|critical` `domain_reviewer` обязателен уже на уровне схемы. Для чувствительных тем (`sports_nutrition`, `dietary_supplements` и др.) сервер сохраняет отдельный блокер редакторской проверки. Приём `article_status=review` / `status=accepted` не означает `published`.
+4. Исходящий запрос требует `candidate_id`, `idempotency_key`, `request_nonce`, `research_version`, `provenance`, текущие версии skill и отдельный существующий серверный HMAC/permission boundary. **Не генерировать сетевой request** до квалифицированной научной проверки + конкретного решения редактора YFC + отдельного owner GO.
 5. YFC [#1072](https://github.com/MikeMoore1337/your-fitness-coach/issues/1072) проверяет **калькулятор TDEE/БЖУ**, а не всю редакционную публикацию. Для нейтрального образовательного обзора восстановления он является **смежной**, не безусловной блокирующей зависимостью. Если claim изменяет TDEE, БЖУ или персональную корректировку питания, #1072 и применимые продуктовые gates становятся обязательными. Это уточнение **не снимает** #317 или editorial/owner GO.
 
 ### Узкая последовательность для будущей настоящей приёмки
 
 | Этап | Подтверждение из первоисточника | Сейчас |
 | --- | --- | --- |
-| Научная рецензия | Независимый квалифицированный рецензент; версия/дата статей и протоколов, PICO, effect/CI, risk of bias, notices, ограничения; signoff **на конкретный текст claim** | \`BLOCKED_EXPERT\` |
-| Редактор YFC | Согласованный неизменённый claim, \`claim_source_matrix\`, domain reviewer, полная статья, проверка существующих контрактов | \`NOT_RUN\` |
-| Owner GO | Отдельное разрешение на передачу этого claim/article, не общий approval на разработку | \`NOT_GRANTED_FOR_POST\` |
-| Интеграционный E2E | Одна разрешённая передача в **существующий** YFC intake, фактический \`accepted/review\` receipt, отрицательные сценарии, никаких bypass и автопубликации | \`NOT_RUN\` |
-| Финальная публикация | Только по правилам и правам владельца YFC, отдельно от I3 transport | \`FORBIDDEN_BY_DEFAULT\` |
+| Научная рецензия | Независимый квалифицированный рецензент; версия/дата статей и протоколов, PICO, effect/CI, risk of bias, notices, ограничения; signoff **на конкретный текст claim** | `BLOCKED_EXPERT` |
+| Редактор YFC | Согласованный неизменённый claim, `claim_source_matrix`, domain reviewer, полная статья, проверка существующих контрактов | `NOT_RUN` |
+| Owner GO | Отдельное разрешение на передачу этого claim/article, не общий approval на разработку | `NOT_GRANTED_FOR_POST` |
+| Интеграционный E2E | Одна разрешённая передача в **существующий** YFC intake, фактический `accepted/review` receipt, отрицательные сценарии, никаких bypass и автопубликации | `NOT_RUN` |
+| Финальная публикация | Только по правилам и правам владельца YFC, отдельно от I3 transport | `FORBIDDEN_BY_DEFAULT` |
 
-**Решение #558 на данном этапе:** \`I3_OFFLINE_CONTRACT_READINESS=REVIEWED\`, \`SCIENCE=HOLD\`, \`CLAIM_LEVEL_YFC_PAYLOAD=null\`, \`POST=NOT_RUN\`, \`PUBLICATION_ALLOWED=false\`. Без экспертной подписи нельзя считать зелёный CI научной приёмкой. Не создавать вторую очередь, второй редакторский сервис, платные API и не менять YFC код.
+**Решение #558 на данном этапе:** `I3_OFFLINE_CONTRACT_READINESS=REVIEWED`, `SCIENCE=HOLD`, `CLAIM_LEVEL_YFC_PAYLOAD=null`, `POST=NOT_RUN`, `PUBLICATION_ALLOWED=false`. Без экспертной подписи нельзя считать зелёный CI научной приёмкой. Не создавать вторую очередь, второй редакторский сервис, платные API и не менять YFC код.
