@@ -58,6 +58,18 @@ class H585SafetyProbeTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 verify(report)
 
+    def test_only_research_scope_can_bypass_automatic_production(self):
+        source = Path(".github/workflows/production-deploy.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("id: h585_scope", source)
+        self.assertIn("if: steps.h585_scope.outputs.skip != 'true'", source)
+        self.assertIn("*) source_only=false", source)
+        self.assertIn("saw_pilot=false", source)
+        self.assertIn('"$source_only" == true && "$saw_pilot" == true', source)
+        self.assertIn("scripts/h585_srt_pilot.py", source)
+        self.assertIn(".github/workflows/h585-srt-isolated.yml", source)
+
     def test_fixture_initialization_cannot_replace_existing_content(self):
         with tempfile.TemporaryDirectory(prefix="h585-unittest-") as folder:
             root = Path(folder) / "fixtures"
