@@ -30,6 +30,7 @@ function isIn(root, child) {
 async function noSymlinkComponents(root, name, { allowMissingLeaf = false } = {}) {
   // Only operate in an already authorised sandbox root. Parent components
   // and the optional target leaf must be real, non-reparse filesystem nodes.
+  if (name === root) return; // checked by secureRoot, used for top-level targets
   if (typeof name !== 'string' || name.length > 1024 ||
       !path.isAbsolute(name) || path.normalize(name) !== name ||
       !isIn(root, name)) refuse('path_outside_sandbox');
