@@ -65,3 +65,7 @@ The comparison is not a permission grant, a security certification, nor an activ
 ## Release gate
 
 This document records the verified pre-document-update pilot SHA. After incorporating this decision, the final PR head must **again** pass exact-head quality and comparison checks. Merge only after success and ensure merged-main CI is independently verified. Issue #585 can close as completed for its **comparative pilot**, not as a claim that SRT was adopted into production.
+
+## Automatic production deploy isolation for this PR
+
+Hermes production-deploy.yml normally runs after a green main push even if the change is documentation/CI only. PR #588 therefore adds a **positive allowlist** in the existing deployment workflow: it skips the resident deploy only when the exact merge commit contains solely H-585 test, CI, documentation and the gate file itself, and contains at least one H-585 file. Empty, unknown, oversized or mixed application diff is not granted this exemption. All normal application deploy paths remain unchanged. The skip is evaluated by GitHub Actions against the actual merged SHA; the issue must record that exact run before declaring production unchanged. This is a safety gate, not an authorization to change production infrastructure.
