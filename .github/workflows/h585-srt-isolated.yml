@@ -1,0 +1,128 @@
+name: H-585 SRT versus Docker (isolated CI)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/h585-srt-isolated.yml
+      - scripts/h585_srt_pilot.py
+      - tests/test_h585_srt_pilot.py
+      - docs/operations/H-585-SRT-COMPARISON.md
+  pull_request:
+    paths:
+      - .github/workflows/h585-srt-isolated.yml
+      - scripts/h585_srt_pilot.py
+      - tests/test_h585_srt_pilot.py
+      - docs/operations/H-585-SRT-COMPARISON.md
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-22.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Offline probe contract tests
+        run: python3 -m unittest -v tests.test_h585_srt_pilot
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+      - name: Install ephemeral bubblewrap dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends bubblewrap socat ripgrep
+      - name: Verify exact Anthropic source and build from lockfile
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/h585-upstream"
+          cd "$RUNNER_TEMP/h585-upstream"
+          git init -q
+          git remote add origin https://github.com/anthropics/sandbox-runtime.git
+          git fetch --depth=1 --no-tags origin c66fb77b28fdbea8b9788aca72377238ae67ca20
+          git checkout -q --detach FETCH_HEAD
+          test "$(git rev-parse HEAD)" = c66fb77b28fdbea8b9788aca72377238ae67ca20
+          grep -Fq 'Apache License' LICENSE
+          node -e 'if(require("./package.json").version!=="0.0.81")process.exit(1)'
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run build
+          node dist/cli.js --version
+          echo "SRT_SOURCE_PIN_AND_BUILD=PASS" >> "$GITHUB_STEP_SUMMARY"
+      - name: SRT actual child-process, read/write, symlink and network denials
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$GITHUB_WORKSPACE/h585-results"
+          python3 scripts/h585_srt_pilot.py prepare "$root"
+          timeout 50s node "$RUNNER_TEMP/h585-upstream/dist/cli.js" \
+            --settings "$root/srt-settings.json" \
+            python3 "$GITHUB_WORKSPACE/scripts/h585_srt_pilot.py" probe \
+            --workspace "$root/workspace" --private "$root/private" \
+            --protected "$root/protected" > "$root/srt-report.json"
+          python3 scripts/h585_srt_pilot.py verify "$root/srt-report.json"
+          echo "H585_SRT_REAL_NEGATIVE=PASS" >> "$GITHUB_STEP_SUMMARY"
+      - name: Invalid or missing policy fails before child process
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$GITHUB_WORKSPACE/h585-results"
+          printf '{invalid' > "$root/invalid.json"
+          for config in "$root/missing.json" "$root/invalid.json"; do
+            marker="$root/workspace/missing-config-escape"
+            if timeout 20s node "$RUNNER_TEMP/h585-upstream/dist/cli.js" \
+              --settings "$config" python3 -c "from pathlib import Path;Path('$marker').write_text('escaped')" \
+              > /dev/null 2> "$root/policy-error.log"; then
+              echo "SRT_CONFIG_FAIL_OPEN" >&2
+              exit 1
+            fi
+            if test -e "$marker"; then echo "SRT_EXECUTED_WITH_BAD_POLICY" >&2; exit 1; fi
+          done
+          echo "H585_SRT_CONFIG_FAIL_CLOSED=PASS" >> "$GITHUB_STEP_SUMMARY"
+      - name: Docker independent kernel comparison against identical oracle
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$GITHUB_WORKSPACE/h585-results"
+          mkdir -p "$root/docker-workspace"
+          chmod 0777 "$root/docker-workspace"
+          docker pull python:3.12-slim
+          image="$(docker image inspect --format '{{.Id}}' python:3.12-slim)"
+          test -n "$image"
+          printf '%s\n' "$image" > "$root/docker-image-id.txt"
+          timeout 50s docker run --rm --network none --read-only --user 65534:65534 \
+            --cap-drop ALL --security-opt no-new-privileges --pids-limit 64 \
+            --memory 256m --cpus 0.5 \
+            --mount "type=bind,src=$root/docker-workspace,dst=/workspace" \
+            --mount "type=bind,src=$root/protected,dst=/protected,readonly" \
+            --mount "type=bind,src=$GITHUB_WORKSPACE/scripts/h585_srt_pilot.py,dst=/probe.py,readonly" \
+            "$image" python3 /probe.py probe \
+            --workspace /workspace --private /private --protected /protected \
+            > "$root/docker-report.json"
+          python3 scripts/h585_srt_pilot.py verify "$root/docker-report.json"
+          echo "H585_DOCKER_REAL_NEGATIVE=PASS" >> "$GITHUB_STEP_SUMMARY"
+          echo "H585_DOCKER_IMAGE_ID=$image" >> "$GITHUB_STEP_SUMMARY"
+      - name: Production activation never attempted
+        if: always()
+        run: |
+          echo "H585_RESIDENT_PRODUCTION=NOT_RUN" >> "$GITHUB_STEP_SUMMARY"
+          echo "H585_WINDOWS_NATIVE_SRT=NOT_RUN" >> "$GITHUB_STEP_SUMMARY"
+      - name: Archive synthetic reports only
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: h585-synthetic-comparison
+          path: |
+            h585-results/srt-report.json
+            h585-results/docker-report.json
+            h585-results/docker-image-id.txt
+          if-no-files-found: warn
+          retention-days: 7

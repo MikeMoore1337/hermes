@@ -26,7 +26,40 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
+      - name: Keep H-585 research-only merges out of resident production
+        id: h585_scope
+        if: github.event_name == 'workflow_run'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          # Commit file lists can truncate at 300; skip only a tiny allowlisted
+          # diff, never unknown or mixed application commits.
+          mapfile -t changed < <(gh api "repos/$GITHUB_REPOSITORY/commits/$TARGET_SHA" --jq '.files[].filename')
+          if [[ "${#changed[@]}" -eq 0 ]]; then
+            echo "Unable to establish commit scope; fail closed" >&2
+            exit 1
+          fi
+          source_only=true
+          saw_pilot=false
+          if [[ "${#changed[@]}" -gt 7 ]]; then source_only=false; fi
+          for path in "${changed[@]}"; do
+            case "$path" in
+              .github/workflows/h585-srt-isolated.yml|scripts/h585_srt_pilot.py|tests/test_h585_srt_pilot.py|docs/operations/H-585-SRT-COMPARISON.md)
+                saw_pilot=true ;;
+              .github/workflows/production-deploy.yml) ;;
+              *) source_only=false ;;
+            esac
+          done
+          if [[ "$source_only" == true && "$saw_pilot" == true ]]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "H585_SOURCE_ONLY_NO_RESIDENT_DEPLOY=PASS" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Verify current main and both required SHA-scoped checks
+        if: steps.h585_scope.outputs.skip != 'true'
         id: gate
         shell: bash
         env:
