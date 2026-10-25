@@ -73,9 +73,24 @@ class CPanelHttpTests(unittest.TestCase):
         self.assertNotIn('"/api/tools/call"',js)
         self.assertNotIn("eval(",js)
 
+    def test_legacy_archive_owner_only_and_history_only(self):
+        code, _, body = self.request("/desktop-commander-archive")
+        self.assertEqual(code, 401)
+        code, headers, body = self.request("/desktop-commander-archive", owner=True)
+        self.assertEqual(code, 200)
+        self.assertEqual(headers["Cache-Control"], "no-store")
+        self.assertIn(b"Desktop Commander", body)
+        self.assertIn(b"/desktop-commander-archive.js", body)
+        js = self.request("/desktop-commander-archive.js")[2].decode()
+        self.assertIn("/api/providers/desktop-commander/history?days=", js)
+        self.assertNotIn('fetch("/api/providers/desktop-commander"', js)
+        self.assertNotIn("start_process", js)
+        self.assertNotIn("tools/call", js)
+
     def test_reject_query_params_and_wrong_host(self):
         self.assertEqual(self.request("/hermes-brc?utm_source=chatgpt.com", owner=True)[0], 404)
         self.assertEqual(self.request("/hermes-brc/extra", owner=True)[0], 404)
+        self.assertEqual(self.request("/desktop-commander-archive?utm=1", owner=True)[0], 404)
 
 
 if __name__ == "__main__":
