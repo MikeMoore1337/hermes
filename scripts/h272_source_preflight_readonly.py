@@ -12,7 +12,6 @@ from pathlib import Path
 import pwd
 import re
 import stat
-import sys
 
 from control_center.codex_analytics import MAX_FILE_BYTES, SESSION
 
