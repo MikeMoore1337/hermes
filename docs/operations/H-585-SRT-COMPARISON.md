@@ -7,7 +7,7 @@ Scope: Issue #585, source-only disposable CI pilot; **no resident, VPS, owner Wi
 - Candidate: https://github.com/anthropics/sandbox-runtime, Apache-2.0, pinned commit c66fb77b28fdbea8b9788aca72377238ae67ca20, source package version 0.0.81.
 - Build: Git SHA-verified checkout, npm ci (committed package-lock), npm run build; no floating npm package or LLM provider.
 - Pre-existing baseline: scripts/h15_brc_sandbox_linux_e2e.mjs (real dispatcher in isolated Docker) and scripts/h15_windows_os_sandbox_e2e.ps1 (LocalService ACL, *not SRT*).
-- New: scripts/h585_srt_pilot.py; .github/workflows/h585-srt-isolated.yml runs on isolated GitHub Actions ubuntu-24.04 for same-repo PR or owner dispatch.
+- New: scripts/h585_srt_pilot.py; .github/workflows/h585-srt-isolated.yml runs on isolated GitHub Actions ubuntu-22.04 for same-repo PR, merged-main push or owner dispatch.
 - Risk: upstream is a beta research preview. Linux requires bubblewrap, user namespaces and compatible seccomp/kernel; Docker constraints differ and may block nested sandbox execution. Native Windows SRT requires system account/WFP/ACL changes - deliberately NOT_RUN.
 
 ## Same intended safety properties and differences
@@ -68,4 +68,4 @@ This document records the verified pre-document-update pilot SHA. After incorpor
 
 ## Automatic production deploy isolation for this PR
 
-Hermes production-deploy.yml normally runs after a green main push even if the change is documentation/CI only. PR #588 therefore adds a **positive allowlist** in the existing deployment workflow: it skips the resident deploy only when the exact merge commit contains solely H-585 test, CI, documentation and the gate file itself, and contains at least one H-585 file. Empty, unknown, oversized or mixed application diff is not granted this exemption. All normal application deploy paths remain unchanged. The skip is evaluated by GitHub Actions against the actual merged SHA; the issue must record that exact run before declaring production unchanged. This is a safety gate, not an authorization to change production infrastructure.
+Hermes production-deploy.yml normally runs after a green main push even if the change is documentation/CI only. PR #588 therefore adds a **positive allowlist** in the existing deployment workflow: it skips the resident deploy only when the exact merge commit contains solely H-585 test, CI, documentation and the gate file itself, and contains at least one H-585 file. Empty, unknown, oversized or mixed application diff is not granted this exemption. All normal application deploy paths remain unchanged. The skip is evaluated by GitHub Actions against the actual merged SHA. The fail-closed guard is also executed in synthetic unit cases (allowed-only, mixed application, deploy-workflow-only, and empty list). The issue must record the actual post-merge no-deploy run before declaring production unchanged. This is a safety gate, not an authorization to change production infrastructure.
