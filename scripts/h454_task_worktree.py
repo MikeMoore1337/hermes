@@ -47,6 +47,7 @@ def git(root: Path, *args: str, timeout: int = 12) -> str:
         "-c", "core.preloadIndex=false", "-c", "index.threads=1",
         "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null",
         "-c", "pack.threads=1",
+        "-c", "credential.helper=", "-c", "core.askPass=",
         "-c", "submodule.recurse=false",
         "-c", "filter.lfs.smudge=", "-c", "filter.lfs.required=false",
         "-C", str(root), *args,
@@ -55,7 +56,7 @@ def git(root: Path, *args: str, timeout: int = 12) -> str:
         result = subprocess.run(
             cmd, text=True, capture_output=True, timeout=timeout, check=False,
             env={**os.environ, "GIT_TERMINAL_PROMPT": "0",
-                 "GIT_LFS_SKIP_SMUDGE": "1"},
+                 "GIT_LFS_SKIP_SMUDGE": "1", "GIT_ASKPASS": "/bin/false"},
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise TaskDenied("git_not_ready") from exc
