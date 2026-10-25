@@ -99,3 +99,36 @@ Rollback: остановить/выключить **только** новый `h
 сохранить SQLite/cursors как forensic evidence, вернуть проверенный предыдущий
 release SHA штатной процедурой. Не останавливать quota monitor #255,
 scheduler #271 или H-01 #33; не удалять их history/journals.
+
+
+## Read-only проверка источника на production (#272)
+
+Добавлен ограниченный скрипт `scripts/h272_source_preflight_readonly.py`.
+Он работает от имени существующего `hermes-codex` и читает **только
+метаданные файлов** в `CODEX_HOME/sessions/YYYY/MM/DD`: тип, владельца,
+размер и доступность. Число rollout-файлов ограничено 3000, обход каждой
+директории ограничен 3500 записями. Не открывает содержимое JSONL,
+`auth.json`, SQLite, не запускает Codex, shell, сервисы или модель.
+Имена файлов и приватные пути в результат не попадают.
+
+После отдельного согласования чтения на настоящем VPS и подтверждения
+корректного SHA установленного релиза владелец выполняет:
+
+```bash
+sha="$(cat /var/lib/hermes-main-deploy/last-success.sha)"
+cd "/opt/hermes-agent-owner/releases/main-$sha"
+runuser -u hermes-codex -- /usr/bin/python3 -B -m scripts.h272_source_preflight_readonly
+```
+
+`H272_READONLY_PREFLIGHT=METADATA_PASS_RUNTIME_NOT_APPROVED` подтверждает
+только структуру и доступность метаданных от имени нужной учётной записи.
+`HOLD_*` означает безопасный отказ: источник отсутствует, нет файлов,
+неверные права, symlink, некорректное имя файла или превышен лимит.
+Результат **не подтверждает** формат содержимого JSONL, версию Codex CLI,
+фактические usage-метрики, качество API, полную изоляцию systemd или
+непрерывность H-01. Это отдельные этапы приёмки.
+
+Скрипт не активирует `hermes-codex-analytics.timer`.
+Операционный допуск и разрешение владельца на включение нового таймера
+остаются обязательными. Локальные синтетические тесты:
+`python3 -m unittest tests.test_h272_source_preflight -v`.
