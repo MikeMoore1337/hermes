@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#060d18">
+<title>Архив Desktop Commander · Hermes Control Center</title>
+<link rel="stylesheet" href="/desktop-commander-archive.css">
+<script src="/desktop-commander-archive.js" defer></script>
+</head><body>
+<a class="skip" href="#main">Перейти к архиву</a>
+<header class="top"><div class="brand">HERMES <small>CONTROL CENTER</small></div>
+<nav aria-label="Основная навигация"><a href="/">Обзор</a><a href="/hermes-brc">Hermes BRC</a></nav></header>
+<main id="main" class="container">
+<div class="eyebrow">H-15 / ИСТОРИЧЕСКАЯ ТЕЛЕМЕТРИЯ</div>
+<h1>Архив Desktop Commander</h1>
+<p class="intro">Исторические показатели стороннего Remote MCP. Не относятся к Hermes BRC.
+Архив предназначен только для просмотра: новые команды и обращения к облачному Desktop Commander отсюда не выполняются.</p>
+<section class="panel" aria-labelledby="archive-head">
+<header class="panel-top"><h2 id="archive-head">История квоты и подключений</h2>
+<div class="tools"><label for="period">Период</label><select id="period"><option value="1">24 часа</option><option value="7" selected>7 дней</option><option value="30">30 дней</option></select>
+<button type="button" id="refresh">Прочитать архив</button></div></header>
+<p id="message" role="status" aria-live="polite">Данные ещё не запрошены</p>
+<div class="table-scroll"><table><thead><tr><th scope="col">Наблюдение</th><th scope="col">Состояние legacy</th>
+<th scope="col">Квота</th><th scope="col">Online</th><th scope="col">Offline</th></tr></thead>
+<tbody id="observations"><tr><td colspan="5">Нет загруженных наблюдений</td></tr></tbody></table></div>
+</section>
+<p class="notice">Доступность стороннего Remote MCP не измеряется в архиве. Новая панель:
+<a href="/hermes-brc">Hermes BRC · Рабочие пространства</a>.</p>
+</main></body></html>
