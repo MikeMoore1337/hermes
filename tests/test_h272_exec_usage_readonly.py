@@ -10,6 +10,7 @@ import tempfile
 import unittest
 
 from scripts.h272_exec_usage_readonly import UsageHold, read_one
+from scripts.h272_artifact_shape_readonly import classify, read_shape
 
 
 def event(kind, **extra):
@@ -138,6 +139,65 @@ class H272ExecUsageTests(unittest.TestCase):
     def test_invalid_json_payload_not_printed(self):
         self.install('{"type":"turn.completed","usage":INVALID}\n')
         self.assert_hold("EVENT_JSON_INVALID")
+
+    def test_shape_diagnostic_no_completion_is_not_zero_usage(self):
+        self.install(event("thread.started", thread_id=self.secret) +
+                     event("turn.started") +
+                     event("item.completed", item={
+                         "type": "agent_message", "text": self.secret
+                     }))
+        details = read_shape(db=self.db, artifacts=self.artifacts)
+        self.assertEqual(details["classification"], "NO_TURN_COMPLETED_EVENT")
+        self.assertEqual(details["events"]["turn.started"], 1)
+        self.assertEqual(details["items"]["agent_message"], 1)
+        self.assertEqual(details["completed_usage_maps"], 0)
+        self.assertNotIn(self.secret, repr(details))
+        self.assertNotIn(self.jid, repr(details))
+
+    def test_shape_completed_missing_map_is_distinguished(self):
+        self.install(event("turn.completed", usage=None))
+        details = read_shape(db=self.db, artifacts=self.artifacts)
+        self.assertEqual(details["classification"], "TURN_COMPLETED_NO_USAGE_MAP")
+        self.assertEqual(details["events"]["turn.completed"], 1)
+        self.assertEqual(details["completed_usage_maps"], 0)
+
+    def test_shape_counts_maps_without_inferring_token_values(self):
+        details = read_shape(db=self.db, artifacts=self.artifacts)
+        self.assertEqual(details["classification"], "TURN_COMPLETED_USAGE_MAP_PRESENT_UNVERIFIED")
+        self.assertEqual(details["completed_usage_maps"], 1)
+        self.assertNotIn("120", repr(details))
+        self.assertNotIn(self.secret, repr(details))
+
+    def test_shape_never_emits_untrusted_event_or_item_type(self):
+        self.install(event(self.secret, item={"type": self.secret}) +
+                     event("item.completed", item={"type": self.secret,
+                                                    "text": self.secret}))
+        details = read_shape(db=self.db, artifacts=self.artifacts)
+        self.assertEqual(details["other_events"], 1)
+        self.assertEqual(details["other_completed_items"], 1)
+        self.assertEqual(details["last_event_class"], "item.completed")
+        self.assertNotIn(self.secret, repr(details))
+
+    def test_shape_resists_tamper_and_symlink(self):
+        target = self.install(self.payload)
+        target.write_bytes(target.read_bytes() + b"X")
+        with self.assertRaisesRegex(UsageHold, "ARTIFACT_INTEGRITY_UNVERIFIED"):
+            read_shape(db=self.db, artifacts=self.artifacts)
+        target = self.install(self.payload)
+        target.unlink()
+        target.symlink_to(self.db)
+        with self.assertRaisesRegex(UsageHold, "ARTIFACT_INTEGRITY_UNVERIFIED"):
+            read_shape(db=self.db, artifacts=self.artifacts)
+
+    def test_shape_invalid_json_and_cap_limits(self):
+        self.install('{"type":"turn.started"}\\n' * 129)
+        with self.assertRaisesRegex(UsageHold, "EVENT_COUNT_LIMIT"):
+            read_shape(db=self.db, artifacts=self.artifacts)
+        self.install('{"type":"turn.started","secret":INVALID}\\n')
+        with self.assertRaisesRegex(UsageHold, "EVENT_JSON_INVALID"):
+            read_shape(db=self.db, artifacts=self.artifacts)
+        with self.assertRaisesRegex(UsageHold, "ARTIFACT_TOO_LARGE"):
+            classify(b"x" * 8193)
 
     def test_no_success_fails_closed(self):
         with sqlite3.connect(self.db) as c:
