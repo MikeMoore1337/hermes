@@ -77,7 +77,9 @@ def verify_artifact(job_id: str, result_ref: str, directory: Path) -> None:
     target = directory / (job_id + "-" + m.group(2) + ".jsonl")
     required(not target.is_symlink() and target.is_file(), "artifact_file_invalid")
     meta = target.stat()
-    required(stat.S_IMODE(meta.st_mode) == 0o600 and 0 <= meta.st_size <= 8192,
+    # A SHA-256-matching zero-byte artifact proves only that empty output was
+    # saved. It cannot establish the presence of a response or usage events.
+    required(stat.S_IMODE(meta.st_mode) == 0o600 and 0 < meta.st_size <= 8192,
              "artifact_file_mode_or_size")
     digest = hashlib.sha256(target.read_bytes()).hexdigest()
     required(digest == m.group(2), "artifact_hash_mismatch")
