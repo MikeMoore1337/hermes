@@ -13,33 +13,21 @@ async function overview(page) {
  }));
 }
 
-test("Desktop Commander: status transitions are separate from verbose content; Escape restores focus",async({page})=>{
- await overview(page);
- let remaining=70;
- await page.route("**/api/providers/desktop-commander",route=>route.fulfill({
+test("Legacy archive: history-only table announces results and remains keyboard accessible",async({page})=>{
+ await page.route("**/api/providers/desktop-commander/history?*",route=>route.fulfill({
   status:200,contentType:"application/json",
-  body:JSON.stringify({status:"stale",quota_remaining_percent:remaining,
-   devices:[{name:"Synthetic device",state:"offline"}],
-   observed_at:new Date().toISOString()})
+  body:JSON.stringify({schema:1,source:"desktop_commander_remote_mcp",status:"available",days:7,
+   points:[{at:new Date().toISOString(),status:"monitored",remaining_percent:70,online:1,offline:0}]})
  }));
- await page.goto("/");
- const toggle=page.getByRole("button",{name:"Устройства"});
- await toggle.focus();await toggle.press("Enter");
- const panel=page.getByRole("region",{name:"Состояние Desktop Commander"});
- await expect(panel).toBeVisible();
- await expect(toggle).toHaveAttribute("aria-expanded","true");
- await expect(panel.getByRole("status")).toHaveText("Desktop Commander: Данные устарели");
- await expect(panel.locator(".dc-status")).not.toHaveAttribute("aria-live",/./);
- await expect(panel.locator(".dc-chart")).not.toHaveAttribute("aria-live",/./);
- await expect(panel.getByText("Synthetic device")).toBeVisible();
- remaining=30;
- await panel.getByRole("button",{name:"Обновить"}).click();
- await expect(panel.getByText("30% облачной квоты осталось")).toBeVisible();
- await expect(panel.getByRole("status")).toHaveText("Desktop Commander: Данные устарели");
- await page.keyboard.press("Escape");
- await expect(panel).toBeHidden();
- await expect(toggle).toHaveAttribute("aria-expanded","false");
- await expect(toggle).toBeFocused();
+ await page.goto("/desktop-commander-archive");
+ await expect(page.getByRole("heading",{name:"Архив Desktop Commander"})).toBeVisible();
+ await expect(page.getByRole("status")).toContainText("Исторических наблюдений: 1");
+ await expect(page.getByRole("table")).toContainText("70%");
+ await page.getByRole("button",{name:"Прочитать архив"}).focus();
+ await expect(page.getByRole("button",{name:"Прочитать архив"})).toBeFocused();
+ await page.keyboard.press("Enter");
+ await expect(page.getByRole("status")).toContainText("Исторических наблюдений: 1");
+ await expect(page.locator("#dc-monitor")).toHaveCount(0);
 });
 
 test("VPS metrics: missing measurement is a named indeterminate progressbar",async({page})=>{
