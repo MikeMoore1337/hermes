@@ -29,6 +29,10 @@ The login preview at `/?preview=login` displays a disabled OAuth button. It rema
 
 No deploy or replacement of Basic Auth is part of this work until separate security and visual acceptance.
 
+## Опциональные локальные визуальные замечания
+
+При необходимости можно включить [Agentation для Control Center](../../docs/ux/agentation-local-feedback.md): ручная установка на компьютере разработчика, `HERMES_AGENTATION=1 npm run dev`, только Vite dev на loopback. Это **не** production-функция, пакет не входит в `package-lock.json`, архив `control_center/web` и VPS-сервисы; замечания передаются только после ручной проверки на приватные данные.
+
 ## Approved HD branding (2026-10-17)
 
 The login and header use a local transparent high-resolution `brand.webp` (1096 × 595 RGBA WebP). Opaque background rectangles and screen blending are disallowed. The PWA uses 192/512 PNG icons, maskable 192/512 PNG icons with safe padding, the Apple touch icon and favicon. Public assets must match `control_center/web/` after Vite build. No external asset/CDN requests. The OAuth, service worker, read-only API and sandbox security boundaries are unchanged.
