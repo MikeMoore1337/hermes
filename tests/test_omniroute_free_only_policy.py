@@ -37,9 +37,6 @@ def offline_admission(
         return "DENY"
     if not hops or len(hops) > 4:
         return "DENY"
-    if any(code in DENY_CODES or code >= 500 or code < 200
-           for code in http_codes):
-        return "DENY"
     if any(type(code) is not int or code not in (200, 201, 204)
            for code in http_codes):
         return "DENY"
