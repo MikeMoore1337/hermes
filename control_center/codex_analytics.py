@@ -374,13 +374,19 @@ def read(database: Path = DEFAULT_DB, *, period="7d", now=None):
                 raw, cache_rate, output_rate = PRICES_V1[key]
                 price_total += ((inp-cached)*raw + cached*cache_rate + out*output_rate)/1e6
                 priced += 1
-    quality = ("partial" if scan[1] or scan[2] or not cache_complete or priced < usage_count
+    # A valid task_started/task_complete event without token_count is evidence
+    # of activity, NOT evidence of zero token usage. In particular, a period
+    # filter may exclude usage events while retaining task events.
+    has_usage = usage_count > 0
+    quality = ("partial" if not has_usage or scan[1] or scan[2]
+               or not cache_complete or priced < usage_count
                or any(x["name"] == "unattributed" for x in by_model.values()) else "verified")
     empty.update(quality=quality, observed_at=scan[0], sessions=len(sessions),
                  completed_turns=turns, duration_seconds=_union_seconds(intervals) if intervals else None,
-                 tokens={"input": sums[0], "output": sums[1],
-                         "cached_input": sums[2] if cache_complete else None,
-                         "total": sums[0]+sums[1]},
+                 tokens={"input": sums[0] if has_usage else None,
+                         "output": sums[1] if has_usage else None,
+                         "cached_input": sums[2] if has_usage and cache_complete else None,
+                         "total": sums[0]+sums[1] if has_usage else None},
                  api_equivalent_usd=round(price_total, 6) if priced else None,
                  pricing_coverage=round(priced / usage_count, 3) if usage_count else None,
                  models=sorted(by_model.values(), key=lambda x: -x["input"])[:30],
@@ -388,8 +394,9 @@ def read(database: Path = DEFAULT_DB, *, period="7d", now=None):
                  daily=sorted(daily.values())[-90:], invalid_events=scan[1],
                  incomplete_files=scan[2],
                  metric_quality={
-                     "tokens": "partial" if scan[1] or scan[2] or not cache_complete
-                               else "verified",
+                     "tokens": ("unknown" if not has_usage else
+                                "partial" if scan[1] or scan[2] or not cache_complete
+                                else "verified"),
                      "sessions": "partial" if scan[1] or scan[2] else "verified",
                      "duration": "estimated" if intervals else "unknown",
                      "projects": "estimated" if any(
@@ -398,7 +405,9 @@ def read(database: Path = DEFAULT_DB, *, period="7d", now=None):
                      "api_equivalent": "estimated" if priced else "unknown",
                      "actual_spend": "unknown",
                  },
-                 notes=["Real subscription charges unknown",
+                 notes=(["No token usage events in the selected period; zero cannot be inferred"]
+                        if not has_usage else []) + [
+                        "Real subscription charges unknown",
                         "Task attribution unavailable without verified session-to-job link",
                         "Duration is a union of observed completed Codex turns, not idle time"])
     return empty
