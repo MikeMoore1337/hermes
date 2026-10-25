@@ -159,8 +159,8 @@ def main() -> int:
         "child_checks": child,
         "child_exit": completed.returncode,
     }
-    print(json.dumps(report, sort_keys=True))
     verify(report)
+    print(json.dumps(report, sort_keys=True))
     return 0
 
 
