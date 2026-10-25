@@ -70,6 +70,52 @@ class H585SafetyProbeTests(unittest.TestCase):
         self.assertIn("scripts/h585_srt_pilot.py", source)
         self.assertIn(".github/workflows/h585-srt-isolated.yml", source)
 
+    @unittest.skipUnless(shutil.which("bash"), "requires bash for actual deploy guard")
+    def test_deploy_scope_guard_real_bash_negative_cases(self):
+        workflow = Path(".github/workflows/production-deploy.yml").read_text(
+            encoding="utf-8"
+        )
+        section = workflow.split("      - name: Keep H-585 research-only merges", 1)[1]
+        section = section.split("      - name: Verify current main", 1)[0]
+        body = section.split("        run: |\n", 1)[1]
+        script = "\n".join(
+            line[10:] if line.startswith("          ") else line
+            for line in body.splitlines()
+        )
+        with tempfile.TemporaryDirectory(prefix="h585-guard-") as d:
+            temp = Path(d)
+            fake_gh = temp / "gh"
+            fake_gh.write_text('#!/bin/sh\ncat "$GH_SYNTHETIC_CHANGED"\n', encoding="utf-8")
+            fake_gh.chmod(0o755)
+            cases = (
+                (["scripts/h585_srt_pilot.py", "docs/operations/H-585-SRT-COMPARISON.md",
+                  ".github/workflows/production-deploy.yml"], True, 0),
+                (["scripts/h585_srt_pilot.py", "control_center/app.py"], False, 0),
+                ([".github/workflows/production-deploy.yml"], False, 0),
+                ([], False, 1),
+            )
+            for i, (paths, allowed, exit_status) in enumerate(cases):
+                with self.subTest(case=i):
+                    changed = temp / "changed.txt"
+                    changed.write_text("\n".join(paths) + ("\n" if paths else ""), encoding="utf-8")
+                    out = temp / "github-output.txt"
+                    out.write_text("", encoding="utf-8")
+                    env = os.environ.copy()
+                    env.update({
+                        "PATH": str(temp) + os.pathsep + env.get("PATH", ""),
+                        "GH_SYNTHETIC_CHANGED": str(changed),
+                        "GITHUB_REPOSITORY": "MikeMoore1337/hermes",
+                        "TARGET_SHA": "synthetic-no-network",
+                        "GITHUB_OUTPUT": str(out),
+                        "GITHUB_STEP_SUMMARY": str(temp / "summary.md"),
+                    })
+                    completed = subprocess.run(
+                        ["bash", "-euo", "pipefail", "-c", script],
+                        env=env, text=True, capture_output=True, timeout=5,
+                    )
+                    self.assertEqual(completed.returncode, exit_status, completed.stderr)
+                    self.assertEqual("skip=true" in out.read_text(encoding="utf-8"), allowed)
+
     def test_fixture_initialization_cannot_replace_existing_content(self):
         with tempfile.TemporaryDirectory(prefix="h585-unittest-") as folder:
             root = Path(folder) / "fixtures"
