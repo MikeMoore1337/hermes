@@ -50,9 +50,12 @@ def _count_pid1_zombies(proc: Path) -> int:
             raise ProcessPreflightDenied("PROCESS_SNAPSHOT_UNAVAILABLE")
         try:
             raw = (entry / "status").read_text(encoding="utf-8")
-        except (FileNotFoundError, ProcessLookupError, PermissionError):
-            # PID may exit during a read; never infer a clean process table.
+        except (FileNotFoundError, ProcessLookupError):
+            # A process can disappear during a snapshot; its status is not
+            # proof that an inaccessible, still-live PID had no zombie state.
             continue
+        except PermissionError as exc:
+            raise ProcessPreflightDenied("PROCESS_SNAPSHOT_UNAVAILABLE") from exc
         if len(raw) > 8192:
             raise ProcessPreflightDenied("PROCESS_SNAPSHOT_UNAVAILABLE")
         fields: dict[str, str] = {}
@@ -62,7 +65,9 @@ def _count_pid1_zombies(proc: Path) -> int:
                 if key in fields:
                     raise ProcessPreflightDenied("PROCESS_SNAPSHOT_UNAVAILABLE")
                 fields[key] = value.strip()
-        if fields.get("State", "").startswith("Z") and fields.get("PPid") == "1":
+        if set(fields) != {"State", "PPid"} or not fields["PPid"].isdecimal():
+            raise ProcessPreflightDenied("PROCESS_SNAPSHOT_UNAVAILABLE")
+        if fields["State"].startswith("Z") and fields["PPid"] == "1":
             count += 1
     return count
 
