@@ -15,7 +15,7 @@ permissions:
 jobs:
   compare:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
     timeout-minutes: 18
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -62,6 +62,7 @@ jobs:
           python3 scripts/h585_srt_pilot.py verify "$root/srt-report.json"
           echo "H585_SRT_REAL_NEGATIVE=PASS" >> "$GITHUB_STEP_SUMMARY"
       - name: Invalid or missing policy fails before child process
+        if: always()
         shell: bash
         run: |
           set -euo pipefail
@@ -79,6 +80,7 @@ jobs:
           done
           echo "H585_SRT_CONFIG_FAIL_CLOSED=PASS" >> "$GITHUB_STEP_SUMMARY"
       - name: Docker independent kernel comparison against identical oracle
+        if: always()
         shell: bash
         run: |
           set -euo pipefail
