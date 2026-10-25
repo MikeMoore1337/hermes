@@ -28,9 +28,11 @@ class PreflightHold(Exception):
     """The message is a constant safe reason code, never an OS exception."""
 
 
-def _directory(path: Path) -> None:
+def _directory(path: Path, *, missing_reason="SOURCE_DIRECTORY_UNAVAILABLE") -> None:
     try:
         info = path.lstat()
+    except FileNotFoundError:
+        raise PreflightHold(missing_reason) from None
     except OSError:
         raise PreflightHold("SOURCE_DIRECTORY_UNAVAILABLE") from None
     if not stat.S_ISDIR(info.st_mode):
@@ -61,7 +63,7 @@ def inspect_source(home: Path, *, expected_uid: int) -> dict[str, int]:
         raise PreflightHold("COLLECTOR_IDENTITY_MISMATCH")
     _directory(home)
     sessions = home / "sessions"
-    _directory(sessions)
+    _directory(sessions, missing_reason="SESSIONS_DIRECTORY_MISSING")
     if not os.access(sessions, os.R_OK | os.X_OK):
         raise PreflightHold("SESSIONS_NOT_READABLE")
     files = 0
