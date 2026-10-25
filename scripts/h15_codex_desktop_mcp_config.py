@@ -152,9 +152,12 @@ def manage(root: Path, operation: str, *, enforce_windows: bool = True) -> dict:
     original, had_original = _read_config(config)
     receipt = _read_receipt(record)
     if operation == "status":
+        state = ("managed" if _sha(original) == receipt["installed_sha"] else
+                 "pending_install" if _sha(original) == receipt["before_sha"] else
+                 "conflict") if receipt else (
+                 "preexisting" if _has_hermes(original) else "not_installed")
         return {
-            "schema": 1, "status": "managed" if receipt else
-                ("preexisting" if _has_hermes(original) else "not_installed"),
+            "schema": 1, "status": state,
             "changes": 0, "config_present": had_original,
             "receipt_present": receipt is not None,
             "server_configured": _has_hermes(original),
