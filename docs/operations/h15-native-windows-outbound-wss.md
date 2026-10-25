@@ -77,7 +77,12 @@ is no new MCP server, public listener, token refresh or Codex CLI.
 - A session exhausted by its call budget ends the process; never
   automatically reset that budget by reconnecting. Each new transport
   session constructs a new local read-only MCP session, but does not
-  queue or replay any previous tool request.
+  queue or replay any previous tool request. During a single supervised
+  process lifetime, a bounded in-memory request-ID ledger is preserved
+  across reconnects; relay redelivery of an already handled ID is refused
+  before reaching the file adapter. This ledger is **not durable across
+  OS/process restarts**, so mutating commands must remain unavailable
+  until a separately reviewed persistent idempotency receipt exists.
 - A runtime guard requires the tool catalog to contain **only**
   `native_file_read` and `native_file_stat`. If commands/write tools
   are introduced in the future, this supervisor **fails closed** until
