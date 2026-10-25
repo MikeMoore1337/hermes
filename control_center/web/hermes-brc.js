@@ -10,7 +10,7 @@
  const names = Object.freeze(["H15 Windows permanent sandbox","H15 Hermes VPS sandbox","H15 YFC VPS sandbox"]);
  const nodes = {};
  for(const id of ["health","health-dot","time","device-count","project-count","refresh","error","projects",
-   "selected-name","selected-caption","selected-state","path","branch","copy","devices","devices-label","read-access","diagnostic","check-source","source-result"])
+   "selected-name","selected-caption","selected-state","path","branch","copy","devices","devices-label","read-access","diagnostic","check-source","source-result","client-check","client-check-status"])
    nodes[id] = document.getElementById("brc-" + id);
  let selected="hermes", observation=null, pending=false, failure="not_loaded", sourcePending=false;
  const errorText=Object.freeze({
@@ -192,6 +192,40 @@
        "Не удалось проверить снимок. Повторите запрос после восстановления связи.";
    }finally{clearTimeout(timeout);sourcePending=false;nodes["check-source"].disabled=false;}
  }
+
+ // Generates text for an independently connected ChatGPT/Codex MCP client.
+ // No browser-initiated device calls, fixed canonical projects and commands.
+ function clientCheckRequest(){
+   const p=projects.find(item=>item.id===selected)||projects[0];
+   return [
+     "Проверь подключение Hermes Commander к проекту "+p.name+".",
+     "Используй только подключённый Hermes Agent MCP; ничего не изменяй.",
+     "1. Вызови list_devices, затем list_workspaces и resolve_workspace для "+p.id+".",
+     "2. Найди три разрешённых sandbox-устройства по именам из list_devices;",
+     "   для каждого вызови list_directory и get_file_info для /workspace.",
+     "3. На Windows sandbox проверь существующий каталог "+"/workspace/projects/"+p.id,
+     "   через get_file_info и list_directory (depth=1).",
+     "4. Покажи PASS/FAIL/NOT_VERIFIED отдельно по устройствам,",
+     "   проверенный root, branch и только фактически проверенные Git-данные.",
+     "   Не заявляй права записи или успешность команд на основании статуса online.",
+     "5. Не открывай оригинальные папки Windows, приватный vault,",
+     "   не запускай процессы, не редактируй файлы и не меняй права.",
+     "   Если MCP недоступен, честно сообщи об ошибке и предложи",
+     "   восстановить существующее подключение без переподключения устройства."
+   ].join("\n");
+ }
+ async function copyClientCheck(){
+   const value=clientCheckRequest();
+   try{
+     if(!navigator.clipboard?.writeText)throw Error("clipboard_unavailable");
+     await navigator.clipboard.writeText(value);
+     nodes["client-check-status"].textContent="Запрос скопирован. Вставьте его в ChatGPT или Codex с подключённым Hermes Agent.";
+   }catch(_){
+     nodes["client-check-status"].textContent="Копирование недоступно в браузере. Используйте подключённый Hermes Agent для проверки выбранного проекта.";
+   }
+ }
+
+ nodes["client-check"].addEventListener("click",copyClientCheck);
  nodes.refresh.addEventListener("click",refresh);
  nodes["check-source"].addEventListener("click",checkSource);
  document.addEventListener("visibilitychange",()=>{if(!document.hidden)void refresh();});

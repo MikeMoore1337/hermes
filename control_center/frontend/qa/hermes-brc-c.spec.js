@@ -37,7 +37,7 @@ test("concept C reads only sanitized source and switches four projects",async({p
   await expect(page.locator("#brc-branch")).toHaveText(branch);
  }
  await expect(page.locator(".brc-facts")).toContainText("Не проверено");
- await expect(page.getByRole("button",{name:/Проверить инструменты/})).toBeDisabled();
+ await expect(page.getByRole("button",{name:"Скопировать запрос проверки"})).toBeEnabled();
  await expect(page.locator("body")).not.toContainText("D:\\Pet-projects");
 });
 for(const width of [320,390,768,1440]){
@@ -83,7 +83,7 @@ test("C read-only diagnostics explain auth failure without granting tools",async
  await expect(page.locator("#brc-error")).toContainText("Войдите через GitHub");
  await expect(page.locator("#brc-diagnostic")).toContainText("Сессия");
  await expect(page.locator("#brc-device-count")).toHaveText("—");
- await expect(page.getByRole("button",{name:/Проверить инструменты/})).toBeDisabled();
+ await expect(page.getByRole("button",{name:"Скопировать запрос проверки"})).toBeEnabled();
 });
 test("C corrects reported device recency by age of snapshot",async({page})=>{
  const valid=snapshot();valid.observed_at=new Date(Date.now()-90000).toISOString();
@@ -97,7 +97,7 @@ test("C reports partial reachability without promoting devices to command ready"
  await setup(page,value);
  await expect(page.locator("#brc-diagnostic")).toContainText("часть устройств недоступна");
  await expect(page.locator("#brc-device-count")).toHaveText("2/3");
- await expect(page.getByRole("button",{name:/Проверить инструменты/})).toBeDisabled();
+ await expect(page.getByRole("button",{name:"Скопировать запрос проверки"})).toBeEnabled();
 });
 
 test("owner source-check confirms snapshot only and never enables commands",async({page})=>{
@@ -120,7 +120,7 @@ test("owner source-check confirms snapshot only and never enables commands",asyn
  await expect(page.locator("#brc-source-result")).toContainText("онлайн 3/3");
  await expect(page.locator("#brc-source-result")).toContainText("не проверялись");
  expect(calls).toBe(1);
- await expect(page.getByRole("button",{name:/Проверить инструменты/})).toBeDisabled();
+ await expect(page.getByRole("button",{name:"Скопировать запрос проверки"})).toBeEnabled();
  expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(321);
 });
 test("source-check denies optimistic status on forged flags or missing auth",async({page})=>{
@@ -140,5 +140,52 @@ test("source-check denies optimistic status on forged flags or missing auth",asy
       tools:"not_probed",git:"not_probed",onboarding:"disabled",native_host:"disabled"}})}));
  await b.click();
  await expect(page.locator("#brc-source-result")).toContainText("Некорректный ответ");
- await expect(page.getByRole("button",{name:/Проверить инструменты/})).toBeDisabled();
+ await expect(page.getByRole("button",{name:"Скопировать запрос проверки"})).toBeEnabled();
+});
+
+test("guided check copies canonical read-only prompt for selected project",async({page})=>{
+ await page.addInitScript(()=>{
+   Object.defineProperty(navigator,"clipboard",{configurable:true,
+    value:{writeText:async text=>{window.__h455Copied=text;}}});
+ });
+ await setup(page);
+ await page.locator('button[data-project="ai-development-toolkit"]').click();
+ await page.getByRole("button",{name:"Скопировать запрос проверки"}).click();
+ await expect(page.locator("#brc-client-check-status")).toContainText("скопирован");
+ const value=await page.evaluate(()=>window.__h455Copied);
+ expect(value).toContain("ai-development-toolkit");
+ expect(value).toContain("/workspace/projects/ai-development-toolkit");
+ expect(value).toContain("list_devices");
+ expect(value).toContain("list_workspaces");
+ expect(value).toContain("resolve_workspace");
+ expect(value).toContain("list_directory");
+ expect(value).toContain("get_file_info");
+ expect(value).toContain("\n");
+ expect(value).not.toContain("h15-win-05be");
+ expect(value).not.toContain("D:\\Pet-projects");
+ expect(value).not.toContain("start_process");
+ expect(value).not.toContain("write_file");
+});
+test("guided check stays non-executing with offline API and clipboard denial",async({page})=>{
+ await page.setViewportSize({width:320,height:844});
+ await page.addInitScript(()=>{
+  Object.defineProperty(navigator,"clipboard",{configurable:true,
+   value:{writeText:async()=>{throw Error("denied");}}});
+ });
+ let otherCalls=0;
+ await page.route("**/api/**",route=>{
+  if(new URL(route.request().url()).pathname==="/api/providers/hermes-brc")
+   return route.fulfill({status:503,contentType:"application/json",
+    body:'{"error":"unavailable"}'});
+  otherCalls++;return route.abort();
+ });
+ await page.goto("/hermes-brc");
+ await page.getByRole("button",{name:"Скопировать запрос проверки"}).click();
+ await expect(page.locator("#brc-client-check-status")).toContainText("Копирование недоступно");
+ expect(otherCalls).toBe(0);
+ await expect(page.locator("#brc-device-count")).toHaveText("—");
+ const geometry=await page.evaluate(()=>({
+  inner:window.innerWidth,scroll:document.documentElement.scrollWidth
+ }));
+ expect(geometry.scroll).toBeLessThanOrEqual(geometry.inner+1);
 });
