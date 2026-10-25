@@ -78,6 +78,18 @@ class H271PostCanaryReadOnlyTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 check.verify_artifact(job, ref, base)
 
+    def test_empty_sha_matching_artifact_is_not_positive_canary_evidence(self):
+        job = self.rows()[1]["job_id"]
+        empty_digest = hashlib.sha256(b"").hexdigest()
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory) / "artifacts"
+            base.mkdir(mode=0o700)
+            target = base / f"{job}-{empty_digest}.jsonl"
+            target.write_bytes(b"")
+            target.chmod(0o600)
+            with self.assertRaisesRegex(ValueError, "artifact_file_mode_or_size"):
+                check.verify_artifact(job, f"artifact:{job}:{empty_digest}", base)
+
     def test_no_external_actions_under_pure_contract(self):
         # These pure validators do not import a CLI, mutate SQLite or emit
         # task prompt contents; the production main is never invoked here.
