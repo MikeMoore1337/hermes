@@ -10,9 +10,16 @@
  const names = Object.freeze(["H15 Windows permanent sandbox","H15 Hermes VPS sandbox","H15 YFC VPS sandbox"]);
  const nodes = {};
  for(const id of ["health","health-dot","time","device-count","project-count","refresh","error","projects",
-   "selected-name","selected-caption","selected-state","path","branch","copy","devices","devices-label","read-access"])
+   "selected-name","selected-caption","selected-state","path","branch","copy","devices","devices-label","read-access","diagnostic"])
    nodes[id] = document.getElementById("brc-" + id);
- let selected="hermes", observation=null, pending=false;
+ let selected="hermes", observation=null, pending=false, failure="not_loaded";
+ const errorText=Object.freeze({
+  not_loaded:"Нет проверенного снимка BRC.",
+  auth:"Сессия Control Center не подтверждена. Войдите через GitHub и обновите страницу.",
+  stale:"Нет свежего наблюдения BRC. Проверьте relay и обновление снимка.",
+  invalid:"Источник вернул неподтверждённые данные. Статусы скрыты.",
+  network:"Не удалось получить снимок BRC. Проверьте соединение и повторите запрос."
+ });
  const labels={online:"ОНЛАЙН",offline:"ОФЛАЙН",stale:"УСТАРЕЛО",paused:"ПРИОСТАНОВЛЕНО"};
  const statusLabel=state=>labels[state] || "НЕ ПРОВЕРЕНО";
  const allowedStates=new Set(Object.keys(labels));
@@ -58,7 +65,8 @@
    observation.devices.forEach(d=>{
      const row=element("li"),dot=element("span","brc-device-dot "+d.status),
        details=element("div","brc-device-text"),label=element("strong","",d.name),
-       last=element("small","","Последнее наблюдение: "+d.last_seen_age_seconds+" с"),
+       lag=Math.max(0,Math.floor((Date.now()-Date.parse(observation.observed_at))/1000)),
+       last=element("small","","Последний сигнал: ~"+(d.last_seen_age_seconds+lag)+" с назад (по снимку)"),
        state=element("span","brc-device-state "+d.status,statusLabel(d.status));
      dot.setAttribute("aria-hidden","true");details.append(label,last);row.append(dot,details,state);nodes.devices.append(row);
    });
@@ -82,6 +90,9 @@
    }
  }
  function render(){
+   if(observation && Date.now()-Date.parse(observation.observed_at)>300000){
+     observation=null;failure="stale";
+   }
    const state=observation?.status;
    nodes.health.textContent=state==="online"?"Hermes BRC · подключён":
      state==="partial"?"Hermes BRC · частичное подключение":"Hermes BRC · статус недоступен";
@@ -91,6 +102,11 @@
    nodes["project-count"].textContent=observation?observation.workspaces.filter(w=>w.state==="reachable_not_git_verified").length+"/4":"—";
    nodes["read-access"].textContent=observation?"Разрешено":"Не проверено";
    nodes.error.hidden=Boolean(observation);
+   if(!observation)nodes.error.textContent=errorText[failure]||errorText.network;
+   nodes.diagnostic.textContent=!observation?"Диагностика: "+(errorText[failure]||errorText.network):
+     state==="online"?"Снимок свежий, 3 устройства на связи. Доступность инструментов и Git не проверены.":
+     state==="partial"?"Свежий снимок: часть устройств недоступна. Проверьте соединение через Hermes MCP.":
+     "Свежий снимок: устройства недоступны. Проверьте состояние relay и агентов.";
    renderDevices();renderSelection();
  }
  async function refresh(){
@@ -99,11 +115,15 @@
    const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),8000);
    try{
      const response=await fetch("/api/providers/hermes-brc",{credentials:"same-origin",cache:"no-store",signal:controller.signal});
-     if(!response.ok)throw Error("snapshot_unavailable");
-     const data=verify(await response.json());
-     if(!data)throw Error("invalid_snapshot");
-     observation=data;
-   }catch(_){observation=null;}
+     if(response.status===401)throw Error("auth");
+     if(response.status===503)throw Error("stale");
+     if(!response.ok)throw Error("network");
+     let raw;
+     try{raw=await response.json();}catch(_){throw Error("invalid");}
+     const data=verify(raw);
+     if(!data)throw Error("invalid");
+     observation=data;failure=null;
+   }catch(error){observation=null;failure=Object.hasOwn(errorText,error.message)?error.message:"network";}
    finally{clearTimeout(timeout);pending=false;nodes.refresh.disabled=false;render();}
  }
  nodes.projects.addEventListener("click",event=>{
