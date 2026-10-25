@@ -46,6 +46,7 @@ def git(root: Path, *args: str, timeout: int = 12) -> str:
         "git", "-c", f"safe.directory={root}",
         "-c", "core.preloadIndex=false", "-c", "index.threads=1",
         "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null",
+        "-c", "pack.threads=1",
         "-c", "submodule.recurse=false",
         "-c", "filter.lfs.smudge=", "-c", "filter.lfs.required=false",
         "-C", str(root), *args,
@@ -85,7 +86,10 @@ def registered(root: Path, target: Path) -> bool:
 
 def check_task(project: str, task: str, slug: str,
                *, workspace_root: Path = WORKSPACES,
-               task_root: Path = TASKS, prepare: bool = False) -> dict:
+               task_root: Path = TASKS, prepare: bool = False,
+               sync: bool = False) -> dict:
+    if sync and not prepare:
+        deny("sync_requires_prepare")
     name = project_name(project)
     if not TASK_ID.fullmatch(task) or not SLUG.fullmatch(slug):
         deny("invalid_task_identifier")
@@ -124,9 +128,11 @@ def check_task(project: str, task: str, slug: str,
         if not SHA.fullmatch(actual_head):
             deny("task_head_invalid")
         state = "reused"
+        basis = "previously_created"
     elif not prepare:
         state = "not_created"
         actual_head = None
+        basis = "local_checkout_not_remote_verified"
     else:
         strict_path(task_root)
         if task_root.exists() and not task_root.is_dir():
@@ -135,9 +141,22 @@ def check_task(project: str, task: str, slug: str,
         strict_path(task_root)
         parent.mkdir(mode=0o700, exist_ok=True)
         strict_path(parent)
+        start_head = head
+        basis = "local_checkout_not_remote_verified"
+        if sync:
+            # Verified fixed GitHub origin + exact default branch only. This
+            # updates Git objects and remote refs, NOT the existing checkout.
+            git(base, "fetch", "--no-tags", "--depth=1",
+                "--no-recurse-submodules", "origin", f"refs/heads/{branch}", timeout=45)
+            start_head = git(base, "rev-parse", "FETCH_HEAD")
+            if not SHA.fullmatch(start_head) or git(base, "cat-file", "-t", start_head) != "commit":
+                deny("fetched_head_invalid")
+            if git(base, "rev-parse", "HEAD") != head:
+                deny("baseline_moved_during_fetch")
+            basis = "fetched_origin"
         # Git enforces ref exclusivity and checkout atomicity; we neither
-        # fetch nor change the original branch, its index or tracked files.
-        git(base, "worktree", "add", "-b", task_branch, str(target), head, timeout=30)
+        # change the original branch nor its tracked worktree.
+        git(base, "worktree", "add", "-b", task_branch, str(target), start_head, timeout=30)
         if not registered(base, target):
             deny("new_task_not_registered")
         if git(target, "branch", "--show-current") != task_branch:
@@ -147,8 +166,9 @@ def check_task(project: str, task: str, slug: str,
     return {
         "schema": 1, "status": state, "project": name, "task": task,
         "branch": task_branch, "root": str(target), "origin": origin,
-        "head": actual_head, "scope": "sandbox",
-        "baseline_unchanged": True, "network_called": False,
+        "head": actual_head, "baseline_head": head, "basis": basis,
+        "scope": "sandbox", "baseline_unchanged": True,
+        "network_called": bool(sync and state == "created"),
     }
 
 
@@ -159,10 +179,12 @@ def main(argv=None) -> int:
     parser.add_argument("--slug", required=True)
     parser.add_argument("--prepare", action="store_true",
                         help="Create isolated local worktree; default only inspects.")
+    parser.add_argument("--sync", action="store_true",
+                        help="Fetch approved origin branch, without changing original checkout.")
     args = parser.parse_args(argv)
     try:
         result = check_task(args.project, args.task, args.slug,
-                            prepare=args.prepare)
+                            prepare=args.prepare, sync=args.sync)
     except TaskDenied as exc:
         print(json.dumps({"schema": 1, "status": "refused", "reason": str(exc)}))
         return 2
