@@ -69,7 +69,7 @@ class StaticContracts(unittest.TestCase):
         self.assertEqual(b[0], 200)
         self.assertIn(b'data-auth-mode="proxy" data-authenticated="true"', a[2])
         self.assertIn(b'data-auth-mode="proxy" data-authenticated="true"', b[2])
-        self.assertIn(b'/desktop-commander.js', a[2])
+        self.assertNotIn(b'/desktop-commander.js', a[2])
         self.assertNotIn(b'/desktop-commander.js', b[2])
         self.assertNotIn(b'/provider-quota.js', b[2])
 
@@ -84,7 +84,7 @@ class StaticContracts(unittest.TestCase):
         self.assertEqual(headers["ETag"], tag)
         self.assertEqual(headers["Cache-Control"], "private, no-cache")
         self.assertIn("default-src 'none'", headers["Content-Security-Policy"])
-        for path in ("/", "/?preview=login", "/sw.js", "/offline.html"):
+        for path in ("/", "/?preview=login", "/hermes-brc", "/desktop-commander-archive", "/sw.js", "/offline.html"):
             status, headers, _ = self.get(path, headers={"If-None-Match": tag})
             self.assertEqual(status, 200, path)
             self.assertEqual(headers["Cache-Control"], "no-store", path)

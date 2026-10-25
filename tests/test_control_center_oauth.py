@@ -362,8 +362,8 @@ class RouteTests(unittest.TestCase):
         st, h, html = self.req("GET", "/", {"Cookie": token})
         self.assertEqual(st, 200)
         self.assertIn(b'data-auth-mode="github" data-authenticated="true"', html)
-        for widget in (b"desktop-commander.js", b"ai-analytics.js",
-                       b"infrastructure.js", b"provider-quota.js"):
+        self.assertNotIn(b"desktop-commander.js", html)
+        for widget in (b"ai-analytics.js", b"infrastructure.js", b"provider-quota.js"):
             self.assertIn(widget, html)
         st, _, preview = self.req("GET", "/?preview=login", {"Cookie": token})
         self.assertEqual(st, 200)
