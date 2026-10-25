@@ -55,6 +55,11 @@ class OfficialAdapterTests(TestCase):
     def test_only_fixed_argv_and_trusted_stdin(self, popen):
         process = MagicMock()
         process.returncode = 0
+        def synthetic_output(*, input, timeout):
+            stream = popen.call_args.kwargs["stdout"]
+            stream.write(b'{"type":"turn.completed","usage":{"input_tokens":1}}\\n')
+            stream.flush()
+        process.communicate.side_effect = synthetic_output
         popen.return_value = process
         adapter = self.adapter(enabled=True)
         okay, reference = adapter.execute(self.job)
@@ -167,11 +172,43 @@ class OfficialAdapterTests(TestCase):
         (self.repo / ".git").mkdir()
         process = MagicMock()
         process.returncode = 0
+        def synthetic_output(*, input, timeout):
+            stream = popen.call_args.kwargs["stdout"]
+            stream.write(b'{"type":"turn.completed"}\\n')
+            stream.flush()
+        process.communicate.side_effect = synthetic_output
         popen.return_value = process
         self.adapter(enabled=True).execute(writable)
         argv = popen.call_args.args[0]
         self.assertEqual(argv[argv.index("--sandbox") + 1], "workspace-write")
         self.assertNotIn("--skip-git-repo-check", argv)
+
+    @patch("control_center.codex_scheduler_executor.subprocess.Popen")
+    def test_empty_success_stdout_requires_manual_review_without_artifact(self, popen):
+        process = MagicMock()
+        process.returncode = 0
+        popen.return_value = process
+        artifacts = Path(self.temp.name) / "empty-artifacts"
+        artifacts.mkdir(mode=0o700)
+        adapter = OfficialCodexExecutor(
+            repo_roots={"MikeMoore1337/hermes": self.repo},
+            approved_instructions={"approved-task-1234": "Synthetic approved test."},
+            codex_home=self.home, binary=self.binary,
+            enabled=True, artifact_dir=artifacts)
+        with self.assertRaisesRegex(RuntimeError, "codex_empty_stdout_outcome_uncertain"):
+            adapter.execute({**self.job, "job_id": "12345678-1111-2222-3333-123456789abc"})
+        self.assertEqual(adapter.last_phase, "empty_stdout")
+        self.assertEqual(list(artifacts.iterdir()), [])
+        process.communicate.assert_called_once()
+        self.assertEqual(process.returncode, 0)
+
+    @patch("control_center.codex_scheduler_executor.subprocess.Popen")
+    def test_empty_stdout_without_artifact_directory_also_blocks(self, popen):
+        process = MagicMock()
+        process.returncode = 0
+        popen.return_value = process
+        with self.assertRaisesRegex(RuntimeError, "codex_empty_stdout_outcome_uncertain"):
+            self.adapter(enabled=True).execute(self.job)
 
     @patch("control_center.codex_scheduler_executor.subprocess.Popen")
     def test_successful_jsonl_is_durable_before_receipt(self, popen):
