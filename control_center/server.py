@@ -53,6 +53,9 @@ ASSETS = {
     "/style.css": ("style.css", "text/css; charset=utf-8"),
     "/desktop-commander.js": ("desktop-commander.js", "text/javascript; charset=utf-8"),
     "/desktop-commander.css": ("desktop-commander.css", "text/css; charset=utf-8"),
+    "/hermes-brc": ("hermes-brc.html", "text/html; charset=utf-8"),
+    "/hermes-brc.js": ("hermes-brc.js", "text/javascript; charset=utf-8"),
+    "/hermes-brc.css": ("hermes-brc.css", "text/css; charset=utf-8"),
     "/ai-analytics.js": ("ai-analytics.js", "text/javascript; charset=utf-8"),
     "/ai-analytics.css": ("ai-analytics.css", "text/css; charset=utf-8"),
     "/infrastructure.js": ("infrastructure.js", "text/javascript; charset=utf-8"),
@@ -468,6 +471,9 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
                 return self.respond(200, "application/json; charset=utf-8", raw)
             if path in ASSETS:
                 name, mime = ASSETS[path]
+                if name == "hermes-brc.html" and config.mode == "github" and not oauth.authenticated(
+                        self._cookie(SESSION_COOKIE)):
+                    return self.respond(401, "text/plain", b"Authentication required")
                 try:
                     raw = (WEB / name).read_bytes()
                     if name == "index.html":
@@ -493,7 +499,7 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
                                 b'<script src="/provider-quota.js" defer></script></head>'))
                 except OSError:
                     return self.respond(503, "text/plain", b"Static asset unavailable")
-                if name in ("index.html", "sw.js", "offline.html"):
+                if name in ("index.html", "hermes-brc.html", "sw.js", "offline.html"):
                     return self.respond(200, mime, raw)
                 # Static public UI assets are non-sensitive; HTTP revalidation avoids
                 # repeating full bundle/image downloads, without caching auth or API.
