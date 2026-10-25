@@ -2,6 +2,13 @@ name: H-585 SRT versus Docker (isolated CI)
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/h585-srt-isolated.yml
+      - scripts/h585_srt_pilot.py
+      - tests/test_h585_srt_pilot.py
+      - docs/operations/H-585-SRT-COMPARISON.md
   pull_request:
     paths:
       - .github/workflows/h585-srt-isolated.yml
