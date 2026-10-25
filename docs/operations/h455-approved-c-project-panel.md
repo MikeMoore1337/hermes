@@ -82,3 +82,28 @@ after OAuth, main navigation -> C; archives show only historic records and
 no new command/tool permissions. Keep prior Control Center symlink release
 for rollback.
 
+
+## Validated source check (follow-up to #591)
+
+The new owner-only GET `/api/providers/hermes-brc/source-check` (also via the
+existing `/control-center/api` prefix) revalidates the **same already
+sanitized local snapshot** when the operator selects **Проверить источник**.
+The response includes only the source validation time, a bounded age, three
+canonical display names/statuses and explicit `not_probed` flags for relay,
+OAuth, tools and Git. This is an idempotent read-only filesystem operation;
+there is no remote MCP ping, command dispatch, new background job, collector,
+mount, device enrollment, reconnect or request-supplied path. The result is
+not a tool-execution proof and does not alter the old snapshot contract.
+
+Security gates: same GitHub owner session (guest 401), exact Host and query
+validation, no-store, sanitizer/TTL/schema failures 503, source symlink denial,
+no IDs/bearer/session/host secrets, no client-controlled paths, no HTTP POST.
+The `Проверить инструменты` command button remains disabled. The endpoint
+is bounded by the existing 16 KiB sanitized snapshot and is suitable only
+for confirming the quality of the observation currently displayed.
+
+This is a scoped, incremental step toward #455, **not complete onboarding**.
+Actual tool checks, grant/deny/revoke, reconnection and new-device enrollment
+must be implemented against a separately authorized allowlisted device
+executor with OS-level isolation; never infer such permissions from ONLINE.
+Owner browser post-migration acceptance is still separately required.
