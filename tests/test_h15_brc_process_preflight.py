@@ -120,12 +120,13 @@ class ProcessPreflightTests(unittest.TestCase):
     def test_too_many_process_dirs_refuse_clean_claim(self):
         with tempfile.TemporaryDirectory() as tmp:
             proc = Path(tmp)
-            for pid in range(gate.MAX_PID_DIRS + 1):
+            for pid in range(3):
                 (proc / str(pid)).mkdir()
-            with self.assertRaisesRegex(
-                gate.ProcessPreflightDenied, "PROCESS_SNAPSHOT_UNAVAILABLE"
-            ):
-                gate._count_pid1_zombies(proc)
+            with patch.object(gate, "MAX_PID_DIRS", 2):
+                with self.assertRaisesRegex(
+                    gate.ProcessPreflightDenied, "PROCESS_SNAPSHOT_UNAVAILABLE"
+                ):
+                    gate._count_pid1_zombies(proc)
 
     def test_pid1_zombie_requires_actual_parent_one(self):
         with tempfile.TemporaryDirectory() as tmp:
