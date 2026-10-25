@@ -85,6 +85,8 @@ jobs:
         run: |
           set -euo pipefail
           root="$GITHUB_WORKSPACE/h585-results"
+          mkdir -p "$root/docker-workspace"
+          chmod 0777 "$root/docker-workspace"
           docker pull python:3.12-slim
           image="$(docker image inspect --format '{{.Id}}' python:3.12-slim)"
           test -n "$image"
@@ -92,7 +94,7 @@ jobs:
           timeout 50s docker run --rm --network none --read-only --user 65534:65534 \
             --cap-drop ALL --security-opt no-new-privileges --pids-limit 64 \
             --memory 256m --cpus 0.5 \
-            --mount "type=bind,src=$root/workspace,dst=/workspace" \
+            --mount "type=bind,src=$root/docker-workspace,dst=/workspace" \
             --mount "type=bind,src=$root/protected,dst=/protected,readonly" \
             --mount "type=bind,src=$GITHUB_WORKSPACE/scripts/h585_srt_pilot.py,dst=/probe.py,readonly" \
             "$image" python3 /probe.py probe \
