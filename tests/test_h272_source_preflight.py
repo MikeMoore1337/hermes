@@ -2,6 +2,7 @@
 import io
 import os
 from pathlib import Path
+import shutil
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -36,6 +37,29 @@ class SourcePreflightTests(unittest.TestCase):
     def test_empty_never_means_active_telemetry(self):
         with self.assertRaisesRegex(PreflightHold, "NO_ROLLOUT_FILES"):
             self.collect()
+
+    def test_missing_sessions_is_not_permission_error(self):
+        shutil.rmtree(self.home / "sessions")
+        with self.assertRaisesRegex(PreflightHold, "^SESSIONS_DIRECTORY_MISSING$"):
+            self.collect()
+
+    def test_missing_auth_remains_distinct_from_missing_sessions(self):
+        shutil.rmtree(self.home)
+        with self.assertRaisesRegex(PreflightHold, "^SOURCE_DIRECTORY_UNAVAILABLE$"):
+            self.collect()
+
+    def test_permission_denial_remains_generic_hold(self):
+        sessions = self.home / "sessions"
+        actual_lstat = Path.lstat
+
+        def denied(path):
+            if path == sessions:
+                raise PermissionError("private diagnostic must not echo this")
+            return actual_lstat(path)
+
+        with patch.object(Path, "lstat", autospec=True, side_effect=denied):
+            with self.assertRaisesRegex(PreflightHold, "^SOURCE_DIRECTORY_UNAVAILABLE$"):
+                self.collect()
 
     def test_unapproved_identity_cannot_inspect(self):
         self.file.write_bytes(b"private")
