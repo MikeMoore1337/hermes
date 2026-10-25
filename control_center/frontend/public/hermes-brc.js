@@ -10,9 +10,9 @@
  const names = Object.freeze(["H15 Windows permanent sandbox","H15 Hermes VPS sandbox","H15 YFC VPS sandbox"]);
  const nodes = {};
  for(const id of ["health","health-dot","time","device-count","project-count","refresh","error","projects",
-   "selected-name","selected-caption","selected-state","path","branch","copy","devices","devices-label","read-access","diagnostic"])
+   "selected-name","selected-caption","selected-state","path","branch","copy","devices","devices-label","read-access","diagnostic","check-source","source-result"])
    nodes[id] = document.getElementById("brc-" + id);
- let selected="hermes", observation=null, pending=false, failure="not_loaded";
+ let selected="hermes", observation=null, pending=false, failure="not_loaded", sourcePending=false;
  const errorText=Object.freeze({
   not_loaded:"Нет проверенного снимка BRC.",
   auth:"Сессия Control Center не подтверждена. Войдите через GitHub и обновите страницу.",
@@ -112,6 +112,7 @@
  async function refresh(){
    if(pending)return;
    pending=true;nodes.refresh.disabled=true;
+   nodes["source-result"].textContent="Проверка источника не выполнялась";
    const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),8000);
    try{
      const response=await fetch("/api/providers/hermes-brc",{credentials:"same-origin",cache:"no-store",signal:controller.signal});
@@ -144,7 +145,55 @@
    }
    setTimeout(()=>{nodes.copy.textContent="Копировать";},1700);
  });
+ async function checkSource(){
+   if(sourcePending)return;
+   sourcePending=true;nodes["check-source"].disabled=true;
+   nodes["source-result"].textContent="Проверяется сохранённый снимок. Команды на устройства не выполняются.";
+   const controller=new AbortController(), timeout=setTimeout(()=>controller.abort(),8000);
+   try{
+     const res=await fetch("/api/providers/hermes-brc/source-check",{
+       credentials:"same-origin",cache:"no-store",signal:controller.signal
+     });
+     if(res.status===401)throw Error("Требуется авторизация через GitHub.");
+     if(res.status===503)throw Error("Снимок недоступен или устарел.");
+     if(!res.ok)throw Error("Проверка источника не выполнена.");
+     const value=await res.json();
+     if(!exact(value,["schema","source","check","checked_at","snapshot_age_seconds",
+          "status","devices","verification"])||value.schema!==1||
+        value.source!=="hermes_brc_validated_snapshot"||
+        value.check!=="snapshot_validity_only"||
+        !["online","partial","unavailable"].includes(value.status)||
+        !Number.isSafeInteger(value.snapshot_age_seconds)||
+        value.snapshot_age_seconds<0||value.snapshot_age_seconds>300||
+        typeof value.checked_at!=="string"||
+        !Number.isFinite(Date.parse(value.checked_at))||
+        Math.abs(Date.now()-Date.parse(value.checked_at))>60000||
+        !exact(value.verification,["snapshot","relay","oauth","tools","git","onboarding","native_host"])||
+        value.verification.snapshot!=="valid"||
+        !["relay","oauth","tools","git"].every(k=>value.verification[k]==="not_probed")||
+        value.verification.onboarding!=="disabled"||value.verification.native_host!=="disabled"||
+        !Array.isArray(value.devices)||value.devices.length!==3)throw Error("Некорректный ответ источника.");
+     for(let i=0;i<3;i++){
+       const d=value.devices[i];
+       if(!exact(d,["name","status","last_seen_age_seconds","command_execution"])||
+          d.name!==names[i]||!allowedStates.has(d.status)||
+          !Number.isSafeInteger(d.last_seen_age_seconds)||d.last_seen_age_seconds<0||
+          d.command_execution!=="not_verified")throw Error("Некорректный ответ источника.");
+     }
+     const online=value.devices.filter(d=>d.status==="online").length;
+     if(value.status!==(online===3?"online":online?"partial":"unavailable"))
+       throw Error("Некорректный ответ источника.");
+     nodes["source-result"].textContent="Источник: проверенный снимок "+value.snapshot_age_seconds+
+       " с назад; устройств онлайн "+online+"/3. Relay, OAuth, команды и Git не проверялись.";
+   }catch(error){
+     const messages=["Требуется авторизация через GitHub.","Снимок недоступен или устарел.",
+       "Некорректный ответ источника."];
+     nodes["source-result"].textContent=messages.includes(error.message)?error.message:
+       "Не удалось проверить снимок. Повторите запрос после восстановления связи.";
+   }finally{clearTimeout(timeout);sourcePending=false;nodes["check-source"].disabled=false;}
+ }
  nodes.refresh.addEventListener("click",refresh);
+ nodes["check-source"].addEventListener("click",checkSource);
  document.addEventListener("visibilitychange",()=>{if(!document.hidden)void refresh();});
  window.setInterval(()=>{if(!document.hidden)void refresh();},60000);
  render();void refresh();

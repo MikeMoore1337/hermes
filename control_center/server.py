@@ -38,6 +38,7 @@ from control_center.desktop_commander import (DEFAULT_OUTPUT as DC_OUTPUT,
 from control_center.desktop_commander_history import read as read_desktop_history, HistoryError
 from control_center.brc_snapshot import (DEFAULT_OUTPUT as BRC_OUTPUT,
     read_snapshot as read_brc_snapshot, SnapshotRejected as BrcSnapshotRejected)
+from control_center.brc_source_check import source_check as check_brc_source
 from control_center.credentials import load_runtime_credentials
 from control_center.auth import (
     AuthConfig, AuthError, OAuthService, ORIGIN,
@@ -382,6 +383,21 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
                 except HistoryError:
                     return self.respond(503, "application/json",
                                         b'{"error":"desktop_commander_history_unavailable"}')
+                return self.respond(200, "application/json; charset=utf-8",
+                                    json.dumps(data, separators=(",", ":")).encode())
+            if path in ("/api/providers/hermes-brc/source-check",
+                        "/control-center/api/providers/hermes-brc/source-check"):
+                # Explicit owner-authenticated revalidation of an existing
+                # sanitized file; no relay, device, shell or Git operations.
+                if config.mode == "github" and not oauth.authenticated(
+                        self._cookie(SESSION_COOKIE)):
+                    return self.respond(401, "application/json",
+                                        b'{"error":"authentication_required"}')
+                try:
+                    data = check_brc_source(brc_snapshot_path)
+                except BrcSnapshotRejected:
+                    return self.respond(503, "application/json",
+                                        b'{"error":"hermes_brc_snapshot_unavailable"}')
                 return self.respond(200, "application/json; charset=utf-8",
                                     json.dumps(data, separators=(",", ":")).encode())
             if path in ("/api/providers/hermes-brc",

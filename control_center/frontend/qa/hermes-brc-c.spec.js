@@ -99,3 +99,46 @@ test("C reports partial reachability without promoting devices to command ready"
  await expect(page.locator("#brc-device-count")).toHaveText("2/3");
  await expect(page.getByRole("button",{name:/Проверить инструменты/})).toBeDisabled();
 });
+
+test("owner source-check confirms snapshot only and never enables commands",async({page})=>{
+ await page.setViewportSize({width:320,height:844});
+ await setup(page);
+ const checked={
+  schema:1,source:"hermes_brc_validated_snapshot",check:"snapshot_validity_only",
+  checked_at:new Date().toISOString(),snapshot_age_seconds:5,status:"online",
+  devices:devices.map(name=>({name,status:"online",last_seen_age_seconds:14,
+   command_execution:"not_verified"})),
+  verification:{snapshot:"valid",relay:"not_probed",oauth:"not_probed",
+   tools:"not_probed",git:"not_probed",onboarding:"disabled",native_host:"disabled"}
+ };
+ let calls=0;
+ await page.route("**/api/providers/hermes-brc/source-check",route=>{
+  calls++;return route.fulfill({status:200,contentType:"application/json",
+   body:JSON.stringify(checked)});
+ });
+ await page.getByRole("button",{name:"Проверить источник"}).click();
+ await expect(page.locator("#brc-source-result")).toContainText("онлайн 3/3");
+ await expect(page.locator("#brc-source-result")).toContainText("не проверялись");
+ expect(calls).toBe(1);
+ await expect(page.getByRole("button",{name:/Проверить инструменты/})).toBeDisabled();
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(321);
+});
+test("source-check denies optimistic status on forged flags or missing auth",async({page})=>{
+ await setup(page);
+ const b=page.getByRole("button",{name:"Проверить источник"});
+ await page.route("**/api/providers/hermes-brc/source-check",route=>
+  route.fulfill({status:401,contentType:"application/json",body:"{}"}));
+ await b.click();
+ await expect(page.locator("#brc-source-result")).toContainText("Требуется авторизация");
+ await page.unroute("**/api/providers/hermes-brc/source-check");
+ await page.route("**/api/providers/hermes-brc/source-check",route=>
+  route.fulfill({status:200,contentType:"application/json",
+   body:JSON.stringify({schema:1,source:"hermes_brc_validated_snapshot",check:"snapshot_validity_only",
+    checked_at:new Date().toISOString(),snapshot_age_seconds:1,status:"online",
+    devices:devices.map(name=>({name,status:"online",last_seen_age_seconds:1,
+     command_execution:"verified"})),verification:{snapshot:"valid",relay:"not_probed",oauth:"not_probed",
+      tools:"not_probed",git:"not_probed",onboarding:"disabled",native_host:"disabled"}})}));
+ await b.click();
+ await expect(page.locator("#brc-source-result")).toContainText("Некорректный ответ");
+ await expect(page.getByRole("button",{name:/Проверить инструменты/})).toBeDisabled();
+});
