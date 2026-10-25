@@ -92,10 +92,16 @@ def _atomic_replace(path: Path, data: bytes, mode: int) -> None:
     descriptor, temp_name = tempfile.mkstemp(prefix=".hermes-config-", dir=path.parent)
     try:
         with os.fdopen(descriptor, "wb") as stream:
-            os.fchmod(stream.fileno(), mode)
+            if hasattr(os, "fchmod"):
+                os.fchmod(stream.fileno(), mode)
+            # Windows does not have os.fchmod; the temporary file inherits
+            # the .codex directory ACL. Restore its read-only attribute
+            # through chmod after the stream is closed.
             stream.write(data)
             stream.flush()
             os.fsync(stream.fileno())
+        if os.name == "nt":
+            os.chmod(temp_name, mode)
         _regular_or_absent(path)
         os.replace(temp_name, path)
     finally:
@@ -128,7 +134,8 @@ def _write_receipt(path: Path, receipt: dict) -> None:
     raw = json.dumps(receipt, separators=(",", ":"), sort_keys=True).encode("ascii")
     try:
         with path.open("xb") as stream:
-            os.fchmod(stream.fileno(), 0o600)
+            if hasattr(os, "fchmod"):
+                os.fchmod(stream.fileno(), 0o600)
             stream.write(raw)
             stream.flush()
             os.fsync(stream.fileno())
