@@ -44,7 +44,11 @@
   details.target = "_blank";
   details.rel = "noopener noreferrer";
   details.textContent = "Кабинет Usage ↗";
-  actions.append(refresh, details);
+  const brcLink = document.createElement("a");
+  brcLink.href = "/hermes-brc";
+  brcLink.textContent = "Hermes BRC · проекты";
+  brcLink.setAttribute("aria-label", "Открыть рабочие пространства Hermes BRC");
+  actions.append(brcLink, refresh, details);
   const history = document.createElement("details");
   history.className = "dc-history";
   const historySummary = document.createElement("summary");
