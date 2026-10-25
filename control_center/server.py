@@ -54,6 +54,9 @@ ASSETS = {
     "/desktop-commander.js": ("desktop-commander.js", "text/javascript; charset=utf-8"),
     "/desktop-commander.css": ("desktop-commander.css", "text/css; charset=utf-8"),
     "/hermes-brc": ("hermes-brc.html", "text/html; charset=utf-8"),
+    "/desktop-commander-archive": ("desktop-commander-archive.html", "text/html; charset=utf-8"),
+    "/desktop-commander-archive.js": ("desktop-commander-archive.js", "text/javascript; charset=utf-8"),
+    "/desktop-commander-archive.css": ("desktop-commander-archive.css", "text/css; charset=utf-8"),
     "/hermes-brc.js": ("hermes-brc.js", "text/javascript; charset=utf-8"),
     "/hermes-brc.css": ("hermes-brc.css", "text/css; charset=utf-8"),
     "/ai-analytics.js": ("ai-analytics.js", "text/javascript; charset=utf-8"),
@@ -471,7 +474,7 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
                 return self.respond(200, "application/json; charset=utf-8", raw)
             if path in ASSETS:
                 name, mime = ASSETS[path]
-                if name == "hermes-brc.html" and config.mode == "github" and not oauth.authenticated(
+                if name in ("hermes-brc.html", "desktop-commander-archive.html") and config.mode == "github" and not oauth.authenticated(
                         self._cookie(SESSION_COOKIE)):
                     return self.respond(401, "text/plain", b"Authentication required")
                 try:
@@ -489,8 +492,6 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
                         if authenticated and parsed.query != "preview=login":
                             # Load operator-only widgets on authorized pages only.
                             raw = raw.replace(b"</head>", (
-                                b'<link rel="stylesheet" href="/desktop-commander.css">'
-                                b'<script src="/desktop-commander.js" defer></script>'
                                 b'<link rel="stylesheet" href="/ai-analytics.css">'
                                 b'<script src="/ai-analytics.js" defer></script>'
                                 b'<link rel="stylesheet" href="/infrastructure.css">'
@@ -499,7 +500,7 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
                                 b'<script src="/provider-quota.js" defer></script></head>'))
                 except OSError:
                     return self.respond(503, "text/plain", b"Static asset unavailable")
-                if name in ("index.html", "hermes-brc.html", "sw.js", "offline.html"):
+                if name in ("index.html", "hermes-brc.html", "desktop-commander-archive.html", "sw.js", "offline.html"):
                     return self.respond(200, mime, raw)
                 # Static public UI assets are non-sensitive; HTTP revalidation avoids
                 # repeating full bundle/image downloads, without caching auth or API.
