@@ -22,9 +22,6 @@ class Hop:
 
 
 APPROVED = {("synthetic-free-provider", "synthetic-free-model", "free.invalid")}
-DENY_CODES = {401, 402, 403, 429}
-
-
 def offline_admission(
     hops: tuple[Hop, ...],
     *,
