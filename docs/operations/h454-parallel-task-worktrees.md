@@ -54,6 +54,25 @@ Git object database / remote refs; **основная рабочая ветка 
 существующий worktree возвращается без Git fetch, сброса файлов
 или изменения незавершённой работы. Никакой автоматической уборки.
 
+## Admission перед тяжёлыми процессами (H-15 #445)
+
+Перед новым Git fetch, тестовым Node/Go/esbuild-процессом или несколькими
+одновременными задачами агент должен проверить фактические ограничения
+Windows BRC sandbox, не ограничиваясь статусом устройства `Online`:
+
+```sh
+exec python3 -B /workspace/commander-tools/process_preflight.py
+```
+
+`status=HOLD` и ненулевой exit code требуют остановки тяжёлой работы,
+а не повтора с увеличенными таймаутами. Причины включают недостаток
+свободных PID/потоков, непогашенные PID1 zombies, память и /tmp.
+`CAPACITY_OBSERVED_NOT_AUTHORIZED` — наблюдение ресурсов, но не новая
+авторизация. Временно подтверждённый однопроцессный Node с
+`UV_THREADPOOL_SIZE=1 exec node --v8-pool-size=1` не снимает
+обязательную проверку общего жизненного цикла процессов.
+Подробности: [h445-brc-pid-process-recovery.md](h445-brc-pid-process-recovery.md).
+
 ## Один раз установить на уже разрешённый sandbox
 
 Исходник `scripts/h454_task_worktree.py` необходимо установить
