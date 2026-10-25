@@ -172,11 +172,13 @@ test("guided check stays non-executing with offline API and clipboard denial",as
   Object.defineProperty(navigator,"clipboard",{configurable:true,
    value:{writeText:async()=>{throw Error("denied");}}});
  });
- await page.route("**/api/providers/hermes-brc",route=>route.fulfill({
-  status:503,contentType:"application/json",body:'{"error":"unavailable"}'
- }));
  let otherCalls=0;
- await page.route("**/api/**",route=>{otherCalls++;return route.abort();});
+ await page.route("**/api/**",route=>{
+  if(new URL(route.request().url()).pathname==="/api/providers/hermes-brc")
+   return route.fulfill({status:503,contentType:"application/json",
+    body:'{"error":"unavailable"}'});
+  otherCalls++;return route.abort();
+ });
  await page.goto("/hermes-brc");
  await page.getByRole("button",{name:"Скопировать запрос проверки"}).click();
  await expect(page.locator("#brc-client-check-status")).toContainText("Копирование недоступно");
