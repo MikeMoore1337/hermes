@@ -2,6 +2,7 @@
 import json
 from http.server import ThreadingHTTPServer
 from pathlib import Path
+import sqlite3
 import tempfile
 from threading import Thread
 import unittest
@@ -61,6 +62,37 @@ class AnalyticsApiTests(unittest.TestCase):
         self.assertEqual(self.get("/api/analytics/codex")[0], 401)
         self.assertEqual(self.get("/control-center/api/analytics/codex")[0], 401)
         self.assertEqual(self.get("/api/analytics/codex", method="POST")[0], 501)
+
+    def test_owner_api_activity_only_never_reports_zero_tokens(self):
+        # Synthetic activity-only state: no token_count events in this DB.
+        with sqlite3.connect(self.database) as db:
+            db.execute("DELETE FROM events")
+            db.execute(
+                "INSERT INTO events VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                ("synthetic:1", "test-session", "2026-10-18T00:00:00+00:00",
+                 "task_started", None, None, "unattributed", None, None, None,
+                 "verified"),
+            )
+            db.execute(
+                "INSERT INTO events VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                ("synthetic:2", "test-session", "2026-10-18T00:01:00+00:00",
+                 "task_complete", None, None, "unattributed", None, None, None,
+                 "verified"),
+            )
+        self.auth.allowed = True
+        status, headers, body = self.get("/api/analytics/codex?period=all")
+        self.assertEqual(status, 200)
+        self.assertEqual(headers["Cache-Control"], "no-store")
+        result = json.loads(body)
+        self.assertEqual(result["quality"], "partial")
+        self.assertEqual(result["metric_quality"]["tokens"], "unknown")
+        self.assertIsNone(result["tokens"]["total"])
+        self.assertIsNone(result["tokens"]["input"])
+        self.assertEqual(result["completed_turns"], 1)
+        self.assertIsNone(result["actual_spend_usd"])
+        self.assertEqual(self.get("/api/analytics/codex")[0], 200)
+        self.auth.allowed = False
+        self.assertEqual(self.get("/api/analytics/codex?period=all")[0], 401)
 
     def test_read_only_no_secret_or_private_path(self):
         self.auth.allowed = True
