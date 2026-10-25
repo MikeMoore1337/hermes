@@ -49,3 +49,36 @@ When owner confirms C visuals and live content on the new route,
 switch the main nav entry to C and leave legacy Desktop Commander as
 read-only archive/history with explicit label. Follow normal CSS/a11y
 and rollback QA; #455 is not closed by this additive delivery alone.
+
+## Owner production visual acceptance and final migration
+
+On 2026-10-25 owner explicitly **accepted** deployed Concept C after
+the production release of #589. This is the visual gate for switching
+the primary Hermes Commander main/top navigation to the existing protected
+`/hermes-brc` page. Do not replace its backend, add remote execution
+or extend original Windows access.
+
+Main Control Center no longer loads the old `desktop-commander.js`
+floating widget. It remains physically in source and production assets for
+emergency UI rollback, but does not poll or render on normal operator pages.
+Historic third-party telemetry is accessed explicitly through
+`/desktop-commander-archive` (owner-authenticated, no-store HTML), which
+reads only the old allowlisted `/api/providers/desktop-commander/history`
+endpoint with bounded 1,7,30-day filters, and never calls the live cloud
+Desktop Commander API. No automatic archive refresh is scheduled by this UI.
+
+The accepted C page links to the optional archive; original native Windows
+read-only remains offline/paused. Preserve independent existing scheduler
+state, infrastructure data, authentication, and history database. The
+historical backend collector is not removed or restarted as part of this
+UI-only migration; any later retirement of that service needs explicit
+separate operational verification.
+
+CI gates: exact built `web` assets, repo Python API/owner 401/security
+tests, Playwright primary-navigation/archival A11y at 320/393/768/1440,
+legacy quiet on main page, offline history and malformed data fail-closed.
+Final production gate: release receipt pinned to main SHA, owner 200 UI
+after OAuth, main navigation -> C; archives show only historic records and
+no new command/tool permissions. Keep prior Control Center symlink release
+for rollback.
+
