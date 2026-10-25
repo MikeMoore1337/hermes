@@ -37,12 +37,31 @@ Scope: Issue #585, source-only disposable CI pilot; **no resident, VPS, owner Wi
 - Container-specific security configuration stays in its existing ownership (#371/#454); this experiment does not replace it.
 - No production adoption just because this source PR merges.
 
-## Adoption decision
+## Verified pilot results (25 October 2026)
 
-**PENDING REAL CI EVIDENCE.** If SRT produces no additional kernel-enforced security benefit over existing Docker BRC, prefer **NO_ADOPT for resident Hermes**: avoid complexity, extra OS dependencies, user namespace behavior and Windows alpha WFP side effects. If it demonstrably improves a user-requested trusted boundary, separately evaluate it under #371/#454 and require owner approval for any native host changes.
+| Evidence | Exact result |
+| --- | --- |
+| PR #588 candidate, SHA c139881db14f3a26ef2bf0590d49fbb383989127 | GitHub Actions quality and comparison checks both SUCCESS |
+| [Real Ubuntu 22.04 comparison](https://github.com/MikeMoore1337/hermes/actions/runs/40201324841) | All steps PASS: build from pinned SHA, actual SRT negative probes, invalid-config fail-closed, Docker negative probes |
+| [Synthetic artifact 12601623139](https://github.com/MikeMoore1337/hermes/actions/runs/40201324841/artifacts/12601623139) | 760-byte ZIP, sha256:ebfcb3dd55824d38acf17b3c1bb6bfc165a6cac9c0d6f25b8b5e9f0bbbdbcc5f |
+| [Hermes repository checks](https://github.com/MikeMoore1337/hermes/actions/runs/40201324840) | All repository quality steps SUCCESS |
+| Initial Ubuntu 24.04 attempt | SRT FAILED at bwrap network namespace setup: RTM_NEWADDR Operation not permitted; no security PASS claimed |
+| Ubuntu 22.04 fixed attempt | SRT PASS; first Docker test only failed on synthetic test-file ownership collision (SRT and Docker shared names) |
+| Separate-output-root corrected attempt | Both SRT and Docker PASS with independent disposable workspaces |
+| Native Windows SRT, genuine production devices, p95/CPU comparison | NOT_RUN / NOT_MEASURED - no claim of security or performance equivalence outside exact CI |
 
-## Status and chronology
+The upstream SRT workflow itself documents that Ubuntu 24.04 restricts unprivileged user namespace capabilities through AppArmor and therefore needs a sysctl adjustment on ephemeral runners. This comparison selected Ubuntu 22.04 instead of weakening the Ubuntu 24.04 runner policy. The old failure is genuine environment incompatibility without that configuration, not proof of an SRT defect.
 
-2026-10-25: Hermes BRC sandbox preflight (device h15-win-05be75515428) confirmed an unprivileged Linux Docker checkout; neither bwrap nor srt nor Docker daemon available inside that particular container. This is not equivalent to the GitHub Actions runner with Docker installed. See #585 issue comment for evidence.
+Docker's explicit cgroup controls (256 MiB, 0.5 CPU, max 64 PIDs) are exercised by the comparison step. SRT's process is limited by the GitHub Actions job timeout and command timeout; this does **not** establish equivalent per-process cgroups. Hosted runner step durations are not controlled latency benchmarks. In particular, SRT's successful direct TCP connection failure does not prove every external address is unreachable; net namespace policy and dedicated network red-team cases are independent concerns.
 
-Release only after the **real** workflow results and associated revision are linked in Issue #585. No claim about live Windows SRT testing without a separate isolated VM proof.
+## Final adoption decision for Hermes BRC: NO_ADOPT
+
+The **tested restricted file/network capabilities** pass for both SRT and Docker. No missing BRC capability or measurable additional enforcement has been established to justify installing another process sandbox in resident Hermes. Existing Docker has separate UID, read-only mounts, no network, Linux capability restrictions and explicit cgroups. Additional SRT introduces beta APIs, bubblewrap/userns/AppArmor compatibility requirements and, for native Windows, WFP/ACL account provisioning with documented platform limitations. Therefore do **not** install SRT in Hermes resident runtime or on the owner's Windows host.
+
+Keep the isolated source-only CI comparison as a reproducible research record. Do not modify H-15 #371 or #454 to require SRT. Revisit adoption only when a specific uncovered BRC threat can be reproduced and when an isolated negative test proves SRT improves enforcement over Docker. Such a future choice is a separate owner gate.
+
+The comparison is not a permission grant, a security certification, nor an activation of untrusted MCP servers. No paid APIs, Codex CLI, resident runtime changes or real secrets were used.
+
+## Release gate
+
+This document records the verified pre-document-update pilot SHA. After incorporating this decision, the final PR head must **again** pass exact-head quality and comparison checks. Merge only after success and ensure merged-main CI is independently verified. Issue #585 can close as completed for its **comparative pilot**, not as a claim that SRT was adopted into production.
