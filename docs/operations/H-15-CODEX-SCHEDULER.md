@@ -1,8 +1,52 @@
 # H-15 Codex Task Scheduler (#271): operator and recovery contract
 
-Status: production source release delivered by #274; opt-in worker follow-up #277. **Production live worker NOT YET ENABLED**.
+Status: source and bounded opt-in worker delivered (#274/#277). **One operator-authorized real `inspect` canary PASS on 2026-10-25; worker restored to `enabled=false`, periodic timer DISABLED. Unattended production mode NOT activated.**
 Dependencies: #255 quota monitor/policy; #2/#33 H-01 burn-in; #272 analytics;
 #273 offline benchmark. Nothing here restarts or reconfigures H-01.
+
+## Production one-shot v7 ACCEPT; periodic activation HOLD (2026-10-25)
+
+One explicit owner-approved `inspect` passed a real full-stack canary using the
+existing ChatGPT subscription and official Codex CLI — **no paid API**:
+`NEW_CANARY_VERDICT=SUCCESS`, `SERVICE_EXIT_CODE=0`,
+`EXECUTION_REQUESTS_MAX=1`, `TOTAL_JOBS=2`. The one new job is
+`succeeded/attempt_count=1/invocation_state=finished`,
+`DURABLE_ARTIFACT=PASS`, `IDEMPOTENT_ACK=PASS`. The historical first
+job remains **`blocked/1/reviewed`**, never replayed.
+
+The owner operator preserved the used one-shot markers, disabled the
+worker immediately, kept the scheduler timer disabled and verified H-01
+timer active. The original failed/uncertain first attempt must never be
+restarted, and the successful `inspect` must not be regenerated as a
+new task merely to re-prove this receipt.
+
+**Read-only Stage-5 audit** (on actual owner VPS, root console only;
+no extra inference and no state mutation):
+
+```sh
+sha="$(cat /var/lib/hermes-main-deploy/last-success.sha)"
+cd "/opt/hermes-agent-owner/releases/main-$sha"
+python3 -B -m scripts.h271_post_canary_readonly
+```
+
+The validator checks the canonical deployed receipt and UI symlink,
+unchanged installed service/timer unit bytes and absent overrides, inactive
+service, disabled/inactive scheduler timer, active H-01 timer, disabled
+worker config, exactly one manually reconciled historical job and one
+delivered successful one-attempt job, bounded on-disk artifact permissions
+and SHA-256, plus absence of active **unbound** local grants. It prints only
+fixed labels and aggregates — no approval IDs, prompts, auth tokens, or
+model output. It does not test the CLI or alter `delivered`.
+It **never** enables the timer or clears old one-shot markers.
+
+**Stage-5 activation gate remains HOLD** independently of an audit PASS:
+the existing runbook requires a separately approved maintenance window
+after #33 H-01 acceptance, which remains OPEN/PARTIAL for a new natural
+useful incident turn. Do not run `systemctl enable --now` or leave
+`runtime.enabled=true` until that owner gate is satisfied. No automatic
+quota-recovery retry or unattended production result is claimed from the
+one-shot success. On any HOLD preserve the blocked record and disabled
+timer; never substitute a new canary to hide an uncertain result.
 
 ## Exact-time capacity deferral diagnosis (2026-10-25)
 
