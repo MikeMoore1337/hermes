@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react";
 import {agentationDevelopmentPlugin} from "./devtools/agentation-dev-plugin.js";
 import {fileURLToPath} from "node:url";
 export default defineConfig({
- plugins:[react()],
+ plugins:[react(),agentationDevelopmentPlugin()],
  base:"/",
  build:{
   outDir:fileURLToPath(new URL("../web/",import.meta.url)),
