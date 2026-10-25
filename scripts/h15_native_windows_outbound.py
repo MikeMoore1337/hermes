@@ -151,7 +151,8 @@ def safe_call(session: McpSession, message: dict[str, Any],
     return {"type": "result", "id": ident, "result": rpc["result"]}
 
 
-def run_session(config: Settings, connector: Callable[..., Any]) -> str:
+def run_session(config: Settings, connector: Callable[..., Any],
+                *, seen_ids: set[str] | None = None) -> str:
     """One authenticated outbound TLS socket, one bounded local tool session.
 
     The connector is injected for offline tests. Production uses the
@@ -165,7 +166,7 @@ def run_session(config: Settings, connector: Callable[..., Any]) -> str:
     })
     if not isinstance(init, dict) or "result" not in init:
         raise NativeTransportDenied("internal_mcp_init_failed")
-    seen: set[str] = set()
+    seen: set[str] = seen_ids if seen_ids is not None else set()
     sent = 0
     try:
         connection = connector(
@@ -239,9 +240,12 @@ def run_bounded_reconnect(
     """
     if {tool.get("name") for tool in TOOLS} != READONLY_NAMES or len(TOOLS) != 2:
         raise NativeTransportDenied("reconnect_requires_readonly_catalog")
+    seen_ids: set[str] = set()
     for index in range(MAX_RECONNECT_ATTEMPTS):
         try:
-            end = run_session(config, connector)
+            # Preserve prior in-process request IDs over a connection reset;
+            # a relay redelivery must not dispatch the same ID twice.
+            end = run_session(config, connector, seen_ids=seen_ids)
         except NativeTransportDenied as exc:
             if str(exc) != "transport_failed":
                 raise
