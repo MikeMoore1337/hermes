@@ -75,3 +75,27 @@ test("C rejects forged capabilities, extra keys and expired snapshots",async({pa
   await expect(page.locator("body")).not.toContainText("SECRET_SENTINEL");
  }
 });
+
+test("C read-only diagnostics explain auth failure without granting tools",async({page})=>{
+ await page.route("**/api/providers/hermes-brc",route=>route.fulfill({status:401,
+  contentType:"application/json",body:'{"error":"authentication_required"}'}));
+ await page.goto("/hermes-brc");
+ await expect(page.locator("#brc-error")).toContainText("Войдите через GitHub");
+ await expect(page.locator("#brc-diagnostic")).toContainText("Сессия");
+ await expect(page.locator("#brc-device-count")).toHaveText("—");
+ await expect(page.getByRole("button",{name:/Проверить инструменты/})).toBeDisabled();
+});
+test("C corrects reported device recency by age of snapshot",async({page})=>{
+ const valid=snapshot();valid.observed_at=new Date(Date.now()-90000).toISOString();
+ await setup(page,valid);
+ await expect(page.locator("#brc-devices li").first()).toContainText(/Последний сигнал: ~\d+ с назад/);
+ await expect(page.locator("#brc-devices li").first()).not.toContainText("Последнее наблюдение: 9 с");
+ await expect(page.locator("#brc-diagnostic")).toContainText("Доступность инструментов и Git не проверены");
+});
+test("C reports partial reachability without promoting devices to command ready",async({page})=>{
+ const value=snapshot();value.devices[1].status="offline";value.status="partial";
+ await setup(page,value);
+ await expect(page.locator("#brc-diagnostic")).toContainText("часть устройств недоступна");
+ await expect(page.locator("#brc-device-count")).toHaveText("2/3");
+ await expect(page.getByRole("button",{name:/Проверить инструменты/})).toBeDisabled();
+});
