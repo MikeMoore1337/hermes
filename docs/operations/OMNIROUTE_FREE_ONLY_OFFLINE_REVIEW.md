@@ -23,7 +23,7 @@ Hermes #62: только утверждённый Cloudflare Workers AI Free и 
 - любые raw chat/secret fields в synthetic trace и несинтетический payload — DENY;
 - один безопасный вымышленный hop — SYNTHETIC_ORACLE_ACCEPTS_SHAPE_ONLY, не ALLOW_LIVE.
 
-Запуск без зависимостей: python3 -m unittest tests.test_omniroute_free_only_policy -v
+Запуск без зависимостей: python3 -m unittest discover -s tests -p 'test_omniroute_free_only_policy.py' -v
 
 Эти тесты **не выполняют код OmniRoute**. Зелёный тест означает только полноту локального списка отрицательных условий, не реальную защиту gateway от списаний/утечки и не фактическую интеграцию.
 
