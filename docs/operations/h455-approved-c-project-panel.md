@@ -107,3 +107,28 @@ Actual tool checks, grant/deny/revoke, reconnection and new-device enrollment
 must be implemented against a separately authorized allowlisted device
 executor with OS-level isolation; never infer such permissions from ONLINE.
 Owner browser post-migration acceptance is still separately required.
+
+
+## Guided client-side tool check (safe fallback)
+
+For owners with an already connected Hermes Agent MCP in ChatGPT or Codex,
+Concept C now offers **Скопировать запрос проверки** for the selected
+canonical sandbox project. The button only copies a fixed, human-readable
+read-only request into the clipboard. It asks the existing authorized client to
+resolve the project with \`list_devices\`, \`list_workspaces\` and
+\`resolve_workspace\`, then use \`list_directory\` and \`get_file_info\`
+inside the three already approved sandbox workspaces. It neither transmits the
+request to the Hermes Control Center server nor sends it to an MCP provider.
+
+The generated request never contains bearer tokens, device IDs or guessed
+host paths, and explicitly disallows native Windows and private vault access,
+file modification, new permissions and shell process execution. A failed
+clipboard permission reports an error; it never claims that a tool check
+happened. The existing snapshot and source-check endpoints remain unchanged.
+
+This improves reproducible owner-driven diagnostics while a separate
+audited and explicitly approved server-to-relay identity is not yet present.
+**Not a browser-executed tool check:** results must be independently checked
+in the authenticated ChatGPT/Codex MCP client; the Control Center continues
+to mark command execution and Git as NOT_VERIFIED. New device/project
+enrollment, grant/revoke and automatic recovery remain outside this change.
