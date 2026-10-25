@@ -1,6 +1,9 @@
 """Fail-closed checks for #585. No network, sandbox or host config needed."""
 from __future__ import annotations
 
+import os
+import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
