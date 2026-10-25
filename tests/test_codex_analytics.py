@@ -43,6 +43,42 @@ class AnalyticsTests(unittest.TestCase):
     def inspect(self):
         return read(self.db, period="24h", now=self.now)
 
+    def test_activity_without_usage_is_unknown_not_zero(self):
+        self.write(
+            item("event_msg", {"type": "task_started"}, "2026-10-18T00:00:00Z"),
+            item("event_msg", {"type": "task_complete"}, "2026-10-18T00:03:00Z"),
+        )
+        collect(self.home, self.db, now=self.now)
+        result = self.inspect()
+        self.assertEqual(result["quality"], "partial")
+        self.assertEqual(result["metric_quality"]["tokens"], "unknown")
+        self.assertEqual(result["metric_quality"]["sessions"], "verified")
+        self.assertEqual(result["sessions"], 1)
+        self.assertEqual(result["completed_turns"], 1)
+        self.assertEqual(result["duration_seconds"], 180)
+        self.assertEqual(result["tokens"], {
+            "input": None, "output": None, "cached_input": None, "total": None,
+        })
+        self.assertIsNone(result["api_equivalent_usd"])
+        self.assertIsNone(result["pricing_coverage"])
+        self.assertTrue(any("zero cannot be inferred" in note for note in result["notes"]))
+        self.assertEqual(result["daily"], [])
+
+    def test_period_with_activity_but_usage_outside_window_is_unknown(self):
+        self.write(
+            usage(300, 30, 90, "2026-10-16T00:00:00Z"),
+            item("event_msg", {"type": "task_started"}, "2026-10-18T00:00:00Z"),
+            item("event_msg", {"type": "task_complete"}, "2026-10-18T00:01:00Z"),
+        )
+        collect(self.home, self.db, now=self.now)
+        current = self.inspect()
+        self.assertIsNone(current["tokens"]["total"])
+        self.assertEqual(current["metric_quality"]["tokens"], "unknown")
+        self.assertEqual(current["completed_turns"], 1)
+        all_time = read(self.db, period="all", now=self.now)
+        self.assertEqual(all_time["tokens"]["total"], 330)
+        self.assertEqual(all_time["metric_quality"]["tokens"], "verified")
+
     def test_empty_no_fake_zeros(self):
         empty = self.inspect()
         self.assertIsNone(empty["tokens"]["total"])
