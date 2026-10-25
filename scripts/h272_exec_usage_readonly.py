@@ -14,7 +14,6 @@ from pathlib import Path
 import re
 import sqlite3
 import stat
-import sys
 
 from scripts.h271_post_canary_readonly import verify_artifact
 
@@ -22,7 +21,7 @@ DB = Path("/var/lib/hermes-codex-scheduler/jobs.sqlite3")
 ARTIFACTS = Path("/var/lib/hermes-codex-scheduler/artifacts")
 MAX_ARTIFACT = 8192
 MAX_TOKENS = 10**12
-SAFE_MODEL = re.compile(r"[A-Za-z0-9_.-]{1,64}\\Z")
+SAFE_MODEL = re.compile(r"[A-Za-z0-9_.-]{1,64}\Z")
 
 
 class UsageHold(ValueError):
