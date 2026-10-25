@@ -6,6 +6,9 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
+
+from scripts import h454_task_worktree as module
 
 from scripts.h454_task_worktree import TaskDenied, check_task
 
@@ -116,6 +119,33 @@ class TaskWorktreeTests(unittest.TestCase):
         with self.assertRaisesRegex(TaskDenied, "task_path_collision"):
             self.check(prepare=True)
         self.assertEqual((place / "owner-data").read_text(), "untouched")
+
+    def test_sync_requires_explicit_create(self):
+        with self.assertRaisesRegex(TaskDenied, "sync_requires_prepare"):
+            self.check(sync=True)
+        self.assertFalse(self.tasks.exists())
+
+    def test_fetch_failure_preserves_original_and_no_task_checkout(self):
+        actual_git = module.git
+        def decline_fetch(root, *args, **kwargs):
+            if args and args[0] == "fetch":
+                raise TaskDenied("git_not_ready")
+            return actual_git(root, *args, **kwargs)
+        with patch.object(module, "git", side_effect=decline_fetch):
+            with self.assertRaisesRegex(TaskDenied, "git_not_ready"):
+                self.check(prepare=True, sync=True)
+        self.assertEqual(run("-C", self.base, "rev-parse", "HEAD"), self.before)
+        self.assertFalse((self.tasks / "hermes" / "issue454-sandbox").exists())
+
+    def test_no_sync_never_fetches(self):
+        actual_git = module.git
+        seen = []
+        def track_git(root, *args, **kwargs):
+            seen.append(args[0])
+            return actual_git(root, *args, **kwargs)
+        with patch.object(module, "git", side_effect=track_git):
+            self.assertEqual(self.check(prepare=True)["status"], "created")
+        self.assertNotIn("fetch", seen)
 
     def test_original_checkout_symlink_git_denied(self):
         (self.base / ".git").rename(self.base / ".git-real")
