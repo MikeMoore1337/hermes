@@ -26,7 +26,8 @@ class ReconnectTests(unittest.TestCase):
             "read_budget_exhausted",
         ]
 
-        def fake_session(config, connector):
+        def fake_session(config, connector, *, seen_ids=None):
+            self.assertIsInstance(seen_ids, set)
             attempts.append(config.device_id)
             item = sequence.pop(0)
             if isinstance(item, Exception):
