@@ -76,6 +76,14 @@ class YfcOwnerEditorialTests(unittest.TestCase):
             "article_status": "draft",
             "content_hash": CONTENT_HASH,
             "content_version": 1,
+            "title": "Полный текст тестовой статьи",
+            "description": "Описание исследований",
+            "lead": "Это исходный вводный абзац.",
+            "body_sections": [
+                {"heading": "Первый раздел", "paragraphs": ["Абзац один", "Абзац два"]},
+                {"heading": "Второй раздел", "paragraphs": ["Абзац три"]},
+            ],
+            "claims": [{"claim_id": "c_01", "claim_text": "Ограниченные данные"}],
             "sources": [{"source_id": "s_01", "url": "https://example.org"}],
             "claim_source_matrix": [{"claim_id": "c_01", "review_status": "pending"}],
             "review_blockers": ["claim_source_matrix_not_fully_verified"],
@@ -86,6 +94,24 @@ class YfcOwnerEditorialTests(unittest.TestCase):
         with self.assertRaisesRegex(EditorialTransportError, "yfc_article_id_invalid"):
             get_draft(TOKEN, "../../credentials", opener=fake)
         self.assertEqual(len(fake.calls), 1)
+
+    def test_incomplete_fulltext_refused_before_display_or_publication(self):
+        incomplete = {
+            "article_id": ARTICLE_ID,
+            "article_status": "draft",
+            "content_hash": CONTENT_HASH,
+            "content_version": 1,
+            "title": "Неполная статья",
+            "description": "Описание",
+            "lead": "Вводный текст",
+            "body_sections": [{"heading": "Часть", "paragraphs": ["Абзац"]}],
+            "sources": [{"source_id": "s"}],
+            "claims": [{"claim_id": "c"}],
+            "claim_source_matrix": [{"review_status": "pending"}],
+            "review_blockers": [],
+        }
+        with self.assertRaisesRegex(EditorialTransportError, "yfc_draft_response_invalid"):
+            get_draft(TOKEN, ARTICLE_ID, opener=Transport(incomplete))
 
     def test_publication_rejected_without_explicit_owner_click(self):
         fake = Transport({})
