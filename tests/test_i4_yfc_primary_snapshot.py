@@ -9,7 +9,7 @@ from research_scout import yfc_primary_snapshot as snapshot
 
 
 def xml(pmcid="12345678", doi="10.1234/example"):
-    return (('<article><front><article-meta>'
+    return ('<article><front><article-meta>'
              '<article-id pub-id-type="pmc">' + pmcid + '</article-id>'
              '<article-id pub-id-type="doi">' + doi + '</article-id>'
              '<permissions><license>CC BY</license></permissions>'
