@@ -124,7 +124,7 @@ let hub={get(id){return id===good.device_id?agent:undefined},
  async call(id,name,args){calls++;return {isError:false,content:[{type:'text',text:JSON.stringify(verified)}]}}};
 const ctx={userId:'owner-A',clientId:'chatgpt'};
 (async()=>{
- assert.deepEqual(NATIVE_TOOLS.map(t=>t.name),['native_file_stat','native_file_read']);
+ assert.deepEqual(NATIVE_TOOLS.map(t=>t.name),['native_file_stat','native_file_read','native_file_list']);
  const ok=await invokeOwnerNativeRead(hub,store,ctx,'native_file_read',{project:'hermes',relative:'README.md'});
  assert.equal(ok.isError,false);assert.equal(calls,1);assert.equal(logs.length,1);
  for(const args of [{project:'hermes',relative:'..\\README.md'},
