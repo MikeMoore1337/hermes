@@ -2,6 +2,7 @@ import React,{useCallback,useEffect,useRef,useState} from "react";
 import {AlertTriangle,BookOpen,CheckCircle2,ExternalLink,FileText,
   LockKeyhole,RefreshCw,ShieldCheck,X} from "lucide-react";
 import "./yfc-articles.css";
+import {createYfcEditorialBridge} from "./yfc-browser-bridge";
 
 const ID=/^[0-9a-f]{32}$/;
 const HASH=/^[0-9a-f]{64}$/;
@@ -32,19 +33,10 @@ const validDetail=(article,row)=>{
 };
 const blocked=(article)=>article.claim_source_matrix.some(x=>
  !x||x.review_status==="blocked"||x.support_level==="does_not_support");
-async function editorialRequest(action,payload,signal){
- const res=await fetch("/api/yfc/editorial/"+action,{
-  method:"POST",credentials:"same-origin",cache:"no-store",signal,
-  headers:{"Content-Type":"application/json","X-Hermes-Editorial-Intent":"owner-interactive"},
-  body:JSON.stringify(payload)
- });
- let value={};
- try{value=await res.json();}catch{/* request cannot be treated as success */}
- if(!res.ok)throw Error(value.error||"yfc_request_unavailable");
- return value;
-}
 const errors={
  authentication_required:"Сессия Hermes завершена. Войдите снова.",
+ yfc_popup_unavailable:"Окно YFC закрыто. Подключите YFC заново.",
+ yfc_popup_blocked:"Браузер заблокировал окно YFC. Разрешите всплывающее окно для Hermes.",
  owner_oauth_required:"Публикация доступна только после входа владельца через GitHub.",
  owner_origin_denied:"Защита запроса не пройдена. Обновите страницу.",
  yfc_root_auth_required:"Root-токен YFC недействителен или срок его действия истёк.",
@@ -57,7 +49,8 @@ const errors={
 const friendly=(e)=>errors[e?.message]||"Не удалось выполнить запрос к YFC. Повторите проверку.";
 
 export default function YfcArticles(){
- const [token,setToken]=useState("");
+ const [connected,setConnected]=useState(false);
+ const bridgeRef=useRef(null);
  const [rows,setRows]=useState([]);
  const [selected,setSelected]=useState(null);
  const [article,setArticle]=useState(null);
@@ -70,42 +63,60 @@ export default function YfcArticles(){
  const [publishing,setPublishing]=useState(false);
  const [receipt,setReceipt]=useState(null);
  const confirmRef=useRef(null);
+ const editorialRequest=useCallback((action,payload,signal)=>
+  bridgeRef.current?.request(action,payload,signal) ??
+  Promise.reject(Error("yfc_popup_unavailable")),[]);
+ useEffect(()=>{
+  const bridge=createYfcEditorialBridge({
+   onGranted:()=>setConnected(true),
+   onDisconnected:()=>setConnected(false)
+  });
+  bridgeRef.current=bridge;
+  return()=>{bridgeRef.current=null;bridge.destroy();};
+ },[]);
+ const connect=()=>{
+  setError("");
+  try{bridgeRef.current?.connect();}
+  catch(e){setError(friendly(e));}
+ };
+
  const requestRef=useRef(null);
  const detailRef=useRef(null);
- const list=useCallback(async(rawToken)=>{
+ const list=useCallback(async()=>{
   requestRef.current?.abort();
   const ctrl=new AbortController();requestRef.current=ctrl;
   setPhase("loading");setError("");setRows([]);setArticle(null);setSelected(null);
   setDetailPhase("idle");setConfirm(false);setAck(false);setReading(false);setReceipt(null);
   try{
-   const data=await editorialRequest("list",{root_token:rawToken,limit:25,offset:0},ctrl.signal);
+   const data=await editorialRequest("list",{},ctrl.signal);
    if(!Array.isArray(data)||data.length>25||!data.every(validRow))throw Error("yfc_draft_response_invalid");
    if(!ctrl.signal.aborted){setRows(data);setPhase("ready");}
   }catch(e){
    if(!ctrl.signal.aborted){setPhase("error");setError(friendly(e));
-    if(e.message==="yfc_root_auth_required")setToken("");}
+    if(e.message==="yfc_popup_unavailable")setConnected(false);}
   }
- },[]);
+ },[editorialRequest]);
+ useEffect(()=>{if(connected)void list();},[connected,list]);
  useEffect(()=>()=>{requestRef.current?.abort();detailRef.current?.abort();},[]);
  useEffect(()=>{
   detailRef.current?.abort();
   setArticle(null);setConfirm(false);setAck(false);setDetailPhase("idle");setReading(false);
-  if(!selected||!token)return;
+  if(!selected||!connected)return;
   const row=rows.find(x=>x.article_id===selected);
   if(!row)return;
   const ctrl=new AbortController();detailRef.current=ctrl;setDetailPhase("loading");
   (async()=>{
    try{
-    const data=await editorialRequest("detail",{root_token:token,article_id:selected},ctrl.signal);
+    const data=await editorialRequest("detail",{article_id:selected},ctrl.signal);
     if(!validDetail(data,row))throw Error("yfc_draft_response_invalid");
     if(!ctrl.signal.aborted){setArticle(data);setDetailPhase("ready");}
    }catch(e){
     if(!ctrl.signal.aborted){setDetailPhase("error");setError(friendly(e));
-     if(e.message==="yfc_root_auth_required")setToken("");}
+     if(e.message==="yfc_popup_unavailable")setConnected(false);}
    }
   })();
   return()=>ctrl.abort();
- },[selected,rows,token]);
+ },[selected,rows,connected,editorialRequest]);
  useEffect(()=>{
   if(!confirm)return;
   confirmRef.current?.focus();
@@ -117,25 +128,25 @@ export default function YfcArticles(){
  const exact=detailPhase==="ready"&&validDetail(article,currentRow);
  const canPublish=exact&&!blocked(article)&&!publishing;
  const disconnected=()=>{
-  requestRef.current?.abort();detailRef.current?.abort();setToken("");
+  requestRef.current?.abort();detailRef.current?.abort();bridgeRef.current?.disconnect();
   setRows([]);setSelected(null);setArticle(null);setPhase("locked");
   setDetailPhase("idle");setConfirm(false);setReceipt(null);setError("");
  };
  const publish=async()=>{
-  if(!canPublish||!ack||!confirm||!token)return;
+  if(!canPublish||!ack||!confirm||!connected)return;
   setPublishing(true);setError("");
   try{
    const receipt=await editorialRequest("publish",{
-    root_token:token,article_id:article.article_id,
-    content_hash:article.content_hash,content_version:article.content_version,
-    owner_confirmed:true
+    article_id:article.article_id,
+    content_hash:article.content_hash,content_version:article.content_version
    });
    if(receipt.article_id!==article.article_id||receipt.content_version!==article.content_version||
       receipt.article_status!=="published"||receipt.editorial_decision!=="root_owner_publication"||
       receipt.scientific_verification!=="not_attested"||
       !safeSourceUrl(receipt.canonical_url))throw Error("yfc_publication_receipt_invalid");
    setReceipt(receipt);setArticle(null);setSelected(null);setRows([]);
-   setPhase("locked");setDetailPhase("idle");setToken("");setConfirm(false);setAck(false);setReading(false);
+   setPhase("ready");setDetailPhase("idle");setConfirm(false);setAck(false);setReading(false);
+   void list();
   }catch(e){setConfirm(false);setAck(false);setArticle(null);setDetailPhase("error");
    setError(friendly(e));}
   finally{setPublishing(false);}
@@ -153,19 +164,18 @@ export default function YfcArticles(){
     <p>Версия {receipt.content_version}. Научная аттестация: не заявлена.</p>
     <a href={receipt.canonical_url} target="_blank" rel="noopener noreferrer">Открыть статью <ExternalLink size={14}/></a>
    </div></div>}
-  <section className="ye-login" aria-label="Авторизация Root YFC">
-   <div><strong><LockKeyhole size={17}/> Независимая Root-проверка YFC</strong>
-    <p>Вход через GitHub в Hermes не заменяет Root-авторизацию YFC. Введите временный токен из действующей Root-сессии YFC. Он используется только в памяти вкладки и не сохраняется.</p></div>
-   <form onSubmit={e=>{e.preventDefault();if(token.trim())void list(token.trim());}}>
-    <label htmlFor="ye-token">Временный Root-токен YFC</label>
-    <div className="ye-login-controls"><input id="ye-token" type="password" autoComplete="off"
-     spellCheck={false} value={token} onChange={e=>setToken(e.target.value)}
-     placeholder="Введите токен без отображения" aria-label="Временный токен YFC Root"/>
-     <button type="submit" disabled={!token.trim()||phase==="loading"}>
-      <RefreshCw size={15}/> {phase==="ready"?"Обновить":"Загрузить черновики"}</button>
-     {token&&<button type="button" className="ye-ghost" onClick={disconnected}>Отключить</button>}
-    </div>
-   </form>
+  <section className="ye-login" aria-label="Подтверждение Root YFC">
+   <div><strong><LockKeyhole size={17}/> Независимое подтверждение YFC Root</strong>
+    <p>Для чтения и публикации откроется отдельное окно YFC с вашей действующей Root-сессией.
+     Токены и пароли в Hermes не передаются. Публикация требует отдельного подтверждения в YFC.</p></div>
+   <div className="ye-login-controls">
+    {!connected?<button type="button" onClick={connect}>
+     <ShieldCheck size={15}/> Подтвердить доступ через YFC</button>:
+     <><span role="status">Root YFC подключён для просмотра</span>
+      <button type="button" onClick={()=>void list()} disabled={phase==="loading"}>
+       <RefreshCw size={15}/> Обновить</button>
+      <button type="button" className="ye-ghost" onClick={disconnected}>Отключить</button></>}
+   </div>
   </section>
   {error&&<div className="ye-error" role="alert"><AlertTriangle size={18}/>{error}</div>}
   {phase==="loading"&&<div className="ye-empty" role="status">Загружаем приватную очередь YFC…</div>}
