@@ -2,12 +2,12 @@ import React,{useCallback,useEffect,useRef,useState} from "react";
 import {AlertTriangle,BookOpen,CheckCircle2,ExternalLink,FileText,
   LockKeyhole,RefreshCw,ShieldCheck,X} from "lucide-react";
 import "./yfc-articles.css";
+import {validYfcConsentMessage} from "./yfc-consent.js";
 
 const ID=/^[0-9a-f]{32}$/;
 const HASH=/^[0-9a-f]{64}$/;
 const statuses=new Set(["draft","review","update_required"]);
 const ROOT_CONSENT_ORIGIN="https://app.your-fitness-coach.ru";
-const CONSENT_KIND="yfc-root-editorial-consent-v1";
 const nonceHex=()=>{
  const bytes=new Uint8Array(32);
  crypto.getRandomValues(bytes);
@@ -98,13 +98,9 @@ export default function YfcArticles(){
  useEffect(()=>()=>{requestRef.current?.abort();detailRef.current?.abort();consentWindowRef.current?.close();},[]);
  useEffect(()=>{
   const onConsent=event=>{
-   if(event.origin!==ROOT_CONSENT_ORIGIN||
-      event.source!==consentWindowRef.current||
-      !consentNonceRef.current||
-      event.data?.type!==CONSENT_KIND||
-      event.data?.nonce!==consentNonceRef.current||
-      typeof event.data?.token!=="string"||
-      !/^[A-Za-z0-9._-]{20,4096}$/.test(event.data.token))return;
+   if(!validYfcConsentMessage(
+    event,ROOT_CONSENT_ORIGIN,consentWindowRef.current,consentNonceRef.current
+   ))return;
    const granted=event.data.token;
    consentWindowRef.current?.close();
    consentWindowRef.current=null;
