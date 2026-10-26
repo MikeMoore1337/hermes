@@ -134,8 +134,28 @@ def get_draft(root_token: str, article_id: str, *, opener=None) -> dict:
         not isinstance(data, dict)
         or data.get("article_id") != article_id
         or data.get("article_status") not in DRAFT_STATUSES
+        or not isinstance(data.get("title"), str)
+        or not data["title"].strip()
+        or not isinstance(data.get("lead"), str)
+        or not data["lead"].strip()
+        or not isinstance(data.get("description"), str)
+        or not isinstance(data.get("body_sections"), list)
+        or not 2 <= len(data["body_sections"]) <= 24
+        or any(
+            not isinstance(section, dict)
+            or not isinstance(section.get("heading"), str)
+            or not section["heading"].strip()
+            or not isinstance(section.get("paragraphs"), list)
+            or not section["paragraphs"]
+            or any(not isinstance(p, str) or not p.strip() for p in section["paragraphs"])
+            for section in data["body_sections"]
+        )
+        or not isinstance(data.get("claims"), list)
+        or not data["claims"]
         or not isinstance(data.get("claim_source_matrix"), list)
+        or not data["claim_source_matrix"]
         or not isinstance(data.get("sources"), list)
+        or not data["sources"]
         or not isinstance(data.get("review_blockers"), list)
         or CONTENT_HASH.fullmatch(str(data.get("content_hash", ""))) is None
         or type(data.get("content_version")) is not int
