@@ -55,3 +55,8 @@
 @media(max-width:1000px){.ye-login{grid-template-columns:1fr}.ye-layout{grid-template-columns:230px minmax(0,1fr)}.ye-paper{padding:22px}}
 @media(max-width:700px){.ye-header{align-items:flex-start;flex-direction:column}.ye-header h1{font-size:25px}.ye-layout{display:block}.ye-queue{max-height:300px;margin-bottom:14px}.ye-reading .ye-queue{display:none}.ye-paper{padding:21px 18px}.ye-paper-actions{flex-direction:column;align-items:stretch}.ye-paper-actions button{width:100%}.ye-login{padding:17px}.ye-login-controls{flex-direction:column}.ye-login-controls input{width:100%}.ye-modal{padding:22px}.ye-modal-actions{flex-direction:column}.ye-meta dl{grid-template-columns:1fr;gap:4px}.ye-meta dd{margin-bottom:8px}}
 @media(prefers-reduced-motion:reduce){.ye-root *{scroll-behavior:auto}}
+
+.ye-pairing{display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-start;grid-column:1/-1}
+.ye-pairing button{border-radius:9px;border:1px solid #5da2f7;background:#17599d;color:#eef6ff;font-size:13px;font-weight:650;min-height:45px;padding:11px 15px}
+.ye-pairing span{font-size:12px;color:var(--muted);line-height:1.5}
+@media(max-width:700px){.ye-pairing{display:grid;grid-template-columns:1fr}.ye-pairing button{width:100%}}
