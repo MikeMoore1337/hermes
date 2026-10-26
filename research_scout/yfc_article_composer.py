@@ -56,7 +56,9 @@ def compose(packet: object, *, source_dir: Path = handoff.SOURCE_DIR) -> dict:
     }, "METADATA_SCHEMA_INVALID")
     check(meta["risk_level"] in ("low", "moderate", "unknown") and
           meta["evidence_level"] in ("limited", "preliminary", "conflicting", "unknown")
-          and type(meta["topics"]) is list and 1 <= len(meta["topics"]) <= 12,
+          and type(meta["topics"]) is list and 1 <= len(meta["topics"]) <= 12
+          and all(type(topic) is str and 1 <= len(topic) <= 60
+                  for topic in meta["topics"]),
           "METADATA_SCIENCE_HOLD")
     for field, limit in (("title", 180), ("description", 320),
                          ("lead", 1200), ("primary_query", 240)):
@@ -82,7 +84,8 @@ def compose(packet: object, *, source_dir: Path = handoff.SOURCE_DIR) -> dict:
         check(source_id in source_ids and source_id not in seen,
               "SOURCE_RIGHTS_RECEIPT_MISMATCH")
         seen.add(source_id)
-        check(review["licence_id"] in LICENSE_URLS
+        check(type(review["licence_id"]) is str
+              and review["licence_id"] in LICENSE_URLS
               and review["licence_url"] == LICENSE_URLS[review["licence_id"]]
               and review["notice_status"] == "NO_UNRESOLVED_NOTICE_REPORTED"
               and review["basis"] == "OPERATOR_READ_PUBLISHER_FULL_TEXT",
@@ -106,7 +109,8 @@ def compose(packet: object, *, source_dir: Path = handoff.SOURCE_DIR) -> dict:
               and cid not in seen_claims, "CLAIM_ID_INVALID")
         seen_claims.add(cid)
         refs = claim["source_ids"]
-        check(type(refs) is list and len(refs) >= 2
+        check(type(refs) is list and 2 <= len(refs) <= 15
+              and all(type(ref) is str for ref in refs)
               and len(refs) == len(set(refs)) and set(refs) <= set(source_ids),
               "CLAIM_NOT_BACKED_BY_TWO_REFERENCES")
         statement = checked_text(claim["claim_text"], 10, 800)
