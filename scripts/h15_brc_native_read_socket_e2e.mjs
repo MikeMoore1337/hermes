@@ -83,7 +83,7 @@ try {
     }));
   });
   await once(socket, 'open');
-  assert(NATIVE_TOOLS.map(t => t.name).join(',') === 'native_file_stat,native_file_read',
+  assert(NATIVE_TOOLS.map(t => t.name).join(',') === 'native_file_stat,native_file_read,native_file_list',
     'NATIVE_TWO_TOOLS_ONLY');
   socket.send(JSON.stringify({
     type: 'hello', protocol: 1,
