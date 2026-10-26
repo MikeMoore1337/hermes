@@ -136,9 +136,12 @@ class NativeEffectLedgerContracts(unittest.TestCase):
     def test_ledger_stores_only_hash_and_identifiers_not_paths_or_commands(self):
         item = identity()
         ledger.claim(self.root, item, now=1730000000)
-        rows = sqlite3.connect(self.root / "native-effects.sqlite3").execute(
-            "SELECT * FROM effects"
-        ).fetchall()
+        connection = sqlite3.connect(self.root / "native-effects.sqlite3")
+        try:
+            rows = connection.execute("SELECT * FROM effects").fetchall()
+        finally:
+            # Windows prohibits cleanup of an open database handle.
+            connection.close()
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0], (item.operation_id, item.device_id, item.project,
                                    item.operation, item.scope_sha256, item.expires_at,
