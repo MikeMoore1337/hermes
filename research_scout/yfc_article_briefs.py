@@ -11,6 +11,7 @@ from datetime import UTC, datetime, timedelta
 import hashlib
 import json
 import os
+import tempfile
 from pathlib import Path
 import stat
 
@@ -215,6 +216,70 @@ def read_source(path: Path = DIRECTORY / FILENAME) -> dict:
         return json.loads(content)
     except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
         raise BriefHold("SOURCE_READ_UNAVAILABLE") from None
+
+
+
+BRIEFS_FILENAME = "latest-yfc-article-briefs.json"
+MAX_BRIEFS_BYTES = 64 * 1024
+
+
+def save_briefs(result: object, directory: Path = DIRECTORY) -> None:
+    """Atomic 0600 source-only brief snapshot; no scripts/services/network.
+
+    A validated digest plan is informational, not YFC intake or permission.
+    Failed writes must never remove a valid citation digest.
+    """
+    require_shape = (type(result) is dict and result.get("schema") == SCHEMA
+                     and result.get("policy") == POLICY
+                     and result.get("hmac_transmission_allowed") is False
+                     and result.get("automatic_publication") is False
+                     and result.get("model_calls") == 0
+                     and result.get("network_calls") == 0
+                     and result.get("yfc_intake_payload") is None
+                     and type(result.get("brief_count")) is int
+                     and type(result.get("briefs")) is list
+                     and len(result["briefs"]) == result["brief_count"] <= MAX_BRIEFS
+                     and all(type(row) is dict
+                             and row.get("status") in ("HOLD", "NEEDS_CONTENT")
+                             and row.get("yfc_intake_payload") is None
+                             and row.get("candidate_provisioning_allowed") is False
+                             and row.get("publication_allowed") is False
+                             for row in result["briefs"]))
+    _require(require_shape, "BRIEFS_CONTRACT_UNTRUSTED")
+    try:
+        info = directory.lstat()
+        _require(stat.S_ISDIR(info.st_mode) and info.st_uid == os.geteuid()
+                 and stat.S_IMODE(info.st_mode) == 0o700,
+                 "BRIEFS_DIRECTORY_UNTRUSTED")
+        target = directory / BRIEFS_FILENAME
+        if target.is_symlink():
+            raise BriefHold("BRIEFS_SYMLINK_DENIED")
+        if target.exists():
+            existing = target.stat()
+            _require(stat.S_ISREG(existing.st_mode)
+                     and stat.S_IMODE(existing.st_mode) == 0o600
+                     and existing.st_uid == os.geteuid() and existing.st_nlink == 1,
+                     "BRIEFS_EXISTING_FILE_UNTRUSTED")
+        raw = json.dumps(result, ensure_ascii=False, sort_keys=True,
+                         separators=(",", ":")).encode("utf-8")
+        _require(0 < len(raw) <= MAX_BRIEFS_BYTES, "BRIEFS_CAPACITY")
+        fd, name = tempfile.mkstemp(dir=directory, prefix=".i4-briefs-")
+        try:
+            os.fchmod(fd, 0o600)
+            with os.fdopen(fd, "wb") as stream:
+                stream.write(raw)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(name, target)
+            root_fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            try:
+                os.fsync(root_fd)
+            finally:
+                os.close(root_fd)
+        finally:
+            Path(name).unlink(missing_ok=True)
+    except OSError:
+        raise BriefHold("BRIEFS_WRITE_UNAVAILABLE") from None
 
 
 def main() -> int:
