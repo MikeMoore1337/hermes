@@ -81,3 +81,50 @@ to launch any Windows process.
 Microsoft Win32 references:
 - https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew
 - https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-getfinalpathnamebyhandlew
+
+
+## ChatGPT-first bounded discovery — native_file_list (#454)
+
+The existing read-only **Win32 handle-bound** agent now exposes a third
+operation, `native_file_list`, scoped to the **root only** of one
+previously approved original source-code repository. Its arguments are
+`{"project":"hermes","relative":""}` (or another one of the four
+previously approved project identifiers). No deviceId, arbitrary absolute
+Windows path, executable, shell, folder crawl or host-wide search is
+accepted from ChatGPT. This is deliberately narrower than general
+Desktop Commander directory browsing.
+
+Win32 validation opens the approved original root with
+`FILE_FLAG_OPEN_REPARSE_POINT` and without
+`FILE_SHARE_DELETE` for the enumeration. Its final path must
+match the expected original root exactly. Entries are discovered via
+bounded `os.scandir` and **each disclosed entry** is independently
+opened with Win32 `CreateFileW` and checked against its expected final
+path, reparse status and hardlink count. Forbidden names, hidden
+credentials, unsupported file extensions, junctions and reparse points
+are never returned. At most 256 directory entries are scanned; at most
+64 approved entries are disclosed, sorted case-insensitively. No file
+contents, full original Windows paths, ACLs, config values or secrets
+are returned. If the directory exceeds the scan bound the entire
+operation refuses; result `truncated=true` indicates approved entries
+exceeded the return bound.
+
+The same exact shape is verified again at the Python MCP boundary and
+the pinned TypeScript owner-bound relay: result keys and entry names are
+validated, duplicate aliases rejected, and any additional field fails
+closed. All three read-only tool names must match the paired `win32`
+device catalog; an old two-tool native agent will **not** silently gain
+a third tool through a self-reported capability.
+
+**Critical limitations:** This is not a general recursive directory
+browser. It does not include write, edit, delete, PowerShell or Git.
+The original owner Windows Host remains OFFLINE/PAUSED until a
+separately authorized native process bootstrap and private re-pair
+are completed. A successful GitHub Windows runner fixture validates
+the Win32 API against synthetic files, not real `D:\\Pet-projects`
+nor ChatGPT reachability of the owner's PC. Keep #454 OPEN until
+an actual owner-host `native_file_list` tool-use E2E succeeds.
+
+Existing native host pairing/revocation and `/ws` private transport
+rules remain unchanged. **Do not enable public /ws** or trust
+the 3 online linux/docker sandbox agents as Windows Host proof.
