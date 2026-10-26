@@ -452,7 +452,20 @@ def main(argv: list[str] | None = None) -> int:
     except (DigestError, OSError):
         print(json.dumps({"status": "UNKNOWN", "reason": "metadata_report_unavailable"}))
         return 2
+    # Existing daily source timer also projects a private, bounded I4
+    # review queue. No additional network/model/publish calls; failure must
+    # not suppress the already durable scientific digest.
+    i4_briefs_status = "HOLD"
+    try:
+        from .yfc_article_briefs import BriefHold, build_briefs, save_briefs
+
+        planned = build_briefs(report, now=datetime.now(UTC))
+        save_briefs(planned)
+        i4_briefs_status = planned["status"]
+    except (BriefHold, OSError):
+        pass  # Source metadata is still available; never fabricate a draft.
     print(json.dumps({
+        "i4_briefs_status": i4_briefs_status,
         "status": report["status"],
         "topics": len(TOPIC_IDS),
         "candidate_count": len(report["items"]),
