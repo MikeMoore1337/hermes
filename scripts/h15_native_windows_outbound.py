@@ -33,7 +33,7 @@ MAX_CALLS = 16
 MAX_SEEN_IDS = 64
 MAX_RECONNECT_ATTEMPTS = 5
 RECONNECT_DELAYS = (1, 2, 4, 8)
-READONLY_NAMES = frozenset({'native_file_stat', 'native_file_read'})
+READONLY_NAMES = frozenset({'native_file_stat', 'native_file_read', 'native_file_list'})
 DEVICE_ID = re.compile(r"^[A-Za-z0-9_-]{8,128}$")
 TOKEN = re.compile(r"^[A-Za-z0-9_.~-]{24,1024}$")
 
@@ -134,9 +134,11 @@ def safe_call(session: McpSession, message: dict[str, Any],
     args = message.get("args")
     if (type(ident) is not str or not 1 <= len(ident) <= 128
         or type(name) is not str or name not in
-            ("native_file_read", "native_file_stat")
+            ("native_file_read", "native_file_stat", "native_file_list")
         or not isinstance(args, dict) or set(args) != {"project", "relative"}
         or not all(type(v) is str for v in args.values())):
+        return None
+    if name == "native_file_list" and args["relative"] != "":
         return None
     if ident in seen or len(seen) >= MAX_SEEN_IDS:
         return None
@@ -238,7 +240,7 @@ def run_bounded_reconnect(
     Nothing is persisted. On restart owner-scoped re-pair may be required.
     Fatal protocol/relay refusal does NOT get retried.
     """
-    if {tool.get("name") for tool in TOOLS} != READONLY_NAMES or len(TOOLS) != 2:
+    if {tool.get("name") for tool in TOOLS} != READONLY_NAMES or len(TOOLS) != 3:
         raise NativeTransportDenied("reconnect_requires_readonly_catalog")
     seen_ids: set[str] = set()
     for index in range(MAX_RECONNECT_ATTEMPTS):
