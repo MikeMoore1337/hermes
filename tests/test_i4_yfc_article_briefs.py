@@ -11,6 +11,7 @@ import unittest
 from unittest.mock import patch
 
 from research_scout import yfc_article_briefs as planner
+from research_scout import daily_digest
 from research_scout.daily_digest import SCHEMA as DIGEST_SCHEMA, TOPIC_IDS
 
 
@@ -171,6 +172,83 @@ class I4SourceGatedBriefsTests(unittest.TestCase):
                 path.symlink_to(outside)
                 with self.assertRaises(planner.BriefHold):
                     planner.read_source(path)
+
+    def test_private_snapshot_atomic_replay_and_symlink_denial(self):
+        result = self.build(packet())
+        with tempfile.TemporaryDirectory() as location:
+            base = Path(location) / "research"
+            base.mkdir(mode=0o700)
+            planner.save_briefs(result, base)
+            saved = base / planner.BRIEFS_FILENAME
+            self.assertEqual(saved.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(json.loads(saved.read_text())["status"], "NEEDS_CONTENT")
+            first = saved.read_bytes()
+            planner.save_briefs(result, base)
+            self.assertEqual(saved.read_bytes(), first)
+            saved.unlink()
+            saved.symlink_to(Path(location) / "outside")
+            with self.assertRaisesRegex(planner.BriefHold, "BRIEFS_SYMLINK_DENIED"):
+                planner.save_briefs(result, base)
+            saved.unlink()
+            base.chmod(0o755)
+            with self.assertRaisesRegex(planner.BriefHold, "BRIEFS_DIRECTORY_UNTRUSTED"):
+                planner.save_briefs(result, base)
+
+    def test_private_snapshot_cannot_become_yfc_submission_or_fake_attestation(self):
+        outcome = self.build(packet())
+        for key, value in (
+            ("hmac_transmission_allowed", True),
+            ("automatic_publication", True),
+            ("yfc_intake_payload", {"article_status": "published"}),
+            ("model_calls", 1),
+        ):
+            data = deepcopy(outcome)
+            data[key] = value
+            with tempfile.TemporaryDirectory() as location:
+                base = Path(location) / "research"
+                base.mkdir(mode=0o700)
+                with self.subTest(key=key), self.assertRaisesRegex(
+                    planner.BriefHold, "BRIEFS_CONTRACT_UNTRUSTED"
+                ):
+                    planner.save_briefs(data, base)
+
+    def test_existing_daily_digest_generates_private_briefs_without_new_provider_call(self):
+        live = packet()
+        live["observed_at"] = datetime.now(UTC).isoformat()
+        with patch.object(daily_digest, "prepare", return_value=live) as producer:
+            with patch.object(daily_digest, "save") as citation_store:
+                with patch.object(planner, "save_briefs") as briefs_store:
+                    from contextlib import redirect_stdout
+                    import io
+                    stream = io.StringIO()
+                    with redirect_stdout(stream):
+                        code = daily_digest.main(["--execute"])
+        self.assertEqual(code, 0)
+        producer.assert_called_once()
+        citation_store.assert_called_once_with(live)
+        briefs_store.assert_called_once()
+        output = json.loads(stream.getvalue())
+        self.assertEqual(output["i4_briefs_status"], "NEEDS_CONTENT")
+        self.assertNotIn("Research review", stream.getvalue())
+        self.assertNotIn("source_url", stream.getvalue())
+        self.assertFalse(output["automatic_publication"])
+
+    def test_brief_write_failure_does_not_cancel_existing_digest(self):
+        live = packet()
+        live["observed_at"] = datetime.now(UTC).isoformat()
+        with patch.object(daily_digest, "prepare", return_value=live):
+            with patch.object(daily_digest, "save") as citation_store:
+                with patch.object(planner, "save_briefs", side_effect=planner.BriefHold(
+                    "BRIEFS_WRITE_UNAVAILABLE"
+                )):
+                    from contextlib import redirect_stdout
+                    import io
+                    stream = io.StringIO()
+                    with redirect_stdout(stream):
+                        code = daily_digest.main(["--execute"])
+        self.assertEqual(code, 0)
+        citation_store.assert_called_once()
+        self.assertEqual(json.loads(stream.getvalue())["i4_briefs_status"], "HOLD")
 
     def test_redacted_cli_failure_never_leaks_source_text(self):
         with patch.object(planner, "read_source", side_effect=planner.BriefHold("SOURCE_READ_UNAVAILABLE")):
