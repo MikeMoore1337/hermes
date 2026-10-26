@@ -37,6 +37,7 @@ export function createYfcEditorialBridge({onGranted, onDisconnected}) {
       return;
     }
     if (!nonce || message.nonce !== nonce) return;
+    if (message.kind === "revoked") { disconnect(false); return; }
     if (message.kind === "granted") {
       if (!granted) { granted = true; onGranted?.(); }
       return;
