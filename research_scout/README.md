@@ -187,3 +187,70 @@ GRADE, лицензию или право публиковать выводы. �
 второго publisher.
 
 Офлайн тесты: `python3 -m unittest tests.test_i4_yfc_article_briefs -v`.
+
+
+## I4 #599: защищённый HMAC draft-only handoff в YFC
+
+`research_scout.yfc_draft_handoff` подготавливает подписанное тело
+**только** для уже существующего
+`POST https://app.your-fitness-coach.ru/api/v1/hermes/articles/intake`.
+В отличие от source-gated briefs, этот модуль не создаёт текст из
+библиографических карточек: ему нужен реально составленный полный
+`HermesWebArticleProposal` и приватные снимки первичных текстов.
+Он не запускает модель, не создаёт/повышает научную аттестацию и не
+публикует статью. Подпись HMAC сама по себе подтверждает отправителя,
+а не истинность научного вывода.
+
+Вход: частный файл `/var/lib/hermes-research-scout/i4-reviewed-content.json`
+(владелец = запускающий OS-пользователь, режим 0600, каталог 0700):
+
+```json
+{
+  "schema": "hermes-i4-reviewed-content-v1",
+  "research_version": "i4-<approved-source-revision>",
+  "article": {"...": "complete HermesWebArticleProposal, pending claims"},
+  "source_receipts": [
+    {"source_id": "paperone", "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC.../",
+     "full_text_sha256": "<sha256 of the privately reviewed primary text>"}
+  ]
+}
+```
+
+Каждой ссылке `article.sources[*]` должен соответствовать
+`/var/lib/hermes-research-scout/i4-primary-texts/<source_id>.txt`
+с проверенным SHA-256, режимом 0600 и доверенным каталогом 0700.
+Это **только проверка целостности локальных файлов**, не независимая
+экспертиза, лицензия или разрешение на публикацию. Исходные тексты
+остаются на VPS и не передаются в YFC: туда уходит только написанная
+статья, источники, матрица pending и технический provenance.
+
+По умолчанию:
+
+```bash
+python3 -B -m research_scout.yfc_draft_handoff
+```
+
+Вывод `READY_NOT_SUBMITTED` — только локальная проверка, без сети.
+`HOLD_*` — честный отказ без содержимого источника в логе.
+Одностороннее **создание черновика YFC** допускается отдельно, только
+после установленного разрешённого Root-администратором HMAC контура,
+реальных проверенных source snapshots и явного owner consent на
+одноразовую запись: `--submit`, переменная
+`HERMES_I4_DRAFT_SUBMIT_APPROVED=YES` и секрет
+`HERMES_I4_HMAC_SECRET` + ID
+`HERMES_I4_HMAC_KEY_ID` из отдельной секретной среды.
+Ни в репозиторий, ни в логи, ни в браузер секрет не переносится.
+HTTPS адрес жёстко закреплён, redirects/proxy обход запрещены.
+Нет повторных попыток: повтор после неопределённого результата решает
+оператор на основании YFC audit, не scheduler.
+
+`candidate_id` и `source_ref` следуют контракту YFC I4:
+SHA-256 от компактного отсортированного JSON
+`{"schema":"hermes-i4-autocandidate-v1", "slug": ..., "source_urls": sorted(...)}`
+с `ensure_ascii=False`; `candidate_id` — первые 32 hex.
+Запросы с HMAC не могут задать `review_status=verified` или
+имитировать квалифицированного рецензента. YFC сохраняет статус
+`draft` до отдельного Root click в Control Center.
+
+Тесты: `python3 -m unittest tests.test_i4_yfc_draft_handoff -v`.
+Новый таймер, запланированная публикация и платные AI отсутствуют.
