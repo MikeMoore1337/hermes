@@ -12,6 +12,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import logging
 import sqlite3
+import threading
+import time
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
@@ -40,6 +42,10 @@ from control_center.brc_snapshot import (DEFAULT_OUTPUT as BRC_OUTPUT,
     read_snapshot as read_brc_snapshot, SnapshotRejected as BrcSnapshotRejected)
 from control_center.brc_source_check import source_check as check_brc_source
 from control_center.credentials import load_runtime_credentials
+from control_center.yfc_editorial import (
+    EditorialTransportError, get_draft as get_yfc_draft,
+    list_drafts as list_yfc_drafts, publish_existing_draft as publish_yfc_draft,
+)
 from control_center.auth import (
     AuthConfig, AuthError, OAuthService, ORIGIN,
     SESSION_COOKIE, STATE_COOKIE, STATE_TTL, SESSION_TTL,
@@ -100,6 +106,24 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
         OAuthService(config) if config.mode == "github" else None)
     if config.mode == "github" and oauth is None:
         raise AuthError("OAuth mode without service")
+
+    # Per-owner, in-memory abuse limit. Never stores cookies, access tokens or body.
+    editorial_lock = threading.Lock()
+    editorial_events: dict[str, list[float]] = {}
+
+    def editorial_rate_allowed(session_cookie: str, *, publishing: bool) -> bool:
+        now = time.monotonic()
+        key = hashlib.sha256(session_cookie.encode("utf-8")).hexdigest()
+        with editorial_lock:
+            for old in list(editorial_events):
+                editorial_events[old] = [t for t in editorial_events[old] if now - t < 60]
+                if not editorial_events[old]:
+                    del editorial_events[old]
+            events = editorial_events.setdefault(key, [])
+            if len(events) >= (8 if publishing else 35):
+                return False
+            events.append(now)
+        return True
 
     class Handler(BaseHTTPRequestHandler):
         server_version = "HermesControlCenter"
@@ -529,9 +553,104 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
                                     cache_control="private, no-cache")
             return self.respond(404, "text/plain", b"Not found")
 
+        def _editorial_post(self, path):
+            # Never exposed in Basic-Auth proxy mode: GitHub OAuth + YFC Root
+            # must BOTH be independently confirmed. No scheduled call route.
+            if config.mode != "github":
+                return self.respond(403, "application/json", b'{"error":"owner_oauth_required"}')
+            session = self._cookie(SESSION_COOKIE)
+            if not oauth.authenticated(session):
+                return self.respond(401, "application/json", b'{"error":"authentication_required"}')
+            if (
+                self.headers.get("Origin") != ORIGIN
+                or self.headers.get("X-Hermes-Editorial-Intent") != "owner-interactive"
+                or self.headers.get("Sec-Fetch-Site", "same-origin") not in ("same-origin", "none")
+            ):
+                return self.respond(403, "application/json", b'{"error":"owner_origin_denied"}')
+            if self.headers.get("Content-Type") != "application/json":
+                return self.respond(415, "application/json", b'{"error":"json_required"}')
+            try:
+                size = int(self.headers.get("Content-Length", "0"))
+            except ValueError:
+                size = 0
+            if not 2 <= size <= 8192:
+                return self.respond(413, "application/json", b'{"error":"invalid_request_size"}')
+            op = path.removeprefix("/api/yfc/editorial/")
+            if op not in ("list", "detail", "publish"):
+                return self.respond(404, "application/json", b'{"error":"not_found"}')
+            if not editorial_rate_allowed(session, publishing=op == "publish"):
+                return self.respond(429, "application/json", b'{"error":"editorial_rate_limited"}')
+            try:
+                def unique_pairs(pairs):
+                    found = {}
+                    for key, value in pairs:
+                        if key in found:
+                            raise ValueError("duplicate_json_key")
+                        found[key] = value
+                    return found
+                body = json.loads(
+                    self.rfile.read(size),
+                    object_pairs_hook=unique_pairs,
+                    parse_constant=lambda _: (_ for _ in ()).throw(ValueError("json_constant")),
+                )
+                if not isinstance(body, dict) or type(body.get("root_token")) is not str:
+                    raise ValueError("missing_token")
+                fields = {
+                    "list": {"root_token", "limit", "offset"},
+                    "detail": {"root_token", "article_id"},
+                    "publish": {
+                        "root_token", "article_id", "content_hash",
+                        "content_version", "owner_confirmed",
+                    },
+                }[op]
+                if set(body) - fields or not set(body) >= (
+                    {"root_token", "article_id"} if op != "list" else {"root_token"}
+                ):
+                    raise ValueError("invalid_fields")
+                token = body.pop("root_token")
+                if op == "list":
+                    result = list_yfc_drafts(
+                        token, limit=body.get("limit", 25), offset=body.get("offset", 0)
+                    )
+                elif op == "detail":
+                    result = get_yfc_draft(token, body["article_id"])
+                else:
+                    if set(body) != {
+                        "article_id", "content_hash", "content_version", "owner_confirmed"
+                    }:
+                        raise ValueError("invalid_approval_fields")
+                    result = publish_yfc_draft(
+                        token, article_id=body["article_id"],
+                        content_hash=body["content_hash"],
+                        content_version=body["content_version"],
+                        owner_confirmed=body["owner_confirmed"],
+                    )
+            except EditorialTransportError as exc:
+                code = str(exc)
+                status = (
+                    401 if code == "yfc_root_auth_required"
+                    else 409 if code == "yfc_article_revision_conflict"
+                    else 502 if code.startswith("yfc_request_")
+                    or code.endswith("_response_invalid") else 422
+                )
+                return self.respond(status, "application/json",
+                                    json.dumps({"error": code}).encode("utf-8"))
+            except (ValueError, KeyError, TypeError, UnicodeDecodeError):
+                return self.respond(400, "application/json", b'{"error":"invalid_editorial_request"}')
+            return self.respond(
+                200, "application/json; charset=utf-8",
+                json.dumps(result, ensure_ascii=False, separators=(",", ":")).encode("utf-8"),
+            )
+
         def do_POST(self):
             if not self._trusted():
                 return self.respond(400, "text/plain", b"Invalid host")
+            if self.path in (
+                "/api/yfc/editorial/list",
+                "/api/yfc/editorial/detail",
+                "/api/yfc/editorial/publish",
+            ):
+                return self._editorial_post(self.path)
             if config.mode != "github" or self.path != "/auth/logout":
                 return self.respond(501, "text/plain", b"Method not implemented")
             if self.headers.get("Origin") != ORIGIN:
