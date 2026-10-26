@@ -245,6 +245,8 @@ class McpSession:
         project, relative = args["project"], args["relative"]
         if type(project) is not str or type(relative) is not str:
             return _tool_error(identifier)
+        if name == "native_file_list" and relative != "":
+            return _tool_error(identifier)
         if self.read_calls >= MAX_READS:
             return _tool_error(identifier)
         self.read_calls += 1
