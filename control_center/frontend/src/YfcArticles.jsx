@@ -146,7 +146,6 @@ export default function YfcArticles(){
       !safeSourceUrl(receipt.canonical_url))throw Error("yfc_publication_receipt_invalid");
    setReceipt(receipt);setArticle(null);setSelected(null);setRows([]);
    setPhase("ready");setDetailPhase("idle");setConfirm(false);setAck(false);setReading(false);
-   void list();
   }catch(e){setConfirm(false);setAck(false);setArticle(null);setDetailPhase("error");
    setError(friendly(e));}
   finally{setPublishing(false);}
