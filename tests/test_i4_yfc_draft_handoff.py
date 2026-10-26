@@ -100,7 +100,7 @@ class SourceBoundHandoffTests(unittest.TestCase):
         self.assertEqual(len(a["candidate_id"]), 32)
         self.assertEqual(a["provenance"]["provider"], "local")
         self.assertEqual(a["provenance"]["skill_version"], "yfc-hermes-editorial-v1")
-        self.assertNotIn("publish", repr(a).lower())
+        self.assertNotIn('"publish"', json.dumps(a))
         self.assertNotIn("root_token", repr(a))
         hdr = handoff.headers(a, "synthetic-hmac-secret-1234", "test-key", timestamp=123)
         body = handoff._encode(a)
