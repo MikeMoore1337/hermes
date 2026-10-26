@@ -187,7 +187,7 @@ export default function YfcArticles(){
   {phase==="ready"&&<div className={"ye-layout"+(reading?" ye-reading":"")}>
     <aside className="ye-queue" aria-label="Черновики">
      <div className="ye-queue-top"><h2>На проверку</h2><span>{rows.length}</span></div>
-     {rows.length===0?<p className="ye-empty">На первой странице нет ожидающих публикации материалов.</p>:
+     {rows.length===0?<p className="ye-empty">Нет неопубликованных черновиков на первой странице. Опубликованные статьи здесь не показываются. Новые материалы появятся после подготовки и проверки источников.</p>:
      rows.map(row=><button type="button" key={row.article_id}
        className={"ye-queue-item"+(selected===row.article_id?" ye-selected":"")}
        aria-pressed={selected===row.article_id} onClick={()=>setSelected(row.article_id)}>
