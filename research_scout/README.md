@@ -154,3 +154,36 @@ python3 -m research_scout.science_handoff
 - **#4** — реализация ежедневного bounded сбора Europe PMC/Crossref (не более 5 GET за run), защищённого локального snapshot, provenance, `HOLD/NO_DATA/MANUAL_REVIEW`, проверки DOI/коррекций и owner Control Center. Никаких новых прав и платных API.
 - **[#317 Scientific Evidence Review](https://github.com/MikeMoore1337/hermes/issues/317)** — 19 уже подготовленных человеческих review gates, полноценные первоисточники, риск систематической ошибки, эффекты/95% CI, проверка publisher notices и claim-level редакционное решение. Не prerequisite для технического закрытия #4.
 - Любые внешние советы, рекомендации YFC, Telegram/Second Brain publication, изменения fitness/nutrition алгоритмов требуют самостоятельного owner GO и применимой научной экспертизы. `scientific_claims_verified=false` и `automatic_publication=false` не меняются.
+
+
+## I4 #599: source-gated research briefs (draft-only, без публикации)
+
+Новый модуль `python3 -B -m research_scout.yfc_article_briefs` использует
+**только существующий** приватный `latest-citations.json` Research Scout.
+Вход должен принадлежать текущему OS-пользователю, иметь `0600`, находиться
+в доверенном каталоге `0700`, возраст не более 48 часов. Новые API,
+подписки, Codex/Claude CLI, inference, сетевой поиск или автоматические
+запросы в YFC не выполняются.
+
+Содержимое метаданных Europe PMC/Crossref (заголовок, DOI, карточка
+публикации) **не является первичным полным текстом**, не доказывает эффект,
+GRADE, лицензию или право публиковать выводы. Модуль создаёт
+идемпотентно идентифицируемый **план заготовок**, а не валидный
+`HermesWebArticleProposal`. Каждый пункт имеет статус `NEEDS_CONTENT`
+или `HOLD`, матрица утверждений пуста; `yfc_intake_payload=null`,
+`candidate_provisioning_allowed=false`, `hmac_transmission_allowed=false`
+и `automatic_publication=false`. Любые исправления/ретракции,
+подозрительные заголовки, дубли, устаревшие даты, неопределённые
+издательские notices или ошибки источника приводят к HOLD.
+В server journal выводятся **только счётчики** и reason code, не заголовки.
+
+Интеграция с Root-only редакционным интерфейсом #601 остаётся
+**независимой**. Нельзя превращать `NEEDS_CONTENT` в YFC `draft`
+путём добавления шаблонных медицинских выводов. Следующая отдельная стадия:
+проверяемые полные первичные тексты/claim-source матрица, идемпотентное
+создание YFC-кандидата и подписанный HMAC intake строго в `draft`
+после соответствующих разрешений; публикация возможна только через
+явное Root-действие в Hermes Control Center. Архитектура не создаёт
+второго publisher.
+
+Офлайн тесты: `python3 -m unittest tests.test_i4_yfc_article_briefs -v`.
