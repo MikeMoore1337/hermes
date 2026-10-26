@@ -59,7 +59,7 @@ export function createYfcEditorialBridge({onGranted, onDisconnected}) {
     rejectAll();
     nonce = randomHex(32);
     granted = false;
-    popup = window.open(URL, "yfc-owner-editorial-bridge",
+    popup = window.open(URL, "_blank",
       "popup,width=660,height=760,resizable=yes,scrollbars=yes");
     if (!popup) { nonce = null; throw Error("yfc_popup_blocked"); }
     // YFC signals ready only after its own authenticated Root frontend loads.
