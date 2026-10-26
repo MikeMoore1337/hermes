@@ -18,6 +18,8 @@ on:
       - tests/test_h15_native_windows_read.py
       - tests/test_h15_native_windows_read_on_win.py
       - tests/test_h15_native_windows_list.py
+      - scripts/h15_native_effect_receipts.py
+      - tests/test_h15_native_effect_receipts.py
       - .github/workflows/h15-native-windows-read.yml
   workflow_dispatch:
 
@@ -71,6 +73,13 @@ jobs:
           python -B -m unittest -v tests.test_h15_native_windows_read_on_win
           if ($LASTEXITCODE -ne 0) { throw "WIN32_HANDLE_E2E_FAIL" }
           Write-Output "H454_NATIVE_WIN32_SYNTHETIC=PASS"
+      - name: Verify crash-safe one-use effect ledger on disposable Windows state
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -B -m unittest -v tests.test_h15_native_effect_receipts
+          if ($LASTEXITCODE -ne 0) { throw 'H454_WIN32_EFFECT_REPLAY_LEDGER_FAIL' }
+          Write-Output 'H454_WIN32_EFFECT_LEDGER=PASS'
       - name: Compile native relay gate and verify owner/device fail closed
         shell: pwsh
         run: |
