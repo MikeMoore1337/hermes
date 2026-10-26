@@ -6,6 +6,13 @@ import "./yfc-articles.css";
 const ID=/^[0-9a-f]{32}$/;
 const HASH=/^[0-9a-f]{64}$/;
 const statuses=new Set(["draft","review","update_required"]);
+const ROOT_CONSENT_ORIGIN="https://app.your-fitness-coach.ru";
+const CONSENT_KIND="yfc-root-editorial-consent-v1";
+const nonceHex=()=>{
+ const bytes=new Uint8Array(32);
+ crypto.getRandomValues(bytes);
+ return Array.from(bytes,v=>v.toString(16).padStart(2,"0")).join("");
+};
 const safeSourceUrl=(url)=>{
  try{
   const value=new URL(url);
@@ -72,6 +79,8 @@ export default function YfcArticles(){
  const confirmRef=useRef(null);
  const requestRef=useRef(null);
  const detailRef=useRef(null);
+ const consentWindowRef=useRef(null);
+ const consentNonceRef=useRef(null);
  const list=useCallback(async(rawToken)=>{
   requestRef.current?.abort();
   const ctrl=new AbortController();requestRef.current=ctrl;
@@ -86,7 +95,26 @@ export default function YfcArticles(){
     if(e.message==="yfc_root_auth_required")setToken("");}
   }
  },[]);
- useEffect(()=>()=>{requestRef.current?.abort();detailRef.current?.abort();},[]);
+ useEffect(()=>()=>{requestRef.current?.abort();detailRef.current?.abort();consentWindowRef.current?.close();},[]);
+ useEffect(()=>{
+  const onConsent=event=>{
+   if(event.origin!==ROOT_CONSENT_ORIGIN||
+      event.source!==consentWindowRef.current||
+      !consentNonceRef.current||
+      event.data?.type!==CONSENT_KIND||
+      event.data?.nonce!==consentNonceRef.current||
+      typeof event.data?.token!=="string"||
+      !/^[A-Za-z0-9._-]{20,4096}$/.test(event.data.token))return;
+   const granted=event.data.token;
+   consentWindowRef.current?.close();
+   consentWindowRef.current=null;
+   consentNonceRef.current=null;
+   setToken(granted);
+   void list(granted);
+  };
+  window.addEventListener("message",onConsent);
+  return()=>window.removeEventListener("message",onConsent);
+ },[list]);
  useEffect(()=>{
   detailRef.current?.abort();
   setArticle(null);setConfirm(false);setAck(false);setDetailPhase("idle");setReading(false);
@@ -116,6 +144,18 @@ export default function YfcArticles(){
  const currentRow=rows.find(r=>r.article_id===selected);
  const exact=detailPhase==="ready"&&validDetail(article,currentRow);
  const canPublish=exact&&!blocked(article)&&!publishing;
+ const connectYfc=()=>{
+  const nonce=nonceHex();
+  const destination=ROOT_CONSENT_ORIGIN+"/admin/hermes-connect#nonce="+nonce;
+  consentWindowRef.current?.close();
+  consentNonceRef.current=nonce;
+  consentWindowRef.current=window.open(destination,"yfc-root-consent",
+   "width=540,height=660,scrollbars=yes,resizable=yes");
+  if(!consentWindowRef.current){
+   consentNonceRef.current=null;
+   setError("Браузер заблокировал окно YFC. Разрешите всплывающее окно для Hermes.");
+  }else setError("");
+ };
  const disconnected=()=>{
   requestRef.current?.abort();detailRef.current?.abort();setToken("");
   setRows([]);setSelected(null);setArticle(null);setPhase("locked");
@@ -155,7 +195,11 @@ export default function YfcArticles(){
    </div></div>}
   <section className="ye-login" aria-label="Авторизация Root YFC">
    <div><strong><LockKeyhole size={17}/> Независимая Root-проверка YFC</strong>
-    <p>Вход через GitHub в Hermes не заменяет Root-авторизацию YFC. Введите временный токен из действующей Root-сессии YFC. Он используется только в памяти вкладки и не сохраняется.</p></div>
+    <p>Вход через GitHub в Hermes не заменяет Root-авторизацию YFC. Подключите действующую YFC Root-сессию через защищённое окно браузера. Временный токен передаётся только после вашего согласия и не сохраняется.</p></div>
+   <div className="ye-pairing">
+    <button type="button" onClick={connectYfc}>Подключить Root YFC через браузер</button>
+    <span>Без DevTools и копирования токена · только после вашего подтверждения на YFC.</span>
+   </div>
    <form onSubmit={e=>{e.preventDefault();if(token.trim())void list(token.trim());}}>
     <label htmlFor="ye-token">Временный Root-токен YFC</label>
     <div className="ye-login-controls"><input id="ye-token" type="password" autoComplete="off"
