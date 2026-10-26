@@ -86,7 +86,7 @@ jobs:
           delete process.env.HERMES_NATIVE_READ_DEVICE_ID;
           assert.equal(a.originalWindowsReadToolCatalog().length, 0);
           process.env.HERMES_NATIVE_READ_DEVICE_ID = 'h15-native-readonly-1234';
-          assert.equal(a.originalWindowsReadToolCatalog().length, 2);
+          assert.equal(a.originalWindowsReadToolCatalog().length, 3);
           const d = { deviceId: 'h15-native-readonly-1234', name: 'H15 Windows native read-only', platform: 'win32' };
           const tools = [{name:'native_file_read'},{name:'native_file_stat'},{name:'native_file_list'}];
           assert.equal(a.isNativeOriginalDevice(d.deviceId, true, d, tools), true);
