@@ -117,16 +117,24 @@ const raw=Buffer.from('abc');
 const verified={status:'ok',project:'hermes',relative:'README.md',action:'read',
  kind:'file',size_bytes:3,encoding:'base64',data:raw.toString('base64'),
  sha256:crypto.createHash('sha256').update(raw).digest('hex')};
+const safeList={status:'ok',project:'hermes',relative:'',action:'list',kind:'directory',
+ entries:[{name:'README.md',kind:'file'},{name:'src',kind:'directory'}],truncated:false};
 let calls=0,logs=[];
 let store={listDevices(owner){return owner==='owner-A'?[good]:[]},
  audit(e){logs.push(e)}};
 let hub={get(id){return id===good.device_id?agent:undefined},
- async call(id,name,args){calls++;return {isError:false,content:[{type:'text',text:JSON.stringify(verified)}]}}};
+ async call(id,name,args){calls++;return {isError:false,content:[{type:'text',text:JSON.stringify(
+ name==='native_file_list'?safeList:verified)}]}}};
 const ctx={userId:'owner-A',clientId:'chatgpt'};
 (async()=>{
- assert.deepEqual(NATIVE_TOOLS.map(t=>t.name),['native_file_stat','native_file_read']);
+ assert.deepEqual(NATIVE_TOOLS.map(t=>t.name),['native_file_stat','native_file_read','native_file_list']);
  const ok=await invokeOwnerNativeRead(hub,store,ctx,'native_file_read',{project:'hermes',relative:'README.md'});
  assert.equal(ok.isError,false);assert.equal(calls,1);assert.equal(logs.length,1);
+ const root=await invokeOwnerNativeRead(hub,store,ctx,'native_file_list',{project:'hermes',relative:''});
+ assert.equal(root.isError,false);assert.equal(calls,2);assert.equal(logs.length,2);
+ assert.equal(JSON.parse(root.content[0].text).entries.length,2);
+ assert.equal((await invokeOwnerNativeRead(hub,store,ctx,'native_file_list',
+   {project:'hermes',relative:'src'})).isError,true);
  for(const args of [{project:'hermes',relative:'..\\README.md'},
  {project:'hermes',relative:'README.md',deviceId:good.device_id},
  {project:'hermes',relative:'D:\\Pet-projects\\hermes\\README.md'},
@@ -134,17 +142,21 @@ const ctx={userId:'owner-A',clientId:'chatgpt'};
  {project:'second-brain-workspace',relative:'README.md'}]){
   assert.equal((await invokeOwnerNativeRead(hub,store,ctx,'native_file_read',args)).isError,true);
  }
- assert.equal(calls,1);
+ assert.equal(calls,2);
  assert.equal((await invokeOwnerNativeRead(hub,store,{userId:'other',clientId:'codex'},'native_file_read',{project:'hermes',relative:'README.md'})).isError,true);
- assert.equal(calls,1);
+ assert.equal(calls,2);
  for(const altered of [
  {...agent,ownerId:'other'}, {...agent,tools:[...agent.tools,{name:'start_process'}]},
  {...agent,info:{...agent.info,platform:'linux'}}]){
   hub.get=()=>altered;
   assert.equal((await invokeOwnerNativeRead(hub,store,ctx,'native_file_read',{project:'hermes',relative:'README.md'})).isError,true);
  }
- assert.equal(calls,1);
+ assert.equal(calls,2);
  hub.get=()=>agent;
+ hub.call=async()=>({isError:false,content:[{type:'text',text:JSON.stringify({
+   ...safeList,entries:[{name:'.env',kind:'file'}]})}]});
+ assert.equal((await invokeOwnerNativeRead(hub,store,ctx,'native_file_list',
+   {project:'hermes',relative:''})).isError,true);
  hub.call=async()=>({isError:false,content:[{type:'text',text:JSON.stringify({...verified,data:'AAAA'})}]});
  assert.equal((await invokeOwnerNativeRead(hub,store,ctx,'native_file_read',{project:'hermes',relative:'README.md'})).isError,true);
  hub.call=async()=>({isError:false,content:[{type:'text',text:JSON.stringify({...verified,path:'C:\\private'})}]});

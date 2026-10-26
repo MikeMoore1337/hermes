@@ -71,7 +71,7 @@ class NativeWindowsMcpStdioTests(unittest.TestCase):
         self.assertEqual(len(records), 3)
         self.assertEqual(records[0]["result"]["protocolVersion"], "2025-06-18")
         self.assertEqual([v["name"] for v in records[1]["result"]["tools"]],
-                         ["native_file_stat", "native_file_read"])
+                         ["native_file_stat", "native_file_read", "native_file_list"])
         for tool in records[1]["result"]["tools"]:
             self.assertTrue(tool["annotations"]["readOnlyHint"])
             self.assertFalse(tool["annotations"]["destructiveHint"])
@@ -228,9 +228,9 @@ class NativeWindowsMcpStdioTests(unittest.TestCase):
     def test_only_owner_listed_projects_and_ops_are_exposed(self):
         self.assertEqual(set(mcp.native.READ_ROOTS), {
             "ai-development-toolkit", "hermes", "second-brain", "your-fitness-coach"})
-        self.assertEqual(len(mcp.TOOLS), 2)
+        self.assertEqual(len(mcp.TOOLS), 3)
         self.assertEqual({t["name"] for t in mcp.TOOLS},
-                         {"native_file_read", "native_file_stat"})
+                         {"native_file_read", "native_file_stat", "native_file_list"})
         self.assertTrue(all(t["name"] not in ("execute", "write", "start_process")
                             and set(t["inputSchema"]["properties"]) == {"project", "relative"}
                             for t in mcp.TOOLS))

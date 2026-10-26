@@ -16,7 +16,7 @@ IMPORT = "import { LIST_WORKSPACES_TOOL, RESOLVE_WORKSPACE_TOOL, listApprovedWor
 LIST = ("      LIST_WORKSPACES_TOOL, RESOLVE_WORKSPACE_TOOL] };")
 CALL = "    const out = await invokeTool(hub, store, ctx, name, args as Record<string, unknown> | undefined);"
 NATIVE_IMPORT = "import { NATIVE_TOOLS, invokeOwnerNativeRead } from './hermes-native-read.js';"
-NATIVE_CALL = """    if (name === 'native_file_read' || name === 'native_file_stat') {
+NATIVE_CALL = """    if (name === 'native_file_read' || name === 'native_file_stat' || name === 'native_file_list') {
       // No generic deviceId dispatch, no shell grants, no unpaired host reads.
       return await invokeOwnerNativeRead(hub, store, ctx, name, args);
     }
@@ -59,7 +59,7 @@ def apply(root: Path, *, sha: str = UPSTREAM_SHA) -> dict[str, object]:
     target.write_text(code, encoding="utf-8")
     server.write_text(updated, encoding="utf-8")
     return {"status": "DISPOSABLE_NATIVE_READ_RELAY_PATCHED",
-            "tools": ["native_file_read", "native_file_stat"],
+            "tools": ["native_file_read", "native_file_stat", "native_file_list"],
             "owner_device_required": True, "native_host_execution": False,
             "production_activation": False}
 

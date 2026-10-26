@@ -1,6 +1,6 @@
 """Hermes #454: dormant, local-only MCP stdio facade for ORIGINAL Windows files.
 
-ONLY native_file_stat/native_file_read, backed by Win32 handle-bound reader.
+Read-only native_file_stat/native_file_read/native_file_list, backed by Win32 handles.
 No remote agent, TCP listener, arbitrary subprocess, filesystem write, policy
 mutation or shell. No host activation occurs when this file is committed.
 
@@ -58,6 +58,22 @@ TOOLS = (
             "additionalProperties": False,
         },
         "annotations": {"title": "Windows original file read",
+                        "readOnlyHint": True, "destructiveHint": False,
+                        "openWorldHint": False},
+    },
+    {
+        "name": "native_file_list",
+        "description": "List up to 64 safe source files/subdirectories at approved ORIGINAL Windows repository root; no recursion or file contents.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project": {"type": "string", "enum": sorted(native.READ_ROOTS)},
+                "relative": {"type": "string", "enum": [""]},
+            },
+            "required": ["project", "relative"],
+            "additionalProperties": False,
+        },
+        "annotations": {"title": "Windows original project discovery",
                         "readOnlyHint": True, "destructiveHint": False,
                         "openWorldHint": False},
     },
@@ -125,6 +141,34 @@ def _sanitized_result(value: object, project: str, relative: str,
     """Output validation prevents a buggy native adapter widening tool scope."""
     if not isinstance(value, dict):
         raise ProtocolRefused("invalid_native_output")
+    if operation == "list":
+        if (set(value) != {"status", "project", "relative", "action", "kind",
+                           "entries", "truncated"}
+            or value["status"] != "ok" or value["project"] != project
+            or relative != "" or value["relative"] != ""
+            or value["action"] != "list" or value["kind"] != "directory"
+            or type(value["truncated"]) is not bool
+            or type(value["entries"]) is not list
+            or len(value["entries"]) > native.MAX_LIST_ENTRIES):
+            raise ProtocolRefused("invalid_native_list")
+        seen = set()
+        for entry in value["entries"]:
+            if type(entry) is not dict or set(entry) != {"name", "kind"}:
+                raise ProtocolRefused("invalid_native_list")
+            name = entry["name"]
+            if (type(name) is not str or entry["kind"] not in ("file", "directory")
+                or name.casefold() in seen):
+                raise ProtocolRefused("invalid_native_list")
+            try:
+                native.build_request(project, name, "stat")
+            except native.NativeReadRefused as exc:
+                raise ProtocolRefused("invalid_native_list") from exc
+            if (entry["kind"] == "file"
+                and native.ntpath.splitext(name)[1].lower()
+                    not in native.ALLOWED_EXTENSIONS):
+                raise ProtocolRefused("invalid_native_list")
+            seen.add(name.casefold())
+        return value
     base = {"status", "project", "relative", "action", "kind", "size_bytes"}
     expected = base if operation == "stat" else base | {"encoding", "sha256", "data"}
     if (set(value) != expected or value["status"] != "ok"
@@ -194,21 +238,26 @@ class McpSession:
         if not _params_exact(params, "name", "arguments"):
             return _error(identifier, -32602, "Invalid params")
         name, args = params["name"], params["arguments"]
-        if name not in ("native_file_stat", "native_file_read") or not isinstance(args, dict):
+        if name not in ("native_file_stat", "native_file_read", "native_file_list") or not isinstance(args, dict):
             return _tool_error(identifier)
         if not _params_exact(args, "project", "relative"):
             return _tool_error(identifier)
         project, relative = args["project"], args["relative"]
         if type(project) is not str or type(relative) is not str:
             return _tool_error(identifier)
+        if name == "native_file_list" and relative != "":
+            return _tool_error(identifier)
         if self.read_calls >= MAX_READS:
             return _tool_error(identifier)
         self.read_calls += 1
-        operation = "stat" if name == "native_file_stat" else "read"
+        operation = {"native_file_stat": "stat", "native_file_read": "read",
+                     "native_file_list": "list"}[name]
         try:
-            # The Win32 helper is the actual per-handle scope check. No
-            # ProcessRunner, shell, pathlib.read_bytes or native path fallback.
-            result = native.handle_native_request(project, relative, operation)
+            # Win32 handles are the scope check. No shell/pathlib content
+            # fallback and no Windows process execution.
+            result = (native.handle_native_list(project, relative)
+                      if operation == "list" else
+                      native.handle_native_request(project, relative, operation))
             result = _sanitized_result(result, project, relative, operation)
         except (native.NativeReadRefused, ProtocolRefused, OSError, ValueError):
             return _tool_error(identifier)

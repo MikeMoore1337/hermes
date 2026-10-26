@@ -8,7 +8,7 @@ const EXPECTED_NAME = 'H15 Windows native read-only';
 const ID = /^[A-Za-z0-9_-]{8,128}$/;
 const PROJECTS = new Set(['hermes', 'your-fitness-coach', 'second-brain',
                           'ai-development-toolkit']);
-const METHODS = new Set(['native_file_stat', 'native_file_read']);
+const METHODS = new Set(['native_file_stat', 'native_file_read', 'native_file_list']);
 const DENIED = new Set(['.git', 'vault', '.vault', 'private-vault', '.ssh',
                         'secrets', '.secrets', 'credentials', 'node_modules']);
 const VALID_SUFFIX = /\.(?:py|js|jsx|ts|tsx|mjs|cjs|md|mdx|txt|json|toml|yaml|yml|html|css|scss|sql|sh|ps1|go|rs|c|h|cpp|cs|xml)$/i;
@@ -29,7 +29,8 @@ export function isNativeOriginalReadRequest(
   if (typeof project !== 'string' || !PROJECTS.has(project)
       || typeof relative !== 'string' || relative.length > 1024) return false;
   if (tool === 'native_file_read' && !relative) return false;
-  if (!relative) return tool === 'native_file_stat';
+  if (!relative) return tool === 'native_file_stat' || tool === 'native_file_list';
+  if (tool === 'native_file_list') return false;
   if (relative.startsWith('\\') || relative.includes('/') ||
       relative.includes('\0') || /[\x00-\x1f]/.test(relative)) return false;
   const components = relative.split('\\');
@@ -48,7 +49,7 @@ export function isNativeOriginalDevice(
   if (!configured || !requested || requested !== configured || !ownerBound
       || !device || device.deviceId !== configured || device.name !== EXPECTED_NAME
       || device.platform !== 'win32' || !Array.isArray(tools)
-      || tools.length !== 2) return false;
+      || tools.length !== 3) return false;
   const names = tools.map(t => t && typeof t === 'object' ? t.name : null);
   return names.length === METHODS.size && new Set(names).size === METHODS.size
       && names.every(name => typeof name === 'string' && METHODS.has(name));
@@ -62,8 +63,9 @@ function tool(name: string, description: string) {
       type: 'object',
       properties: {
         project: {type: 'string', enum: [...PROJECTS]},
-        relative: {type: 'string', minLength: name === 'native_file_read' ? 1 : 0,
-                   maxLength: 1024},
+        relative: name === 'native_file_list' ? {type: 'string', enum: ['']}
+          : {type: 'string', minLength: name === 'native_file_read' ? 1 : 0,
+              maxLength: 1024},
         deviceId: deviceProp,
       },
       required: ['project', 'relative', 'deviceId'],
@@ -79,5 +81,6 @@ export function originalWindowsReadToolCatalog() {
   return [
     tool('native_file_stat', 'Stat one file under approved original Windows project'),
     tool('native_file_read', 'Read one approved original Windows source file (max 256 KiB)'),
+    tool('native_file_list', 'List bounded approved root source file names'),
   ];
 }

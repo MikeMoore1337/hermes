@@ -142,6 +142,83 @@ class NativeWindowsReadOnRunnerTests(unittest.TestCase):
             with self.assertRaises(broker.NativeReadRefused):
                 broker.handle_native_request("hermes", "src\\safe.py", "read")
 
+
+    def test_real_win32_bounded_project_root_listing_without_private_names(self):
+        (self.root / "README.md").write_text("# synthetic")
+        (self.root / ".env").write_text("DO_NOT_EXPOSE=1")
+        (self.root / "config.local").write_text("private")
+        (self.root / "private-vault").mkdir()
+        (self.root / ".git").mkdir()
+        (self.root / "binary.exe").write_bytes(b"native-program")
+        listing = broker.handle_native_list("hermes", "")
+        self.assertEqual(listing["status"], "ok")
+        self.assertEqual(listing["kind"], "directory")
+        self.assertEqual(listing["action"], "list")
+        self.assertEqual(listing["relative"], "")
+        self.assertFalse(listing["truncated"])
+        names = {item["name"] for item in listing["entries"]}
+        self.assertEqual(names, {"src", "README.md"})
+        self.assertTrue(all(set(item) == {"name", "kind"}
+                            for item in listing["entries"]))
+        self.assertNotIn("DO_NOT_EXPOSE", json.dumps(listing))
+        with self.assertRaisesRegex(broker.NativeReadRefused,
+                                    "listing_only_approved_root"):
+            broker.handle_native_list("hermes", "src")
+
+    def test_win32_list_excludes_junction_and_hardlink(self):
+        (self.root / "safe.md").write_text("# safe")
+        (self.root / "alias.md").hardlink_to(self.root / "safe.md")
+        junction = self.root / "linked"
+        os.symlink(self.outside, junction, target_is_directory=True)
+        listing = broker.handle_native_list("hermes", "")
+        names = {item["name"] for item in listing["entries"]}
+        self.assertIn("src", names)
+        self.assertNotIn("linked", names)
+        self.assertNotIn("alias.md", names)
+        self.assertNotIn("safe.md", names)
+
+    def test_real_win32_mcp_and_wss_readonly_list(self):
+        session = mcp.McpSession()
+        session.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                        "params": {"protocolVersion": mcp.PROTOCOL,
+                                   "capabilities": {}, "clientInfo": {}}})
+        answer = session.handle({
+            "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+            "params": {"name": "native_file_list",
+                       "arguments": {"project": "hermes", "relative": ""}}
+        })
+        self.assertFalse(answer["result"]["isError"])
+        payload = json.loads(answer["result"]["content"][0]["text"])
+        self.assertEqual({x["name"] for x in payload["entries"]}, {"src"})
+        denied = session.handle({
+            "jsonrpc": "2.0", "id": 3, "method": "tools/call",
+            "params": {"name": "native_file_list",
+                       "arguments": {"project": "hermes", "relative": "src"}}
+        })
+        self.assertTrue(denied["result"]["isError"])
+        class MockSocket:
+            def __init__(self):
+                self.events = [
+                    {"type":"welcome", "protocol":1,
+                     "relayVersion":"test", "serverTime": 1},
+                    {"type":"call", "id":"list-1", "tool":"native_file_list",
+                     "args":{"project":"hermes", "relative":""}},
+                ]
+                self.output = []
+            def __enter__(self): return self
+            def __exit__(self, *_): return None
+            def send(self, frame): self.output.append(json.loads(frame))
+            def recv(self, timeout=None):
+                if not self.events: raise TimeoutError
+                return json.dumps(self.events.pop(0))
+        sock = MockSocket()
+        settings = outbound.parse_settings(
+            "wss://hermes.mikemoore.top/ws", "native-ci-win-handle-123", "x"*40)
+        self.assertEqual(outbound.run_session(settings, lambda *a,**k:sock),
+                         "idle_timeout")
+        output = json.loads(sock.output[-1]["result"]["content"][0]["text"])
+        self.assertEqual({x["name"] for x in output["entries"]}, {"src"})
+
     def test_broker_never_creates_or_changes_source_fixture(self):
         before = self.file.read_bytes()
         with self.assertRaises(broker.NativeReadRefused):

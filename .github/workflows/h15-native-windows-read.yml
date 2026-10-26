@@ -17,6 +17,7 @@ on:
       - control_center/native_windows_policy.py
       - tests/test_h15_native_windows_read.py
       - tests/test_h15_native_windows_read_on_win.py
+      - tests/test_h15_native_windows_list.py
       - .github/workflows/h15-native-windows-read.yml
   workflow_dispatch:
 
@@ -85,9 +86,9 @@ jobs:
           delete process.env.HERMES_NATIVE_READ_DEVICE_ID;
           assert.equal(a.originalWindowsReadToolCatalog().length, 0);
           process.env.HERMES_NATIVE_READ_DEVICE_ID = 'h15-native-readonly-1234';
-          assert.equal(a.originalWindowsReadToolCatalog().length, 2);
+          assert.equal(a.originalWindowsReadToolCatalog().length, 3);
           const d = { deviceId: 'h15-native-readonly-1234', name: 'H15 Windows native read-only', platform: 'win32' };
-          const tools = [{name:'native_file_read'},{name:'native_file_stat'}];
+          const tools = [{name:'native_file_read'},{name:'native_file_stat'},{name:'native_file_list'}];
           assert.equal(a.isNativeOriginalDevice(d.deviceId, true, d, tools), true);
           assert.equal(a.isNativeOriginalDevice(d.deviceId, false, d, tools), false);
           assert.equal(a.isNativeOriginalDevice(d.deviceId, true, d, [...tools,{name:'start_process'}]), false);
@@ -101,6 +102,6 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          python -B -m unittest -v tests.test_h15_native_windows_read tests.test_native_windows_policy tests.test_h15_native_windows_mcp_stdio tests.test_h15_native_windows_outbound tests.test_h15_native_windows_relay_contract tests.test_h15_brc_native_read_gate_patch
+          python -B -m unittest -v tests.test_h15_native_windows_read tests.test_native_windows_policy tests.test_h15_native_windows_mcp_stdio tests.test_h15_native_windows_outbound tests.test_h15_native_windows_relay_contract tests.test_h15_brc_native_read_gate_patch tests.test_h15_native_windows_list
           if ($LASTEXITCODE -ne 0) { throw "NATIVE_READ_CONTRACT_FAIL" }
           Write-Output "H454_OWNER_SCOPE_CONTRACT=PASS"

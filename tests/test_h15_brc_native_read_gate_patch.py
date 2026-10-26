@@ -88,9 +88,9 @@ const a=require(process.argv[1]),assert=require('node:assert/strict');
 delete process.env.HERMES_NATIVE_READ_DEVICE_ID;
 assert.equal(a.originalWindowsReadToolCatalog().length,0);
 process.env.HERMES_NATIVE_READ_DEVICE_ID='h15-native-readonly-1234';
-assert.equal(a.originalWindowsReadToolCatalog().length,2);
+assert.equal(a.originalWindowsReadToolCatalog().length,3);
 const dev={deviceId:'h15-native-readonly-1234',name:'H15 Windows native read-only',platform:'win32'};
-const caps=[{name:'native_file_read'},{name:'native_file_stat'}];
+const caps=[{name:'native_file_read'},{name:'native_file_stat'},{name:'native_file_list'}];
 assert.equal(a.isNativeOriginalDevice(dev.deviceId,true,dev,caps),true);
 for(const [id,owner,info,tools] of [
   ['bad',true,dev,caps],[dev.deviceId,false,dev,caps],

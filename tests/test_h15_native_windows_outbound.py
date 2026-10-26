@@ -101,7 +101,7 @@ class OutboundReadOnlyTests(unittest.TestCase):
         self.assertEqual(h["device"]["platform"], "win32")
         self.assertEqual(h["device"]["name"], outbound.DEVICE_NAME)
         self.assertEqual([x["name"] for x in h["tools"]],
-                         ["native_file_stat", "native_file_read"])
+                         ["native_file_stat", "native_file_read", "native_file_list"])
         self.assertNotIn("start_process", json.dumps(h))
         self.assertNotIn("write_file", json.dumps(h))
         self.assertNotIn("a"*48, json.dumps(connector.ws.sent))
@@ -178,7 +178,7 @@ class OutboundReadOnlyTests(unittest.TestCase):
         self.assertEqual(connector.invocations[0][0], cfg.websocket_url)
         self.assertIsNone(connector.invocations[0][1]["proxy"])
         self.assertEqual([tool["name"] for tool in connector.ws.sent[0]["tools"]],
-                         ["native_file_stat", "native_file_read"])
+                         ["native_file_stat", "native_file_read", "native_file_list"])
         self.assertEqual(len([x for x in connector.ws.sent if x["type"] == "result"]), 1)
 
     def test_refuses_bad_device_tokens_and_ids(self):

@@ -9,7 +9,7 @@ import type { SqliteStore } from '../store/sqlite.js';
 import type { InvokeContext } from './invoke.js';
 
 const DEVICE_NAME = 'H15 Windows native read-only';
-const NAMES = ['native_file_stat', 'native_file_read'] as const;
+const NAMES = ['native_file_stat', 'native_file_read', 'native_file_list'] as const;
 const PROJECTS = ['hermes', 'your-fitness-coach', 'second-brain', 'ai-development-toolkit'];
 const DENY = { content: [{ type: 'text' as const,
   text: '{"status":"refused","reason":"native_read_unavailable"}' }], isError: true };
@@ -19,12 +19,16 @@ const EXT = /\.(?:py|js|jsx|ts|tsx|mjs|cjs|md|mdx|txt|json|toml|yaml|yml|html|cs
 export const NATIVE_TOOLS = NAMES.map(name => ({
   name,
   description: name === 'native_file_stat'
-    ? 'Read metadata of one owner-approved ORIGINAL Windows project file. No directory listing, writes or shell.'
-    : 'Read one allowed ORIGINAL Windows project source file (max 256KiB). Requires separately approved native host agent.',
+    ? 'Read metadata of one owner-approved ORIGINAL Windows project file. No write or shell.'
+    : name === 'native_file_read'
+      ? 'Read one allowed ORIGINAL Windows project source file (max 256KiB). Requires separately approved native host agent.'
+      : 'List safe first-level names of approved ORIGINAL Windows project, max 64. No recursion or file contents.',
   inputSchema: { type: 'object', properties: {
     project: { type: 'string', enum: PROJECTS },
-    relative: { type: 'string', minLength: name === 'native_file_read' ? 1 : 0,
-      maxLength: 1024 },
+    relative: name === 'native_file_list'
+      ? { type: 'string', enum: [''] }
+      : { type: 'string', minLength: name === 'native_file_read' ? 1 : 0,
+          maxLength: 1024 },
   }, required: ['project', 'relative'], additionalProperties: false },
   annotations: { title: name, readOnlyHint: true, destructiveHint: false, openWorldHint: false },
 }));
@@ -36,7 +40,7 @@ function allowedArgs(input: unknown, read: boolean): input is {project: string; 
       || typeof a.relative !== 'string' || !PROJECTS.includes(a.project)
       || a.relative.length > 1024 || (read && !a.relative)) return false;
   const path = a.relative;
-  if (!path && !read) return true; // stat of project root, never a directory listing
+  if (!path && !read) return true; // stat or list of approved project root
   if (path.startsWith('\\') || path.includes('/') || path.includes('\0')
       || [...path].some(c => c.charCodeAt(0) < 32)) return false;
   const parts = path.split('\\');
@@ -60,15 +64,36 @@ function eligibleDevice(hub: DeviceHub, store: SqliteStore, owner: string) {
   const online = hub.get(row.device_id);
   if (!online || online.ownerId !== owner || online.info.platform !== 'win32'
       || online.info.name !== DEVICE_NAME || online.info.deviceId !== row.device_id
-      || online.tools.length !== 2
+      || online.tools.length !== 3
       || NAMES.some(n => !online.tools.some(t => t.name === n))
       || online.tools.some(t => !NAMES.includes(t.name as typeof NAMES[number]))) return null;
   return online.info.deviceId;
 }
 function validatedResult(value: unknown, a: {project: string; relative: string},
-                         operation: 'read' | 'stat') {
+                         operation: 'read' | 'stat' | 'list') {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const r = value as Record<string, unknown>;
+  if (operation === 'list') {
+    const keys = ['status','project','relative','action','kind','entries','truncated'];
+    if (Object.keys(r).sort().join(',') !== keys.sort().join(',')
+        || r.status !== 'ok' || r.project !== a.project
+        || r.relative !== '' || a.relative !== '' || r.action !== 'list'
+        || r.kind !== 'directory' || typeof r.truncated !== 'boolean'
+        || !Array.isArray(r.entries) || r.entries.length > 64) return null;
+    const seen = new Set<string>();
+    for (const item of r.entries) {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+      const v = item as Record<string, unknown>;
+      if (Object.keys(v).sort().join(',') !== 'kind,name'
+          || typeof v.name !== 'string' || v.name.length < 1
+          || !['file','directory'].includes(v.kind as string)
+          || !allowedArgs({project:a.project,relative:v.name}, false)
+          || (v.kind === 'file' && !EXT.test(v.name))
+          || seen.has(v.name.toLowerCase())) return null;
+      seen.add(v.name.toLowerCase());
+    }
+    return r;
+  }
   const base = ['status','project','relative','action','kind','size_bytes'];
   const permitted = operation === 'read' ? [...base,'encoding','sha256','data'] : base;
   if (Object.keys(r).sort().join(',') !== permitted.sort().join(',')
@@ -90,7 +115,9 @@ export async function invokeOwnerNativeRead(
     hub: DeviceHub, store: SqliteStore, ctx: InvokeContext,
     name: string, args: unknown) {
   const read = name === 'native_file_read';
-  if (!NAMES.includes(name as typeof NAMES[number]) || !allowedArgs(args, read))
+  if (!NAMES.includes(name as typeof NAMES[number]) || !allowedArgs(args, read)
+      || (name === 'native_file_list'
+          && (args as {relative: string}).relative !== ''))
     return DENY;
   const deviceId = eligibleDevice(hub, store, ctx.userId);
   if (!deviceId) return DENY;
@@ -107,7 +134,8 @@ export async function invokeOwnerNativeRead(
         && typeof response.content[0].text === 'string'
         && response.content[0].text.length < 370000) {
       const raw = JSON.parse(response.content[0].text);
-      safe = validatedResult(raw, safeArgs, read ? 'read' : 'stat');
+      safe = validatedResult(raw, safeArgs,
+        name === 'native_file_list' ? 'list' : read ? 'read' : 'stat');
     }
   } catch { /* Never forward agent error, filepath, output, or credentials. */ }
   try {
