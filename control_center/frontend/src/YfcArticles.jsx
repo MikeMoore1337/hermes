@@ -97,6 +97,12 @@ export default function YfcArticles(){
   }
  },[editorialRequest]);
  useEffect(()=>{if(connected)void list();},[connected,list]);
+ useEffect(()=>{
+  if(connected)return;
+  requestRef.current?.abort();detailRef.current?.abort();
+  setRows([]);setArticle(null);setSelected(null);setPhase("locked");
+  setDetailPhase("idle");setConfirm(false);setAck(false);
+ },[connected]);
  useEffect(()=>()=>{requestRef.current?.abort();detailRef.current?.abort();},[]);
  useEffect(()=>{
   detailRef.current?.abort();
