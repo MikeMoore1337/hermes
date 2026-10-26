@@ -6,7 +6,7 @@ requires a separate owner approval for that exact process invocation.
 The script takes only one of four owner-approved project identifiers and
 a relative file path. It never writes, deletes, launches a subprocess, or
 opens a network listener. Contents are emitted only on an explicit read.
-No directory listing or shell/command bridge is provided.
+Directory listing is bounded to the approved project root; no shell bridge.
 
 Real Windows handles are checked for reparse points and compared against
 the opened original-root handle using GetFinalPathNameByHandleW. A pure
@@ -29,6 +29,8 @@ from control_center.native_windows_policy import READ_ROOTS, classify_native_req
 
 MAX_FILE_BYTES = 256 * 1024
 MAX_PATH_LENGTH = 1024
+MAX_LIST_ENTRIES = 64
+MAX_SCAN_ENTRIES = 256
 ALLOWED_EXTENSIONS = frozenset({
     ".py", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs",
     ".md", ".mdx", ".txt", ".json", ".toml", ".yaml", ".yml",
@@ -143,11 +145,13 @@ def _winapi():
     return api
 
 
-def _opened(api, path: str, *, content: bool):
+def _opened(api, path: str, *, content: bool, lock_rename: bool = False):
     flags = FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS
     access = GENERIC_READ if content else FILE_READ_ATTRIBUTES
-    h = api.CreateFileW(path, access,
-        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+    shares = FILE_SHARE_READ | FILE_SHARE_WRITE
+    if not lock_rename:
+        shares |= FILE_SHARE_DELETE
+    h = api.CreateFileW(path, access, shares,
         None, OPEN_EXISTING, flags, None)
     if h == ctypes.c_void_p(-1).value:
         raise NativeReadRefused("open_denied")
@@ -234,6 +238,80 @@ def handle_native_request(project: str, relative: str, operation: str) -> dict:
             api.CloseHandle(target)
     finally:
         api.CloseHandle(root_handle)
+
+
+
+def handle_native_list(project: str, relative: str = "") -> dict:
+    """Enumerate safe immediate code names at ONE pinned approved root.
+
+    No recursive walk, no file contents, no alternate host directories.
+    The root is held open WITHOUT FILE_SHARE_DELETE until enumeration ends,
+    preventing its rename during this call. Each returned entry is also
+    opened and handle-verified before release. Win32 OS ACLs still apply.
+    """
+    if relative != "":
+        raise NativeReadRefused("listing_only_approved_root")
+    root, _ = build_request(project, "", "stat")
+    api = _winapi()
+    handle = _opened(api, root, content=False, lock_rename=True)
+    try:
+        info = _metadata(api, handle)
+        if not info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY:
+            raise NativeReadRefused("root_not_directory")
+        resolved_root = _final_path(api, handle)
+        if resolved_root != ntpath.normcase(ntpath.normpath(root)):
+            raise NativeReadRefused("root_redirected")
+        visible = []
+        scanned = 0
+        try:
+            with os.scandir(root) as iterator:
+                for entry in iterator:
+                    scanned += 1
+                    if scanned > MAX_SCAN_ENTRIES:
+                        raise NativeReadRefused("directory_too_large")
+                    name = entry.name
+                    if not isinstance(name, str):
+                        continue
+                    try:
+                        # Reuse the EXACT path restrictions of the native
+                        # read broker for each disclosed file or directory.
+                        _, path = build_request(project, name, "stat")
+                        if entry.is_symlink() or (
+                            hasattr(entry, "is_junction") and entry.is_junction()
+                        ):
+                            continue
+                        candidate = _opened(api, path, content=False, lock_rename=True)
+                        try:
+                            child = _metadata(api, candidate)
+                            expected = ntpath.normcase(ntpath.normpath(path))
+                            if _final_path(api, candidate) != expected or (
+                                not expected.startswith(resolved_root + "\\")
+                            ):
+                                continue
+                            directory = bool(child.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+                            if not directory and child.nNumberOfLinks != 1:
+                                continue
+                            if not directory and ntpath.splitext(name)[1].lower() not in ALLOWED_EXTENSIONS:
+                                continue
+                            visible.append({"name": name, "kind": "directory" if directory else "file"})
+                        finally:
+                            api.CloseHandle(candidate)
+                    except (NativeReadRefused, OSError, ValueError):
+                        # Exclude inaccessible/forbidden entries by name, never
+                        # disclose details, resolve symlinks, or follow into them.
+                        continue
+        except (OSError, UnicodeError) as exc:
+            raise NativeReadRefused("enumeration_unavailable") from exc
+        visible.sort(key=lambda item: (item["name"].casefold(), item["name"]))
+        return {
+            "status": "ok", "project": project, "relative": "",
+            "action": "list", "kind": "directory",
+            "entries": visible[:MAX_LIST_ENTRIES],
+            "truncated": len(visible) > MAX_LIST_ENTRIES,
+        }
+    finally:
+        api.CloseHandle(handle)
+
 
 
 def main(argv: list[str] | None = None) -> int:
