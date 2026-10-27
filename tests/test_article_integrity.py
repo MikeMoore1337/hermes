@@ -82,6 +82,50 @@ class ArticleIntegrityTests(unittest.TestCase):
         self.assertIsNone(r["pmid"])
         self.assertIsNone(r["doi"])
 
+    def test_pmc_lookup_canonical_med_pmid_alias_keeps_pmcid_binding(self):
+        # An official PMC lookup may use a MED/PMID record as its
+        # canonical citation identity. Both identifiers must agree.
+        raw = packet(source="MED", identifier=PMID, pmid=PMID,
+                     pmcid=PMCID, doi=DOI)
+        result = article.parse(raw, source="PMC", identifier=PMCID)
+        self.assertEqual(result["article_source"], "PMC")
+        self.assertEqual(result["article_identifier"], PMCID)
+        self.assertEqual(result["pmcid"], PMCID)
+        self.assertEqual(result["pmid"], PMID)
+        self.assertEqual(result["status"], "MANUAL_REVIEW")
+        self.assertFalse(result["authoritative_notice_clearance"])
+        self.assertFalse(result["scientific_claims_verified"])
+        self.assertFalse(result["automatic_publication"])
+
+        with_notice = packet(source="MED", identifier=PMID, pmid=PMID,
+                             pmcid=PMCID, notices=[notice("Retraction in")])
+        rejected = article.parse(with_notice, source="PMC", identifier=PMCID)
+        self.assertEqual(rejected["status"], "HOLD")
+        self.assertEqual(rejected["notice_codes"],
+                         ["RETRACTION_OR_WITHDRAWAL_NOTICE"])
+
+    def test_pmc_canonical_alias_cannot_mask_mismatch_or_spoofed_record(self):
+        invalid = (
+            (packet(source="MED", identifier=PMID, pmid=PMID, pmcid="PMC99999"),
+             "article_pmcid_mismatch"),
+            (packet(source="MED", identifier="99999999", pmid=PMID, pmcid=PMCID),
+             "article_identity_mismatch"),
+            (packet(source="MED", identifier=PMID, pmid=None, pmcid=PMCID),
+             "article_identity_mismatch"),
+            (packet(source="MED", identifier="notnumeric", pmid="notnumeric", pmcid=PMCID),
+             "article_related_pmid_invalid"),
+            (packet(source="PPR", identifier=PMID, pmid=PMID, pmcid=PMCID),
+             "article_identity_mismatch"),
+            (packet(source="PMC", identifier=PMID, pmid=PMID, pmcid=PMCID),
+             "article_identity_mismatch"),
+            (packet(source="PMC", identifier=PMCID, pmid=PMID, pmcid="PMC99999"),
+             "article_pmcid_mismatch"),
+        )
+        for raw, expected in invalid:
+            with self.subTest(expected=expected, raw=raw[:60]):
+                with self.assertRaisesRegex(article.ArticleIntegrityError, expected):
+                    article.parse(raw, source="PMC", identifier=PMCID)
+
     def test_identity_mismatch_or_bad_pmid_fails_closed(self):
         for data, src, ident, error in (
             (packet(identifier="42771056"),"MED",PMID,"article_identity_mismatch"),
