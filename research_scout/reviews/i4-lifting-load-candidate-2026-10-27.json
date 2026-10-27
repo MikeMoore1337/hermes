@@ -1,0 +1,183 @@
+{
+  "schema": "hermes-i4-reviewed-content-v1",
+  "research_version": "i4-20261027-lifting-load-candidate",
+  "article": {
+    "slug": "legkie-i-tyazhelye-vesa-gipertrofiya-sila",
+    "title": "Лёгкие и тяжёлые веса: что действительно показывают исследования о росте мышц и силе",
+    "description": "Сравниваем два первичных исследования разных нагрузок: условия экспериментов, результаты для мышц и силы, статистические ограничения.",
+    "lead": "Можно ли развивать мышцы с небольшими весами и обязательно ли тренироваться тяжело для роста силы? Два оригинальных исследования помогают разобраться, но не дают универсального ответа. Рассмотрим, кого обследовали, что измеряли и почему отсутствие значимого различия ещё не доказывает равенство программ.",
+    "topics": [
+      "training",
+      "strength_hypertrophy"
+    ],
+    "article_kind": "evidence_review",
+    "search_intent": "evidence",
+    "primary_query": "лёгкие тяжёлые рабочие веса гипертрофия сила исследования",
+    "secondary_queries": [
+      "нагрузка 30 80 процентов 1RM рост мышц",
+      "высокий объём против высокой нагрузки силовые тренировки"
+    ],
+    "risk_level": "low",
+    "evidence_level": "limited",
+    "body_sections": [
+      {
+        "heading": "Почему «лёгкие» и «тяжёлые» веса — не одно и то же",
+        "paragraphs": [
+          "Процент от одноповторного максимума (1ПМ, или 1RM) помогает описать относительную тяжесть подхода. Доля 30% 1ПМ обычно допускает больше повторений, чем 80% 1ПМ, но сама по себе не описывает ни общий объём работы, ни близость к отказу, ни длительность отдыха. Сравнивать результаты исследований без этих подробностей некорректно.",
+          "Гипертрофию исследователи оценивают с помощью различных измерений размера мышцы, а силовые изменения — с помощью конкретных тестов. Изменение площади мышцы на МРТ, изометрическая сила сгибателей локтя и результат в разгибании ноги — разные конечные точки. Хороший результат по одной из них не гарантирует такого же результата по всем остальным."
+        ]
+      },
+      {
+        "heading": "Исследование Fink и коллег: восемь недель тренировки сгибателей локтя",
+        "paragraphs": [
+          "В работе Fink и коллег (SpringerPlus, 2016) 21 участника распределили по трём группам по семь человек. Одна группа выполняла сгибания руки с нагрузкой 80% 1ПМ, другая — с 30% 1ПМ, третья чередовала эти варианты каждые две недели. Тренировки левой руки проводились трижды в неделю в течение восьми недель; подходы выполнялись до отказа. Правую руку использовали как контроль.",
+          "Площадь поперечного сечения тренируемых сгибателей локтя по МРТ в среднем увеличилась на 9,1% в группе тяжёлых весов, на 9,4% в группе лёгких и на 8,8% при чередовании. Авторы не обнаружили статистически значимого различия изменений между тремя группами. Однако при семи участниках на группу это не является статистическим доказательством одинаковой эффективности нагрузок.",
+          "Для изометрического максимального произвольного усилия сгибателей локтя статистически значимое изменение относительно исходного уровня было обнаружено в группе 80% 1ПМ. Это не следует пересказывать как автоматически доказанное преимущество данной группы над каждой другой: сравнение отдельных внутригрупповых p-значений не заменяет корректный межгрупповой анализ."
+        ]
+      },
+      {
+        "heading": "Исследование Vann и коллег: шесть недель тренировки ног",
+        "paragraphs": [
+          "В работе Vann и коллег (Frontiers in Physiology, 2022) участвовали 15 молодых мужчин с опытом силовых тренировок. В течение шести недель они тренировали ноги три раза в неделю, причём для каждой ноги случайным образом назначался один из режимов: более тяжёлый с меньшим числом повторений либо менее тяжёлый с большим объёмом. Такой дизайн сравнивает два режима в пределах одного человека, но одновременно изменяет и нагрузку, и тренировочный объём.",
+          "Авторы обнаружили взаимодействие времени и тренировочного условия по площади латеральной широкой мышцы бедра, измеренной МРТ. Непосредственно после курса показатель увеличился примерно на 3,2% при большем объёме и почти не изменился в варианте с более тяжёлой нагрузкой. Разница изменений от исходного уровня непосредственно после курса была статистически значимой. Однако при повторном измерении через десять дней различия изменений между режимами не наблюдалось.",
+          "Для оценки силы разгибания ноги более тяжёлый режим показал преимущество по соответствующему тесту. При этом для ряда других тестов силы и морфологических характеристик мышцы статистически значимого различия между режимами не нашли. Это важная оговорка: результат одного теста нельзя превращать в утверждение, что тяжёлые веса всегда лучше развивают любую силу."
+        ]
+      },
+      {
+        "heading": "Что можно сопоставить, а что — нельзя",
+        "paragraphs": [
+          "Оба исследования показывают, что адаптации зависят от конкретной программы и способа измерения. В эксперименте с рукой рост изученной мышцы наблюдали при разных нагрузках. В эксперименте с ногами более объёмный режим дал преимущество по одной оценке площади мышцы непосредственно после тренировочного периода, а более тяжёлый — по одному силовому тесту. Эти результаты не противоречат друг другу автоматически, поскольку упражнения, участники, длительность и объём нагрузки различались.",
+          "В работе Fink сравнивали группы по семь человек и доводили подходы до отказа. У Vann сопоставляли ноги одних и тех же тренированных участников, но режимы различались объёмом. Поэтому на основании только этих двух экспериментов нельзя установить «идеальный» процент 1ПМ, точное число повторений или универсальный рецепт прогрессии для любого человека."
+        ]
+      },
+      {
+        "heading": "Практический смысл и пределы доказательств",
+        "paragraphs": [
+          "Разумный вывод для читателя — оценивать тренировочный вес вместе с числом подходов, повторений, близостью к отказу, объёмом работы и способом измерения прогресса. Записи рабочих весов и повторений помогают отслеживать собственную динамику, но сами по себе не показывают изменения объёма мышцы. Выбор нагрузки остаётся вопросом цели, переносимости и качества индивидуальной программы, а не результата одной небольшой работы.",
+          "Обе работы относительно короткие и имеют ограниченные выборки. Они не проверяют долгосрочный эффект во всех возрастных группах, у женщин, при любых упражнениях или в условиях реальной программы на месяцы и годы. Ни один вывод в этом материале не заменяет самостоятельной оценки техники, самочувствия и применимости нагрузки к конкретному человеку.",
+          "Это образовательный разбор двух исследований, а не клиническое руководство или персональное назначение. Для окончательного редакционного выпуска требуется отдельная проверка первичных полных текстов, уведомлений об исправлениях и прав использования, а также независимая оценка интерпретаций."
+        ]
+      },
+      {
+        "heading": "Исследования и ссылки",
+        "paragraphs": [
+          "Fink J., Kikuchi N., Yoshida S. и соавторы (2016). Impact of high versus low fixed loads and non-linear training loads on muscle hypertrophy, strength and force development. SpringerPlus 5:698. DOI: 10.1186/s40064-016-2333-z. Оригинальный полный текст: https://pmc.ncbi.nlm.nih.gov/articles/PMC4899398/",
+          "Vann C. G., Sexton C. L., Osburn S. C. и соавторы (2022). Effects of High-Volume Versus High-Load Resistance Training on Skeletal Muscle Growth and Molecular Adaptations. Frontiers in Physiology 13:857555. DOI: 10.3389/fphys.2022.857555. Оригинальный полный текст: https://pmc.ncbi.nlm.nih.gov/articles/PMC8962955/"
+        ]
+      }
+    ],
+    "claims": [
+      {
+        "claim_id": "fink_hypertrophy",
+        "claim_text": "В небольшом восьминедельном исследовании сгибателей локтя прирост измеренной площади мышцы наблюдался во всех трёх условиях нагрузки, без выявленного значимого различия между группами.",
+        "normalized_claim": "Fink 2016: MRI CSA increased within each of three arms; between-group change difference not significant."
+      },
+      {
+        "claim_id": "fink_mvc",
+        "claim_text": "В работе Fink значимое внутригрупповое изменение изометрической силы обнаружено в условии 80% 1ПМ, что само по себе не доказывает превосходства относительно всех остальных групп.",
+        "normalized_claim": "Fink 2016: significant within-group elbow flexor MVC change only in high-load group; avoid inference from between-group p-values."
+      },
+      {
+        "claim_id": "vann_morphology",
+        "claim_text": "В работе Vann после шести недель более объёмный режим дал больший непосредственный прирост площади латеральной широкой мышцы, но различие изменений исчезло при повторном измерении через десять дней.",
+        "normalized_claim": "Vann 2022: HV versus HL MRI vastus lateralis CSA difference in changes at POST, not at POSTPR."
+      },
+      {
+        "claim_id": "vann_strength",
+        "claim_text": "В работе Vann более тяжёлый режим имел преимущество по отдельному тесту разгибания ноги, без универсального преимущества по всем силовым тестам.",
+        "normalized_claim": "Vann 2022: HL improved unilateral leg extension test more, while other strength outcomes did not all show condition interactions."
+      },
+      {
+        "claim_id": "external_validity",
+        "claim_text": "Два коротких исследования с небольшими выборками не устанавливают универсальную оптимальную нагрузку для всех тренирующихся.",
+        "normalized_claim": "Short small-sample intervention studies have limited generalizability; no load equivalence or universal prescription established."
+      }
+    ],
+    "sources": [
+      {
+        "source_id": "fink2016",
+        "title": "Impact of high versus low fixed loads and non-linear training loads on muscle hypertrophy, strength and force development",
+        "publisher": "SpringerPlus",
+        "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC4899398/",
+        "source_type": "randomized_trial",
+        "published_at": "2016-05-20",
+        "limitations": "21 participants (7 per group), 8 weeks, unilateral preacher curl; absence of significant between-group differences does not prove equivalence."
+      },
+      {
+        "source_id": "vann2022",
+        "title": "Effects of High-Volume Versus High-Load Resistance Training on Skeletal Muscle Growth and Molecular Adaptations",
+        "publisher": "Frontiers in Physiology",
+        "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC8962955/",
+        "source_type": "randomized_trial",
+        "published_at": "2022-03-11",
+        "limitations": "15 trained young men; within-participant leg randomization; differing load and volume; 6 weeks; one strength outcome and time-dependent MRI results."
+      }
+    ],
+    "claim_source_matrix": [
+      {
+        "claim_id": "fink_hypertrophy",
+        "source_ids": [
+          "fink2016"
+        ],
+        "support_level": "unclear",
+        "review_status": "pending",
+        "limitations": "Requires original JATS text snapshot, figure/table read, rights and correction notice review; no equivalence claim."
+      },
+      {
+        "claim_id": "fink_mvc",
+        "source_ids": [
+          "fink2016"
+        ],
+        "support_level": "unclear",
+        "review_status": "pending",
+        "limitations": "Within-group statistical significance does not establish between-group superiority; independent verification pending."
+      },
+      {
+        "claim_id": "vann_morphology",
+        "source_ids": [
+          "vann2022"
+        ],
+        "support_level": "unclear",
+        "review_status": "pending",
+        "limitations": "Distinguish POST versus POSTPR; MRI CSA among 15 trained men; independent table review pending."
+      },
+      {
+        "claim_id": "vann_strength",
+        "source_ids": [
+          "vann2022"
+        ],
+        "support_level": "unclear",
+        "review_status": "pending",
+        "limitations": "Outcome-specific effect, not a blanket claim about strength; original raw statistics need verification."
+      },
+      {
+        "claim_id": "external_validity",
+        "source_ids": [
+          "fink2016",
+          "vann2022"
+        ],
+        "support_level": "unclear",
+        "review_status": "pending",
+        "limitations": "Study length, sample size, muscle site, sex and training status differ; generalization not verified."
+      }
+    ],
+    "author": {
+      "name": "Research Scout",
+      "type": "Organization"
+    },
+    "editor": {
+      "name": "YFC Editorial",
+      "type": "Organization"
+    },
+    "domain_reviewer": null,
+    "related_slugs": [],
+    "cta": {},
+    "evergreen_score": 0,
+    "product_relevance": 0,
+    "editorial_value": 0,
+    "web_article_potential_reasons": [
+      "awaiting_independent_scientific_review"
+    ]
+  },
+  "source_receipts": []
+}
