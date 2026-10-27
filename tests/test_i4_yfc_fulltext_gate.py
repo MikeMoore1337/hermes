@@ -50,6 +50,56 @@ class FulltextGateTests(TestCase):
         with self.assertRaisesRegex(fulltext.FulltextHold, "FULLTEXT_DTD_OR_ENTITY_DENIED"):
             fulltext.inspect("PMC12345678", b"<?xml-stylesheet href='https://evil.invalid'?>" + sample())
 
+
+    def test_standard_external_jats_public_dtd_is_stripped_without_resolution(self):
+        preamble = (
+            b'<?xml version="1.0" encoding="UTF-8"?>\n'
+            b'<!DOCTYPE article PUBLIC '
+            b'"-//NLM//DTD JATS (Z39.96) Journal Archiving and Interchange DTD v1.1 20151215//EN" '
+            b'"https://jats.nlm.nih.gov/archiving/1.1/JATS-archivearticle1.dtd">\n'
+        )
+        content = preamble + sample()
+        with patch.object(fulltext.ET, "fromstring", wraps=fulltext.ET.fromstring) as parse:
+            report = fulltext.inspect("PMC12345678", content, expected_doi="10.1234/sample")
+        self.assertTrue(report["full_text_available"])
+        parsed_input = parse.call_args.args[0]
+        self.assertNotIn(b"<!DOCTYPE", parsed_input)
+        self.assertNotIn(b"jats.nlm.nih.gov", parsed_input)
+        self.assertEqual(report["sha256"], fulltext.hashlib.sha256(content).hexdigest())
+        self.assertFalse(report["license_reuse_verified"])
+        self.assertFalse(report["automatic_publication"])
+
+    def test_malicious_external_dtd_custom_system_and_internal_subset_rejected(self):
+        pub = (
+            b'<!DOCTYPE article PUBLIC '
+            b'"-//NLM//DTD JATS (Z39.96) Journal Publishing DTD v1.0 20120330//EN" '
+            b'"JATS-journalpublishing1.dtd">'
+        )
+        for prefix in (
+            b'<!DOCTYPE article SYSTEM "file:///etc/passwd">',
+            b'<!DOCTYPE article SYSTEM "https://evil.example/external.dtd">',
+            b'<!DOCTYPE article PUBLIC "-//EVIL//DTD bogus//EN" "x.dtd">',
+            pub[:-1] + b' [ ]>',
+            pub[:-1] + b' [<!ENTITY x SYSTEM "file:///etc/passwd">]>',
+            pub + pub,
+            b'<!-- note -->' + pub,
+            b'<?xml-model href="https://evil.example/x"?>' + pub,
+            b'<?xml-stylesheet href="https://evil.example/x"?>' + pub,
+        ):
+            with self.subTest(prefix=prefix[:50]):
+                with self.assertRaisesRegex(fulltext.FulltextHold, "FULLTEXT_DTD_OR_ENTITY_DENIED"):
+                    fulltext.inspect("PMC12345678", prefix + sample())
+
+    def test_jats_public_dtd_does_not_bypass_real_article_identity(self):
+        public = (
+            b'<!DOCTYPE article PUBLIC '
+            b'"-//NLM//DTD JATS (Z39.96) Journal Publishing DTD v1.0 20120330//EN" '
+            b'"JATS-journalpublishing1.dtd">'
+        )
+        with self.assertRaisesRegex(fulltext.FulltextHold, "FULLTEXT_DOI_MISMATCH"):
+            fulltext.inspect("PMC12345678", public + sample(doi="10.1234/other"),
+                             expected_doi="10.1234/sample")
+
     def test_missing_body_and_non_jats_are_denied(self):
         with self.assertRaisesRegex(fulltext.FulltextHold, "FULLTEXT_BODY_MISSING"):
             fulltext.inspect("PMC12345678", sample(body=False))

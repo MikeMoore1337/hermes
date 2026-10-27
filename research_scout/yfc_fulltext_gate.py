@@ -24,6 +24,51 @@ class FulltextHold(ValueError):
     """Fixed refusal code only; never include XML, identifiers or URLs."""
 
 
+
+# Europe PMC's JATS XML may declare an *external* public NLM/JATS DTD.
+# This reader does not validate a DTD and must NEVER dereference it.
+# Only a bounded standard public identifier with an opaque, safe system
+# locator is removed BEFORE parsing. Internal subsets and entity declarations
+# remain forbidden, including in otherwise valid article XML.
+_JATS_PUBLIC_ID = (
+    rb'(?:\"-//(?:NLM|JATS)//DTD [A-Za-z0-9 .(),+/_-]{3,190}//EN\"'
+    rb'|\'-//(?:NLM|JATS)//DTD [A-Za-z0-9 .(),+/_-]{3,190}//EN\')'
+)
+_JATS_SYSTEM_ID = (
+    rb'(?:\"[A-Za-z0-9:/._-]{1,220}\"'
+    rb'|\'[A-Za-z0-9:/._-]{1,220}\')'
+)
+_SAFE_JATS_DOCTYPE = re.compile(
+    rb'<!DOCTYPE[ \t\r\n]+article[ \t\r\n]+PUBLIC[ \t\r\n]+'
+    + _JATS_PUBLIC_ID + rb'[ \t\r\n]+' + _JATS_SYSTEM_ID
+    + rb'[ \t\r\n]*>', re.IGNORECASE,
+)
+_XML_PREAMBLE = re.compile(
+    rb'(?:\xef\xbb\xbf)?[ \t\r\n]*(?:<\?xml[ \t\r\n]+[^?<>]{1,160}\?>[ \t\r\n]*)?',
+    re.IGNORECASE,
+)
+
+
+def xml_without_external_doctype(raw: bytes) -> bytes:
+    """Discard one strictly bounded JATS public DOCTYPE, never resolve its URI.
+
+    No DTD, file, network or entity expansion is performed. This function is
+    shared by the metadata inspector and the private full-text extractor.
+    """
+    upper = raw.upper()
+    if b'<!ENTITY' in upper or b'<?XML-STYLESHEET' in upper or b'<?XML-MODEL' in upper:
+        raise FulltextHold("FULLTEXT_DTD_OR_ENTITY_DENIED")
+    if b'<!DOCTYPE' not in upper:
+        return raw
+    if upper.count(b'<!DOCTYPE') != 1:
+        raise FulltextHold("FULLTEXT_DTD_OR_ENTITY_DENIED")
+    matched = _SAFE_JATS_DOCTYPE.search(raw)
+    if matched is None or _XML_PREAMBLE.fullmatch(raw[:matched.start()]) is None:
+        raise FulltextHold("FULLTEXT_DTD_OR_ENTITY_DENIED")
+    # Internal subsets, custom declarations, arbitrary DOCTYPE forms and
+    # multiple declarations never match the bounded PUBLIC-only pattern.
+    return raw[:matched.start()] + raw[matched.end():]
+
 def _identity(pmcid: str, doi: str | None = None) -> None:
     if type(pmcid) is not str or PMCID.fullmatch(pmcid) is None:
         raise FulltextHold("PMCID_NOT_ALLOWLISTED")
@@ -76,12 +121,9 @@ def inspect(pmcid: str, raw: bytes, *, expected_doi: str | None = None) -> dict:
     _identity(pmcid, expected_doi)
     if type(raw) is not bytes or not 0 < len(raw) <= MAX_XML:
         raise FulltextHold("FULLTEXT_SIZE_LIMIT")
-    upper = raw.upper()
-    if any(term in upper for term in
-           (b"<!DOCTYPE", b"<!ENTITY", b"<?XML-STYLESHEET")):
-        raise FulltextHold("FULLTEXT_DTD_OR_ENTITY_DENIED")
+    safe_xml = xml_without_external_doctype(raw)
     try:
-        root = ET.fromstring(raw)
+        root = ET.fromstring(safe_xml)
     except ET.ParseError:
         raise FulltextHold("FULLTEXT_XML_INVALID") from None
     if _local(root.tag) != "article":

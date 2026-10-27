@@ -37,7 +37,10 @@ def require(value: bool, reason: str) -> None:
 def extracted_text(raw: bytes) -> bytes:
     """Extract bounded JATS body paragraphs; discard markup, not claim content."""
     try:
-        root = ET.fromstring(raw)
+        safe_xml = gate.xml_without_external_doctype(raw)
+        root = ET.fromstring(safe_xml)
+    except gate.FulltextHold:
+        raise SnapshotHold("JATS_XML_UNSAFE") from None
     except ET.ParseError:
         raise SnapshotHold("JATS_XML_INVALID") from None
     bodies = [element for element in root.iter()

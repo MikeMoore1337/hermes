@@ -59,6 +59,36 @@ class ProtectedSnapshotTests(unittest.TestCase):
                                    expected_doi=doi, directory=self.folder)
         self.assertEqual(list(self.folder.iterdir()), [])
 
+
+    def test_standard_jats_public_dtd_snapshots_identical_body_only(self):
+        public = (
+            b'<?xml version="1.0" encoding="UTF-8"?>\n'
+            b'<!DOCTYPE article PUBLIC '
+            b'"-//NLM//DTD JATS (Z39.96) Journal Publishing DTD v1.0 20120330//EN" '
+            b'"JATS-journalpublishing1.dtd">'
+        )
+        original = xml()
+        receipt = snapshot.stage("PMC12345678", "standardjats",
+                                 public + original,
+                                 expected_doi="10.1234/example",
+                                 directory=self.folder)
+        source = (self.folder / "standardjats.txt").read_bytes()
+        self.assertNotIn(b"DOCTYPE", source)
+        self.assertNotIn(b"JATS-journalpublishing", source)
+        self.assertEqual(hashlib.sha256(source).hexdigest(), receipt["full_text_sha256"])
+        self.assertEqual(receipt["status"], "STAGED_NEEDS_EDITORIAL_REVIEW")
+
+    def test_internal_subset_without_entity_still_not_staged(self):
+        header = (
+            b'<!DOCTYPE article PUBLIC '
+            b'"-//NLM//DTD JATS (Z39.96) Journal Publishing DTD v1.0 20120330//EN" '
+            b'"JATS-journalpublishing1.dtd" [ ]>'
+        )
+        with self.assertRaisesRegex(snapshot.SnapshotHold, "FULLTEXT_IDENTITY_OR_STRUCTURE_HOLD"):
+            snapshot.stage("PMC12345678", "unsafeheader",
+                           header + xml(), directory=self.folder)
+        self.assertFalse((self.folder / "unsafeheader.txt").exists())
+
     def test_untrusted_folder_and_existing_symlink_refused(self):
         self.folder.chmod(0o755)
         with self.assertRaisesRegex(snapshot.SnapshotHold, "SOURCE_DIRECTORY_UNTRUSTED"):
