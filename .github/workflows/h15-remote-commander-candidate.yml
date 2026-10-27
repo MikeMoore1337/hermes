@@ -136,7 +136,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m unittest -v tests.test_h15_workspace_router tests.test_h15_brc_workspace_gateway tests.test_h15_brc_upgrade_preflight tests.test_h15_brc_transactional_upgrade tests.test_h15_brc_owner_artifact_stage tests.test_h15_brc_owner_handoff tests.test_h15_brc_native_read_gateway tests.test_h15_native_windows_relay_contract
+          python3 -m unittest -v tests.test_h15_workspace_router tests.test_h15_brc_workspace_gateway tests.test_h15_brc_upgrade_preflight tests.test_h15_brc_transactional_upgrade tests.test_h15_brc_owner_artifact_stage tests.test_h15_brc_owner_handoff tests.test_h15_brc_native_read_gateway tests.test_h15_native_windows_relay_contract tests.test_h454_brc_native_three_tool_cutover
 
       - name: Fetch exact upstream Git commit (not tag, latest or npm install)
         shell: bash
