@@ -43,6 +43,7 @@ class WorkspaceRouterTests(unittest.TestCase):
             self.assertEqual(r["workspace"], "your-fitness-coach")
             self.assertEqual(r["branch"], "master")
             self.assertEqual(r["device_status"], "not_checked")
+        self.assertIs(r["process_execution_verified"], False)
             self.assertEqual(len(r["head"]), 40)
             self.assertEqual(r["tracked_clean"], "not_checked")
 
@@ -50,6 +51,7 @@ class WorkspaceRouterTests(unittest.TestCase):
         r = self.route(devices=self.devices)
         self.assertEqual(r["device_id"], "h15-win-05be75515428")
         self.assertEqual(r["device_status"], "online")
+        self.assertIs(r["process_execution_verified"], False)
 
     def test_no_guessed_or_unrecognized_aliases(self):
         for alias in ("C:/", "../../secrets", "prod", "YFC Production", "", "yfc\nsecret"):
