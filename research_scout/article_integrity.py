@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import http.client
 import json
+import re
 from typing import Any, Callable
 
 from .europe_pmc import EuropePMCError, PinnedHTTPS, resolve_public, ID, HOST, unique_json
@@ -28,6 +29,9 @@ RETRACTION_TYPES = frozenset({
 CONCERN_TYPES = frozenset({
     "Expression of concern in", "Expression of concern for",
 })
+# Exact Europe PMC link to an earlier preprint, NOT an article correction.
+# Reject unexpected ID/source forms as unknown notices (fail closed).
+PREPRINT_ID = re.compile(r"PPR[1-9][0-9]{1,11}\Z")
 # A missing notice is not proof the publisher has no correction.
 ABSENT = "NOT_REPORTED_IN_THIS_METADATA"
 
@@ -99,6 +103,10 @@ def _notice_codes(source: object) -> tuple[str, ...]:
             categories.add("CORRECTION_NOTICE")
         elif name in CONCERN_TYPES:
             categories.add("EXPRESSION_OF_CONCERN")
+        elif (name == "Preprint in" and item.get("source") == "PPR"
+              and type(item.get("id")) is str
+              and PREPRINT_ID.fullmatch(item["id"]) is not None):
+            categories.add("PREPRINT_LINK")
         else:
             categories.add("OTHER_OR_UNKNOWN_NOTICE")
     return tuple(sorted(categories))
@@ -164,14 +172,23 @@ def parse(raw: bytes, *, source: str, identifier: str) -> dict[str, object]:
     if "commentCorrectionList" in result and result["commentCorrectionList"] is None:
         raise ArticleIntegrityError("article_notice_schema_invalid")
     categories = _notice_codes(result.get("commentCorrectionList"))
-    status = "HOLD" if categories or doi is None else "MANUAL_REVIEW"
+    # A validated link to a prior preprint is informative, not a
+    # retraction or correction of the peer-reviewed journal article.
+    # Any other notice category, including an unknown type, stays HOLD.
+    blocking_notices = any(code != "PREPRINT_LINK" for code in categories)
+    status = "HOLD" if blocking_notices or doi is None else "MANUAL_REVIEW"
+    notice_state = (
+        "REVIEW_REQUIRED" if blocking_notices
+        else "PREPRINT_LINK_REPORTED" if "PREPRINT_LINK" in categories
+        else ABSENT
+    )
     return {
         "status": status,
         "article_source": source,
         "article_identifier": identifier,
         "pmid": pmid, "pmcid": pmcid, "doi": doi,
         "doi_state": "IN_METADATA" if doi is not None else "MISSING_IN_THIS_METADATA",
-        "notice_state": "REVIEW_REQUIRED" if categories else ABSENT,
+        "notice_state": notice_state,
         "notice_codes": list(categories),
         "authoritative_notice_clearance": False,
         "scientific_claims_verified": False,

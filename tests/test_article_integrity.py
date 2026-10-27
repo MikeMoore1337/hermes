@@ -55,6 +55,83 @@ class ArticleIntegrityTests(unittest.TestCase):
                 self.assertEqual(result["status"],"HOLD")
                 self.assertIn(expected,result["notice_codes"])
 
+    def test_preprint_link_is_informational_not_notice_clearance(self):
+        linked = notice("Preprint in")
+        linked["source"] = "PPR"
+        linked["id"] = "PPR364325"
+        report = article.parse(
+            packet(source="MED", identifier=PMID, pmid=PMID,
+                   pmcid=PMCID, notices=[linked]),
+            source="PMC", identifier=PMCID,
+        )
+        self.assertEqual(report["status"], "MANUAL_REVIEW")
+        self.assertEqual(report["notice_codes"], ["PREPRINT_LINK"])
+        self.assertEqual(report["notice_state"], "PREPRINT_LINK_REPORTED")
+        self.assertFalse(report["authoritative_notice_clearance"])
+        self.assertFalse(report["scientific_claims_verified"])
+        self.assertFalse(report["automatic_publication"])
+        self.assertNotIn("PPR364325", str(report))
+
+    def test_preprint_link_never_overrides_corrections_or_retractions(self):
+        linked = notice("Preprint in")
+        linked.update(source="PPR", id="PPR364325")
+        for kind, label in (
+            ("Retraction in", "RETRACTION_OR_WITHDRAWAL_NOTICE"),
+            ("Erratum in", "CORRECTION_NOTICE"),
+            ("Expression of concern in", "EXPRESSION_OF_CONCERN"),
+            ("New unrecognized type", "OTHER_OR_UNKNOWN_NOTICE"),
+        ):
+            with self.subTest(kind=kind):
+                report = article.parse(
+                    packet(notices=[linked, notice(kind)]),
+                    source="MED", identifier=PMID,
+                )
+                self.assertEqual(report["status"], "HOLD")
+                self.assertEqual(report["notice_state"], "REVIEW_REQUIRED")
+                self.assertIn(label, report["notice_codes"])
+                self.assertIn("PREPRINT_LINK", report["notice_codes"])
+                self.assertFalse(report["authoritative_notice_clearance"])
+
+    def test_preprint_link_requires_exact_type_source_and_ppr_id(self):
+        for name, source, identifier in (
+            ("Preprint in", "MED", "PPR364325"),
+            ("Preprint in", "PPR", "PMC364325"),
+            ("Preprint in", "PPR", "PPR0"),
+            ("Preprint in", "PPR", "../PPR364325"),
+            ("Preprint in", "PPR", "PPR364325?x=1"),
+            ("Preprint in", "ppr", "PPR364325"),
+            ("preprint in", "PPR", "PPR364325"),
+            ("Preprint of", "PPR", "PPR364325"),
+        ):
+            with self.subTest(name=name, source=source, identifier=identifier):
+                item = notice(name)
+                item["source"], item["id"] = source, identifier
+                report = article.parse(
+                    packet(notices=[item]), source="MED", identifier=PMID
+                )
+                self.assertEqual(report["status"], "HOLD")
+                self.assertEqual(report["notice_codes"], ["OTHER_OR_UNKNOWN_NOTICE"])
+                self.assertFalse(report["authoritative_notice_clearance"])
+
+    def test_preprint_link_does_not_bypass_missing_doi_or_pmcid(self):
+        linked = notice("Preprint in")
+        linked.update(source="PPR", id="PPR364325")
+        missing_doi = article.parse(
+            packet(source="PMC", identifier=PMCID, pmid=None,
+                   pmcid=PMCID, doi=None, notices=[linked]),
+            source="PMC", identifier=PMCID,
+        )
+        self.assertEqual(missing_doi["status"], "HOLD")
+        self.assertEqual(missing_doi["doi_state"], "MISSING_IN_THIS_METADATA")
+        with self.assertRaisesRegex(
+            article.ArticleIntegrityError, "article_pmcid_mismatch"
+        ):
+            article.parse(
+                packet(source="PMC", identifier=PMCID, pmcid="PMC999999",
+                       notices=[linked]),
+                source="PMC", identifier=PMCID,
+            )
+
     def test_absence_of_notices_does_not_assert_no_erratum(self):
         r=article.parse(packet(),source="MED",identifier=PMID)
         self.assertEqual(r["status"],"MANUAL_REVIEW")
