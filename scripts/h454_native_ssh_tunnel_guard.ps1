@@ -159,7 +159,7 @@ try {
                 $grace = (Get-Date).AddSeconds(90)
                 while ((Get-Date) -lt $grace -and (Get-Date) -lt $deadline) {
                     if ($child.HasExited) { break }
-                    if (Test-OwnListener $child.Id -and (Test-RelayHealth)) {
+                    if ((Test-OwnListener -ExpectedPid $child.Id) -and (Test-RelayHealth)) {
                         $ready = $true
                         break
                     }
@@ -174,7 +174,7 @@ try {
                 $failures = 0
                 while ((Get-Date) -lt $deadline -and -not $child.HasExited) {
                     Start-Sleep -Seconds 5
-                    if (Test-OwnListener $child.Id -and (Test-RelayHealth)) {
+                    if ((Test-OwnListener -ExpectedPid $child.Id) -and (Test-RelayHealth)) {
                         $failures = 0
                     } else {
                         $failures++
