@@ -138,6 +138,8 @@ def resolve(alias: str, *, registry: dict[str, Any] | None = None,
         "root": str(target), "origin": expected_origin, "branch": entry["branch"],
         "head": sha, "access": "sandbox", "device_name": cfg["device_name"],
         "tracked_clean": "not_checked", "device_status": "not_checked",
+        # Online device discovery alone cannot prove it can spawn a process.
+        "process_execution_verified": False,
     }
     if devices is not None:
         response.update(_device(devices, cfg["device_name"]))
