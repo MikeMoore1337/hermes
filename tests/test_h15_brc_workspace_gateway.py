@@ -82,10 +82,12 @@ const assert=require('node:assert/strict'),api=require(process.argv[1]);
 const win={name:'H15 Windows permanent sandbox',deviceId:'h15-win-05be75515428',online:true,paused:false};
 const other={name:'H15 YFC VPS sandbox',deviceId:'h15-yfc-c6ee0d53e858',online:true,paused:false};
 assert.equal(api.listApprovedWorkspaces([win,other]).workspaces.length,4);
+assert.equal(api.listApprovedWorkspaces([win,other]).workspaces.every(w=>w.process_execution_verified===false),true);
 assert.equal(api.resolveApprovedWorkspace({project:'YFC'},[win]).root,'/workspace/projects/your-fitness-coach');
 assert.equal(api.resolveApprovedWorkspace({project:'adt'},[win]).workspace,'ai-development-toolkit');
 assert.equal(api.resolveApprovedWorkspace({project:'Second_Brain'},[win]).workspace,'second-brain');
 assert.equal(api.resolveApprovedWorkspace({project:'hermes'},[win]).git_verified,false);
+assert.equal(api.resolveApprovedWorkspace({project:'hermes'},[win]).process_execution_verified,false);
 for (const args of [{project:'../../private'}, {project:'random'}, {project:'yfc',deviceId:'forced'}, {}])
  assert.equal(api.resolveApprovedWorkspace(args,[win]).status,'refused');
 for (const devices of [[],[other],[{...win,online:false}],[{...win,paused:true}],[win,win]])
