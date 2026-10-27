@@ -26,8 +26,13 @@ function Deny([string]$Code) {
 }
 
 function Invoke-DockerReadOnly([string[]]$Arguments) {
-    $docker = Get-Command 'docker.exe' -CommandType Application -ErrorAction Stop
-    $output = @(& $docker.Source @Arguments 2>$null)
+    $docker = Join-Path $env:ProgramFiles 'Docker\Docker\resources\bin\docker.exe'
+    $binary = Get-Item -LiteralPath $docker -Force -ErrorAction Stop
+    if ($binary.PSIsContainer -or
+        ($binary.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+        throw 'H445_UNTRUSTED_DOCKER_BINARY'
+    }
+    $output = @(& $docker @Arguments 2>$null)
     if ($LASTEXITCODE -ne 0 -or $output.Count -gt 150 -or
         (($output -join [Environment]::NewLine).Length -gt 32768)) {
         throw 'H445_DOCKER_UNAVAILABLE_OR_OUTPUT_INVALID'
