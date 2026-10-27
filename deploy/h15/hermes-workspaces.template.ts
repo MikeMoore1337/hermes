@@ -38,6 +38,8 @@ export function listApprovedWorkspaces(devices: unknown) {
   return { schema: 1, status: 'catalog', workspaces: WORKSPACES.map(w => ({
     name: w.name, aliases: [...w.aliases], root: w.root, origin: w.origin,
     branch: w.branch, scope: 'sandbox', device_status: state, git_verified: false,
+    // Online indicates a control-plane heartbeat, not a successful remote exec.
+    process_execution_verified: false,
     ...(state === 'online' ? { deviceId: d.deviceId } : {})
   })) };
 }
@@ -59,5 +61,5 @@ export function resolveApprovedWorkspace(args: unknown, devices: unknown) {
   return { schema: 1, status: 'resolved', workspace: w.name,
     root: w.root, branch: w.branch, origin: w.origin, scope: 'sandbox',
     deviceId: d!.deviceId, device_status: 'online', git_verified: false,
-    verification_required_before_write: true };
+    process_execution_verified: false, verification_required_before_write: true };
 }
