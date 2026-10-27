@@ -165,3 +165,55 @@ Keep [#454](https://github.com/MikeMoore1337/hermes/issues/454)
 No new Docker deployment, CLI authorization, broad host grant, reset,
 forceful repository clean-up or unsafe fixture generation is implied by
 this document.
+
+## Current-state recheck — 2026-10-27 (later than the historical baseline)
+
+The October 24 table is a **historical observed PASS**, not perpetual
+availability. In a new **real ChatGPT Hermes MCP** test on October 27:
+
+| Capability | Windows sandbox | Hermes VPS sandbox | YFC VPS sandbox |
+| --- | --- | --- | --- |
+| Device heartbeat `online` | PASS | PASS | PASS |
+| Basic `start_process` now | **FAIL — EAGAIN** | PASS | PASS |
+| Ephemeral file write/read/edit/search/move | NOT RE-RUN (shell blocked) | PASS | PASS |
+| Ephemeral fixture cleanup | N/A | PASS | PASS |
+| Git and Python3 binaries | NOT VERIFIED NOW | NOT PRESENT | NOT PRESENT |
+
+Windows sandbox `h15-win-05be75515428`: repeated simple
+`start_process` calls returned `Failed to get process ID`; the live
+`list_processes` operation reported `spawn /bin/sh EAGAIN`, while
+`list_sessions` exposed one blocked session (PID 7810, runtime over
+126000 seconds). This is consistent with the process/PID1 exhaustion
+already investigated under #445, but no new cgroup counts or live host
+configuration were collected. Do **not** treat `online` as proof of
+execution readiness; do not restart or terminate unrelated processes
+without a separate narrowly scoped host approval.
+
+Hermes VPS and YFC VPS sandbox: separately created isolated
+`/workspace/h454-parity-e2e-20261027-2334` fixtures, verified real
+MCP file writes, reads, unique edits, content search and result pagination,
+moves, metadata and read-after-move. Both basic terminals started and
+both ephemeral fixture directories were removed using exact scoped commands.
+Neither VPS sandbox had `git` or `python3`; Node was available.
+No project repository files, host files, vault or production data were changed.
+
+Live receipts:
+[Hermes #454](https://github.com/MikeMoore1337/hermes/issues/454#issuecomment-6453041813) and
+[PID remediation #445](https://github.com/MikeMoore1337/hermes/issues/445#issuecomment-6453042758).
+
+### Control-plane versus capability readiness
+
+The gateway workspace catalog uses `device_status=online` only for an
+owner-authenticated device heartbeat. Since no remote process execution is
+performed by the read-only resolver, its response must explicitly carry
+`process_execution_verified=false`; consumers must run a narrow authorized
+`start_process` preflight before promising terminal/Git work. This boolean
+does **not** assert that a host is permanently incapable: it means that
+this **response** did not verify the capability. It provides neither native
+Windows file rights nor a process authorization. The current production
+relay may not expose this new field until a separately approved pinned
+OCI candidate is deployed; a source merge is not that deployment.
+
+Windows sandbox is currently **BLOCKED** on runtime process-capacity
+remediation (#445). Full 2-client × 3-device **current** parity must remain
+OPEN, despite its historical baseline PASS.
