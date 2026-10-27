@@ -95,29 +95,44 @@ def _connect(directory: Path) -> sqlite3.Connection:
     _check_state_dir(directory)
     path = directory / "native-effects.sqlite3"
     _check_db(path)
-    try:
-        connection = sqlite3.connect(path, timeout=2.0, isolation_level=None)
-        connection.execute("PRAGMA trusted_schema=OFF")
-        connection.execute("PRAGMA journal_mode=WAL")
-        connection.execute("PRAGMA synchronous=FULL")
-        connection.execute("PRAGMA busy_timeout=2000")
-        connection.execute("CREATE TABLE IF NOT EXISTS effects ("
-                           "operation_id TEXT PRIMARY KEY,"
-                           "device_id TEXT NOT NULL,"
-                           "project TEXT NOT NULL,"
-                           "operation TEXT NOT NULL,"
-                           "scope_sha256 TEXT NOT NULL,"
-                           "expires_at INTEGER NOT NULL,"
-                           "state TEXT NOT NULL CHECK(state IN ('reserved','completed','failed')))")
-        # SQLite writes only IDs and hashes; never host commands, arguments,
-        # file paths, file content, process output, bearer or tokens.
-        _check_db(path)
-        return connection
-    except (sqlite3.Error, OSError, LedgerDenied) as exc:
-        if "connection" in locals():
-            connection.close()
-        raise LedgerDenied("ledger_unavailable") from exc
-
+    # First-open WAL/schema setup can race between threads or processes.
+    # Retry only transient SQLite locking *before* any claim transaction:
+    # a reservation, completion, or ambiguous effect is NEVER retried.
+    for attempt in range(5):
+        connection = None
+        try:
+            connection = sqlite3.connect(path, timeout=2.0, isolation_level=None)
+            connection.execute("PRAGMA trusted_schema=OFF")
+            connection.execute("PRAGMA busy_timeout=2000")
+            connection.execute("PRAGMA journal_mode=WAL")
+            connection.execute("PRAGMA synchronous=FULL")
+            connection.execute("CREATE TABLE IF NOT EXISTS effects ("
+                               "operation_id TEXT PRIMARY KEY,"
+                               "device_id TEXT NOT NULL,"
+                               "project TEXT NOT NULL,"
+                               "operation TEXT NOT NULL,"
+                               "scope_sha256 TEXT NOT NULL,"
+                               "expires_at INTEGER NOT NULL,"
+                               "state TEXT NOT NULL CHECK(state IN ('reserved','completed','failed')))")
+            # SQLite writes only IDs and hashes; never host commands, arguments,
+            # file paths, file content, process output, bearer or tokens.
+            _check_db(path)
+            return connection
+        except sqlite3.OperationalError as exc:
+            if connection is not None:
+                connection.close()
+            code = getattr(exc, "sqlite_errorcode", None)
+            transient = (type(code) is int
+                         and (code & 0xff) in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED))
+            if transient and attempt < 4:
+                time.sleep(0.025 * (attempt + 1))
+                continue
+            raise LedgerDenied("ledger_unavailable") from exc
+        except (sqlite3.Error, OSError, LedgerDenied) as exc:
+            if connection is not None:
+                connection.close()
+            raise LedgerDenied("ledger_unavailable") from exc
+    raise LedgerDenied("ledger_unavailable")
 
 def claim(directory: Path, identity: EffectIdentity, *,
           now: int | None = None) -> str:
