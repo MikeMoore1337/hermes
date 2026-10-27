@@ -43,6 +43,62 @@ class FulltextGateTests(TestCase):
             fulltext.inspect("PMC12345678", sample().replace(
                 b"</article-meta>", b'<article-id pub-id-type="pmc">12345678</article-id></article-meta>'))
 
+    def test_standard_pmcid_alias_is_strictly_verified(self):
+        # PMC's JATS guidelines specify pub-id-type="pmcid", while
+        # historical documents also use "pmc".
+        xml = sample().replace(b'pub-id-type="pmc"', b'pub-id-type="pmcid"')
+        for ident in (b"12345678", b"PMC12345678"):
+            with self.subTest(ident=ident):
+                aliased = xml.replace(b">12345678</article-id>", b">" + ident + b"</article-id>")
+                report = fulltext.inspect("PMC12345678", aliased,
+                                          expected_doi="10.1234/sample")
+                self.assertEqual(report["source_identity"], "PMC12345678")
+                self.assertFalse(report["hmac_submission_allowed"])
+                self.assertFalse(report["automatic_publication"])
+
+        with self.assertRaisesRegex(fulltext.FulltextHold, "FULLTEXT_PMCI_MISMATCH"):
+            fulltext.inspect("PMC12345678", sample().replace(
+                b'pub-id-type="pmc"', b'pub-id-type="pmid"'),
+                expected_doi="10.1234/sample")
+
+        for wrong in (b"99999999", b"PMC99999999", b"PMC12345678X"):
+            with self.subTest(wrong=wrong):
+                modified = xml.replace(b">12345678</article-id>",
+                                       b">" + wrong + b"</article-id>")
+                with self.assertRaisesRegex(fulltext.FulltextHold, "FULLTEXT_PMCI_MISMATCH"):
+                    fulltext.inspect("PMC12345678", modified,
+                                     expected_doi="10.1234/sample")
+
+    def test_pmc_alias_conflicts_and_duplicates_fail_closed(self):
+        both = sample().replace(
+            b'<article-id pub-id-type="doi">',
+            b'<article-id pub-id-type="pmcid">PMC12345678</article-id>'
+            b'<article-id pub-id-type="doi">'
+        )
+        self.assertEqual(fulltext.inspect(
+            "PMC12345678", both, expected_doi="10.1234/sample"
+        )["status"], "NEEDS_CONTENT")
+
+        conflicting = both.replace(
+            b'<article-id pub-id-type="pmcid">PMC12345678</article-id>',
+            b'<article-id pub-id-type="pmcid">PMC99999999</article-id>'
+        )
+        with self.assertRaisesRegex(fulltext.FulltextHold, "FULLTEXT_PMCI_MISMATCH"):
+            fulltext.inspect("PMC12345678", conflicting)
+
+        duplicate = both.replace(
+            b'<article-id pub-id-type="doi">',
+            b'<article-id pub-id-type="pmcid">PMC12345678</article-id>'
+            b'<article-id pub-id-type="doi">'
+        )
+        with self.assertRaisesRegex(fulltext.FulltextHold, "FULLTEXT_ID_DUPLICATE"):
+            fulltext.inspect("PMC12345678", duplicate)
+
+        bad_doi = both.replace(b"10.1234/sample", b"10.1234/other")
+        with self.assertRaisesRegex(fulltext.FulltextHold, "FULLTEXT_DOI_MISMATCH"):
+            fulltext.inspect("PMC12345678", bad_doi,
+                             expected_doi="10.1234/sample")
+
     def test_dtd_and_entity_injection_rejected(self):
         attack = b'<!DOCTYPE article [<!ENTITY secret SYSTEM "file:///etc/passwd">]>' + sample()
         with self.assertRaisesRegex(fulltext.FulltextHold, "FULLTEXT_DTD_OR_ENTITY_DENIED"):
