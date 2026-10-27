@@ -21,7 +21,7 @@ class NativeContractTests(unittest.TestCase):
             self.assertIsNotNone(literal, str(file))
             self.assertEqual(literal.group(1), DEVICE_NAME, str(file))
 
-    def test_native_hello_exposes_exact_two_operations(self):
+    def test_native_hello_exposes_exact_three_operations(self):
         conf = parse_settings("wss://hermes.mikemoore.top/ws",
                               "h15-native-ci-read-123456", "a" * 48)
         frame = hello(conf)
@@ -38,6 +38,17 @@ class NativeContractTests(unittest.TestCase):
         self.assertIn("...NATIVE_TOOLS", gateway)
         self.assertIn("NATIVE_CALL + CALL", gateway)
         self.assertIn("...pinnedToolCatalog()", (ROOT / "scripts/h15_brc_workspace_gateway.py").read_text(encoding="utf-8"))
+
+
+    def test_built_oci_native_toolset_is_gated_in_ci(self):
+        workflow = (ROOT / ".github/workflows/h15-remote-commander-candidate.yml").read_text(encoding="utf-8")
+        # Do not accept CI that only checks templates while the shipped image
+        # still exports the previous exact-two native reader.
+        self.assertIn("H454_COMPILED_NATIVE_TOOLSET_3=PASS", workflow)
+        self.assertIn("H454_OCI_NATIVE_TOOLSET_3=PASS", workflow)
+        self.assertIn("H454_OCI_NATIVE_TOOLSET_MISMATCH", workflow)
+        self.assertIn('"/opt/brc/packages/relay/dist/mcp/hermes-native-read.js"', workflow)
+        self.assertIn('--network none --read-only --cap-drop ALL', workflow)
 
 
 if __name__ == "__main__":

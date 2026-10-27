@@ -136,7 +136,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m unittest -v tests.test_h15_workspace_router tests.test_h15_brc_workspace_gateway tests.test_h15_brc_upgrade_preflight tests.test_h15_brc_transactional_upgrade tests.test_h15_brc_owner_artifact_stage tests.test_h15_brc_owner_handoff tests.test_h15_brc_native_read_gateway tests.test_h15_native_windows_relay_contract
+          python3 -m unittest -v tests.test_h15_workspace_router tests.test_h15_brc_workspace_gateway tests.test_h15_brc_upgrade_preflight tests.test_h15_brc_transactional_upgrade tests.test_h15_brc_owner_artifact_stage tests.test_h15_brc_owner_handoff tests.test_h15_brc_native_read_gateway tests.test_h15_native_windows_relay_contract tests.test_h454_brc_native_three_tool_cutover
 
       - name: Fetch exact upstream Git commit (not tag, latest or npm install)
         shell: bash
@@ -265,6 +265,16 @@ jobs:
         run: |
           set -euo pipefail
           pnpm build
+          # H454: verify the COMPILED native toolset, not only the Python/TS templates.
+          node --input-type=module <<'JS'
+          import { NATIVE_TOOLS } from './packages/relay/dist/mcp/hermes-native-read.js';
+          const expected = ['native_file_stat', 'native_file_read', 'native_file_list'];
+          const names = Array.isArray(NATIVE_TOOLS) ? NATIVE_TOOLS.map(t => t.name) : [];
+          if (JSON.stringify(names) !== JSON.stringify(expected)) {
+            throw Error('H454_COMPILED_NATIVE_TOOLSET_MISMATCH');
+          }
+          console.log('H454_COMPILED_NATIVE_TOOLSET_3=PASS');
+          JS
           node "$GITHUB_WORKSPACE/scripts/h15_brc_observer_contract.mjs" "$RUNNER_TEMP/brc-upstream/packages/relay/dist/hermes-brc-observer.js"
           node --input-type=module <<'JS'
           import { listApprovedWorkspaces, resolveApprovedWorkspace } from './packages/relay/dist/mcp/hermes-workspaces.js';
@@ -372,6 +382,21 @@ jobs:
                 .then(buffer => { if (!Buffer.isBuffer(buffer) || buffer.length < 20) process.exit(4); })
                 .catch(() => process.exit(5));
             '
+          # H454: a successful source CI is insufficient. Probe the ACTUAL OCI
+          # before publishing/staging it; a stale two-tool image must fail CI.
+          docker run --rm --network none --read-only --cap-drop ALL \
+            --security-opt no-new-privileges --user 65534:65534 \
+            --memory 256m --pids-limit 32 \
+            --entrypoint node "$image" --input-type=module -e '
+              import { NATIVE_TOOLS } from "/opt/brc/packages/relay/dist/mcp/hermes-native-read.js";
+              const expected = ["native_file_stat", "native_file_read", "native_file_list"];
+              const names = Array.isArray(NATIVE_TOOLS) ? NATIVE_TOOLS.map(t => t.name) : [];
+              if (JSON.stringify(names) !== JSON.stringify(expected)) {
+                throw Error("H454_OCI_NATIVE_TOOLSET_MISMATCH");
+              }
+              console.log("H454_OCI_NATIVE_TOOLSET_3=PASS");
+            '
+          echo "H454_OCI_NATIVE_TOOLSET_3=PASS" >> "$GITHUB_STEP_SUMMARY"
           echo "H15_RELAY_RUNTIME_NPM_REMOVED=PASS" >> "$GITHUB_STEP_SUMMARY"
           echo "H15_RELAY_RUNTIME_SHARP_NATIVE=PASS" >> "$GITHUB_STEP_SUMMARY"
           test "$(docker image inspect --format '{{.Config.User}}' "$image")" = "65534:65534"
