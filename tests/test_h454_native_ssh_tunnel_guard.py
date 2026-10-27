@@ -54,7 +54,7 @@ class TunnelGuardContracts(unittest.TestCase):
         src = self.code
         self.assertIn("H454_LOCAL_PORT_ALREADY_BOUND", src)
         self.assertIn("H454_UNOWNED_LISTENER_AFTER_DISCONNECT", src)
-        self.assertIn("Test-OwnListener $child.Id", src)
+        self.assertIn("Test-OwnListener -ExpectedPid $child.Id", src)
         self.assertIn("$child.Kill()", src)
         self.assertIn("$child.Dispose()", src)
         self.assertIn("H454_REASON=", src)
