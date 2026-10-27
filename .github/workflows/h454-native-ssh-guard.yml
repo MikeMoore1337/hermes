@@ -1,0 +1,59 @@
+name: H454 native SSH guard (synthetic, no host changes)
+
+on:
+  pull_request:
+    paths:
+      - scripts/h454_native_ssh_tunnel_guard.ps1
+      - tests/test_h454_native_ssh_tunnel_guard.py
+      - docs/operations/h454-native-ssh-tunnel-guard.md
+      - .github/workflows/h454-native-ssh-guard.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-guard-contract:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: windows-2022
+    timeout-minutes: 5
+    steps:
+      - name: Checkout source without persistent credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Parse PowerShell and test unauthorized Run denial (no SSH)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $script = Join-Path $env:GITHUB_WORKSPACE 'scripts/h454_native_ssh_tunnel_guard.ps1'
+          $tokens = $null
+          $parseErrors = $null
+          [Management.Automation.Language.Parser]::ParseFile($script, [ref]$tokens, [ref]$parseErrors) | Out-Null
+          if (@($parseErrors).Count -ne 0) { throw 'H454_GUARD_POWERSHELL_PARSE_FAILED' }
+          $out = Join-Path $env:RUNNER_TEMP 'h454-guard-stdout.txt'
+          $err = Join-Path $env:RUNNER_TEMP 'h454-guard-stderr.txt'
+          $originalUser = $env:USERNAME
+          try {
+            # Mock ONLY identity to reach the approval check before any SSH/key IO.
+            $env:USERNAME = 'Mike'
+            $args = @('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass',
+                      '-File', ('"' + $script + '"'), '-Mode', 'Run')
+            $proc = Start-Process -FilePath 'powershell.exe' -ArgumentList $args -Wait -PassThru -RedirectStandardOutput $out -RedirectStandardError $err
+          } finally {
+            $env:USERNAME = $originalUser
+          }
+          if ($proc.ExitCode -eq 0) { throw 'H454_UNAUTHORIZED_RUN_SUCCEEDED' }
+          $stdout = Get-Content -LiteralPath $out -Raw
+          if ($stdout -notmatch 'H454_NATIVE_SSH_TUNNEL=REFUSED' -or
+              $stdout -notmatch 'H454_REASON=H454_EXPLICIT_OWNER_APPROVAL_REQUIRED') {
+              throw 'H454_UNAUTHORIZED_RUN_NOT_DENIED_EARLY'
+          }
+          Write-Output 'H454_GUARD_PARSER=PASS'
+          Write-Output 'H454_GUARD_UNAUTHORIZED_RUN_DENY=PASS'
+      - name: Source safety contracts
+        shell: pwsh
+        run: |
+          python -B -m unittest -v tests.test_h454_native_ssh_tunnel_guard
+          if ($LASTEXITCODE -ne 0) { throw 'H454_GUARD_SOURCE_TESTS_FAILED' }
+          Write-Output 'H454_GUARD_SOURCE_TESTS=PASS'
