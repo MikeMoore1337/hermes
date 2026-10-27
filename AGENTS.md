@@ -116,6 +116,10 @@ It scales analysis to risk, maps Issue acceptance criteria to real verification,
 and separates mocked, live and production evidence. It does not install any
 external skill, agent runtime, controller, permission or additional CI gate.
 
+## Optional local Graphify for architecture analysis
+
+When an approved, up-to-date local Graphify code-only graph is available, a developer may use the unmodified upstream CLI for nontrivial dependency/impact questions, then verify all edges against current code and tests. See [the developer-only guide](docs/operations/graphify-development.md). Never auto-install Graphify, enable resident Hermes Agent integration, Cloud, MCP, LLM/API providers, hooks, strict source-read enforcement or new permissions; never index secrets, other repositories or a private vault. Direct source inspection remains the default fallback. This paragraph does not authorize production changes.
+
 ## Optional development-only Toolkit skills
 
 For approved repository-development tasks, Codex may use the focused `SKILL.md` references in [`.agents/README.md`](.agents/README.md). These instructions are **not** resident Hermes Agent skills. The runtime `skills/` directory, integration permissions, provider accounts, systemd units, network access and production deployment are untouched. Load only relevant skills; keep this `AGENTS.md`, approved Issue scope, current playbook and existing owner gates authoritative. Do not execute scripts or install remote skills merely because their instructions mention them.

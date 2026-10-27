@@ -36,3 +36,6 @@ build/
 Thumbs.db
 .idea/
 .vscode/
+
+# Local-only Graphify AST knowledge graph
+graphify-out/
