@@ -120,12 +120,30 @@ def parse(raw: bytes, *, source: str, identifier: str) -> dict[str, object]:
             or type(document.get("result")) is not dict):
         raise ArticleIntegrityError("article_schema_invalid")
     result: dict[str, Any] = document["result"]
-    if result.get("source") != source or result.get("id") != identifier:
-        raise ArticleIntegrityError("article_identity_mismatch")
-    if source == "MED" and result.get("pmid") != identifier:
-        raise ArticleIntegrityError("article_pmid_mismatch")
-    if source == "PMC" and result.get("pmcid") != identifier:
-        raise ArticleIntegrityError("article_pmcid_mismatch")
+    if source == "PMC":
+        # Europe PMC can answer a PMCID lookup with a canonical MED/PMID
+        # citation record. Do not confuse returned citation source/id with
+        # the requested PMCID: the explicit pmcid must ALWAYS match.
+        if result.get("pmcid") != identifier:
+            raise ArticleIntegrityError("article_pmcid_mismatch")
+        response_source = result.get("source")
+        response_id = result.get("id")
+        if response_source == "PMC":
+            if response_id != identifier:
+                raise ArticleIntegrityError("article_identity_mismatch")
+        elif response_source == "MED":
+            # Permit only the canonical MED alias, not arbitrary records or
+            # absent/unrelated PubMed IDs. PMID format is validated below.
+            if (type(response_id) is not str or not response_id
+                    or response_id != result.get("pmid")):
+                raise ArticleIntegrityError("article_identity_mismatch")
+        else:
+            raise ArticleIntegrityError("article_identity_mismatch")
+    else:
+        if result.get("source") != source or result.get("id") != identifier:
+            raise ArticleIntegrityError("article_identity_mismatch")
+        if result.get("pmid") != identifier:
+            raise ArticleIntegrityError("article_pmid_mismatch")
     doi = result.get("doi")
     if doi is not None and (type(doi) is not str or DOI.fullmatch(doi) is None):
         raise ArticleIntegrityError("article_doi_invalid")
