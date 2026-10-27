@@ -1,0 +1,52 @@
+name: H445 owner Windows Docker inventory (synthetic only)
+
+on:
+  pull_request:
+    paths:
+      - scripts/h445_windows_docker_inventory.ps1
+      - tests/test_h445_windows_docker_inventory.py
+      - docs/operations/h445-windows-docker-host-inventory.md
+      - .github/workflows/h445-windows-docker-inventory.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  static-host-inventory:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: windows-2022
+    timeout-minutes: 6
+    steps:
+      - name: Checkout exact PR source without retained credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Parse Windows PowerShell and deny unvalidated container identifiers
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $script = Join-Path $env:GITHUB_WORKSPACE 'scripts/h445_windows_docker_inventory.ps1'
+          $tokens = $null
+          $parseErrors = $null
+          [Management.Automation.Language.Parser]::ParseFile($script, [ref]$tokens, [ref]$parseErrors) | Out-Null
+          if (@($parseErrors).Count -ne 0) { throw 'H445_INVENTORY_PARSER_FAILED' }
+
+          # This MUST fail before any Docker binary/file IO is attempted.
+          # Use PS 5.1 as on the owner host, without passing a valid container ID.
+          $result = @(& powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $script -Mode Inspect -ContainerId 'INVALID')
+          $exitCode = $LASTEXITCODE
+          if ($exitCode -ne 2 -or
+              ($result -join ';') -notmatch 'H445_REASON=H445_FULL_CONTAINER_ID_REQUIRED' -or
+              ($result -join ';') -notmatch 'H445_HOST_INVENTORY=HOLD') {
+              throw 'H445_INVALID_ID_NOT_DENIED'
+          }
+          Write-Output 'H445_WINDOWS_PS_PARSER=PASS'
+          Write-Output 'H445_INVALID_HOST_ID_DENIED=PASS'
+          $global:LASTEXITCODE = 0
+      - name: Source-only security contracts
+        shell: pwsh
+        run: |
+          python -B -m unittest -v tests.test_h445_windows_docker_inventory
+          if ($LASTEXITCODE -ne 0) { throw 'H445_INVENTORY_CONTRACT_FAIL' }
+          Write-Output 'H445_INVENTORY_SOURCE_CONTRACTS=PASS'
