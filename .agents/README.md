@@ -15,6 +15,7 @@
 | UX/UI Control Center (основная критика дизайна и полировка) | `impeccable` (pinned upstream, только разработка) |
 | Browser/Control Center сценарий | `browser-workflow-evidence` |
 | Проверка уже разрешённого выпуска | `release-safety` |
+| Минимальный корректный diff и самостоятельный анализ кода | [Оригинальный Ponytail v5.3.2](../docs/operations/PONYTAIL_DEV_ONLY.md) - **только добровольный навык клиента разработки**, не Hermes resident |
 
 **Оригинальный Graphify - отдельно устанавливаемый по согласию разработчика инструмент для изучения зависимостей.** См. [локальную инструкцию](../docs/operations/graphify-development.md). Не копировать в runtime `skills/` и не включать resident `graphify hermes install`.
 
@@ -32,3 +33,5 @@ Impeccable source доступен только после инициализа�
 ## ECC (внешний upstream, не здесь)
 
 Для Issue [#632](https://github.com/MikeMoore1337/hermes/issues/632) зафиксирована [инструкция по штатному upstream-адаптеру](../docs/operations/ecc-upstream-as-is.md). Она описывает проверку отдельной среды Hermes Agent и профиль `minimal`, но **не импортирует ECC** в `.agents/skills/`, не меняет `AGENTS.md`, не включает резидентный процесс/MCP/хуки/память и не подтверждает runtime-установку. Статус устанавливается только по изолированной фактической проверке.
+
+Ponytail **не** поставляется в `.agents/skills/`, не устанавливается в resident Hermes Agent и не запускает hooks через этот репозиторий. Используйте исходные навыки только вручную в совместимом агенте разработки; если уже установлен оригинальный глобальный Ponytail, не копируйте его повторно. Подробные границы, SHA и откат: [PONYTAIL_DEV_ONLY.md](../docs/operations/PONYTAIL_DEV_ONLY.md).
