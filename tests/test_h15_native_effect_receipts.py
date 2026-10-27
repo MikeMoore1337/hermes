@@ -65,6 +65,50 @@ class NativeEffectLedgerContracts(unittest.TestCase):
         self.assertEqual(results.count("RESERVED_ONCE"), 1)
         self.assertEqual(results.count("ALREADY_RESERVED"), 15)
 
+    def test_transient_wal_init_busy_retries_only_before_reservation(self):
+        real_connect = sqlite3.connect
+        busy = sqlite3.OperationalError("database is locked")
+        busy.sqlite_errorcode = sqlite3.SQLITE_BUSY
+        attempted = 0
+
+        def once_busy(*args, **kwargs):
+            nonlocal attempted
+            attempted += 1
+            if attempted == 1:
+                raise busy
+            return real_connect(*args, **kwargs)
+
+        with patch.object(ledger.sqlite3, "connect", side_effect=once_busy):
+            with patch.object(ledger.time, "sleep") as pause:
+                self.assertEqual(ledger.claim(
+                    self.root, identity(), now=1730000000
+                ), "RESERVED_ONCE")
+        self.assertEqual(attempted, 2)
+        pause.assert_called_once_with(0.025)
+        self.assertEqual(ledger.inspect(
+            self.root, identity().operation_id
+        ), "reserved")
+        self.assertEqual(ledger.claim(
+            self.root, identity(), now=1730000001
+        ), "ALREADY_RESERVED")
+
+    def test_persistent_wal_init_busy_fail_closed_without_reservation(self):
+        real_connect = sqlite3.connect
+        busy = sqlite3.OperationalError("database is locked")
+        busy.sqlite_errorcode = sqlite3.SQLITE_BUSY
+        with patch.object(ledger.sqlite3, "connect", side_effect=busy) as connect:
+            with patch.object(ledger.time, "sleep") as pause:
+                with self.assertRaisesRegex(ledger.LedgerDenied, "ledger_unavailable"):
+                    ledger.claim(self.root, identity(), now=1730000000)
+        self.assertEqual(connect.call_count, 5)
+        self.assertEqual(pause.call_count, 4)
+        self.assertEqual(ledger.inspect(
+            self.root, identity().operation_id
+        ), "unknown")
+        self.assertEqual(ledger.claim(
+            self.root, identity(), now=1730000001
+        ), "RESERVED_ONCE")
+
     def test_cross_scope_id_collision_does_not_reserve_twice(self):
         one = identity()
         ledger.claim(self.root, one, now=1730000000)
