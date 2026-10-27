@@ -138,7 +138,7 @@ def inspect(pmcid: str, raw: bytes, *, expected_doi: str | None = None) -> dict:
         name = _local(elem.tag)
         if name == "article-id":
             key = elem.attrib.get("pub-id-type")
-            if key in ("pmc", "doi"):
+            if key in ("pmc", "pmcid", "doi"):
                 val = (elem.text or "").strip()
                 if key in ids:
                     raise FulltextHold("FULLTEXT_ID_DUPLICATE")
@@ -147,7 +147,14 @@ def inspect(pmcid: str, raw: bytes, *, expected_doi: str | None = None) -> dict:
             body = True
         elif name == "license":
             license_present = True
-    if ids.get("pmc", "").removeprefix("PMC") != pmcid.removeprefix("PMC"):
+    # JATS/PMC use both pub-id-type="pmcid" and legacy "pmc". Require
+    # at least one and compare EVERY present variant against the requested
+    # PMCID: conflicting aliases must never bypass the identity gate.
+    pmc_values = [ids[key] for key in ("pmc", "pmcid") if key in ids]
+    if not pmc_values or any(
+        value.removeprefix("PMC") != pmcid.removeprefix("PMC")
+        for value in pmc_values
+    ):
         raise FulltextHold("FULLTEXT_PMCI_MISMATCH")
     if expected_doi is not None and ids.get("doi", "").casefold() != expected_doi.casefold():
         raise FulltextHold("FULLTEXT_DOI_MISMATCH")
