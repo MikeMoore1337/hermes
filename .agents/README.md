@@ -26,3 +26,7 @@
 `Hermes Agent`, не разрешение на LLM API, публикацию, VPS или private vault.
 
 Impeccable source доступен только после инициализации Git-подмодуля `.impeccable` (см. `../docs/ux/impeccable-control-center.md`). Это не runtime Hermes Agent и не новый разрешённый бинарник. Existing source Toolkit skills и owner approval первичны.
+
+## ECC (внешний upstream, не здесь)
+
+Для Issue [#632](https://github.com/MikeMoore1337/hermes/issues/632) зафиксирована [инструкция по штатному upstream-адаптеру](../docs/operations/ecc-upstream-as-is.md). Она описывает проверку отдельной среды Hermes Agent и профиль `minimal`, но **не импортирует ECC** в `.agents/skills/`, не меняет `AGENTS.md`, не включает резидентный процесс/MCP/хуки/память и не подтверждает runtime-установку. Статус устанавливается только по изолированной фактической проверке.
