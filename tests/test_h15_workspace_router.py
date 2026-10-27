@@ -43,7 +43,7 @@ class WorkspaceRouterTests(unittest.TestCase):
             self.assertEqual(r["workspace"], "your-fitness-coach")
             self.assertEqual(r["branch"], "master")
             self.assertEqual(r["device_status"], "not_checked")
-        self.assertIs(r["process_execution_verified"], False)
+            self.assertIs(r["process_execution_verified"], False)
             self.assertEqual(len(r["head"]), 40)
             self.assertEqual(r["tracked_clean"], "not_checked")
 
