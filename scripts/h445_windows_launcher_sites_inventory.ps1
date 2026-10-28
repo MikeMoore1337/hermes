@@ -45,6 +45,7 @@ function Find-RunSites([string]$Source) {
         $n -is [Management.Automation.Language.CommandAst]
     },$true))
     $sites=New-Object 'System.Collections.Generic.List[object]'
+    $contexts=New-Object 'System.Collections.Generic.List[object]'
     $otherDockerCalls=0
     foreach ($call in $calls) {
         $args=@($call.CommandElements)
@@ -89,7 +90,11 @@ function Find-RunSites([string]$Source) {
         $conditional=(Parent-Has $call 'IfStatementAst') -or
             (Parent-Has $call 'SwitchStatementAst') -or
             (Parent-Has $call 'TryStatementAst')
+        $nearest=Nearest-If $call
+        $arm=If-Arm $call $nearest
+        $contexts.Add([pscustomobject]@{ IfNode=$nearest; Arm=$arm })
         $sites.Add([pscustomobject]@{
+            NearestIf=(Flag-Value ($null -ne $nearest))
             Context=$context
             Conditional=(Flag-Value $conditional)
             Name=(Flag-Value $name)
@@ -102,11 +107,62 @@ function Find-RunSites([string]$Source) {
             Splat=(Flag-Value $splat)
         })
     }
+    $relation='UNKNOWN'
+    if ($contexts.Count -eq 2) {
+        $relation=If-Relation $contexts[0].IfNode $contexts[1].IfNode $contexts[0].Arm $contexts[1].Arm
+    }
     return [pscustomobject]@{
         Sites=@($sites.ToArray())
         OtherDockerCalls=$otherDockerCalls
+        Relation=$relation
     }
 }
+
+# AST-only correlation: no predicate evaluation and no source fragments printed.
+function Nearest-If($Node) {
+    $parent=$Node.Parent
+    while ($null -ne $parent) {
+        if ($parent -is [Management.Automation.Language.IfStatementAst]) {
+            return $parent
+        }
+        $parent=$parent.Parent
+    }
+    return $null
+}
+function If-Arm($Node,$IfNode) {
+    if ($null -eq $IfNode) { return -1 }
+    $start=$Node.Extent.StartOffset
+    $end=$Node.Extent.EndOffset
+    $index=0
+    foreach ($clause in $IfNode.Clauses) {
+        $block=$clause.Item2
+        if ($null -ne $block -and
+            $start -ge $block.Extent.StartOffset -and
+            $end -le $block.Extent.EndOffset) {
+            return $index
+        }
+        $index++
+    }
+    $other=$IfNode.ElseClause
+    if ($null -ne $other -and
+        $start -ge $other.Extent.StartOffset -and
+        $end -le $other.Extent.EndOffset) { return 100 }
+    return -1
+}
+function If-Relation($First,$Second,[int]$FirstArm,[int]$SecondArm) {
+    if ($null -eq $First -or $null -eq $Second) {
+        return 'UNKNOWN'
+    }
+    if (-not [object]::ReferenceEquals($First,$Second)) {
+        return 'DIFFERENT_NEAREST_IF'
+    }
+    if ($FirstArm -lt 0 -or $SecondArm -lt 0) {
+        return 'UNKNOWN'
+    }
+    if ($FirstArm -eq $SecondArm) { return 'SAME_IF_ARM' }
+    return 'EXCLUSIVE_IF_ARMS'
+}
+
 function Count-Class([int]$Value) {
     if ($Value -eq 0) { return 'ZERO' }
     if ($Value -eq 1) { return 'ONE' }
@@ -173,10 +229,12 @@ try {
     Write-Output 'H445_LAUNCHER_SITES=READ_ONLY_INVENTORY'
     Write-Output ('H445_DIRECT_RUN_SITE_COUNT='+@($inventory.Sites).Count)
     Write-Output ('H445_OTHER_DIRECT_DOCKER_CALLS='+(Count-Class $inventory.OtherDockerCalls))
+    Write-Output ('H445_RUN_SITE_RELATION='+$inventory.Relation)
     for ($i=0; $i -lt $inventory.Sites.Count; $i++) {
         $site=$inventory.Sites[$i]
         $prefix='H445_RUN_SITE_'+($i+1).ToString()
         Write-Output ($prefix+'_CONTEXT='+$site.Context)
+        Write-Output ($prefix+'_NEAREST_IF='+$site.NearestIf)
         Write-Output ($prefix+'_CONDITIONAL='+$site.Conditional)
         Write-Output ($prefix+'_NAME_FLAG='+$site.Name)
         Write-Output ($prefix+'_MOUNT_FLAG='+$site.Mount)

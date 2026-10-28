@@ -565,3 +565,36 @@ inventory is static source evidence **only**, not execution-path
 verification. Exact dynamic Docker arguments, pairing preservation,
 original rollback execution and single-container `--init` maintenance
 are still held behind separate owner approval. Do not stop the original.
+
+
+## Owner Windows 2026-10-29: exactly two conditional Docker run sites
+
+Owner successfully ran the pinned source-only private inventory
+(`h445_windows_launcher_sites_inventory.ps1`), source integrity PASS,
+exit 0, no Docker/task mutation by the script. Exactly **two** direct
+`docker run` sites were found in conditional, top-level PowerShell
+AST contexts. Both contain literal name/mount/network flag tokens,
+no literal env/init/rm tokens, a variable argument, and no splat.
+These are **static source characteristics**, not effective runtime
+settings: environment variables or init options might be constructed
+dynamically, and the executed path remains NOT_VERIFIED.
+
+The next source-only revision extends the existing protected-local
+inventory with **read-only AST parent correlation**. It reports
+`H445_RUN_SITE_RELATION` exclusively as one of:
+`EXCLUSIVE_IF_ARMS`, `SAME_IF_ARM`,
+`DIFFERENT_NEAREST_IF`, or `UNKNOWN`.
+It also emits per-site `_NEAREST_IF=YES/NO`. No branch predicates
+are executed or printed, no condition text or source offsets leave
+Windows, and neither PowerShell launcher nor Docker is invoked.
+
+Even `EXCLUSIVE_IF_ARMS` proves only that the two static call sites
+belong to different branches of the same parsed `if` statement;
+it does not indicate which branch was executed on the owner host, and
+does not authorize insertion of `--init`, a live cutover, or a rollback.
+
+Until the actual branch and launch argument construction are verified
+locally, keep both `H445_CUTOVER_AUTHORIZED=FALSE` and
+`H445_ROLLBACK_EXECUTION=NOT_TESTED`. Continue under #454 if #445
+has been closed by repository workflow without satisfying its original
+runtime acceptance criteria.

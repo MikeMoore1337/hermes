@@ -342,7 +342,7 @@ jobs:
           $ast = [Management.Automation.Language.Parser]::ParseFile(
             $script, [ref]$tokens, [ref]$errors)
           if (@($errors).Count -ne 0) { throw 'H445_SITE_PS_PARSE_FAILED' }
-          foreach ($fnName in @('Flag-Value', 'Parent-Has', 'Find-RunSites', 'Count-Class')) {
+          foreach ($fnName in @('Flag-Value', 'Parent-Has', 'Nearest-If', 'If-Arm', 'If-Relation', 'Find-RunSites', 'Count-Class')) {
             $matching = @($ast.FindAll({
               param($n)
               $n -is [Management.Automation.Language.FunctionDefinitionAst] -and
@@ -369,6 +369,29 @@ jobs:
               $multiple.Sites[0].Conditional -cne 'YES' -or
               $multiple.Sites[1].Context -cne 'TOP_LEVEL') {
             throw 'H445_SITE_MULTIPLE_CONTEXT_FAILED'
+          }
+          $exclusive = Find-RunSites -Source 'if ($flag) { docker run --name x img } else { docker run --name y img }'
+          if ($exclusive.Relation -cne 'EXCLUSIVE_IF_ARMS' -or
+              $exclusive.Sites[0].NearestIf -cne 'YES' -or
+              $exclusive.Sites[1].NearestIf -cne 'YES') {
+            throw 'H445_RUN_SITES_EXCLUSIVE_IF_FAILED'
+          }
+          $elseif = Find-RunSites -Source 'if ($flag) { docker run img } elseif ($other) { docker run img }'
+          if ($elseif.Relation -cne 'EXCLUSIVE_IF_ARMS') {
+            throw 'H445_RUN_SITES_ELSEIF_FAILED'
+          }
+          $same = Find-RunSites -Source 'if ($flag) { docker run img; docker run img }'
+          if ($same.Relation -cne 'SAME_IF_ARM') {
+            throw 'H445_RUN_SITES_SAME_ARM_FAILED'
+          }
+          $separate = Find-RunSites -Source 'if ($flag) { docker run img }; if ($other) { docker run img }'
+          if ($separate.Relation -cne 'DIFFERENT_NEAREST_IF') {
+            throw 'H445_RUN_SITES_DIFFERENT_IF_FAILED'
+          }
+          $top = Find-RunSites -Source 'docker run img; docker run img'
+          if ($top.Relation -cne 'UNKNOWN' -or
+              $top.Sites[0].NearestIf -cne 'NO') {
+            throw 'H445_RUN_SITES_TOP_LEVEL_UNCERTAINTY_FAILED'
           }
           $splat = Find-RunSites -Source '& $docker run @args'
           if ($splat.Sites.Count -ne 1 -or $splat.Sites[0].Splat -cne 'YES') {
