@@ -64,7 +64,7 @@ function Protected-Directory([string]$Location) {
         (New-Object Security.Principal.SecurityIdentifier('S-1-5-32-544'))
     )
     foreach ($sid in $sidList) {
-        $rule=New-Object Security.AccessControl.FileSystemAccessRule(
+        $rule=[Security.AccessControl.FileSystemAccessRule]::new(
             $sid,
             [Security.AccessControl.FileSystemRights]::FullControl,
             ([Security.AccessControl.InheritanceFlags]::ContainerInherit -bor
