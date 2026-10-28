@@ -636,3 +636,51 @@ are independently verified, preserve `H445_CUTOVER_AUTHORIZED=FALSE`
 and `H445_ROLLBACK_EXECUTION=NOT_TESTED` and do not stop,
 recreate, rename or retask the original Windows Docker device.
 Outstanding integration acceptance is recorded under OPEN #454.
+
+
+## Owner Windows static source evidence and in-memory --init candidate (2026-10-29)
+
+The owner confirmed source-only local control-flow inventory:
+two direct Docker run commands, both inside **different** `try`
+blocks, each in a TRY_BODY region; first also has an enclosing
+`if`, second does not. Both are TOP_LEVEL, conditional, with
+name/mount/network flags and at least one dynamic variable argument.
+Source integrity validated and `H445_LAUNCHER_SITES_EXIT=0`.
+Neither site contains a *literal* `--init`. Runtime control path
+and effective flags are still NOT_VERIFIED.
+
+New operator `scripts/h445_windows_init_candidate_dry_run.ps1`:
+- Reads only the existing four-file protected owner backup after local
+  ACL/manifest/hash checks and an exact pinned launcher SHA.
+- Checks exactly two direct `docker run` command AST sites with their
+  expected literal flag shapes, and denies pre-existing literal
+  `--init`, splatting, or source structural drift.
+- Compares in local memory **text of AST expressions** for each site's
+  `--name`, mount and network specs; emits ONLY SAME_AST_TEXT,
+  DIFFERENT_AST_TEXT or UNKNOWN (not the values themselves).
+- Inserts exactly two `--init` tokens **in memory only**, parses the
+  synthetic candidate to check both calls have exactly one literal
+  flag, then removes precisely those insertions and checks byte-exact
+  reversibility against the original in-memory source.
+- Never runs the candidate; never writes any launcher, patch, diff,
+  Docker config, snapshot, task or credentials to disk; never outputs
+  original text/arguments/token values; never executes any Docker,
+  Task Scheduler or host process command. No external calls.
+- Even a PASS is **only a static transform proof**, not operational
+  evidence that both commands use identical effective values or that
+  both are valid targets for a live change. Identical AST text of a
+  variable does **not** prove equal runtime values.
+- No live Docker or Task Scheduler modifications are authorized;
+  `H445_CUTOVER_AUTHORIZED=FALSE`,
+  `H445_ROLLBACK_EXECUTION=NOT_TESTED`. Owner-local test is required
+  before deciding whether to permit a carefully staged candidate
+  with full rollback and post-change E2E.
+
+Owner usage: fetch the exact reviewed main commit from GitHub, check
+its source Git blob SHA with `git hash-object`, then execute in
+ordinary owner PowerShell with
+`powershell.exe -NoProfile -NonInteractive -File $file`.
+Share ONLY the `H445_*` receipt lines, not backed-up launcher or
+Docker inspect. This step needs no Windows native agent and does not
+circumvent original Docker container owner-gate. Operational work is
+tracked in open #454.
