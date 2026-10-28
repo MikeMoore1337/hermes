@@ -7,6 +7,8 @@ on:
       - scripts/h445_windows_docker_capacity.ps1
       - scripts/h445_windows_task_launcher_preflight.ps1
       - scripts/h445_windows_disposable_init_trial.ps1
+      - scripts/h445_windows_local_rollback_snapshot.ps1
+      - tests/test_h445_windows_local_rollback_snapshot.py
       - tests/test_h445_windows_disposable_init_trial.py
       - tests/test_h445_windows_task_launcher_preflight.py
       - tests/test_h445_windows_docker_capacity.py
@@ -167,3 +169,38 @@ jobs:
           # approval is a separate step, not implicit in a green PR.
           Write-Output 'H445_DISPOSABLE_SOURCE_PARSER=PASS'
           Write-Output 'H445_DISPOSABLE_HOST_RUNTIME=NOT_EXECUTED'
+
+      - name: Local-only protected rollback preflight parser and source contract
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $script = Join-Path $env:GITHUB_WORKSPACE 'scripts/h445_windows_local_rollback_snapshot.ps1'
+          $tokens = $null
+          $parseErrors = $null
+          $ast = [Management.Automation.Language.Parser]::ParseFile(
+            $script, [ref]$tokens, [ref]$parseErrors)
+          if (@($parseErrors).Count -ne 0) { throw 'H445_BACKUP_POWERSHELL_PARSE_FAILED' }
+          $funcs = @($ast.FindAll({
+            param($node)
+            $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+              $node.Name -eq 'Get-LauncherPath'
+          }, $true))
+          if ($funcs.Count -ne 1) { throw 'H445_BACKUP_LAUNCHER_PARSER_NOT_FOUND' }
+          . ([scriptblock]::Create($funcs[0].Extent.Text))
+          $cases = @(
+            @{ Text='-NoProfile -File "C:\Test Data\launcher.ps1"'; Value='C:\Test Data\launcher.ps1' },
+            @{ Text='-File C:\Test\launcher.ps1'; Value='C:\Test\launcher.ps1' },
+            @{ Text='-Command "hello"'; Value=$null },
+            @{ Text='-EncodedCommand AAAA'; Value=$null },
+            @{ Text='-NoProfile'; Value=$null }
+          )
+          foreach ($case in $cases) {
+            if ((Get-LauncherPath -Arguments $case.Text) -cne $case.Value) {
+              throw 'H445_BACKUP_LAUNCHER_PARSER_CASE_FAILED'
+            }
+          }
+          python -B -m unittest -v tests.test_h445_windows_local_rollback_snapshot
+          if ($LASTEXITCODE -ne 0) { throw 'H445_BACKUP_SOURCE_CONTRACT_FAILED' }
+          Write-Output 'H445_BACKUP_POWERSHELL_AST=PASS'
+          Write-Output 'H445_BACKUP_SOURCE_ONLY=PASS'
+          Write-Output 'H445_BACKUP_OWNER_HOST_NOT_TOUCHED=TRUE'
