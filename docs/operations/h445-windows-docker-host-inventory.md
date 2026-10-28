@@ -286,3 +286,62 @@ access, or full Git/Python workspace parity. An unapproved Test call
 must HOLD; a running old container is never stopped or altered by the
 trial. No real host trial or original container mutation is part of
 the repository merge.
+
+
+## 2026-10-28 owner real disposable Docker init acceptance
+
+The owner verified exact source Git blob
+1280640bf71e77acccbfc3807063fd04eea8a8d8. The sole separately
+approved Windows trial with -Mode Test -OwnerApproved returned
+H445_DISPOSABLE_INIT=PASS and H445_TEST_EXIT=0, no network or mounts,
+process init/reaper fixture PASS. Direct original container inspect
+before vs after test showed exact unchanged container identity, image,
+running state, StartedAt and RestartCount.
+
+A separate owner-host Docker read-only ps -a ancestor filter returned
+H445_DISPOSABLE_CLEANUP=PASS and H445_ORIGINAL_CONTAINER=PRESERVED.
+Thus the temporary image-matched trial container was actually removed.
+This is **not** approval for re-creating the running original sandbox,
+nor evidence that BRC force_terminate cleans a process tree.
+
+## Original Windows launcher and Docker configuration snapshot
+
+The original pinned image is present, the launcher PowerShell SHA256 is
+55EA1245671C8B656A3BBA944945198350668B2920CD46E36ED7CBA56637317E
+and 26893 bytes; the target has exactly one mount and its task is
+HermesH15BRCWindows. A protected local backup is still REQUIRED before
+maintenance and must NOT be uploaded to GitHub, a model or a remote VPS.
+
+The reviewed SOURCE ONLY helper
+scripts/h445_windows_local_rollback_snapshot.ps1 defaults to
+-Mode Preflight (read-only). It checks the exact task action file hash,
+Docker ID/name/image/PIDs/memory/nonroot UID/one mount/restart policy,
+and immutable image availability, without showing the action, secret
+environment or host volume paths. It refuses any mismatch and refuses
+a previously existing backup directory to avoid overwrites.
+
+Its separate -Mode Backup -OwnerApproved requires specific additional
+owner authorization to create **one new directory** under the owner's
+LocalAppData, named HermesH445Rollback-20261028. Windows ACLs restrict
+directory and file access to the owner SID, SYSTEM and Administrators.
+That directory will contain exactly these files, readable ONLY locally:
+
+- launcher.ps1 — an exact copy of the original host launcher script
+- scheduled-task.xml — private Task Scheduler action/trigger/principal
+- container-inspect.json — PRIVATE Docker inspect including original
+  environment values and mount source paths; never paste or commit
+- manifest.json — local SHA256 checksums of the captured files and
+  immutable Docker identifiers
+
+Do not run Backup until the owner approves this local sensitive
+snapshot. The tool never changes Docker, the task, existing project
+roots, the relay or the private Win32 device; it does not install a
+new agent. Preflight expected receipt includes
+H445_BACKUP=PREFLIGHT_PASS, H445_BACKUP_FILES_CREATED=FALSE and
+H445_ROLLBACK_VERIFIED=FALSE.
+
+A future successful Backup means only that an ACL-protected source
+snapshot exists and its hashes match. It is **not** yet a rehearsed
+restoration. The existing BRC token/device identity must remain intact;
+the actual launcher/cutover plus rollback procedure must be reviewed
+and verified separately before any original-container maintenance.
