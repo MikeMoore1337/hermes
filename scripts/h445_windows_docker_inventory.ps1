@@ -40,6 +40,16 @@ function Invoke-DockerReadOnly([string[]]$Arguments) {
     return @($output)
 }
 
+function Normalize-InitValue([object[]]$Raw) {
+    # Docker may return no value or reject a missing Init key. Neither
+    # missing, nil nor a malformed result may be promoted to false.
+    if ($Raw.Count -eq 1 -and $Raw[0] -is [string] -and
+        $Raw[0] -cin @('true', 'false')) {
+        return [string]$Raw[0]
+    }
+    return 'UNAVAILABLE'
+}
+
 try {
     if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
         Deny 'H445_WINDOWS_REQUIRED'
@@ -113,9 +123,7 @@ try {
     $init = 'UNAVAILABLE'
     try {
         $optional = @(Invoke-DockerReadOnly @('container', 'inspect', '--format', '{{.HostConfig.Init}}', $ContainerId))
-        if ($optional.Count -eq 1 -and $optional[0] -cin @('true', 'false')) {
-            $init = $optional[0]
-        }
+        $init = Normalize-InitValue -Raw $optional
     } catch {
         # Docker Go-template may reject a missing map key. This is not
         # evidence about the container's actual PID1/reaper configuration.
