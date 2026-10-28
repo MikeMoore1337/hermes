@@ -73,7 +73,13 @@ function Protected-Directory([string]$Location) {
             [Security.AccessControl.AccessControlType]::Allow)
         $acl.AddAccessRule($rule)
     }
-    [IO.Directory]::CreateDirectory($Location,$acl) | Out-Null
+    if ([Environment]::Version.Major -lt 5) {
+        # Windows PowerShell 5.1 on .NET Framework.
+        [IO.Directory]::CreateDirectory($Location,$acl) | Out-Null
+    } else {
+        # PowerShell 7+ on modern .NET uses the ACL extension.
+        [IO.FileSystemAclExtensions]::CreateDirectory($acl,$Location) | Out-Null
+    }
     $actual=Get-Acl -LiteralPath $Location -ErrorAction Stop
     if (-not $actual.AreAccessRulesProtected) { throw 'BACKUP_ACL_NOT_PROTECTED' }
     foreach ($ace in $actual.Access) {
