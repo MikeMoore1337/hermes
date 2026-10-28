@@ -34,7 +34,7 @@ class H445CapacitySourceTests(unittest.TestCase):
         src=self.src
         for marker in (
             "function Top-Summary", "process_state_status = 'NOT_VERIFIED'",
-            "visible_zombies = $null", "$top = Top-Summary -Lines $rows",
+            "visible_zombies = $null", "$top = Top-Summary -Lines $result",
             "catch {", "[Math]::Max(0, 96 - $pids)",
             "if ($headroom -lt 24) { 'HOLD' }",
             "pid1_reaper_verified = $false",
