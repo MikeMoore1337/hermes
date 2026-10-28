@@ -199,6 +199,35 @@ jobs:
               throw 'H445_BACKUP_LAUNCHER_PARSER_CASE_FAILED'
             }
           }
+          $aclFns = @($ast.FindAll({
+            param($node)
+            $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+              $node.Name -eq 'Protected-Directory'
+          }, $true))
+          if ($aclFns.Count -ne 1) { throw 'H445_PROTECTED_DIR_FUNCTION_NOT_FOUND' }
+          . ([scriptblock]::Create($aclFns[0].Extent.Text))
+          $testDir = Join-Path $env:RUNNER_TEMP ('h445-acl-' + [guid]::NewGuid().ToString('N'))
+          try {
+            Protected-Directory -Location $testDir
+            $actualAcl = Get-Acl -LiteralPath $testDir
+            if (-not $actualAcl.AreAccessRulesProtected) {
+              throw 'H445_ACL_INHERITANCE_NOT_DISABLED'
+            }
+            $allowed = @(
+              [Security.Principal.WindowsIdentity]::GetCurrent().User.Value,
+              'S-1-5-18', 'S-1-5-32-544'
+            )
+            foreach ($entry in $actualAcl.Access) {
+              $sid = $entry.IdentityReference.Translate(
+                [Security.Principal.SecurityIdentifier]).Value
+              if ($sid -notin $allowed) { throw 'H445_ACL_UNEXPECTED_IDENTITY' }
+            }
+          } finally {
+            if ([IO.Directory]::Exists($testDir)) {
+              [IO.Directory]::Delete($testDir)
+            }
+          }
+          Write-Output 'H445_BACKUP_SYNTHETIC_ACL=PASS'
           python -B -m unittest -v tests.test_h445_windows_local_rollback_snapshot
           if ($LASTEXITCODE -ne 0) { throw 'H445_BACKUP_SOURCE_CONTRACT_FAILED' }
           Write-Output 'H445_BACKUP_POWERSHELL_AST=PASS'
