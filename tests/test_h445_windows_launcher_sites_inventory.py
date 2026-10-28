@@ -22,6 +22,7 @@ class H445LauncherSitesInventoryTests(unittest.TestCase):
     def test_categorical_output_only_and_no_execution(self):
         for fragment in (
             "H445_RUN_SITE_", "_CONTEXT=", "_CONDITIONAL=",
+            "H445_RUN_SITE_RELATION=", "_NEAREST_IF=",
             "_NAME_FLAG=", "_MOUNT_FLAG=", "_ENV_FLAG=",
             "_INIT_FLAG=", "_RM_FLAG=", "_NETWORK_FLAG=",
             "_VARIABLE_ARGUMENT=", "_SPLAT=",
@@ -30,6 +31,9 @@ class H445LauncherSitesInventoryTests(unittest.TestCase):
             "H445_ROLLBACK_EXECUTION=NOT_TESTED",
             "H445_SITES_STATIC_ONLY=TRUE",
             "RUN_SITE_LIMIT_EXCEEDED", "GetType().Name", "Find-RunSites",
+            "Nearest-If", "If-Arm", "If-Relation",
+            "'EXCLUSIVE_IF_ARMS'", "'SAME_IF_ARM'", "'DIFFERENT_NEAREST_IF'",
+            "return 'UNKNOWN'",
             "return 'YES'", "return 'NO'", "'FUNCTION'", "'TOP_LEVEL'",
         ):
             with self.subTest(fragment=fragment):
