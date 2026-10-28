@@ -38,8 +38,8 @@ function Inspect-RunStructure([string]$Source) {
     foreach ($call in $calls) {
         $elements=@($call.CommandElements)
         if ($elements.Count -lt 2) { continue }
-        $executable=$elements[0].Extent.Text.Trim("'","""")
-        $verb=$elements[1].Extent.Text.Trim("'","""")
+        $executable=$elements[0].Extent.Text.Trim([char[]]@([char]39,[char]34))
+        $verb=$elements[1].Extent.Text.Trim([char[]]@([char]39,[char]34))
         if ($executable -cnotmatch '^(?i:(?:&\s*)?(?:\$docker|docker(?:\.exe)?))$' -or
             $verb -cne 'run') { continue }
         $runCount++
