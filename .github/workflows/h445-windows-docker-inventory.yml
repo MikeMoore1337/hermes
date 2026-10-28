@@ -342,7 +342,7 @@ jobs:
           $ast = [Management.Automation.Language.Parser]::ParseFile(
             $script, [ref]$tokens, [ref]$errors)
           if (@($errors).Count -ne 0) { throw 'H445_SITE_PS_PARSE_FAILED' }
-          foreach ($fnName in @('Flag-Value', 'Parent-Has', 'Nearest-If', 'If-Arm', 'If-Relation', 'Find-RunSites', 'Count-Class')) {
+          foreach ($fnName in @('Flag-Value', 'Parent-Has', 'Nearest-If', 'If-Arm', 'If-Relation', 'Nearest-Control', 'Nearest-Try', 'Try-Region', 'Try-Relation', 'Find-RunSites', 'Count-Class')) {
             $matching = @($ast.FindAll({
               param($n)
               $n -is [Management.Automation.Language.FunctionDefinitionAst] -and
@@ -392,6 +392,43 @@ jobs:
           if ($top.Relation -cne 'UNKNOWN' -or
               $top.Sites[0].NearestIf -cne 'NO') {
             throw 'H445_RUN_SITES_TOP_LEVEL_UNCERTAINTY_FAILED'
+          }
+          $tryCatch = Find-RunSites -Source 'try { docker run img } catch { docker run fallback }'
+          if ($tryCatch.Sites.Count -ne 2 -or
+              $tryCatch.TryRelation -cne 'SAME_TRY' -or
+              $tryCatch.Sites[0].NearestControl -cne 'TRY' -or
+              $tryCatch.Sites[1].NearestControl -cne 'TRY' -or
+              $tryCatch.Sites[0].TryRegion -cne 'TRY_BODY' -or
+              $tryCatch.Sites[1].TryRegion -cne 'CATCH') {
+            throw 'H445_RUN_SITES_TRY_CATCH_FAILED'
+          }
+          $ifTry = Find-RunSites -Source 'try { if ($yes) { docker run img }; docker run backup } catch { Write-Output caught }'
+          if ($ifTry.Sites.Count -ne 2 -or
+              $ifTry.Sites[0].NearestControl -cne 'IF' -or
+              $ifTry.Sites[1].NearestControl -cne 'TRY' -or
+              $ifTry.TryRelation -cne 'SAME_TRY' -or
+              $ifTry.Sites[0].TryRegion -cne 'TRY_BODY' -or
+              $ifTry.Sites[1].TryRegion -cne 'TRY_BODY') {
+            throw 'H445_RUN_SITES_IF_INSIDE_TRY_FAILED'
+          }
+          $switchCase = Find-RunSites -Source 'switch ($value) { 1 { docker run img } default { docker run img2 } }'
+          if ($switchCase.Sites.Count -ne 2 -or
+              $switchCase.Sites[0].NearestControl -cne 'SWITCH' -or
+              $switchCase.Sites[1].NearestControl -cne 'SWITCH' -or
+              $switchCase.TryRelation -cne 'NONE') {
+            throw 'H445_RUN_SITES_SWITCH_FAILED'
+          }
+          $separateTry = Find-RunSites -Source 'try { docker run img } catch { Write-Output x }; try { docker run img2 } catch { Write-Output x }'
+          if ($separateTry.TryRelation -cne 'DIFFERENT_TRY') {
+            throw 'H445_RUN_SITES_DIFFERENT_TRY_FAILED'
+          }
+          $oneTry = Find-RunSites -Source 'try { docker run img } catch { Write-Output x }; docker run img2'
+          if ($oneTry.TryRelation -cne 'ONE_ONLY') {
+            throw 'H445_RUN_SITES_ONE_TRY_FAILED'
+          }
+          $finally = Find-RunSites -Source 'try { docker run img } finally { docker run img2 }'
+          if ($finally.Sites[1].TryRegion -cne 'FINALLY') {
+            throw 'H445_RUN_SITES_FINALLY_FAILED'
           }
           $splat = Find-RunSites -Source '& $docker run @args'
           if ($splat.Sites.Count -ne 1 -or $splat.Sites[0].Splat -cne 'YES') {

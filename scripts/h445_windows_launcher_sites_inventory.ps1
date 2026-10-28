@@ -46,6 +46,7 @@ function Find-RunSites([string]$Source) {
     },$true))
     $sites=New-Object 'System.Collections.Generic.List[object]'
     $contexts=New-Object 'System.Collections.Generic.List[object]'
+    $tryContexts=New-Object 'System.Collections.Generic.List[object]'
     $otherDockerCalls=0
     foreach ($call in $calls) {
         $args=@($call.CommandElements)
@@ -91,10 +92,17 @@ function Find-RunSites([string]$Source) {
             (Parent-Has $call 'SwitchStatementAst') -or
             (Parent-Has $call 'TryStatementAst')
         $nearest=Nearest-If $call
+        $nearestTry=Nearest-Try $call
+        $control=Nearest-Control $call
+        $tryRegion=Try-Region $call $nearestTry
+        $tryContexts.Add($nearestTry)
         $arm=If-Arm $call $nearest
         $contexts.Add([pscustomobject]@{ IfNode=$nearest; Arm=$arm })
         $sites.Add([pscustomobject]@{
             NearestIf=(Flag-Value ($null -ne $nearest))
+            NearestControl=$control
+            EnclosingTry=(Flag-Value ($null -ne $nearestTry))
+            TryRegion=$tryRegion
             Context=$context
             Conditional=(Flag-Value $conditional)
             Name=(Flag-Value $name)
@@ -115,6 +123,9 @@ function Find-RunSites([string]$Source) {
         Sites=@($sites.ToArray())
         OtherDockerCalls=$otherDockerCalls
         Relation=$relation
+        TryRelation=$(if ($tryContexts.Count -eq 2) {
+            Try-Relation $tryContexts[0] $tryContexts[1]
+        } else { 'UNKNOWN' })
     }
 }
 
@@ -149,6 +160,71 @@ function If-Arm($Node,$IfNode) {
         $end -le $other.Extent.EndOffset) { return 100 }
     return -1
 }
+# Literal AST ancestor only; this never evaluates a condition or executes a statement.
+function Nearest-Control($Node) {
+    $parent=$Node.Parent
+    while ($null -ne $parent) {
+        if ($parent -is [Management.Automation.Language.IfStatementAst]) {
+            return 'IF'
+        }
+        if ($parent -is [Management.Automation.Language.TryStatementAst]) {
+            return 'TRY'
+        }
+        if ($parent -is [Management.Automation.Language.SwitchStatementAst]) {
+            return 'SWITCH'
+        }
+        if ($parent.GetType().Name -in @(
+            'ForStatementAst','ForEachStatementAst','WhileStatementAst',
+            'DoWhileStatementAst','DoUntilStatementAst')) {
+            return 'LOOP'
+        }
+        $parent=$parent.Parent
+    }
+    return 'NONE'
+}
+function Nearest-Try($Node) {
+    $parent=$Node.Parent
+    while ($null -ne $parent) {
+        if ($parent -is [Management.Automation.Language.TryStatementAst]) {
+            return $parent
+        }
+        $parent=$parent.Parent
+    }
+    return $null
+}
+function Try-Region($Node,$TryNode) {
+    if ($null -eq $TryNode) { return 'NONE' }
+    $from=$Node.Extent.StartOffset
+    $to=$Node.Extent.EndOffset
+    $body=$TryNode.Body
+    if ($null -ne $body -and
+        $from -ge $body.Extent.StartOffset -and
+        $to -le $body.Extent.EndOffset) { return 'TRY_BODY' }
+    foreach ($clause in $TryNode.CatchClauses) {
+        $catchBody=$clause.Body
+        if ($null -ne $catchBody -and
+            $from -ge $catchBody.Extent.StartOffset -and
+            $to -le $catchBody.Extent.EndOffset) { return 'CATCH' }
+    }
+    $final=$TryNode.Finally
+    if ($null -ne $final -and
+        $from -ge $final.Extent.StartOffset -and
+        $to -le $final.Extent.EndOffset) { return 'FINALLY' }
+    return 'UNKNOWN'
+}
+function Try-Relation($First,$Second) {
+    if ($null -eq $First -and $null -eq $Second) {
+        return 'NONE'
+    }
+    if ($null -eq $First -or $null -eq $Second) {
+        return 'ONE_ONLY'
+    }
+    if ([object]::ReferenceEquals($First,$Second)) {
+        return 'SAME_TRY'
+    }
+    return 'DIFFERENT_TRY'
+}
+
 function If-Relation($First,$Second,[int]$FirstArm,[int]$SecondArm) {
     if ($null -eq $First -or $null -eq $Second) {
         return 'UNKNOWN'
@@ -230,11 +306,15 @@ try {
     Write-Output ('H445_DIRECT_RUN_SITE_COUNT='+@($inventory.Sites).Count)
     Write-Output ('H445_OTHER_DIRECT_DOCKER_CALLS='+(Count-Class $inventory.OtherDockerCalls))
     Write-Output ('H445_RUN_SITE_RELATION='+$inventory.Relation)
+    Write-Output ('H445_RUN_SITE_PAIR_TRY_RELATION='+$inventory.TryRelation)
     for ($i=0; $i -lt $inventory.Sites.Count; $i++) {
         $site=$inventory.Sites[$i]
         $prefix='H445_RUN_SITE_'+($i+1).ToString()
         Write-Output ($prefix+'_CONTEXT='+$site.Context)
         Write-Output ($prefix+'_NEAREST_IF='+$site.NearestIf)
+        Write-Output ($prefix+'_NEAREST_CONTROL='+$site.NearestControl)
+        Write-Output ($prefix+'_ENCLOSING_TRY='+$site.EnclosingTry)
+        Write-Output ($prefix+'_TRY_REGION='+$site.TryRegion)
         Write-Output ($prefix+'_CONDITIONAL='+$site.Conditional)
         Write-Output ($prefix+'_NAME_FLAG='+$site.Name)
         Write-Output ($prefix+'_MOUNT_FLAG='+$site.Mount)
