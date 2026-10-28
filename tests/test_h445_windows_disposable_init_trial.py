@@ -27,7 +27,7 @@ class TrialContracts(unittest.TestCase):
     def test_pinned_image_and_no_e2e_claim(self):
         self.assertIn("571a1e2bede31a07638b896e3ef2de677dafa1c000e4a7975e7996257f8ea162",SRC)
         self.assertIn("sha256:8d28b0e1158b01c179ae1e6e1e399acaf3f502675522136d931ce08f2851a5a3",SRC)
-        self.assertIn("'/hermes-h15-windows-permanent",SRC) if False else None
+        self.assertIn("/hermes-h15-windows-permanent",SRC)
         self.assertIn("H445_PRODUCTION_CUTOVER=NOT_AUTHORIZED",SRC)
         self.assertIn("H445_PROCESS_TREE_TERMINATION=NOT_TESTED",SRC)
     def test_synthetic_node_reaper_contract(self):
