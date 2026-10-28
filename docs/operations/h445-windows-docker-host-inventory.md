@@ -345,3 +345,53 @@ snapshot exists and its hashes match. It is **not** yet a rehearsed
 restoration. The existing BRC token/device identity must remain intact;
 the actual launcher/cutover plus rollback procedure must be reviewed
 and verified separately before any original-container maintenance.
+
+
+## 2026-10-28 owner restore-evidence match and next gate
+
+Owner Windows local source backup completed under separate specific approval:
+H445_BACKUP=PASS, H445_ACL=PROTECTED, H445_BACKUP_FILE_COUNT=4,
+H445_LAUNCHER_HASH=PASS, H445_ORIGINAL_CONTAINER_UNCHANGED=PASS,
+H445_ROLLBACK_VERIFIED=FALSE. Owner separately read back the four local
+files without exposing their private contents, verified protected
+directory access controls and checksums: H445_BACKUP_FILES=PASS,
+H445_BACKUP_DIRECTORY_ACL=PROTECTED, H445_BACKUP_CHECKSUMS=PASS.
+
+Owner then independently matched the backup against the live Docker
+container and Task Scheduler metadata, without changing either:
+H445_BACKUP_ACCESS=PASS, H445_DOCKER_CONFIG_MATCH=PASS,
+H445_TASK_CONFIG_MATCH=PASS, H445_RESTORE_EVIDENCE=PASS,
+H445_ROLLBACK_EXECUTION=NOT_TESTED,
+H445_ORIGINAL_CONTAINER_CHANGED=FALSE.
+
+These results establish that a protected snapshot of the unchanged
+original state was captured and is readable. They **do not** establish
+that recreation and actual rollback can run successfully. The Docker
+mount's source and OS-specific reattach semantics, device bearer
+registration, transient host dependencies and BRC process-tree
+termination remain distinct verification gates.
+
+New SOURCE ONLY read-only probe:
+scripts/h445_windows_restore_readiness.ps1. It is designed to run only
+on the owner's Windows Docker host with the already captured local
+snapshot; it does not create additional backups, invoke Docker run,
+stop, restart, remove, exec or change Task Scheduler. It checks the
+private manifest/checksums, saved vs live Config/HostConfig/Mounts,
+live task XML and known resource/security contract, reporting only
+fixed non-secret receipts. It NEVER prints task XML, local paths,
+mount source, environment, credential or container inspect JSON.
+
+After pinned-source integrity verification, invoke locally:
+
+~~~powershell
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $file
+'H445_RESTORE_READINESS_EXIT=' + $LASTEXITCODE
+~~~
+
+Even SNAPSHOT_CONSISTENT emits
+H445_MOUNT_REATTACH=NOT_VERIFIED,
+H445_DEVICE_IDENTITY_REATTACH=NOT_VERIFIED and
+H445_ROLLBACK_EXECUTION=NOT_TESTED. Failure is HOLD with exit 2.
+The probe is not a substitute for an operator-approved
+recovery plan, bounded maintenance window, or live ChatGPT/Codex
+acceptance. Original Windows native read-only presence remains paused.
