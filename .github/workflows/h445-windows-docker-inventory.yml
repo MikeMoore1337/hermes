@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - scripts/h445_windows_docker_inventory.ps1
+      - scripts/h445_windows_docker_capacity.ps1
+      - tests/test_h445_windows_docker_capacity.py
       - tests/test_h445_windows_docker_inventory.py
       - docs/operations/h445-windows-docker-host-inventory.md
       - .github/workflows/h445-windows-docker-inventory.yml
@@ -72,3 +74,44 @@ jobs:
           python -B -m unittest -v tests.test_h445_windows_docker_inventory
           if ($LASTEXITCODE -ne 0) { throw 'H445_INVENTORY_CONTRACT_FAIL' }
           Write-Output 'H445_INVENTORY_SOURCE_CONTRACTS=PASS'
+
+      - name: Static PID-capacity diagnostic parser and synthetic ps fixtures
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $script = Join-Path $env:GITHUB_WORKSPACE 'scripts/h445_windows_docker_capacity.ps1'
+          $tokens = $null
+          $parseErrors = $null
+          $ast = [Management.Automation.Language.Parser]::ParseFile($script, [ref]$tokens, [ref]$parseErrors)
+          if (@($parseErrors).Count -ne 0) { throw 'H445_CAPACITY_PS_PARSE_FAILED' }
+          $funcs = @($ast.FindAll({
+            param($node)
+            $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+              $node.Name -eq 'Top-Summary'
+          }, $true))
+          if ($funcs.Count -ne 1) { throw 'H445_CAPACITY_PARSER_MISSING' }
+          . ([scriptblock]::Create($funcs[0].Extent.Text))
+          $good = Top-Summary -Lines ([string[]]@('PID PPID STAT','100 1 Ss','101 1 Z','102 100 Sl'))
+          if ($good.process_state_status -ne 'OBSERVED_WITHOUT_PID1_ATTRIBUTION' -or
+              $good.visible_zombies -ne 1 -or $good.process_rows -ne 3) {
+              throw 'H445_CAPACITY_SYNTHETIC_GOOD_FAILED'
+          }
+          foreach ($bad in @(
+            ([string[]]@('STAT','Z')),
+            ([string[]]@('PID PPID STAT','123 malformed')),
+            ([string[]]@('PID PPID STAT')),
+            ([string[]]@('PID PPID STAT','1 2 Z credential')),
+            ([string[]]@('PID PPID STAT','oops 1 Z'))
+          )) {
+            $result = Top-Summary -Lines ([string[]]$bad)
+            if ($result.process_state_status -ne 'NOT_VERIFIED' -or
+                $null -ne $result.visible_zombies -or
+                $null -ne $result.process_rows) {
+                throw 'H445_CAPACITY_SYNTHETIC_BAD_NOT_DENIED'
+            }
+          }
+          python -B -m unittest -v tests.test_h445_windows_docker_capacity
+          if ($LASTEXITCODE -ne 0) { throw 'H445_CAPACITY_SOURCE_CONTRACTS_FAILED' }
+          Write-Output 'H445_CAPACITY_PS_PARSER=PASS'
+          Write-Output 'H445_CAPACITY_PID_HEADER_GUARD=PASS'
+          Write-Output 'H445_CAPACITY_SOURCE_CONTRACTS=PASS'
