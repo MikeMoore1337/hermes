@@ -10,6 +10,8 @@ on:
       - scripts/h445_windows_local_rollback_snapshot.ps1
       - scripts/h445_windows_restore_readiness.ps1
       - scripts/h445_windows_init_cutover_preflight.ps1
+      - scripts/h445_windows_launcher_sites_inventory.ps1
+      - tests/test_h445_windows_launcher_sites_inventory.py
       - tests/test_h445_windows_init_cutover_preflight.py
       - tests/test_h445_windows_restore_readiness.py
       - tests/test_h445_windows_local_rollback_snapshot.py
@@ -329,3 +331,55 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'H445_INIT_CUTOVER_CONTRACT_FAILED' }
           Write-Output 'H445_INIT_CUTOVER_STATIC_AST=PASS'
           Write-Output 'H445_INIT_CUTOVER_HOST_EXECUTION=NOT_RUN'
+
+      - name: Offline private launcher multi-site PowerShell AST inventory tests
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $script = Join-Path $env:GITHUB_WORKSPACE 'scripts/h445_windows_launcher_sites_inventory.ps1'
+          $tokens = $null
+          $errors = $null
+          $ast = [Management.Automation.Language.Parser]::ParseFile(
+            $script, [ref]$tokens, [ref]$errors)
+          if (@($errors).Count -ne 0) { throw 'H445_SITE_PS_PARSE_FAILED' }
+          foreach ($fnName in @('Flag-Value', 'Parent-Has', 'Find-RunSites', 'Count-Class')) {
+            $matching = @($ast.FindAll({
+              param($n)
+              $n -is [Management.Automation.Language.FunctionDefinitionAst] -and
+                $n.Name -ceq $fnName
+            }, $true))
+            if ($matching.Count -ne 1) { throw 'H445_PURE_AST_FUNCTION_MISSING' }
+            . ([scriptblock]::Create($matching[0].Extent.Text))
+          }
+          $single = Find-RunSites -Source '& $docker run --name test --network none -v /w:/w -e A=x --init --rm $image'
+          if ($single.Sites.Count -ne 1 -or $single.Sites[0].Name -cne 'YES' -or
+              $single.Sites[0].Mount -cne 'YES' -or
+              $single.Sites[0].Environment -cne 'YES' -or
+              $single.Sites[0].Network -cne 'YES' -or
+              $single.Sites[0].Init -cne 'YES' -or
+              $single.Sites[0].Remove -cne 'YES' -or
+              $single.Sites[0].VariableArgument -cne 'YES' -or
+              $single.Sites[0].Context -cne 'TOP_LEVEL') {
+            throw 'H445_SITE_SINGLE_FLAGS_FAILED'
+          }
+          $multiple = Find-RunSites -Source 'function Go { if ($true) { & $docker run --name a $img } }; docker inspect a; docker run --network none img'
+          if ($multiple.Sites.Count -ne 2 -or
+              $multiple.OtherDockerCalls -ne 1 -or
+              $multiple.Sites[0].Context -cne 'FUNCTION' -or
+              $multiple.Sites[0].Conditional -cne 'YES' -or
+              $multiple.Sites[1].Context -cne 'TOP_LEVEL') {
+            throw 'H445_SITE_MULTIPLE_CONTEXT_FAILED'
+          }
+          $splat = Find-RunSites -Source '& $docker run @args'
+          if ($splat.Sites.Count -ne 1 -or $splat.Sites[0].Splat -cne 'YES') {
+            throw 'H445_SITE_SPLAT_FAILED'
+          }
+          $comment = Find-RunSites -Source "# docker run fake" 
+          if ($comment.Sites.Count -ne 0) { throw 'H445_SITE_COMMENT_FALSE_POSITIVE' }
+          $bad = $false
+          try { Find-RunSites -Source 'function {' | Out-Null } catch { $bad=$true }
+          if (-not $bad) { throw 'H445_SITE_SYNTAX_ERROR_NOT_DENIED' }
+          python -B -m unittest -v tests.test_h445_windows_launcher_sites_inventory
+          if ($LASTEXITCODE -ne 0) { throw 'H445_SITE_CONTRACTS_FAILED' }
+          Write-Output 'H445_LAUNCHER_SITES_SYNTHETIC_AST=PASS'
+          Write-Output 'H445_LAUNCHER_SITES_PRIVATE_HOST_EXECUTION=NOT_RUN'
