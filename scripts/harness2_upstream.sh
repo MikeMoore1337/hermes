@@ -13,6 +13,7 @@ Usage: bash scripts/harness2_upstream.sh status
        bash scripts/harness2_upstream.sh check [original harness2-check flags]
        bash scripts/harness2_upstream.sh report [original harness2-report flags]
        bash scripts/harness2_upstream.sh setup-preview lab|jb|wb
+       bash scripts/harness2_upstream.sh summary runs/.../summary.json
 
 This only calls OFFICIAL upstream preflight and read-only report CLI.
 It does not start models or install any software.
@@ -48,6 +49,10 @@ case "$1" in
   report)
     shift
     exec "$BIN/harness2-report" "$@"
+    ;;
+  summary)
+    [[ $# -eq 2 ]] || die "provide a single original runs/.../summary.json path"
+    exec python3 "$(dirname -- "${BASH_SOURCE[0]}")/harness2_upstream_manifest.py" "$2"
     ;;
   setup-preview)
     [[ $# -eq 2 ]] || die "specify exactly one supported benchmark"
