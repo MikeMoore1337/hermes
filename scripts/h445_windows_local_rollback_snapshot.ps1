@@ -165,11 +165,11 @@ try {
         throw 'TASK_XML_SIZE_UNSAFE'
     }
     [IO.File]::WriteAllText($taskCopy,$taskXml,
-        (New-Object Text.UTF8Encoding($false)))
+        ([Text.UTF8Encoding]::new($false)))
     $all=@(Read-Docker @('container','inspect',$cid) 1048576)
     $allText=$all -join [Environment]::NewLine
     [IO.File]::WriteAllText($inspectCopy,$allText,
-        (New-Object Text.UTF8Encoding($false)))
+        ([Text.UTF8Encoding]::new($false)))
     $documents=@($launcherCopy,$taskCopy,$inspectCopy)
     $checks=@{}
     foreach ($path in $documents) {
@@ -190,7 +190,7 @@ try {
         original_container_changed=$false
     } | ConvertTo-Json -Depth 5
     [IO.File]::WriteAllText((Join-Path $dest 'manifest.json'),$manifest,
-        (New-Object Text.UTF8Encoding($false)))
+        ([Text.UTF8Encoding]::new($false)))
     $after=@(Read-Docker @('container','inspect','--format',$fmt,$cid))
     if ($after.Count -ne 1 -or $after[0] -cne $expected) {
         throw 'BACKUP_COMPLETED_BUT_CONTAINER_STATE_CHANGED'
