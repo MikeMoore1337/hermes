@@ -180,3 +180,50 @@ container prove a proper init/reaper and process-group termination. Only
 then consider a single-container maintenance cutover without changing
 identity/bearer, root access, 96-PID budget or the 512MiB memory budget.
 Real ChatGPT+Codex E2E and Windows reboot/login remain separate gates.
+
+
+## 2026-10-28 scheduled launcher attribution — read-only gate
+
+Latest owner-host task metadata:
+
+- HermesDevicePresence is a separate LocalService Python boot-triggered
+  presence task. DO NOT modify or revoke its registration.
+- HermesH15BRCWindows is Ready, Interactive, LogonTrigger, one PowerShell
+  -File action (not EncodedCommand), IgnoreNew instance policy. Last ran
+  2026-10-24 23:45:54 +03:00; exit 3221225786 / 0xC000013A.
+- Target Docker container started 2026-10-24 20:46:01.903Z, about
+  eight seconds after the task started. It is still running with
+  restart policy=no and restart count=0. This is strong correlation,
+  not proof of the launcher script's exact behavior.
+- Task NextRunTime null is not proof of error for an on-logon trigger.
+- Owner Docker capacity observation: PIDs 96/96, five visible process
+  rows, visible zombies zero, aggregate NLWP 67 and max NLWP 42. The
+  delta of 29 is unexplained and must not be called zombies.
+
+### Read-only preflight after SHA review
+
+In ordinary Mike PowerShell, after the approved repository source
+has been staged in the actual local Hermes checkout:
+
+~~~powershell
+$operator = 'D:\Pet-projects\hermes\scripts\h445_windows_task_launcher_preflight.ps1'
+& powershell.exe -NoProfile -File $operator
+'H445_TASK_PREFLIGHT_EXIT=' + $LASTEXITCODE
+~~~
+
+This probe reads the Scheduled Task -File target, hashes its source
+without exposing the path, contents or arguments, and does not execute
+the target file. Text-only Docker/flag indicators may match comments,
+so they do NOT prove runtime execution or authorize maintenance.
+The probe verifies the exact immutable original running container and
+checks that the original image is still locally available. It always
+sets rollback_verified=false, restart_authorized=false and
+changes_applied=false. Any unexpected state fails closed.
+
+Do not send the task XML, full Docker inspect JSON, action arguments,
+full script contents, environment variables, host volume paths or
+private credentials to chat or GitHub. The SHA alone does not mean a
+tested rollback exists. Future owner-gated recovery requires the
+actual LOCAL launcher and container settings, a disposable init/reaper
+and process-tree test, then a single-container cutover and ChatGPT/Codex
+end-to-end acceptance. Keep #445 and #454 OPEN.

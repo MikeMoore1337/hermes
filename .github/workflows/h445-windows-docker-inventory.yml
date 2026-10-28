@@ -5,6 +5,8 @@ on:
     paths:
       - scripts/h445_windows_docker_inventory.ps1
       - scripts/h445_windows_docker_capacity.ps1
+      - scripts/h445_windows_task_launcher_preflight.ps1
+      - tests/test_h445_windows_task_launcher_preflight.py
       - tests/test_h445_windows_docker_capacity.py
       - tests/test_h445_windows_docker_inventory.py
       - docs/operations/h445-windows-docker-host-inventory.md
@@ -115,3 +117,35 @@ jobs:
           Write-Output 'H445_CAPACITY_PS_PARSER=PASS'
           Write-Output 'H445_CAPACITY_PID_HEADER_GUARD=PASS'
           Write-Output 'H445_CAPACITY_SOURCE_CONTRACTS=PASS'
+
+      - name: Synthetic scheduled task launcher parsing without host access
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $script = Join-Path $env:GITHUB_WORKSPACE 'scripts/h445_windows_task_launcher_preflight.ps1'
+          $tokens = $null
+          $errors = $null
+          $ast = [Management.Automation.Language.Parser]::ParseFile($script, [ref]$tokens, [ref]$errors)
+          if (@($errors).Count -ne 0) { throw 'H445_TASK_PREFLIGHT_PARSE_FAILED' }
+          $f = @($ast.FindAll({
+            param($n)
+            $n -is [Management.Automation.Language.FunctionDefinitionAst] -and
+              $n.Name -eq 'Get-FileArgument'
+          }, $true))
+          if ($f.Count -ne 1) { throw 'H445_FILE_ARGUMENT_FUNCTION_NOT_FOUND' }
+          . ([scriptblock]::Create($f[0].Extent.Text))
+          $samples = @(
+            @{ Args='-NoProfile -File "C:\Hermes Test\launch.ps1" -Target hermes-h15-windows-permanent'; Expected='C:\Hermes Test\launch.ps1' },
+            @{ Args='-NoProfile -File C:\Hermes\launch.ps1'; Expected='C:\Hermes\launch.ps1' },
+            @{ Args='-NoProfile -Command "do things"'; Expected=$null },
+            @{ Args='-EncodedCommand AAA'; Expected=$null },
+            @{ Args='-NoProfile'; Expected=$null }
+          )
+          foreach ($sample in $samples) {
+            $actual = Get-FileArgument -Arguments $sample.Args
+            if ($actual -cne $sample.Expected) { throw 'H445_FILE_ARGUMENT_CASE_FAILED' }
+          }
+          python -B -m unittest -v tests.test_h445_windows_task_launcher_preflight
+          if ($LASTEXITCODE -ne 0) { throw 'H445_TASK_PREFLIGHT_SOURCE_CONTRACTS_FAILED' }
+          Write-Output 'H445_TASK_LAUNCHER_PARSER=PASS'
+          Write-Output 'H445_TASK_LAUNCHER_SOURCE_CONTRACTS=PASS'
