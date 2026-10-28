@@ -8,6 +8,8 @@ on:
       - scripts/h445_windows_task_launcher_preflight.ps1
       - scripts/h445_windows_disposable_init_trial.ps1
       - scripts/h445_windows_local_rollback_snapshot.ps1
+      - scripts/h445_windows_restore_readiness.ps1
+      - tests/test_h445_windows_restore_readiness.py
       - tests/test_h445_windows_local_rollback_snapshot.py
       - tests/test_h445_windows_disposable_init_trial.py
       - tests/test_h445_windows_task_launcher_preflight.py
@@ -233,3 +235,33 @@ jobs:
           Write-Output 'H445_BACKUP_POWERSHELL_AST=PASS'
           Write-Output 'H445_BACKUP_SOURCE_ONLY=PASS'
           Write-Output 'H445_BACKUP_OWNER_HOST_NOT_TOUCHED=TRUE'
+
+      - name: Synthetic read-only restore evidence parser and contracts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $script = Join-Path $env:GITHUB_WORKSPACE 'scripts/h445_windows_restore_readiness.ps1'
+          $tokens = $null
+          $parseErrors = $null
+          $ast = [Management.Automation.Language.Parser]::ParseFile(
+            $script, [ref]$tokens, [ref]$parseErrors)
+          if (@($parseErrors).Count -ne 0) { throw 'H445_RESTORE_READINESS_PARSE_FAILED' }
+          $f = @($ast.FindAll({
+            param($n)
+            $n -is [Management.Automation.Language.FunctionDefinitionAst] -and
+              $n.Name -eq 'Compare-Section'
+          }, $true))
+          if ($f.Count -ne 1) { throw 'H445_COMPARE_SECTION_NOT_FOUND' }
+          . ([scriptblock]::Create($f[0].Extent.Text))
+          $a = [pscustomobject]@{ Config = [pscustomobject]@{ User = '65534:65534' } }
+          $b = [pscustomobject]@{ Config = [pscustomobject]@{ User = '65534:65534' } }
+          Compare-Section $a $b 'Config'
+          $b.Config.User = 'root'
+          $denied = $false
+          try { Compare-Section $a $b 'Config' } catch { $denied = $true }
+          if (-not $denied) { throw 'H445_CONFIG_DRIFT_NOT_DENIED' }
+          python -B -m unittest -v tests.test_h445_windows_restore_readiness
+          if ($LASTEXITCODE -ne 0) { throw 'H445_RESTORE_SOURCE_CONTRACT_FAILED' }
+          Write-Output 'H445_RESTORE_READINESS_AST=PASS'
+          Write-Output 'H445_RESTORE_DRIFT_DENIAL=PASS'
+          Write-Output 'H445_OWNER_PRIVATE_DATA_ACCESSED=FALSE'
