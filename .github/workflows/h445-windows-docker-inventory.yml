@@ -11,6 +11,8 @@ on:
       - scripts/h445_windows_restore_readiness.ps1
       - scripts/h445_windows_init_cutover_preflight.ps1
       - scripts/h445_windows_launcher_sites_inventory.ps1
+      - scripts/h445_windows_init_candidate_dry_run.ps1
+      - tests/test_h445_windows_init_candidate_dry_run.py
       - tests/test_h445_windows_launcher_sites_inventory.py
       - tests/test_h445_windows_init_cutover_preflight.py
       - tests/test_h445_windows_restore_readiness.py
@@ -443,3 +445,58 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'H445_SITE_CONTRACTS_FAILED' }
           Write-Output 'H445_LAUNCHER_SITES_SYNTHETIC_AST=PASS'
           Write-Output 'H445_LAUNCHER_SITES_PRIVATE_HOST_EXECUTION=NOT_RUN'
+
+      - name: H445 private two-site candidate in-memory AST dry-run (synthetic only)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $script = Join-Path $env:GITHUB_WORKSPACE 'scripts/h445_windows_init_candidate_dry_run.ps1'
+          $tokens = $null
+          $errors = $null
+          $ast = [Management.Automation.Language.Parser]::ParseFile(
+            $script, [ref]$tokens, [ref]$errors)
+          if (@($errors).Count -ne 0) { throw 'H445_CANDIDATE_SCRIPT_AST_INVALID' }
+          foreach ($fnName in @('Parse-RunCalls','Has-LiteralFlag','One-Spec',
+                                 'Equal-Spec','Preview-InMemory')) {
+            $fn = @($ast.FindAll({
+              param($n)
+              $n -is [Management.Automation.Language.FunctionDefinitionAst] -and
+                $n.Name -ceq $fnName
+            }, $true))
+            if ($fn.Count -ne 1) { throw 'H445_CANDIDATE_PURE_FUNCTION_MISSING' }
+            . ([scriptblock]::Create($fn[0].Extent.Text))
+          }
+          $source = 'if ($a) { & $docker run --name $container --network $net -v $mount $image }; try { & $docker run --name $container --network $net -v $mount $image } catch { Write-Output fallback }'
+          $result = Preview-InMemory $source
+          if ($result.InsertionCount -ne 2 -or
+              $result.NameRelation -cne 'SAME_AST_TEXT' -or
+              $result.MountRelation -cne 'SAME_AST_TEXT' -or
+              $result.NetworkRelation -cne 'SAME_AST_TEXT' -or
+              $result.CandidateNotWritten -ne $true) {
+            throw 'H445_CANDIDATE_VALID_TWO_SITE_FAILED'
+          }
+          $different = $source.Replace('--name $container --network $net -v $mount $image } catch',
+                                        '--name $other --network $net2 -v $otherMount $image } catch')
+          $comparison = Preview-InMemory $different
+          if ($comparison.NameRelation -cne 'DIFFERENT_AST_TEXT' -or
+              $comparison.MountRelation -cne 'DIFFERENT_AST_TEXT' -or
+              $comparison.NetworkRelation -cne 'DIFFERENT_AST_TEXT') {
+            throw 'H445_CANDIDATE_SOURCE_RELATION_FALSE_EQUAL'
+          }
+          $broken = @(
+            'docker run --name x --network none -v m $img',
+            'docker run --name x --network none -v m $img; docker run --name y --network none -v m $img; docker run --name z --network none -v m $img',
+            'docker run --init --name x --network none -v m $img; docker run --name y --network none -v m $img',
+            'docker run --name x --network none -v m $img; docker run --name y --network none -v m @args',
+            'docker run --name x --network none -v m $img; function {'
+          )
+          foreach ($sourceCase in $broken) {
+            $denied = $false
+            try { Preview-InMemory $sourceCase | Out-Null } catch { $denied=$true }
+            if (-not $denied) { throw 'H445_CANDIDATE_BAD_SOURCE_NOT_DENIED' }
+          }
+          python -B -m unittest -v tests.test_h445_windows_init_candidate_dry_run
+          if ($LASTEXITCODE -ne 0) { throw 'H445_CANDIDATE_SOURCE_CONTRACT_FAILED' }
+          Write-Output 'H445_IN_MEMORY_CANDIDATE_SYNTHETIC=PASS'
+          Write-Output 'H445_PRIVATE_WINDOWS_SOURCE=NOT_ACCESSED'
+          Write-Output 'H445_CANDIDATE_FILE_WRITES=ZERO'
