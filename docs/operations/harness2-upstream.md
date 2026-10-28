@@ -24,3 +24,31 @@ Source compatibility is limited to original JobBench, LAB and WorkBuddy-Bench. H
 This repo does **not** contain Harness² source. If the external installation is absent, all Hermes CI/release/runtime functions remain unchanged. When an official upstream benchmark is explicitly run later, preserve its original `runs/` outside Hermes; a useful read-only report requires actual official `judged.json` rows, and no improvement, safety or cost claims are inferred without those data.
 
 Owner restrictions: no incremental spend, no paid API, no Codex/Claude CLI, no disabled-sandbox Codex runner. Nothing in this helper removes `eval_lane/owner_spend_lock.py` or authorizes model-backed execution.
+
+
+## Чтение штатных результатов Harness² как внешних метаданных
+
+Для **настоящего** `runs/.../summary.json`, сформированного официальной версией
+Harness² в отдельной пользовательской установке, предусмотрен read-only импорт
+`scripts/harness2_upstream_manifest.py` (добавлено по #629):
+
+```bash
+# Сначала проверь официальную установку.
+bash scripts/harness2_upstream.sh status
+
+# Только если существует настоящий результат, сгенерированный original upstream:
+python3 scripts/harness2_upstream_manifest.py runs/<namespace>/<task>/summary.json
+```
+
+Путь должен находиться **строго внутри** pinned checkout и `runs/`; запрещены
+symlink, path traversal, крупные/неизвестные JSON, произвольные корневые каталоги
+и неподтверждённый SHA источника. Из исходного `summary.json` выдаются только
+проверенные на формат метаданные, собственный SHA256 файла и фиксированные флаги
+`model_efficacy_verified=false`, `native_execution_observed=false`,
+`review_status=SOURCE_METADATA_ONLY`. Не импортируются модельные тексты,
+деливераблы, логи и секреты. Наличие файла не доказывает настоящий модельный
+запуск и не означает согласия на использование выводов.
+
+Этот JSON можно **вручную** приложить к существующим механизмам evidence Hermes.
+Никакой автоматической записи в БД, обхода owner gate или новой системы
+самообучения нет. Синтетические unittest проверяют только формат и отказы.
