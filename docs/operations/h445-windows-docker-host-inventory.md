@@ -520,3 +520,48 @@ check the exact Git blob, and run the file in ordinary owner PowerShell
 as in the prior read-only procedure. Share only `H445_*` receipt lines.
 Do not paste the private launcher or backed-up Docker inspect.
 The original container must remain running and unchanged.
+
+
+## 2026-10-29 owner AST inventory after multiple Docker calls
+
+The owner re-ran the pinned read-only init feasibility gate on Windows.
+Exact blob integrity PASS. The source-only AST counters returned:
+explicit Docker run sites MULTIPLE; Docker-like calls MULTIPLE;
+other/indirect Docker calls MULTIPLE; splatted calls ZERO; literal
+`--init` tokens ZERO. Result: `H445_INIT_PLAN=HOLD`,
+`H445_REASON=LAUNCHER_AST_REQUIRES_MANUAL_REVIEW`, exit 2,
+`H445_CUTOVER_AUTHORIZED=FALSE`, rollback NOT_TESTED.
+
+Important: the older `DockerIndirectCalls` bucket also includes
+ordinary non-run Docker commands; it does NOT establish multiple
+indirect launches. The available evidence does not identify which
+`docker run` site actually creates the original device, or whether
+the flags are supplied through runtime variables. Never apply a
+blind textual `--init` replacement across every site.
+
+New source-only READ ONLY helper:
+`scripts/h445_windows_launcher_sites_inventory.ps1`.
+It reads ONLY the already-existing four-file protected LOCAL Windows
+backup, verifies directory ACL and manifest/checksums including the
+exact original launcher SHA. It parses that copy via PowerShell AST
+without invoking its code or accessing Docker. It prints only a bounded
+count (max 12) and fixed `YES`/`NO`/context classifications for each
+direct `docker run` site: function vs top-level, enclosing conditional,
+literal `--name`, mount, environment, network, `--init`,
+`--rm`, dynamic variable argument and splatting. Any discrepancy
+fails closed. No command arguments, environment values, task XML,
+launcher source text, private paths or tokens are printed or uploaded.
+
+After verifying the immutable source Git blob, run in the ordinary
+owner Windows PowerShell:
+
+~~~powershell
+& powershell.exe -NoProfile -NonInteractive -File $file
+'H445_LAUNCHER_SITES_EXIT=' + $LASTEXITCODE
+~~~
+
+Only paste the sanitized `H445_*` receipt lines. A successful
+inventory is static source evidence **only**, not execution-path
+verification. Exact dynamic Docker arguments, pairing preservation,
+original rollback execution and single-container `--init` maintenance
+are still held behind separate owner approval. Do not stop the original.
