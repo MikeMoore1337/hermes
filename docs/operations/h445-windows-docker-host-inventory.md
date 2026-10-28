@@ -132,3 +132,51 @@ For a future real host cutover, use the separate verified rollback procedure
 specific to the original container. Do not perform that rollback from the
 sandbox or via untrusted remote terminal access. Keep #445 and #454 OPEN
 until live post-repair requirements actually pass.
+
+
+## 2026-10-28 owner PID saturation, safe follow-up
+
+Owner's actual **read-only** Docker Desktop host snapshot:
+
+- Identity: full 64-hex Docker container ID starting 571a1e2bede3 and
+  ending f8ea162; name /hermes-h15-windows-permanent.
+- Immutable base image: sha256:8d28b0e1158b01c179ae1e6e1e399acaf3f502675522136d931ce08f2851a5a3.
+- PIDs limit 96, live Docker stats PIDs **96**, headroom **zero**.
+- Memory limit 536870912 bytes; UID:GID 65534:65534.
+- HostConfig.Init absent/unknown, Docker PID1 reaping **NOT VERIFIED**.
+- A read-only docker top request with only -eo stat failed:
+  "Couldn't find PID field in ps output". This is a **format error**, not
+  evidence of process corruption or absence of zombie processes.
+- Last independent BRC process tool probe returned spawn /bin/sh EAGAIN.
+  96/96 is sufficient to explain why the cgroup cannot create new tasks;
+  zombie attribution and root cause of PID consumption need separate proof.
+
+Docker (Moby) daemon's top parser **requires PID** as a header. The
+read-only corrected request uses -eo pid,ppid,stat, never -eo stat alone.
+It returns process-state summary **only**; a failure is marked
+NOT_VERIFIED, with no PID/PPID, process name, command or argv printed.
+
+For an optional fresh owner-host read-only measurement, securely stage the
+reviewed source under the known trusted owner checkout. Use ordinary Mike
+PowerShell, **not** the hermes-brc-readonly native-account context:
+
+~~~powershell
+$operator = 'D:\Pet-projects\hermes\scripts\h445_windows_docker_capacity.ps1'
+$cid = '571a1e2bede31a07638b896e3ef2de677dafa1c000e4a7975e7996257f8ea162'
+& powershell.exe -NoProfile -File $operator -ContainerId $cid
+'H445_CAPACITY_OPERATOR_EXIT=' + $LASTEXITCODE
+~~~
+
+This diagnostic **intentionally returns exit 2** for low PID headroom,
+while printing a bounded JSON HOLD receipt. It never creates or terminates
+processes, builds images, changes settings, accesses Docker Env/mount paths,
+or activates the original Win32 native reader. No new host permissions.
+
+Next **separate owner-gated** step is to verify exact launcher
+(Compose, Task Scheduler or explicit docker run) and preserve the original
+container's rollback configuration (including mount source paths **locally
+only**, never posted into public logs or chat). In a disposable no-device
+container prove a proper init/reaper and process-group termination. Only
+then consider a single-container maintenance cutover without changing
+identity/bearer, root access, 96-PID budget or the 512MiB memory budget.
+Real ChatGPT+Codex E2E and Windows reboot/login remain separate gates.
