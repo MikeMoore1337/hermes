@@ -29,8 +29,30 @@ jobs:
           $script = Join-Path $env:GITHUB_WORKSPACE 'scripts/h445_windows_docker_inventory.ps1'
           $tokens = $null
           $parseErrors = $null
-          [Management.Automation.Language.Parser]::ParseFile($script, [ref]$tokens, [ref]$parseErrors) | Out-Null
+          $ast = [Management.Automation.Language.Parser]::ParseFile($script, [ref]$tokens, [ref]$parseErrors)
           if (@($parseErrors).Count -ne 0) { throw 'H445_INVENTORY_PARSER_FAILED' }
+          # Execute ONLY the extracted pure normalization function against
+          # synthetic Docker template results. Do not call Docker or the script.
+          $funcs = @($ast.FindAll({
+            param($node)
+            $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+              $node.Name -eq 'Normalize-InitValue'
+          }, $true))
+          if ($funcs.Count -ne 1) { throw 'H445_INIT_NORMALIZER_NOT_FOUND' }
+          . ([scriptblock]::Create($funcs[0].Extent.Text))
+          foreach ($case in @(
+            @{ Raw=@('true'); Expected='true' },
+            @{ Raw=@('false'); Expected='false' },
+            @{ Raw=@(); Expected='UNAVAILABLE' },
+            @{ Raw=@('<nil>'); Expected='UNAVAILABLE' },
+            @{ Raw=@('<no value>'); Expected='UNAVAILABLE' },
+            @{ Raw=@('garbage'); Expected='UNAVAILABLE' },
+            @{ Raw=@('true','false'); Expected='UNAVAILABLE' }
+          )) {
+            $actual = Normalize-InitValue -Raw ([object[]]$case.Raw)
+            if ($actual -cne $case.Expected) { throw 'H445_INIT_NORMALIZER_CASE_FAILED' }
+          }
+          Write-Output 'H445_MISSING_INIT_NORMALIZATION=PASS'
 
           # This MUST fail before any Docker binary/file IO is attempted.
           # Use PS 5.1 as on the owner host, without passing a valid container ID.

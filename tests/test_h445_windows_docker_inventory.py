@@ -41,7 +41,19 @@ class H445ReadOnlyHostInventoryTests(unittest.TestCase):
 
     def test_inspect_minimizes_secrets(self):
         p = self.script
+        # The mandatory metadata template must not dereference optional Init.
         self.assertIn("{{.HostConfig.Init}}", p)
+        self.assertIn("$fmt = '{{.Id}}|", p)
+        mandatory = p.split("$fmt = '", 1)[1].split("'", 1)[0]
+        self.assertNotIn("HostConfig.Init", mandatory)
+        self.assertIn("{{.HostConfig.PidsLimit}}", mandatory)
+        self.assertIn("'container', 'inspect', '--format', '{{.HostConfig.Init}}', $ContainerId", p)
+        self.assertIn("try {\n        $optional = @(", p)
+        self.assertIn("Normalize-InitValue -Raw $optional", p)
+        self.assertIn("$init = 'UNAVAILABLE'", p)
+        self.assertIn("init_probe_status = $initProbeStatus", p)
+        self.assertIn("suspected_process_reaping_risk = $initRisk", p)
+        self.assertIn("else { $null }", p)
         self.assertIn("{{.HostConfig.PidsLimit}}", p)
         self.assertIn("{{.HostConfig.Memory}}", p)
         self.assertIn("{{len .Mounts}}", p)

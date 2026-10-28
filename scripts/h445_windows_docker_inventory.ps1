@@ -40,6 +40,16 @@ function Invoke-DockerReadOnly([string[]]$Arguments) {
     return @($output)
 }
 
+function Normalize-InitValue([object[]]$Raw) {
+    # Docker may return no value or reject a missing Init key. Neither
+    # missing, nil nor a malformed result may be promoted to false.
+    if ($Raw.Count -eq 1 -and $Raw[0] -is [string] -and
+        $Raw[0] -cin @('true', 'false')) {
+        return [string]$Raw[0]
+    }
+    return 'UNAVAILABLE'
+}
+
 try {
     if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
         Deny 'H445_WINDOWS_REQUIRED'
@@ -80,17 +90,19 @@ try {
     if ($ContainerId -cnotmatch '^[a-f0-9]{64}$') {
         Deny 'H445_FULL_CONTAINER_ID_REQUIRED'
     }
-    $fmt = '{{.Id}}|{{.Image}}|{{.Name}}|{{.State.Running}}|{{.HostConfig.Init}}|{{.HostConfig.PidsLimit}}|{{.HostConfig.Memory}}|{{.HostConfig.ReadonlyRootfs}}|{{.HostConfig.Privileged}}|{{.Config.User}}|{{len .Mounts}}'
+    # Mandatory fields only: Docker inspect does not guarantee HostConfig.Init
+    # on every engine/API version. A missing optional key must never abort
+    # the *other* verified metadata reads or be interpreted as Init=false.
+    $fmt = '{{.Id}}|{{.Image}}|{{.Name}}|{{.State.Running}}|{{.HostConfig.PidsLimit}}|{{.HostConfig.Memory}}|{{.HostConfig.ReadonlyRootfs}}|{{.HostConfig.Privileged}}|{{.Config.User}}|{{len .Mounts}}'
     $lines = @(Invoke-DockerReadOnly @('container', 'inspect', '--format', $fmt, $ContainerId))
     if ($lines.Count -ne 1) { Deny 'H445_CONTAINER_INSPECT_FAILED' }
     $part = $lines[0] -split '\|'
-    if ($part.Count -ne 11) { Deny 'H445_INSPECT_SCHEMA_DRIFT' }
-    $id, $image, $name, $running, $init, $pids, $memory, $readonly, $privileged, $uid, $mounts = $part
+    if ($part.Count -ne 10) { Deny 'H445_INSPECT_SCHEMA_DRIFT' }
+    $id, $image, $name, $running, $pids, $memory, $readonly, $privileged, $uid, $mounts = $part
     if ($id -cne $ContainerId -or
         $image -cnotmatch '^sha256:[a-f0-9]{64}$' -or
         $name -notmatch '^/[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$' -or
         $running -cnotin @('true', 'false') -or
-        $init -cnotin @('true', 'false', '<nil>') -or
         $readonly -cnotin @('true', 'false') -or
         $privileged -cnotin @('true', 'false') -or
         $pids -cnotmatch '^-?[0-9]{1,7}$' -or
@@ -106,6 +118,19 @@ try {
         $memoryNum -gt 8589934592) {
         Deny 'H445_INSPECT_RESOURCE_OUT_OF_BOUNDS'
     }
+    # Optional *second* fixed-format query. It can fail when Init is absent;
+    # never turn absence into 'false' or echo Docker's stderr to the user.
+    $init = 'UNAVAILABLE'
+    try {
+        $optional = @(Invoke-DockerReadOnly @('container', 'inspect', '--format', '{{.HostConfig.Init}}', $ContainerId))
+        $init = Normalize-InitValue -Raw $optional
+    } catch {
+        # Docker Go-template may reject a missing map key. This is not
+        # evidence about the container's actual PID1/reaper configuration.
+        $init = 'UNAVAILABLE'
+    }
+    $initProbeStatus = if ($init -eq 'UNAVAILABLE') { 'UNAVAILABLE' } else { 'PRESENT' }
+    $initRisk = if ($init -eq 'false') { $true } elseif ($init -eq 'true') { $false } else { $null }
     # No environment, binds, actual mount paths, entrypoint, shell args,
     # authorizations, or file contents are ever requested from Docker.
     $payload = @{
@@ -115,14 +140,15 @@ try {
         container_name = $name.Substring(1)
         image_id = $image
         running = [bool]::Parse($running)
-        init = if ($init -eq '<nil>') { 'UNSPECIFIED' } else { $init }
+        init = $init
+        init_probe_status = $initProbeStatus
         pids_limit = $pidsNum
         memory_limit_bytes = $memoryNum
         uid = $uid
         read_only_rootfs = [bool]::Parse($readonly)
         privileged = [bool]::Parse($privileged)
         mount_count = $mountsNum
-        suspected_process_reaping_risk = ($init -ne 'true')
+        suspected_process_reaping_risk = $initRisk
         target_device_verified = $false
         rollback_verified = $false
         host_change_authorized = $false
