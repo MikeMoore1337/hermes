@@ -9,6 +9,8 @@ on:
       - scripts/h445_windows_disposable_init_trial.ps1
       - scripts/h445_windows_local_rollback_snapshot.ps1
       - scripts/h445_windows_restore_readiness.ps1
+      - scripts/h445_windows_init_cutover_preflight.ps1
+      - tests/test_h445_windows_init_cutover_preflight.py
       - tests/test_h445_windows_restore_readiness.py
       - tests/test_h445_windows_local_rollback_snapshot.py
       - tests/test_h445_windows_disposable_init_trial.py
@@ -265,3 +267,40 @@ jobs:
           Write-Output 'H445_RESTORE_READINESS_AST=PASS'
           Write-Output 'H445_RESTORE_DRIFT_DENIAL=PASS'
           Write-Output 'H445_OWNER_PRIVATE_DATA_ACCESSED=FALSE'
+
+      - name: Parse owner init cutover gate and test synthetic launcher AST
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $script = Join-Path $env:GITHUB_WORKSPACE 'scripts/h445_windows_init_cutover_preflight.ps1'
+          $tokens = $null
+          $errors = $null
+          $ast = [Management.Automation.Language.Parser]::ParseFile(
+            $script, [ref]$tokens, [ref]$errors)
+          if (@($errors).Count -ne 0) { throw 'H445_INIT_CUTOVER_PARSE_FAILED' }
+          $funcs = @($ast.FindAll({
+            param($node)
+            $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+              $node.Name -eq 'Inspect-RunStructure'
+          }, $true))
+          if ($funcs.Count -ne 1) { throw 'H445_INIT_AST_FUNCTION_MISSING' }
+          . ([scriptblock]::Create($funcs[0].Extent.Text))
+          $one = Inspect-RunStructure -Source '& $docker run --pids-limit 96 @opts'
+          if ($one.DockerRunSites -ne 1 -or $one.LiteralInitTokens -ne 0) {
+            throw 'H445_INIT_ONE_RUN_NOT_RECOGNIZED'
+          }
+          $two = Inspect-RunStructure -Source "docker run --init testimage`ndocker run testimage"
+          if ($two.DockerRunSites -ne 2 -or $two.LiteralInitTokens -ne 1) {
+            throw 'H445_INIT_MULTIPLE_RUN_NOT_RECOGNIZED'
+          }
+          $comment = Inspect-RunStructure -Source "# docker run fake`nWrite-Output test"
+          if ($comment.DockerRunSites -ne 0) { throw 'H445_INIT_COMMENT_FALSE_POSITIVE' }
+          $parseDenied = $false
+          try { Inspect-RunStructure -Source 'function {' | Out-Null } catch {
+            $parseDenied = $true
+          }
+          if (-not $parseDenied) { throw 'H445_INIT_BROKEN_SCRIPT_NOT_DENIED' }
+          python -B -m unittest -v tests.test_h445_windows_init_cutover_preflight
+          if ($LASTEXITCODE -ne 0) { throw 'H445_INIT_CUTOVER_CONTRACT_FAILED' }
+          Write-Output 'H445_INIT_CUTOVER_STATIC_AST=PASS'
+          Write-Output 'H445_INIT_CUTOVER_HOST_EXECUTION=NOT_RUN'

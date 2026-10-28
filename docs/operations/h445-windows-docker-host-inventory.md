@@ -395,3 +395,94 @@ H445_ROLLBACK_EXECUTION=NOT_TESTED. Failure is HOLD with exit 2.
 The probe is not a substitute for an operator-approved
 recovery plan, bounded maintenance window, or live ChatGPT/Codex
 acceptance. Original Windows native read-only presence remains paused.
+
+
+## 2026-10-28 --init cutover feasibility and reversible maintenance contract
+
+The source-only operator `scripts/h445_windows_init_cutover_preflight.ps1`
+is a **READ ONLY** Windows-owner gate. It uses the existing protected four-file
+snapshot, validates its ACL, manifest checksums, immutable image and launcher
+hash, and compares live Docker `Config`, `HostConfig`, `Mounts`, and
+Task Scheduler XML against the original. The `Config.Env` comparison
+preserves sensitive BRC registration material **by equality only**; no Env,
+host paths, launcher source, task action or token is printed.
+
+A PowerShell AST structural check requires exactly one recognized direct
+`docker run` command site and no literal `--init` argument at that
+site. Passing this check does NOT establish that dynamic/splatted Docker
+options can be safely patched, that the original container has no init,
+or that the future host launch will work. Other launch forms fail closed
+with `LAUNCHER_AST_REQUIRES_MANUAL_REVIEW`. Never attempt a textual
+search-and-replace or run a private launcher solely from these findings.
+
+After reviewing the immutable Git blob of the source (on Windows owner
+PowerShell), run without elevated privileges:
+
+~~~powershell
+$operator = 'D:\Pet-projects\hermes\scripts\h445_windows_init_cutover_preflight.ps1'
+& powershell.exe -NoProfile -NonInteractive -File $operator
+'H445_INIT_PLAN_EXIT=' + $LASTEXITCODE
+~~~
+
+Only a sanitized receipt may be shared. A PASS says snapshot/config equality
+and static call-site structure were observed. It emits
+`H445_CUTOVER_AUTHORIZED=FALSE`,
+`H445_DEVICE_IDENTITY_REATTACH=NOT_VERIFIED`,
+`H445_ROLLBACK_EXECUTION=NOT_TESTED`. Exit 2 is a hard HOLD.
+The operator never creates, stops, renames or replaces a container,
+does not edit scheduled tasks or backup files, and is not a rollback.
+
+### Reviewed, separately authorized single-container maintenance sequence
+
+This is an **operator review checklist, not a runnable command sequence**.
+All stages require a new explicit scope-limited owner approval. Until then
+the original Docker container and Scheduled Task remain unchanged.
+
+1. Confirm the existing snapshot with both read-only gates, original image
+   locally available, full immutable old Docker ID, old device ID observed
+   via BRC, exact task launcher hash and one-mount topology. Record the
+   other two sandbox IDs and statuses without treating heartbeat as exec.
+2. Review the private original launcher locally on the Windows owner host:
+   identify the actual Docker run argument construction, network, image,
+   volumes, env/registration sources, labels, UID, cap-drop, no-new-privileges,
+   read-only filesystem if configured, PIDs=96, memory=512MiB, CPU, restart,
+   entrypoint and Task Scheduler action. Confirm the only intentional
+   candidate change is addition of Docker `--init`, without privileged
+   mounts, Internet, identity reset or altered token storage. Keep the
+   original launcher, task XML and inspect snapshot protected and intact.
+3. Prepare an independently audited candidate launcher **only locally**,
+   with a semantic comparison against the old effective Docker arguments.
+   Do not edit or activate the scheduled task while the original remains
+   running. If the launcher contains destructive cleanup, autoremoval or
+   hidden branching, HOLD for a dedicated manual recovery plan.
+4. During an explicitly approved maintenance window, quiesce exactly the
+   Windows sandbox, preserve the OLD container object for rollback (do not
+   delete it), ensure old and candidate are never simultaneously attached
+   as the same BRC device, then start the candidate from the pinned image
+   with the original validated configuration plus `--init`. A conflicting
+   Docker name must be resolved with a documented reversible rename; verify
+   effective HostConfig, Mounts and Config locally before client acceptance.
+5. Prove Docker Init=true from the actual NEW container inspect and verify
+   saved-vs-new equality for relevant effective settings except deliberately
+   changed Init. Independently prove that ChatGPT and Codex observe the
+   same original BRC device ID, authentication and connection, and that both
+   can execute bounded file+process tools. Verify resource limits, nonroot,
+   negative access to protected paths, process subtree termination, PID
+   headroom, and that the Hermes/YFC VPS sandboxes are unaffected.
+6. On any failed identity, safety or execution gate: **rollback before
+   further work**. Stop/remove only the NEW candidate, revert the task/
+   launcher to the byte-identical private backup, restore the OLD
+   container's original Docker name and run state, and independently
+   reverify the original BRC device ID and security contract. The ability
+   to restart the old saturated-PID container is NOT yet proven; therefore
+   do not begin maintenance until this failure mode and a recovery path
+   have been explicitly accepted. Do not claim rollback PASS from hashes.
+7. If acceptance passes, retain rollback evidence through a subsequent
+   separately approved Windows reboot/login and scheduled task auto-reconnect
+   test. Only after the result is verified may the obsolete old container be
+   considered for removal under another approval.
+
+Current status: snapshot equality PASS (owner evidence); disposable
+no-network/no-mount `--init` trial PASS; actual launcher rewrite feasibility,
+mount reattachment, device-ID reattachment, original-container rollback
+execution, cutover and reboot E2E all **NOT VERIFIED**. #445/#454 remain OPEN.
