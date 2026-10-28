@@ -598,3 +598,41 @@ locally, keep both `H445_CUTOVER_AUTHORIZED=FALSE` and
 `H445_ROLLBACK_EXECUTION=NOT_TESTED`. Continue under #454 if #445
 has been closed by repository workflow without satisfying its original
 runtime acceptance criteria.
+
+
+## 2026-10-29 owner Windows second source inventory: relation UNKNOWN
+
+The exact-source owner Windows static inventory from merge
+`1aaaee60346606ed0dfd0c6916048159357037a4` verified
+source Git blob `1152ede57086425c91d383ea183a294e022f1042`
+and returned exit 0. It found exactly two direct conditional
+`docker run` sites, both TOP_LEVEL, both with static name,
+mount and network flags, variable arguments, but no *literal* init flag.
+
+The two-site if-arm relation was `UNKNOWN`: site 1 has an
+enclosing `if` and site 2 does NOT have an enclosing `if`,
+but both are within a broader control context. **No conclusion
+about runtime execution, effective dynamic Docker arguments,
+or a mutually exclusive fallback is justified.**
+
+The next read-only local inventory revision reports only
+`H445_RUN_SITE_N_NEAREST_CONTROL` (IF/TRY/SWITCH/LOOP/NONE),
+`H445_RUN_SITE_N_ENCLOSING_TRY` (YES/NO),
+`H445_RUN_SITE_N_TRY_REGION` (TRY_BODY/CATCH/FINALLY/NONE/UNKNOWN)
+and `H445_RUN_SITE_PAIR_TRY_RELATION`
+(SAME_TRY/DIFFERENT_TRY/ONE_ONLY/NONE/UNKNOWN).
+These are based solely on private on-host PowerShell AST structure,
+no predicate/command/source text is emitted, no script is executed
+and no Docker/task action is performed. An enclosing `try` is
+exception handling, NOT necessarily a conditional branch.
+
+The full original launcher, environment, task XML, private paths,
+Docker inspect and secrets remain on the owner's Windows.
+The snapshot is still read with ACL/manifest/hash checks.
+The owner must verify the exact pinned SHA before local use.
+
+Until the runtime branch and actual Docker argument construction
+are independently verified, preserve `H445_CUTOVER_AUTHORIZED=FALSE`
+and `H445_ROLLBACK_EXECUTION=NOT_TESTED` and do not stop,
+recreate, rename or retask the original Windows Docker device.
+Outstanding integration acceptance is recorded under OPEN #454.
