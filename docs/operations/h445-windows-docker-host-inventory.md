@@ -55,6 +55,30 @@ does NOT request or disclose Docker Env, secrets, volumes' host paths,
 entrypoint/command arguments, network credentials, device bearer,
 original Windows project content, or private vault.
 
+Some Docker Engine/API versions omit the optional HostConfig.Init key
+entirely. A direct multi-field format that includes this key fails with
+"map has no entry for key Init". The updated operator checks mandatory
+container metadata first, then queries Init separately as an optional
+best-effort read. Absent/invalid/unsupported Init becomes
+"init":"UNAVAILABLE", "init_probe_status":"UNAVAILABLE", and
+"suspected_process_reaping_risk":null — **never false**. A present explicit
+true/false remains distinguishable. Docker settings must be checked on
+the real host before proposing --init or a container replacement.
+
+For a one-time interactive read-only check **without** staging the operator,
+from an ordinary Mike PowerShell session and after selecting the actual
+container ID, never print full JSON:
+
+~~~powershell
+$docker = Join-Path $env:ProgramFiles 'Docker\Docker\resources\bin\docker.exe'
+$id = '<exact-existing-container-ID>'
+& $docker container inspect --format '{{.Id}}|{{.Image}}|{{.HostConfig.PidsLimit}}|{{.HostConfig.Memory}}|{{.Config.User}}' $id
+if ($LASTEXITCODE -ne 0) { throw 'H445_REQUIRED_METADATA=FAIL' }
+# Optional; may fail with missing map key, does not mean Init=false.
+& $docker container inspect --format '{{.HostConfig.Init}}' $id
+if ($LASTEXITCODE -ne 0) { 'H445_INIT_STATE=UNAVAILABLE' }
+~~~
+
 If the operator reports HOLD, exit 2 or malformed metadata, stop; do not
 reinterpret failure as a pass. suspected_process_reaping_risk is advisory
 only. The tool deliberately emits target_device_verified=false,
