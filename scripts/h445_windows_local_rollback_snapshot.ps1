@@ -77,9 +77,10 @@ function Protected-Directory([string]$Location) {
     $actual=Get-Acl -LiteralPath $Location -ErrorAction Stop
     if (-not $actual.AreAccessRulesProtected) { throw 'BACKUP_ACL_NOT_PROTECTED' }
     foreach ($ace in $actual.Access) {
-        if ([string]$ace.IdentityReference -notin @(
-            [string]$identity.User, 'S-1-5-18', 'S-1-5-32-544',
-            'NT AUTHORITY\SYSTEM', 'BUILTIN\Administrators')) {
+        $sid=$ace.IdentityReference.Translate(
+            [Security.Principal.SecurityIdentifier]).Value
+        if ($sid -notin @(
+            $identity.User.Value,'S-1-5-18','S-1-5-32-544')) {
             throw 'BACKUP_ACL_EXTRA_IDENTITY'
         }
     }
@@ -190,11 +191,15 @@ try {
     } | ConvertTo-Json -Depth 5
     [IO.File]::WriteAllText((Join-Path $dest 'manifest.json'),$manifest,
         (New-Object Text.UTF8Encoding($false)))
+    $after=@(Read-Docker @('container','inspect','--format',$fmt,$cid))
+    if ($after.Count -ne 1 -or $after[0] -cne $expected) {
+        throw 'BACKUP_COMPLETED_BUT_CONTAINER_STATE_CHANGED'
+    }
     Write-Output 'H445_BACKUP=PASS'
     Write-Output 'H445_ACL=PROTECTED'
     Write-Output 'H445_BACKUP_FILE_COUNT=4'
     Write-Output 'H445_LAUNCHER_HASH=PASS'
-    Write-Output 'H445_ORIGINAL_CONTAINER_UNCHANGED=OBSERVED_BEFORE'
+    Write-Output 'H445_ORIGINAL_CONTAINER_UNCHANGED=PASS'
     Write-Output 'H445_ROLLBACK_VERIFIED=FALSE'
     exit 0
 } catch {
