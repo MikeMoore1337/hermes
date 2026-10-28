@@ -7,11 +7,11 @@ from __future__ import annotations
 
 import hashlib
 import json
-from pathlib import Path, PurePosixPath
 import re
 import stat
 import subprocess
 import sys
+from pathlib import Path
 
 PIN = "1cfe254e8d25b15f37048c3730134686abe60335"
 ORIGIN = "https://github.com/google-research/harness2.git"
