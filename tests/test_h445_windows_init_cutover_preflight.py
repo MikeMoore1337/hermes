@@ -41,6 +41,17 @@ class H445InitCutoverPreflightTests(unittest.TestCase):
         ):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, SOURCE)
+        for key in (
+            "H445_AST_EXPLICIT_RUN_SITES=",
+            "H445_AST_DOCKER_LIKE_CALLS=",
+            "H445_AST_DOCKER_INDIRECT_CALLS=",
+            "H445_AST_DOCKER_SPLATTED_CALLS=",
+            "H445_AST_LITERAL_INIT_TOKENS=",
+            "function Site-Class([int]$Count)",
+            "return 'ZERO'", "return 'ONE'", "return 'MULTIPLE'",
+        ):
+            with self.subTest(key=key):
+                self.assertIn(key, SOURCE)
         self.assertIn("H445_CUTOVER_AUTHORIZED=FALSE", SOURCE)
         self.assertIn("H445_ROLLBACK_EXECUTION=NOT_TESTED", SOURCE)
         self.assertIn("H445_ORIGINAL_CONTAINER_CHANGED=FALSE", SOURCE)

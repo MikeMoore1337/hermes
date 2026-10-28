@@ -285,6 +285,13 @@ jobs:
           }, $true))
           if ($funcs.Count -ne 1) { throw 'H445_INIT_AST_FUNCTION_MISSING' }
           . ([scriptblock]::Create($funcs[0].Extent.Text))
+          $classes = @($ast.FindAll({
+            param($node)
+            $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+              $node.Name -eq 'Site-Class'
+          }, $true))
+          if ($classes.Count -ne 1) { throw 'H445_BOUNDED_ENUM_FUNCTION_MISSING' }
+          . ([scriptblock]::Create($classes[0].Extent.Text))
           $one = Inspect-RunStructure -Source '& $docker run --pids-limit 96 @opts'
           if ($one.DockerRunSites -ne 1 -or $one.LiteralInitTokens -ne 0) {
             throw 'H445_INIT_ONE_RUN_NOT_RECOGNIZED'
@@ -292,6 +299,24 @@ jobs:
           $two = Inspect-RunStructure -Source "docker run --init testimage`ndocker run testimage"
           if ($two.DockerRunSites -ne 2 -or $two.LiteralInitTokens -ne 1) {
             throw 'H445_INIT_MULTIPLE_RUN_NOT_RECOGNIZED'
+          }
+          $indirect = Inspect-RunStructure -Source '& $docker @dockerArgs'
+          if ($indirect.DockerRunSites -ne 0 -or
+              $indirect.DockerIndirectCalls -ne 1 -or
+              $indirect.DockerLikeCalls -ne 1) {
+            throw 'H445_INIT_INDIRECT_DOCKER_NOT_CLASSIFIED'
+          }
+          $named = Inspect-RunStructure -Source '& $dockerExe @dockerArgs'
+          if ($named.DockerRunSites -ne 0 -or $named.DockerIndirectCalls -ne 1) {
+            throw 'H445_INIT_NAMED_DOCKER_WRAPPER_NOT_CLASSIFIED'
+          }
+          $literal = Inspect-RunStructure -Source 'docker run --init testimage'
+          if ($literal.DockerRunSites -ne 1 -or $literal.LiteralInitTokens -ne 1) {
+            throw 'H445_INIT_LITERAL_FLAG_NOT_RECOGNIZED'
+          }
+          if ((Site-Class 0) -cne 'ZERO' -or (Site-Class 1) -cne 'ONE' -or
+              (Site-Class 99) -cne 'MULTIPLE') {
+            throw 'H445_INIT_BOUNDED_RECEIPT_CLASS_FAILED'
           }
           $comment = Inspect-RunStructure -Source "# docker run fake`nWrite-Output test"
           if ($comment.DockerRunSites -ne 0) { throw 'H445_INIT_COMMENT_FALSE_POSITIVE' }

@@ -486,3 +486,37 @@ Current status: snapshot equality PASS (owner evidence); disposable
 no-network/no-mount `--init` trial PASS; actual launcher rewrite feasibility,
 mount reattachment, device-ID reattachment, original-container rollback
 execution, cutover and reboot E2E all **NOT VERIFIED**. #445/#454 remain OPEN.
+
+
+## Owner read-only launcher AST HOLD diagnostics (2026-10-28)
+
+The first local preflight of `scripts/h445_windows_init_cutover_preflight.ps1`
+from merge `e5ef9a6` passed exact source Git blob integrity but returned
+`H445_REASON=LAUNCHER_AST_REQUIRES_MANUAL_REVIEW`, exit 2.
+This gate only means that the private launcher does not match the first
+narrow PowerShell AST model (or a literal init token was found); it is NOT
+evidence that the launcher is broken or that the old container changed.
+
+The source-only next revision emits five bounded enumerations on that HOLD:
+`H445_AST_EXPLICIT_RUN_SITES`, `H445_AST_DOCKER_LIKE_CALLS`,
+`H445_AST_DOCKER_INDIRECT_CALLS`,
+`H445_AST_DOCKER_SPLATTED_CALLS`, and
+`H445_AST_LITERAL_INIT_TOKENS`. Each value is exclusively
+`ZERO`, `ONE` or `MULTIPLE`; never a private identifier, argument,
+path, source excerpt, token, registration URL or environment value.
+Static AST is only advisory because the actual command and flags can be
+assembled dynamically, in other functions, or through a wrapper.
+
+The operator still checks the ACL-protected four-file local backup,
+manifest hashes and pinned Windows launcher, live original container,
+immutable image, `Config/HostConfig/Mounts` and scheduled task equality.
+It cannot authorize or perform any host/container change. If a dynamic
+or unrecognized Docker invocation remains, **keep HOLD** and design a
+separate owner-local review with no private data leaving Windows.
+No automated search/replace of `--init` and no private launcher upload.
+
+For owner rerun: download the specific reviewed main commit via HTTPS,
+check the exact Git blob, and run the file in ordinary owner PowerShell
+as in the prior read-only procedure. Share only `H445_*` receipt lines.
+Do not paste the private launcher or backed-up Docker inspect.
+The original container must remain running and unchanged.

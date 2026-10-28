@@ -35,13 +35,32 @@ function Inspect-RunStructure([string]$Source) {
     },$true))
     $runCount=0
     $initTokens=0
+    $dockerLike=0
+    $dockerIndirect=0
+    $dockerSplat=0
     foreach ($call in $calls) {
         $elements=@($call.CommandElements)
-        if ($elements.Count -lt 2) { continue }
+        if ($elements.Count -lt 1) { continue }
         $executable=$elements[0].Extent.Text.Trim([char[]]@([char]39,[char]34))
-        $verb=$elements[1].Extent.Text.Trim([char[]]@([char]39,[char]34))
-        if ($executable -cnotmatch '^(?i:(?:&\s*)?(?:\$docker|docker(?:\.exe)?))$' -or
-            $verb -cne 'run') { continue }
+        # Variable names are a hint only, never proof of execution.
+        $direct=$executable -cmatch '^(?i:(?:\$docker|docker(?:\.exe)?))$'
+        $possible=$executable -match '^(?i:(?:\$[a-z0-9_]*docker[a-z0-9_]*|docker(?:\.exe)?))$'
+        if (-not $possible) { continue }
+        $dockerLike++
+        $verb=''
+        if ($elements.Count -ge 2) {
+            $verb=$elements[1].Extent.Text.Trim([char[]]@([char]39,[char]34))
+        }
+        $hasSplat=$false
+        foreach ($element in $elements) {
+            if ($element -is [Management.Automation.Language.VariableExpressionAst] -and
+                $element.Splatted) { $hasSplat=$true }
+        }
+        if ($hasSplat) { $dockerSplat++ }
+        if (-not $direct -or $verb -cne 'run') {
+            $dockerIndirect++
+            continue
+        }
         $runCount++
         foreach ($element in $elements) {
             if ($element.Extent.Text -ceq '--init') { $initTokens++ }
@@ -50,7 +69,15 @@ function Inspect-RunStructure([string]$Source) {
     return [pscustomobject]@{
         DockerRunSites=$runCount
         LiteralInitTokens=$initTokens
+        DockerLikeCalls=$dockerLike
+        DockerIndirectCalls=$dockerIndirect
+        DockerSplattedCalls=$dockerSplat
     }
+}
+function Site-Class([int]$Count) {
+    if ($Count -eq 0) { return 'ZERO' }
+    if ($Count -eq 1) { return 'ONE' }
+    return 'MULTIPLE'
 }
 function Load-Private([string]$Path) {
     $item=Get-Item -LiteralPath $Path -Force -ErrorAction Stop
@@ -157,7 +184,14 @@ try {
         Deny 'ORIGINAL_IMAGE_NOT_AVAILABLE'
     }
     $structure=Inspect-RunStructure (Load-Private (Join-Path $dir 'launcher.ps1'))
-    if ($structure.DockerRunSites -ne 1 -or $structure.LiteralInitTokens -ne 0) {
+    if ($structure.DockerRunSites -ne 1 -or $structure.LiteralInitTokens -ne 0 -or
+        $structure.DockerIndirectCalls -ne 0) {
+        # Fixed enums only; never print source or any private argument.
+        Write-Output ('H445_AST_EXPLICIT_RUN_SITES='+(Site-Class $structure.DockerRunSites))
+        Write-Output ('H445_AST_DOCKER_LIKE_CALLS='+(Site-Class $structure.DockerLikeCalls))
+        Write-Output ('H445_AST_DOCKER_INDIRECT_CALLS='+(Site-Class $structure.DockerIndirectCalls))
+        Write-Output ('H445_AST_DOCKER_SPLATTED_CALLS='+(Site-Class $structure.DockerSplattedCalls))
+        Write-Output ('H445_AST_LITERAL_INIT_TOKENS='+(Site-Class $structure.LiteralInitTokens))
         Deny 'LAUNCHER_AST_REQUIRES_MANUAL_REVIEW'
     }
     # This proves only a static command site, NOT a safe mechanical edit:
