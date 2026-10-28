@@ -227,3 +227,62 @@ tested rollback exists. Future owner-gated recovery requires the
 actual LOCAL launcher and container settings, a disposable init/reaper
 and process-tree test, then a single-container cutover and ChatGPT/Codex
 end-to-end acceptance. Keep #445 and #454 OPEN.
+
+
+## 2026-10-28 owner Windows launcher script LIVE verified
+
+The owner independently downloaded the exact release SHA
+ea8d93757ee299447aababa79ad149d61d56a980 of
+scripts/h445_windows_task_launcher_preflight.ps1 and checked Git blob
+6485f245f92c4db4f41775484697ac150d30ff3c. Windows preflight
+returned OBSERVED_NOT_AUTHORIZED, exit 0, with:
+
+- launcher file SHA256: 55EA1245671C8B656A3BBA944945198350668B2920CD46E36ED7CBA56637317E;
+  launcher script size: 26893 bytes
+- textual flags: docker=true; target container=true; run=true; 
+  volume=true; env=true; pids-limit=true; init=false
+- original pinned image available=true, Docker identity verified=true
+- existing container mount count=1
+- rollback_verified=false, restart_authorized=false, changes_applied=false
+
+No source file, action arguments, env contents, mount origin or secrets
+were exposed in chat or saved in GitHub. This is still *not a rollback*:
+the Windows owner needs local backup of the launcher and original Docker
+launch settings before any destructive action. Textual absence of an init
+flag does not by itself attest to the actual PID1 implementation.
+
+## Disposable no-device reaper trial (owner gate)
+
+New SOURCE-ONLY helper: scripts/h445_windows_disposable_init_trial.ps1.
+
+Preflight is read-only. It checks the exact currently running original
+container ID, image ID, 96-PID/512-MiB/UID contract and local image
+availability. It does not connect to the BRC relay or read credentials.
+
+Do not run the Test mode without a *separate explicit owner approval* to
+create a disposable Docker container on Windows. The intended command
+after pinning to a reviewed immutable source SHA is:
+
+~~~powershell
+& powershell.exe -NoProfile -File .\scripts\h445_windows_disposable_init_trial.ps1 -Mode Preflight
+# Only if the owner separately approves this specific Docker test:
+& powershell.exe -NoProfile -File .\scripts\h445_windows_disposable_init_trial.ps1 -Mode Test -OwnerApproved
+~~~
+
+Test mode uses only the already local pinned image and a new transient
+container with Docker built-in --init, --rm, --pull=never, network=none,
+no bind mounts, no BRC device token/env, nonroot UID, read-only rootfs,
+no capabilities, no-new-privileges, original PID+memory limits, a
+temporary 16-MiB /tmp and an overridden Node entrypoint (not the BRC
+agent). It checks a tiny set of orphan children and the absence of
+PID1-owned zombies plus 24+ PID headroom. It prints only fixed receipts,
+never subprocess arguments or local paths.
+
+PASS proves only the isolated pinned image and Docker init worked in a
+single short trial; it does NOT prove the old BRC container has init,
+that BRC force_terminate kills descendant process trees, a validated
+rollback, Windows reboot reconnect, original Windows host filesystem
+access, or full Git/Python workspace parity. An unapproved Test call
+must HOLD; a running old container is never stopped or altered by the
+trial. No real host trial or original container mutation is part of
+the repository merge.

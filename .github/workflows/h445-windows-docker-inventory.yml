@@ -6,6 +6,8 @@ on:
       - scripts/h445_windows_docker_inventory.ps1
       - scripts/h445_windows_docker_capacity.ps1
       - scripts/h445_windows_task_launcher_preflight.ps1
+      - scripts/h445_windows_disposable_init_trial.ps1
+      - tests/test_h445_windows_disposable_init_trial.py
       - tests/test_h445_windows_task_launcher_preflight.py
       - tests/test_h445_windows_docker_capacity.py
       - tests/test_h445_windows_docker_inventory.py
@@ -149,3 +151,19 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'H445_TASK_PREFLIGHT_SOURCE_CONTRACTS_FAILED' }
           Write-Output 'H445_TASK_LAUNCHER_PARSER=PASS'
           Write-Output 'H445_TASK_LAUNCHER_SOURCE_CONTRACTS=PASS'
+
+      - name: Offline owner gate for disposable PID1 trial
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $script = Join-Path $env:GITHUB_WORKSPACE 'scripts/h445_windows_disposable_init_trial.ps1'
+          $tokens = $null
+          $parseErrors = $null
+          [Management.Automation.Language.Parser]::ParseFile($script,[ref]$tokens,[ref]$parseErrors) | Out-Null
+          if (@($parseErrors).Count -ne 0) { throw 'H445_DISPOSABLE_PS_PARSE_FAILED' }
+          python -B -m unittest -v tests.test_h445_windows_disposable_init_trial
+          if ($LASTEXITCODE -ne 0) { throw 'H445_DISPOSABLE_SOURCE_CONTRACT_FAILED' }
+          # Do not execute script or connect Docker in CI. Explicit host
+          # approval is a separate step, not implicit in a green PR.
+          Write-Output 'H445_DISPOSABLE_SOURCE_PARSER=PASS'
+          Write-Output 'H445_DISPOSABLE_HOST_RUNTIME=NOT_EXECUTED'
