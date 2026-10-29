@@ -296,7 +296,12 @@ def build_packet(payload: object) -> dict[str, Any]:
             "suggested_internal_links": ([gap["nearest_url"]]
                                          if gap["nearest_url"] else []),
             "proposed_scientific_claims": [],
-            "requires_expert_review": True,
+            # #317 external expert certification was cancelled by the owner.
+            # Source and claim checks remain separate from expert signoff.
+            "requires_expert_review": False,
+            "requires_claim_source_review": science is not None,
+            "scientific_attestation_status": ("NOT_ATTESTED" if science is not None
+                                              else "NOT_APPLICABLE"),
             "requires_yfc_owner_ready": True,
         },
         "publication_allowed": False,
@@ -348,7 +353,12 @@ def render_markdown(packet: dict[str, Any]) -> str:
         "Вопрос читателя: " + (science["proposed_question"] if science else "NO_DATA"),
         "Связанный первоисточник: " + (science["research_provenance"]["source_url"] if science else "NO_DATA"),
         "Научный статус: " + (science["status"] if science else "NOT_PROVIDED"),
-        "Проверка научных утверждений: требуется экспертная оценка.",
+        ("Проверка научных утверждений: нет научных тезисов; "
+         "внешняя экспертиза не требуется."
+         if science is None else
+         "Научная аттестация: NOT_ATTESTED. Проверка исходных статей, "
+         "тезисов и ограничений необходима перед редакционным решением YFC."),
+        "Неподтверждённые персональные медицинские рекомендации запрещены.",
         "YFC owner READY: обязателен до любой публикации.",
         "Автопубликация и запись в YFC: запрещены.",
         "",
