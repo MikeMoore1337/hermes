@@ -10,9 +10,11 @@ import tempfile
 import unittest
 from datetime import date, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 from marketing.gsc_direct import (
     API_ORIGIN, BASE_URL, DIMENSION_REPORTS, GscRuntimeError, SCOPE,
+    OAUTH_TOKEN_URL, API_TIMEOUT, _pinned_oauth_request,
     _authorized_fetch, _google_rows, _sitemap_rows, _verify_credential_file,
     _write_private_json, collect, request_plan,
 )
@@ -156,6 +158,47 @@ class GscRuntimeTests(unittest.TestCase):
             p.symlink_to(Path(tmp) / "elsewhere")
             with self.assertRaisesRegex(GscRuntimeError, "credential_file_unsafe"):
                 _verify_credential_file(p)
+
+    def test_credentials_single_snapshot_and_owner_check(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "key.json"
+            secret = "private-synthetic-only-key"
+            payload = {
+                "type": "service_account",
+                "token_uri": OAUTH_TOKEN_URL,
+                "client_email": "reader@project.iam.gserviceaccount.com",
+                "private_key": secret,
+            }
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            os.chmod(path, 0o600)
+            loaded = _verify_credential_file(path)
+            self.assertEqual(loaded, payload)
+            path.write_text("not-json", encoding="utf-8")
+            # Previously returned in-memory snapshot must not change even if
+            # the underlying file changes before Google auth runs.
+            self.assertEqual(loaded["private_key"], secret)
+            with patch("marketing.gsc_direct.os.geteuid", return_value=-1):
+                with self.assertRaisesRegex(GscRuntimeError, "credential_file_unsafe"):
+                    _verify_credential_file(path)
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            os.chmod(path, 0o700)
+            with self.assertRaisesRegex(GscRuntimeError, "credential_file_unsafe"):
+                _verify_credential_file(path)
+
+    def test_oauth_endpoint_pinned_and_timeout_cannot_be_overridden(self):
+        received = []
+        def fake_transport(url, **kwargs):
+            received.append((url, kwargs))
+            return {"status": 200}
+        with self.assertRaisesRegex(GscRuntimeError, "oauth_endpoint_not_allowed"):
+            _pinned_oauth_request(fake_transport, "https://untrusted.example/token",
+                                  method="POST", timeout=120)
+        self.assertEqual(received, [])
+        result = _pinned_oauth_request(fake_transport, OAUTH_TOKEN_URL,
+                                      method="POST", timeout=120)
+        self.assertEqual(result, {"status": 200})
+        self.assertEqual(received, [(OAUTH_TOKEN_URL,
+                                     {"method": "POST", "timeout": API_TIMEOUT})])
 
     def test_private_atomic_output_and_symlink_denied(self):
         with tempfile.TemporaryDirectory() as tmp:
