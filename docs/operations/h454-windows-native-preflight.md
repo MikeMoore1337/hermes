@@ -80,3 +80,27 @@ rollback. Preserve the original container, original launcher and task export.
 Login/reboot recovery, lasting PID1 reaping, actual rollback, native original
 folder grants and new Control Center onboarding remain separate unverified
 acceptance. Keep #454 OPEN. No environment keys or paid API are added.
+
+## Later owner-authorized read-only recheck, 2026-10-30
+
+PR #676 merged as `f6e64acd40fb413bb1c4d8945b5fd284bc0d02f8` after all
+five head checks passed. Exact-main repository and Windows/Linux matrix
+checks passed; [source production deployment](https://github.com/MikeMoore1337/hermes/actions/runs/40955932347)
+succeeded. This delivers the repository/release snapshot, not a BRC image,
+launcher installation or runtime activation.
+
+The owner then approved one hash-pinned **read-only UAC** preflight.
+It returned `H454_PS51_STDIN_SELFTEST=PASS`, `H454_PARITY_RECHECK=PASS`,
+`H454_TUNNEL_PREFLIGHT=PASS`, `H454_NON_MUTATING_PREFLIGHT=PASS` and
+`H454_READY_TO_APPLY=PASS`, with `H454_ORIGINAL_CONTAINER_CHANGED=FALSE`
+and `H454_CUTOVER=NOT_PERFORMED`. Ordinary-context missing command-line
+metadata was an access limitation, not a proven wrong tunnel.
+
+A new protected five-file rollback snapshot now matches the current
+original Config/HostConfig/Mounts. The older snapshot is retained.
+Independent rollback preparation checks are synthetic only: stop candidate,
+start original, stage original credentials again, verify original; a staging
+failure must remain HOLD. Actual rollback and DPAPI staging are NOT TESTED.
+Stopping BRC, installing the prepared launcher and changing the task still
+require the separate concrete maintenance approval. No reboot or native
+original-folder permission is implied by the read-only UAC approval.

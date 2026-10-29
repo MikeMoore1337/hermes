@@ -7,6 +7,9 @@ on:
   push:
     branches: [main]
     paths:
+      - scripts/h15_brc_apply_policy_patch.py
+      - scripts/h15_brc_sandbox_linux_e2e.mjs
+      - tests/test_h15_brc_apply_policy_patch.py
       - scripts/h15_brc_workspace_gateway.py
       - scripts/h15_brc_native_read_gateway.py
       - deploy/h15/hermes-native-read.template.ts

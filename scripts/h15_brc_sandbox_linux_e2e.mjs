@@ -33,6 +33,21 @@ assert(allowed.isError !== true &&
        fs.readFileSync('/workspace/allowed.txt', 'utf8').includes('approved-workspace-data'),
        'MCP_WORKSPACE_WRITE');
 
+const editPath = '/workspace/edit-conflict.txt';
+const editBefore = 'same\nsame\nunique-before\n';
+fs.writeFileSync(editPath, editBefore);
+const conflict = await callTool('edit_block', {
+  file_path: editPath, old_string: 'same', new_string: 'wrong', expected_replacements: 1,
+});
+assert(conflict.isError === true && fs.readFileSync(editPath, 'utf8') === editBefore,
+       'MCP_EDIT_CONFLICT_ERROR_NO_WRITE');
+const edited = await callTool('edit_block', {
+  file_path: editPath, old_string: 'unique-before', new_string: 'unique-after', expected_replacements: 1,
+});
+assert(edited.isError !== true &&
+       fs.readFileSync(editPath, 'utf8') === 'same\nsame\nunique-after\n',
+       'MCP_EDIT_UNIQUE_SUCCESS');
+
 const forbidden = await callTool('write_file', {
   path: '/opt/brc/package.json', content: 'unapproved-tampering',
   mode: 'rewrite',

@@ -217,3 +217,65 @@ OCI candidate is deployed; a source merge is not that deployment.
 Windows sandbox is currently **BLOCKED** on runtime process-capacity
 remediation (#445). Full 2-client × 3-device **current** parity must remain
 OPEN, despite its historical baseline PASS.
+
+## Codex Desktop live recheck — 2026-10-30 Europe/Moscow
+
+These are actual `mcp__hermes__*` calls, not source inspection or generated
+tests. Each device used a distinct marker in an initially absent test file
+outside repositories. The date in the fixture filename is its session date;
+these calls completed after midnight Moscow time.
+
+| Client / device | File/edit/search/move/stat | 128 KiB binary + hash/move | Two interactive sessions | Git | Recovery |
+| --- | --- | --- | --- | --- | --- |
+| Codex / Windows sandbox | PASS | PASS, process-backed bytes | PASS; own MCP sessions closed; terminated child observed Z | PASS, disposable local bare remote | NOT VERIFIED |
+| Codex / Hermes VPS sandbox | PASS | PASS, process-backed bytes | PASS; own MCP sessions closed; terminated child observed Z | MISSING | NOT VERIFIED |
+| Codex / YFC VPS sandbox | PASS | PASS, process-backed bytes | PASS; both exited after explicit tool approval | MISSING | NOT VERIFIED |
+| ChatGPT / Windows sandbox | NOT RE-RUN in this Codex session | NOT RE-RUN | NOT RE-RUN | Historical only | NOT VERIFIED |
+| ChatGPT / Hermes VPS sandbox | NOT RE-RUN in this Codex session | NOT RE-RUN | NOT RE-RUN | MISSING in live Codex probe | NOT VERIFIED |
+| ChatGPT / YFC VPS sandbox | NOT RE-RUN in this Codex session | NOT RE-RUN | NOT RE-RUN | MISSING in live Codex probe | NOT VERIFIED |
+
+- Real write/read, unique edit, targeted content search plus pagination,
+  rename/stat/read, process stdout and exit 0 passed on all three devices.
+  `/host-private` was refused by the real metadata tool on every device.
+- Duplicate-match editing left the file byte-for-byte unchanged on every
+  device, but the live handler incorrectly reported `isError=false`.
+  The source fix adds the error flag in the pinned no-write conflict branch;
+  disposable OCI E2E must verify both refusal and the still-working unique edit.
+  The source fix does not repair an existing agent image automatically.
+- Deterministic 131,072-byte binary fixtures retained SHA256
+  `feb1e4409d009e0ec502eaabe321f86b5197a881e9b765252ec8a75d6957596d`
+  through real MCP `move_file`. Exact test files were removed, absence
+  checked, and temporary Git repositories cleaned. This is not a dedicated
+  binary transfer protocol or a larger-file size-limit test.
+- Windows Git exercised status/diff/branch/commit, push and fetch against a
+  temporary **local bare repository**. No GitHub credentials or network push
+  were used. The registered Hermes clone was read at `924dbed4`; no project
+  branch or tracked file was changed. Both VPS sandbox Git probes returned
+  MISSING; their host development toolchains were not accessed.
+- Two REPLs retained separate markers on every device. `force_terminate`
+  stopped the selected Windows/Hermes session, but its child was observed
+  in Linux state Z immediately afterward. MCP session removal is therefore
+  not proof of kernel reaping or lasting PID capacity. YFC termination was
+  refused by tool approvals; after explicit owner permission both owned
+  sessions exited normally. No unrelated process was signalled. Other
+  Windows client sessions appeared during the run and were preserved.
+
+For fresh Windows snapshot/preflight evidence see
+[H454 native preflight](h454-windows-native-preflight.md). Keep #454 OPEN:
+the init candidate is still stopped, login/reboot and rollback have not run,
+the native reader is revoked/paused, Control Center onboarding remains
+disabled, and full GitHub writes through MCP have no credential proof.
+
+### One independent ChatGPT acceptance pass
+
+In the already connected ChatGPT client, ask Hermes MCP to discover the three
+approved sandbox devices, resolve Hermes, then use unique temporary files
+outside repositories to verify write/read/unique edit/duplicate-match refusal,
+targeted search/results, rename/stat and process exit on each device. Verify
+the actual file contents after each edit, including `isError` on refusal.
+Remove exactly those fixtures, close only the sessions created for this pass,
+and record real tool results per device. Report missing Git and unavailable
+capabilities explicitly. Do not enable the native reader, read credentials,
+change Docker/SSH/tasks, restart a device or claim the Codex run as ChatGPT
+evidence. This is the remaining independent client acceptance, not a claim
+that it has run.
