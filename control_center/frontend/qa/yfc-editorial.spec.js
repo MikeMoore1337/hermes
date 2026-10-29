@@ -107,8 +107,8 @@ test("independent YFC Root window displays entire article and performs two owner
  for(const paragraph of ["Вступление без сокращения","Первый полный абзац исследования",
   "Второй полный абзац исследования","Третий полный абзац","Четвёртый полный абзац"])
   await expect(page.getByText(paragraph,{exact:true})).toBeVisible();
- await expect(page.getByText("Первичное исследование")).toBeVisible();
- await expect(page.getByText("Второе исследование")).toBeVisible();
+ await expect(page.getByRole("link",{name:/Первичное исследование/})).toBeVisible();
+ await expect(page.getByRole("link",{name:/Второе исследование/})).toBeVisible();
  await expect(page.getByText(/Источники: Первичное исследование; Второе исследование/)).toBeVisible();
  await expect(page.getByText(/Ограничения: Требуется независимая научная проверка/)).toBeVisible();
  await expect(page.getByText(/undefined/)).toHaveCount(0);
