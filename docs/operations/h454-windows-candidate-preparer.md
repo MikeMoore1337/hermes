@@ -75,3 +75,26 @@ CI executes both suites on Windows/Linux with Python 3.11 and 3.14.
    recovery. Keep Hermes #454 OPEN until those are actual evidence.
 
 No new paid API, subscriptions or paid AI model invocations.
+
+## H454 v2 field-diff recovery (non-destructive)
+
+An owner Windows v2 container was **already created** and remains stopped.
+Do not rerun `--create`: the operator refuses an existing candidate. An
+observed `CONFIG_DRIFT` resulted solely from Docker `container create`
+setting `AttachStdout/AttachStderr=True` where original `run -d` stored
+`False`. The read-only contract now accepts **only** these exact false-to-true
+stdout/stderr differences. It does not ignore stdin, tty, labels,
+environment, security flags, mounts or other fields.
+
+Before cutover, inspect the existing candidate **without recreation**:
+
+    py -3.14 -B scripts/h454_windows_candidate_contract.py --candidate-name h454-init-stage-571a1e2b-v2 --diagnose
+
+This emits **field names only**, including any remaining `HostConfig`
+difference; do not paste raw `docker inspect` JSON, environment, image
+metadata or mount source paths. The last unknown HostConfig difference
+is NOT APPROVED and MUST be diagnosed and corrected before proceeding.
+
+Once an exact, safe HostConfig difference has been proven and any subsequent
+fix passed CI, rerun the normal read-only contract without `--diagnose`.
+Never use the candidate or call `docker start` while any parity gate holds.
