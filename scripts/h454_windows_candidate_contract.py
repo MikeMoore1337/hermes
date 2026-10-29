@@ -12,6 +12,7 @@ import argparse
 import copy
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -75,6 +76,50 @@ def _normal_config(config: dict[str, Any]) -> dict[str, Any]:
     return kept
 
 
+def _normalized_candidate_config(original: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any]:
+    """Allow only Docker create's detached stdout/stderr attach default.
+
+    An original made by docker run -d has AttachStdout/Stderr=False.
+    A stopped docker create candidate may have these two booleans True.
+    No stdin, tty, env, entrypoint, label or other difference is allowed.
+    This is NOT an authorization to start/attach to the candidate.
+    """
+    normalized = _normal_config(candidate)
+    for name in ("AttachStdout", "AttachStderr"):
+        if original.get(name) is False and candidate.get(name) is True:
+            normalized[name] = False
+    return normalized
+
+
+def _safe_diff_keys(left: dict[str, Any], right: dict[str, Any], excluded: frozenset[str]) -> list[str]:
+    """Only field names, not values. Never serialize Docker inspect/env to stdout."""
+    return sorted(
+        key if re.fullmatch(r"[A-Za-z][A-Za-z0-9]{0,63}", key) else "OTHER"
+        for key in (set(left) | set(right))
+        if key not in excluded and left.get(key) != right.get(key)
+    )
+
+
+def diagnose(original: dict[str, Any], candidate: dict[str, Any], candidate_name: str) -> list[str]:
+    """Read-only, fail-closed diff-key inspection for an already-created candidate."""
+    _need(candidate_name in ALLOWED_CANDIDATES, "CANDIDATE_SELECTOR")
+    _need(original.get("Id") == ORIGINAL_ID and original.get("Image") == IMAGE_ID, "ORIGINAL_IDENTITY")
+    _need(original.get("Name") == ORIGINAL_NAME, "ORIGINAL_IDENTITY")
+    _need((original.get("State") or {}).get("Running") is True, "ORIGINAL_NOT_RUNNING")
+    _need(candidate.get("Name") == candidate_name and candidate.get("Image") == IMAGE_ID, "CANDIDATE_IDENTITY")
+    _need((candidate.get("State") or {}).get("Status") == "created" and
+          (candidate.get("State") or {}).get("Running") is False, "CANDIDATE_NOT_CREATED")
+    config_keys = _safe_diff_keys(_cfg(original), _cfg(candidate), VOLATILE_CONFIG)
+    host_keys = _safe_diff_keys(_host(original), _host(candidate), frozenset(("Init", "Tmpfs")))
+    return [
+        "H454_DIAGNOSTIC=PASS",
+        "H454_CONFIG_DIFF_KEYS=" + ",".join(config_keys),
+        "H454_HOST_DIFF_KEYS=" + ",".join(host_keys),
+        "H454_CHANGES_APPLIED=FALSE",
+        "H454_CUTOVER=NOT_PERFORMED",
+    ]
+
+
 def _normal_host(host: dict[str, Any]) -> dict[str, Any]:
     kept = copy.deepcopy(host)
     kept.pop("Init", None)
@@ -123,7 +168,7 @@ def verify(original: dict[str, Any], candidate: dict[str, Any], *, expected_cand
     _need(oldcfg.get("User") == "65534:65534", "USER")
     oldlabels = oldcfg.get("Labels") or {}
     _need(oldlabels.get("com.hermes.scope") == SCOPE, "LABELS")
-    _need(_normal_config(oldcfg) == _normal_config(newcfg), "CONFIG_DRIFT")
+    _need(_normal_config(oldcfg) == _normalized_candidate_config(oldcfg, newcfg), "CONFIG_DRIFT")
     _need(_normal_host(oldhost) == _normal_host(newhost), "HOST_DRIFT")
     _need(_mount_contract(original) == _mount_contract(candidate), "MOUNT_DRIFT")
     return "PASS"
@@ -144,6 +189,7 @@ def _read_live(target: str, docker: Path) -> dict[str, Any]:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Read-only H454 Windows candidate parity gate")
     parser.add_argument("--candidate-name", choices=sorted(n.lstrip("/") for n in ALLOWED_CANDIDATES), default=CANDIDATE_NAME.lstrip("/"))
+    parser.add_argument("--diagnose", action="store_true", help="Print only differing Docker field names")
     args = parser.parse_args()
     try:
         _need(os.name == "nt", "OWNER_WINDOWS_REQUIRED")
@@ -153,6 +199,10 @@ def main() -> int:
         _need(docker.is_file() and not docker.is_symlink(), "DOCKER_UNAVAILABLE")
         original = _read_live(ORIGINAL_ID, docker)
         candidate = _read_live(args.candidate_name, docker)
+        if args.diagnose:
+            for line in diagnose(original, candidate, "/" + args.candidate_name):
+                print(line)
+            return 0
         verify(original, candidate, expected_candidate_name="/" + args.candidate_name)
     except ContractHold as error:
         print("H454_CANDIDATE_CONTRACT=HOLD")
