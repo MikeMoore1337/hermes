@@ -38,6 +38,12 @@ EDIT = """async function edit() {
 
 
 class BrcHardeningTests(unittest.TestCase):
+    def test_offline_bundle_distributes_the_edit_handler_change(self):
+        workflow = (Path(__file__).resolve().parents[1] /
+                    ".github/workflows/h15-remote-commander-candidate.yml").read_text(encoding="utf-8")
+        paths = workflow.split('cat > "$bundle/EXPECTED_PATHS.txt" <<\'PATHS\'\n', 1)[1].split('\n          PATHS', 1)[0]
+        self.assertIn("packages/agent/src/core/tools/edit.ts", [line.strip() for line in paths.splitlines()])
+
     def setUp(self):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)

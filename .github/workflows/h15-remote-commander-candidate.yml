@@ -832,6 +832,7 @@ jobs:
           git -C "$candidate" diff --binary HEAD > "$bundle/hermes-brc.patch"
           test -s "$bundle/hermes-brc.patch"
           cat > "$bundle/EXPECTED_PATHS.txt" <<'PATHS'
+          packages/agent/src/core/tools/edit.ts
           packages/agent/src/dispatcher.ts
           packages/relay/src/app.ts
           packages/relay/src/device-hub.ts
