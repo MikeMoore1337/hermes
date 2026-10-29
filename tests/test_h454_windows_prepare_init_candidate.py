@@ -84,14 +84,14 @@ class TestCandidatePreparer(unittest.TestCase):
         orig["Mounts"][0]["Source"] = "/run/desktop/mnt/host/c/Users/Mike/Hermes-H15-Test"
         with patch.object(Path, "home", return_value=Path("C:/Users/Mike")), patch.object(Path, "is_dir", return_value=True):
             src = prep.check_original(orig, img)
-        self.assertEqual(src, "C:/Users/Mike/Hermes-H15-Test")
+        self.assertEqual(prep.canonical(src), prep.canonical("C:/Users/Mike/Hermes-H15-Test"))
 
     def test_docker_desktop_legacy_mount_translation(self):
         orig, img = samples()
         orig["Mounts"][0]["Source"] = "/host_mnt/c/Users/Mike/Hermes-H15-Test"
         with patch.object(Path, "home", return_value=Path("C:/Users/Mike")), patch.object(Path, "is_dir", return_value=True):
             src = prep.check_original(orig, img)
-        self.assertEqual(src, "C:/Users/Mike/Hermes-H15-Test")
+        self.assertEqual(prep.canonical(src), prep.canonical("C:/Users/Mike/Hermes-H15-Test"))
 
     def test_unknown_translated_mount_denied(self):
         orig, img = samples()
