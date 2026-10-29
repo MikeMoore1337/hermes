@@ -89,6 +89,62 @@ class TestH454Contract(unittest.TestCase):
             contract.verify(old, new, expected_candidate_name="/foreign-container")
         self.assertEqual(str(exc.exception), "CANDIDATE_SELECTOR")
 
+    def test_docker_create_stdout_stderr_attach_defaults_are_accepted(self):
+        original, candidate = pair()
+        original["Config"].update(AttachStdout=False, AttachStderr=False)
+        candidate["Config"].update(AttachStdout=True, AttachStderr=True)
+        self.assertEqual(contract.verify(original, candidate), "PASS")
+
+    def test_stdin_or_tty_differences_remain_denied(self):
+        for key in ("AttachStdin", "OpenStdin", "StdinOnce", "Tty"):
+            with self.subTest(key=key):
+                original, candidate = pair()
+                original["Config"][key] = False
+                candidate["Config"][key] = True
+                with self.assertRaises(contract.ContractHold) as exc:
+                    contract.verify(original, candidate)
+                self.assertEqual(str(exc.exception), "CONFIG_DRIFT")
+
+    def test_other_config_field_changes_still_denied(self):
+        self.check_hold(
+            "CONFIG_DRIFT",
+            lambda old, new: new["Config"].update(StopSignal="SIGKILL"),
+        )
+
+    def test_safe_diagnose_outputs_only_field_names(self):
+        original, candidate = pair()
+        original["Config"].update(AttachStdout=False, AttachStderr=False)
+        candidate["Config"].update(AttachStdout=True, AttachStderr=True)
+        original["HostConfig"]["ConsoleSize"] = [0, 0]
+        candidate["HostConfig"]["ConsoleSize"] = None
+        result = contract.diagnose(original, candidate, contract.CANDIDATE_NAME)
+        self.assertIn("H454_CONFIG_DIFF_KEYS=AttachStderr,AttachStdout", result)
+        self.assertIn("H454_HOST_DIFF_KEYS=ConsoleSize", result)
+        self.assertNotIn("SIGKILL", str(result))
+        self.assertIn("H454_CHANGES_APPLIED=FALSE", result)
+
+    def test_diagnose_requires_preserved_original_and_stopped_candidate(self):
+        original, candidate = pair()
+        original["State"]["Running"] = False
+        with self.assertRaises(contract.ContractHold) as exc:
+            contract.diagnose(original, candidate, contract.CANDIDATE_NAME)
+        self.assertEqual(str(exc.exception), "ORIGINAL_NOT_RUNNING")
+
+    def test_diagnose_candidate_identity_and_state(self):
+        original, candidate = pair()
+        candidate["State"]["Status"] = "exited"
+        with self.assertRaises(contract.ContractHold) as exc:
+            contract.diagnose(original, candidate, contract.CANDIDATE_NAME)
+        self.assertEqual(str(exc.exception), "CANDIDATE_NOT_CREATED")
+
+    def test_diagnostic_field_name_sanitization(self):
+        names = contract._safe_diff_keys(
+            {"UNSAFE_PRIVATE_PATH": 1},
+            {"UNSAFE_PRIVATE_PATH": 2},
+            frozenset(),
+        )
+        self.assertEqual(names, ["OTHER"])
+
     def test_missing_tmpfs_not_masked_by_single_mount(self):
         self.check_hold("TMPFS", lambda old, new: new["HostConfig"]["Tmpfs"].pop("/run/brc"))
 
