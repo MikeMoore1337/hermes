@@ -76,6 +76,9 @@ CI executes both suites on Windows/Linux with Python 3.11 and 3.14.
 
 No new paid API, subscriptions or paid AI model invocations.
 
+For the later PS5.1 process-start failure, actual host preflight and
+non-mutating launcher repair, see [H454 Windows native preflight](h454-windows-native-preflight.md).
+
 ## H454 v2 field-diff recovery (non-destructive)
 
 An owner Windows v2 container was **already created** and remains stopped.
