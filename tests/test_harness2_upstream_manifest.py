@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -81,6 +84,46 @@ class UpstreamSummaryImportTests(unittest.TestCase):
             with self.assertRaises(h2.UpstreamRejected):
                 h2.read_external_summary("runs/lab/summary.json", home=base)
             self.assertEqual(list(base.iterdir()), [])
+
+    def test_real_upstream_root_layout_with_external_home_directory(self):
+        # This is a metadata-only fixture, not a real model run.
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            install = home / ".local/share/ai-development-toolkit" / ("harness2-" + h2.PIN)
+            (install / "source").mkdir(parents=True)
+            (install / ".adt-original-harness2").write_text(h2.PIN + "\\n", encoding="utf-8")
+            custom_root = home / "original-harness2-results"
+            relative = "runs/lab/adapt/namespace/legal/task001/summary.json"
+            report = custom_root.joinpath(*relative.split("/")[1:])
+            report.parent.mkdir(parents=True)
+            report.write_bytes(fixture(task_id="legal/task001", domain="legal"))
+            verified_git = [
+                subprocess.CompletedProcess(args=[], returncode=0, stdout=h2.PIN + "\\n"),
+                subprocess.CompletedProcess(args=[], returncode=0, stdout=h2.ORIGIN + "\\n"),
+            ]
+            with patch.object(h2.subprocess, "run", side_effect=verified_git), patch.dict(
+                os.environ, {"HARNESS2_RUNS_DIR": str(custom_root)}
+            ):
+                out = h2.read_external_summary(relative, home=home)
+            self.assertEqual(out["claimed_task_id"], "legal/task001")
+            self.assertFalse(out["model_efficacy_verified"])
+            self.assertFalse(out["source_file_verified_as_genuine"])
+
+    def test_external_runs_outside_home_fails_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            install = home / ".local/share/ai-development-toolkit" / ("harness2-" + h2.PIN)
+            (install / "source").mkdir(parents=True)
+            (install / ".adt-original-harness2").write_text(h2.PIN + "\\n", encoding="utf-8")
+            verified_git = [
+                subprocess.CompletedProcess(args=[], returncode=0, stdout=h2.PIN + "\\n"),
+                subprocess.CompletedProcess(args=[], returncode=0, stdout=h2.ORIGIN + "\\n"),
+            ]
+            with patch.object(h2.subprocess, "run", side_effect=verified_git), patch.dict(
+                os.environ, {"HARNESS2_RUNS_DIR": "/tmp"}
+            ):
+                with self.assertRaises(h2.UpstreamRejected):
+                    h2.read_external_summary("runs/lab/adapt/x/summary.json", home=home)
 
     def test_bad_json_and_oversize_rejected(self):
         for raw in [b"{", b"x" * (h2.LIMIT + 1), b"[]"]:
