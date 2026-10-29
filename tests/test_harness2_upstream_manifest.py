@@ -115,10 +115,6 @@ class UpstreamSummaryImportTests(unittest.TestCase):
             install = home / ".local/share/ai-development-toolkit" / ("harness2-" + h2.PIN)
             (install / "source").mkdir(parents=True)
             (install / ".adt-original-harness2").write_text(h2.PIN + "\n", encoding="utf-8")
-            verified_git = [
-                subprocess.CompletedProcess(args=[], returncode=0, stdout=h2.PIN + "\n"),
-                subprocess.CompletedProcess(args=[], returncode=0, stdout=h2.ORIGIN + "\n"),
-            ]
             for path in ("/tmp", str(home / ".." / "outside-runs"), str(home / "x" / "..")):
                 with self.subTest(path=path):
                     verified_git = [
