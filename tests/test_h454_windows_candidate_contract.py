@@ -78,6 +78,17 @@ class TestH454Contract(unittest.TestCase):
         original, candidate = pair()
         self.assertEqual(contract.verify(original, candidate), "PASS")
 
+    def test_second_candidate_can_be_validated_without_deleting_retained_candidate(self):
+        old, new = pair()
+        new["Name"] = contract.CANDIDATE_V2_NAME
+        self.assertEqual(contract.verify(old, new, expected_candidate_name=contract.CANDIDATE_V2_NAME), "PASS")
+
+    def test_unapproved_candidate_selector_fails_closed(self):
+        old, new = pair()
+        with self.assertRaises(contract.ContractHold) as exc:
+            contract.verify(old, new, expected_candidate_name="/foreign-container")
+        self.assertEqual(str(exc.exception), "CANDIDATE_SELECTOR")
+
     def test_missing_tmpfs_not_masked_by_single_mount(self):
         self.check_hold("TMPFS", lambda old, new: new["HostConfig"]["Tmpfs"].pop("/run/brc"))
 
