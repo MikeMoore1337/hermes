@@ -101,6 +101,26 @@ class TestCandidatePreparer(unittest.TestCase):
                 prep.check_original(orig, img)
         self.assertEqual(str(exc.exception), "BIND_SOURCE_NOT_OWNER_WORKSPACE")
 
+    def test_oom_killer_enabled_on_original_preflight(self):
+        for value in (None, False):
+            original, image = samples()
+            original["HostConfig"]["OomKillDisable"] = value
+            self.assertTrue(self.valid(original=original, image=image).endswith("Hermes-H15-Test"))
+
+    def test_oom_disabled_or_invalid_original_preflight_holds(self):
+        for value in (True, "false", 0, 1):
+            with self.subTest(value=value):
+                self.hold(
+                    "OOM_KILLER_ENABLED_REQUIRED",
+                    lambda original, image: original["HostConfig"].update(OomKillDisable=value),
+                )
+
+    def test_oom_option_explicit_false_in_candidate_args(self):
+        args = prep.build_create_args("C:\\Synthetic\\Hermes-H15-Test")
+        self.assertEqual(args.count("--oom-kill-disable=false"), 1)
+        self.assertNotIn("--oom-kill-disable", args)
+        self.assertNotIn("--oom-kill-disable=true", args)
+
     def test_wrong_cpu_limit(self):
         self.hold("CPU_LIMIT", lambda orig, img: orig["HostConfig"].__setitem__("NanoCpus", 0))
 

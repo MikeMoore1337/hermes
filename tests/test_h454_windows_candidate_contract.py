@@ -34,6 +34,7 @@ def pair():
             "Init": False,
             "PidsLimit": 128,
             "Memory": 536870912,
+            "OomKillDisable": None,
             "ReadonlyRootfs": True,
             "Privileged": False,
             "NetworkMode": "bridge",
@@ -144,6 +145,58 @@ class TestH454Contract(unittest.TestCase):
             frozenset(),
         )
         self.assertEqual(names, ["OTHER"])
+
+    def test_oom_defaults_null_false_are_equivalent(self):
+        for old, new in ((None, False), (False, None), (False, False), (None, None)):
+            with self.subTest(original=old, candidate=new):
+                original, candidate = pair()
+                original["HostConfig"]["OomKillDisable"] = old
+                candidate["HostConfig"]["OomKillDisable"] = new
+                self.assertEqual(contract.verify(original, candidate), "PASS")
+
+    def test_oom_killer_cannot_be_disabled_either_side(self):
+        for original_value, candidate_value in (
+            (True, True), (True, False), (False, True), (None, True), (True, None)
+        ):
+            with self.subTest(original=original_value, candidate=candidate_value):
+                self.check_hold(
+                    "OOM_KILLER_DISABLED_OR_INVALID",
+                    lambda old, new: (
+                        old["HostConfig"].update(OomKillDisable=original_value),
+                        new["HostConfig"].update(OomKillDisable=candidate_value),
+                    ),
+                )
+
+    def test_invalid_oom_types_fail_closed(self):
+        for value in (0, 1, "false", "true", [], {}):
+            with self.subTest(value=value):
+                self.check_hold(
+                    "OOM_KILLER_DISABLED_OR_INVALID",
+                    lambda old, new: new["HostConfig"].update(OomKillDisable=value),
+                )
+
+    def test_missing_oom_field_fails_closed(self):
+        for source in ("original", "candidate"):
+            with self.subTest(source=source):
+                self.check_hold(
+                    "OOM_FIELD_MISSING",
+                    lambda old, new: (old if source == "original" else new)["HostConfig"].pop("OomKillDisable"),
+                )
+
+    def test_oom_default_does_not_erase_unrelated_host_drift(self):
+        original, candidate = pair()
+        original["HostConfig"]["OomKillDisable"] = None
+        candidate["HostConfig"]["OomKillDisable"] = False
+        candidate["HostConfig"]["Privileged"] = True
+        with self.assertRaises(contract.ContractHold) as exc:
+            contract.verify(original, candidate)
+        self.assertEqual(str(exc.exception), "HOST_DRIFT")
+
+    def test_oom_memory_cap_remains_strict(self):
+        self.check_hold(
+            "HOST_DRIFT",
+            lambda old, new: new["HostConfig"].update(Memory=0),
+        )
 
     def test_missing_tmpfs_not_masked_by_single_mount(self):
         self.check_hold("TMPFS", lambda old, new: new["HostConfig"]["Tmpfs"].pop("/run/brc"))

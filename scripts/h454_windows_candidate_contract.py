@@ -128,6 +128,30 @@ def _normal_host(host: dict[str, Any]) -> dict[str, Any]:
     return kept
 
 
+def _normalized_host_pair(
+    original: dict[str, Any], candidate: dict[str, Any]
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Match the Docker OOM-killer-enabled default without disabling OOM safety.
+
+    Engine HostConfig.OomKillDisable is a nullable boolean: absent default
+    setting is represented by JSON null or false. Both mean the OOM killer
+    remains enabled. Explicit true, missing field, strings/numbers are
+    forbidden even when both containers share the unsafe value.
+    All other HostConfig keys remain strictly compared.
+    """
+    for host in (original, candidate):
+        _need("OomKillDisable" in host, "OOM_FIELD_MISSING")
+        _need(
+            host["OomKillDisable"] is None or host["OomKillDisable"] is False,
+            "OOM_KILLER_DISABLED_OR_INVALID",
+        )
+    old = _normal_host(original)
+    new = _normal_host(candidate)
+    old["OomKillDisable"] = False
+    new["OomKillDisable"] = False
+    return old, new
+
+
 def _mount_contract(container: dict[str, Any]) -> list[dict[str, Any]]:
     mounts = container.get("Mounts")
     _need(isinstance(mounts, list), "MOUNTS")
@@ -169,7 +193,8 @@ def verify(original: dict[str, Any], candidate: dict[str, Any], *, expected_cand
     oldlabels = oldcfg.get("Labels") or {}
     _need(oldlabels.get("com.hermes.scope") == SCOPE, "LABELS")
     _need(_normal_config(oldcfg) == _normalized_candidate_config(oldcfg, newcfg), "CONFIG_DRIFT")
-    _need(_normal_host(oldhost) == _normal_host(newhost), "HOST_DRIFT")
+    canonical_old_host, canonical_new_host = _normalized_host_pair(oldhost, newhost)
+    _need(canonical_old_host == canonical_new_host, "HOST_DRIFT")
     _need(_mount_contract(original) == _mount_contract(candidate), "MOUNT_DRIFT")
     return "PASS"
 

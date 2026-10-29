@@ -75,6 +75,8 @@ def check_original(original: dict[str, Any], image: dict[str, Any]) -> str:
     require(cfg.get("Labels") == expected_labels, "LABELS_NOT_IMAGE_DEFAULT")
     require(host.get("PidsLimit") == 128 and host.get("Memory") == 536870912, "LIMITS")
     require(host.get("NanoCpus") == 1_000_000_000, "CPU_LIMIT")
+    require("OomKillDisable" in host and
+            (host["OomKillDisable"] is None or host["OomKillDisable"] is False), "OOM_KILLER_ENABLED_REQUIRED")
     require(host.get("ReadonlyRootfs") is True and host.get("Privileged") is False, "ISOLATION")
     require(host.get("NetworkMode") == "bridge", "NETWORK")
     require(set(host.get("CapDrop") or []) == {"ALL"}, "CAP_DROP")
@@ -129,6 +131,7 @@ def build_create_args(source: str) -> list[str]:
         "--user", "65534:65534", "--cap-drop", "ALL",
         "--security-opt", "no-new-privileges",
         "--memory", "512m", "--cpus", "1", "--pids-limit", "128",
+        "--oom-kill-disable=false",
         "--mount", f"type=bind,source={source},target=/workspace",
         "--tmpfs", "/run/brc:rw,nosuid,nodev,noexec,uid=65534,gid=65534,mode=0700,size=8m",
         "--tmpfs", "/tmp:rw,nosuid,nodev,noexec,uid=65534,gid=65534,mode=0700,size=64m",

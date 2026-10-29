@@ -98,3 +98,31 @@ is NOT APPROVED and MUST be diagnosed and corrected before proceeding.
 Once an exact, safe HostConfig difference has been proven and any subsequent
 fix passed CI, rerun the normal read-only contract without `--diagnose`.
 Never use the candidate or call `docker start` while any parity gate holds.
+
+## Safe nullable OOM-killer default parity (owner evidence 2026-10-29)
+
+Read-only v2 diagnostics reported `AttachStderr`, `AttachStdout`, and **only**
+`HostConfig.OomKillDisable` as different. In Docker Engine this field is
+nullable (`bool | null`); `null` and `false` both leave OOM killing enabled.
+The comparison now treats ONLY this pair as equivalent after verifying:
+
+- the original is running, the v2 candidate is stopped and never started;
+- immutable image, 512-MiB memory limit, 128 PID cap, both tmpfs and other
+  existing safety flags match;
+- **both** OOM fields exist, and each is exactly JSON `null` or `false`;
+- **any** `true`, integer, string, missing field or unrelated HostConfig
+  difference is a hard HOLD.
+
+For future candidates the command explicitly specifies
+`--oom-kill-disable=false`. Docker's standard OOM-killer protection
+remains active; **never** use `--oom-kill-disable=true`.
+
+To verify the **already created v2**, use the exact pinned released source
+without rerunning the create command:
+
+    py -3.14 -B scripts/h454_windows_candidate_contract.py --candidate-name h454-init-stage-571a1e2b-v2
+
+A successful parity check is source/config acceptance ONLY; it is not an
+owner-approved cutover or a real run of the --init candidate. Keep the
+original live device, DPAPI state and the stopped v2 untouched until the
+separate rollback/cutover/launcher validation sequence is ready.
