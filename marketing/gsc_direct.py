@@ -25,6 +25,7 @@ from marketing.gsc_analytics import (
 )
 
 SCOPE = "https://www.googleapis.com/auth/webmasters.readonly"
+OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token"
 API_ORIGIN = "https://www.googleapis.com"
 SITE_PATH = quote(PROPERTY, safe="")
 BASE_URL = API_ORIGIN + "/webmasters/v3/sites/" + SITE_PATH
@@ -230,26 +231,51 @@ def collect(fetch: Callable[[str, str, dict[str, Any] | None], object],
     }
 
 
-def _verify_credential_file(path: Path) -> None:
+def _verify_credential_file(path: Path) -> dict[str, Any]:
+    """Read one private POSIX credential snapshot, without file-swap races.
+
+    The returned in-memory dict is the ONLY credential source used for OAuth.
+    No path is read again by google-auth, and no secret data is logged.
+    """
     if not path.is_absolute():
         raise GscRuntimeError("credential_path_not_absolute")
+    if not hasattr(os, "O_NOFOLLOW") or not hasattr(os, "geteuid"):
+        raise GscRuntimeError("credential_platform_unsupported")
+    if path.is_symlink():
+        raise GscRuntimeError("credential_file_unsafe")
+    flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
     try:
-        meta = path.lstat()
-        if (not stat.S_ISREG(meta.st_mode) or meta.st_mode & 0o077 or
-                meta.st_size > 32 * 1024 or meta.st_size < 64):
+        fd = os.open(path, flags)
+        with os.fdopen(fd, "rb") as input_file:
+            meta = os.fstat(input_file.fileno())
+            if (not stat.S_ISREG(meta.st_mode) or meta.st_uid != os.geteuid()
+                    or meta.st_mode & 0o177 or meta.st_size > 32 * 1024
+                    or meta.st_size < 64):
+                raise GscRuntimeError("credential_file_unsafe")
+            raw = input_file.read(32 * 1024 + 1)
+        if len(raw) > 32 * 1024:
             raise GscRuntimeError("credential_file_unsafe")
-        # Validation before google-auth parses the private credential file.
-        body = json.loads(path.read_text(encoding="utf-8"))
+        body = json.loads(raw.decode("utf-8", "strict"))
         if (type(body) is not dict or body.get("type") != "service_account"
-                or body.get("token_uri") != "https://oauth2.googleapis.com/token"
-                or not re.fullmatch(r"[A-Za-z0-9_.+-]+@[A-Za-z0-9.-]+\.iam\.gserviceaccount\.com",
+                or body.get("token_uri") != OAUTH_TOKEN_URL
+                or not re.fullmatch(r"[A-Za-z0-9_.+-]+@[A-Za-z0-9.-]+\\.iam\\.gserviceaccount\\.com",
                                     body.get("client_email", ""))
                 or type(body.get("private_key")) is not str):
             raise GscRuntimeError("credential_type_invalid")
+        return body
     except GscRuntimeError:
         raise
     except (OSError, ValueError, TypeError):
         raise GscRuntimeError("credential_unavailable") from None
+
+
+def _pinned_oauth_request(transport: Callable[..., Any], url: str,
+                          **kwargs: Any) -> Any:
+    """Single Google token endpoint, explicit timeout, no URL reflection."""
+    if url != OAUTH_TOKEN_URL:
+        raise GscRuntimeError("oauth_endpoint_not_allowed")
+    kwargs["timeout"] = API_TIMEOUT
+    return transport(url, **kwargs)
 
 
 class _NoRedirect(HTTPRedirectHandler):
@@ -331,17 +357,27 @@ def _write_private_json(path: Path, data: dict[str, Any]) -> None:
 def live_run(*, credentials_path: Path, output_path: Path,
              now_utc: datetime | None = None) -> dict[str, Any]:
     """One permissioned live run; no scheduling or service activation here."""
-    _verify_credential_file(credentials_path)
+    credential_info = _verify_credential_file(credentials_path)
     try:
+        import requests
         from google.auth.transport.requests import Request as AuthRequest
         from google.oauth2 import service_account
     except ImportError:
         raise GscRuntimeError("google_auth_dependency_missing") from None
     try:
-        credentials = service_account.Credentials.from_service_account_file(
-            str(credentials_path), scopes=[SCOPE])
-        credentials.refresh(AuthRequest())
-        token = credentials.token
+        # Never re-read the credential path after ownership, mode and contents
+        # were checked. Pin Google OAuth transport as strictly as GSC reads.
+        credentials = service_account.Credentials.from_service_account_info(
+            credential_info, scopes=[SCOPE])
+        with requests.Session() as session:
+            session.trust_env = False  # no HTTP(S)_PROXY, .netrc, or env CA overrides
+            session.max_redirects = 0
+            auth_transport = AuthRequest(session)
+            credentials.refresh(
+                lambda url, **kw: _pinned_oauth_request(auth_transport, url, **kw))
+            token = credentials.token
+        if type(token) is not str or not token:
+            raise GscRuntimeError("google_auth_failed")
     except Exception:
         raise GscRuntimeError("google_auth_failed") from None
     utc = now_utc or datetime.now(tz=ZoneInfo("UTC"))
