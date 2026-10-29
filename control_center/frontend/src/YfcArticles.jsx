@@ -17,6 +17,36 @@ const safeSourceUrl=(url)=>{
 const validRow=(row)=>row&&typeof row==="object"&&ID.test(row.article_id)&&
  statuses.has(row.article_status)&&HASH.test(row.content_hash)&&
  Number.isInteger(row.content_version)&&row.content_version>0&&typeof row.title==="string";
+// YFC ArticleClaimSourceMatrixItem uses source_ids[], never source_id.
+// Reject missing/foreign/duplicated references rather than showing undefined evidence
+// or enabling an owner publish action for an incomplete review document.
+const validEvidence=(article)=>{
+ if(!Array.isArray(article.claims)||!article.claims.length||
+   !Array.isArray(article.sources)||!article.sources.length||
+   !Array.isArray(article.claim_source_matrix)||
+   article.claim_source_matrix.length!==article.claims.length)return false;
+ const claimIds=article.claims.map(x=>x?.claim_id);
+ const sourceIds=article.sources.map(x=>x?.source_id);
+ if(claimIds.some(id=>typeof id!=="string"||!id.trim())||
+   sourceIds.some(id=>typeof id!=="string"||!id.trim())||
+   new Set(claimIds).size!==claimIds.length||
+   new Set(sourceIds).size!==sourceIds.length||
+   article.claims.some(x=>typeof x.claim_text!=="string"||!x.claim_text.trim())||
+   article.sources.some(x=>typeof x.title!=="string"||!x.title.trim()))return false;
+ const claimSet=new Set(claimIds),sourceSet=new Set(sourceIds);
+ const matrixIds=new Set();
+ for(const item of article.claim_source_matrix){
+  if(!item||typeof item.claim_id!=="string"||!claimSet.has(item.claim_id)||
+    matrixIds.has(item.claim_id)||!Array.isArray(item.source_ids)||
+    item.source_ids.length<1||item.source_ids.length>15||
+    item.source_ids.some(id=>typeof id!=="string"||!sourceSet.has(id))||
+    new Set(item.source_ids).size!==item.source_ids.length||
+    !["supports","partially_supports","does_not_support","unclear"].includes(item.support_level)||
+    !["pending","verified","blocked"].includes(item.review_status))return false;
+  matrixIds.add(item.claim_id);
+ }
+ return matrixIds.size===claimSet.size;
+};
 const validDetail=(article,row)=>{
  if(!article||!row||!validRow(article)||article.article_id!==row.article_id||
    article.content_hash!==row.content_hash||article.content_version!==row.content_version)return false;
@@ -26,10 +56,7 @@ const validDetail=(article,row)=>{
   article.body_sections.every(s=>s&&typeof s.heading==="string"&&s.heading.trim()&&
    Array.isArray(s.paragraphs)&&s.paragraphs.length>0&&
    s.paragraphs.every(p=>typeof p==="string"&&p.trim()))&&
-  Array.isArray(article.claims)&&article.claims.length>0&&
-  Array.isArray(article.sources)&&article.sources.length>0&&
-  Array.isArray(article.claim_source_matrix)&&article.claim_source_matrix.length>0&&
-  Array.isArray(article.review_blockers);
+  validEvidence(article)&&Array.isArray(article.review_blockers);
 };
 const blocked=(article)=>article.claim_source_matrix.some(x=>
  !x||x.review_status==="blocked"||x.support_level==="does_not_support");
@@ -214,7 +241,11 @@ export default function YfcArticles(){
         {article.claims.map((claim,i)=><div className="ye-claim" key={claim.claim_id||i}>
          <strong>{claim.claim_text}</strong>
          <ul>{article.claim_source_matrix.filter(x=>x.claim_id===claim.claim_id).map((item,j)=>
-          <li key={j}>Источник: {item.source_id} · Поддержка: {item.support_level} · Рецензия: {item.review_status}</li>)}</ul>
+          <li key={j}>
+           Источники: {item.source_ids.map(id=>article.sources.find(source=>source.source_id===id).title).join("; ")}
+           {" · "}Поддержка: {item.support_level}{" · "}Рецензия: {item.review_status}
+           {item.limitations&&<p>Ограничения: {item.limitations}</p>}
+          </li>)}</ul>
         </div>)}
         <h4>Первоисточники</h4><ol>{article.sources.map((source,i)=><li key={source.source_id||i}>
          {safeSourceUrl(source.url)?<a href={safeSourceUrl(source.url)} target="_blank" rel="noopener noreferrer">{source.title} <ExternalLink size={13}/></a>:<span>{source.title} (ссылка недоступна)</span>}

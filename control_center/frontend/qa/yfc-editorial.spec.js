@@ -4,7 +4,7 @@ test.use({serviceWorkers:"block"});
 
 const ID="a".repeat(32),SHA="b".repeat(64);
 const row={article_id:ID,title:"Тестовая статья YFC",article_status:"draft",
- content_version:3,content_hash:SHA,source_count:1,claim_count:1,
+ content_version:3,content_hash:SHA,source_count:2,claim_count:1,
  pending_claim_count:1,review_blockers:["claim_source_matrix_not_fully_verified"]};
 const full={...row,description:"Описание материала",lead:"Вступление без сокращения",
  body_sections:[
@@ -12,16 +12,19 @@ const full={...row,description:"Описание материала",lead:"Вс�
   {heading:"Практические ограничения",paragraphs:["Третий полный абзац","Четвёртый полный абзац"]}
  ],
  claims:[{claim_id:"c1",claim_text:"Доказательства ограничены"}],
- sources:[{source_id:"s1",title:"Первичное исследование",url:"https://pmc.ncbi.nlm.nih.gov/articles/PMC00000001/",limitations:"Малая выборка"}],
- claim_source_matrix:[{claim_id:"c1",source_id:"s1",review_status:"pending",support_level:"partially_supports"}],
+ sources:[{source_id:"s1",title:"Первичное исследование",url:"https://pmc.ncbi.nlm.nih.gov/articles/PMC00000001/",limitations:"Малая выборка"},
+  {source_id:"s2",title:"Второе исследование",url:"https://pmc.ncbi.nlm.nih.gov/articles/PMC00000002/"}],
+ claim_source_matrix:[{claim_id:"c1",source_ids:["s1","s2"],review_status:"pending",
+  support_level:"partially_supports",limitations:"Требуется независимая научная проверка"}],
  risk_level:"moderate",evidence_level:"limited",domain_reviewer:null,
  provider:"local",model:"research-draft",review_blockers:["claim_source_matrix_not_fully_verified"]
 };
 
 
 const PROTOCOL="yfc-owner-editorial-bridge-v1";
-function popupHtml({incomplete=false}={}){
- const detail=incomplete?{...full,body_sections:[]}:full;
+function popupHtml({incomplete=false,invalidMatrix=false}={}){
+ const detail=incomplete?{...full,body_sections:[]}:
+  invalidMatrix?{...full,claim_source_matrix:[{...full.claim_source_matrix[0],source_ids:["unknown"]}]}:full;
  return `<!doctype html><html lang="ru"><meta charset="utf-8"><title>Root YFC</title>
  <body><h1>Подтвердить доступ YFC</h1>
  <button id="grant">Разрешить просмотр черновиков</button>
@@ -104,7 +107,11 @@ test("independent YFC Root window displays entire article and performs two owner
  for(const paragraph of ["Вступление без сокращения","Первый полный абзац исследования",
   "Второй полный абзац исследования","Третий полный абзац","Четвёртый полный абзац"])
   await expect(page.getByText(paragraph,{exact:true})).toBeVisible();
- await expect(page.getByText("Первичное исследование")).toBeVisible();
+ await expect(page.getByRole("link",{name:/Первичное исследование/})).toBeVisible();
+ await expect(page.getByRole("link",{name:/Второе исследование/})).toBeVisible();
+ await expect(page.getByText(/Источники: Первичное исследование; Второе исследование/)).toBeVisible();
+ await expect(page.getByText(/Ограничения: Требуется независимая научная проверка/)).toBeVisible();
+ await expect(page.getByText(/undefined/)).toHaveCount(0);
  await page.getByRole("button",{name:"Режим чтения"}).click();
  await expect(page.getByText("Четвёртый полный абзац")).toBeVisible();
  await page.getByRole("button",{name:/Проверил статью/}).click();
@@ -128,5 +135,17 @@ test("invalid full-text never offers publication",async({page})=>{
  await page.getByRole("button",{name:/Тестовая статья YFC/}).click();
  await expect(page.getByText(/Черновик не подтверждён/)).toBeVisible();
  await expect(page.getByRole("button",{name:/Проверил статью/})).toHaveCount(0);
+ expect(unexpected).toEqual([]);
+});
+
+test("missing foreign source_ids fail closed without owner publish controls",async({page})=>{
+ const {unexpected}=await prepare(page,{invalidMatrix:true});
+ await page.goto("/");
+ await page.getByRole("button",{name:"Статьи YFC"}).first().click();
+ await connect(page);
+ await page.getByRole("button",{name:/Тестовая статья YFC/}).click();
+ await expect(page.getByText(/Черновик не подтверждён/)).toBeVisible();
+ await expect(page.getByRole("button",{name:/Проверил статью/})).toHaveCount(0);
+ await expect(page.getByRole("button",{name:"Опубликовать в YFC"})).toHaveCount(0);
  expect(unexpected).toEqual([]);
 });
