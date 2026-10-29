@@ -258,7 +258,7 @@ def _verify_credential_file(path: Path) -> dict[str, Any]:
         body = json.loads(raw.decode("utf-8", "strict"))
         if (type(body) is not dict or body.get("type") != "service_account"
                 or body.get("token_uri") != OAUTH_TOKEN_URL
-                or not re.fullmatch(r"[A-Za-z0-9_.+-]+@[A-Za-z0-9.-]+\\.iam\\.gserviceaccount\\.com",
+                or not re.fullmatch(r"[A-Za-z0-9_.+-]+@[A-Za-z0-9.-]+\.iam\.gserviceaccount\.com",
                                     body.get("client_email", ""))
                 or type(body.get("private_key")) is not str):
             raise GscRuntimeError("credential_type_invalid")
