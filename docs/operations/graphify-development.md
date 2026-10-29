@@ -34,18 +34,45 @@ graphify --version
 Запускать из **корня Hermes checkout**, не из каталога-родителя:
 
 ```bash
-graphify extract . --code-only
-graphify query "which code depends on the Control Center API?"
-graphify explain "OpsWatch"
-graphify path "SourceModule" "TargetModule"
+graphify extract . --code-only --no-cluster
+graphify explain "auth.py"
+graphify explain "pilot.py"
+graphify path control_center_oauth_broker control_center_auth
+graphify path agent_budget_pilot agent_budget_policy
+graphify query "which code imports control_center.auth?"
 ```
 
-`--code-only` ограничивает обработку локальным AST. Не использовать
-`--no-gitignore`; стандартный `graphify-out/` исключён из Git.
-После построения проверить `graphify-out/graph.json` и выборочные
-результаты на включение `.env`, секретов, операционных данных, соседних
-проектов/Second Brain vault, каталогов state/logs, артефактов и баз данных.
-Никогда не копировать полученный граф в Issue/PR или внешнее хранилище.
+`--code-only` ограничивает обработку локальным AST, без LLM API.
+`--no-cluster` оставляет исходные извлечённые связи без кластеризации.
+Не использовать `--no-gitignore`; стандартный `graphify-out/` исключён из Git.
+
+**При первом запуске на новом checkout** оригинальный Graphify 0.9.97
+автоматически читает [корневой `.graphifyignore`](../../.graphifyignore)
+**в дополнение к `.gitignore`**. Это штатный upstream-механизм, а не
+собственная обёртка. Правила исключают `third_party/`, vendor/dependencies,
+временные каталоги, `.env*`, ключи, базы, state/logs и приватные пути.
+Не копируйте сюда настоящие credentials. Не сканируйте домашнюю папку или
+родительскую директорию с несколькими проектами.
+
+Уже заданные ранее `--exclude PATTERN` оригинальный CLI сохраняет внутри
+производных артефактов Graphify для последующих запусков **того же графа**.
+Это не заменяет `.graphifyignore` для нового checkout. После изменения
+правил повторный `extract` пересматривает состав индекса; при сомнении
+можно запустить `graphify extract . --code-only --no-cluster --force`,
+не удаляя ничего из репозитория.
+
+Проверяйте `graphify-out/graph.json` по путям `source_file`,
+`source_location` и концам рёбер; совпадений с запрещёнными каталогами
+быть не должно. У части узлов `source_file` может отсутствовать — нулевые
+совпадения по маскам не доказывают абсолютного отсутствия секретов.
+`git check-ignore -v graphify-out/graph.json` должен показать правило
+`.gitignore`. Никогда не копируйте полный граф в Issue/PR или внешнее хранилище.
+
+Команды `path` выше проверены по реальному исходному коду Hermes:
+`control_center/oauth_broker.py` импортирует `control_center.auth`, а
+`agent_budget/pilot.py` использует `agent_budget.policy.verify_metrics`.
+Свободный `query` может выдавать нерелевантные узлы или усекаться по
+бюджету — результат нужно проверять по исходникам и тестам.
 
 Подтверждать найденные связи по **текущим исходникам и тестам**, а не по
 графу. `EXTRACTED` и `INFERRED` - метки вывода Graphify, не гарантия
@@ -58,10 +85,17 @@ graphify path "SourceModule" "TargetModule"
 graphify install --platform codex --project
 ```
 
-Команда может добавить `.agents/skills/graphify/` и `references/`.
-Разрешена только после просмотра официального механизма установки и
-диффа на **отдельной рабочей ветке**. Прежде чем оставлять новые файлы,
-сверить их с `AGENTS.md`, текущим `.agents/README.md` и политиками доступа.
+Если оригинальный Graphify skill **уже** обнаружен в текущей сессии
+Codex Desktop через существующую пользовательскую установку, не нужно
+повторно устанавливать его в Hermes. При явном согласии на **проектную**
+установку команда выше копирует оригинальный skill в
+`.codex/skills/graphify/` (и его `references/`, если они поставляются
+upstream). Сначала проверить файлы и точный diff на отдельной рабочей
+ветке; не перезаписывать существующие навыки.
+
+**Не** использовать `graphify codex install`: это другой режим,
+который может изменить `AGENTS.md` и Codex hooks; здесь он не разрешён.
+Сверить `AGENTS.md`, `.agents/README.md`, разрешения и owner gates.
 В Codex используется `$graphify`. Никакой Codex CLI, Claude CLI или
 копии upstream-движка в проект для этого не нужно.
 
@@ -84,10 +118,14 @@ uv tool uninstall graphifyy
 `uv tool install --reinstall 'graphifyy==0.9.97'`, затем повторять
 реальный AST smoke и несколько `query/path/explain`.
 
-**Доказательства:** upstream v8 и команда `--code-only` проверены
-по исходникам, но локальная установка на рабочем Windows-узле и сборка
-графа Hermes не подтверждены автоматически этим документом. Нужно
-отдельно зафиксировать: версию CLI, hash checkout, результаты поиска,
-проверку приватности, exit codes, diff и статус PR/CI. Источник истины -
-код, тесты, ADR и утверждённая Issue. Любой прогон через отдельную
-Linux-песочницу нельзя выдавать за проверку Codex Desktop.
+**Доказательства (29.10.2026):** репозиторное внедрение [#631](https://github.com/MikeMoore1337/hermes/issues/631)
+проверено на Linux/Docker sandbox: оригинальный Graphify 0.9.97,
+code-only граф, `explain`/`path`/`query` с кодами 0 и ограниченный
+аудит путей узлов и рёбер. Для безопасности нового checkout добавлен
+штатный `.graphifyignore` ([#674](https://github.com/MikeMoore1337/hermes/issues/674)).
+Для любой новой локальной приёмки отдельно фиксировать точный Git SHA,
+версию CLI, состав графа, exit codes и сохранность Git.
+
+**Не подтверждено:** фактический Graphify-run *на Windows* из Hermes
+checkout в Codex Desktop. Песочница Linux не считается Windows-приёмкой.
+Граф не равнозначен source/tests/ADR и не подключён к resident Hermes Agent.

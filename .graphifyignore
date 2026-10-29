@@ -1,0 +1,40 @@
+# Graphify-only project corpus exclusions; does not change Git or runtime.
+# Native Graphify v0.9.97 reads this alongside .gitignore.
+# Keep authored first-party code; omit external bundles, local state and secrets.
+third_party/
+vendor/
+node_modules/
+site-packages/
+.venv/
+venv/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.cache/
+.artifacts/
+.backups/
+graphify-out/
+build/
+dist/
+coverage/
+secrets/
+credentials/
+auth/
+private/
+vault/
+data/
+state/
+logs/
+.env*
+*.pem
+*.key
+*.p12
+*.pfx
+*.sqlite
+*.sqlite3
+*.db
+.ssh/
+.aws/
+.gnupg/
+AppData/
