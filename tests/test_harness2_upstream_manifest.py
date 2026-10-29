@@ -91,15 +91,15 @@ class UpstreamSummaryImportTests(unittest.TestCase):
             home = Path(directory)
             install = home / ".local/share/ai-development-toolkit" / ("harness2-" + h2.PIN)
             (install / "source").mkdir(parents=True)
-            (install / ".adt-original-harness2").write_text(h2.PIN + "\\n", encoding="utf-8")
+            (install / ".adt-original-harness2").write_text(h2.PIN + "\n", encoding="utf-8")
             custom_root = home / "original-harness2-results"
             relative = "runs/lab/adapt/namespace/legal/task001/summary.json"
             report = custom_root.joinpath(*relative.split("/")[1:])
             report.parent.mkdir(parents=True)
             report.write_bytes(fixture(task_id="legal/task001", domain="legal"))
             verified_git = [
-                subprocess.CompletedProcess(args=[], returncode=0, stdout=h2.PIN + "\\n"),
-                subprocess.CompletedProcess(args=[], returncode=0, stdout=h2.ORIGIN + "\\n"),
+                subprocess.CompletedProcess(args=[], returncode=0, stdout=h2.PIN + "\n"),
+                subprocess.CompletedProcess(args=[], returncode=0, stdout=h2.ORIGIN + "\n"),
             ]
             with patch.object(h2.subprocess, "run", side_effect=verified_git), patch.dict(
                 os.environ, {"HARNESS2_RUNS_DIR": str(custom_root)}
@@ -114,10 +114,10 @@ class UpstreamSummaryImportTests(unittest.TestCase):
             home = Path(directory)
             install = home / ".local/share/ai-development-toolkit" / ("harness2-" + h2.PIN)
             (install / "source").mkdir(parents=True)
-            (install / ".adt-original-harness2").write_text(h2.PIN + "\\n", encoding="utf-8")
+            (install / ".adt-original-harness2").write_text(h2.PIN + "\n", encoding="utf-8")
             verified_git = [
-                subprocess.CompletedProcess(args=[], returncode=0, stdout=h2.PIN + "\\n"),
-                subprocess.CompletedProcess(args=[], returncode=0, stdout=h2.ORIGIN + "\\n"),
+                subprocess.CompletedProcess(args=[], returncode=0, stdout=h2.PIN + "\n"),
+                subprocess.CompletedProcess(args=[], returncode=0, stdout=h2.ORIGIN + "\n"),
             ]
             with patch.object(h2.subprocess, "run", side_effect=verified_git), patch.dict(
                 os.environ, {"HARNESS2_RUNS_DIR": "/tmp"}
