@@ -22,13 +22,18 @@ From a trusted checkout, run:
 
     py -3.14 -B -m unittest discover -s tests -p "test_h454_windows_candidate_contract.py" -v
 
-18 deterministic Python tests require no Docker, credentials, network or API.
+20 deterministic Python tests require no Docker, credentials, network or API.
 
 ## Owner Windows host, read-only gate
 
 After pinning and reviewing a released SHA, optionally run:
 
     py -3.14 -B scripts/h454_windows_candidate_contract.py
+
+To inspect a future second candidate without deleting the preserved
+original incomplete staging container:
+
+    py -3.14 -B scripts/h454_windows_candidate_contract.py --candidate-name h454-init-stage-571a1e2b-v2
 
 The inspector uses a pinned Docker Desktop binary and in-memory
 docker container inspect for the original and stopped candidate; it emits
