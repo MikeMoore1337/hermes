@@ -40,7 +40,7 @@ bash scripts/harness2_upstream.sh status
 python3 scripts/harness2_upstream_manifest.py runs/<namespace>/<task>/summary.json
 ```
 
-Путь должен находиться **строго внутри** pinned checkout и `runs/`; запрещены
+Путь должен быть **относительным и начинаться с** `runs/`; целевой каталог берётся из оригинального `HARNESS2_RUNS_DIR` (по умолчанию `source/runs`) внутри домашнего каталога пользователя. Корень за пределами `HOME` отклоняется. Запрещены
 symlink, path traversal, крупные/неизвестные JSON, произвольные корневые каталоги
 и неподтверждённый SHA источника. Из исходного `summary.json` выдаются только
 проверенные на формат метаданные, собственный SHA256 файла и фиксированные флаги
