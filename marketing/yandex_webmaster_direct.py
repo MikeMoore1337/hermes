@@ -151,6 +151,10 @@ def _verify_host(response: dict[str, Any]) -> None:
     target = [x for x in hosts if type(x) is dict and x.get("host_id") == HOST]
     if len(target) != 1 or target[0].get("verified") is not True:
         raise YandexLiveDenied("TARGET_HOST_NOT_VERIFIED")
+    # Yandex /v4/user/{uid}/hosts exposes a required ASCII host URL.
+    # Matching an ID alone must not accept a mismatched canonical origin.
+    if target[0].get("ascii_host_url") != "https://your-fitness-coach.ru/":
+        raise YandexLiveDenied("TARGET_HOST_URL_MISMATCH")
     mirror = target[0].get("main_mirror")
     if mirror is not None and (
         type(mirror) is not dict or mirror.get("host_id") != HOST

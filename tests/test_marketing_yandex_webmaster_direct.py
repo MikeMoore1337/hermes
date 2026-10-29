@@ -83,6 +83,12 @@ class YandexLiveProbeTests(unittest.TestCase):
             {"hosts": [{"host_id": HOST, "verified": True, "main_mirror": {"host_id": "http:your-fitness-coach.ru:80"}}]},
             {"hosts": [{"host_id": HOST, "verified": True}, {"host_id": HOST, "verified": True}]},
             {"hosts": [{"host_id": HOST, "verified": True, "host_data_status": "NOT_LOADED"}]},
+            {"hosts": [{"host_id": HOST, "verified": True,
+                        "ascii_host_url": "https://attacker.example/",
+                        "main_mirror": {"host_id": HOST}}]},
+            {"hosts": [{"host_id": HOST, "verified": True,
+                        "ascii_host_url": "http://your-fitness-coach.ru/",
+                        "main_mirror": {"host_id": HOST}}]},
         ):
             with self.subTest(item=item):
                 data = mocked_sequence()[0]
@@ -90,6 +96,27 @@ class YandexLiveProbeTests(unittest.TestCase):
                 with self.assertRaises(YandexLiveDenied):
                     collect(as_of=AS_OF, token=TOKEN, transport=send)
                 self.assertEqual(2, len(calls))
+
+    def test_host_identity_requires_exact_https_ascii_origin(self):
+        for ascii_url in (
+            None, "", "http://your-fitness-coach.ru/",
+            "https://your-fitness-coach.ru.evil.example/",
+            "https://your-fitness-coach.ru:8443/",
+        ):
+            with self.subTest(ascii_url=ascii_url):
+                send, calls = mocked_sequence(responses=[
+                    {"user_id": 100},
+                    {"hosts": [{
+                        "host_id": HOST, "verified": True,
+                        "ascii_host_url": ascii_url,
+                        "main_mirror": {"host_id": HOST},
+                    }]},
+                ])
+                with self.assertRaisesRegex(
+                    YandexLiveDenied, "TARGET_HOST_URL_MISMATCH",
+                ):
+                    collect(as_of=AS_OF, token=TOKEN, transport=send)
+                self.assertEqual(2, len(calls))  # no query, sitemap or index GET
 
     def test_user_id_malformed_refused_after_first_get(self):
         for value in (None, True, "123", -1, 0):
@@ -138,7 +165,9 @@ class YandexLiveProbeTests(unittest.TestCase):
         responses = mocked_sequence()[0]
         send, calls = mocked_sequence(responses=[
             {"user_id": 100},
-            {"hosts": [{"host_id": HOST, "verified": True, "main_mirror": {"host_id": HOST}}]},
+            {"hosts": [{"host_id": HOST, "verified": True,
+                        "ascii_host_url": "https://your-fitness-coach.ru/",
+                        "main_mirror": {"host_id": HOST}}]},
             bad["popular"], bad["all_history"], bad["index_history"], bad["sitemaps"],
         ])
         with self.assertRaisesRegex(YandexLiveDenied, "Yandex_RESPONSE_CONTRACT_CHANGED"):
