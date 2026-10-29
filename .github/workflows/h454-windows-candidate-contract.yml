@@ -5,20 +5,30 @@ on:
     paths:
       - scripts/h454_windows_candidate_contract.py
       - scripts/h454_windows_prepare_init_candidate.py
+      - scripts/h454_windows_native_preflight.ps1
+      - tests/test_h454_windows_native_preflight.py
+      - scripts/h454_windows_launcher_patch.py
+      - tests/test_h454_windows_launcher_patch.py
       - tests/test_h454_windows_candidate_contract.py
       - tests/test_h454_windows_prepare_init_candidate.py
       - docs/operations/h454-windows-candidate-contract.md
       - docs/operations/h454-windows-candidate-preparer.md
+      - docs/operations/h454-windows-native-preflight.md
       - .github/workflows/h454-windows-candidate-contract.yml
   push:
     branches: [main]
     paths:
       - scripts/h454_windows_candidate_contract.py
       - scripts/h454_windows_prepare_init_candidate.py
+      - scripts/h454_windows_native_preflight.ps1
+      - tests/test_h454_windows_native_preflight.py
+      - scripts/h454_windows_launcher_patch.py
+      - tests/test_h454_windows_launcher_patch.py
       - tests/test_h454_windows_candidate_contract.py
       - tests/test_h454_windows_prepare_init_candidate.py
       - docs/operations/h454-windows-candidate-contract.md
       - docs/operations/h454-windows-candidate-preparer.md
+      - docs/operations/h454-windows-native-preflight.md
       - .github/workflows/h454-windows-candidate-contract.yml
 
 permissions:
@@ -43,3 +53,11 @@ jobs:
         run: python -B -m unittest discover -s tests -p "test_h454_windows_candidate_contract.py" -v
       - name: Synthetic candidate preparer tests
         run: python -B -m unittest discover -s tests -p "test_h454_windows_prepare_init_candidate.py" -v
+      - name: Launcher preparation never modifies live source
+        run: python -B -m unittest discover -s tests -p "test_h454_windows_launcher_patch.py" -v
+      - name: Real PowerShell 5.1 stdin and failure diagnostics (no host services)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          python -B -m unittest discover -s tests -p "test_h454_windows_native_preflight.py" -v
+          if ($LASTEXITCODE -ne 0) { throw 'H454_NATIVE_PREFLIGHT_TESTS_FAILED' }
