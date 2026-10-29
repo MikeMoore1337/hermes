@@ -15,6 +15,20 @@
 
 Документированные сценарии отказа и тесты: `tests/test_marketing_yandex_webmaster_direct.py`, только синтетический транспорт/фикстуры. Никаких вызовов к настоящему Яндексу в GitHub CI.
 
+## Однозапросная диагностика OAuth без повторной загрузки статистики
+
+Если штатный `--execute-read` возвращает только `AUTH_OR_RESPONSE_NOT_VERIFIED`, не повторять полный шестизапросный сбор и не перевыпускать токен без доказательств. После проверки правильного production release SHA, владельца и режима 0600 приватного token-файла, оператор может **однократно** выполнить:
+
+```sh
+cd "/opt/hermes-agent-owner/releases/main-$(cat /var/lib/hermes-main-deploy/last-success.sha)"
+runuser -u hermes-seo -- env -i HOME=/var/lib/hermes-seo PATH=/usr/bin:/bin PYTHONDONTWRITEBYTECODE=1 \
+  /usr/bin/python3 -B -m marketing.yandex_webmaster_direct \
+  --date "$(date -u +%F)" --execute-read --probe-user \
+  --token-file /var/lib/hermes-seo/private/yandex-oauth-token
+```
+
+Новый `--probe-user` запускает только **один HTTPS GET** `https://api.webmaster.yandex.net/v4/user` (8 секунд, без proxy/redirect/retry) и никогда не обращается к `hosts`, поисковым запросам, индексации или sitemap. Положительный результат `LIVE_USER_ENDPOINT_ONLY` подтверждает только валидный `/user` ответ при локально переданном OAuth-токене, **не** наличие YFC в аккаунте или пригодность данных. Отказ выдаёт только заранее разрешённый код: `TOKEN_INVALID`, `AUTH_REQUIRED`, `ACCESS_DENIED`, `NETWORK_UNAVAILABLE`, `USER_ID_INVALID`, `RESPONSE_JSON_INVALID` и прочие фиксированные состояния; неизвестное исключение никогда не выводится наружу. Никакие token/UID/provider response не печатаются. Обычный полный `--execute-read` сохраняет прежний обобщённый отказ. Все проверочные тесты синтетические; необходимость живого smoke сохраняется.
+
 ## Реальный запуск на авторизованном Linux VPS после установки OAuth
 
 1. У владельца **уже был** подтверждён сайт YFC в UI Webmaster. Не создавать снова verification-файлы или другой сайт. Официальный [OAuth guide](https://yandex.ru/dev/webmaster/doc/ru/tasks/how-to-get-oauth): отдельное приложение, redirect `https://oauth.yandex.ru/verification_code`, scope `webmaster:hostinfo` для только чтения. Если для **явно согласованного управления** позднее потребуется `webmaster:verify`, предоставить её отдельному специально ограниченному клиенту и проверить операции/квоты, не переводить read-collector на все permissions по умолчанию.

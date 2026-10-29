@@ -15,7 +15,8 @@ from unittest.mock import patch
 from marketing.yandex_webmaster import BASE, HOST
 from marketing.yandex_webmaster_direct import (
     YandexLiveDenied, _json_unique, _parse_response, _safe_url, _uid,
-    _verify_host, collect, main, read_private_token, summarized_receipt,
+    _verify_host, collect, main, probe_user, read_private_token,
+    summarized_receipt,
 )
 from tests.test_marketing_yandex_webmaster import fixture
 
@@ -206,6 +207,100 @@ class YandexLiveProbeTests(unittest.TestCase):
                 read_private_token(str(link))
             with self.assertRaises(YandexLiveDenied):
                 read_private_token("relative/path")
+
+    def test_single_user_auth_probe_does_not_access_host_or_query(self):
+        send, called = mocked_sequence(responses=[{"user_id": 100}])
+        result = probe_user(token=TOKEN, transport=send)
+        self.assertEqual([BASE + "/user"], called)
+        self.assertEqual("SYNTHETIC_USER_ENDPOINT_ONLY", result["status"])
+        self.assertEqual(1, result["request_count"])
+        self.assertEqual(1, result["request_limit"])
+        self.assertFalse(result["host_verified"])
+        self.assertFalse(result["search_metrics_verified"])
+        self.assertFalse(result["publication_allowed"])
+        self.assertNotIn("user_id", result)
+
+    def test_user_probe_invalid_token_does_not_call_transport(self):
+        calls = []
+        def fake(*args):
+            calls.append(args)
+            return b'{"user_id":100}'
+        for bad in ("", "not-valid", None, " " * 40):
+            with self.subTest(bad_type=type(bad).__name__), self.assertRaises(
+                YandexLiveDenied,
+            ):
+                probe_user(token=bad, transport=fake)
+        self.assertEqual([], calls)
+
+    def test_cli_probe_requires_explicit_execution_and_private_token_path(self):
+        for argv, reason in (
+            (["--date", "2026-10-23", "--probe-user"],
+             "EXPLICIT_EXECUTION_REQUIRED"),
+            (["--date", "2026-10-23", "--execute-read", "--probe-user"],
+             "TOKEN_FILE_REQUIRED"),
+        ):
+            with self.subTest(reason=reason):
+                with patch("marketing.yandex_webmaster_direct._transport",
+                           side_effect=AssertionError("must not request")):
+                    output = io.StringIO()
+                    with patch("sys.stdout", output):
+                        rc = main(argv)
+                self.assertEqual(2, rc)
+                result = json.loads(output.getvalue())
+                self.assertEqual("REFUSED", result["status"])
+                self.assertEqual(reason, result["reason"])
+                self.assertEqual(1, result["request_limit"])
+                self.assertFalse(result["publication_allowed"])
+
+    def test_cli_probe_prints_only_redacted_fixed_codes(self):
+        cmd = ["--date", "2026-10-23", "--probe-user", "--execute-read",
+               "--token-file", "/private/synthetic"]
+        for provider_error, expected in (
+            ("ACCESS_DENIED", "ACCESS_DENIED"),
+            ("AUTH_REQUIRED", "AUTH_REQUIRED"),
+            ("NETWORK_UNAVAILABLE", "NETWORK_UNAVAILABLE"),
+            ("secret=do-not-echo", "AUTH_OR_RESPONSE_NOT_VERIFIED"),
+        ):
+            with self.subTest(reason=expected):
+                calls = []
+                def denied(url, token):
+                    calls.append(url)
+                    raise YandexLiveDenied(provider_error)
+                with patch("marketing.yandex_webmaster_direct.read_private_token",
+                           return_value=TOKEN), patch(
+                        "marketing.yandex_webmaster_direct._transport",
+                        side_effect=denied):
+                    output = io.StringIO()
+                    with patch("sys.stdout", output):
+                        rc = main(cmd)
+                self.assertEqual(2, rc)
+                self.assertEqual([BASE + "/user"], calls)
+                self.assertEqual(expected, json.loads(output.getvalue())["reason"])
+                self.assertNotIn("secret=", output.getvalue())
+                self.assertNotIn(TOKEN, output.getvalue())
+
+    def test_cli_probe_one_success_still_does_not_verify_site(self):
+        cmd = ["--date", "2026-10-23", "--probe-user", "--execute-read",
+               "--token-file", "/private/synthetic"]
+        calls = []
+        def ok(url, token):
+            calls.append(url)
+            return b'{"user_id":123456}'
+        with patch("marketing.yandex_webmaster_direct.read_private_token",
+                   return_value=TOKEN), patch(
+                   "marketing.yandex_webmaster_direct._transport", side_effect=ok):
+            output = io.StringIO()
+            with patch("sys.stdout", output):
+                rc = main(cmd)
+        data = json.loads(output.getvalue())
+        self.assertEqual(0, rc)
+        self.assertEqual([BASE + "/user"], calls)
+        self.assertEqual("LIVE_USER_ENDPOINT_ONLY", data["status"])
+        self.assertEqual(1, data["request_count"])
+        self.assertFalse(data["host_verified"])
+        self.assertFalse(data["publication_allowed"])
+        self.assertNotIn("123456", output.getvalue())
+        self.assertNotIn(TOKEN, output.getvalue())
 
     def test_no_exec_cli_does_not_load_credentials_or_network(self):
         stdout = io.StringIO()
