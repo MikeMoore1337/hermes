@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import stat
 import subprocess
@@ -70,7 +71,12 @@ def read_external_summary(relative: str, *, home: Path | None = None) -> dict:
     # Never expose an option for an arbitrary project or private-vault root.
     root = (home or Path.home()) / ".local/share/ai-development-toolkit" / ("harness2-" + PIN)
     source = root / "source"
-    if source.is_symlink() or not source.is_dir() or root.is_symlink():
+    marker = root / ".adt-original-harness2"
+    if (
+        source.is_symlink() or not source.is_dir() or root.is_symlink()
+        or marker.is_symlink() or not marker.is_file()
+        or marker.read_text(encoding="utf-8").strip() != PIN
+    ):
         raise UpstreamRejected("PINNED_SOURCE_NOT_INSTALLED")
     try:
         rev = subprocess.run(["git", "-C", str(source), "rev-parse", "HEAD"],
@@ -88,12 +94,29 @@ def read_external_summary(relative: str, *, home: Path | None = None) -> dict:
     if (len(parts) < 3 or any(x in {"", ".", ".."} for x in parts)
             or parts[-1] != "summary.json"):
         raise UpstreamRejected("UNSUPPORTED_ARTIFACT_PATH")
-    target = source
-    for part in parts:
+    # Honor the ORIGINAL upstream's config.RUNS, including HARNESS2_RUNS_DIR.
+    # Require a private user-home output root; never scan production or private vault.
+    base_home = home or Path.home()
+    raw_runs = os.environ.get("HARNESS2_RUNS_DIR")
+    runs_root = Path(raw_runs).expanduser() if raw_runs is not None else source / "runs"
+    if not runs_root.is_absolute() or runs_root == base_home:
+        raise UpstreamRejected("UNSAFE_UPSTREAM_RUNS_ROOT")
+    try:
+        runs_root.relative_to(base_home)
+    except ValueError as exc:
+        raise UpstreamRejected("UPSTREAM_RUNS_OUTSIDE_HOME") from exc
+    for node in (runs_root, *runs_root.parents):
+        if node == base_home:
+            break
+        if node.is_symlink():
+            raise UpstreamRejected("LINKED_UPSTREAM_RUNS_ROOT")
+
+    target = runs_root
+    for part in parts[1:]:
         target = target / part
         if target.is_symlink():
             raise UpstreamRejected("SYMLINK_NOT_ALLOWED")
-    if not target.is_file() or not target.resolve().is_relative_to(source.resolve()):
+    if not target.is_file() or not target.resolve().is_relative_to(runs_root.resolve()):
         raise UpstreamRejected("ARTIFACT_NOT_FOUND")
     info = target.stat()
     if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_size > LIMIT:
