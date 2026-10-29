@@ -1,0 +1,37 @@
+name: H454 Windows candidate contract
+
+on:
+  pull_request:
+    paths:
+      - scripts/h454_windows_candidate_contract.py
+      - tests/test_h454_windows_candidate_contract.py
+      - docs/operations/h454-windows-candidate-contract.md
+      - .github/workflows/h454-windows-candidate-contract.yml
+  push:
+    branches: [main]
+    paths:
+      - scripts/h454_windows_candidate_contract.py
+      - tests/test_h454_windows_candidate_contract.py
+      - docs/operations/h454-windows-candidate-contract.md
+      - .github/workflows/h454-windows-candidate-contract.yml
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-contract:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.11", "3.14"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Compile parser
+        run: python -m py_compile scripts/h454_windows_candidate_contract.py
+      - name: Synthetic contract tests
+        run: python -B -m unittest discover -s tests -p "test_h454_windows_candidate_contract.py" -v
