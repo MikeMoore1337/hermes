@@ -34,6 +34,20 @@ class UpstreamSummaryImportTests(unittest.TestCase):
         self.assertNotIn("fake CI", str(out))
         self.assertEqual(len(out["source_file_sha256"]), 64)
 
+    def test_exact_upstream_failure_and_skipped_statuses(self):
+        # Original pinned harness2/core/schedule.py: skipped/base-failed/partial/ok/running.
+        for status in ("running", "ok", "partial", "skipped", "base-failed"):
+            with self.subTest(status=status):
+                report = h2.parse_summary(fixture(status=status))
+                self.assertEqual(report["claimed_status"], status)
+                self.assertFalse(report["model_efficacy_verified"])
+                self.assertEqual(report["review_status"], "SOURCE_METADATA_ONLY")
+
+        for status in ("failed", "PASS", "SUCCESS", "complete", "approved"):
+            with self.subTest(status=status):
+                with self.assertRaises(h2.UpstreamRejected):
+                    h2.parse_summary(fixture(status=status))
+
     def test_fake_pass_and_unsafe_values_rejected(self):
         for bad in [
             {"task_id": "../private"}, {"domain": "x\nInjected"}, {"k": True},
