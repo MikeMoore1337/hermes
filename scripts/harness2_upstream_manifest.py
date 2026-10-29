@@ -105,6 +105,12 @@ def read_external_summary(relative: str, *, home: Path | None = None) -> dict:
         runs_root.relative_to(base_home)
     except ValueError as exc:
         raise UpstreamRejected("UPSTREAM_RUNS_OUTSIDE_HOME") from exc
+    # Reject both lexical traversal and symlink/realpath escapes. The original
+    # upstream resolves HARNESS2_RUNS_DIR before using it.
+    resolved_home = base_home.resolve()
+    resolved_runs = runs_root.resolve()
+    if resolved_runs == resolved_home or not resolved_runs.is_relative_to(resolved_home):
+        raise UpstreamRejected("UPSTREAM_RUNS_OUTSIDE_HOME")
     for node in (runs_root, *runs_root.parents):
         if node == base_home:
             break
