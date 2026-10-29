@@ -17,7 +17,7 @@ PIN = "1cfe254e8d25b15f37048c3730134686abe60335"
 ORIGIN = "https://github.com/google-research/harness2.git"
 LIMIT = 128 * 1024
 IDENT = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}\Z")
-STATUS = re.compile(r"[a-z_]{1,32}\Z")
+STATUSES = frozenset({"running", "ok", "partial", "skipped", "base-failed"})
 
 
 class UpstreamRejected(ValueError):
@@ -37,7 +37,7 @@ def parse_summary(raw: bytes) -> dict:
     task, domain, status = data["task_id"], data["domain"], data["status"]
     if (type(task) is not str or not IDENT.fullmatch(task)
             or type(domain) is not str or not IDENT.fullmatch(domain)
-            or type(status) is not str or not STATUS.fullmatch(status)
+            or type(status) is not str or status not in STATUSES
             or type(data["k"]) is not int or not 1 <= data["k"] <= 100
             or (data["seed"] is not None and type(data["seed"]) is not int)
             or type(data["modes"]) is not dict
