@@ -48,6 +48,19 @@ class UpstreamSummaryImportTests(unittest.TestCase):
                 with self.assertRaises(h2.UpstreamRejected):
                     h2.parse_summary(fixture(status=status))
 
+    def test_native_lab_jobbench_task_id_with_single_slash(self):
+        # Original JobBench and LAB benchmark task identities contain a slash.
+        for task in ("professional/task42", "antitrust-competition/case_001"):
+            with self.subTest(task=task):
+                got = h2.parse_summary(fixture(task_id=task))
+                self.assertEqual(got["claimed_task_id"], task)
+                self.assertFalse(got["source_file_verified_as_genuine"])
+        for task in ("../secret", "role/../secret", "/role/task1", "role//task1",
+                     "role/task1/extra", "role/.", "role/..", "role\\task1"):
+            with self.subTest(task=task):
+                with self.assertRaises(h2.UpstreamRejected):
+                    h2.parse_summary(fixture(task_id=task))
+
     def test_fake_pass_and_unsafe_values_rejected(self):
         for bad in [
             {"task_id": "../private"}, {"domain": "x\nInjected"}, {"k": True},
