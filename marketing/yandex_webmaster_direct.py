@@ -238,6 +238,57 @@ def collect(
     }
 
 
+# Only explicitly enumerated, non-sensitive refusal codes may be printed by
+# the opt-in one-request authentication probe. Provider payloads, URLs, tokens,
+# user identifiers and exception messages are never forwarded to the CLI.
+USER_PROBE_REFUSALS = frozenset({
+    "EXPLICIT_EXECUTION_REQUIRED", "TOKEN_FILE_REQUIRED",
+    "TOKEN_PATH_INVALID", "TOKEN_FILE_UNSAFE", "TOKEN_FILE_UNAVAILABLE",
+    "TOKEN_INVALID", "INPUT_INVALID", "URL_NOT_ALLOWED",
+    "AUTH_REQUIRED", "ACCESS_DENIED", "HOST_NOT_VERIFIED_OR_UNAVAILABLE",
+    "RATE_LIMITED", "UPSTREAM_UNAVAILABLE", "HTTP_REQUEST_REFUSED",
+    "NETWORK_UNAVAILABLE", "RESPONSE_NOT_OK", "RESPONSE_SIZE_INVALID",
+    "RESPONSE_BUDGET_EXCEEDED", "RESPONSE_DUPLICATE_KEY",
+    "RESPONSE_NUMBER_INVALID", "RESPONSE_JSON_INVALID",
+    "RESPONSE_SCHEMA_INVALID", "USER_ID_INVALID", "REQUEST_FAILED",
+})
+
+
+def probe_user(*, token: str,
+               transport: Callable[[str, str], bytes] | None = None) -> dict[str, Any]:
+    """One authorized GET /v4/user, never a search/host/SEO-data collection.
+
+    Real-network verification applies only to this account endpoint; no YFC
+    property permissions, canonical host, indexing or demand are asserted.
+    """
+    if type(token) is not str or not TOKEN_PATTERN.fullmatch(token):
+        raise YandexLiveDenied("INPUT_INVALID")
+    endpoint = _transport if transport is None else transport
+    try:
+        raw = endpoint(BASE + "/user", token)
+    except YandexLiveDenied:
+        raise
+    except Exception:
+        raise YandexLiveDenied("REQUEST_FAILED") from None
+    _uid(_parse_response(raw))  # validate shape, never print account id
+    return {
+        "status": ("LIVE_USER_ENDPOINT_ONLY" if transport is None
+                   else "SYNTHETIC_USER_ENDPOINT_ONLY"),
+        "request_count": 1,
+        "request_limit": 1,
+        "host_verified": False,
+        "search_metrics_verified": False,
+        "publication_allowed": False,
+    }
+
+
+def _safe_probe_reason(exc: YandexLiveDenied) -> str:
+    """Never print untrusted exception text or secrets."""
+    reason = exc.args[0] if len(exc.args) == 1 else None
+    return (reason if type(reason) is str and reason in USER_PROBE_REFUSALS
+            else "AUTH_OR_RESPONSE_NOT_VERIFIED")
+
+
 def summarized_receipt(report: dict[str, Any]) -> dict[str, Any]:
     """Safe operator output, deliberately omits query strings and credentials."""
     data = report["data"]
@@ -259,19 +310,37 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--date", required=True)
     parser.add_argument("--token-file")
     parser.add_argument("--execute-read", action="store_true")
+    parser.add_argument(
+        "--probe-user", action="store_true",
+        help="One authorized GET /v4/user only; outputs fixed diagnostic codes",
+    )
     args = parser.parse_args(argv)
     try:
         as_of = date.fromisoformat(args.date)
+        if args.probe_user and not args.execute_read:
+            raise YandexLiveDenied("EXPLICIT_EXECUTION_REQUIRED")
         if not args.execute_read:
             result = {"status": "NOT_EXECUTED", "scope": SCOPE, "max_gets": 6}
         else:
             if args.token_file is None:
                 raise YandexLiveDenied("TOKEN_FILE_REQUIRED")
-            result = summarized_receipt(collect(
-                as_of=as_of, token=read_private_token(args.token_file)))
+            token = read_private_token(args.token_file)
+            if args.probe_user:
+                result = probe_user(token=token)
+            else:
+                result = summarized_receipt(collect(as_of=as_of, token=token))
         code = 0
-    except (YandexLiveDenied, ValueError):
-        result = {"status": "REFUSED", "reason": "AUTH_OR_RESPONSE_NOT_VERIFIED"}
+    except YandexLiveDenied as exc:
+        result = {
+            "status": "REFUSED",
+            "reason": (_safe_probe_reason(exc) if args.probe_user
+                       else "AUTH_OR_RESPONSE_NOT_VERIFIED"),
+        }
+        if args.probe_user:
+            result.update(request_limit=1, publication_allowed=False)
+        code = 2
+    except ValueError:
+        result = {"status": "REFUSED", "reason": "DATE_INVALID"}
         code = 2
     print(json.dumps(result, sort_keys=True))
     return code
