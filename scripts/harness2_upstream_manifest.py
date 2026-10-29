@@ -16,7 +16,7 @@ from pathlib import Path
 PIN = "1cfe254e8d25b15f37048c3730134686abe60335"
 ORIGIN = "https://github.com/google-research/harness2.git"
 LIMIT = 128 * 1024
-IDENT = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}\Z")
+IDENT = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}(?:/[A-Za-z0-9][A-Za-z0-9_.-]{0,127})?\Z")
 STATUSES = frozenset({"running", "ok", "partial", "skipped", "base-failed"})
 
 
