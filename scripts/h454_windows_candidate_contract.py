@@ -8,6 +8,7 @@ A PASS is *only* candidate config parity, not permission to cut over.
 """
 from __future__ import annotations
 
+import argparse
 import copy
 import json
 import os
@@ -20,6 +21,8 @@ ORIGINAL_ID = "571a1e2bede31a07638b896e3ef2de677dafa1c000e4a7975e7996257f8ea162"
 IMAGE_ID = "sha256:8d28b0e1158b01c179ae1e6e1e399acaf3f502675522136d931ce08f2851a5a3"
 ORIGINAL_NAME = "/hermes-h15-windows-permanent"
 CANDIDATE_NAME = "/h454-init-stage-571a1e2b"
+CANDIDATE_V2_NAME = "/h454-init-stage-571a1e2b-v2"
+ALLOWED_CANDIDATES = frozenset((CANDIDATE_NAME, CANDIDATE_V2_NAME))
 SCOPE = "h15-windows-owner-permanent"
 REQUIRED_TMPFS = frozenset(("/run/brc", "/tmp"))
 REQUIRED_TMPFS_FLAGS = {
@@ -92,13 +95,14 @@ def _mount_contract(container: dict[str, Any]) -> list[dict[str, Any]]:
     return [{key: mount.get(key) for key in selected}]
 
 
-def verify(original: dict[str, Any], candidate: dict[str, Any]) -> str:
+def verify(original: dict[str, Any], candidate: dict[str, Any], *, expected_candidate_name: str = CANDIDATE_NAME) -> str:
     """Raise ContractHold with a fixed reason, else return candidate-parity PASS."""
     _need(isinstance(original, dict) and isinstance(candidate, dict), "INVALID_INPUT")
+    _need(expected_candidate_name in ALLOWED_CANDIDATES, "CANDIDATE_SELECTOR")
     _need(original.get("Id") == ORIGINAL_ID and candidate.get("Id") != ORIGINAL_ID, "IDENTITY")
     _need(isinstance(candidate.get("Id"), str) and len(candidate["Id"]) == 64, "IDENTITY")
     _need(original.get("Image") == IMAGE_ID and candidate.get("Image") == IMAGE_ID, "IMAGE")
-    _need(original.get("Name") == ORIGINAL_NAME and candidate.get("Name") == CANDIDATE_NAME, "NAME")
+    _need(original.get("Name") == ORIGINAL_NAME and candidate.get("Name") == expected_candidate_name, "NAME")
 
     oldstate = original.get("State") or {}
     newstate = candidate.get("State") or {}
@@ -138,6 +142,9 @@ def _read_live(target: str, docker: Path) -> dict[str, Any]:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description="Read-only H454 Windows candidate parity gate")
+    parser.add_argument("--candidate-name", choices=sorted(n.lstrip("/") for n in ALLOWED_CANDIDATES), default=CANDIDATE_NAME.lstrip("/"))
+    args = parser.parse_args()
     try:
         _need(os.name == "nt", "OWNER_WINDOWS_REQUIRED")
         program_files = os.environ.get("ProgramFiles", "")
@@ -145,8 +152,8 @@ def main() -> int:
         docker = Path(program_files) / "Docker" / "Docker" / "resources" / "bin" / "docker.exe"
         _need(docker.is_file() and not docker.is_symlink(), "DOCKER_UNAVAILABLE")
         original = _read_live(ORIGINAL_ID, docker)
-        candidate = _read_live(CANDIDATE_NAME.lstrip("/"), docker)
-        verify(original, candidate)
+        candidate = _read_live(args.candidate_name, docker)
+        verify(original, candidate, expected_candidate_name="/" + args.candidate_name)
     except ContractHold as error:
         print("H454_CANDIDATE_CONTRACT=HOLD")
         print("H454_REASON=" + str(error))
