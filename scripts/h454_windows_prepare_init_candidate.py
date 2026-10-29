@@ -142,6 +142,7 @@ def main() -> int:
     parser.add_argument("--owner-approved", action="store_true", help="Explicit owner gate")
     args = parser.parse_args()
     created = False
+    create_attempted = False
     try:
         require(os.name == "nt", "OWNER_WINDOWS_REQUIRED")
         require(not args.owner_approved or args.create, "APPROVAL_WITHOUT_CREATE")
@@ -166,6 +167,7 @@ def main() -> int:
         require(probe.returncode != 0, "CANDIDATE_ALREADY_EXISTS")
         if args.create:
             # No user-controlled command, extra mounts, secret env or HTTP calls.
+            create_attempted = True
             docker_call(docker, build_create_args(source), max_bytes=1024)
             created = True
             candidate = inspect(docker, "container", CANDIDATE)
@@ -173,13 +175,13 @@ def main() -> int:
     except ContractHold as error:
         print("H454_CREATE_CANDIDATE=HOLD")
         print("H454_REASON=" + str(error))
-        print("H454_CANDIDATE_CREATE_ATTEMPTED=" + ("TRUE" if created else "FALSE"))
+        print("H454_CANDIDATE_CREATE_ATTEMPTED=" + ("TRUE" if create_attempted else "FALSE"))
         print("H454_ORIGINAL_CHANGED=FALSE")
         return 2
     except Exception:
         print("H454_CREATE_CANDIDATE=HOLD")
         print("H454_REASON=INTERNAL_UNAVAILABLE")
-        print("H454_CANDIDATE_CREATE_ATTEMPTED=" + ("TRUE" if created else "FALSE"))
+        print("H454_CANDIDATE_CREATE_ATTEMPTED=" + ("TRUE" if create_attempted else "FALSE"))
         print("H454_ORIGINAL_CHANGED=FALSE")
         return 2
     print("H454_PREFLIGHT=PASS")
