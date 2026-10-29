@@ -16,7 +16,8 @@ from pathlib import Path
 PIN = "1cfe254e8d25b15f37048c3730134686abe60335"
 ORIGIN = "https://github.com/google-research/harness2.git"
 LIMIT = 128 * 1024
-IDENT = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}(?:/[A-Za-z0-9][A-Za-z0-9_.-]{0,127})?\Z")
+DOMAIN_IDENT = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}\Z")
+TASK_IDENT = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}(?:/[A-Za-z0-9][A-Za-z0-9_.-]{0,127})?\Z")
 STATUSES = frozenset({"running", "ok", "partial", "skipped", "base-failed"})
 
 
@@ -35,8 +36,8 @@ def parse_summary(raw: bytes) -> dict:
     if type(data) is not dict or set(data) != fields:
         raise UpstreamRejected("UNSUPPORTED_UPSTREAM_SUMMARY_SCHEMA")
     task, domain, status = data["task_id"], data["domain"], data["status"]
-    if (type(task) is not str or not IDENT.fullmatch(task)
-            or type(domain) is not str or not IDENT.fullmatch(domain)
+    if (type(task) is not str or not TASK_IDENT.fullmatch(task)
+            or type(domain) is not str or not DOMAIN_IDENT.fullmatch(domain)
             or type(status) is not str or status not in STATUSES
             or type(data["k"]) is not int or not 1 <= data["k"] <= 100
             or (data["seed"] is not None and type(data["seed"]) is not int)
