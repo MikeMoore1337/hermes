@@ -144,6 +144,26 @@ class H12OfflineResearchTests(unittest.TestCase):
         self.assertEqual(p["status"], "HOLD")
         self.assertIn("SCIENTIFIC_HOLD", p["reasons"])
 
+    def test_owner_cancelled_external_expert_gate_does_not_approve_science(self):
+        data = input_packet()
+        data["observations"] = [mock_search()]
+        report = build_packet(data)
+        self.assertFalse(report["editorial"]["requires_expert_review"])
+        self.assertTrue(report["editorial"]["requires_claim_source_review"])
+        self.assertEqual(report["editorial"]["scientific_attestation_status"], "NOT_ATTESTED")
+        self.assertEqual(report["editorial"]["proposed_scientific_claims"], [])
+        self.assertIn("Научная аттестация: NOT_ATTESTED", report["markdown"])
+        self.assertIn("Проверка исходных статей", report["markdown"])
+        self.assertFalse(report["publication_allowed"])
+        self.assertFalse(report["yfc_write_allowed"])
+        self.assertTrue(report["editorial"]["requires_yfc_owner_ready"])
+        data["research_item"]["status"] = "HOLD"
+        held = build_packet(data)
+        self.assertEqual(held["status"], "HOLD")
+        self.assertIn("SCIENTIFIC_HOLD", held["reasons"])
+        self.assertFalse(held["publication_allowed"])
+        self.assertTrue(held["editorial"]["requires_claim_source_review"])
+
     def test_existing_or_nearby_page_is_not_a_new_article(self):
         data = input_packet()
         data["observations"] = [mock_search()]
@@ -190,7 +210,10 @@ class H12OfflineResearchTests(unittest.TestCase):
         self.assertIsNone(p["research_brief"])
         self.assertEqual(p["status"], "READY_FOR_REVIEW")
         self.assertIn("Научный статус: NOT_PROVIDED", p["markdown"])
-        self.assertTrue(p["editorial"]["requires_expert_review"])
+        self.assertFalse(p["editorial"]["requires_expert_review"])
+        self.assertFalse(p["editorial"]["requires_claim_source_review"])
+        self.assertEqual(p["editorial"]["scientific_attestation_status"], "NOT_APPLICABLE")
+        self.assertIn("нет научных тезисов", p["markdown"])
         self.assertFalse(p["publication_allowed"])
         data["research_item"] = input_packet()["research_item"]
         with self.assertRaisesRegex(SeoResearchDenied, "market_research_cannot_claim_science"):
