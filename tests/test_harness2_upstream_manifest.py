@@ -115,15 +115,19 @@ class UpstreamSummaryImportTests(unittest.TestCase):
             install = home / ".local/share/ai-development-toolkit" / ("harness2-" + h2.PIN)
             (install / "source").mkdir(parents=True)
             (install / ".adt-original-harness2").write_text(h2.PIN + "\n", encoding="utf-8")
-            verified_git = [
-                subprocess.CompletedProcess(args=[], returncode=0, stdout=h2.PIN + "\n"),
-                subprocess.CompletedProcess(args=[], returncode=0, stdout=h2.ORIGIN + "\n"),
-            ]
-            with patch.object(h2.subprocess, "run", side_effect=verified_git), patch.dict(
-                os.environ, {"HARNESS2_RUNS_DIR": "/tmp"}
-            ):
-                with self.assertRaises(h2.UpstreamRejected):
-                    h2.read_external_summary("runs/lab/adapt/x/summary.json", home=home)
+            for path in ("/tmp", str(home / ".." / "outside-runs"), str(home / "x" / "..")):
+                with self.subTest(path=path):
+                    verified_git = [
+                        subprocess.CompletedProcess(args=[], returncode=0, stdout=h2.PIN + "\n"),
+                        subprocess.CompletedProcess(args=[], returncode=0, stdout=h2.ORIGIN + "\n"),
+                    ]
+                    with patch.object(h2.subprocess, "run", side_effect=verified_git), patch.dict(
+                        os.environ, {"HARNESS2_RUNS_DIR": path}
+                    ):
+                        with self.assertRaisesRegex(
+                            h2.UpstreamRejected, "UPSTREAM_RUNS_OUTSIDE_HOME"
+                        ):
+                            h2.read_external_summary("runs/lab/adapt/x/summary.json", home=home)
 
     def test_bad_json_and_oversize_rejected(self):
         for raw in [b"{", b"x" * (h2.LIMIT + 1), b"[]"]:
