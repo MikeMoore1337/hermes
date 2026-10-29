@@ -1,18 +1,24 @@
-name: H454 Windows candidate contract
+name: H454 Windows candidate preparation and contract
 
 on:
   pull_request:
     paths:
       - scripts/h454_windows_candidate_contract.py
+      - scripts/h454_windows_prepare_init_candidate.py
       - tests/test_h454_windows_candidate_contract.py
+      - tests/test_h454_windows_prepare_init_candidate.py
       - docs/operations/h454-windows-candidate-contract.md
+      - docs/operations/h454-windows-candidate-preparer.md
       - .github/workflows/h454-windows-candidate-contract.yml
   push:
     branches: [main]
     paths:
       - scripts/h454_windows_candidate_contract.py
+      - scripts/h454_windows_prepare_init_candidate.py
       - tests/test_h454_windows_candidate_contract.py
+      - tests/test_h454_windows_prepare_init_candidate.py
       - docs/operations/h454-windows-candidate-contract.md
+      - docs/operations/h454-windows-candidate-preparer.md
       - .github/workflows/h454-windows-candidate-contract.yml
 
 permissions:
@@ -32,6 +38,8 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Compile parser
-        run: python -m py_compile scripts/h454_windows_candidate_contract.py
+        run: python -m py_compile scripts/h454_windows_candidate_contract.py scripts/h454_windows_prepare_init_candidate.py
       - name: Synthetic contract tests
         run: python -B -m unittest discover -s tests -p "test_h454_windows_candidate_contract.py" -v
+      - name: Synthetic candidate preparer tests
+        run: python -B -m unittest discover -s tests -p "test_h454_windows_prepare_init_candidate.py" -v
