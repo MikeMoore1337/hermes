@@ -177,6 +177,7 @@ class GscRuntimeTests(unittest.TestCase):
             # Previously returned in-memory snapshot must not change even if
             # the underlying file changes before Google auth runs.
             self.assertEqual(loaded["private_key"], secret)
+            path.write_text(json.dumps(payload), encoding="utf-8")
             with patch("marketing.gsc_direct.os.geteuid", return_value=-1):
                 with self.assertRaisesRegex(GscRuntimeError, "credential_file_unsafe"):
                     _verify_credential_file(path)
