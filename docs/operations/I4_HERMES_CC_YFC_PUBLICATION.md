@@ -1,37 +1,36 @@
-# I4 — публикация статей YFC из Hermes Control Center
+# I4 — статьи YFC в Hermes Control Center: эксплуатация и границы публикации
 
-**Decision:** владелец выбрал Hermes Control Center для просмотра и ручной публикации статей YFC (25.10.2026). Задачи: [Hermes #601](https://github.com/MikeMoore1337/hermes/issues/601), [Hermes #599](https://github.com/MikeMoore1337/hermes/issues/599), [YFC #1226](https://github.com/MikeMoore1337/your-fitness-coach/issues/1226).
+**Дата актуализации:** 29.10.2026. **Принцип владельца:** автоматизировать Research Scout → научно-осторожный **draft** → YFC Root review; само опубликование только отдельным явным действием владельца. Связанные задачи: [Hermes #599](https://github.com/MikeMoore1337/hermes/issues/599), [#601](https://github.com/MikeMoore1337/hermes/issues/601), [YFC #1226](https://github.com/MikeMoore1337/your-fitness-coach/issues/1226).
 
-## Границы прав
+## Реальное состояние и доказательства
 
-- Hermes Research Scout автономно собирает сведения, проверяет источники, может готовить черновик и передавать **только draft** в существующий HMAC YFC intake.
-- Hermes Control Center использует **GitHub OAuth owner authentication**. Это **не** равно YFC Root Telegram identity.
-- YFC `require_root_admin` принимает решение о реальном `draft → published`. Никакие Hermes HMAC, GitHub-owner cookie, агент, модель, workflow или systemd timer не становятся публикационными полномочиями.
-- Точный запрос на стороне YFC (PR #1233): `POST /api/v1/admin/articles/drafts/publish` требует YFC Root bearer, **article_id + content_hash + content_version**, `confirm_exact_revision=true` и `acknowledge_unverified_evidence=true`. Сменился контент — 409, не публикация. Успех оставляет `scientific_verification=not_attested`, сохраняет pending матрицу и audit владельца.
+- Исходная статья о лёгких/тяжёлых весах сохранена в Hermes как операторский кандидат, два оригинальных текста защищены SHA-256; **пять тезисов всё ещё `pending`**. Отсутствие независимой научной аттестации и абсолютного publisher notice clearance не скрывается.
+- Owner VPS подготовил защищённый `i4-reviewed-content.json`, `PENDING_EDITORIAL_REVIEW`, затем локальный `READY_NOT_SUBMITTED`; packet SHA256: `d56a63617f50738d9bb60961bf4ab4163176c1f6f2ccaafdc55a0a92c6d3c93e`.
+- Реальный YFC backend принял один HMAC draft-only intake с существующим HMAC из собственной среды, **не** переносив shared secret на Hermes и не открывая root-to-root SSH. Ответ: `ACCEPTED_DRAFT_ONLY`, статья `510276353c157f60ab5cb87ce9b2e336`, version `1`, `publisher_invoked=false`, `public_url=null`.
+- Оператор выполнил отрицательный запрос к публичному YFC API по slug `legkie-i-tyazhelye-vesa-gipertrofiya-sila`: `HTTP 404`.
+- Владелец 29.10.2026 показал реальный production Hermes Control Center: очередь из одного черновика, связанная Root YFC сессия, заголовок, шесть разделов, тексты исследований, источники и пять тезисов. **Это visual/read-only E2E, не подтверждение публикации.** Полную побайтовую сверку 15 абзацев и реальный Root publish audit отдельно не проводили.
+- Уточнение: исходное поле матрицы YFC — **`source_ids: string[]`**, а не `source_id`. PR #656 исправляет рендеринг всех источников и запрещает публикационные действия при повреждённой/неполной матрице. Release status PR проверяется отдельно; не считать код доставленным до CI и production SHA.
 
-## Реализация первой части
+## Текущая архитектура безопасности
 
-`control_center.yfc_editorial` содержит **изолированный stateless transport**:
-- `list_drafts(root_token, limit, offset)` — ограниченный GET списка.
-- `get_draft(root_token, article_id)` — точная матрица источников и предупреждения.
-- `publish_existing_draft(root_token, article_id, content_hash, content_version, owner_confirmed=True)` — только явный запрос с двумя признаками согласия; без owner_confirmed нет сети.
-- Все обращения pinned на `https://app.your-fitness-coach.ru`; никаких произвольных адресов, redirect, persistent bearer store, env credentials, logging секретов, фоновых операций или платных API. Ошибки от YFC становятся fixed error codes, тело ошибки сервера не выводится.
+1. Hermes Research Scout может готовить и HMAC-отправлять **только** статью со статусом `draft` в существующий `POST /api/v1/hermes/articles/intake`. У Research Scout нет Root Telegram identity и публикационных полномочий. Подготовка по source metadata не является scientific signoff.
+2. Hermes Control Center требует собственную GitHub OAuth owner-сессию. UI `control_center/frontend/src/YfcArticles.jsx` открывает отдельное окно `https://app.your-fitness-coach.ru/admin/hermes-bridge` через `control_center/frontend/src/yfc-browser-bridge.js`. Consent исходит из действующей **независимой Root-сессии YFC**. Root bearer не отправляется в браузер Hermes и не хранится в его БД/cookies/localStorage.
+3. Read-only действия списка и полного текста возвращают `article_id`, `content_hash`, `content_version`, все `body_sections`, `claims`, `sources`, `claim_source_matrix`, `review_blockers` и provenance. Публикационная кнопка должна быть недоступна при неполном тексте, чужом ID/хеше/версии или нарушенной матрице ссылок. Передача данных браузеру допускает только безопасный текст/HTTPS URL.
+4. Публикация не начинается при выборе статьи. Владелец отдельно открывает confirmation modal с точной версией и SHA-256, ставит чекбокс о прочтении и неопределённости доказательств, затем подтверждает публикацию ещё **в YFC Root окне**. Сервис YFC строго проверяет `article_id`, `expected_content_hash`, `expected_content_version`, `confirm_exact_revision=true`, `acknowledge_unverified_evidence=true`; изменение редакции должно дать 409, а не неявную публикацию. Только YFC Root выполняет переход в `published` и пишет actor audit.
+5. Нельзя использовать Hermes OAuth, HMAC, worker, CI, BRC, systemd timer или модель для имитации владельца, бесконтрольного POST в Root endpoint либо обхода Root consent. Никаких платных API. Secrets не выводятся в логи, chat, артефакты или репозитории.
 
-**ВНИМАНИЕ:** транспортный модуль существует **без HTTP routes, without CC UI action, without a live operator feature**. Нельзя считать этот PR разрешением публикации через интерфейс. Ему нужны отдельные защиты Hermes OAuth + Origin/CSRF, пользовательский ввод transient YFC token, визуально принятый экран и независимый e2e.
+## Приёмка и остаток
 
-## Визуальная приёмка
+| Gate | Состояние |
+|---|---|
+| Подготовленный текст + точный source packet hash | PASS, подтверждённый owner VPS |
+| HMAC `draft` intake + real article ID/version | PASS |
+| Публичный API возвращает 404 до Root публикации | PASS |
+| Root read-only link + production Control Center очередь / полный текст | PASS (owner screenshot, не byte-for-byte) |
+| Матрица `source_ids` без undefined / foreign source fail-closed | PR #656; CI и deploy подлежат проверке |
+| Синтетические negative / owner double-confirm E2E | Проверяются CI; не являются реальной публикацией |
+| Настоящая ручная Root публикация exact revision + audit receipt | **NOT_TESTED**, ожидает отдельного желания владельца публиковать |
 
-Макет с графитовой/синей палитрой и тремя состояниями (очередь → черновик/источники → явное подтверждение) подготовлен вне production как HTML. Нельзя изменять текущую CC navigation/JS/CSS до отдельного visual APPROVE владельца. Состояние MVP без более сложного pair-flow: владелец вводит краткоживущий Root токен в защищённой Hermes сессии **в памяти только на конкретную операцию**, с сетевым POST через Hermes server и немедленным уничтожением после запроса. Токен никогда не хранить в localStorage/sessionStorage, БД, cookie, логах, URL или файловом vault.
+**Правило завершения:** задача #599 — черновик доставлен, без публикации; #601 остаётся открытой до точной приёмки дополнительных критериев / самостоятельного Root publication E2E. Нельзя закрывать #601 утверждением «опубликовано» без настоящей квитанции, нельзя автоматически запускать тестовый Root publish для её закрытия.
 
-В перспективе можно заменить ручной ввод на отдельную consent-based cross-app PKCE/delegated authorization, но только с двусторонней явной привязкой GitHub-owner и Root Telegram identity, без service-level publish secret и без автоматизации публикаций. Это НЕ реализовано данным PR.
-
-### Условия открытия Hermes POST
-
-1. Owner approves visual states; Review never automatically publishes.
-2. Only GitHub OAuth mode and authenticated owner session; reject proxy/preview.
-3. Strict Origin/CSRF and Content-Type/size/rate bound; never token in URL/log.
-4. Pinned YFC egress without redirect/SSRF, no retry of unsafe POST, exact revision checks.
-5. HTTP tests for 401/403, CSRF, missing token, wrong Root, version conflicts, rate limits, idempotent user replay, and audit receipt.
-6. Production deployment to CC with exact SHA and manual owner E2E proof; YFC public URL only after real authenticated owner click.
-
-**NO-GO:** любые плановые публикации, скрытая кнопка publish в автоматическом процессе, поддельный reviewer, внешние платные LLM, работу через Hermes BRC в данном чате.
+**NO-GO:** повторная отправка после неопределённого исхода; подмена экспертной подписи; публикация по HMAC; распространение секретов между VPS; автоматический таймер выпуска.
