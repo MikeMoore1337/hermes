@@ -5,8 +5,18 @@ const preview={schema:1,status:"preview_only",repository:"https://github.com/exa
  device:"Windows sandbox",root:"/workspace/projects/project",scope:"sandbox",catalog:"not_reserved",
  remote:"not_checked",filesystem:"not_checked",can_connect:false};
 
-async function setup(page,reply=preview,status=200){
- await page.route("**/api/providers/hermes-brc",route=>route.fulfill({status:503,body:"{}"}));
+function snapshot(windows="online",age=0){
+ const names=["H15 Windows permanent sandbox","H15 Hermes VPS sandbox","H15 YFC VPS sandbox"];
+ const projects=[["hermes","main"],["your-fitness-coach","master"],["second-brain","main"],["ai-development-toolkit","main"]];
+ return {schema:1,source:"hermes_brc_mcp",status:windows==="online"?"online":"partial",
+  observed_at:new Date(Date.now()-age).toISOString(),execution_verified:false,native_host_access:false,onboarding_enabled:false,
+  devices:names.map((name,i)=>({name,status:i===0?windows:"online",last_seen_age_seconds:9,command_execution:"not_verified"})),
+  workspaces:projects.map(([name,branch])=>({name,branch,root:"/workspace/projects/"+name,git_verified:false,
+   state:windows==="online"?"reachable_not_git_verified":"not_ready"}))};
+}
+async function setup(page,reply=preview,status=200,packet=null){
+ await page.route("**/api/providers/hermes-brc",route=>route.fulfill(packet?
+  {status:200,contentType:"application/json",body:JSON.stringify(packet)}:{status:503,body:"{}"}));
  await page.route("**/api/providers/hermes-brc/onboarding-preview",async route=>{
   expect(route.request().method()).toBe("POST");
   expect(route.request().postDataJSON()).toEqual({repository_url:"https://github.com/example/project"});
@@ -27,6 +37,7 @@ for(const width of [320,393,768,1440]){
   await page.getByRole("button",{name:"Проверить",exact:true}).click();
   await expect(dialog.getByRole("heading",{name:"Проверьте подключение"})).toBeFocused();
   await expect(dialog).toContainText("/workspace/projects/project");
+  await expect(dialog.locator("#brc-onboard-device")).toHaveText("Windows sandbox — нет свежих данных");
   await expect(dialog).toContainText("не проверены");
   await expect(dialog.getByRole("button",{name:"Подключить",exact:true})).toBeDisabled();
   const dimensions=await page.evaluate(()=>{const d=document.querySelector("#brc-onboard");
@@ -41,6 +52,40 @@ for(const width of [320,393,768,1440]){
   await expect(page.getByRole("button",{name:"Подключить проект"})).toBeFocused();
  });
 }
+
+for(const [description,state,age,expected,health] of [
+ ["online","online",0,"Windows sandbox — на связи (по снимку)","Hermes BRC · подключён"],
+ ["offline","offline",0,"Windows sandbox — не на связи (по снимку)","Hermes BRC · частичное подключение"],
+ ["stale","online",360000,"Windows sandbox — нет свежих данных","Hermes BRC · статус недоступен"],
+ ["forged","online",0,"Windows sandbox — нет свежих данных","Hermes BRC · статус недоступен"],
+]){
+ test("device preview uses only a fresh verified snapshot: "+description,async({page})=>{
+  const packet=snapshot(state,age);
+  if(description==="forged")packet.devices[0].name="untrusted device";
+  await setup(page,preview,200,packet);
+  await expect(page.locator("#brc-health")).toHaveText(health);
+  await page.getByLabel("Ссылка на репозиторий").fill("https://github.com/example/project");
+  await page.getByRole("button",{name:"Проверить",exact:true}).click();
+  await expect(page.locator("#brc-onboard-device")).toHaveText(expected);
+  await expect(page.getByRole("button",{name:"Подключить",exact:true})).toBeDisabled();
+ });
+}
+
+test("an open preview follows refreshed or expired snapshot status",async({page})=>{
+ const packet=snapshot();
+ await setup(page,preview,200,packet);
+ await expect(page.locator("#brc-health")).toHaveText("Hermes BRC · подключён");
+ await page.getByLabel("Ссылка на репозиторий").fill("https://github.com/example/project");
+ await page.getByRole("button",{name:"Проверить",exact:true}).click();
+ await expect(page.locator("#brc-onboard-device")).toHaveText("Windows sandbox — на связи (по снимку)");
+ packet.devices[0].status="offline";packet.status="partial";
+ packet.workspaces.forEach(workspace=>{workspace.state="not_ready";});
+ await page.evaluate(()=>document.getElementById("brc-refresh").click());
+ await expect(page.locator("#brc-onboard-device")).toHaveText("Windows sandbox — не на связи (по снимку)");
+ packet.observed_at=new Date(Date.now()-360000).toISOString();
+ await page.evaluate(()=>document.getElementById("brc-refresh").click());
+ await expect(page.locator("#brc-onboard-device")).toHaveText("Windows sandbox — нет свежих данных");
+});
 
 test("reserved catalog name cannot be connected",async({page})=>{
  await setup(page,{...preview,catalog:"reserved"});

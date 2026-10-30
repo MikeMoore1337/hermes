@@ -77,7 +77,9 @@ live PASS, partial coverage and untested scenarios by device and tool.
   The owner-approved visual direction has a source-level, read-only preview
   for a narrowly formatted GitHub URL. It checks syntax and collisions with
   the built-in catalog only; remote visibility and the device filesystem are
-  **not checked**, and connecting is disabled. It makes no MCP call and adds
+  **not checked**, and connecting is disabled. The device label uses only an
+  existing fresh, validated observation and says when it is unavailable; it
+  does not prove current command execution. It makes no MCP call and adds
   no registry entry. Runtime delivery and actual onboarding require separate
   implementation, authorization and live verification.
 - Windows login/reboot and outage recovery: **OPEN** (#445; do not perform

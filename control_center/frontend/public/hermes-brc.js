@@ -107,6 +107,7 @@
      state==="partial"?"Свежий снимок: часть устройств недоступна. Проверьте соединение через Hermes MCP.":
      "Свежий снимок: устройства недоступны. Проверьте состояние relay и агентов.";
    renderDevices();renderSelection();
+   if(dialog.open&&!onboarding.result.hidden)renderOnboardingDevice();
  }
  async function refresh(){
    if(pending)return;
@@ -225,9 +226,14 @@
  }
 
  const onboarding=Object.fromEntries(["open","close","cancel","form","entry","result","result-title",
-   "step","url","error","preview","back","repository","root","result-note"].map(key=>
+   "step","url","error","preview","back","repository","device","root","result-note"].map(key=>
      [key,document.getElementById("brc-onboard-"+key)]));
  const dialog=document.getElementById("brc-onboard");
+ function renderOnboardingDevice(){
+   const status=observation&&verify(observation)?.devices[0].status;
+   const text={online:"на связи",offline:"не на связи",paused:"приостановлено",stale:"данные устарели"}[status];
+   onboarding.device.textContent=text?"Windows sandbox — "+text+" (по снимку)":"Windows sandbox — нет свежих данных";
+ }
  const githubUrl=/^https:\/\/github\.com\/([a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?)\/([a-z][a-z0-9-]{1,79})(?:\.git)?\/?$/i;
  let previewController=null;
  function resetOnboarding(){
@@ -279,7 +285,7 @@
        !["reserved","not_reserved"].includes(value.catalog)||value.remote!=="not_checked"||
        value.filesystem!=="not_checked"||value.can_connect!==false)throw Error("invalid");
      if(!dialog.open||previewController!==controller)return;
-     onboarding.repository.textContent=value.repository;onboarding.root.textContent=value.root;
+     onboarding.repository.textContent=value.repository;onboarding.root.textContent=value.root;renderOnboardingDevice();
      onboarding["result-note"].textContent=value.catalog==="reserved"?
        "Такое имя уже есть во встроенном каталоге. Подключение заблокировано.":
        "Формат адреса проверен; это имя отсутствует во встроенном каталоге.";
