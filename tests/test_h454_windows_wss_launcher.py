@@ -1,14 +1,14 @@
 """Compose the identity, interrupted-transition and WSS launcher changes."""
-import hashlib
 import base64
+import hashlib
 import os
 from pathlib import Path
+import queue
 import shutil
-import socket
 import subprocess
 import sys
 import tempfile
-import time
+import threading
 import unittest
 from unittest.mock import patch
 
@@ -119,27 +119,27 @@ class WssLauncherTests(unittest.TestCase):
             server = ("const fs=require('node:fs'),https=require('node:https');"
                       "const s=https.createServer({cert:fs.readFileSync(process.argv[1]),"
                       "key:fs.readFileSync(process.argv[2])},(_,r)=>{r.writeHead(404);r.end()});"
-                      "s.on('tlsClientError',()=>{});s.listen(+process.argv[3],'127.0.0.1')")
+                      "s.on('tlsClientError',()=>{});s.on('error',e=>{console.error(e.code);process.exitCode=1});"
+                      "s.listen(0,'127.0.0.1',()=>console.log('PORT='+s.address().port))")
             for cert, expected in (("trusted", 0), ("fake", 1), ("wrong", 1)):
-                with self.subTest(cert=cert), socket.socket() as probe:
-                    probe.bind(("127.0.0.1", 0))
-                    port = probe.getsockname()[1]
-                    probe.close()
+                with self.subTest(cert=cert):
                     process = subprocess.Popen([node, "-e", server, str(root / f"{cert}.crt"),
-                                                str(root / f"{cert}.key"), str(port)],
-                                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                                str(root / f"{cert}.key")],
+                                               stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                                creationflags=subprocess.CREATE_NO_WINDOW)
+                    ready = queue.Queue(maxsize=1)
+                    reader = threading.Thread(target=lambda: ready.put(process.stdout.readline()), daemon=True)
+                    reader.start()
                     try:
-                        ready = False
-                        deadline = time.monotonic() + 10
-                        while time.monotonic() < deadline and process.poll() is None:
-                            try:
-                                with socket.create_connection(("127.0.0.1", port), timeout=0.2):
-                                    ready = True
-                                    break
-                            except OSError:
-                                time.sleep(0.1)
-                        self.assertTrue(ready and process.poll() is None, "synthetic server did not start")
+                        try:
+                            message = ready.get(timeout=15).decode("ascii", errors="replace").strip()
+                        except queue.Empty:
+                            self.fail("synthetic server did not report its bound port")
+                        if not message and process.poll() is not None:
+                            self.fail("synthetic server exited: " + process.stderr.read(1024).decode(errors="replace"))
+                        self.assertRegex(message, r"^PORT=[0-9]{1,5}$")
+                        port = int(message.removeprefix("PORT="))
+                        self.assertTrue(0 < port < 65536 and process.poll() is None)
                         result = run_health(port)
                         self.assertEqual(result.returncode, expected, result.stdout.decode(errors="replace") + result.stderr.decode(errors="replace"))
                         if cert == "trusted":
@@ -152,6 +152,9 @@ class WssLauncherTests(unittest.TestCase):
                         if process.poll() is None:
                             process.terminate()
                         process.wait(timeout=5)
+                        reader.join(timeout=5)
+                        process.stdout.close()
+                        process.stderr.close()
 
     if sys.platform == "win32" and os.getenv("H454_WINDOWS_WSS_HEALTH") == "1":
         test_windows_tls_health_checks_synthetic_certificates = _assert_windows_tls_health_checks_synthetic_certificates
