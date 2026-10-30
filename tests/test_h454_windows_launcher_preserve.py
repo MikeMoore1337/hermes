@@ -93,19 +93,19 @@ class LauncherPreserveTests(unittest.TestCase):
                 self.assertEqual(source.read_bytes(), FIXTURE)
                 self.assertEqual(output.read_bytes(), b"existing")
 
-    @unittest.skipUnless(os.name == "nt", "requires Windows PowerShell 5.1")
-    def test_real_ps51_preserves_and_refuses_unsafe_container(self):
-        with tempfile.TemporaryDirectory() as directory:
-            launcher = Path(directory) / "fixture-launcher.ps1"
-            launcher.write_bytes(self.prepare())
-            powershell = Path(os.environ["SystemRoot"]) / "System32/WindowsPowerShell/v1.0/powershell.exe"
-            harness = Path(__file__).with_name("h454_windows_launcher_preserve_fixture.ps1")
-            result = subprocess.run([str(powershell), "-NoProfile", "-NonInteractive", "-File",
-                                     str(harness), str(launcher)], capture_output=True,
-                                    text=True, encoding="utf-8", timeout=30, check=False)
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertIn("H454_LAUNCHER_PRESERVE_FIXTURES=PASS", result.stdout)
-            self.assertEqual(result.stderr.strip(), "")
+    if os.name == "nt":
+        def test_real_ps51_preserves_and_refuses_unsafe_container(self):
+            with tempfile.TemporaryDirectory() as directory:
+                launcher = Path(directory) / "fixture-launcher.ps1"
+                launcher.write_bytes(self.prepare())
+                powershell = Path(os.environ["SystemRoot"]) / "System32/WindowsPowerShell/v1.0/powershell.exe"
+                harness = Path(__file__).with_name("h454_windows_launcher_preserve_fixture.ps1")
+                result = subprocess.run([str(powershell), "-NoProfile", "-NonInteractive", "-File",
+                                         str(harness), str(launcher)], capture_output=True,
+                                        text=True, encoding="utf-8", timeout=30, check=False)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("H454_LAUNCHER_PRESERVE_FIXTURES=PASS", result.stdout)
+                self.assertEqual(result.stderr.strip(), "")
 
 
 if __name__ == "__main__":
