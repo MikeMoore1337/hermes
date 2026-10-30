@@ -14,17 +14,28 @@ from unittest.mock import patch
 from scripts import h454_windows_launcher_preserve as subject
 from scripts.h454_windows_launcher_patch import RUN, RUN_END, PatchRefused
 
-FIXTURE = ("# fixture only\n" + RUN + """    try {
+FIXTURE = ("""# fixture only
+function Stop-TunnelByPid([int]$tunnelProcessId) {
+    if ($exe -ne 'ssh.exe' -or -not $cmd.Contains($TUNNEL_TARGET) -or -not $cmd.Contains('38180:fixture')) { return }
+}
+""" + RUN + """    try {
         & docker.exe info | Out-Null
         & docker.exe image inspect $state.imageId | Out-Null
         Stop-OwnedContainer
+        Stop-TunnelByPid ([int]$state.tunnelPid)
+        $SSH_PROCESS = Start-Process -FilePath 'ssh.exe' -ArgumentList $sshArgs -PassThru -WindowStyle Hidden
         & docker.exe run --pull never --detach --init --pids-limit 128 `
             --read-only $state.imageId | Out-Null
         Require ($LASTEXITCODE -eq 0) 'RUN_FAILED'
         Assert-ManagedContainer
         & docker.exe exec $CONTAINER synthetic-stage | Out-Null
         & docker.exe inspect $CONTAINER | Out-Null
-    } finally { Stop-OwnedContainer }
+    } finally {
+        Stop-OwnedContainer
+        if ($SSH_PROCESS -and -not $SSH_PROCESS.HasExited) {
+            Stop-TunnelByPid $SSH_PROCESS.Id
+        }
+    }
 """ + RUN_END + "\n} finally {}\n").encode()
 PROFILE = "a" * 64
 IMAGE = "sha256:" + "a" * 64
@@ -45,6 +56,11 @@ class LauncherPreserveTests(unittest.TestCase):
         run = result.split(RUN, 1)[1].split(RUN_END, 1)[0]
         self.assertNotIn("Stop-OwnedContainer", run)
         self.assertEqual(run.count("Stop-H454PreservedContainer"), 3)  # definition and two calls
+        self.assertIn("Assert-H454ExistingTunnel\n        Stop-H454PreservedContainer -Claim", run)
+        self.assertIn("Stop-H454ExistingTunnel", run)
+        self.assertIn("Stop-H454TunnelHandle $SSH_PROCESS", run)
+        self.assertIn("$null = $SSH_PROCESS.Handle", run)
+        self.assertNotIn("Stop-TunnelByPid", run)
         self.assertIn("Stop-H454PreservedContainer -Claim", run)
         self.assertIn("if (-not (Start-H454PreservedContainer))", run)
         self.assertIn("container create --pull never", run)
@@ -63,6 +79,8 @@ class LauncherPreserveTests(unittest.TestCase):
                     FIXTURE.replace(b"docker.exe run", b"docker.exe create", 1),
                     FIXTURE.replace(b"--detach", b"--rm", 1),
                     FIXTURE.replace(b"--pull never", b"--pull always", 1),
+                    FIXTURE.replace(b"38180:fixture", b"other-forward", 1),
+                    FIXTURE.replace(b"-FilePath 'ssh.exe'", b"-FilePath 'other.exe'", 1),
                     FIXTURE.replace(b"Assert-ManagedContainer", b"Other-Assert", 1)):
             with self.subTest(bad=hashlib.sha256(bad).hexdigest()[:8]):
                 with self.assertRaisesRegex(PatchRefused, "SOURCE_STRUCTURE_MISMATCH"):
