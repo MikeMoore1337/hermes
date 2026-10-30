@@ -62,6 +62,7 @@ FILESYSTEM = """    const info: Record<string, any> = {
 TERMINAL = """class TerminalManager {
   forceTerminate(pid: number): boolean {
     const session = this.sessions.get(pid);
+    session.process.kill('SIGINT');
     setTimeout(() => {
           if (this.sessions.has(pid)) {
             session.process.kill('SIGKILL');
@@ -278,6 +279,23 @@ class BrcHardeningTests(unittest.TestCase):
                     apply(self.root)
                 self.assertEqual({p: p.read_bytes() for p in paths}, before)
                 target.write_text(original, encoding="utf-8")
+
+    def test_termination_requires_successful_signal_and_discloses_scope(self):
+        apply(self.root)
+        terminal = self.terminal.read_text(encoding="utf-8")
+        tools = self.process_tools.read_text(encoding="utf-8")
+        self.assertIn("if (!session.process.kill('SIGINT'))", terminal)
+        self.assertIn("if (!session.process.kill('SIGKILL'))", terminal)
+        self.assertIn("Only the tracked process is signaled; descendants may remain.", tools)
+
+    def test_changed_initial_termination_signal_refuses_without_writing(self):
+        self.terminal.write_text(TERMINAL.replace("kill('SIGINT')", "kill('SIGTERM')"), encoding="utf-8")
+        paths = (self.dispatcher, self.edit, self.filesystem, self.terminal, self.process_tools,
+                 self.search, self.search_handlers)
+        before = {p: p.read_bytes() for p in paths}
+        with self.assertRaisesRegex(AuditError, "unreviewed_terminal_termination"):
+            apply(self.root)
+        self.assertEqual({p: p.read_bytes() for p in paths}, before)
 
     def test_changed_edit_branch_refuses_before_any_source_write(self):
         changed = EDIT.replace("count !== expectedReplacements", "count >= expectedReplacements")

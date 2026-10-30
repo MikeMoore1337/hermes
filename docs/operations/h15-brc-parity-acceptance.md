@@ -154,6 +154,12 @@ At the time of this initial test, live Codex termination acceptance and runtime
 rollout were not verified; see the later Windows rollout below.
 See the [Issue record](https://github.com/MikeMoore1337/hermes/issues/454#issuecomment-6521362507).
 
+A later disposable test showed the tracked shell can exit while its child
+continues running. The next source candidate treats a false signal result as
+an error, logs an unsuccessful escalation, and warns that descendants may
+remain. This does not terminate a process tree; the Windows image identified
+below predates that candidate. See the [reproduction](https://github.com/MikeMoore1337/hermes/issues/454#issuecomment-6522596020).
+
 ## Follow-up after Windows integrity rollout (2026-10-30)
 
 The owner-approved Windows window switched device `h15-win-05be75515428` to
