@@ -117,6 +117,25 @@ and the additional status field. A genuine epoch-zero date is also ambiguous,
 and `ctime` fallback cannot be detected reliably. Source and CI evidence do
 not establish activation of the candidate on any device.
 
+## Concurrent MCP mutation boundary (2026-10-30)
+
+In a disposable no-network container using the current agent image, two
+`edit_block` calls were held after reading the same synthetic file. Both
+reported success while only one replacement remained. This is a controlled
+dispatcher reproduction, not evidence of lost user data; see the [Issue
+record](https://github.com/MikeMoore1337/hermes/issues/454#issuecomment-6520977835).
+
+The source candidate fails a concurrent `write_file`, `write_pdf`,
+`create_directory`, `move_file` or `edit_block` call with
+`HERMES_FILE_MUTATION_BUSY` while any one of those operations is in progress.
+The guard covers the entire agent process, including unrelated paths; callers
+must retry after the first operation completes. Reads remain available. The
+guard is released on success or error, but a stuck operation keeps later
+mutations blocked. It does not coordinate shell processes, native agents,
+other agent processes or external writers, and it does not make reads atomic.
+The regression uses a controlled read barrier and the real dispatcher; it is
+not a live-device or cross-client concurrency acceptance.
+
 ## Remaining Desktop Commander replacement gaps
 
 | User goal / parity dimension | Hermes status | Required next acceptance |

@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import re
 import sys
 
 from scripts.h15_remote_commander_candidate_audit import (
@@ -42,6 +43,37 @@ DENIED_HANDLERS = {
 DENIED_TOOLS = tuple(DENIED_HANDLERS)
 REMOTE_URL_DENIED = "HERMES_REMOTE_URL_FETCH_DENIED"
 REMOTE_POLICY_DENIED = "HERMES_MCP_TOOL_DISABLED_BY_OWNER_POLICY"
+FILE_MUTATIONS = ("write_file", "write_pdf", "create_directory", "move_file", "edit_block")
+
+
+def guard_file_mutations(raw: str) -> str:
+    """Fail concurrent MCP mutations closed within one agent dispatcher."""
+    states = list(re.finditer(r"(?m)^let cachedDefs(?:: ToolDefinition\[\] \| null)? = null;$", raw))
+    entries = list(re.finditer(r"(?m)^([ ]+)try \{\n([ ]+)const result = \(await handler\(args \?\? \{\}\)\)(?: as ToolResult)?;", raw))
+    if (len(states) != 1 or len(entries) != 1 or "HERMES_FILE_MUTATION_BUSY" in raw
+            or any(len(re.findall(rf"(?m)^[ \t]+{name}:[ \t]*\(", raw)) != 1 for name in FILE_MUTATIONS)):
+        raise AuditError("unreviewed_file_mutation_dispatcher")
+    state, entry = states[0], entries[0]
+    indent, inner = entry.groups()
+    error = "return { content: [{ type: 'text', text: `Error in ${name}: ${message}` }], isError: true };"
+    tail = inner + error + "\n" + indent + "}\n}"
+    if raw.count(tail) != 1:
+        raise AuditError("unreviewed_file_mutation_dispatcher")
+    declaration = ("const h454FileMutations = new Set([" + ", ".join(repr(name) for name in FILE_MUTATIONS) + "]);\n"
+                   "let h454FileMutationBusy = false;\n")
+    guard = (indent + "const h454Mutation = h454FileMutations.has(name);\n"
+             + indent + "if (h454Mutation && h454FileMutationBusy) {\n"
+             + inner + "void usageTracker.trackFailure(name);\n"
+             + inner + "return { content: [{ type: 'text', text: 'HERMES_FILE_MUTATION_BUSY: "
+             "another file mutation is in progress; retry after it completes.' }], isError: true };\n"
+             + indent + "}\n" + indent + "if (h454Mutation) h454FileMutationBusy = true;\n")
+    finish = (inner + error + "\n" + indent + "} finally {\n"
+              + inner + "if (h454Mutation) h454FileMutationBusy = false;\n" + indent + "}\n}")
+    raw = raw[:state.start()] + declaration + raw[state.start():]
+    entry = re.search(r"(?m)^([ ]+)try \{\n([ ]+)const result = \(await handler\(args \?\? \{\}\)\)(?: as ToolResult)?;", raw)
+    if entry is None:
+        raise AuditError("unreviewed_file_mutation_dispatcher")
+    return raw[:entry.start()] + guard + raw[entry.start():].replace(tail, finish, 1)
 
 
 def edit_conflict_errors(raw: str) -> str:
@@ -167,6 +199,7 @@ def apply(root: Path, *, sha: str = UPSTREAM_SHA) -> dict[str, object]:
     # handlers. Unknown MCP calls fail rather than deferring to a fallback.
     if "if (!handler) {" not in updated or "t.name in TOOL_HANDLERS" not in updated:
         raise AuditError("dispatcher_fallback_unreviewed")
+    updated = guard_file_mutations(updated)
     updated_edit = edit_conflict_errors(edit_path.read_text(encoding="utf-8"))
     updated_filesystem = unknown_birthtime(filesystem_path.read_text(encoding="utf-8"))
     updated_search, updated_search_handlers = search_timeout_errors(
