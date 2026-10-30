@@ -136,6 +136,22 @@ other agent processes or external writers, and it does not make reads atomic.
 The regression uses a controlled read barrier and the real dispatcher; it is
 not a live-device or cross-client concurrency acceptance.
 
+## Termination result and stale session boundary (2026-10-30)
+
+The current agent returned a `No active session` message without MCP `isError`
+for a missing `force_terminate` session in an isolated container. The source
+candidate marks an unsuccessful termination request as an error and says it
+may have already ended or could not be terminated. Success still means only
+that termination was initiated, not that exit was confirmed.
+
+The candidate also escalates a delayed SIGKILL only while the registry still
+contains the same session object, and contains a failed escalation without
+crashing the dispatcher. Controlled tests use synthetic session objects, not
+real processes, to check replacement, normal escalation and failure. This is
+not an OS-level process-handle guarantee against PID reuse outside the agent;
+live Codex termination acceptance and runtime rollout remain NOT VERIFIED.
+See the [Issue record](https://github.com/MikeMoore1337/hermes/issues/454#issuecomment-6521362507).
+
 ## Remaining Desktop Commander replacement gaps
 
 | User goal / parity dimension | Hermes status | Required next acceptance |

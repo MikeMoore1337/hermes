@@ -19,6 +19,8 @@ from scripts.h15_remote_commander_candidate_audit import (
 RELATIVE = Path("packages/agent/src/dispatcher.ts")
 EDIT_RELATIVE = Path("packages/agent/src/core/tools/edit.ts")
 FILESYSTEM_RELATIVE = Path("packages/agent/src/core/tools/filesystem.ts")
+TERMINAL_RELATIVE = Path("packages/agent/src/core/terminal-manager.ts")
+PROCESS_TOOLS_RELATIVE = Path("packages/agent/src/core/tools/improved-process-tools.ts")
 SEARCH_RELATIVE = Path("packages/agent/src/core/search-manager.ts")
 SEARCH_HANDLERS_RELATIVE = Path("packages/agent/src/core/handlers/search-handlers.ts")
 DENIED_HANDLERS = {
@@ -151,12 +153,55 @@ def unknown_birthtime(raw: str) -> str:
     return raw.replace(marker, change + marker, 1)
 
 
+def safe_termination(manager: str, tools: str) -> tuple[str, str]:
+    """Keep escalation bound to its session and expose unsuccessful requests."""
+    start, end = "forceTerminate(pid", "listActiveSessions()"
+    if manager.count(start) != 1 or manager.count(end) != 1:
+        raise AuditError("unreviewed_terminal_termination")
+    first, last = manager.index(start), manager.index(end)
+    if first >= last:
+        raise AuditError("unreviewed_terminal_termination")
+    branch = manager[first:last]
+    pattern = r"(?m)^([ ]*)if \(this\.sessions\.has\(pid\)\) \{\n([ ]*)session\.process\.kill\('SIGKILL'\);\n\1\}"
+    matches = list(re.finditer(pattern, branch))
+    if len(matches) != 1:
+        raise AuditError("unreviewed_terminal_termination")
+    match = matches[0]
+    indent, inner = match.groups()
+    replacement = (indent + "if (this.sessions.get(pid) === session) {\n"
+                   + inner + "try { session.process.kill('SIGKILL'); }\n"
+                   + inner + "catch { console.error('HERMES_TERMINATION_ESCALATION_FAILED'); }\n"
+                   + indent + "}")
+    branch = branch[:match.start()] + replacement + branch[match.end():]
+    manager = manager[:first] + branch + manager[last:]
+
+    first_marker, last_marker = "export async function forceTerminate(", "export async function listSessions("
+    if tools.count(first_marker) != 1 or tools.count(last_marker) != 1:
+        raise AuditError("unreviewed_terminal_termination")
+    first, last = tools.index(first_marker), tools.index(last_marker)
+    if first >= last:
+        raise AuditError("unreviewed_terminal_termination")
+    branch = tools[first:last]
+    pattern = r"(?m)^([ ]*)const success = terminalManager\.forceTerminate\(pid\);\n\1return \{\n"
+    matches = list(re.finditer(pattern, branch))
+    old = "No active session found for PID ${pid}"
+    if len(matches) != 1 or branch.count(old) != 1 or "isError: !success" in branch:
+        raise AuditError("unreviewed_terminal_termination")
+    match = matches[0]
+    indent = match.group(1)
+    branch = (branch[:match.end()] + indent + indent + "isError: !success,\n" + branch[match.end():])
+    branch = branch.replace(old, "No active session or unable to initiate termination for PID ${pid}", 1)
+    return manager, tools[:first] + branch + tools[last:]
+
+
 def apply(root: Path, *, sha: str = UPSTREAM_SHA) -> dict[str, object]:
     # Checks immutable source revision, license/NOTICE and all known risks.
     evaluate(root, sha=sha)
     path = root / RELATIVE
     edit_path = root / EDIT_RELATIVE
     filesystem_path = root / FILESYSTEM_RELATIVE
+    terminal_path = root / TERMINAL_RELATIVE
+    process_tools_path = root / PROCESS_TOOLS_RELATIVE
     search_path = root / SEARCH_RELATIVE
     search_handlers_path = root / SEARCH_HANDLERS_RELATIVE
     if path.is_symlink() or not path.is_file():
@@ -165,6 +210,8 @@ def apply(root: Path, *, sha: str = UPSTREAM_SHA) -> dict[str, object]:
         raise AuditError("unsafe_edit_handler")
     if filesystem_path.is_symlink() or not filesystem_path.is_file():
         raise AuditError("unsafe_filesystem_handler")
+    if any(p.is_symlink() or not p.is_file() for p in (terminal_path, process_tools_path)):
+        raise AuditError("unsafe_terminal_handler")
     if any(p.is_symlink() or not p.is_file() for p in (search_path, search_handlers_path)):
         raise AuditError("unsafe_search_handler")
     raw = path.read_text(encoding="utf-8")
@@ -202,11 +249,15 @@ def apply(root: Path, *, sha: str = UPSTREAM_SHA) -> dict[str, object]:
     updated = guard_file_mutations(updated)
     updated_edit = edit_conflict_errors(edit_path.read_text(encoding="utf-8"))
     updated_filesystem = unknown_birthtime(filesystem_path.read_text(encoding="utf-8"))
+    updated_terminal, updated_process_tools = safe_termination(
+        terminal_path.read_text(encoding="utf-8"), process_tools_path.read_text(encoding="utf-8"))
     updated_search, updated_search_handlers = search_timeout_errors(
         search_path.read_text(encoding="utf-8"), search_handlers_path.read_text(encoding="utf-8"))
     path.write_text(updated, encoding="utf-8")
     edit_path.write_text(updated_edit, encoding="utf-8")
     filesystem_path.write_text(updated_filesystem, encoding="utf-8")
+    terminal_path.write_text(updated_terminal, encoding="utf-8")
+    process_tools_path.write_text(updated_process_tools, encoding="utf-8")
     search_path.write_text(updated_search, encoding="utf-8")
     search_handlers_path.write_text(updated_search_handlers, encoding="utf-8")
     return {

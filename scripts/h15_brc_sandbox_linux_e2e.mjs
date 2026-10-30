@@ -136,6 +136,49 @@ const afterError = await callTool('write_file', {path:'/workspace/unlocked.txt',
 assert(invalidEdit.isError === true && afterError.isError !== true &&
   fs.readFileSync('/workspace/unlocked.txt', 'utf8') === 'ok', 'MCP_MUTATION_GUARD_RELEASED_ON_ERROR');
 
+// Synthetic session objects exercise the actual manager without signalling any OS process.
+const terminalPath = source.replace('/dispatcher.js', '/core/terminal-manager.js');
+const { terminalManager } = await import(pathToFileURL(terminalPath).href);
+const absentTermination = await callTool('force_terminate', {pid:2147483647});
+const absentText = absentTermination.content.map(item => item.text || '').join('\n');
+assert(absentTermination.isError === true && absentText.includes('No active session or unable to initiate'),
+  'MCP_TERMINATE_MISSING_IS_ERROR');
+const fakePids = [2147483646, 2147483645, 2147483644, 2147483643];
+if (fakePids.some(pid => terminalManager.sessions.has(pid))) throw Error('SYNTHETIC_PID_OCCUPIED');
+const oldSignals = [], replacementSignals = [], sameSignals = [];
+const oldSession = {process:{kill:signal => oldSignals.push(signal)}};
+const replacementSession = {process:{kill:signal => replacementSignals.push(signal)}};
+const sameSession = {process:{kill:signal => sameSignals.push(signal)}};
+const failingSession = {process:{kill:signal => {if (signal === 'SIGKILL') throw Error('synthetic failure');}}};
+const refusedSession = {process:{kill:() => {throw Error('synthetic refusal');}}};
+const originalConsoleError = console.error;
+let escalationLogged = false;
+try {
+  console.error = (...args) => {
+    if (args[0] === 'HERMES_TERMINATION_ESCALATION_FAILED') escalationLogged = true;
+    else originalConsoleError(...args);
+  };
+  terminalManager.sessions.set(fakePids[0], oldSession);
+  const initiated = await callTool('force_terminate', {pid:fakePids[0]});
+  terminalManager.sessions.set(fakePids[0], replacementSession);
+  terminalManager.sessions.set(fakePids[1], sameSession);
+  const sameInitiated = await callTool('force_terminate', {pid:fakePids[1]});
+  terminalManager.sessions.set(fakePids[2], failingSession);
+  const failingInitiated = await callTool('force_terminate', {pid:fakePids[2]});
+  terminalManager.sessions.set(fakePids[3], refusedSession);
+  const refused = await callTool('force_terminate', {pid:fakePids[3]});
+  await pause(1200);
+  assert(initiated.isError !== true && oldSignals.join(',') === 'SIGINT' && replacementSignals.length === 0,
+    'MCP_TERMINATE_REPLACEMENT_SESSION_UNTOUCHED');
+  assert(sameInitiated.isError !== true && sameSignals.join(',') === 'SIGINT,SIGKILL',
+    'MCP_TERMINATE_SAME_SESSION_ESCALATES');
+  assert(failingInitiated.isError !== true && escalationLogged, 'MCP_TERMINATE_ESCALATION_ERROR_CONTAINED');
+  assert(refused.isError === true, 'MCP_TERMINATE_REFUSAL_IS_ERROR');
+} finally {
+  console.error = originalConsoleError;
+  for (const pid of fakePids) terminalManager.sessions.delete(pid);
+}
+
 // Drive the real compiled search manager with a controlled, real child process.
 // Timing/output are synthetic; SIGTERM, result retention and MCP flags are real.
 const originalSpawn = childProcess.spawn;
