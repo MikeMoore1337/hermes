@@ -82,9 +82,7 @@ class WssLauncherTests(unittest.TestCase):
         self.assertTrue(output.startswith(b"\xef\xbb\xbf"))
         self.assertNotIn(b"\n", output.replace(b"\r\n", b""))
 
-    @unittest.skipUnless(sys.platform == "win32" and os.getenv("H454_WINDOWS_WSS_HEALTH") == "1",
-                         "requires an isolated Windows TLS fixture")
-    def test_windows_tls_health_checks_synthetic_certificates(self):
+    def _assert_windows_tls_health_checks_synthetic_certificates(self):
         bash = Path(os.environ["ProgramFiles"]) / "Git" / "bin" / "bash.exe"
         node = shutil.which("node.exe")
         self.assertTrue(bash.is_file() and node, "Git Bash and Node must exist on the Windows runner")
@@ -154,6 +152,9 @@ class WssLauncherTests(unittest.TestCase):
                         if process.poll() is None:
                             process.terminate()
                         process.wait(timeout=5)
+
+    if sys.platform == "win32" and os.getenv("H454_WINDOWS_WSS_HEALTH") == "1":
+        test_windows_tls_health_checks_synthetic_certificates = _assert_windows_tls_health_checks_synthetic_certificates
 
 
 if __name__ == "__main__":
