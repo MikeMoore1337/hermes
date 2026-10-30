@@ -17,6 +17,7 @@ from scripts.h15_remote_commander_candidate_audit import (
 
 RELATIVE = Path("packages/agent/src/dispatcher.ts")
 EDIT_RELATIVE = Path("packages/agent/src/core/tools/edit.ts")
+FILESYSTEM_RELATIVE = Path("packages/agent/src/core/tools/filesystem.ts")
 SEARCH_RELATIVE = Path("packages/agent/src/core/search-manager.ts")
 SEARCH_HANDLERS_RELATIVE = Path("packages/agent/src/core/handlers/search-handlers.ts")
 DENIED_HANDLERS = {
@@ -104,17 +105,34 @@ def search_timeout_errors(manager: str, handlers: str) -> tuple[str, str]:
     return manager, "".join(parts)
 
 
+def unknown_birthtime(raw: str) -> str:
+    """Do not present an ambiguous Unix-epoch birthtime as a known date."""
+    field = "        created: fileInfo.created ?? fallbackInfo.created,\n"
+    marker = "    // Add type-specific metadata from file handler\n"
+    if (raw.count(field) != 1 or raw.count(marker) != 1 or raw.index(field) > raw.index(marker)
+            or "unavailable_or_epoch" in raw):
+        raise AuditError("unreviewed_file_info_birthtime")
+    change = ("    if (info.created instanceof Date && info.created.getTime() === 0) {\n"
+              "        info.created = null;\n"
+              "        info.createdStatus = 'unavailable_or_epoch';\n"
+              "    }\n\n")
+    return raw.replace(marker, change + marker, 1)
+
+
 def apply(root: Path, *, sha: str = UPSTREAM_SHA) -> dict[str, object]:
     # Checks immutable source revision, license/NOTICE and all known risks.
     evaluate(root, sha=sha)
     path = root / RELATIVE
     edit_path = root / EDIT_RELATIVE
+    filesystem_path = root / FILESYSTEM_RELATIVE
     search_path = root / SEARCH_RELATIVE
     search_handlers_path = root / SEARCH_HANDLERS_RELATIVE
     if path.is_symlink() or not path.is_file():
         raise AuditError("unsafe_dispatcher")
     if edit_path.is_symlink() or not edit_path.is_file():
         raise AuditError("unsafe_edit_handler")
+    if filesystem_path.is_symlink() or not filesystem_path.is_file():
+        raise AuditError("unsafe_filesystem_handler")
     if any(p.is_symlink() or not p.is_file() for p in (search_path, search_handlers_path)):
         raise AuditError("unsafe_search_handler")
     raw = path.read_text(encoding="utf-8")
@@ -150,10 +168,12 @@ def apply(root: Path, *, sha: str = UPSTREAM_SHA) -> dict[str, object]:
     if "if (!handler) {" not in updated or "t.name in TOOL_HANDLERS" not in updated:
         raise AuditError("dispatcher_fallback_unreviewed")
     updated_edit = edit_conflict_errors(edit_path.read_text(encoding="utf-8"))
+    updated_filesystem = unknown_birthtime(filesystem_path.read_text(encoding="utf-8"))
     updated_search, updated_search_handlers = search_timeout_errors(
         search_path.read_text(encoding="utf-8"), search_handlers_path.read_text(encoding="utf-8"))
     path.write_text(updated, encoding="utf-8")
     edit_path.write_text(updated_edit, encoding="utf-8")
+    filesystem_path.write_text(updated_filesystem, encoding="utf-8")
     search_path.write_text(updated_search, encoding="utf-8")
     search_handlers_path.write_text(updated_search_handlers, encoding="utf-8")
     return {

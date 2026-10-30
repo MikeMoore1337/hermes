@@ -43,7 +43,7 @@ retained.
 | Protected-path write policy | PARTIAL (platform blocked attempted call) | PARTIAL (platform blocked attempted call) | PARTIAL (platform blocked attempted call) | NOT TESTED | NOT TESTED | NOT TESTED |
 | Two simultaneous interactive sessions (Node REPL) | PASS | PASS | PASS | NOT TESTED | NOT TESTED | NOT TESTED |
 | Targeted process termination and no residual sessions | PASS | PASS | PASS | NOT TESTED | NOT TESTED | NOT TESTED |
-| Binary 128 KiB: create, get_file_info, move, SHA-256, cleanup | PASS (process-backed bytes) | PASS (process-backed bytes) | PASS (process-backed bytes) | NOT TESTED | NOT TESTED | NOT TESTED |
+| Binary 128 KiB: create, get_file_info, move, SHA-256, cleanup | PASS (process-backed bytes) | PASS (process-backed bytes) | PASS (process-backed bytes) | PASS (process-backed bytes) | PASS (process-backed bytes) | PASS (process-backed bytes) |
 | Arbitrary MCP binary read/write and larger size limits | NOT TESTED | NOT TESTED | NOT TESTED | NOT TESTED | NOT TESTED | NOT TESTED |
 | Duplicate edit matching fails closed; unique edit succeeds | PASS | NOT TESTED | NOT TESTED | NOT TESTED | NOT TESTED | NOT TESTED |
 | Concurrent writes, stale session replay and timeout | NOT TESTED | NOT TESTED | NOT TESTED | NOT TESTED | NOT TESTED | NOT TESTED |
@@ -93,7 +93,29 @@ not CI emulation. All three devices were online for these tests.
 No production host access, package installation, Git modification,
 Codex CLI, paid API, reload or reboot was performed in the earlier tests.
 New Codex basic file/search/process E2E on both VPS sandboxes was later
-**PASS on 2026-10-24**; larger binary and concurrent-write tests remain NOT TESTED.
+**PASS on 2026-10-24**; at that time, 128 KiB binary and concurrent-write
+tests were NOT TESTED.
+
+## Codex 128 KiB binary and creation-time observation (2026-10-30)
+
+Real Codex MCP calls on all three existing sandbox devices created a 131,072-byte
+binary fixture through Node, confirmed binary type and size with `get_file_info`,
+moved it with `move_file` and verified the same SHA-256 afterward. All six
+test processes exited 0, the three private test directories were confirmed
+absent and no terminal sessions remained. This is process-backed byte handling,
+not proof of a dedicated binary MCP payload-transfer protocol. Details are in
+the [Issue evidence](https://github.com/MikeMoore1337/hermes/issues/454#issuecomment-6520858705).
+
+The newly created Windows sandbox fixture reported an epoch-zero birthtime;
+the two VPS fixtures reported nonzero values. Node documents that [birthtime
+may be unavailable](https://nodejs.org/docs/latest-v24.x/api/fs.html#stat-time-values)
+and represented by the Unix epoch or `ctime`. The source candidate now reports
+the ambiguous epoch sentinel as `created: null` with
+`createdStatus: unavailable_or_epoch`; other values are unchanged. This is an
+intentional response change for that sentinel: consumers must accept `null`
+and the additional status field. A genuine epoch-zero date is also ambiguous,
+and `ctime` fallback cannot be detected reliably. Source and CI evidence do
+not establish activation of the candidate on any device.
 
 ## Remaining Desktop Commander replacement gaps
 
