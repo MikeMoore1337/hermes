@@ -296,4 +296,19 @@ $script:h454Item.Config.AttachStderr=$false
 Require ((Get-H454ContainerProfileHash $script:h454Item) -ceq $script:h454ExpectedProfile) 'VOLATILE_CONFIG_DRIFT'
 $script:h454Item.Config.PSObject.Properties.Remove('MacAddress')
 Require ((Get-H454ContainerProfileHash $script:h454Item) -ceq $script:h454ExpectedProfile) 'OMITTED_EMPTY_MAC'
+
+# Docker labels are a map: order must not change the pinned profile.
+Reset-H454Fixture
+$script:h454Item.Config.Labels=[pscustomobject][ordered]@{'z.example'='z';'com.hermes.scope'='synthetic';'A.example'='a'}
+$script:h454ExpectedProfile=Get-H454ContainerProfileHash $script:h454Item
+$script:h454Item.Config.Labels=[pscustomobject][ordered]@{'A.example'='a';'com.hermes.scope'='synthetic';'z.example'='z'}
+Require ((Get-H454ContainerProfileHash $script:h454Item) -ceq $script:h454ExpectedProfile) 'LABEL_ORDER_CHANGED_PROFILE'
+$script:h454Item.Config.Labels.'A.example'='tampered'
+Expect-H454Refusal { Stop-H454PreservedContainer -Claim }
+$script:h454Item.Config.Labels.'A.example'='a'
+$script:h454Item.Config.Labels|Add-Member -NotePropertyName 'new.example' -NotePropertyValue 'unexpected'
+Expect-H454Refusal { Stop-H454PreservedContainer -Claim }
+$script:h454Item.Config.Labels.PSObject.Properties.Remove('new.example')
+$script:h454Item.Config.Labels.PSObject.Properties.Remove('z.example')
+Expect-H454Refusal { Stop-H454PreservedContainer -Claim }
 'H454_LAUNCHER_PRESERVE_FIXTURES=PASS'
