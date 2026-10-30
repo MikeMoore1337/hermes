@@ -10,11 +10,20 @@ case "$nonce" in *[!0-9-]*|'') exit 2;; esac
 tmp="$(mktemp -d "${RUNNER_TEMP:?}/h454-offline.XXXXXX")"
 image="h454-offline-fixture:$nonce"
 container=''
+isolated=''
+sidecar=''
+network_id=''
 server_pid=''
 cleanup() {
-  if test -n "$container"; then
-    label="$(docker inspect --format '{{index .Config.Labels "com.hermes.h454.fixture"}}' "$container" 2>/dev/null || true)"
-    if test "$label" = "$nonce"; then docker rm --force "$container" >/dev/null 2>&1 || true; fi
+  for fixture in "$container" "$isolated" "$sidecar"; do
+    if test -n "$fixture"; then
+      label="$(docker inspect --format '{{index .Config.Labels "com.hermes.h454.fixture"}}' "$fixture" 2>/dev/null || true)"
+      if test "$label" = "$nonce"; then docker rm --force "$fixture" >/dev/null 2>&1 || true; fi
+    fi
+  done
+  if test -n "$network_id"; then
+    label="$(docker network inspect --format '{{index .Labels "com.hermes.h454.fixture"}}' "$network_id" 2>/dev/null || true)"
+    if test "$label" = "$nonce"; then docker network rm "$network_id" >/dev/null 2>&1 || true; fi
   fi
   if test -n "$server_pid" && jobs -pr | grep -Fxq "$server_pid"; then
     kill "$server_pid" 2>/dev/null || true
@@ -138,3 +147,51 @@ for cycle in 1 2; do
 done
 echo 'H454_CI_ISOLATED_OFFLINE_STAGING_ORDER=PASS'
 echo 'H454_CI_SYNTHETIC_LISTENER_RECEIVED_NO_STAGED_TOKEN=PASS'
+
+# Feasibility only: no TLS sidecar or live Windows behavior is implied.
+network_id="$(docker network create --internal --label "com.hermes.h454.fixture=$nonce" "h454-internal-$nonce")"
+sidecar="$(docker create --pull never --network "$network_id" --network-alias host.docker.internal \
+  --read-only --init --cap-drop ALL --security-opt no-new-privileges --user 65534:65534 \
+  --memory 128m --pids-limit 32 --label "com.hermes.h454.fixture=$nonce" --entrypoint node "$image" -e '
+    const http=require("node:http");
+    http.createServer((q,r)=>{console.log(q.headers.authorization?"H454_SYNTHETIC_AUTH":"H454_SYNTHETIC_PROBE");r.writeHead(401);r.end()})
+      .listen(38180,"0.0.0.0",()=>console.log("H454_SYNTHETIC_ALIAS_READY"));')"
+docker start "$sidecar" >/dev/null
+for _ in $(seq 1 50); do
+  docker logs "$sidecar" 2>&1 | grep -q '^H454_SYNTHETIC_ALIAS_READY$' && break
+  sleep 0.1
+done
+docker logs "$sidecar" 2>&1 | grep -q '^H454_SYNTHETIC_ALIAS_READY$'
+side_ip="$(docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$sidecar")"
+node -e 'if(require("node:net").isIP(process.argv[1])!==4)process.exit(1)' "$side_ip"
+isolated="$(docker create --pull never --network bridge --read-only --init --cap-drop ALL \
+  --security-opt no-new-privileges --user 65534:65534 --memory 256m --pids-limit 64 \
+  --label "com.hermes.h454.fixture=$nonce" \
+  --tmpfs /run/brc:rw,nosuid,nodev,noexec,uid=65534,gid=65534,mode=0700,size=8m \
+  --tmpfs /tmp:rw,nosuid,nodev,noexec,uid=65534,gid=65534,mode=1777,size=16m \
+  --entrypoint /bin/sh "$image" /usr/local/bin/h15-entry.sh)"
+docker start "$isolated" >/dev/null
+docker exec "$isolated" /bin/sh -c 'test ! -e /run/brc/ready && test ! -e /run/brc/device.json'
+docker network disconnect bridge "$isolated"
+docker network connect "$network_id" "$isolated"
+test "$(docker inspect --format '{{len .NetworkSettings.Networks}}' "$isolated")" = 1
+if ! timeout 8s docker exec "$isolated" node -e '
+  const dns=require("node:dns"),expected=process.argv[1];
+  dns.lookup("host.docker.internal",{all:true,verbatim:true},(e,a)=>
+    process.exit(e||!a.length||a.some(x=>x.address!==expected)?1:0));' "$side_ip"; then
+  echo 'H454_INTERNAL_ALIAS_FEASIBILITY=HOLD'
+  exit 0
+fi
+docker exec "$isolated" node -e '
+  const http=require("node:http"),host=process.argv[1],port=process.argv[2];
+  const q=http.get("http://"+host+":"+port,()=>process.exit(1));
+  q.on("error",()=>process.exit(0));q.setTimeout(2000,()=>{q.destroy();process.exit(0)});' "$gateway" "$port"
+isolated_credential="$(printf '{"relayUrl":"http://host.docker.internal:38180","deviceId":"synthetic-device","deviceToken":"%s","name":"fixture","pairedAt":"manual"}' "$token")"
+printf '%s' "$isolated_credential" | docker exec --interactive "$isolated" /bin/sh /usr/local/bin/h15-stage.sh
+for _ in $(seq 1 50); do
+  docker logs "$sidecar" 2>&1 | grep -q '^H454_SYNTHETIC_AUTH$' && break
+  sleep 0.1
+done
+docker logs "$sidecar" 2>&1 | grep -q '^H454_SYNTHETIC_AUTH$'
+test "$(grep -c '^auth$' "$tmp/events")" = 1
+echo 'H454_INTERNAL_ALIAS_FEASIBILITY=PASS_SYNTHETIC_ONLY'

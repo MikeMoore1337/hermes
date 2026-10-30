@@ -112,7 +112,10 @@ original plaintext bearer remains open.
   start/stage cycles with synthetic credentials; its tmpfs was empty after
   restart and an extra stage refused overwrite. This does not test the actual
   original container or its return to the network. The candidate CI includes
-  a separate synthetic Docker network-order test, not a Windows rollout.
+  a separate synthetic Docker network-order test and an exploratory isolated
+  network-alias check that reports HOLD if the alias cannot be established.
+  Neither provides a TLS sidecar, proves Docker Desktop behavior or verifies a
+  Windows rollout.
 - These tests do not establish certificate deployment, host ACLs, actual SSH
   forwarding, complete process-tree cleanup, login/reboot recovery, a real
   power-loss guarantee, live MCP recovery or production activation.
