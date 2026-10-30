@@ -82,6 +82,14 @@ live PASS, partial coverage and untested scenarios by device and tool.
   does not prove current command execution. It makes no MCP call and adds
   no registry entry. Runtime delivery and actual onboarding require separate
   implementation, authorization and live verification.
+- `scripts/h454_sandbox_project_probe.py` is a separate, non-installed
+  read-only helper for the existing Windows sandbox. With a verified script
+  supplied to that sandbox and a public GitHub URL on stdin, it checks the
+  public HEAD and an instant of root/name availability, without cloning or
+  creating a reservation. Its UID and container checks prevent accidents;
+  they do not establish an OS security boundary. It does not feed the UI,
+  enable connection or add a workspace. Recheck immediately before any
+  separately approved operation because the directory can change afterward.
 - Windows login/reboot and outage recovery: **OPEN** (#445; do not perform
   unapproved reboot).
 - Original Windows read-only access was separately owner-approved for
