@@ -94,24 +94,16 @@ set; it does not prevent a Docker administrator changing the network later.
 
 The former image still uses plaintext transport. Automatically restarting it
 after a failed TLS migration would reintroduce the bearer exposure. Until a
-separately verified secure rollback image exists, recovery leaves the agent
-offline with its marker and guard in place. A production-ready operator must
-also reconcile container names, the SSH forward and a secure fallback image,
-then repeat a real MCP smoke before clearing the marker. Removing the marker
-or using the previous plaintext rollback is not an automatic recovery step.
+separately verified route restores the exact original container securely,
+recovery leaves the agent offline with its marker and guard in place. A
+production-ready operator must reconcile the original container, launcher,
+SSH forward, isolated proxy and future starts, then repeat a real MCP smoke
+before clearing the marker. Removing the marker or using the previous
+plaintext rollback is not an automatic recovery step.
 
-One candidate sequence is to build two separately pinned images with the same
-verified WSS module and public CA: a transport-secured version of the current
-image, and a transport-secured version of the no-auto-pair image. First verify
-the transport-secured baseline with a real MCP smoke; only then can it be a
-rollback target for the second image. The baseline's temporary credentials
-must use `manual` to avoid the older CLI's re-pair path. If the first migration
-fails, the plaintext predecessor remains stopped; this is a safe outage, not
-an automatically successful rollback. Neither image currently has an
-approved real CA or a production-ready rollout operator.
-The secured baseline would be a different image and container; it does not
-fulfil the owner's separate requirement to restage credentials and restore
-the original container. A safe and tested way to do that without exposing the
+A transport-secured baseline would be a different image and container; it does
+not fulfil the owner's requirement to restage credentials and restore the
+original container. A safe and tested way to do that without exposing the
 original plaintext bearer remains open.
 
 `h454_isolated_rollback_proxy.mjs` is a source-only experiment for that gap.
@@ -163,7 +155,9 @@ and must not be deployed as a standalone recovery procedure.
   restaged credentials, passed MCP and retained the marker. A third container
   on the private network was refused before staging. Test adapters and state
   were synthetic; this does not verify the production operator or actual
-  original-container rollback.
+  original-container rollback. A PowerShell 5.1 run also injected an ambiguous
+  error, reacquired the fixture lock and recovered through the same synthetic
+  route. This models an interruption; it did not terminate the operator process.
 - These tests do not establish certificate deployment, host ACLs, actual SSH
   forwarding, complete process-tree cleanup, login/reboot recovery, a real
   power-loss guarantee, live MCP recovery or production activation.
