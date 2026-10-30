@@ -16,6 +16,7 @@ from scripts.h15_remote_commander_candidate_audit import (
 )
 
 RELATIVE = Path("packages/agent/src/dispatcher.ts")
+EDIT_RELATIVE = Path("packages/agent/src/core/tools/edit.ts")
 DENIED_HANDLERS = {
     # Never expose remote config or historical tool arguments, which can
     # reveal policy internals or secret-bearing command prompts.
@@ -40,12 +41,29 @@ REMOTE_URL_DENIED = "HERMES_REMOTE_URL_FETCH_DENIED"
 REMOTE_POLICY_DENIED = "HERMES_MCP_TOOL_DISABLED_BY_OWNER_POLICY"
 
 
+def edit_conflict_errors(raw: str) -> str:
+    """Keep the pinned no-write conflict branch, but report its MCP failure."""
+    marker = "    if (count > 0 && count !== expectedReplacements) {"
+    if raw.count(marker) != 1:
+        raise AuditError("unreviewed_edit_conflict_branch")
+    start = raw.index(marker)
+    end = raw.find("\n    }", start)
+    branch = raw[start:end] if end != -1 else ""
+    if branch.count("        return {\n") != 1 or "isError" in branch:
+        raise AuditError("unreviewed_edit_conflict_branch")
+    changed = branch.replace("        return {\n", "        return {\n            isError: true,\n", 1)
+    return raw[:start] + changed + raw[end:]
+
+
 def apply(root: Path, *, sha: str = UPSTREAM_SHA) -> dict[str, object]:
     # Checks immutable source revision, license/NOTICE and all known risks.
     evaluate(root, sha=sha)
     path = root / RELATIVE
+    edit_path = root / EDIT_RELATIVE
     if path.is_symlink() or not path.is_file():
         raise AuditError("unsafe_dispatcher")
+    if edit_path.is_symlink() or not edit_path.is_file():
+        raise AuditError("unsafe_edit_handler")
     raw = path.read_text(encoding="utf-8")
     old_import = "import { getConfig, setConfigValue } from './core/tools/config.js';"
     new_import = ""
@@ -78,7 +96,9 @@ def apply(root: Path, *, sha: str = UPSTREAM_SHA) -> dict[str, object]:
     # handlers. Unknown MCP calls fail rather than deferring to a fallback.
     if "if (!handler) {" not in updated or "t.name in TOOL_HANDLERS" not in updated:
         raise AuditError("dispatcher_fallback_unreviewed")
+    updated_edit = edit_conflict_errors(edit_path.read_text(encoding="utf-8"))
     path.write_text(updated, encoding="utf-8")
+    edit_path.write_text(updated_edit, encoding="utf-8")
     return {
         "source_sha": sha,
         "status": "PATCHED_DISPOSABLE_SOURCE",

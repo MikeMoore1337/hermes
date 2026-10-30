@@ -26,8 +26,24 @@ if (!handler) { return error; }
 t.name in TOOL_HANDLERS
 """
 
+EDIT = """async function edit() {
+    if (count > 0 && count !== expectedReplacements) {
+        return {
+            content: [{type: 'text', text: 'Expected occurrences mismatch'}],
+        };
+    }
+    return writeReplacement();
+}
+"""
+
 
 class BrcHardeningTests(unittest.TestCase):
+    def test_offline_bundle_distributes_the_edit_handler_change(self):
+        workflow = (Path(__file__).resolve().parents[1] /
+                    ".github/workflows/h15-remote-commander-candidate.yml").read_text(encoding="utf-8")
+        paths = workflow.split('cat > "$bundle/EXPECTED_PATHS.txt" <<\'PATHS\'\n', 1)[1].split('\n          PATHS', 1)[0]
+        self.assertIn("packages/agent/src/core/tools/edit.ts", [line.strip() for line in paths.splitlines()])
+
     def setUp(self):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
@@ -35,6 +51,9 @@ class BrcHardeningTests(unittest.TestCase):
         self.dispatcher = self.root / "packages/agent/src/dispatcher.ts"
         self.dispatcher.parent.mkdir(parents=True)
         self.dispatcher.write_text(ORIGINAL, encoding="utf-8")
+        self.edit = self.root / "packages/agent/src/core/tools/edit.ts"
+        self.edit.parent.mkdir(parents=True)
+        self.edit.write_text(EDIT, encoding="utf-8")
         guard = patch("scripts.h15_brc_apply_policy_patch.evaluate", return_value={
             "status": "SOURCE_PIN_VERIFIED"
         })
@@ -113,6 +132,31 @@ class BrcHardeningTests(unittest.TestCase):
         self.dispatcher.write_text(source, encoding="utf-8")
         with self.assertRaisesRegex(AuditError, "unreviewed_dispatcher_change"):
             apply(self.root)
+
+    def test_edit_conflict_is_error_and_success_branch_is_preserved(self):
+        apply(self.root)
+        actual = self.edit.read_text(encoding="utf-8")
+        expected = EDIT.replace("        return {\n", "        return {\n            isError: true,\n")
+        self.assertEqual(actual, expected)
+        self.assertIn("return writeReplacement();", actual)
+
+    def test_changed_edit_branch_refuses_before_any_source_write(self):
+        changed = EDIT.replace("count !== expectedReplacements", "count >= expectedReplacements")
+        self.edit.write_text(changed, encoding="utf-8")
+        with self.assertRaisesRegex(AuditError, "unreviewed_edit_conflict_branch"):
+            apply(self.root)
+        self.assertEqual(self.dispatcher.read_text(encoding="utf-8"), ORIGINAL)
+        self.assertEqual(self.edit.read_text(encoding="utf-8"), changed)
+
+    def test_symlinked_edit_handler_refused_before_dispatcher_write(self):
+        self.edit.unlink()
+        target = self.root / "edit-original.ts"
+        target.write_text(EDIT, encoding="utf-8")
+        self.edit.symlink_to(target)
+        with self.assertRaisesRegex(AuditError, "unsafe_edit_handler"):
+            apply(self.root)
+        self.assertEqual(target.read_text(encoding="utf-8"), EDIT)
+        self.assertEqual(self.dispatcher.read_text(encoding="utf-8"), ORIGINAL)
 
 
 if __name__ == "__main__":

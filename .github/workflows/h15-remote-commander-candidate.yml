@@ -7,6 +7,9 @@ on:
   push:
     branches: [main]
     paths:
+      - scripts/h15_brc_apply_policy_patch.py
+      - scripts/h15_brc_sandbox_linux_e2e.mjs
+      - tests/test_h15_brc_apply_policy_patch.py
       - scripts/h15_brc_workspace_gateway.py
       - scripts/h15_brc_native_read_gateway.py
       - deploy/h15/hermes-native-read.template.ts
@@ -829,6 +832,7 @@ jobs:
           git -C "$candidate" diff --binary HEAD > "$bundle/hermes-brc.patch"
           test -s "$bundle/hermes-brc.patch"
           cat > "$bundle/EXPECTED_PATHS.txt" <<'PATHS'
+          packages/agent/src/core/tools/edit.ts
           packages/agent/src/dispatcher.ts
           packages/relay/src/app.ts
           packages/relay/src/device-hub.ts
