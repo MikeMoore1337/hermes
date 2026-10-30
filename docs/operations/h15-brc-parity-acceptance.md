@@ -290,6 +290,22 @@ and is not a PASS. Login/reboot and ChatGPT acceptance remain unverified.
 Initial init delivery receipt:
 [#454 comment](https://github.com/MikeMoore1337/hermes/issues/454#issuecomment-6515625089).
 
+### Directory-search timeout reporting — 2026-10-30
+
+Real Codex MCP searches found a fresh plain/hidden test file from its own
+directory and found the plain filename. Searching `/workspace` for that same
+plain file returned zero matches with `COMPLETED` and `isError=false`.
+A direct ripgrep probe with the same arguments timed out; this is not proof
+of a completed no-match scan. Exact owned fixtures were removed and sessions
+stopped. Narrowing the search root is verified; a broad search is not a PASS.
+
+The pinned source adapter now marks its deadline as an error/incomplete state,
+keeps partial results, and propagates that state through both search responses.
+Disposable CI exercises real child termination plus partial-result retention,
+and a real ripgrep success/no-match control. This source change does not update
+the running `ac9f8ce0` agent or either VPS image. Runtime acceptance and any
+separate owner-approved image switch remain outstanding.
+
 ### One independent ChatGPT acceptance pass
 
 In the already connected ChatGPT client, ask Hermes MCP to discover the three
