@@ -52,9 +52,9 @@ protect an already compromised agent process or Docker administrator.
 
 ## Interruption and rollback boundary
 
-The rollout must acquire the exclusive runtime lock, persist verified snapshots
-and a flushed, no-overwrite pending marker, then install the guarded **old**
-launcher before stopping either container. A guarded candidate launcher must
+The rollout must acquire the exclusive runtime lock, persist verified snapshots,
+install the guarded **old** launcher, then persist a flushed, no-overwrite
+pending marker before stopping either container. A guarded candidate launcher must
 also contain the same marker check. Under the lock, the guard refuses normal
 start whenever the marker name exists, including an unexpected directory or
 reparse entry; unknown or oversized state directories fail closed.
@@ -69,6 +69,24 @@ preflight rejects drift, missing snapshots, unknown markers, shared locks and
 running containers before writing; later drift causes HOLD with the marker
 retained. These primitives are not yet wired into
 the existing rollout operator and do not automatically restore availability.
+
+`h454_windows_cutover_engine.ps1` provides the ordering core for a trusted
+local operator adapter: it checks the held recovery lock at each step, installs
+the guard and marker before attempting the stop, requires each action to
+confirm its postconditions, and requires candidate MCP before changing control
+files. A failed or ambiguous stop enters rollback; a successful rollback must
+stop the candidate, restore and if needed restage the original, verify original
+MCP and restore known control files while retaining the marker. If marker
+removal has an ambiguous result after a verified commit, it reports HOLD without
+starting a second rollback. The same ordered recovery entry can be called after
+an interruption, with fresh inspected state and the lock reacquired; repeated
+recovery skips staging if the adapter verifies the original is already ready.
+The engine accepts only local trusted callbacks;
+it neither validates Docker or credentials itself nor is a standalone operator.
+The production adapter, its exact artifacts and an approved cutover are still
+missing. `h454_windows_network_guard.ps1` verifies a fresh Docker network
+snapshot's immutable identity, internal bridge mode, label and exact two-member
+set; it does not prevent a Docker administrator changing the network later.
 
 The former image still uses plaintext transport. Automatically restarting it
 after a failed TLS migration would reintroduce the bearer exposure. Until a
@@ -134,6 +152,14 @@ and must not be deployed as a standalone recovery procedure.
   token: the trusted peer received the token; an untrusted or wrong-name peer
   did not, even with a globally trusted fake CA. The proxy rejected a missing
   interface and a changed CA hash. A deliberately slow TLS handshake was bounded.
+- A local Docker Desktop fixture exercised the ordering engine with real
+  disposable original-image and WSS-candidate containers, synthetic OAuth/MCP,
+  lock and marker. After candidate MCP and a synthetic failure between control
+  file replacements, it restored the same disposable original container,
+  restaged credentials, passed MCP and retained the marker. A third container
+  on the private network was refused before staging. Test adapters and state
+  were synthetic; this does not verify the production operator or actual
+  original-container rollback.
 - These tests do not establish certificate deployment, host ACLs, actual SSH
   forwarding, complete process-tree cleanup, login/reboot recovery, a real
   power-loss guarantee, live MCP recovery or production activation.

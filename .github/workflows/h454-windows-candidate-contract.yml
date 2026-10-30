@@ -18,6 +18,10 @@ on:
       - scripts/h454_windows_secure_credential_e2e.ps1
       - scripts/h454_windows_offline_recovery.ps1
       - scripts/h454_windows_offline_recovery_e2e.ps1
+      - scripts/h454_windows_network_guard.ps1
+      - scripts/h454_windows_network_guard_e2e.ps1
+      - scripts/h454_windows_cutover_engine.ps1
+      - scripts/h454_windows_cutover_engine_e2e.ps1
       - tests/test_h454_windows_launcher_guard.py
       - tests/test_h454_windows_wss_launcher.py
       - tests/test_h454_windows_launcher_preserve.py
@@ -49,6 +53,10 @@ on:
       - scripts/h454_windows_secure_credential_e2e.ps1
       - scripts/h454_windows_offline_recovery.ps1
       - scripts/h454_windows_offline_recovery_e2e.ps1
+      - scripts/h454_windows_network_guard.ps1
+      - scripts/h454_windows_network_guard_e2e.ps1
+      - scripts/h454_windows_cutover_engine.ps1
+      - scripts/h454_windows_cutover_engine_e2e.ps1
       - tests/test_h454_windows_launcher_guard.py
       - tests/test_h454_windows_wss_launcher.py
       - tests/test_h454_windows_launcher_preserve.py
@@ -116,3 +124,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'H454_CREDENTIAL_TEST_FAILED' }
           & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/h454_windows_offline_recovery_e2e.ps1 -Source (Resolve-Path scripts/h454_windows_offline_recovery.ps1).Path -GuardPath $env:H454_GUARD_FIXTURE -FixtureParent $env:RUNNER_TEMP
           if ($LASTEXITCODE -ne 0) { throw 'H454_RECOVERY_TEST_FAILED' }
+          & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/h454_windows_network_guard_e2e.ps1 -Source (Resolve-Path scripts/h454_windows_network_guard.ps1).Path
+          if ($LASTEXITCODE -ne 0) { throw 'H454_NETWORK_GUARD_TEST_FAILED' }
+          & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/h454_windows_cutover_engine_e2e.ps1 -Source (Resolve-Path scripts/h454_windows_cutover_engine.ps1).Path -FixtureParent $env:RUNNER_TEMP
+          if ($LASTEXITCODE -ne 0) { throw 'H454_CUTOVER_ENGINE_TEST_FAILED' }

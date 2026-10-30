@@ -20,6 +20,8 @@ on:
       - scripts/h454_offline_restore_order_e2e.sh
       - scripts/h454_isolated_rollback_proxy.mjs
       - scripts/h454_isolated_rollback_proxy_e2e.mjs
+      - scripts/h454_windows_network_guard.ps1
+      - scripts/h454_windows_cutover_engine.ps1
       - deploy/h15/Dockerfile.brc-agent-pinned-wss
       - deploy/h15/Dockerfile.brc-rollback-proxy
       - tests/test_h454_agent_pinned_wss.py
@@ -62,6 +64,8 @@ on:
       - scripts/h454_offline_restore_order_e2e.sh
       - scripts/h454_isolated_rollback_proxy.mjs
       - scripts/h454_isolated_rollback_proxy_e2e.mjs
+      - scripts/h454_windows_network_guard.ps1
+      - scripts/h454_windows_cutover_engine.ps1
       - deploy/h15/Dockerfile.brc-agent-pinned-wss
       - deploy/h15/Dockerfile.brc-rollback-proxy
       - tests/test_h454_agent_pinned_wss.py
