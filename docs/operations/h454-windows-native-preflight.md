@@ -91,8 +91,11 @@ retains the existing container ID across a stop/start, and uses the local Docker
 Desktop pipe. If the container is missing, it creates it stopped, validates the
 result and only then starts it. Profile or identity drift fails closed. A
 profile hash is an input to preparation, not proof that the profile is safe.
+Docker labels are hashed in ordinal key order, so their serialization order
+does not change the profile. Regenerate both the hash and prepared launcher
+with the same helper revision; hashes from earlier helpers are not interchangeable.
 
-On the owner host, the current running container was compared read-only with
+During the prior search-image rollout, the running container was compared read-only with
 the protected pre-rollout snapshot plus the approved search-image labels. Its
 profile hash and image ID were captured in an ACL-protected, untracked candidate. PS5.1
 read-only checks found the actual container and correctly handled an absent

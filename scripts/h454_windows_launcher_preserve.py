@@ -118,7 +118,18 @@ HELPERS = r"""    # Keep the verified container across task retries and logons.
         $h454Config = [ordered]@{}
         foreach ($h454Prop in @($h454Item.Config.PSObject.Properties | Sort-Object Name)) {
             if ($h454Prop.Name -cnotin @('Hostname','Domainname','MacAddress','Image','AttachStdout','AttachStderr')) {
-                $h454Config[$h454Prop.Name] = $h454Prop.Value
+                if ($h454Prop.Name -ceq 'Labels' -and $null -ne $h454Prop.Value) {
+                    # Docker labels are a map; their order is not part of the profile.
+                    [string[]]$h454LabelNames = @($h454Prop.Value.PSObject.Properties | ForEach-Object { $_.Name })
+                    [Array]::Sort($h454LabelNames, [StringComparer]::Ordinal)
+                    $h454Labels = [ordered]@{}
+                    foreach ($h454LabelName in $h454LabelNames) {
+                        $h454Labels[$h454LabelName] = $h454Prop.Value.PSObject.Properties[$h454LabelName].Value
+                    }
+                    $h454Config[$h454Prop.Name] = $h454Labels
+                } else {
+                    $h454Config[$h454Prop.Name] = $h454Prop.Value
+                }
             }
         }
         $h454Host = [ordered]@{}
