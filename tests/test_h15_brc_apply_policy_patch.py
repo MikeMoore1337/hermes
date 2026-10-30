@@ -59,7 +59,32 @@ FILESYSTEM = """    const info: Record<string, any> = {
     return info;
 """
 
-TERMINAL = """class TerminalManager {
+TERMINAL = """const MAX_WAIT_OUTPUT_CHARS = 2 * 1024 * 1024;
+class TerminalManager {
+  async executeCommand() {
+    const outputEvents: OutputEvent[] = [];
+    let exitReason = 'timeout';
+    result.timingInfo = {
+      outputEvents: outputEvents.length > 0 ? outputEvents : undefined
+    };
+    childProcess.stdout.on('data', (data: any) => {
+        if (collectTiming) {
+          outputEvents.push({
+            source: 'stdout',
+          });
+        }
+        if (collectTiming && outputEvents.length > 0) {
+          outputEvents[outputEvents.length - 1].matchedPattern = 'quick_pattern';
+        }
+    });
+    childProcess.stderr.on('data', (data: any) => {
+        if (collectTiming) {
+          outputEvents.push({
+            source: 'stderr',
+          });
+        }
+    });
+  }
   forceTerminate(pid: number): boolean {
     const session = this.sessions.get(pid);
     session.process.kill('SIGINT');
@@ -74,7 +99,29 @@ TERMINAL = """class TerminalManager {
 }
 """
 
-PROCESS_TOOLS = """export async function forceTerminate(args: unknown): Promise<ServerResult> {
+PROCESS_TOOLS = """import { terminalManager, MAX_BUFFERED_OUTPUT_CHARS } from '../terminal-manager.js';
+function formatTimingInfo(timing: any): string {
+  let msg = '';
+  if (timing.outputEvents && timing.outputEvents.length > 0) {
+    msg += `\\n  Output Events (${timing.outputEvents.length} total):\\n`;
+  }
+  return msg;
+}
+export async function interactWithProcess() {
+  const outputEvents: any[] = [];
+            if (verbose_timing) {
+              outputEvents.push({
+                source: 'periodic_poll',
+              });
+            }
+              if (verbose_timing && outputEvents.length > 0) {
+                outputEvents[outputEvents.length - 1].matchedPattern = 'periodic_check';
+              }
+  const timingInfo = {
+        outputEvents: outputEvents.length > 0 ? outputEvents : undefined
+  };
+}
+export async function forceTerminate(args: unknown): Promise<ServerResult> {
   const success = terminalManager.forceTerminate(pid);
   return {
     content: [{ text: success ? `Successfully initiated termination of session ${pid}`
@@ -82,6 +129,11 @@ PROCESS_TOOLS = """export async function forceTerminate(args: unknown): Promise<
   };
 }
 export async function listSessions() { return []; }
+"""
+
+TYPES = """export interface TimingInfo {
+  outputEvents?: OutputEvent[];
+}
 """
 
 SEARCH_MANAGER = """        if (!session.isComplete && !session.process.killed) {
@@ -119,6 +171,7 @@ class BrcHardeningTests(unittest.TestCase):
         paths = workflow.split('cat > "$bundle/EXPECTED_PATHS.txt" <<\'PATHS\'\n', 1)[1].split('\n          PATHS', 1)[0]
         for path in ("packages/agent/src/core/tools/edit.ts", "packages/agent/src/core/tools/filesystem.ts",
                      "packages/agent/src/core/tools/improved-process-tools.ts", "packages/agent/src/core/terminal-manager.ts",
+                     "packages/agent/src/core/types.ts",
                      "packages/agent/src/core/search-manager.ts",
                      "packages/agent/src/core/handlers/search-handlers.ts"):
             self.assertIn(path, [line.strip() for line in paths.splitlines()])
@@ -137,6 +190,8 @@ class BrcHardeningTests(unittest.TestCase):
         self.filesystem.write_text(FILESYSTEM, encoding="utf-8")
         self.terminal = self.root / "packages/agent/src/core/terminal-manager.ts"
         self.terminal.write_text(TERMINAL, encoding="utf-8")
+        self.types = self.root / "packages/agent/src/core/types.ts"
+        self.types.write_text(TYPES, encoding="utf-8")
         self.process_tools = self.root / "packages/agent/src/core/tools/improved-process-tools.ts"
         self.process_tools.write_text(PROCESS_TOOLS, encoding="utf-8")
         self.search = self.root / "packages/agent/src/core/search-manager.ts"
@@ -287,6 +342,37 @@ class BrcHardeningTests(unittest.TestCase):
         self.assertIn("if (!session.process.kill('SIGINT'))", terminal)
         self.assertIn("if (!session.process.kill('SIGKILL'))", terminal)
         self.assertIn("Only the tracked process is signaled; descendants may remain.", tools)
+
+    def test_verbose_timing_is_bounded_and_discloses_truncation(self):
+        apply(self.root)
+        manager = self.terminal.read_text(encoding="utf-8")
+        tools = self.process_tools.read_text(encoding="utf-8")
+        self.assertEqual(manager.count("collectTiming && !resolved"), 3)
+        self.assertIn("MAX_HERMES_TIMING_EVENTS = 128", manager)
+        self.assertIn("outputEventsTruncated?: boolean", self.types.read_text(encoding="utf-8"))
+        self.assertIn("HERMES_TIMING_EVENTS_TRUNCATED", tools)
+        self.assertIn("verbose_timing && !outputEventsTruncated", tools)
+
+    def test_changed_timing_source_refuses_before_any_source_write(self):
+        self.terminal.write_text(TERMINAL.replace("source: 'stderr'", "source: 'other'"), encoding="utf-8")
+        paths = (self.dispatcher, self.edit, self.filesystem, self.terminal, self.types,
+                 self.process_tools, self.search, self.search_handlers)
+        before = {p: p.read_bytes() for p in paths}
+        with self.assertRaisesRegex(AuditError, "unreviewed_timing_events"):
+            apply(self.root)
+        self.assertEqual({p: p.read_bytes() for p in paths}, before)
+
+    def test_symlinked_timing_types_refused_before_any_source_write(self):
+        self.types.unlink()
+        target = self.root / "types-original.ts"
+        target.write_text(TYPES, encoding="utf-8")
+        self.types.symlink_to(target)
+        paths = (self.dispatcher, self.edit, self.filesystem, self.terminal,
+                 self.process_tools, self.search, self.search_handlers, target)
+        before = {p: p.read_bytes() for p in paths}
+        with self.assertRaisesRegex(AuditError, "unsafe_terminal_handler"):
+            apply(self.root)
+        self.assertEqual({p: p.read_bytes() for p in paths}, before)
 
     def test_changed_initial_termination_signal_refuses_without_writing(self):
         self.terminal.write_text(TERMINAL.replace("kill('SIGINT')", "kill('SIGTERM')"), encoding="utf-8")
