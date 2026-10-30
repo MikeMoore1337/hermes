@@ -86,6 +86,56 @@ assert(edited.isError !== true &&
        fs.readFileSync(editPath, 'utf8') === 'same\nsame\nunique-after\n',
        'MCP_EDIT_UNIQUE_SUCCESS');
 
+// Hold a real edit after its read so conflicting MCP mutations overlap.
+const racePath = '/workspace/mutation-race.txt';
+fs.writeFileSync(racePath, 'before\n');
+const originalReadFile = fsPromises.readFile;
+let readObserved, releaseRead, held = false;
+const readStarted = new Promise(resolve => { readObserved = resolve; });
+const readGate = new Promise(resolve => { releaseRead = resolve; });
+let firstEdit;
+try {
+  fsPromises.readFile = async (...args) => {
+    const value = await originalReadFile(...args);
+    if (!held && args[0] === racePath && args[1]?.signal) {
+      held = true;
+      readObserved();
+      await readGate;
+    }
+    return value;
+  };
+  firstEdit = callTool('edit_block', {
+    file_path: racePath, old_string: 'before', new_string: 'A-after', expected_replacements: 1,
+  });
+  await Promise.race([readStarted, pause(5000).then(() => { throw Error('MUTATION_BARRIER_TIMEOUT'); })]);
+  for (const [name, args] of [
+    ['edit_block', {file_path: racePath, old_string: 'before', new_string: 'B-after', expected_replacements: 1}],
+    ['write_file', {path: '/workspace/blocked.txt', content: 'wrong', mode: 'rewrite'}],
+    ['move_file', {source: racePath, destination: '/workspace/blocked-move.txt'}],
+    ['create_directory', {path: '/workspace/blocked-dir'}],
+    ['write_pdf', {path: '/workspace/blocked.pdf', content: 'wrong'}],
+  ]) {
+    const blocked = await callTool(name, args);
+    const text = blocked.content.map(item => item.text || '').join('\n');
+    assert(blocked.isError === true && text.includes('HERMES_FILE_MUTATION_BUSY'),
+      'MCP_MUTATION_BUSY_' + name.toUpperCase());
+  }
+  const info = await callTool('get_file_info', {path: racePath});
+  assert(info.isError !== true, 'MCP_READ_DURING_MUTATION');
+} finally {
+  releaseRead();
+  fsPromises.readFile = originalReadFile;
+}
+const firstResult = await firstEdit;
+assert(firstResult.isError !== true && fs.readFileSync(racePath, 'utf8') === 'A-after\n' &&
+  !fs.existsSync('/workspace/blocked.txt') && !fs.existsSync('/workspace/blocked-move.txt') &&
+  !fs.existsSync('/workspace/blocked-dir') && !fs.existsSync('/workspace/blocked.pdf'),
+  'MCP_MUTATION_FIRST_WRITE_PRESERVED');
+const invalidEdit = await callTool('edit_block', {});
+const afterError = await callTool('write_file', {path:'/workspace/unlocked.txt', content:'ok', mode:'rewrite'});
+assert(invalidEdit.isError === true && afterError.isError !== true &&
+  fs.readFileSync('/workspace/unlocked.txt', 'utf8') === 'ok', 'MCP_MUTATION_GUARD_RELEASED_ON_ERROR');
+
 // Drive the real compiled search manager with a controlled, real child process.
 // Timing/output are synthetic; SIGTERM, result retention and MCP flags are real.
 const originalSpawn = childProcess.spawn;

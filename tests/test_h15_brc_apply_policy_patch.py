@@ -18,12 +18,27 @@ const TOOL_HANDLERS = {
   start_process: (a) => handlers.handleStartProcess(a),
   read_file: (a) => handlers.handleReadFile(a),
   write_file: (a) => handlers.handleWriteFile(a),
+  write_pdf: (a) => handlers.handleWritePdf(a),
+  create_directory: (a) => handlers.handleCreateDirectory(a),
+  move_file: (a) => handlers.handleMoveFile(a),
+  edit_block: (a) => handlers.handleEditBlock(a),
   prepare_file_transfer: (a) => handlers.handlePrepareFileTransfer(a),
   send_file_transfer: (a) => handlers.handleSendFileTransfer(a),
   receive_file_transfer: (a) => handlers.handleReceiveFileTransfer(a),
 };
-if (!handler) { return error; }
+let cachedDefs: ToolDefinition[] | null = null;
 t.name in TOOL_HANDLERS
+export async function callTool(name: string, args: Args): Promise<ToolResult> {
+  const handler = TOOL_HANDLERS[name];
+  if (!handler) { return error; }
+  try {
+    const result = (await handler(args ?? {})) as ToolResult;
+    return result;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { content: [{ type: 'text', text: `Error in ${name}: ${message}` }], isError: true };
+  }
+}
 """
 
 EDIT = """async function edit() {
@@ -203,6 +218,14 @@ class BrcHardeningTests(unittest.TestCase):
         self.assertIn("info.created = null;", actual)
         self.assertIn("info.createdStatus = 'unavailable_or_epoch';", actual)
         self.assertIn("return info;", actual)
+
+    def test_unreviewed_mutation_dispatcher_refuses_without_writing(self):
+        self.dispatcher.write_text(ORIGINAL.replace("  move_file:", "  unexpected_move:"), encoding="utf-8")
+        paths = (self.dispatcher, self.edit, self.filesystem, self.search, self.search_handlers)
+        before = {p: p.read_bytes() for p in paths}
+        with self.assertRaisesRegex(AuditError, "unreviewed_file_mutation_dispatcher"):
+            apply(self.root)
+        self.assertEqual({p: p.read_bytes() for p in paths}, before)
 
     def test_changed_file_info_refuses_before_any_source_write(self):
         self.filesystem.write_text(FILESYSTEM.replace("fileInfo.created", "unreviewed.created"), encoding="utf-8")
