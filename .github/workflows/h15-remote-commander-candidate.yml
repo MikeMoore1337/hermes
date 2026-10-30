@@ -18,7 +18,10 @@ on:
       - scripts/h454_wss_relay_proxy.mjs
       - scripts/h454_wss_fixture_certificates.sh
       - scripts/h454_offline_restore_order_e2e.sh
+      - scripts/h454_isolated_rollback_proxy.mjs
+      - scripts/h454_isolated_rollback_proxy_e2e.mjs
       - deploy/h15/Dockerfile.brc-agent-pinned-wss
+      - deploy/h15/Dockerfile.brc-rollback-proxy
       - tests/test_h454_agent_pinned_wss.py
       - scripts/h15_brc_workspace_gateway.py
       - scripts/h15_brc_native_read_gateway.py
@@ -57,7 +60,10 @@ on:
       - scripts/h454_wss_relay_proxy.mjs
       - scripts/h454_wss_fixture_certificates.sh
       - scripts/h454_offline_restore_order_e2e.sh
+      - scripts/h454_isolated_rollback_proxy.mjs
+      - scripts/h454_isolated_rollback_proxy_e2e.mjs
       - deploy/h15/Dockerfile.brc-agent-pinned-wss
+      - deploy/h15/Dockerfile.brc-rollback-proxy
       - tests/test_h454_agent_pinned_wss.py
       - scripts/h15_brc_harden_relay.py
       - scripts/h15_brc_harden_gateway.py
@@ -529,7 +535,8 @@ jobs:
           image_context="$(mktemp -d "$RUNNER_TEMP/h454-wss-image.XXXXXX")"
           fixture_base="h454-wss-fixture-base:${GITHUB_RUN_ID}"
           fixture_image="h454-wss-fixture:${GITHUB_RUN_ID}"
-          trap 'docker image rm "$fixture_image" "$fixture_base" >/dev/null 2>&1 || true; rm -rf "$fixture" "$image_context"' EXIT
+          proxy_image="h454-rollback-proxy-fixture:${GITHUB_RUN_ID}"
+          trap 'docker image rm "$proxy_image" "$fixture_image" "$fixture_base" >/dev/null 2>&1 || true; rm -rf "$fixture" "$image_context"' EXIT
           bash scripts/h454_wss_fixture_certificates.sh "$fixture"
           chmod 755 "$fixture"
           image="hermes-brc-relay-eval:${GITHUB_SHA:0:12}"
@@ -566,6 +573,37 @@ jobs:
               }
               console.log("H454_SYNTHETIC_IMAGE_READONLY=PASS");
             '
+          docker run --rm --network none --read-only --init --cap-drop ALL --security-opt no-new-privileges \
+            --user 65534:65534 --memory 256m --pids-limit 64 \
+            --env NODE_EXTRA_CA_CERTS=/fixtures/fake.crt --env NODE_TLS_REJECT_UNAUTHORIZED=0 \
+            --mount "type=bind,src=$GITHUB_WORKSPACE,dst=/src,readonly" \
+            --mount "type=bind,src=$fixture,dst=/fixtures,readonly" \
+            --entrypoint node "$image" /src/scripts/h454_isolated_rollback_proxy_e2e.mjs /fixtures
+          cp scripts/h454_isolated_rollback_proxy.mjs "$image_context/"
+          docker build --quiet --pull=false --network none --build-arg "H454_BASE_IMAGE=$fixture_base" \
+            --file deploy/h15/Dockerfile.brc-rollback-proxy --tag "$proxy_image" "$image_context"
+          test "$(docker image inspect --format '{{.Config.User}}' "$proxy_image")" = '65534:65534'
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+            --user 65534:65534 --memory 128m --pids-limit 32 --entrypoint node "$proxy_image" --input-type=module -e '
+              import fs from "node:fs"; import assert from "node:assert/strict";
+              import {createHash} from "node:crypto";
+              import {readPinnedCa} from "/opt/hermes-rollback/proxy.mjs";
+              const ca=fs.readFileSync("/opt/hermes-rollback/relay-ca.pem");
+              const digest=createHash("sha256").update(ca).digest("hex");
+              assert.deepEqual(readPinnedCa(digest),ca);
+              assert.throws(()=>readPinnedCa("0".repeat(64)),/H454_CA_DRIFT/);
+              for(const p of ["/opt/hermes-rollback/relay-ca.pem","/opt/hermes-rollback/proxy.mjs"]) {
+                const s=fs.lstatSync(p); assert(s.isFile() && s.uid===0 && s.gid===0 && (s.mode&0o777)===0o444);
+                assert.throws(()=>fs.writeFileSync(p,"fixture"),e=>["EROFS","EACCES"].includes(e.code));
+              }
+              console.log("H454_SYNTHETIC_ROLLBACK_IMAGE_READONLY=PASS");
+            '
+          ca_hash="$(sha256sum "$fixture/relay-ca.pem" | cut -d" " -f1)"
+          if docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+            --user 65534:65534 --memory 128m --pids-limit 32 "$proxy_image" 172.17.0.1 "$ca_hash"; then
+            echo 'H454_ROLLBACK_PROXY_MISSING_INTERFACE_NOT_REFUSED' >&2; exit 1
+          fi
+          echo "H454_SYNTHETIC_ROLLBACK_PROXY_TLS=PASS" >> "$GITHUB_STEP_SUMMARY"
           echo "H454_PINNED_WSS_SYNTHETIC_E2E=PASS" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Verify synthetic offline staging and restart order

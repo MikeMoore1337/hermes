@@ -92,6 +92,18 @@ fulfil the owner's separate requirement to restage credentials and restore
 the original container. A safe and tested way to do that without exposing the
 original plaintext bearer remains open.
 
+`h454_isolated_rollback_proxy.mjs` is a source-only experiment for that gap.
+It listens on one detected private IPv4 address and forwards no agent bytes
+until a separate TLS connection authenticates the pinned CA and server name.
+Its image recipe places the CA and code in a root-owned, read-only directory.
+The proxy cannot itself establish that Docker's network is internal, that its
+DNS alias resolves uniquely to this proxy, or that no other container can join
+the network. A future owner-gated operator must verify those facts, exact image
+and network identities, the old container's existing host overrides, and the
+complete process and rollback sequence before staging real credentials. The
+isolation may remove normal project egress. The experiment is not an operator
+and must not be deployed as a standalone recovery procedure.
+
 ## Evidence and limits
 
 - A real pinned BRC agent transport and relay were exercised together in an
@@ -114,8 +126,14 @@ original plaintext bearer remains open.
   original container or its return to the network. The candidate CI includes
   a separate synthetic Docker network-order test and an exploratory isolated
   network-alias check that reports HOLD if the alias cannot be established.
-  Neither provides a TLS sidecar, proves Docker Desktop behavior or verifies a
-  Windows rollout.
+  The candidate workflow also exercises a synthetic original-like restart and
+  stage through the isolated proxy to a synthetic TLS relay; it checks that the
+  proxy does not listen on its upstream interface. These fixtures do not prove
+  Docker Desktop behavior or verify a Windows rollout.
+- Local network-isolated tests of the proxy used synthetic certificates and
+  token: the trusted peer received the token; an untrusted or wrong-name peer
+  did not, even with a globally trusted fake CA. The proxy rejected a missing
+  interface and a changed CA hash. A deliberately slow TLS handshake was bounded.
 - These tests do not establish certificate deployment, host ACLs, actual SSH
   forwarding, complete process-tree cleanup, login/reboot recovery, a real
   power-loss guarantee, live MCP recovery or production activation.

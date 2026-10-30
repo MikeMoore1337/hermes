@@ -9,28 +9,36 @@ nonce="${GITHUB_RUN_ID:?}-${GITHUB_RUN_ATTEMPT:?}-${RANDOM}"
 case "$nonce" in *[!0-9-]*|'') exit 2;; esac
 tmp="$(mktemp -d "${RUNNER_TEMP:?}/h454-offline.XXXXXX")"
 image="h454-offline-fixture:$nonce"
+proxy_image="h454-offline-proxy:$nonce"
+relay_image="h454-offline-relay:$nonce"
 container=''
 isolated=''
 sidecar=''
+relay=''
 network_id=''
+upstream_network=''
 server_pid=''
 cleanup() {
-  for fixture in "$container" "$isolated" "$sidecar"; do
+  for fixture in "$container" "$isolated" "$sidecar" "$relay"; do
     if test -n "$fixture"; then
       label="$(docker inspect --format '{{index .Config.Labels "com.hermes.h454.fixture"}}' "$fixture" 2>/dev/null || true)"
       if test "$label" = "$nonce"; then docker rm --force "$fixture" >/dev/null 2>&1 || true; fi
     fi
   done
-  if test -n "$network_id"; then
-    label="$(docker network inspect --format '{{index .Labels "com.hermes.h454.fixture"}}' "$network_id" 2>/dev/null || true)"
-    if test "$label" = "$nonce"; then docker network rm "$network_id" >/dev/null 2>&1 || true; fi
-  fi
+  for network in "$network_id" "$upstream_network"; do
+    if test -n "$network"; then
+      label="$(docker network inspect --format '{{index .Labels "com.hermes.h454.fixture"}}' "$network" 2>/dev/null || true)"
+      if test "$label" = "$nonce"; then docker network rm "$network" >/dev/null 2>&1 || true; fi
+    fi
+  done
   if test -n "$server_pid" && jobs -pr | grep -Fxq "$server_pid"; then
     kill "$server_pid" 2>/dev/null || true
     wait "$server_pid" 2>/dev/null || true
   fi
-  label="$(docker image inspect --format '{{index .Config.Labels "com.hermes.h454.fixture"}}' "$image" 2>/dev/null || true)"
-  if test "$label" = "$nonce"; then docker image rm "$image" >/dev/null 2>&1 || true; fi
+  for fixture_image in "$image" "$proxy_image" "$relay_image"; do
+    label="$(docker image inspect --format '{{index .Config.Labels "com.hermes.h454.fixture"}}' "$fixture_image" 2>/dev/null || true)"
+    if test "$label" = "$nonce"; then docker image rm "$fixture_image" >/dev/null 2>&1 || true; fi
+  done
   case "$tmp" in "$RUNNER_TEMP"/h454-offline.*) rm -rf -- "$tmp";; *) exit 2;; esac
 }
 trap cleanup EXIT
@@ -180,7 +188,7 @@ if ! timeout 8s docker exec "$isolated" node -e '
   dns.lookup("host.docker.internal",{all:true,verbatim:true},(e,a)=>
     process.exit(e||!a.length||a.some(x=>x.address!==expected)?1:0));' "$side_ip"; then
   echo 'H454_INTERNAL_ALIAS_FEASIBILITY=HOLD'
-  exit 0
+  exit 1
 fi
 docker exec "$isolated" node -e '
   const http=require("node:http"),host=process.argv[1],port=process.argv[2];
@@ -195,3 +203,85 @@ done
 docker logs "$sidecar" 2>&1 | grep -q '^H454_SYNTHETIC_AUTH$'
 test "$(grep -c '^auth$' "$tmp/events")" = 1
 echo 'H454_INTERNAL_ALIAS_FEASIBILITY=PASS_SYNTHETIC_ONLY'
+
+# Test the same staged fixture through an isolated proxy and a pinned TLS relay.
+# Both networks, certificates, keys and credentials are disposable CI fixtures.
+docker stop --time 5 "$isolated" >/dev/null
+test "$(docker inspect --format '{{index .Config.Labels "com.hermes.h454.fixture"}}' "$sidecar")" = "$nonce"
+docker rm --force "$sidecar" >/dev/null
+sidecar=''
+mkdir "$tmp/certs"
+bash scripts/h454_wss_fixture_certificates.sh "$tmp/certs" >/dev/null
+cp "$tmp/certs/relay-ca.pem" "$tmp/relay-ca.pem"
+cp "$tmp/certs/trusted.crt" "$tmp/certs/trusted.key" "$tmp/"
+cp scripts/h454_isolated_rollback_proxy.mjs "$tmp/"
+docker build --quiet --pull=false --network none --build-arg "H454_BASE_IMAGE=$base" \
+  --label "com.hermes.h454.fixture=$nonce" --file deploy/h15/Dockerfile.brc-rollback-proxy \
+  --tag "$proxy_image" "$tmp" >/dev/null
+cat > "$tmp/Dockerfile.relay" <<'DOCKER'
+ARG H454_TEST_BASE
+FROM ${H454_TEST_BASE}
+USER 0:0
+RUN mkdir -p /fixtures
+COPY trusted.crt trusted.key /fixtures/
+USER 65534:65534
+DOCKER
+docker build --quiet --pull=false --network none --build-arg "H454_TEST_BASE=$base" \
+  --label "com.hermes.h454.fixture=$nonce" --file "$tmp/Dockerfile.relay" \
+  --tag "$relay_image" "$tmp" >/dev/null
+upstream_network="$(docker network create --internal --label "com.hermes.h454.fixture=$nonce" "h454-upstream-$nonce")"
+relay="$(docker create --pull never --network "$upstream_network" --read-only --init --cap-drop ALL \
+  --security-opt no-new-privileges --user 65534:65534 --memory 128m --pids-limit 32 \
+  --label "com.hermes.h454.fixture=$nonce" --entrypoint node "$relay_image" -e '
+    const fs=require("node:fs"),tls=require("node:tls");
+    const server=tls.createServer({cert:fs.readFileSync("/fixtures/trusted.crt"),key:fs.readFileSync("/fixtures/trusted.key")},s=>{
+      let received="";s.on("error",()=>{});s.on("data",chunk=>{
+        received+=chunk.toString();if(received.length>8192)return s.destroy();
+        if(received.includes("\r\n\r\n")){
+          if(received.includes("Bearer brc_dev_"+"a".repeat(43)))console.log("H454_TEST_TLS_AUTH");
+          s.end("HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n");
+        }
+      });
+    });server.on("tlsClientError",()=>{});server.listen(38184,"0.0.0.0",()=>console.log("H454_TEST_TLS_READY"));')"
+docker start "$relay" >/dev/null
+for _ in $(seq 1 50); do
+  docker logs "$relay" 2>&1 | grep -q '^H454_TEST_TLS_READY$' && break
+  sleep 0.1
+done
+docker logs "$relay" 2>&1 | grep -q '^H454_TEST_TLS_READY$'
+relay_ip="$(docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$relay")"
+node -e 'if(require("node:net").isIP(process.argv[1])!==4)process.exit(1)' "$relay_ip"
+ca_hash="$(sha256sum "$tmp/relay-ca.pem" | cut -d' ' -f1)"
+sidecar="$(docker create --pull never --network "$network_id" --network-alias host.docker.internal \
+  --read-only --init --cap-drop ALL --security-opt no-new-privileges --user 65534:65534 \
+  --memory 128m --pids-limit 32 --label "com.hermes.h454.fixture=$nonce" \
+  "$proxy_image" "$relay_ip" "$ca_hash")"
+docker start "$sidecar" >/dev/null
+for _ in $(seq 1 50); do
+  docker logs "$sidecar" 2>&1 | grep -q '^H454_ROLLBACK_PROXY_READY$' && break
+  sleep 0.1
+done
+docker logs "$sidecar" 2>&1 | grep -q '^H454_ROLLBACK_PROXY_READY$'
+side_ip="$(docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$sidecar")"
+docker network connect --alias "h454-u-$nonce" "$upstream_network" "$sidecar"
+test "$(docker inspect --format '{{len .NetworkSettings.Networks}}' "$sidecar")" = 2
+docker exec "$relay" node -e '
+  const net=require("node:net"),s=net.connect(38180,process.argv[1]);
+  s.on("connect",()=>process.exit(1));s.on("error",e=>process.exit(e.code==="ECONNREFUSED"?0:1));
+  setTimeout(()=>process.exit(1),2000).unref();' "h454-u-$nonce"
+docker start "$isolated" >/dev/null
+docker exec "$isolated" /bin/sh -c 'test ! -e /run/brc/ready && test ! -e /run/brc/device.json'
+test "$(docker inspect --format '{{len .NetworkSettings.Networks}}' "$isolated")" = 1
+timeout 8s docker exec "$isolated" node -e '
+  const dns=require("node:dns"),expected=process.argv[1];
+  dns.lookup("host.docker.internal",{all:true,verbatim:true},(e,a)=>
+    process.exit(e||!a.length||a.some(x=>x.address!==expected)?1:0));' "$side_ip"
+printf '%s' "$isolated_credential" | docker exec --interactive "$isolated" /bin/sh /usr/local/bin/h15-stage.sh
+for _ in $(seq 1 50); do
+  docker logs "$relay" 2>&1 | grep -q '^H454_TEST_TLS_AUTH$' && break
+  sleep 0.1
+done
+docker logs "$relay" 2>&1 | grep -q '^H454_TEST_TLS_AUTH$'
+test "$(grep -c '^auth$' "$tmp/events")" = 1
+echo 'H454_SYNTHETIC_RESTAGE_VIA_ISOLATED_PINNED_TLS=PASS'
+echo 'H454_SYNTHETIC_PROXY_UPSTREAM_LISTENER_CLOSED=PASS'
