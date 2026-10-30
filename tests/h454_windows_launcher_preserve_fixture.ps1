@@ -7,7 +7,7 @@ $h454Ast=[Management.Automation.Language.Parser]::ParseFile($FixtureLauncher,[re
 if(@($h454Errors).Count -ne 0){throw 'FIXTURE_SOURCE_PARSE'}
 $h454Names=@('Invoke-H454Docker','Assert-H454ExistingTunnel','Stop-H454ExistingTunnel','Stop-H454TunnelHandle',
              'Get-H454ContainerProfileHash','Get-H454PreservedContainer','Stop-H454PreservedContainer',
-             'Start-H454PreservedContainer','Assert-H454PreservedStarted')
+             'Start-H454PreservedContainer','Assert-H454PreservedStarted','Assert-H454PrivateState','Save-H454State')
 $h454Functions=@($h454Ast.FindAll({param($x)$x -is [Management.Automation.Language.FunctionDefinitionAst]},$true)|Where-Object {$_.Name -cin $h454Names})
 if($h454Functions.Count -ne $h454Names.Count){throw 'FIXTURE_FUNCTION_SCOPE'}
 foreach($h454Function in $h454Functions){. ([scriptblock]::Create($h454Function.Extent.Text))}
@@ -16,6 +16,64 @@ $h454Branches=@($h454Ast.FindAll({param($x)$x -is [Management.Automation.Languag
 if($h454Branches.Count -ne 1){throw 'FIXTURE_BRANCH_SCOPE'}
 $h454CreateBranch=[scriptblock]::Create($h454Branches[0].Extent.Text)
 function Require([bool]$Condition,[string]$Code){if(-not $Condition){throw $Code}}
+
+# Exercise the generated state helper with real private files, including stale-write refusal.
+Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Utility\Microsoft.PowerShell.Utility.psd1') -ErrorAction Stop
+Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Security\Microsoft.PowerShell.Security.psd1') -ErrorAction Stop
+$h454FixtureParent=[IO.Path]::GetFullPath([IO.Path]::GetDirectoryName($FixtureLauncher))
+$h454StateDir=Join-Path $h454FixtureParent ('state-'+[Guid]::NewGuid().ToString('N'))
+Require (-not (Test-Path -LiteralPath $h454StateDir)) 'STATE_FIXTURE_OCCUPIED'
+[IO.Directory]::CreateDirectory($h454StateDir)|Out-Null
+$h454Acl=New-Object Security.AccessControl.DirectorySecurity
+$h454Acl.SetAccessRuleProtection($true,$false)
+foreach($h454Sid in @([Security.Principal.WindowsIdentity]::GetCurrent().User.Value,'S-1-5-18')){
+    $h454Rule=New-Object Security.AccessControl.FileSystemAccessRule([Security.Principal.SecurityIdentifier]::new($h454Sid),'FullControl','ContainerInherit,ObjectInherit','None','Allow')
+    $h454Acl.AddAccessRule($h454Rule)
+}
+Set-Acl -LiteralPath $h454StateDir -AclObject $h454Acl
+$STATE_PATH=Join-Path $h454StateDir 'state.json'
+try {
+    [IO.File]::WriteAllText($STATE_PATH,'{"tunnelPid":101,"keep":"same"}',[Text.UTF8Encoding]::new($false))
+    $h454Before=(Get-FileHash -LiteralPath $STATE_PATH).Hash
+    $h454State=[pscustomobject]@{tunnelPid=202;keep='same'}
+    Save-H454State $h454Before $h454State
+    $h454Actual=ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($STATE_PATH))
+    Require ($h454Actual.tunnelPid -eq 202 -and $h454Actual.keep -ceq 'same') 'STATE_ATOMIC_SUCCESS'
+    Require (@(Get-ChildItem -LiteralPath $h454StateDir -Force).Count -eq 1) 'STATE_BACKUP_NOT_CLEANED'
+    $h454Before=(Get-FileHash -LiteralPath $STATE_PATH).Hash
+    $h454Broad=New-Object Security.AccessControl.DirectorySecurity
+    $h454Broad.SetAccessRuleProtection($true,$false)
+    foreach($h454Sid in @([Security.Principal.WindowsIdentity]::GetCurrent().User.Value,'S-1-5-18')){
+        $h454Rule=New-Object Security.AccessControl.FileSystemAccessRule([Security.Principal.SecurityIdentifier]::new($h454Sid),'FullControl','ContainerInherit,ObjectInherit','None','Allow')
+        $h454Broad.AddAccessRule($h454Rule)
+    }
+    $h454Everyone=New-Object Security.Principal.SecurityIdentifier 'S-1-1-0'
+    $h454Broad.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule($h454Everyone,'Read','ContainerInherit,ObjectInherit','None','Allow')))
+    [IO.Directory]::SetAccessControl($h454StateDir,$h454Broad)
+    $h454Refused=$false
+    try {Save-H454State $h454Before $h454State} catch {$h454Refused=$true}
+    Require ($h454Refused -and (Get-FileHash -LiteralPath $STATE_PATH).Hash -ceq $h454Before) 'STATE_BROAD_ACL_NOT_REFUSED'
+    [IO.Directory]::SetAccessControl($h454StateDir,$h454Acl)
+    $h454Before=(Get-FileHash -LiteralPath $STATE_PATH).Hash
+    [IO.File]::WriteAllText($STATE_PATH,'external-state-must-survive',[Text.UTF8Encoding]::new($false))
+    $h454Refused=$false
+    try {Save-H454State $h454Before $h454State} catch {$h454Refused=$true}
+    Require ($h454Refused -and [IO.File]::ReadAllText($STATE_PATH) -ceq 'external-state-must-survive') 'STATE_STALE_WRITE'
+    Require (@(Get-ChildItem -LiteralPath $h454StateDir -Force).Count -eq 1) 'STATE_TEMP_NOT_CLEANED'
+    $h454Before=(Get-FileHash -LiteralPath $STATE_PATH).Hash
+    $h454Lock=[IO.File]::Open($STATE_PATH,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::None)
+    try {
+        $h454Refused=$false
+        try {Save-H454State $h454Before $h454State} catch {$h454Refused=$true}
+        Require $h454Refused 'STATE_LOCK_NOT_REFUSED'
+    } finally {$h454Lock.Dispose()}
+    Require ([IO.File]::ReadAllText($STATE_PATH) -ceq 'external-state-must-survive' -and
+        @(Get-ChildItem -LiteralPath $h454StateDir -Force).Count -eq 1) 'STATE_LOCK_CHANGED_FILE'
+} finally {
+    if(Test-Path -LiteralPath $STATE_PATH){Remove-Item -LiteralPath $STATE_PATH -Force}
+    Remove-Item -LiteralPath $h454StateDir -Force
+}
+
 $h454Loops=@($h454Ast.FindAll({param($x)$x -is [Management.Automation.Language.WhileStatementAst] -and
     $x.Extent.Text.StartsWith('while (-not [string]::IsNullOrEmpty($h454Path))')},$true))
 if($h454Loops.Count -ne 1){throw 'FIXTURE_PATH_LOOP_SCOPE'}
@@ -91,6 +149,8 @@ function Expect-H454Refusal([scriptblock]$Action) {
     Require ($script:h454Events.Count -eq 0) 'FIXTURE_UNEXPECTED_MUTATION'
 }
 $CONTAINER='synthetic-agent'
+$WORKSPACE='C:\synthetic-workspace'
+$LABEL='synthetic-scope'
 $state=[pscustomobject]@{imageId=('sha256:'+('a'*64));tunnelPid=101}
 $STATE_PATH='synthetic-state'
 $TUNNEL_TARGET='fixture-target'

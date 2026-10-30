@@ -160,6 +160,20 @@ an error, logs an unsuccessful escalation, and warns that descendants may
 remain. This does not terminate a process tree; the Windows image identified
 below predates that candidate. See the [reproduction](https://github.com/MikeMoore1337/hermes/issues/454#issuecomment-6522596020).
 
+The owner-approved Windows signal window later activated image
+`sha256:2d9d7b8a5db7151acf885fdac2858c6dd9d7725e04906697c3d92e534b1824cf`
+and installed its pinned preserving launcher. Actual MCP smoke and a
+post-commit check passed; the prior container and launcher were retained.
+Task Run, login/reboot and process-tree cleanup remain unverified. See the
+[window receipt](https://github.com/MikeMoore1337/hermes/issues/454#issuecomment-6523646903).
+
+The next launcher **source candidate** replaces a direct state rewrite with a
+private, flushed temporary file and atomic `File.Replace`. It checks the
+previous state hash before replacement, rejects unsafe ACLs/reparse points,
+and preserves a backup if a post-replacement check detects drift. This uses the
+existing cooperative runtime lock; it is not an OS-wide compare-and-swap
+against uncooperative writers. It is not installed by source delivery.
+
 ## Follow-up after Windows integrity rollout (2026-10-30)
 
 The owner-approved Windows window switched device `h15-win-05be75515428` to
