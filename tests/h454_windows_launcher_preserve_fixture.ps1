@@ -5,7 +5,7 @@ $ErrorActionPreference='Stop'
 $h454Tokens=$null;$h454Errors=$null
 $h454Ast=[Management.Automation.Language.Parser]::ParseFile($FixtureLauncher,[ref]$h454Tokens,[ref]$h454Errors)
 if(@($h454Errors).Count -ne 0){throw 'FIXTURE_SOURCE_PARSE'}
-$h454Names=@('Invoke-H454Docker','Assert-H454ExistingTunnel','Stop-H454ExistingTunnel','Stop-H454TunnelHandle',
+$h454Names=@('Invoke-H454Docker','Assert-H454ExistingTunnel','Assert-H454StartedTunnel','Stop-H454ExistingTunnel','Stop-H454TunnelHandle',
              'Get-H454ContainerProfileHash','Get-H454PreservedContainer','Stop-H454PreservedContainer',
              'Start-H454PreservedContainer','Assert-H454PreservedStarted','Assert-H454PrivateState','Save-H454State')
 $h454Functions=@($h454Ast.FindAll({param($x)$x -is [Management.Automation.Language.FunctionDefinitionAst]},$true)|Where-Object {$_.Name -cin $h454Names})
@@ -86,6 +86,7 @@ function Get-NetTCPConnection {
     if($script:h454SecondNetFailure -and $script:h454NetworkCalls -gt 1){Write-Error -Category PermissionDenied -Message 'synthetic-second-query';return}
     if($script:h454AppearsOnRecheck -and $script:h454NetworkCalls -gt 1){return [pscustomobject]@{OwningProcess=999}}
     if($script:h454NoListener){Write-Error -Category ObjectNotFound -Message 'synthetic-empty';return}
+    if($script:h454MultipleListeners){return @([pscustomobject]@{OwningProcess=101},[pscustomobject]@{OwningProcess=999})}
     [pscustomobject]@{OwningProcess=$script:h454ListenerPid}
 }
 function Get-CimInstance {
@@ -96,6 +97,7 @@ function Get-CimInstance {
 function Get-Process {
     [CmdletBinding()]param([int]$Id)
     $p=[pscustomobject]@{Handle=[IntPtr]101;StartTime=$script:h454StartTime;HasExited=$false}
+    if($script:h454ProcessHandleMissing){$p.Handle=$null}
     $p|Add-Member -MemberType ScriptMethod -Name Kill -Value {
         $script:h454TunnelEvents.Add('kill')
         if($script:h454KillMode -ceq 'failure'){throw 'synthetic-kill-failure'}
@@ -137,8 +139,8 @@ function Reset-H454Fixture {
     $script:h454TunnelEvents=[Collections.Generic.List[string]]::new()
     $script:h454KillMode='normal'
     $script:h454NetFailure=$false;$script:h454NoListener=$false;$script:h454ListenerPid=101
-    $script:h454NetworkCalls=0;$script:h454SecondNetFailure=$false;$script:h454AppearsOnRecheck=$false
-    $script:h454CimFailure=$false;$script:h454TunnelExists=$true
+    $script:h454NetworkCalls=0;$script:h454SecondNetFailure=$false;$script:h454AppearsOnRecheck=$false;$script:h454MultipleListeners=$false
+    $script:h454CimFailure=$false;$script:h454TunnelExists=$true;$script:h454ProcessHandleMissing=$false
     $script:h454StartTime=[DateTime]::UtcNow.AddMinutes(-5)
     $script:h454StateTime=[DateTime]::UtcNow.AddMinutes(-1)
     $script:h454Tunnel=[pscustomobject]@{Name='ssh.exe';
@@ -236,7 +238,7 @@ try {
         Remove-Item -LiteralPath Function:\Get-Process,Function:\Get-CimInstance
         $state=[pscustomobject]@{tunnelPid=$h454Child.Id;tunnelCreatedUtcTicks=[long]($h454Child.StartTime.ToUniversalTime().Ticks-10000000)}
         $script:h454OriginalTunnel=$null;$script:h454NoListener=$true;$script:h454NetworkCalls=0
-        $script:h454SecondNetFailure=$false;$script:h454AppearsOnRecheck=$false;$script:h454NetFailure=$false
+        $script:h454SecondNetFailure=$false;$script:h454AppearsOnRecheck=$false;$script:h454MultipleListeners=$false;$script:h454NetFailure=$false
         Assert-H454ExistingTunnel
         Require ($null -eq $script:h454OriginalTunnel -and -not $h454Child.HasExited) 'OWN_STALE_PID_SIGNALED'
     } finally {
@@ -251,6 +253,42 @@ try {
 }
 
 # A verified existing tunnel or an absent tunnel and listener is safe to proceed.
+function Test-LocalHealth {return $true}
+$h454ReadyLoop=@($h454Ast.FindAll({param($x)$x -is [Management.Automation.Language.ForStatementAst] -and
+    $x.Extent.Text.Contains('Test-LocalHealth') -and $x.Extent.Text.Contains('$ready=$true')},$true))
+Require ($h454ReadyLoop.Count -eq 1) 'READY_LOOP_SCOPE'
+foreach($h454Owner in @(101,999)) {
+    Reset-H454Fixture
+    $script:h454ListenerPid=$h454Owner;$ready=$false;$refused=$false
+    $SSH_PROCESS=[pscustomobject]@{Id=101;Handle=[IntPtr]101;HasExited=$false}
+    try {. ([scriptblock]::Create($h454ReadyLoop[0].Extent.Text));if($ready){$script:h454Events.Add('stage')}} catch {$refused=$true}
+    if($h454Owner -eq 101){Require (-not $refused -and $ready -and $script:h454Events -ccontains 'stage') 'OWN_HEALTH_REFUSED'}
+    else{Require ($refused -and -not $ready -and $script:h454Events.Count -eq 0) 'FOREIGN_HEALTH_ACCEPTED'}
+}
+foreach($h454Case in @('own','foreign','missing','multiple','query-fails','exited','exit-race','handle-unavailable')) {
+    Reset-H454Fixture
+    $h454New=[pscustomobject]@{Id=101;Handle=[IntPtr]101;HasExited=$false}
+    switch($h454Case) {
+        'foreign' {$script:h454ListenerPid=999}
+        'missing' {$script:h454NoListener=$true}
+        'multiple' {$script:h454MultipleListeners=$true}
+        'query-fails' {$script:h454NetFailure=$true}
+        'exited' {$h454New.HasExited=$true}
+        'exit-race' {
+            $script:h454ExitChecks=0
+            $h454New.PSObject.Properties.Remove('HasExited')
+            $h454New|Add-Member -MemberType ScriptProperty -Name HasExited -Value {$script:h454ExitChecks++;return ($script:h454ExitChecks -gt 1)}
+        }
+        'handle-unavailable' {
+            $h454New.PSObject.Properties.Remove('Handle')
+            $h454New|Add-Member -MemberType ScriptProperty -Name Handle -Value {throw 'synthetic-handle-access'}
+        }
+    }
+    $refused=$false
+    try {Assert-H454StartedTunnel $h454New;$script:h454Events.Add('stage')} catch {$refused=$true}
+    if($h454Case -ceq 'own'){Require (-not $refused -and $script:h454Events -ccontains 'stage') 'OWN_NEW_TUNNEL_REFUSED'}
+    else{Require ($refused -and $script:h454Events.Count -eq 0) ('UNVERIFIED_NEW_TUNNEL_STAGED_'+$h454Case)}
+}
 Reset-H454Fixture
 Assert-H454ExistingTunnel
 Require ($null -ne $script:h454OriginalTunnel) 'VERIFIED_TUNNEL_HANDLE_MISSING'
@@ -296,7 +334,7 @@ Stop-H454ExistingTunnel
 Require (($script:h454TunnelEvents -join ',') -ceq 'dispose,kill,dispose') 'MATCHED_TUNNEL_NOT_STOPPED'
 
 # An unverified or replaced tunnel must fail before stopping the live container.
-foreach($h454Case in @('unavailable','name','path','target','forward','listener','stale-listener','zero-listener','neterror','cimerror','age','reused','marker-listener','marker-invalid','marker-negative','marker-zero-pid','marker-cim-drift','marker-race','marker-neterror','pid')) {
+foreach($h454Case in @('unavailable','name','path','target','forward','listener','stale-listener','zero-listener','neterror','cimerror','age','reused','marker-listener','marker-invalid','marker-negative','marker-zero-pid','marker-cim-drift','marker-race','marker-neterror','marker-no-handle','pid')) {
     Reset-H454Fixture
     switch($h454Case) {
         'unavailable' {$script:h454Tunnel.CommandLine=$null}
@@ -318,6 +356,7 @@ foreach($h454Case in @('unavailable','name','path','target','forward','listener'
         'marker-cim-drift' {$script:h454NoListener=$true;$state|Add-Member -MemberType NoteProperty -Name tunnelCreatedUtcTicks -Value ([long]$script:h454StartTime.AddSeconds(-10).Ticks);$script:h454Tunnel.CreationDate=$script:h454StartTime.AddSeconds(1)}
         'marker-race' {$script:h454NoListener=$true;$script:h454AppearsOnRecheck=$true;$state|Add-Member -MemberType NoteProperty -Name tunnelCreatedUtcTicks -Value ([long]$script:h454StartTime.AddSeconds(-10).Ticks)}
         'marker-neterror' {$script:h454NoListener=$true;$script:h454SecondNetFailure=$true;$state|Add-Member -MemberType NoteProperty -Name tunnelCreatedUtcTicks -Value ([long]$script:h454StartTime.AddSeconds(-10).Ticks)}
+        'marker-no-handle' {$script:h454NoListener=$true;$script:h454ProcessHandleMissing=$true;$state|Add-Member -MemberType NoteProperty -Name tunnelCreatedUtcTicks -Value ([long]$script:h454StartTime.AddSeconds(-10).Ticks)}
         'pid' {$state.tunnelPid='not-a-pid'}
     }
     $h454Refused=$false

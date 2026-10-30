@@ -24,15 +24,27 @@ function Stop-TunnelByPid([int]$tunnelProcessId) {
         & docker.exe image inspect $state.imageId | Out-Null
         Stop-OwnedContainer
         Stop-TunnelByPid ([int]$state.tunnelPid)
+        $sshArgs = @('-o','ExitOnForwardFailure=yes')
         $SSH_PROCESS = Start-Process -FilePath 'ssh.exe' -ArgumentList $sshArgs -PassThru -WindowStyle Hidden
+        $ready=$false
+        for ($i=0; $i -lt 30; $i++) {
+            if ($SSH_PROCESS.HasExited) { throw 'SSH_EXITED' }
+            if (Test-LocalHealth) { $ready=$true; break }
+            Start-Sleep -Seconds 1
+        }
+        Require $ready 'SSH_NOT_READY'
         & docker.exe run --pull never --detach --init --pids-limit 128 `
             --read-only $state.imageId | Out-Null
         Require ($LASTEXITCODE -eq 0) 'RUN_FAILED'
         Assert-ManagedContainer
-        & docker.exe exec $CONTAINER synthetic-stage | Out-Null
+        $encrypted = Get-Content -LiteralPath $CRED_PATH -Raw
+        $credentials | & docker.exe exec --interactive $CONTAINER /bin/sh /usr/local/bin/h15-stage.sh | Out-Null
         $state.tunnelPid = $SSH_PROCESS.Id
         [IO.File]::WriteAllText($STATE_PATH,($state | ConvertTo-Json),[Text.UTF8Encoding]::new($false))
-        & docker.exe inspect $CONTAINER | Out-Null
+        while (-not $SSH_PROCESS.HasExited) {
+            & docker.exe inspect $CONTAINER | Out-Null
+            if (-not (Test-LocalHealth)) { throw 'RELAY_NOT_READY' }
+        }
     } finally {
         Stop-OwnedContainer
         if ($SSH_PROCESS -and -not $SSH_PROCESS.HasExited) {
@@ -70,11 +82,15 @@ class LauncherPreserveTests(unittest.TestCase):
         self.assertIn("npipe:////./pipe/dockerDesktopLinuxEngine", run)
         self.assertIn("H454_DOCKER_OVERRIDE", run)
         self.assertIn("--init --pids-limit 128", run)
-        self.assertIn("synthetic-stage", run)
+        self.assertIn("h15-stage.sh", run)
         self.assertIn("Save-H454State", run)
         self.assertIn("H454_STATE_READ_DRIFT", run)
         self.assertIn("tunnelCreatedUtcTicks", run)
         self.assertIn("$SSH_PROCESS.StartTime.ToUniversalTime().Ticks", run)
+        self.assertIn("if (Test-LocalHealth) { Assert-H454StartedTunnel $SSH_PROCESS; $ready=$true; break }", run)
+        self.assertIn("Assert-H454StartedTunnel $SSH_PROCESS\n        $encrypted = Get-Content", run)
+        self.assertIn("Assert-H454StartedTunnel $SSH_PROCESS\n        $credentials | & $script:h454Docker", run)
+        self.assertIn("Assert-H454StartedTunnel $SSH_PROCESS\n            if (-not (Test-LocalHealth))", run)
         self.assertNotIn("[IO.File]::WriteAllText($STATE_PATH,($state | ConvertTo-Json)", run)
         self.assertIn(PROFILE.upper(), run)
         self.assertIn(IMAGE, run)
@@ -92,6 +108,10 @@ class LauncherPreserveTests(unittest.TestCase):
                     FIXTURE.replace(b"Get-Content -LiteralPath $STATE_PATH", b"Get-Content -LiteralPath $OTHER_PATH", 1),
                     FIXTURE.replace(b"[IO.File]::WriteAllText($STATE_PATH", b"[IO.File]::AppendAllText($STATE_PATH", 1),
                     FIXTURE.replace(b"$state.tunnelPid = $SSH_PROCESS.Id", b"$state.tunnelPid = 0", 1),
+                    FIXTURE.replace(b"ExitOnForwardFailure=yes", b"ExitOnForwardFailure=no", 1),
+                    FIXTURE.replace(b"if (Test-LocalHealth) { $ready=$true; break }", b"if (Test-LocalHealth) { break }", 1),
+                    FIXTURE.replace(b"$encrypted = Get-Content -LiteralPath $CRED_PATH -Raw", b"$encrypted = 'unreviewed'", 1),
+                    FIXTURE.replace(b"/usr/local/bin/h15-stage.sh", b"/usr/local/bin/unreviewed.sh", 1),
                     FIXTURE.replace(b"Assert-ManagedContainer", b"Other-Assert", 1)):
             with self.subTest(bad=hashlib.sha256(bad).hexdigest()[:8]):
                 with self.assertRaisesRegex(PatchRefused, "SOURCE_STRUCTURE_MISMATCH"):

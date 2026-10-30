@@ -146,7 +146,8 @@ HELPERS = r"""    # Keep the verified container across task retries and logons.
             $h454Probe = $null
             try {
                 $h454Probe = Get-Process -Id $h454Pid -ErrorAction Stop
-                $null = $h454Probe.Handle
+                $h454Handle = $h454Probe.Handle
+                Require ($h454Handle -is [IntPtr] -and $h454Handle -ne [IntPtr]::Zero) 'H454_TUNNEL_HANDLE_INVALID'
                 $h454ActualTicks = $h454Probe.StartTime.ToUniversalTime().Ticks
                 $h454CimTicks = ([DateTime]$h454Tunnel.CreationDate).ToUniversalTime().Ticks
                 Require ([Math]::Abs($h454ActualTicks - $h454CimTicks) -le 10) 'H454_TUNNEL_PID_REUSED'
@@ -172,7 +173,8 @@ HELPERS = r"""    # Keep the verified container across task retries and logons.
         $h454Process = $null
         try {
             $h454Process = Get-Process -Id $h454Pid -ErrorAction Stop
-            $null = $h454Process.Handle
+            $h454Handle = $h454Process.Handle
+            Require ($h454Handle -is [IntPtr] -and $h454Handle -ne [IntPtr]::Zero) 'H454_TUNNEL_HANDLE_INVALID'
             $h454Start = $h454Process.StartTime.ToUniversalTime()
             $h454CimStart = ([DateTime]$h454Tunnel.CreationDate).ToUniversalTime()
             $h454StateTime = (Get-Item -LiteralPath $STATE_PATH -Force).LastWriteTimeUtc
@@ -197,6 +199,20 @@ HELPERS = r"""    # Keep the verified container across task retries and logons.
     function Stop-H454ExistingTunnel {
         try { Stop-H454TunnelHandle $script:h454OriginalTunnel }
         finally { $script:h454OriginalTunnel = $null }
+    }
+    function Assert-H454StartedTunnel([object]$Process) {
+        Require ($null -ne $Process) 'H454_NEW_TUNNEL_MISSING'
+        $h454Handle = $Process.Handle
+        Require ($h454Handle -is [IntPtr] -and $h454Handle -ne [IntPtr]::Zero) 'H454_NEW_TUNNEL_HANDLE_INVALID'
+        Require ($Process.Id -gt 0 -and -not $Process.HasExited) 'H454_NEW_TUNNEL_EXITED'
+        $h454Errors = @()
+        $h454Listeners = @(Get-NetTCPConnection -LocalAddress '127.0.0.1' -LocalPort 38180 -State Listen `
+            -ErrorAction SilentlyContinue -ErrorVariable +h454Errors)
+        foreach ($h454Error in $h454Errors) {
+            Require ($h454Error.CategoryInfo.Category -eq [Management.Automation.ErrorCategory]::ObjectNotFound) 'H454_TUNNEL_LISTENER_QUERY'
+        }
+        Require ($h454Listeners.Count -eq 1 -and [int]$h454Listeners[0].OwningProcess -eq $Process.Id -and
+            -not $Process.HasExited) 'H454_NEW_TUNNEL_LISTENER_CONFLICT'
     }
     function Get-H454ContainerProfileHash([object]$h454Item) {
         $h454Mac = $h454Item.Config.PSObject.Properties['MacAddress']
@@ -331,7 +347,15 @@ def prepare(source: bytes, profile_sha256: str, image_id: str) -> bytes:
     state_read = "$state = Get-Content -LiteralPath $STATE_PATH -Raw | ConvertFrom-Json"
     state_write = "[IO.File]::WriteAllText($STATE_PATH,($state | ConvertTo-Json),[Text.UTF8Encoding]::new($false))"
     state_pid = "$state.tunnelPid = $SSH_PROCESS.Id"
+    health_ready = "if (Test-LocalHealth) { $ready=$true; break }"
+    credential_read = "$encrypted = Get-Content -LiteralPath $CRED_PATH -Raw"
+    credential_stage = "$credentials | & docker.exe exec --interactive $CONTAINER /bin/sh /usr/local/bin/h15-stage.sh"
+    health_monitor = "if (-not (Test-LocalHealth)) {"
     if block.count(state_read) != 1 or block.count(state_write) != 1 or block.count(state_pid) != 1:
+        raise PatchRefused("SOURCE_STRUCTURE_MISMATCH")
+    if (block.count("ExitOnForwardFailure=yes") != 1 or block.count(health_ready) != 1 or
+            block.count(credential_read) != 1 or block.count(credential_stage) != 1 or
+            block.count(health_monitor) != 1):
         raise PatchRefused("SOURCE_STRUCTURE_MISMATCH")
     block = block.replace(state_read, "Assert-H454PrivateState $STATE_PATH\n    $h454StateHash = (Get-FileHash -LiteralPath $STATE_PATH).Hash\n    "
                           + state_read + "\n    Require ((Get-FileHash -LiteralPath $STATE_PATH).Hash -ceq $h454StateHash) 'H454_STATE_READ_DRIFT'", 1)
@@ -343,6 +367,14 @@ def prepare(source: bytes, profile_sha256: str, image_id: str) -> bytes:
     block = block.replace(state_pid, state_pid + "\n" + pid_indent +
         "$state | Add-Member -MemberType NoteProperty -Name tunnelCreatedUtcTicks "
         "-Value ([long]$SSH_PROCESS.StartTime.ToUniversalTime().Ticks) -Force", 1)
+    block = block.replace(health_ready,
+        "if (Test-LocalHealth) { Assert-H454StartedTunnel $SSH_PROCESS; $ready=$true; break }", 1)
+    for anchor in (credential_read, credential_stage, health_monitor):
+        pos = block.index(anchor)
+        indent = block[block.rfind("\n", 0, pos) + 1:pos]
+        if not indent or indent.strip():
+            raise PatchRefused("SOURCE_STRUCTURE_MISMATCH")
+        block = block.replace(anchor, "Assert-H454StartedTunnel $SSH_PROCESS\n" + indent + anchor, 1)
     old_tunnel = "Stop-TunnelByPid ([int]$state.tunnelPid)"
     start_ssh = "$SSH_PROCESS = Start-Process -FilePath 'ssh.exe' -ArgumentList $sshArgs -PassThru -WindowStyle Hidden"
     cleanup_ssh = ("        if ($SSH_PROCESS -and -not $SSH_PROCESS.HasExited) {\n"
