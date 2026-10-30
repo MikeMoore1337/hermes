@@ -1,6 +1,8 @@
 #!/bin/sh
 # Disposable synthetic keys only; the destination must be an empty test directory.
 set -eu
+# Git Bash must not reinterpret OpenSSL subject names as Windows paths.
+export MSYS2_ARG_CONV_EXCL='*'
 test "$#" -eq 1
 test -d "$1"
 test -z "$(find "$1" -mindepth 1 -maxdepth 1 -print -quit)"

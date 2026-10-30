@@ -19,6 +19,17 @@ mounts over the agent code and CA. The old encrypted credentials stay intact;
 `Convert-H454SecureCredential` produces an in-memory copy with the WSS URL
 and `pairedAt=manual`, rejecting unexpected fields or identity.
 
+`h454_windows_wss_launcher.py` prepares a Run-only launcher from an exact,
+independently pinned guarded launcher and public CA hash; the caller must not
+trust a hash calculated from unreviewed input. It switches the forward and
+temporary credential copy to WSS and checks local TLS readiness without
+sending a bearer. Other launcher modes require a separate owner operator.
+The Windows curl readiness probe allows an unavailable revocation endpoint
+(`--ssl-revoke-best-effort`); the Node agent independently validates the
+configured CA and server name, but neither check establishes certificate
+revocation status. CA/key custody, renewal and compromise recovery remain
+prerequisites. Readiness is not a substitute for authenticated MCP smoke.
+
 `deploy/h15/Dockerfile.brc-agent-pinned-wss` is a recipe, not an image or a
 deployment. Its build context must contain only the verified compiled module,
 map and public CA. Resolve the supplied local base tag to its approved image ID
@@ -90,6 +101,9 @@ approved real CA or a production-ready rollout operator.
 - Windows PowerShell 5.1 fixtures exercised exclusive locking, known and
   unknown states, idempotent offline recovery, and termination of an owned
   test process between two real `File.Replace` operations.
+- A Windows PowerShell 5.1 and Schannel fixture verified the generated
+  launcher's TLS probe against a synthetic trusted certificate; untrusted,
+  wrong-name, missing-CA and changed-CA cases failed closed.
 - These tests do not establish certificate deployment, host ACLs, actual SSH
   forwarding, complete process-tree cleanup, login/reboot recovery, a real
   power-loss guarantee, live MCP recovery or production activation.

@@ -11,12 +11,15 @@ on:
       - tests/test_h454_windows_launcher_patch.py
       - scripts/h454_windows_launcher_preserve.py
       - scripts/h454_windows_launcher_guard.py
+      - scripts/h454_windows_wss_launcher.py
+      - scripts/h454_wss_fixture_certificates.sh
       - scripts/h454_windows_launcher_guard_e2e.ps1
       - scripts/h454_windows_secure_credential.ps1
       - scripts/h454_windows_secure_credential_e2e.ps1
       - scripts/h454_windows_offline_recovery.ps1
       - scripts/h454_windows_offline_recovery_e2e.ps1
       - tests/test_h454_windows_launcher_guard.py
+      - tests/test_h454_windows_wss_launcher.py
       - tests/test_h454_windows_launcher_preserve.py
       - tests/h454_windows_launcher_preserve_fixture.ps1
       - scripts/h454_agent_edit_image.py
@@ -39,12 +42,15 @@ on:
       - tests/test_h454_windows_launcher_patch.py
       - scripts/h454_windows_launcher_preserve.py
       - scripts/h454_windows_launcher_guard.py
+      - scripts/h454_windows_wss_launcher.py
+      - scripts/h454_wss_fixture_certificates.sh
       - scripts/h454_windows_launcher_guard_e2e.ps1
       - scripts/h454_windows_secure_credential.ps1
       - scripts/h454_windows_secure_credential_e2e.ps1
       - scripts/h454_windows_offline_recovery.ps1
       - scripts/h454_windows_offline_recovery_e2e.ps1
       - tests/test_h454_windows_launcher_guard.py
+      - tests/test_h454_windows_wss_launcher.py
       - tests/test_h454_windows_launcher_preserve.py
       - tests/h454_windows_launcher_preserve_fixture.ps1
       - scripts/h454_agent_edit_image.py
@@ -83,6 +89,10 @@ jobs:
         run: python -B -m unittest discover -s tests -p "test_h454_windows_launcher_patch.py" -v
       - name: Launcher preservation and PowerShell 5.1 lifecycle fixtures
         run: python -B -m unittest discover -s tests -p "test_h454_windows_launcher_preserve.py" -v
+      - name: WSS launcher composition and Windows TLS health
+        env:
+          H454_WINDOWS_WSS_HEALTH: '1'
+        run: python -B -m unittest discover -s tests -p "test_h454_windows_wss_launcher.py" -v
       - name: Immutable edit layer safety contracts (no owner Docker or credentials)
         run: python -B -m unittest discover -s tests -p "test_h454_agent_edit_image.py" -v
       - name: Parse disposable image smoke
