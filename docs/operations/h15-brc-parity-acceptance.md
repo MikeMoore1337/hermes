@@ -214,9 +214,10 @@ Windows file rights nor a process authorization. The current production
 relay may not expose this new field until a separately approved pinned
 OCI candidate is deployed; a source merge is not that deployment.
 
-Windows sandbox is currently **BLOCKED** on runtime process-capacity
-remediation (#445). Full 2-client × 3-device **current** parity must remain
-OPEN, despite its historical baseline PASS.
+At this historical checkpoint the Windows sandbox was **BLOCKED** on
+runtime process-capacity remediation (#445). The later init window below
+verified a short reaping scenario, not long-term capacity. Full 2-client ×
+3-device **current** parity remains OPEN despite its historical baseline PASS.
 
 ## Codex Desktop live recheck — 2026-10-30 Europe/Moscow
 
@@ -284,9 +285,10 @@ At this init-only checkpoint the image was still `8d28b0e`. The later
 separately approved [derived-image activation](h454-agent-edit-image.md)
 promoted `ac9f8ce0` in container `194e06ea9584`; real Codex MCP conflict-error
 and unchanged-byte checks passed, then only the persistent imageId changed.
-Both older containers remain stopped for rollback. Current exact-file content
-search passed; a directory search with exact filePattern returned no matches
-and is not a PASS. Login/reboot and ChatGPT acceptance remain unverified.
+Both older containers were retained stopped for rollback. Exact-file content
+search passed at that checkpoint; a directory search with exact filePattern
+returned no matches. The later diagnosis and live fix are recorded below.
+Login/reboot and ChatGPT acceptance remain unverified.
 Initial init delivery receipt:
 [#454 comment](https://github.com/MikeMoore1337/hermes/issues/454#issuecomment-6515625089).
 
@@ -301,10 +303,23 @@ stopped. Narrowing the search root is verified; a broad search is not a PASS.
 
 The pinned source adapter now marks its deadline as an error/incomplete state,
 keeps partial results, and propagates that state through both search responses.
-Disposable CI exercises real child termination plus partial-result retention,
-and a real ripgrep success/no-match control. This source change does not update
-the running `ac9f8ce0` agent or either VPS image. Runtime acceptance and any
-separate owner-approved image switch remain outstanding.
+Disposable CI exercised real child termination plus partial-result retention,
+and a real ripgrep success/no-match control. The source release did not itself
+update any paired agent image; the two VPS images have not been updated.
+
+In a later separately approved Windows window, container `46e61e432c84`
+on image `sha256:da3d042c75bc74ebd5d0ab0191e1123d630bd4915a8e711e12b2ae4ead002da1`
+became active for the same device. Real Codex MCP returned `isError=true`
+and `HERMES_SEARCH_TIMEOUT` for a bounded broad search; a narrow match and
+a genuine no-match succeeded. UTF-8 file/edit, conflict with unchanged bytes,
+process output/exit, UID/PID1/limits and denied host-private path also passed.
+The partial-result timeout case remains disposable-test evidence only.
+
+The lock stayed held until live acceptance; the persistent state changed only
+in `imageId`, and the launcher and Task XML were unchanged. Prior containers
+`194e06ea9584`, `bd4bb7c37e55` and `571a1e2bede3` remain stopped. No actual
+rollback, login/reboot or current independent ChatGPT acceptance has run.
+See the [actual window receipt](https://github.com/MikeMoore1337/hermes/issues/454#issuecomment-6519950198).
 
 ### One independent ChatGPT acceptance pass
 
