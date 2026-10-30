@@ -2,6 +2,7 @@
 // Genuine patched BRC tool dispatcher exercised under kernel/container OS
 // constraints. Runs only in a disposable Docker CI namespace (#371).
 import fs from 'node:fs';
+import fsPromises from 'node:fs/promises';
 import { setTimeout as pause } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
 import childProcess from 'node:child_process';
@@ -34,6 +35,41 @@ const allowed = await callTool('write_file', {
 assert(allowed.isError !== true &&
        fs.readFileSync('/workspace/allowed.txt', 'utf8').includes('approved-workspace-data'),
        'MCP_WORKSPACE_WRITE');
+
+// The filesystem may use epoch zero when birthtime is unavailable. Exercise
+// the real dispatcher/formatter with controlled stats, not host metadata.
+const metadataPath = '/workspace/birthtime-fixture.txt';
+fs.writeFileSync(metadataPath, 'preserve-content');
+const originalStat = fsPromises.stat;
+let reportedBirthtime = new Date('2020-01-02T03:04:05.000Z');
+try {
+  fsPromises.stat = async (...args) => {
+    const stats = await originalStat(...args);
+    if (args[0] === metadataPath) Object.defineProperty(stats, 'birthtime', {value: reportedBirthtime});
+    return stats;
+  };
+  const known = await callTool('get_file_info', {path: metadataPath});
+  const knownText = known.content.map(item => item.text || '').join('\n');
+  assert(known.isError !== true && knownText.includes('created: "2020-01-02T03:04:05.000Z"') &&
+    !knownText.includes('createdStatus:'), 'MCP_FILE_INFO_KNOWN_BIRTHTIME_UNCHANGED');
+  reportedBirthtime = new Date(0);
+  const unknown = await callTool('get_file_info', {path: metadataPath});
+  const unknownText = unknown.content.map(item => item.text || '').join('\n');
+  assert(unknown.isError !== true && /^created: null$/m.test(unknownText) &&
+    /^createdStatus: unavailable_or_epoch$/m.test(unknownText) &&
+    /^size: 16$/m.test(unknownText), 'MCP_FILE_INFO_EPOCH_AMBIGUOUS');
+  reportedBirthtime = new Date(-1);
+  const beforeEpoch = await callTool('get_file_info', {path: metadataPath});
+  const beforeEpochText = beforeEpoch.content.map(item => item.text || '').join('\n');
+  assert(beforeEpoch.isError !== true && beforeEpochText.includes('created: "1969-12-31T23:59:59.999Z"') &&
+    !beforeEpochText.includes('createdStatus:'), 'MCP_FILE_INFO_PRE_EPOCH_UNCHANGED');
+  reportedBirthtime = new Date(0);
+  const guarded = await callTool('write_file', {path: metadataPath, content: 'unsafe'});
+  assert(guarded.isError === true && fs.readFileSync(metadataPath, 'utf8') === 'preserve-content',
+    'MCP_FILE_INFO_WRITE_GUARD_UNCHANGED');
+} finally {
+  fsPromises.stat = originalStat;
+}
 
 const editPath = '/workspace/edit-conflict.txt';
 const editBefore = 'same\nsame\nunique-before\n';

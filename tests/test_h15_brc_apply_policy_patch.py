@@ -36,6 +36,14 @@ EDIT = """async function edit() {
 }
 """
 
+FILESYSTEM = """    const info: Record<string, any> = {
+        created: fileInfo.created ?? fallbackInfo.created,
+    };
+
+    // Add type-specific metadata from file handler
+    return info;
+"""
+
 SEARCH_MANAGER = """        if (!session.isComplete && !session.process.killed) {
           session.process.kill('SIGTERM');
         }
@@ -65,11 +73,12 @@ export async function handleStopSearch(args) { return originalStop(); }
 
 
 class BrcHardeningTests(unittest.TestCase):
-    def test_offline_bundle_distributes_the_edit_handler_change(self):
+    def test_offline_bundle_distributes_patched_agent_sources(self):
         workflow = (Path(__file__).resolve().parents[1] /
                     ".github/workflows/h15-remote-commander-candidate.yml").read_text(encoding="utf-8")
         paths = workflow.split('cat > "$bundle/EXPECTED_PATHS.txt" <<\'PATHS\'\n', 1)[1].split('\n          PATHS', 1)[0]
-        for path in ("packages/agent/src/core/tools/edit.ts", "packages/agent/src/core/search-manager.ts",
+        for path in ("packages/agent/src/core/tools/edit.ts", "packages/agent/src/core/tools/filesystem.ts",
+                     "packages/agent/src/core/search-manager.ts",
                      "packages/agent/src/core/handlers/search-handlers.ts"):
             self.assertIn(path, [line.strip() for line in paths.splitlines()])
 
@@ -83,6 +92,8 @@ class BrcHardeningTests(unittest.TestCase):
         self.edit = self.root / "packages/agent/src/core/tools/edit.ts"
         self.edit.parent.mkdir(parents=True)
         self.edit.write_text(EDIT, encoding="utf-8")
+        self.filesystem = self.root / "packages/agent/src/core/tools/filesystem.ts"
+        self.filesystem.write_text(FILESYSTEM, encoding="utf-8")
         self.search = self.root / "packages/agent/src/core/search-manager.ts"
         self.search.write_text(SEARCH_MANAGER, encoding="utf-8")
         self.search_handlers = self.root / "packages/agent/src/core/handlers/search-handlers.ts"
@@ -98,7 +109,7 @@ class BrcHardeningTests(unittest.TestCase):
         for target, original in ((self.search, SEARCH_MANAGER), (self.search_handlers, SEARCH_HANDLERS)):
             with self.subTest(path=target.name):
                 target.write_text(original.replace("isComplete", "unexpectedState"), encoding="utf-8")
-                paths = (self.dispatcher, self.edit, self.search, self.search_handlers)
+                paths = (self.dispatcher, self.edit, self.filesystem, self.search, self.search_handlers)
                 before = {p: p.read_bytes() for p in paths}
                 with self.assertRaisesRegex(AuditError, "unreviewed_search_timeout"):
                     apply(self.root)
@@ -184,6 +195,22 @@ class BrcHardeningTests(unittest.TestCase):
         expected = EDIT.replace("        return {\n", "        return {\n            isError: true,\n")
         self.assertEqual(actual, expected)
         self.assertIn("return writeReplacement();", actual)
+
+    def test_patch_marks_ambiguous_epoch_without_removing_created_field(self):
+        apply(self.root)
+        actual = self.filesystem.read_text(encoding="utf-8")
+        self.assertIn("info.created instanceof Date && info.created.getTime() === 0", actual)
+        self.assertIn("info.created = null;", actual)
+        self.assertIn("info.createdStatus = 'unavailable_or_epoch';", actual)
+        self.assertIn("return info;", actual)
+
+    def test_changed_file_info_refuses_before_any_source_write(self):
+        self.filesystem.write_text(FILESYSTEM.replace("fileInfo.created", "unreviewed.created"), encoding="utf-8")
+        paths = (self.dispatcher, self.edit, self.filesystem, self.search, self.search_handlers)
+        before = {p: p.read_bytes() for p in paths}
+        with self.assertRaisesRegex(AuditError, "unreviewed_file_info_birthtime"):
+            apply(self.root)
+        self.assertEqual({p: p.read_bytes() for p in paths}, before)
 
     def test_changed_edit_branch_refuses_before_any_source_write(self):
         changed = EDIT.replace("count !== expectedReplacements", "count >= expectedReplacements")
