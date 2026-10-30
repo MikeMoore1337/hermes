@@ -1,5 +1,5 @@
 #requires -Version 5.1
-# Trusted local adapter only; $true must mean the callback's postconditions were verified.
+# Trusted local adapter only; FAILED_SETTLED means no operation can mutate later.
 function Invoke-H454RecoveryEngine(
     [string]$StateDir, [IO.FileStream]$Lock, [hashtable]$Actions, [switch]$OwnerApproved
 ) {
@@ -51,11 +51,15 @@ function Invoke-H454CutoverEngine(
             Assert-H454RecoveryLock $StateDir $Lock
             if($name -ceq 'StopOriginal'){$stopAttempted=$true}
             $confirmed=@(& $Actions[$name])
+            if($confirmed.Count -eq 1 -and $confirmed[0] -is [string] -and $confirmed[0] -ceq 'FAILED_SETTLED'){
+                if(-not $stopAttempted){return [pscustomobject]@{Status='PREFLIGHT_HOLD';Phase=$phase}}
+                return Invoke-H454RecoveryEngine $StateDir $Lock $Actions -OwnerApproved
+            }
             Require-H454 ($confirmed.Count -eq 1 -and $confirmed[0] -is [bool] -and $confirmed[0]) 'CUTOVER_ACTION_NOT_CONFIRMED'
         }
     } catch {
         if(-not $stopAttempted){return [pscustomobject]@{Status='PREFLIGHT_HOLD';Phase=$phase}}
-        return Invoke-H454RecoveryEngine $StateDir $Lock $Actions -OwnerApproved
+        return [pscustomobject]@{Status='TRANSITION_HOLD';Phase=$phase}
     }
     # A failed marker removal may have succeeded; never start a rollback from that ambiguous state.
     try {

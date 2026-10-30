@@ -74,7 +74,11 @@ the existing rollout operator and do not automatically restore availability.
 local operator adapter: it checks the held recovery lock at each step, installs
 the guard and marker before attempting the stop, requires each action to
 confirm its postconditions, and requires candidate MCP before changing control
-files. A failed or ambiguous stop enters rollback; a successful rollback must
+files. Only an adapter-confirmed, settled failure enters rollback automatically;
+an exception, timeout or other ambiguous outcome retains the marker and stops
+without further mutation because a Docker operation might still be in flight.
+The adapter must not report `FAILED_SETTLED` or resume recovery unless it can
+establish that no earlier daemon operation can still mutate state. A successful rollback must
 stop the candidate, restore and if needed restage the original, verify original
 MCP and restore known control files while retaining the marker. If marker
 removal has an ambiguous result after a verified commit, it reports HOLD without

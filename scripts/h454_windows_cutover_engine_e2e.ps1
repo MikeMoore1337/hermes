@@ -20,7 +20,10 @@ $names=@('Preflight','Snapshot','InstallGuard','WriteMarker','RecheckBeforeStop'
 function MakeAction([string]$Name,[object]$Context){
     return {
         $Context.Events.Add($Name)
-        if($Context.Case -ceq $Name){throw 'FIXTURE_FAILURE'}
+        if($Context.Case -ceq $Name){
+            if($Name -cin @('Preflight','Snapshot','InstallGuard','WriteMarker','RecheckBeforeStop')){throw 'FIXTURE_FAILURE'}
+            return 'FAILED_SETTLED'
+        }
         if($Context.Case -ceq 'candidate-result-false' -and $Name -ceq 'StageCandidate'){return $false}
         if($Context.Case -ceq 'candidate-result-empty' -and $Name -ceq 'StageCandidate'){return}
         switch($Name){
@@ -28,16 +31,18 @@ function MakeAction([string]$Name,[object]$Context){
             'WriteMarker' {Require-H454 $Context.Guard 'FIXTURE_GUARD_ORDER';$Context.Marker=$true;if($Context.Case -ceq 'marker-after'){throw 'FIXTURE_MARKER_INTERRUPTED'}}
             'RecheckBeforeStop' {Require-H454 ($Context.Guard -and $Context.Marker -and $Context.Original) 'FIXTURE_STOP_GATE'}
             'StopOriginal' {
-                if($Context.Case -ceq 'stop-before'){throw 'FIXTURE_STOP_UNKNOWN'}
+                if($Context.Case -ceq 'stop-before'){return 'FAILED_SETTLED'}
+                if($Context.Case -ceq 'stop-ambiguous-before'){throw 'FIXTURE_STOP_UNKNOWN'}
                 $Context.Original=$false
-                if($Context.Case -ceq 'stop-after'){throw 'FIXTURE_STOP_UNKNOWN'}
+                if($Context.Case -ceq 'stop-after'){return 'FAILED_SETTLED'}
+                if($Context.Case -ceq 'stop-ambiguous-after'){throw 'FIXTURE_STOP_UNKNOWN'}
                 if($Context.Case -ceq 'lock-lost'){$Context.Lock.Dispose()}
             }
             'ActivateCandidate' {Require-H454 (-not $Context.Original) 'FIXTURE_TWO_AGENTS';$Context.Candidate=$true}
             'StageCandidate' {Require-H454 $Context.Candidate 'FIXTURE_CANDIDATE_NOT_RUNNING';$Context.CandidateStaged=$true}
             'ConfirmCandidateMcp' {
                 Require-H454 ($Context.CandidateStaged -and $Context.Marker) 'FIXTURE_CANDIDATE_SMOKE'
-                if($Context.Case -cin @('rollback-stop','rollback-reactivate-invalid','rollback-stage','rollback-smoke','rollback-controls','rollback-verify')){throw 'FIXTURE_FAIL_CANDIDATE'}
+                if($Context.Case -cin @('rollback-stop','rollback-reactivate-invalid','rollback-stage','rollback-smoke','rollback-controls','rollback-verify')){return 'FAILED_SETTLED'}
                 $Context.CandidateSmoke=$true
             }
             'CommitLauncher' {Require-H454 $Context.CandidateSmoke 'FIXTURE_SMOKE_ORDER';$Context.Launcher=$true}
@@ -86,7 +91,8 @@ $lockPath=Join-Path $fixture 'runtime.lock';$script:ownedLock=$null
 try {
     $script:ownedLock=[IO.File]::Open($lockPath,[IO.FileMode]::CreateNew,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
     $cases=@('success','Preflight','Snapshot','InstallGuard','WriteMarker','guard-after','marker-after','RecheckBeforeStop',
-        'stop-before','stop-after','lock-lost','ActivateCandidate','StageCandidate','candidate-result-false','candidate-result-empty','ConfirmCandidateMcp',
+        'stop-before','stop-after','stop-ambiguous-before','stop-ambiguous-after','lock-lost',
+        'ActivateCandidate','StageCandidate','candidate-result-false','candidate-result-empty','ConfirmCandidateMcp',
         'CommitLauncher','CommitState','VerifyCommit','rollback-stop','rollback-reactivate-invalid','rollback-stage','rollback-smoke',
         'rollback-controls','rollback-verify','clear-before','clear-after')
     foreach($case in $cases){
@@ -103,9 +109,12 @@ try {
                 -not $context.Events.Contains('StopOriginal')) 'FIXTURE_PREFLIGHT_MUTATED'
             if($case -ceq 'marker-after'){Require-H454 ($context.Guard -and $context.Marker) 'FIXTURE_MARKER_GUARD'}
         }elseif($case -ceq 'lock-lost'){
-            Require-H454 ($result.Status -ceq 'ROLLBACK_HOLD' -and $context.Marker -and -not $context.Original -and
+            Require-H454 ($result.Status -ceq 'TRANSITION_HOLD' -and $context.Marker -and -not $context.Original -and
                 -not $context.Events.Contains('ActivateCandidate') -and -not $context.Events.Contains('StopCandidate')) 'FIXTURE_LOCK_LOST'
             $script:ownedLock=[IO.File]::Open($lockPath,[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
+        }elseif($case -cin @('stop-ambiguous-before','stop-ambiguous-after','candidate-result-false','candidate-result-empty')){
+            Require-H454 ($result.Status -ceq 'TRANSITION_HOLD' -and $context.Marker -and
+                -not $context.Events.Contains('VerifyRollbackState') -and -not $context.Events.Contains('ReactivateOriginal')) 'FIXTURE_AMBIGUOUS_MUTATION'
         }elseif($case -cin @('rollback-stop','rollback-reactivate-invalid','rollback-stage','rollback-smoke','rollback-controls','rollback-verify')){
             Require-H454 ($result.Status -ceq 'ROLLBACK_HOLD' -and $context.Marker -and
                 -not $context.Events.Contains('ClearMarker')) 'FIXTURE_ROLLBACK_FALSE_PASS'
