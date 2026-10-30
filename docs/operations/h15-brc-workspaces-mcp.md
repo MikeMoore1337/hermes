@@ -73,8 +73,13 @@ live PASS, partial coverage and untested scenarios by device and tool.
   E2E: **PASS** on 2026-10-24; exact scoped Git verification PASS for all
   four Windows sandbox clones. See [owner-reported client trace](https://github.com/MikeMoore1337/hermes/issues/454#issuecomment-6388962086).
   Advanced binary/concurrency/reconnect tests remain incomplete.
-- New-project onboarding and Control Center workflow: **OPEN** (#455,
-  visual approval required before UI implementation).
+- New-project onboarding and Control Center workflow: **OPEN** (#454).
+  The owner-approved visual direction has a source-level, read-only preview
+  for a narrowly formatted GitHub URL. It checks syntax and collisions with
+  the built-in catalog only; remote visibility and the device filesystem are
+  **not checked**, and connecting is disabled. It makes no MCP call and adds
+  no registry entry. Runtime delivery and actual onboarding require separate
+  implementation, authorization and live verification.
 - Windows login/reboot and outage recovery: **OPEN** (#445; do not perform
   unapproved reboot).
 - Original Windows read-only access was separately owner-approved for

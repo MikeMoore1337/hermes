@@ -41,6 +41,7 @@ from control_center.desktop_commander_history import read as read_desktop_histor
 from control_center.brc_snapshot import (DEFAULT_OUTPUT as BRC_OUTPUT,
     read_snapshot as read_brc_snapshot, SnapshotRejected as BrcSnapshotRejected)
 from control_center.brc_source_check import source_check as check_brc_source
+from control_center.brc_onboarding import preview as preview_brc_onboarding
 from control_center.credentials import load_runtime_credentials
 from control_center.yfc_editorial import (
     EditorialTransportError, get_draft as get_yfc_draft,
@@ -645,6 +646,8 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
         def do_POST(self):
             if not self._trusted():
                 return self.respond(400, "text/plain", b"Invalid host")
+            if self.path == "/api/providers/hermes-brc/onboarding-preview":
+                return self._brc_onboarding_preview()
             if self.path in (
                 "/api/yfc/editorial/list",
                 "/api/yfc/editorial/detail",
@@ -660,6 +663,47 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
             oauth.revoke(self._cookie(SESSION_COOKIE))
             return self.respond(204, "text/plain", b"", (
                 ("Set-Cookie", cookie_header(SESSION_COOKIE, "", 0)),))
+
+        def _brc_onboarding_preview(self):
+            if config.mode != "github":
+                return self.respond(403, "application/json", b'{"error":"owner_oauth_required"}')
+            if not oauth.authenticated(self._cookie(SESSION_COOKIE)):
+                return self.respond(401, "application/json", b'{"error":"authentication_required"}')
+            if (self.headers.get("Origin") != ORIGIN
+                or self.headers.get("X-Hermes-Onboarding-Intent") != "owner-interactive"
+                or self.headers.get("Sec-Fetch-Site", "same-origin") not in ("same-origin", "none")):
+                return self.respond(403, "application/json", b'{"error":"owner_origin_denied"}')
+            if self.headers.get("Content-Type") != "application/json":
+                return self.respond(415, "application/json", b'{"error":"json_required"}')
+            lengths = self.headers.get_all("Content-Length", [])
+            if (len(lengths) != 1 or not lengths[0].isascii() or not lengths[0].isdigit()
+                or len(lengths[0]) > 4 or self.headers.get("Transfer-Encoding")):
+                return self.respond(413, "application/json", b'{"error":"invalid_request_size"}')
+            size = int(lengths[0])
+            if not 2 <= size <= 4096:
+                return self.respond(413, "application/json", b'{"error":"invalid_request_size"}')
+            try:
+                def unique_pairs(pairs):
+                    found = {}
+                    for key, value in pairs:
+                        if key in found:
+                            raise ValueError("duplicate_json_key")
+                        found[key] = value
+                    return found
+
+                def reject_constant(_):
+                    raise ValueError("json_constant")
+
+                self.connection.settimeout(5)
+                body = json.loads(self.rfile.read(size), object_pairs_hook=unique_pairs,
+                                  parse_constant=reject_constant)
+                if not isinstance(body, dict) or set(body) != {"repository_url"}:
+                    raise ValueError("invalid_fields")
+                result = preview_brc_onboarding(body["repository_url"])
+            except (ValueError, UnicodeDecodeError, TimeoutError):
+                return self.respond(400, "application/json", b'{"error":"invalid_preview_request"}')
+            return self.respond(200, "application/json; charset=utf-8",
+                                json.dumps(result, separators=(",", ":")).encode("utf-8"))
 
     return Handler
 

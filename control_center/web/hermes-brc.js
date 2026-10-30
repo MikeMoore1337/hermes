@@ -224,6 +224,78 @@
    }
  }
 
+ const onboarding=Object.fromEntries(["open","close","cancel","form","entry","result","result-title",
+   "step","url","error","preview","back","repository","root","result-note"].map(key=>
+     [key,document.getElementById("brc-onboard-"+key)]));
+ const dialog=document.getElementById("brc-onboard");
+ const githubUrl=/^https:\/\/github\.com\/([a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?)\/([a-z][a-z0-9-]{1,79})(?:\.git)?\/?$/i;
+ let previewController=null;
+ function resetOnboarding(){
+   previewController?.abort();previewController=null;onboarding.form.reset();
+   onboarding.entry.hidden=false;onboarding.result.hidden=true;onboarding.step.textContent="Шаг 1 из 2";
+   onboarding.error.textContent="";onboarding.url.removeAttribute("aria-invalid");onboarding.preview.disabled=false;
+ }
+ onboarding.open.addEventListener("click",()=>{resetOnboarding();dialog.showModal();onboarding.url.focus();});
+ onboarding.close.addEventListener("click",()=>dialog.close());
+ onboarding.cancel.addEventListener("click",()=>dialog.close());
+ dialog.addEventListener("close",()=>{resetOnboarding();onboarding.open.focus();});
+ dialog.addEventListener("keydown",event=>{
+   if(event.key!=="Tab")return;
+   const focusable=[...dialog.querySelectorAll("button:not(:disabled),input:not(:disabled)")]
+     .filter(element=>element.getClientRects().length);
+   if(!focusable.length)return;
+   const first=focusable[0],last=focusable[focusable.length-1];
+   if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}
+   else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}
+ });
+ onboarding.back.addEventListener("click",()=>{
+   onboarding.result.hidden=true;onboarding.entry.hidden=false;onboarding.step.textContent="Шаг 1 из 2";
+   onboarding.url.focus();
+ });
+ onboarding.url.addEventListener("input",()=>onboarding.url.removeAttribute("aria-invalid"));
+ onboarding.form.addEventListener("submit",async event=>{
+   event.preventDefault();
+   if(previewController)return;
+   const input=onboarding.url.value.trim(),match=githubUrl.exec(input);
+   if(!match || input.length>200){
+     onboarding.error.textContent="Введите HTTPS-ссылку GitHub с именем проекта из букв, цифр и дефисов.";
+     onboarding.url.setAttribute("aria-invalid","true");
+     onboarding.url.focus();return;
+   }
+   const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),8000);
+   previewController=controller;onboarding.preview.disabled=true;onboarding.error.textContent="Проверяем формат и встроенный каталог…";
+   try{
+     const response=await fetch("/api/providers/hermes-brc/onboarding-preview",{
+       method:"POST",credentials:"same-origin",cache:"no-store",signal:controller.signal,
+       headers:{"Content-Type":"application/json","X-Hermes-Onboarding-Intent":"owner-interactive"},
+       body:JSON.stringify({repository_url:input})
+     });
+     if(response.status===401||response.status===403)throw Error("auth");
+     if(!response.ok)throw Error("unavailable");
+     const value=await response.json(), name=match[2].toLowerCase();
+     if(!exact(value,["schema","status","repository","device","root","scope","catalog","remote","filesystem","can_connect"])||
+       value.schema!==1||value.status!=="preview_only"||value.repository!=="https://github.com/"+match[1]+"/"+name+".git"||
+       value.device!=="Windows sandbox"||value.root!=="/workspace/projects/"+name||value.scope!=="sandbox"||
+       !["reserved","not_reserved"].includes(value.catalog)||value.remote!=="not_checked"||
+       value.filesystem!=="not_checked"||value.can_connect!==false)throw Error("invalid");
+     if(!dialog.open||previewController!==controller)return;
+     onboarding.repository.textContent=value.repository;onboarding.root.textContent=value.root;
+     onboarding["result-note"].textContent=value.catalog==="reserved"?
+       "Такое имя уже есть во встроенном каталоге. Подключение заблокировано.":
+       "Формат адреса проверен; это имя отсутствует во встроенном каталоге.";
+     onboarding.entry.hidden=true;onboarding.result.hidden=false;onboarding.step.textContent="Шаг 2 из 2";
+     onboarding["result-title"].focus();
+   }catch(error){
+     if(!dialog.open||previewController!==controller)return;
+     onboarding.error.textContent=error.message==="auth"?
+       "Предпросмотр доступен после входа владельца через GitHub.":
+       "Предпросмотр недоступен. Никаких изменений не выполнено.";
+   }finally{
+     clearTimeout(timeout);
+     if(previewController===controller){previewController=null;onboarding.preview.disabled=false;}
+   }
+ });
+
  nodes["client-check"].addEventListener("click",copyClientCheck);
  nodes.refresh.addEventListener("click",refresh);
  nodes["check-source"].addEventListener("click",checkSource);
