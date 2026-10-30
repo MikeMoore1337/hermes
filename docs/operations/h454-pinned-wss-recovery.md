@@ -19,6 +19,13 @@ mounts over the agent code and CA. The old encrypted credentials stay intact;
 `Convert-H454SecureCredential` produces an in-memory copy with the WSS URL
 and `pairedAt=manual`, rejecting unexpected fields or identity.
 
+`deploy/h15/Dockerfile.brc-agent-pinned-wss` is a recipe, not an image or a
+deployment. Its build context must contain only the verified compiled module,
+map and public CA. Resolve the supplied local base tag to its approved image ID
+before and after the build, prohibit pulls, compare inherited layers/config,
+and verify as UID 65534 that the root-owned 0755 trust directory and 0444 CA
+and module are readable but immutable under the actual read-only runtime.
+
 The private `h454_wss_relay_proxy.mjs` accepts only an agent WebSocket upgrade
 at `/ws` with a well-formed bearer, limits handshakes and connections, and
 forwards only to `127.0.0.1:3000` in its network namespace. The existing relay
@@ -60,12 +67,26 @@ also reconcile container names, the SSH forward and a secure fallback image,
 then repeat a real MCP smoke before clearing the marker. Removing the marker
 or using the previous plaintext rollback is not an automatic recovery step.
 
+One candidate sequence is to build two separately pinned images with the same
+verified WSS module and public CA: a transport-secured version of the current
+image, and a transport-secured version of the no-auto-pair image. First verify
+the transport-secured baseline with a real MCP smoke; only then can it be a
+rollback target for the second image. The baseline's temporary credentials
+must use `manual` to avoid the older CLI's re-pair path. If the first migration
+fails, the plaintext predecessor remains stopped; this is a safe outage, not
+an automatically successful rollback. Neither image currently has an
+approved real CA or a production-ready rollout operator.
+
 ## Evidence and limits
 
 - A real pinned BRC agent transport and relay were exercised together in an
   isolated container with synthetic certificates and token: tool call and
   reconnect passed; fake globally trusted and wrong-name certificates did not
   receive the token. Invalid HTTP routes and unauthorized tokens were refused.
+- The image recipe was exercised on the locally prepared no-auto-pair base
+  with a synthetic CA. Its inherited layers and runtime configuration matched;
+  the non-root process could read but could not overwrite the CA or module.
+  The disposable test image was removed.
 - Windows PowerShell 5.1 fixtures exercised exclusive locking, known and
   unknown states, idempotent offline recovery, and termination of an owned
   test process between two real `File.Replace` operations.

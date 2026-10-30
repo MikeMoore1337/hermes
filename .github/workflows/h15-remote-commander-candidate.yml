@@ -17,6 +17,7 @@ on:
       - scripts/h454_agent_pinned_wss_e2e.mjs
       - scripts/h454_wss_relay_proxy.mjs
       - scripts/h454_wss_fixture_certificates.sh
+      - deploy/h15/Dockerfile.brc-agent-pinned-wss
       - tests/test_h454_agent_pinned_wss.py
       - scripts/h15_brc_workspace_gateway.py
       - scripts/h15_brc_native_read_gateway.py
@@ -54,6 +55,7 @@ on:
       - scripts/h454_agent_pinned_wss_e2e.mjs
       - scripts/h454_wss_relay_proxy.mjs
       - scripts/h454_wss_fixture_certificates.sh
+      - deploy/h15/Dockerfile.brc-agent-pinned-wss
       - tests/test_h454_agent_pinned_wss.py
       - scripts/h15_brc_harden_relay.py
       - scripts/h15_brc_harden_gateway.py
@@ -522,7 +524,10 @@ jobs:
         run: |
           set -euo pipefail
           fixture="$(mktemp -d "$RUNNER_TEMP/h454-wss.XXXXXX")"
-          trap 'rm -rf "$fixture"' EXIT
+          image_context="$(mktemp -d "$RUNNER_TEMP/h454-wss-image.XXXXXX")"
+          fixture_base="h454-wss-fixture-base:${GITHUB_RUN_ID}"
+          fixture_image="h454-wss-fixture:${GITHUB_RUN_ID}"
+          trap 'docker image rm "$fixture_image" "$fixture_base" >/dev/null 2>&1 || true; rm -rf "$fixture" "$image_context"' EXIT
           bash scripts/h454_wss_fixture_certificates.sh "$fixture"
           chmod 755 "$fixture"
           image="hermes-brc-relay-eval:${GITHUB_SHA:0:12}"
@@ -537,6 +542,28 @@ jobs:
             --entrypoint node "$image" /src/scripts/h454_agent_pinned_wss_e2e.mjs \
             /opt/brc/packages/agent/dist/transport/ws-client.js /opt/brc/packages/relay/dist/app.js \
             /opt/brc/packages/relay/dist/mcp/invoke.js /fixtures
+          docker build --quiet --pull=false --network none --tag "$fixture_base" -f - "$image_context" <<'DOCKER'
+          FROM node:24-bookworm-slim@sha256:a5f4366e834695d5f363b920c104953a535d3a9864d1bdf74566a0ebe01daee5
+          USER 0:0
+          RUN mkdir -p /app/dist/transport
+          USER 65534:65534
+          DOCKER
+          cp "$fixture/relay-ca.pem" "$image_context/relay-ca.pem"
+          cp "$RUNNER_TEMP/h454-pinned-wss/ws-client.js" "$RUNNER_TEMP/h454-pinned-wss/ws-client.js.map" "$image_context/"
+          docker build --quiet --pull=false --network none --build-arg "H454_BASE_IMAGE=$fixture_base" \
+            --file deploy/h15/Dockerfile.brc-agent-pinned-wss --tag "$fixture_image" "$image_context"
+          test "$(docker image inspect --format '{{.Config.User}}' "$fixture_image")" = '65534:65534'
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+            --user 65534:65534 --memory 128m --pids-limit 32 --entrypoint node "$fixture_image" -e '
+              const fs=require("node:fs"); const assert=require("node:assert/strict");
+              const dir=fs.lstatSync("/opt/hermes-brc");
+              assert(dir.isDirectory() && !dir.isSymbolicLink() && dir.uid===0 && (dir.mode&0o777)===0o755);
+              for(const p of ["/opt/hermes-brc/relay-ca.pem","/app/dist/transport/ws-client.js"]) {
+                const s=fs.lstatSync(p); assert(s.isFile() && !s.isSymbolicLink() && s.uid===0 && (s.mode&0o777)===0o444);
+                assert.throws(()=>fs.writeFileSync(p,"fixture"),e=>["EROFS","EACCES"].includes(e.code));
+              }
+              console.log("H454_SYNTHETIC_IMAGE_READONLY=PASS");
+            '
           echo "H454_PINNED_WSS_SYNTHETIC_E2E=PASS" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Verify dedicated owner UID/GID image runtime (CI-only, no host mounts)
