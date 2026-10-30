@@ -471,3 +471,23 @@ capabilities explicitly. Do not enable the native reader, read credentials,
 change Docker/SSH/tasks, restart a device or claim the Codex run as ChatGPT
 evidence. This is the remaining independent client acceptance, not a claim
 that it has run.
+
+### Already-paired Windows agent: no automatic re-pair
+
+An isolated test of the current image's CLI showed that a synthetic 401 can
+clear staged synthetic credentials and start pairing when `pairedAt` is not
+`manual`. The current real credential metadata was not read, so this is not a
+claim that the active device re-paired.
+
+`scripts/h454_agent_no_auto_pair.py` prepares a **separate, already-paired
+Windows agent variant** from the exact pinned upstream source and CLI digest.
+It stops on an authorization refusal without deleting staged credentials or
+starting pairing; missing or mismatched credentials fail without pairing.
+Existing saved/manual credentials and normal reconnect remain supported. New
+device enrollment needs its own approved path, not this variant. The compiled
+CLI was exercised only with synthetic credentials and loopback relay fixtures.
+
+Source or CI success does not install an image. This variant does not resolve
+the localhost listener race, authenticate the relay, prove login/reboot or
+guarantee process-tree cleanup. Production image activation still requires a
+reviewed plan, fresh preflight, preserved rollback and separate owner approval.
