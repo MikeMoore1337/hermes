@@ -156,3 +156,6 @@ if (failures.length) {
   console.error('OS_SANDBOX_NEGATIVE_FAILED=' + failures.join(','));
   process.exitCode = 1;
 } else console.log('HERMES_BRC_LINUX_OS_SANDBOX_E2E=PASS');
+// The resident search manager keeps a maintenance interval alive.
+await new Promise(resolve => process.stdout.write('', resolve));
+process.exit(failures.length ? 1 : 0);
