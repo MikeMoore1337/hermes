@@ -13,6 +13,11 @@ on:
       - scripts/h454_agent_no_auto_pair.py
       - scripts/h454_agent_no_auto_pair_e2e.mjs
       - tests/test_h454_agent_no_auto_pair.py
+      - scripts/h454_agent_pinned_wss.py
+      - scripts/h454_agent_pinned_wss_e2e.mjs
+      - scripts/h454_wss_relay_proxy.mjs
+      - scripts/h454_wss_fixture_certificates.sh
+      - tests/test_h454_agent_pinned_wss.py
       - scripts/h15_brc_workspace_gateway.py
       - scripts/h15_brc_native_read_gateway.py
       - deploy/h15/hermes-native-read.template.ts
@@ -45,6 +50,11 @@ on:
       - scripts/h454_agent_no_auto_pair.py
       - scripts/h454_agent_no_auto_pair_e2e.mjs
       - tests/test_h454_agent_no_auto_pair.py
+      - scripts/h454_agent_pinned_wss.py
+      - scripts/h454_agent_pinned_wss_e2e.mjs
+      - scripts/h454_wss_relay_proxy.mjs
+      - scripts/h454_wss_fixture_certificates.sh
+      - tests/test_h454_agent_pinned_wss.py
       - scripts/h15_brc_harden_relay.py
       - scripts/h15_brc_harden_gateway.py
       - scripts/h15_brc_workspace_gateway.py
@@ -221,6 +231,35 @@ jobs:
         with:
           name: h454-agent-no-auto-pair
           path: ${{ runner.temp }}/h454-no-auto-pair/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Compile the pinned WSS-only agent variant (not activated)
+        shell: bash
+        run: |
+          set -euo pipefail
+          source="$RUNNER_TEMP/brc-upstream"
+          bundle="$RUNNER_TEMP/h454-pinned-wss"
+          python3 -m unittest tests.test_h454_agent_pinned_wss
+          python3 -m scripts.h454_agent_pinned_wss --source-dir "$source"
+          (cd "$source" && pnpm --filter brc-agent build)
+          mkdir -p "$bundle"
+          cp "$source/packages/agent/src/transport/ws-client.ts" "$bundle/ws-client.ts"
+          cp "$source/packages/agent/dist/transport/ws-client.js" "$bundle/ws-client.js"
+          cp "$source/packages/agent/dist/transport/ws-client.js.map" "$bundle/ws-client.js.map"
+          printf '%s\n' cbe511702dd0147650353c29ac6ab1decd8afda1 > "$bundle/UPSTREAM_SHA"
+          printf '%s\n' '${{ github.event.pull_request.head.sha || github.sha }}' > "$bundle/HERMES_HEAD_SHA"
+          (cd "$bundle" && sha256sum ws-client.ts ws-client.js ws-client.js.map UPSTREAM_SHA HERMES_HEAD_SHA > SHA256SUMS)
+          git -C "$source" show HEAD:packages/agent/src/transport/ws-client.ts > "$RUNNER_TEMP/h454-original-ws-client.ts"
+          mv "$RUNNER_TEMP/h454-original-ws-client.ts" "$source/packages/agent/src/transport/ws-client.ts"
+          git -C "$source" diff --exit-code -- packages/agent/src/transport/ws-client.ts
+          (cd "$source" && pnpm --filter brc-agent build)
+
+      - name: Preserve source-only WSS agent variant
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: h454-agent-pinned-wss
+          path: ${{ runner.temp }}/h454-pinned-wss/
           if-no-files-found: error
           retention-days: 14
 
@@ -477,6 +516,28 @@ jobs:
           echo "HERMES_BRC_RELAY_OCI_NONROOT_E2E=PASS" >> "$GITHUB_STEP_SUMMARY"
           echo "OCI_PUBLIC_PORTS=NONE" >> "$GITHUB_STEP_SUMMARY"
           echo "OCI_PRODUCTION_DEPLOY=NOT_EXECUTED" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Exercise pinned WSS agent and private proxy against real relay (synthetic only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture="$(mktemp -d "$RUNNER_TEMP/h454-wss.XXXXXX")"
+          trap 'rm -rf "$fixture"' EXIT
+          bash scripts/h454_wss_fixture_certificates.sh "$fixture"
+          chmod 755 "$fixture"
+          image="hermes-brc-relay-eval:${GITHUB_SHA:0:12}"
+          docker run --rm --network none --read-only --cap-drop ALL \
+            --security-opt no-new-privileges --user 65534:65534 \
+            --memory 768m --pids-limit 128 --add-host host.docker.internal:127.0.0.1 \
+            --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777 \
+            --mount "type=bind,src=$GITHUB_WORKSPACE,dst=/src,readonly" \
+            --mount "type=bind,src=$fixture,dst=/fixtures,readonly" \
+            --mount "type=bind,src=$fixture,dst=/opt/hermes-brc,readonly" \
+            --mount "type=bind,src=$RUNNER_TEMP/h454-pinned-wss/ws-client.js,dst=/opt/brc/packages/agent/dist/transport/ws-client.js,readonly" \
+            --entrypoint node "$image" /src/scripts/h454_agent_pinned_wss_e2e.mjs \
+            /opt/brc/packages/agent/dist/transport/ws-client.js /opt/brc/packages/relay/dist/app.js \
+            /opt/brc/packages/relay/dist/mcp/invoke.js /fixtures
+          echo "H454_PINNED_WSS_SYNTHETIC_E2E=PASS" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Verify dedicated owner UID/GID image runtime (CI-only, no host mounts)
         shell: bash
