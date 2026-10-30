@@ -174,6 +174,16 @@ and preserves a backup if a post-replacement check detects drift. This uses the
 existing cooperative runtime lock; it is not an OS-wide compare-and-swap
 against uncooperative writers. It is not installed by source delivery.
 
+The signal image's verbose start timing retained and changed its event array
+after returning: an isolated, no-network test grew it from 8 to 40 events.
+The next source candidate stops recording on response and caps start/interaction
+timing at 128 events with an explicit truncation notice. This is not yet a live
+image rollout. On all three sandboxes a 200 ms MCP wait returned a running
+process that later completed normally; that parameter does not enforce a process
+lifetime limit. Stdout/stderr markers, exit code 7 and a paginated output read
+were observed on each; the output is combined, not separately typed by channel.
+See the [Issue evidence](https://github.com/MikeMoore1337/hermes/issues/454#issuecomment-6524107978).
+
 ## Follow-up after Windows integrity rollout (2026-10-30)
 
 The owner-approved Windows window switched device `h15-win-05be75515428` to

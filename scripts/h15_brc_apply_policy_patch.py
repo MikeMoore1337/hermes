@@ -20,6 +20,7 @@ RELATIVE = Path("packages/agent/src/dispatcher.ts")
 EDIT_RELATIVE = Path("packages/agent/src/core/tools/edit.ts")
 FILESYSTEM_RELATIVE = Path("packages/agent/src/core/tools/filesystem.ts")
 TERMINAL_RELATIVE = Path("packages/agent/src/core/terminal-manager.ts")
+TYPES_RELATIVE = Path("packages/agent/src/core/types.ts")
 PROCESS_TOOLS_RELATIVE = Path("packages/agent/src/core/tools/improved-process-tools.ts")
 SEARCH_RELATIVE = Path("packages/agent/src/core/search-manager.ts")
 SEARCH_HANDLERS_RELATIVE = Path("packages/agent/src/core/handlers/search-handlers.ts")
@@ -206,6 +207,59 @@ def safe_termination(manager: str, tools: str) -> tuple[str, str]:
     return manager, tools[:first] + branch + tools[last:]
 
 
+def bounded_timing(manager: str, tools: str, types: str) -> tuple[str, str, str]:
+    """Bound verbose event details and stop collecting after the start response."""
+    cap = "const MAX_WAIT_OUTPUT_CHARS = 2 * 1024 * 1024;"
+    manager_events = "const outputEvents: OutputEvent[] = [];"
+    manager_record = "if (collectTiming) {\n          outputEvents.push({"
+    manager_match = "if (collectTiming && outputEvents.length > 0) {"
+    tool_import = "import { terminalManager, MAX_BUFFERED_OUTPUT_CHARS } from '../terminal-manager.js';"
+    tool_events = "const outputEvents: any[] = [];"
+    tool_record = "if (verbose_timing) {\n              outputEvents.push({"
+    tool_match = "if (verbose_timing && outputEvents.length > 0) {"
+    result = "outputEvents: outputEvents.length > 0 ? outputEvents : undefined"
+    formatter = "  if (timing.outputEvents && timing.outputEvents.length > 0) {"
+    title = "Output Events (${timing.outputEvents.length} total):"
+    type_field = "  outputEvents?: OutputEvent[];"
+    if (manager.count(cap) != 1 or manager.count(manager_events) != 1 or
+            manager.count(manager_record) != 2 or manager.count(manager_match) != 1 or
+            manager.count("source: 'stdout',") != 1 or manager.count("source: 'stderr',") != 1 or
+            manager.count(result) != 1 or tools.count(tool_import) != 1 or
+            tools.count(tool_events) != 1 or tools.count(tool_record) != 1 or
+            tools.count("source: 'periodic_poll',") != 1 or tools.count(tool_match) != 1 or
+            tools.count(result) != 1 or tools.count(formatter) != 1 or tools.count(title) != 1 or
+            types.count(type_field) != 1 or "MAX_HERMES_TIMING_EVENTS" in manager or
+            "outputEventsTruncated" in manager or "outputEventsTruncated" in tools or
+            "outputEventsTruncated" in types):
+        raise AuditError("unreviewed_timing_events")
+    manager = manager.replace(cap, "export const MAX_HERMES_TIMING_EVENTS = 128;\n" + cap, 1)
+    manager = manager.replace(manager_events, manager_events + "\n    let outputEventsTruncated = false;", 1)
+    manager = manager.replace(manager_record,
+        "if (collectTiming && !resolved) {\n"
+        "          if (outputEvents.length >= MAX_HERMES_TIMING_EVENTS) { outputEventsTruncated = true; }\n"
+        "          else outputEvents.push({", 2)
+    manager = manager.replace(manager_match,
+        "if (collectTiming && !resolved && !outputEventsTruncated && outputEvents.length > 0) {", 1)
+    manager = manager.replace(result, result + ",\n            outputEventsTruncated", 1)
+    tools = tools.replace(tool_import,
+        "import { terminalManager, MAX_BUFFERED_OUTPUT_CHARS, MAX_HERMES_TIMING_EVENTS } from '../terminal-manager.js';", 1)
+    tools = tools.replace(tool_events, tool_events + "\n  let outputEventsTruncated = false;", 1)
+    tools = tools.replace(tool_record,
+        "if (verbose_timing) {\n"
+        "              if (outputEvents.length >= MAX_HERMES_TIMING_EVENTS) { outputEventsTruncated = true; }\n"
+        "              else outputEvents.push({", 1)
+    tools = tools.replace(tool_match,
+        "if (verbose_timing && !outputEventsTruncated && outputEvents.length > 0) {", 1)
+    tools = tools.replace(result, result + ",\n        outputEventsTruncated", 1)
+    tools = tools.replace(formatter,
+        "  if (timing.outputEventsTruncated) {\n"
+        "    msg += `\\n  HERMES_TIMING_EVENTS_TRUNCATED: first ${MAX_HERMES_TIMING_EVENTS} events recorded.\\n`;\n"
+        "  }\n" + formatter, 1)
+    tools = tools.replace(title, "Output Events (${timing.outputEvents.length} recorded):", 1)
+    types = types.replace(type_field, type_field + "\n  outputEventsTruncated?: boolean;", 1)
+    return manager, tools, types
+
+
 def apply(root: Path, *, sha: str = UPSTREAM_SHA) -> dict[str, object]:
     # Checks immutable source revision, license/NOTICE and all known risks.
     evaluate(root, sha=sha)
@@ -213,6 +267,7 @@ def apply(root: Path, *, sha: str = UPSTREAM_SHA) -> dict[str, object]:
     edit_path = root / EDIT_RELATIVE
     filesystem_path = root / FILESYSTEM_RELATIVE
     terminal_path = root / TERMINAL_RELATIVE
+    types_path = root / TYPES_RELATIVE
     process_tools_path = root / PROCESS_TOOLS_RELATIVE
     search_path = root / SEARCH_RELATIVE
     search_handlers_path = root / SEARCH_HANDLERS_RELATIVE
@@ -222,7 +277,7 @@ def apply(root: Path, *, sha: str = UPSTREAM_SHA) -> dict[str, object]:
         raise AuditError("unsafe_edit_handler")
     if filesystem_path.is_symlink() or not filesystem_path.is_file():
         raise AuditError("unsafe_filesystem_handler")
-    if any(p.is_symlink() or not p.is_file() for p in (terminal_path, process_tools_path)):
+    if any(p.is_symlink() or not p.is_file() for p in (terminal_path, process_tools_path, types_path)):
         raise AuditError("unsafe_terminal_handler")
     if any(p.is_symlink() or not p.is_file() for p in (search_path, search_handlers_path)):
         raise AuditError("unsafe_search_handler")
@@ -263,12 +318,15 @@ def apply(root: Path, *, sha: str = UPSTREAM_SHA) -> dict[str, object]:
     updated_filesystem = unknown_birthtime(filesystem_path.read_text(encoding="utf-8"))
     updated_terminal, updated_process_tools = safe_termination(
         terminal_path.read_text(encoding="utf-8"), process_tools_path.read_text(encoding="utf-8"))
+    updated_terminal, updated_process_tools, updated_types = bounded_timing(
+        updated_terminal, updated_process_tools, types_path.read_text(encoding="utf-8"))
     updated_search, updated_search_handlers = search_timeout_errors(
         search_path.read_text(encoding="utf-8"), search_handlers_path.read_text(encoding="utf-8"))
     path.write_text(updated, encoding="utf-8")
     edit_path.write_text(updated_edit, encoding="utf-8")
     filesystem_path.write_text(updated_filesystem, encoding="utf-8")
     terminal_path.write_text(updated_terminal, encoding="utf-8")
+    types_path.write_text(updated_types, encoding="utf-8")
     process_tools_path.write_text(updated_process_tools, encoding="utf-8")
     search_path.write_text(updated_search, encoding="utf-8")
     search_handlers_path.write_text(updated_search_handlers, encoding="utf-8")

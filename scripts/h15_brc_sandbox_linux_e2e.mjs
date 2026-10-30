@@ -7,6 +7,7 @@ import { setTimeout as pause } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
 import childProcess from 'node:child_process';
 import { syncBuiltinESMExports } from 'node:module';
+import { EventEmitter } from 'node:events';
 
 const source = '/opt/brc/packages/agent/dist/dispatcher.js';
 const { listTools, callTool } = await import(pathToFileURL(source).href);
@@ -139,6 +140,79 @@ assert(invalidEdit.isError === true && afterError.isError !== true &&
 // Synthetic session objects exercise the actual manager without signalling any OS process.
 const terminalPath = source.replace('/dispatcher.js', '/core/terminal-manager.js');
 const { terminalManager } = await import(pathToFileURL(terminalPath).href);
+
+// Synthetic stream chunks exercise the compiled manager and MCP formatter;
+// no OS process or production session is signalled.
+const timingSpawn = childProcess.spawn;
+let timingChild;
+let timingChunks = 130;
+try {
+  childProcess.spawn = () => {
+    timingChild = new EventEmitter();
+    timingChild.pid = 2147483600;
+    timingChild.stdout = new EventEmitter();
+    timingChild.stderr = new EventEmitter();
+    timingChild.stdin = {destroyed:false, write:()=>true};
+    setImmediate(() => {
+      for (let i = 0; i < timingChunks; i++) {
+        (i % 2 ? timingChild.stderr : timingChild.stdout).emit('data', Buffer.from('event\n'));
+      }
+      timingChild.stdout.emit('data', Buffer.from('>>> '));
+    });
+    return timingChild;
+  };
+  syncBuiltinESMExports();
+  const timing = await terminalManager.executeCommand('synthetic', 1000, '/bin/sh', true);
+  const recorded = JSON.stringify(timing.timingInfo?.outputEvents);
+  assert(timing.timingInfo?.outputEvents?.length === 128 && timing.timingInfo.outputEventsTruncated === true &&
+    !timing.timingInfo.outputEvents.some(event => event.matchedPattern), 'TIMING_BOUNDED_BEFORE_REPLY');
+  timingChild.stdout.emit('data', Buffer.from('late>'));
+  timingChild.stderr.emit('data', Buffer.from('late-error\n'));
+  assert(JSON.stringify(timing.timingInfo?.outputEvents) === recorded, 'TIMING_STABLE_AFTER_REPLY');
+  timingChild.emit('exit', 0);
+
+  const mcpTiming = await callTool('start_process', {
+    command:'node -e "0"', shell:'/bin/sh', timeout_ms:1000, verbose_timing:true,
+  });
+  assert(mcpTiming.isError !== true && mcpTiming.content.some(item =>
+    item.text?.includes('HERMES_TIMING_EVENTS_TRUNCATED') && item.text.includes('128 recorded')),
+    'MCP_TIMING_TRUNCATION_DISCLOSED');
+  timingChild.emit('exit', 0);
+
+  timingChunks = 2;
+  const brief = await terminalManager.executeCommand('synthetic', 1000, '/bin/sh', true);
+  assert(brief.timingInfo?.outputEvents?.length === 3 && !brief.timingInfo.outputEventsTruncated &&
+    brief.timingInfo.outputEvents[2].matchedPattern === 'quick_pattern', 'TIMING_SHORT_TRACE_UNCHANGED');
+  timingChild.emit('exit', 0);
+} finally {
+  childProcess.spawn = timingSpawn;
+  syncBuiltinESMExports();
+}
+
+// Accelerate only the synthetic poll clock; real interaction still uses 50 ms.
+const interval = globalThis.setInterval;
+const captureSnapshot = terminalManager.captureOutputSnapshot;
+const sendInput = terminalManager.sendInputToProcess;
+const getSince = terminalManager.getOutputSinceSnapshot;
+let syntheticPolls = 0;
+try {
+  globalThis.setInterval = (fn, _delay, ...args) => interval(fn, 1, ...args);
+  terminalManager.captureOutputSnapshot = () => ({});
+  terminalManager.sendInputToProcess = () => true;
+  terminalManager.getOutputSinceSnapshot = () => 'x'.repeat(++syntheticPolls);
+  const interacted = await callTool('interact_with_process', {
+    pid:2147483601, input:'synthetic', timeout_ms:6500, verbose_timing:true,
+  });
+  assert(interacted.isError !== true && interacted.content.some(item =>
+    item.text?.includes('HERMES_TIMING_EVENTS_TRUNCATED') && item.text.includes('128 recorded')),
+    'MCP_INTERACTION_TIMING_TRUNCATION_DISCLOSED');
+} finally {
+  globalThis.setInterval = interval;
+  terminalManager.captureOutputSnapshot = captureSnapshot;
+  terminalManager.sendInputToProcess = sendInput;
+  terminalManager.getOutputSinceSnapshot = getSince;
+}
+
 const absentTermination = await callTool('force_terminate', {pid:2147483647});
 const absentText = absentTermination.content.map(item => item.text || '').join('\n');
 assert(absentTermination.isError === true && absentText.includes('No active session or unable to initiate'),
