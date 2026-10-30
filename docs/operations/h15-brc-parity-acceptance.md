@@ -260,11 +260,30 @@ these calls completed after midnight Moscow time.
   sessions exited normally. No unrelated process was signalled. Other
   Windows client sessions appeared during the run and were preserved.
 
-For fresh Windows snapshot/preflight evidence see
+For Windows snapshot/preflight and the later delivered init evidence see
 [H454 native preflight](h454-windows-native-preflight.md). Keep #454 OPEN:
-the init candidate is still stopped, login/reboot and rollback have not run,
-the native reader is revoked/paused, Control Center onboarding remains
-disabled, and full GitHub writes through MCP have no credential proof.
+login/reboot and actual rollback have not run, the native reader is
+revoked/paused, Control Center onboarding remains disabled, and full GitHub
+writes through MCP have no credential proof.
+
+### Windows init delivery — later on 2026-10-30
+
+The owner-approved maintenance window promoted container `bd4bb7c37e55`
+with `--init`, both tmpfs, UID/GID 65534, PID limit 128 and 512 MiB memory.
+The previous container `571a1e2bede3` is retained stopped for rollback.
+The existing launcher was replaced atomically with its prepared init/lock
+version; Task Scheduler XML, SSH, state and credentials were unchanged.
+
+Real Codex MCP file/process operations and the same device identity passed
+after cutover. PID1 was `docker-init`; two orphaned test children disappeared
+from `/proc`, and bounded probes observed zero zombies. This proves the
+tested short reaping scenario, not a long burn-in or login/reboot recovery.
+Exact fixtures were removed and no active test sessions remained.
+
+The running image is still `8d28b0e`; the edit-error source fix requires a
+separate approved image rollout. The [prepared derived image](h454-agent-edit-image.md)
+has isolated image-handler evidence only. Actual delivery receipt:
+[#454 comment](https://github.com/MikeMoore1337/hermes/issues/454#issuecomment-6515625089).
 
 ### One independent ChatGPT acceptance pass
 
