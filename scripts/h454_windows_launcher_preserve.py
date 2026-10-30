@@ -48,6 +48,67 @@ HELPERS = r"""    # Keep the verified container across task retries and logons.
         } catch { $h454Lines = @(); $h454Code = -1 }
         return [pscustomobject]@{Code=$h454Code;Lines=$h454Lines}
     }
+    function Assert-H454PrivateState([string]$Path) {
+        Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Utility\Microsoft.PowerShell.Utility.psd1') -ErrorAction Stop
+        Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Security\Microsoft.PowerShell.Security.psd1') -ErrorAction Stop
+        $h454Item = Get-Item -LiteralPath $Path -Force
+        $h454Dir = $h454Item.Directory
+        $h454Parent = $h454Item
+        while ($null -ne $h454Parent) {
+            Require (-not ($h454Parent.Attributes -band [IO.FileAttributes]::ReparsePoint)) 'H454_STATE_REPARSE'
+            if ($h454Parent -is [IO.FileInfo]) { $h454Parent = $h454Parent.Directory }
+            else { $h454Parent = $h454Parent.Parent }
+        }
+        $h454Allowed = @([Security.Principal.WindowsIdentity]::GetCurrent().User.Value,'S-1-5-18','S-1-5-32-544')
+        Require ((Get-Acl -LiteralPath $h454Dir.FullName).AreAccessRulesProtected) 'H454_STATE_ACL_INHERITANCE'
+        foreach ($h454Target in @($Path,$h454Dir.FullName)) {
+            $h454OwnerFound = $false
+            foreach ($h454Rule in (Get-Acl -LiteralPath $h454Target).Access) {
+                $h454Sid = $h454Rule.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value
+                Require ($h454Sid -in $h454Allowed) 'H454_STATE_ACL'
+                if ($h454Sid -ceq $h454Allowed[0] -and $h454Rule.AccessControlType -eq 'Allow') { $h454OwnerFound = $true }
+            }
+            Require $h454OwnerFound 'H454_STATE_OWNER_ACL'
+        }
+    }
+    function Save-H454State([string]$ExpectedHash,[object]$Value) {
+        Require ($ExpectedHash -cmatch '^[A-F0-9]{64}$') 'H454_STATE_HASH_INVALID'
+        Assert-H454PrivateState $STATE_PATH
+        $h454Dir = [IO.Path]::GetDirectoryName($STATE_PATH)
+        $h454Name = 'agent-state-h454-' + [Guid]::NewGuid().ToString('N')
+        $h454Pending = Join-Path $h454Dir ($h454Name + '.new')
+        $h454Backup = Join-Path $h454Dir ($h454Name + '.bak')
+        Require (-not (Test-Path -LiteralPath $h454Pending) -and -not (Test-Path -LiteralPath $h454Backup)) 'H454_STATE_TEMP_COLLISION'
+        $h454Bytes = [Text.UTF8Encoding]::new($false).GetBytes(($Value | ConvertTo-Json))
+        $h454Sha = [Security.Cryptography.SHA256]::Create()
+        try { $h454NewHash = [BitConverter]::ToString($h454Sha.ComputeHash($h454Bytes)).Replace('-', '') }
+        finally { $h454Sha.Dispose() }
+        $h454Stream = $null; $h454Committed = $false
+        try {
+            $h454Stream = [IO.File]::Open($h454Pending,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+            $h454Stream.Write($h454Bytes,0,$h454Bytes.Length); $h454Stream.Flush($true)
+            $h454Stream.Dispose(); $h454Stream = $null
+            Assert-H454PrivateState $h454Pending
+            Require ((Get-FileHash -LiteralPath $h454Pending).Hash -ceq $h454NewHash -and
+                (Get-FileHash -LiteralPath $STATE_PATH).Hash -ceq $ExpectedHash) 'H454_STATE_DRIFT'
+            [IO.File]::Replace($h454Pending,$STATE_PATH,$h454Backup)
+            $h454Committed = $true
+            Assert-H454PrivateState $STATE_PATH
+            Assert-H454PrivateState $h454Backup
+            Require ((Get-FileHash -LiteralPath $STATE_PATH).Hash -ceq $h454NewHash -and
+                (Get-FileHash -LiteralPath $h454Backup).Hash -ceq $ExpectedHash) 'H454_STATE_COMMIT_DRIFT'
+            try { [IO.File]::Delete($h454Backup) } catch { Write-Warning 'H454_STATE_BACKUP_RETAINED' }
+        } finally {
+            if ($null -ne $h454Stream) { $h454Stream.Dispose() }
+            if (-not $h454Committed -and (Test-Path -LiteralPath $h454Pending)) {
+                try {
+                    Assert-H454PrivateState $h454Pending
+                    if ((Get-FileHash -LiteralPath $h454Pending).Hash -ceq $h454NewHash) { [IO.File]::Delete($h454Pending) }
+                    else { Write-Warning 'H454_STATE_TEMP_RETAINED' }
+                } catch { Write-Warning 'H454_STATE_TEMP_RETAINED' }
+            }
+        }
+    }
     function Assert-H454ExistingTunnel {
         $h454PidField = $state.PSObject.Properties['tunnelPid']
         Require ($null -ne $h454PidField -and ($h454PidField.Value -is [int] -or
@@ -238,6 +299,13 @@ def prepare(source: bytes, profile_sha256: str, image_id: str) -> bytes:
     start = text.index(RUN) + len(RUN)
     end = text.index(RUN_END, start)
     block = text[start:end]
+    state_read = "$state = Get-Content -LiteralPath $STATE_PATH -Raw | ConvertFrom-Json"
+    state_write = "[IO.File]::WriteAllText($STATE_PATH,($state | ConvertTo-Json),[Text.UTF8Encoding]::new($false))"
+    if block.count(state_read) != 1 or block.count(state_write) != 1:
+        raise PatchRefused("SOURCE_STRUCTURE_MISMATCH")
+    block = block.replace(state_read, "Assert-H454PrivateState $STATE_PATH\n    $h454StateHash = (Get-FileHash -LiteralPath $STATE_PATH).Hash\n    "
+                          + state_read + "\n    Require ((Get-FileHash -LiteralPath $STATE_PATH).Hash -ceq $h454StateHash) 'H454_STATE_READ_DRIFT'", 1)
+    block = block.replace(state_write, "Save-H454State $h454StateHash $state", 1)
     old_tunnel = "Stop-TunnelByPid ([int]$state.tunnelPid)"
     start_ssh = "$SSH_PROCESS = Start-Process -FilePath 'ssh.exe' -ArgumentList $sshArgs -PassThru -WindowStyle Hidden"
     cleanup_ssh = ("        if ($SSH_PROCESS -and -not $SSH_PROCESS.HasExited) {\n"

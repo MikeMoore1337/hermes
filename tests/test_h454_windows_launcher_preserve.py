@@ -19,6 +19,7 @@ function Stop-TunnelByPid([int]$tunnelProcessId) {
     if ($exe -ne 'ssh.exe' -or -not $cmd.Contains($TUNNEL_TARGET) -or -not $cmd.Contains('38180:fixture')) { return }
 }
 """ + RUN + """    try {
+        $state = Get-Content -LiteralPath $STATE_PATH -Raw | ConvertFrom-Json
         & docker.exe info | Out-Null
         & docker.exe image inspect $state.imageId | Out-Null
         Stop-OwnedContainer
@@ -29,6 +30,8 @@ function Stop-TunnelByPid([int]$tunnelProcessId) {
         Require ($LASTEXITCODE -eq 0) 'RUN_FAILED'
         Assert-ManagedContainer
         & docker.exe exec $CONTAINER synthetic-stage | Out-Null
+        $state.tunnelPid = $SSH_PROCESS.Id
+        [IO.File]::WriteAllText($STATE_PATH,($state | ConvertTo-Json),[Text.UTF8Encoding]::new($false))
         & docker.exe inspect $CONTAINER | Out-Null
     } finally {
         Stop-OwnedContainer
@@ -68,6 +71,9 @@ class LauncherPreserveTests(unittest.TestCase):
         self.assertIn("H454_DOCKER_OVERRIDE", run)
         self.assertIn("--init --pids-limit 128", run)
         self.assertIn("synthetic-stage", run)
+        self.assertIn("Save-H454State", run)
+        self.assertIn("H454_STATE_READ_DRIFT", run)
+        self.assertNotIn("[IO.File]::WriteAllText($STATE_PATH,($state | ConvertTo-Json)", run)
         self.assertIn(PROFILE.upper(), run)
         self.assertIn(IMAGE, run)
         self.assertNotIn("container rm", run)
@@ -81,6 +87,8 @@ class LauncherPreserveTests(unittest.TestCase):
                     FIXTURE.replace(b"--pull never", b"--pull always", 1),
                     FIXTURE.replace(b"38180:fixture", b"other-forward", 1),
                     FIXTURE.replace(b"-FilePath 'ssh.exe'", b"-FilePath 'other.exe'", 1),
+                    FIXTURE.replace(b"Get-Content -LiteralPath $STATE_PATH", b"Get-Content -LiteralPath $OTHER_PATH", 1),
+                    FIXTURE.replace(b"[IO.File]::WriteAllText($STATE_PATH", b"[IO.File]::AppendAllText($STATE_PATH", 1),
                     FIXTURE.replace(b"Assert-ManagedContainer", b"Other-Assert", 1)):
             with self.subTest(bad=hashlib.sha256(bad).hexdigest()[:8]):
                 with self.assertRaisesRegex(PatchRefused, "SOURCE_STRUCTURE_MISMATCH"):
