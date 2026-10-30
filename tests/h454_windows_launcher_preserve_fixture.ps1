@@ -5,7 +5,7 @@ $ErrorActionPreference='Stop'
 $h454Tokens=$null;$h454Errors=$null
 $h454Ast=[Management.Automation.Language.Parser]::ParseFile($FixtureLauncher,[ref]$h454Tokens,[ref]$h454Errors)
 if(@($h454Errors).Count -ne 0){throw 'FIXTURE_SOURCE_PARSE'}
-$h454Names=@('Invoke-H454Docker','Get-H454ContainerProfileHash','Get-H454PreservedContainer','Stop-H454PreservedContainer',
+$h454Names=@('Invoke-H454Docker','Assert-H454ExistingTunnel','Get-H454ContainerProfileHash','Get-H454PreservedContainer','Stop-H454PreservedContainer',
              'Start-H454PreservedContainer','Assert-H454PreservedStarted')
 $h454Functions=@($h454Ast.FindAll({param($x)$x -is [Management.Automation.Language.FunctionDefinitionAst]},$true)|Where-Object {$_.Name -cin $h454Names})
 if($h454Functions.Count -ne $h454Names.Count){throw 'FIXTURE_FUNCTION_SCOPE'}
@@ -20,6 +20,26 @@ $h454Loops=@($h454Ast.FindAll({param($x)$x -is [Management.Automation.Language.W
 if($h454Loops.Count -ne 1){throw 'FIXTURE_PATH_LOOP_SCOPE'}
 $h454Path=Join-Path $env:SystemRoot 'System32\cmd.exe'
 . ([scriptblock]::Create($h454Loops[0].Extent.Text))
+function Get-NetTCPConnection {
+    [CmdletBinding()]param([string]$LocalAddress,[int]$LocalPort,[string]$State)
+    if($script:h454NetFailure){Write-Error -Category PermissionDenied -Message 'synthetic-network-query';return}
+    if($script:h454NoListener){Write-Error -Category ObjectNotFound -Message 'synthetic-empty';return}
+    [pscustomobject]@{OwningProcess=$script:h454ListenerPid}
+}
+function Get-CimInstance {
+    [CmdletBinding()]param([string]$ClassName,[string]$Filter)
+    if($script:h454CimFailure){throw 'synthetic-process-query'}
+    if($script:h454TunnelExists){$script:h454Tunnel}
+}
+function Get-Process {
+    [CmdletBinding()]param([int]$Id)
+    [pscustomobject]@{StartTime=$script:h454StartTime}
+}
+function Get-Item {
+    [CmdletBinding()]param([string]$LiteralPath,[switch]$Force)
+    if($LiteralPath -cne $STATE_PATH){throw 'FIXTURE_STATE_PATH'}
+    [pscustomobject]@{LastWriteTimeUtc=$script:h454StateTime}
+}
 function New-H454Fixture {
     return [pscustomobject]@{
         Id=('1'*64);Name='/synthetic-agent';Image=('sha256:'+('a'*64));
@@ -40,6 +60,14 @@ function Reset-H454Fixture {
     $script:h454Exists=$true;$script:h454InspectFails=$false;$script:h454ListFails=$false;$script:h454ContainerId=$null
     $script:h454CreateDrift=$false;$script:h454CreateBadId=$false
     $state.imageId='sha256:'+('a'*64)
+    $state.tunnelPid=101
+    $script:h454NetFailure=$false;$script:h454NoListener=$false;$script:h454ListenerPid=101
+    $script:h454CimFailure=$false;$script:h454TunnelExists=$true
+    $script:h454StartTime=[DateTime]::UtcNow.AddMinutes(-5)
+    $script:h454StateTime=[DateTime]::UtcNow.AddMinutes(-1)
+    $script:h454Tunnel=[pscustomobject]@{Name='ssh.exe';
+        ExecutablePath=(Join-Path ([Environment]::GetFolderPath('System')) 'OpenSSH\ssh.exe');
+        CommandLine='fixture-target 38180:fixture'}
     $script:h454Events=[Collections.Generic.List[string]]::new()
     $script:h454ExpectedProfile=Get-H454ContainerProfileHash $script:h454Item
 }
@@ -50,7 +78,10 @@ function Expect-H454Refusal([scriptblock]$Action) {
     Require ($script:h454Events.Count -eq 0) 'FIXTURE_UNEXPECTED_MUTATION'
 }
 $CONTAINER='synthetic-agent'
-$state=[pscustomobject]@{imageId=('sha256:'+('a'*64))}
+$state=[pscustomobject]@{imageId=('sha256:'+('a'*64));tunnelPid=101}
+$STATE_PATH='synthetic-state'
+$TUNNEL_TARGET='fixture-target'
+$script:h454TunnelNeedle='38180:fixture'
 $script:h454ExpectedImage=$state.imageId
 $script:h454DockerHost='npipe:////./pipe/dockerDesktopLinuxEngine'
 $script:h454Docker={
@@ -96,6 +127,42 @@ $script:h454Docker=Join-Path $env:SystemRoot 'System32\cmd.exe'
 $h454Native=Invoke-H454Docker -Arguments @('/d','/c','h454-synthetic-nonexistent-command')
 Require ($h454Native.Code -ne 0 -and $h454Native.Lines.Count -eq 0) 'NATIVE_STDERR_HANDLING'
 $script:h454Docker=$h454MockDocker
+
+# A verified existing tunnel or an absent tunnel and listener is safe to proceed.
+Reset-H454Fixture
+Assert-H454ExistingTunnel
+Reset-H454Fixture
+$script:h454NoListener=$true;$script:h454TunnelExists=$false
+Assert-H454ExistingTunnel
+Reset-H454Fixture
+$script:h454NoListener=$true
+Assert-H454ExistingTunnel
+Reset-H454Fixture
+$script:h454NoListener=$true;$state.tunnelPid=0
+Assert-H454ExistingTunnel
+
+# An unverified or replaced tunnel must fail before stopping the live container.
+foreach($h454Case in @('unavailable','name','path','target','forward','listener','stale-listener','zero-listener','neterror','cimerror','age','pid')) {
+    Reset-H454Fixture
+    switch($h454Case) {
+        'unavailable' {$script:h454Tunnel.CommandLine=$null}
+        'name' {$script:h454Tunnel.Name='other.exe'}
+        'path' {$script:h454Tunnel.ExecutablePath='untrusted'}
+        'target' {$script:h454Tunnel.CommandLine='other-target 38180:fixture'}
+        'forward' {$script:h454Tunnel.CommandLine='fixture-target other-forward'}
+        'listener' {$script:h454ListenerPid=102}
+        'stale-listener' {$script:h454TunnelExists=$false}
+        'zero-listener' {$state.tunnelPid=0}
+        'neterror' {$script:h454NetFailure=$true}
+        'cimerror' {$script:h454CimFailure=$true}
+        'age' {$script:h454StartTime=[DateTime]::UtcNow}
+        'pid' {$state.tunnelPid='not-a-pid'}
+    }
+    $h454Refused=$false
+    try {Assert-H454ExistingTunnel;Stop-H454PreservedContainer -Claim} catch {$h454Refused=$true}
+    Stop-H454PreservedContainer
+    Require ($h454Refused -and $script:h454Item.State.Running -and $script:h454Events.Count -eq 0) 'UNVERIFIED_TUNNEL_STOPPED_CONTAINER'
+}
 
 # A running original is stopped, restarted under the identical ID, and retained.
 Reset-H454Fixture

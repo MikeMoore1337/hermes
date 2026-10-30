@@ -149,3 +149,26 @@ Source main `01b9573b36ed3c192ad0a761de0b9480e6d07815` was deployed with
 3074 server tests; the active agent is still the older immutable image.
 The later [minimal edit-error image preparation](h454-agent-edit-image.md)
 does not activate that code fix or change this completed window's scope.
+
+## Tunnel preflight before container stop, 2026-10-30
+
+The existing scheduled task reports `RunLevel=Limited`. In the current user
+context, the saved tunnel PID and its loopback listener were observable, but
+the SSH command line and executable path were not. The installed Run path
+stops its container before attempting to stop or restart that tunnel. Actual
+Task Run has not been tested, so this observation is a recovery risk rather
+than a claim about a completed task execution.
+
+The source-only launcher preparer now adds a tunnel preflight before the
+container stop. It checks the saved PID, local listener ownership, the
+expected SSH executable and original target/forward checks, and whether the
+process predates the saved state. Missing or mismatched identity fails closed;
+an absent saved process and an unoccupied listener can proceed. PS5.1 fixtures
+exercise valid, absent, inaccessible, changed and reused-PID cases. A real
+read-only check in the current user context returned the expected identity
+HOLD and confirmed that the existing container was still running.
+
+This candidate is not installed. The preflight is not an atomic guarantee
+against a later PID change, and complete SSH recovery, credential restaging,
+Task Run, login/reboot and rollback remain NOT VERIFIED. A separate owner gate
+and a tested rollback remain necessary before any disruptive window.

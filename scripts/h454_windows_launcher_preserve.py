@@ -18,6 +18,7 @@ SOURCE_SHA256 = "ffa184e07abde9c6f7a7367e75cef4f313986c4a68ca1ab8aabd60f14d2f0ef
 HELPERS = r"""    # Keep the verified container across task retries and logons.
     $script:h454ExpectedProfile = '__PROFILE_SHA256__'
     $script:h454ExpectedImage = '__IMAGE_ID__'
+    $script:h454TunnelNeedle = '__TUNNEL_NEEDLE__'
     $script:h454ContainerId = $null
     $script:h454DockerHost = 'npipe:////./pipe/dockerDesktopLinuxEngine'
     $script:h454Docker = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'Docker\Docker\resources\bin\docker.exe'
@@ -41,6 +42,44 @@ HELPERS = r"""    # Keep the verified container across task retries and logons.
             $h454Code = $LASTEXITCODE
         } catch { $h454Lines = @(); $h454Code = -1 }
         return [pscustomobject]@{Code=$h454Code;Lines=$h454Lines}
+    }
+    function Assert-H454ExistingTunnel {
+        $h454PidField = $state.PSObject.Properties['tunnelPid']
+        Require ($null -ne $h454PidField -and ($h454PidField.Value -is [int] -or
+            $h454PidField.Value -is [long]) -and $h454PidField.Value -ge 0 -and
+            $h454PidField.Value -le [int]::MaxValue) 'H454_TUNNEL_PID_INVALID'
+        $h454Pid = [int]$h454PidField.Value
+        $h454NetErrors = @()
+        $h454Listeners = @(Get-NetTCPConnection -LocalAddress '127.0.0.1' -LocalPort 38180 -State Listen `
+            -ErrorAction SilentlyContinue -ErrorVariable +h454NetErrors)
+        foreach ($h454Error in $h454NetErrors) {
+            Require ($h454Error.CategoryInfo.Category -eq [Management.Automation.ErrorCategory]::ObjectNotFound) 'H454_TUNNEL_LISTENER_QUERY'
+        }
+        Require ($h454Listeners.Count -le 1) 'H454_TUNNEL_LISTENER_CONFLICT'
+        if ($h454Pid -eq 0) {
+            Require ($h454Listeners.Count -eq 0) 'H454_TUNNEL_LISTENER_CONFLICT'
+            return
+        }
+        try { $h454Processes = @(Get-CimInstance Win32_Process -Filter ('ProcessId=' + $h454Pid) -ErrorAction Stop) }
+        catch { throw 'H454_TUNNEL_PROCESS_QUERY' }
+        Require ($h454Processes.Count -le 1) 'H454_TUNNEL_PROCESS_QUERY'
+        if ($h454Processes.Count -eq 0) {
+            Require ($h454Listeners.Count -eq 0) 'H454_TUNNEL_LISTENER_CONFLICT'
+            return
+        }
+        Require ($h454Listeners.Count -eq 0 -or [int]$h454Listeners[0].OwningProcess -eq $h454Pid) 'H454_TUNNEL_LISTENER_CONFLICT'
+        $h454Tunnel = $h454Processes[0]
+        $h454Command = [string]$h454Tunnel.CommandLine
+        $h454Ssh = Join-Path ([Environment]::GetFolderPath('System')) 'OpenSSH\ssh.exe'
+        Require ($h454Tunnel.Name -ieq 'ssh.exe' -and
+            [string]::Equals([string]$h454Tunnel.ExecutablePath, $h454Ssh, [StringComparison]::OrdinalIgnoreCase) -and
+            -not [string]::IsNullOrEmpty($h454Command) -and -not [string]::IsNullOrEmpty($TUNNEL_TARGET) -and
+            $h454Command.Contains($TUNNEL_TARGET) -and $h454Command.Contains($script:h454TunnelNeedle)) 'H454_TUNNEL_IDENTITY_UNAVAILABLE'
+        try {
+            $h454Process = Get-Process -Id $h454Pid -ErrorAction Stop
+            $h454StateTime = (Get-Item -LiteralPath $STATE_PATH -Force).LastWriteTimeUtc
+            Require ($h454Process.StartTime.ToUniversalTime() -le $h454StateTime) 'H454_TUNNEL_PID_REUSED'
+        } catch { throw 'H454_TUNNEL_PROCESS_AGE' }
     }
     function Get-H454ContainerProfileHash([object]$h454Item) {
         $h454Mac = $h454Item.Config.PSObject.Properties['MacAddress']
@@ -145,6 +184,17 @@ def prepare(source: bytes, profile_sha256: str, image_id: str) -> bytes:
     text = source.decode("utf-8-sig")
     newline = "\r\n" if "\r\n" in text else "\n"
     text = text.replace("\r\n", "\n")
+    tunnel = "function Stop-TunnelByPid("
+    if text.count(tunnel) != 1:
+        raise PatchRefused("SOURCE_STRUCTURE_MISMATCH")
+    tunnel_start = text.index(tunnel)
+    tunnel_end = text.find("\n}", tunnel_start)
+    if tunnel_end == -1:
+        raise PatchRefused("SOURCE_STRUCTURE_MISMATCH")
+    needles = re.findall(r"\$cmd\.Contains\('([^']+)'\)", text[tunnel_start:tunnel_end])
+    if (len(needles) != 1 or not re.fullmatch(r"[A-Za-z0-9.:/_-]{1,160}", needles[0])
+            or "38180" not in needles[0]):
+        raise PatchRefused("SOURCE_STRUCTURE_MISMATCH")
     if text.count(RUN) != 1 or text.count(RUN_END) != 1:
         raise PatchRefused("SOURCE_STRUCTURE_MISMATCH")
     start = text.index(RUN) + len(RUN)
@@ -153,7 +203,11 @@ def prepare(source: bytes, profile_sha256: str, image_id: str) -> bytes:
     if (block.count("Stop-OwnedContainer") != 2 or block.count("& docker.exe") != 5
             or block.count("& docker.exe run") != 1 or block.count("Assert-ManagedContainer") != 1):
         raise PatchRefused("SOURCE_STRUCTURE_MISMATCH")
-    block = block.replace("Stop-OwnedContainer", "Stop-H454PreservedContainer -Claim", 1)
+    stop = block.index("Stop-OwnedContainer")
+    stop_indent = block[block.rfind("\n", 0, stop) + 1:stop]
+    if not stop_indent or stop_indent.strip():
+        raise PatchRefused("SOURCE_STRUCTURE_MISMATCH")
+    block = block.replace("Stop-OwnedContainer", "Assert-H454ExistingTunnel\n" + stop_indent + "Stop-H454PreservedContainer -Claim", 1)
     block = block.replace("Stop-OwnedContainer", "Stop-H454PreservedContainer")
     block = block.replace("Assert-ManagedContainer", "Assert-H454PreservedStarted")
     block = block.replace("& docker.exe", "& $script:h454Docker --host $script:h454DockerHost")
@@ -186,7 +240,8 @@ def prepare(source: bytes, profile_sha256: str, image_id: str) -> bytes:
                + indent + "    Require (Start-H454PreservedContainer) 'H454_CONTAINER_START_FAILED'\n"
                + indent + "}")
     block = block[:pos] + wrapped + block[end_pipeline:]
-    helpers = HELPERS.replace("__PROFILE_SHA256__", profile_sha256.upper()).replace("__IMAGE_ID__", image_id)
+    helpers = (HELPERS.replace("__PROFILE_SHA256__", profile_sha256.upper())
+               .replace("__IMAGE_ID__", image_id).replace("__TUNNEL_NEEDLE__", needles[0]))
     changed = text[:start] + helpers + block + text[end:]
     encoded = changed.replace("\n", newline).encode("utf-8")
     return (b"\xef\xbb\xbf" if bom else b"") + encoded
