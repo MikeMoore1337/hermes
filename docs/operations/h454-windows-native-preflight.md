@@ -81,6 +81,32 @@ Login/reboot recovery, lasting PID1 reaping, actual rollback, native original
 folder grants and new Control Center onboarding remain separate unverified
 acceptance. Keep #454 OPEN. No environment keys or paid API are added.
 
+## Container-preserving launcher preparation, 2026-10-30
+
+The installed launcher's Run path removes the existing managed container
+before recreating it. `scripts/h454_windows_launcher_preserve.py` prepares a
+separate copy from the exact installed launcher hash; it does not install or
+execute that copy. The prepared Run path validates pinned image and container profiles,
+retains the existing container ID across a stop/start, and uses the local Docker
+Desktop pipe. If the container is missing, it creates it stopped, validates the
+result and only then starts it. Profile or identity drift fails closed. A
+profile hash is an input to preparation, not proof that the profile is safe.
+
+On the owner host, the current running container was compared read-only with
+the protected pre-rollout snapshot plus the approved search-image labels. Its
+profile hash and image ID were captured in an ACL-protected, untracked candidate. PS5.1
+read-only checks found the actual container and correctly handled an absent
+name; a retained stopped container also matched its pre-stop profile. Fixture
+tests cover preservation, creation, drift, name races and real PS5.1 native
+stderr handling without Docker mutations. The private candidate is not an
+installed launcher or a runtime acceptance result.
+
+The complete Run path, real missing-container creation, credential restaging,
+SSH recovery, Task Run, login/reboot and rollback remain NOT VERIFIED. A later
+installation or disruptive recovery test needs its own concrete owner gate and
+rollback plan; no original Windows folder permissions are changed. A later
+image change also needs a newly prepared and separately approved launcher.
+
 ## Later owner-authorized read-only recheck, 2026-10-30
 
 PR #676 merged as `f6e64acd40fb413bb1c4d8945b5fd284bc0d02f8` after all
