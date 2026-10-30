@@ -50,9 +50,11 @@ activation below has separate live client evidence. See
 ## Approved Windows activation, 2026-10-30
 
 After source release `70deff8a741e10c2f8568e427be78bb38384ba84`, the owner
-approved the maintenance window and one additional Resume. Container
-`194e06ea9584` now runs the candidate image above under the same device ID.
-Both prior containers (`bd4bb7c37e55`, `571a1e2bede3`) are retained stopped.
+approved the maintenance window and one additional Resume. At that checkpoint,
+container `194e06ea9584` ran the candidate image above under the same device ID.
+It was later superseded by the approved search-image activation recorded in
+the [parity evidence](h15-brc-parity-acceptance.md). All three prior containers
+(`194e06ea9584`, `bd4bb7c37e55`, `571a1e2bede3`) are retained stopped.
 
 Real Codex MCP: ambiguous edit returned `isError=true` and exact bytes stayed
 unchanged; unique edit, UTF-8 read/write, exact-file content search, process
@@ -60,7 +62,8 @@ stdout/stderr and exit 0 passed. The compiled-module SHA256 matched. PID1
 was docker-init, UID 65534, both tmpfs present, limits 128 PIDs / 512 MiB,
 and the host-private path was refused. A bounded probe observed zero zombies.
 Exact fixtures and sessions were cleaned. A separate directory search with
-an exact filePattern returned no matches; that case remains under investigation.
+an exact filePattern returned no matches; subsequent timeout diagnosis and
+the later live fix are recorded in the parity evidence.
 
 The actual runtime lock remained exclusive throughout MCP acceptance, while
 the old image pin stayed unchanged. Only after acceptance did atomic state
