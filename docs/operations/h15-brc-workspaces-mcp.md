@@ -80,8 +80,9 @@ live PASS, partial coverage and untested scenarios by device and tool.
   credential-free request to the fixed GitHub API checks public repository
   metadata without following redirects; a timeout, rate limit or ambiguous
   response remains unavailable. The request sends the entered repository
-  name to GitHub, uses a four-second socket timeout and permits at most two
-  checks per Control Center process; DNS resolution has no absolute deadline.
+  name to GitHub, uses a four-second socket timeout and returns unavailable
+  after six seconds. At most two checks run per Control Center process; a
+  stalled DNS lookup may continue in its bounded background slot.
   Runtime use requires the separately approved `api.github.com` egress; it
   does not require new credentials. This does not verify Git HEAD or the
   device filesystem, and connecting is disabled. The device label uses only an

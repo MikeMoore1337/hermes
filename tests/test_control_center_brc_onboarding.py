@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import http.client
 from http.server import ThreadingHTTPServer
-from threading import Thread
+from threading import Event, Thread
 from urllib.error import HTTPError
 from urllib.request import ProxyHandler, Request, build_opener
 import unittest
@@ -121,6 +121,35 @@ class PublicRepositoryTests(unittest.TestCase):
     def test_network_failure_is_unavailable(self):
         with patch.object(brc_onboarding.http.client, "HTTPSConnection", side_effect=OSError("private diagnostic")):
             self.assertEqual(brc_onboarding.check_public_repository("https://github.com/example/project"), "unavailable")
+
+    def test_stalled_lookup_returns_unavailable_and_keeps_its_slot_until_finished(self):
+        started, release, closed = Event(), Event(), Event()
+        with patch.object(brc_onboarding, "PUBLIC_DEADLINE_SECONDS", 0.05), \
+             patch.object(brc_onboarding.http.client, "HTTPSConnection") as constructor:
+            connection = constructor.return_value
+            def stalled_response():
+                started.set()
+                release.wait(3)
+                return self.Response()
+            connection.getresponse.side_effect = stalled_response
+            connection.close.side_effect = closed.set
+            acquired = False
+            try:
+                result = brc_onboarding.check_public_repository("https://github.com/Example/Project.git")
+                self.assertEqual(result, "unavailable")
+                self.assertTrue(started.is_set())
+                acquired = brc_onboarding._public_checks.acquire(blocking=False)
+                self.assertTrue(acquired)
+                self.assertFalse(brc_onboarding._public_checks.acquire(blocking=False))
+            finally:
+                if acquired:
+                    brc_onboarding._public_checks.release()
+                release.set()
+                self.assertTrue(closed.wait(3))
+            self.assertTrue(brc_onboarding._public_checks.acquire(timeout=3))
+            self.assertTrue(brc_onboarding._public_checks.acquire(timeout=3))
+            brc_onboarding._public_checks.release()
+            brc_onboarding._public_checks.release()
 
     def test_non_ascii_casefold_confusable_is_not_the_requested_repository(self):
         body = json.dumps({"private": False, "visibility": "public", "full_name": "example/ta\u017fk"}).encode()
