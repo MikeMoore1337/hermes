@@ -87,6 +87,10 @@ must use `manual` to avoid the older CLI's re-pair path. If the first migration
 fails, the plaintext predecessor remains stopped; this is a safe outage, not
 an automatically successful rollback. Neither image currently has an
 approved real CA or a production-ready rollout operator.
+The secured baseline would be a different image and container; it does not
+fulfil the owner's separate requirement to restage credentials and restore
+the original container. A safe and tested way to do that without exposing the
+original plaintext bearer remains open.
 
 ## Evidence and limits
 
