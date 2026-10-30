@@ -9,6 +9,9 @@ on:
       - tests/test_h454_windows_native_preflight.py
       - scripts/h454_windows_launcher_patch.py
       - tests/test_h454_windows_launcher_patch.py
+      - scripts/h454_windows_launcher_preserve.py
+      - tests/test_h454_windows_launcher_preserve.py
+      - tests/h454_windows_launcher_preserve_fixture.ps1
       - scripts/h454_agent_edit_image.py
       - scripts/h454_agent_edit_image_smoke.mjs
       - tests/test_h454_agent_edit_image.py
@@ -27,6 +30,9 @@ on:
       - tests/test_h454_windows_native_preflight.py
       - scripts/h454_windows_launcher_patch.py
       - tests/test_h454_windows_launcher_patch.py
+      - scripts/h454_windows_launcher_preserve.py
+      - tests/test_h454_windows_launcher_preserve.py
+      - tests/h454_windows_launcher_preserve_fixture.ps1
       - scripts/h454_agent_edit_image.py
       - scripts/h454_agent_edit_image_smoke.mjs
       - tests/test_h454_agent_edit_image.py
@@ -61,6 +67,8 @@ jobs:
         run: python -B -m unittest discover -s tests -p "test_h454_windows_prepare_init_candidate.py" -v
       - name: Launcher preparation never modifies live source
         run: python -B -m unittest discover -s tests -p "test_h454_windows_launcher_patch.py" -v
+      - name: Launcher preservation and PowerShell 5.1 lifecycle fixtures
+        run: python -B -m unittest discover -s tests -p "test_h454_windows_launcher_preserve.py" -v
       - name: Immutable edit layer safety contracts (no owner Docker or credentials)
         run: python -B -m unittest discover -s tests -p "test_h454_agent_edit_image.py" -v
       - name: Parse disposable image smoke
