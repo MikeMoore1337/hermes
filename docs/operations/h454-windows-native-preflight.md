@@ -162,13 +162,17 @@ than a claim about a completed task execution.
 The source-only launcher preparer now adds a tunnel preflight before the
 container stop. It checks the saved PID, local listener ownership, the
 expected SSH executable and original target/forward checks, and whether the
-process predates the saved state. Missing or mismatched identity fails closed;
-an absent saved process and an unoccupied listener can proceed. PS5.1 fixtures
-exercise valid, absent, inaccessible, changed and reused-PID cases. A real
-read-only check in the current user context returned the expected identity
-HOLD and confirmed that the existing container was still running.
+process predates the saved state. It opens a process handle and compares its
+creation time with CIM before retaining it; stopping uses that handle rather
+than a fresh lookup by PID. A newly created tunnel also uses its process handle,
+and the candidate pins the system OpenSSH executable. Missing or mismatched
+identity fails closed; an absent saved process and an unoccupied listener can
+proceed. PS5.1 fixtures exercise valid, absent, inaccessible, changed and
+reused-PID cases, including stopping only a test-owned child through its handle.
+A real read-only check in the current user context returned the expected
+identity HOLD and confirmed that the existing container was still running.
 
-This candidate is not installed. The preflight is not an atomic guarantee
-against a later PID change, and complete SSH recovery, credential restaging,
-Task Run, login/reboot and rollback remain NOT VERIFIED. A separate owner gate
-and a tested rollback remain necessary before any disruptive window.
+This candidate is not installed. A real PID-reuse race was not exercised, and
+complete SSH recovery, credential restaging, Task Run, login/reboot and
+rollback remain NOT VERIFIED. A separate owner gate and a tested rollback
+remain necessary before any disruptive window.

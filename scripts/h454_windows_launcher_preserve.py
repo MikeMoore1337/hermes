@@ -20,16 +20,21 @@ HELPERS = r"""    # Keep the verified container across task retries and logons.
     $script:h454ExpectedImage = '__IMAGE_ID__'
     $script:h454TunnelNeedle = '__TUNNEL_NEEDLE__'
     $script:h454ContainerId = $null
+    $script:h454OriginalTunnel = $null
     $script:h454DockerHost = 'npipe:////./pipe/dockerDesktopLinuxEngine'
     $script:h454Docker = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'Docker\Docker\resources\bin\docker.exe'
+    $script:h454SshExe = Join-Path ([Environment]::GetFolderPath('System')) 'OpenSSH\ssh.exe'
     Require (Test-Path -LiteralPath $script:h454Docker -PathType Leaf) 'H454_DOCKER_NOT_FOUND'
-    $h454Path = $script:h454Docker
-    while (-not [string]::IsNullOrEmpty($h454Path)) {
-        Require (-not ((Get-Item -LiteralPath $h454Path -Force).Attributes -band
-            [IO.FileAttributes]::ReparsePoint)) 'H454_DOCKER_REPARSE'
-        $h454Parent = [IO.Path]::GetDirectoryName($h454Path)
-        if ($h454Parent -ceq $h454Path) { break }
-        $h454Path = $h454Parent
+    Require (Test-Path -LiteralPath $script:h454SshExe -PathType Leaf) 'H454_SSH_NOT_FOUND'
+    foreach ($h454Executable in @($script:h454Docker, $script:h454SshExe)) {
+        $h454Path = $h454Executable
+        while (-not [string]::IsNullOrEmpty($h454Path)) {
+            Require (-not ((Get-Item -LiteralPath $h454Path -Force).Attributes -band
+                [IO.FileAttributes]::ReparsePoint)) 'H454_EXECUTABLE_REPARSE'
+            $h454Parent = [IO.Path]::GetDirectoryName($h454Path)
+            if ($h454Parent -ceq $h454Path) { break }
+            $h454Path = $h454Parent
+        }
     }
     foreach ($h454Key in @('DOCKER_HOST','DOCKER_CONTEXT','DOCKER_TLS_VERIFY','DOCKER_CERT_PATH')) {
         Require ([string]::IsNullOrEmpty([Environment]::GetEnvironmentVariable($h454Key, 'Process'))) 'H454_DOCKER_OVERRIDE'
@@ -70,16 +75,38 @@ HELPERS = r"""    # Keep the verified container across task retries and logons.
         Require ($h454Listeners.Count -eq 0 -or [int]$h454Listeners[0].OwningProcess -eq $h454Pid) 'H454_TUNNEL_LISTENER_CONFLICT'
         $h454Tunnel = $h454Processes[0]
         $h454Command = [string]$h454Tunnel.CommandLine
-        $h454Ssh = Join-Path ([Environment]::GetFolderPath('System')) 'OpenSSH\ssh.exe'
         Require ($h454Tunnel.Name -ieq 'ssh.exe' -and
-            [string]::Equals([string]$h454Tunnel.ExecutablePath, $h454Ssh, [StringComparison]::OrdinalIgnoreCase) -and
+            [string]::Equals([string]$h454Tunnel.ExecutablePath, $script:h454SshExe, [StringComparison]::OrdinalIgnoreCase) -and
             -not [string]::IsNullOrEmpty($h454Command) -and -not [string]::IsNullOrEmpty($TUNNEL_TARGET) -and
             $h454Command.Contains($TUNNEL_TARGET) -and $h454Command.Contains($script:h454TunnelNeedle)) 'H454_TUNNEL_IDENTITY_UNAVAILABLE'
+        $h454Process = $null
         try {
             $h454Process = Get-Process -Id $h454Pid -ErrorAction Stop
+            $null = $h454Process.Handle
+            $h454Start = $h454Process.StartTime.ToUniversalTime()
+            $h454CimStart = ([DateTime]$h454Tunnel.CreationDate).ToUniversalTime()
             $h454StateTime = (Get-Item -LiteralPath $STATE_PATH -Force).LastWriteTimeUtc
-            Require ($h454Process.StartTime.ToUniversalTime() -le $h454StateTime) 'H454_TUNNEL_PID_REUSED'
-        } catch { throw 'H454_TUNNEL_PROCESS_AGE' }
+            Require ($h454Start -le $h454StateTime -and
+                [Math]::Abs($h454Start.Ticks - $h454CimStart.Ticks) -le 10) 'H454_TUNNEL_PID_REUSED'
+            $script:h454OriginalTunnel = $h454Process
+        } catch {
+            if ($null -ne $h454Process) { $h454Process.Dispose() }
+            throw 'H454_TUNNEL_PROCESS_IDENTITY'
+        }
+    }
+    function Stop-H454TunnelHandle([object]$Process) {
+        if ($null -eq $Process) { return }
+        try {
+            if (-not $Process.HasExited) {
+                try { $Process.Kill() }
+                catch { if (-not $Process.HasExited) { throw 'H454_TUNNEL_STOP_FAILED' } }
+            }
+            Require ($Process.WaitForExit(5000)) 'H454_TUNNEL_STOP_FAILED'
+        } finally { $Process.Dispose() }
+    }
+    function Stop-H454ExistingTunnel {
+        try { Stop-H454TunnelHandle $script:h454OriginalTunnel }
+        finally { $script:h454OriginalTunnel = $null }
     }
     function Get-H454ContainerProfileHash([object]$h454Item) {
         $h454Mac = $h454Item.Config.PSObject.Properties['MacAddress']
@@ -200,8 +227,14 @@ def prepare(source: bytes, profile_sha256: str, image_id: str) -> bytes:
     start = text.index(RUN) + len(RUN)
     end = text.index(RUN_END, start)
     block = text[start:end]
+    old_tunnel = "Stop-TunnelByPid ([int]$state.tunnelPid)"
+    start_ssh = "$SSH_PROCESS = Start-Process -FilePath 'ssh.exe' -ArgumentList $sshArgs -PassThru -WindowStyle Hidden"
+    cleanup_ssh = ("        if ($SSH_PROCESS -and -not $SSH_PROCESS.HasExited) {\n"
+                   "            Stop-TunnelByPid $SSH_PROCESS.Id\n        }")
     if (block.count("Stop-OwnedContainer") != 2 or block.count("& docker.exe") != 5
             or block.count("& docker.exe run") != 1 or block.count("Assert-ManagedContainer") != 1):
+        raise PatchRefused("SOURCE_STRUCTURE_MISMATCH")
+    if any(block.count(item) != 1 for item in (old_tunnel, start_ssh, cleanup_ssh)):
         raise PatchRefused("SOURCE_STRUCTURE_MISMATCH")
     stop = block.index("Stop-OwnedContainer")
     stop_indent = block[block.rfind("\n", 0, stop) + 1:stop]
@@ -209,6 +242,11 @@ def prepare(source: bytes, profile_sha256: str, image_id: str) -> bytes:
         raise PatchRefused("SOURCE_STRUCTURE_MISMATCH")
     block = block.replace("Stop-OwnedContainer", "Assert-H454ExistingTunnel\n" + stop_indent + "Stop-H454PreservedContainer -Claim", 1)
     block = block.replace("Stop-OwnedContainer", "Stop-H454PreservedContainer")
+    block = block.replace(old_tunnel, "Stop-H454ExistingTunnel", 1)
+    block = block.replace(start_ssh, start_ssh.replace("'ssh.exe'", "$script:h454SshExe") + "\n        $null = $SSH_PROCESS.Handle", 1)
+    block = block.replace(cleanup_ssh, ("        if ($null -ne $script:h454OriginalTunnel) {\n"
+        "            $script:h454OriginalTunnel.Dispose()\n            $script:h454OriginalTunnel = $null\n        }\n"
+        "        Stop-H454TunnelHandle $SSH_PROCESS"), 1)
     block = block.replace("Assert-ManagedContainer", "Assert-H454PreservedStarted")
     block = block.replace("& docker.exe", "& $script:h454Docker --host $script:h454DockerHost")
     marker = "& $script:h454Docker --host $script:h454DockerHost run"

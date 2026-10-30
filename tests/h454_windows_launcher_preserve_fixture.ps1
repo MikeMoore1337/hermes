@@ -5,7 +5,8 @@ $ErrorActionPreference='Stop'
 $h454Tokens=$null;$h454Errors=$null
 $h454Ast=[Management.Automation.Language.Parser]::ParseFile($FixtureLauncher,[ref]$h454Tokens,[ref]$h454Errors)
 if(@($h454Errors).Count -ne 0){throw 'FIXTURE_SOURCE_PARSE'}
-$h454Names=@('Invoke-H454Docker','Assert-H454ExistingTunnel','Get-H454ContainerProfileHash','Get-H454PreservedContainer','Stop-H454PreservedContainer',
+$h454Names=@('Invoke-H454Docker','Assert-H454ExistingTunnel','Stop-H454ExistingTunnel','Stop-H454TunnelHandle',
+             'Get-H454ContainerProfileHash','Get-H454PreservedContainer','Stop-H454PreservedContainer',
              'Start-H454PreservedContainer','Assert-H454PreservedStarted')
 $h454Functions=@($h454Ast.FindAll({param($x)$x -is [Management.Automation.Language.FunctionDefinitionAst]},$true)|Where-Object {$_.Name -cin $h454Names})
 if($h454Functions.Count -ne $h454Names.Count){throw 'FIXTURE_FUNCTION_SCOPE'}
@@ -33,7 +34,16 @@ function Get-CimInstance {
 }
 function Get-Process {
     [CmdletBinding()]param([int]$Id)
-    [pscustomobject]@{StartTime=$script:h454StartTime}
+    $p=[pscustomobject]@{Handle=[IntPtr]101;StartTime=$script:h454StartTime;HasExited=$false}
+    $p|Add-Member -MemberType ScriptMethod -Name Kill -Value {
+        $script:h454TunnelEvents.Add('kill')
+        if($script:h454KillMode -ceq 'failure'){throw 'synthetic-kill-failure'}
+        $this.HasExited=$true
+        if($script:h454KillMode -ceq 'exited'){throw 'synthetic-already-exited'}
+    }
+    $p|Add-Member -MemberType ScriptMethod -Name WaitForExit -Value {param($Timeout) return [bool]$this.HasExited}
+    $p|Add-Member -MemberType ScriptMethod -Name Dispose -Value {$script:h454TunnelEvents.Add('dispose')}
+    return $p
 }
 function Get-Item {
     [CmdletBinding()]param([string]$LiteralPath,[switch]$Force)
@@ -61,13 +71,16 @@ function Reset-H454Fixture {
     $script:h454CreateDrift=$false;$script:h454CreateBadId=$false
     $state.imageId='sha256:'+('a'*64)
     $state.tunnelPid=101
+    $script:h454OriginalTunnel=$null
+    $script:h454TunnelEvents=[Collections.Generic.List[string]]::new()
+    $script:h454KillMode='normal'
     $script:h454NetFailure=$false;$script:h454NoListener=$false;$script:h454ListenerPid=101
     $script:h454CimFailure=$false;$script:h454TunnelExists=$true
     $script:h454StartTime=[DateTime]::UtcNow.AddMinutes(-5)
     $script:h454StateTime=[DateTime]::UtcNow.AddMinutes(-1)
     $script:h454Tunnel=[pscustomobject]@{Name='ssh.exe';
         ExecutablePath=(Join-Path ([Environment]::GetFolderPath('System')) 'OpenSSH\ssh.exe');
-        CommandLine='fixture-target 38180:fixture'}
+        CommandLine='fixture-target 38180:fixture';CreationDate=$script:h454StartTime}
     $script:h454Events=[Collections.Generic.List[string]]::new()
     $script:h454ExpectedProfile=Get-H454ContainerProfileHash $script:h454Item
 }
@@ -82,6 +95,7 @@ $state=[pscustomobject]@{imageId=('sha256:'+('a'*64));tunnelPid=101}
 $STATE_PATH='synthetic-state'
 $TUNNEL_TARGET='fixture-target'
 $script:h454TunnelNeedle='38180:fixture'
+$script:h454SshExe=Join-Path ([Environment]::GetFolderPath('System')) 'OpenSSH\ssh.exe'
 $script:h454ExpectedImage=$state.imageId
 $script:h454DockerHost='npipe:////./pipe/dockerDesktopLinuxEngine'
 $script:h454Docker={
@@ -128,9 +142,35 @@ $h454Native=Invoke-H454Docker -Arguments @('/d','/c','h454-synthetic-nonexistent
 Require ($h454Native.Code -ne 0 -and $h454Native.Lines.Count -eq 0) 'NATIVE_STDERR_HANDLING'
 $script:h454Docker=$h454MockDocker
 
+# A process handle obtained from our own hidden child remains the stop target.
+$h454Child=$null
+try {
+    $h454PS51=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    $h454Child=Start-Process -FilePath $h454PS51 -ArgumentList '-NoProfile -NonInteractive -Command Start-Sleep -Seconds 30' -WindowStyle Hidden -PassThru
+    $null=$h454Child.Handle
+    Stop-H454TunnelHandle $h454Child
+    $h454Child=$null
+} finally {
+    if($null -ne $h454Child){try{if(-not $h454Child.HasExited){$h454Child.Kill();[void]$h454Child.WaitForExit(5000)}}catch{};$h454Child.Dispose()}
+}
+
 # A verified existing tunnel or an absent tunnel and listener is safe to proceed.
 Reset-H454Fixture
 Assert-H454ExistingTunnel
+Require ($null -ne $script:h454OriginalTunnel) 'VERIFIED_TUNNEL_HANDLE_MISSING'
+Stop-H454ExistingTunnel
+Require (($script:h454TunnelEvents -join ',') -ceq 'kill,dispose') 'VERIFIED_TUNNEL_HANDLE_NOT_USED'
+Reset-H454Fixture
+$script:h454KillMode='exited'
+$h454Process=Get-Process -Id 101
+Stop-H454TunnelHandle $h454Process
+Require (($script:h454TunnelEvents -join ',') -ceq 'kill,dispose') 'EXIT_RACE_NOT_HANDLED'
+Reset-H454Fixture
+$script:h454KillMode='failure'
+$h454Process=Get-Process -Id 101
+$h454Refused=$false
+try {Stop-H454TunnelHandle $h454Process} catch {$h454Refused=$true}
+Require ($h454Refused -and ($script:h454TunnelEvents -join ',') -ceq 'kill,dispose') 'FAILED_KILL_NOT_REPORTED'
 Reset-H454Fixture
 $script:h454NoListener=$true;$script:h454TunnelExists=$false
 Assert-H454ExistingTunnel
@@ -142,7 +182,7 @@ $script:h454NoListener=$true;$state.tunnelPid=0
 Assert-H454ExistingTunnel
 
 # An unverified or replaced tunnel must fail before stopping the live container.
-foreach($h454Case in @('unavailable','name','path','target','forward','listener','stale-listener','zero-listener','neterror','cimerror','age','pid')) {
+foreach($h454Case in @('unavailable','name','path','target','forward','listener','stale-listener','zero-listener','neterror','cimerror','age','reused','pid')) {
     Reset-H454Fixture
     switch($h454Case) {
         'unavailable' {$script:h454Tunnel.CommandLine=$null}
@@ -156,12 +196,14 @@ foreach($h454Case in @('unavailable','name','path','target','forward','listener'
         'neterror' {$script:h454NetFailure=$true}
         'cimerror' {$script:h454CimFailure=$true}
         'age' {$script:h454StartTime=[DateTime]::UtcNow}
+        'reused' {$script:h454Tunnel.CreationDate=$script:h454StartTime.AddSeconds(1)}
         'pid' {$state.tunnelPid='not-a-pid'}
     }
     $h454Refused=$false
     try {Assert-H454ExistingTunnel;Stop-H454PreservedContainer -Claim} catch {$h454Refused=$true}
     Stop-H454PreservedContainer
-    Require ($h454Refused -and $script:h454Item.State.Running -and $script:h454Events.Count -eq 0) 'UNVERIFIED_TUNNEL_STOPPED_CONTAINER'
+    Require ($h454Refused -and $script:h454Item.State.Running -and $script:h454Events.Count -eq 0 -and
+        $script:h454TunnelEvents -cnotcontains 'kill') 'UNVERIFIED_TUNNEL_STOPPED_CONTAINER'
 }
 
 # A running original is stopped, restarted under the identical ID, and retained.
