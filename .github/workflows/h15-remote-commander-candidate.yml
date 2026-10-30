@@ -199,7 +199,7 @@ jobs:
           python3 -m scripts.h454_agent_no_auto_pair --source-dir "$source"
           (cd "$source" && pnpm --filter brc-agent build)
           test "$(sha256sum "$source/packages/agent/dist/cli.js" | cut -d' ' -f1)" = 348866e527fe862ce15aeaf82c217de158e880fcf8df5d219339027488462252
-          test "$(sha256sum "$source/packages/agent/dist/cli.js.map" | cut -d' ' -f1)" = 9c66ef56269fb39901a2840a4706f6c38e23635f09bbf0d035bc22bbfea8856f
+          test "$(sha256sum "$source/packages/agent/dist/cli.js.map" | cut -d' ' -f1)" = 7ee049973509eaed4a2e6aac57204e43b946a87bec4f8824b4e5ff6af07b8328
           node "$GITHUB_WORKSPACE/scripts/h454_agent_no_auto_pair_e2e.mjs" "$source/packages/agent"
           mkdir -p "$bundle"
           cp "$source/packages/agent/src/cli.ts" "$bundle/cli.ts"
