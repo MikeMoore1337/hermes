@@ -17,6 +17,8 @@ from scripts.h15_remote_commander_candidate_audit import (
 
 RELATIVE = Path("packages/agent/src/dispatcher.ts")
 EDIT_RELATIVE = Path("packages/agent/src/core/tools/edit.ts")
+SEARCH_RELATIVE = Path("packages/agent/src/core/search-manager.ts")
+SEARCH_HANDLERS_RELATIVE = Path("packages/agent/src/core/handlers/search-handlers.ts")
 DENIED_HANDLERS = {
     # Never expose remote config or historical tool arguments, which can
     # reveal policy internals or secret-bearing command prompts.
@@ -55,15 +57,66 @@ def edit_conflict_errors(raw: str) -> str:
     return raw[:start] + changed + raw[end:]
 
 
+def search_timeout_errors(manager: str, handlers: str) -> tuple[str, str]:
+    """Preserve partial results without presenting a timed-out search as complete."""
+    changes = (
+        ("        if (!session.isComplete && !session.process.killed) {\n"
+         "          session.process.kill('SIGTERM');",
+         "        if (!session.isComplete && !session.process.killed) {\n"
+         "          session.isError = true;\n"
+         "          session.wasIncomplete = true;\n"
+         "          session.error = 'HERMES_SEARCH_TIMEOUT: results are incomplete; narrow the path or increase timeout_ms.';\n"
+         "          session.process.kill('SIGTERM');"),
+        ("      if (session.totalMatches > 0) {\n        session.isError = false;",
+         "      if (session.totalMatches > 0 && !session.wasIncomplete) {\n        session.isError = false;"),
+    )
+    for old, new in changes:
+        if manager.count(old) != 1:
+            raise AuditError("unreviewed_search_timeout_branch")
+        manager = manager.replace(old, new, 1)
+
+    markers = ("export async function handleStartSearch(",
+               "export async function handleGetMoreSearchResults(",
+               "export async function handleStopSearch(")
+    if any(handlers.count(marker) != 1 for marker in markers):
+        raise AuditError("unreviewed_search_timeout_handlers")
+    first, second, third = (handlers.index(marker) for marker in markers)
+    parts = [handlers[:first], handlers[first:second], handlers[second:third], handlers[third:]]
+    for index, value, running in ((1, "result", "RUNNING"), (2, "results", "IN PROGRESS")):
+        changes = (
+            (f"{value}.isComplete ? 'COMPLETED' : '{running}'",
+             f"{value}.isError ? 'INCOMPLETE' : {value}.isComplete ? 'COMPLETED' : '{running}'"),
+            ("      output += `\\n✅ Search completed.`;",
+             f"      output += {value}.isError\n"
+             "        ? `\\n⚠️ Search incomplete. Results may be partial; narrow the path or increase timeout_ms.`\n"
+             "        : `\\n✅ Search completed.`;"),
+            ('      content: [{ type: "text", text: output }],',
+             f'      isError: {value}.isError,\n      content: [{{ type: "text", text: output }}],'),
+        )
+        for old, new in changes:
+            if parts[index].count(old) != 1:
+                raise AuditError("unreviewed_search_timeout_handlers")
+            parts[index] = parts[index].replace(old, new, 1)
+    old = "      if (results.wasIncomplete) {"
+    if parts[2].count(old) != 1:
+        raise AuditError("unreviewed_search_timeout_handlers")
+    parts[2] = parts[2].replace(old, "      if (results.wasIncomplete && !results.isError) {", 1)
+    return manager, "".join(parts)
+
+
 def apply(root: Path, *, sha: str = UPSTREAM_SHA) -> dict[str, object]:
     # Checks immutable source revision, license/NOTICE and all known risks.
     evaluate(root, sha=sha)
     path = root / RELATIVE
     edit_path = root / EDIT_RELATIVE
+    search_path = root / SEARCH_RELATIVE
+    search_handlers_path = root / SEARCH_HANDLERS_RELATIVE
     if path.is_symlink() or not path.is_file():
         raise AuditError("unsafe_dispatcher")
     if edit_path.is_symlink() or not edit_path.is_file():
         raise AuditError("unsafe_edit_handler")
+    if any(p.is_symlink() or not p.is_file() for p in (search_path, search_handlers_path)):
+        raise AuditError("unsafe_search_handler")
     raw = path.read_text(encoding="utf-8")
     old_import = "import { getConfig, setConfigValue } from './core/tools/config.js';"
     new_import = ""
@@ -97,8 +150,12 @@ def apply(root: Path, *, sha: str = UPSTREAM_SHA) -> dict[str, object]:
     if "if (!handler) {" not in updated or "t.name in TOOL_HANDLERS" not in updated:
         raise AuditError("dispatcher_fallback_unreviewed")
     updated_edit = edit_conflict_errors(edit_path.read_text(encoding="utf-8"))
+    updated_search, updated_search_handlers = search_timeout_errors(
+        search_path.read_text(encoding="utf-8"), search_handlers_path.read_text(encoding="utf-8"))
     path.write_text(updated, encoding="utf-8")
     edit_path.write_text(updated_edit, encoding="utf-8")
+    search_path.write_text(updated_search, encoding="utf-8")
+    search_handlers_path.write_text(updated_search_handlers, encoding="utf-8")
     return {
         "source_sha": sha,
         "status": "PATCHED_DISPOSABLE_SOURCE",

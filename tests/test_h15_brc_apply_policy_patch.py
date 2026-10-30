@@ -36,13 +36,42 @@ EDIT = """async function edit() {
 }
 """
 
+SEARCH_MANAGER = """        if (!session.isComplete && !session.process.killed) {
+          session.process.kill('SIGTERM');
+        }
+      if (session.totalMatches > 0) {
+        session.isError = false;
+      }
+"""
+SEARCH_HANDLERS = """export async function handleStartSearch(args) {
+    output += `${result.isComplete ? 'COMPLETED' : 'RUNNING'}`;
+      output += `\\n✅ Search completed.`;
+    return {
+      content: [{ type: "text", text: output }],
+    };
+}
+export async function handleGetMoreSearchResults(args) {
+    output += `${results.isComplete ? 'COMPLETED' : 'IN PROGRESS'}`;
+      output += `\\n✅ Search completed.`;
+      if (results.wasIncomplete) {
+        permissionWarning();
+      }
+    return {
+      content: [{ type: "text", text: output }],
+    };
+}
+export async function handleStopSearch(args) { return originalStop(); }
+"""
+
 
 class BrcHardeningTests(unittest.TestCase):
     def test_offline_bundle_distributes_the_edit_handler_change(self):
         workflow = (Path(__file__).resolve().parents[1] /
                     ".github/workflows/h15-remote-commander-candidate.yml").read_text(encoding="utf-8")
         paths = workflow.split('cat > "$bundle/EXPECTED_PATHS.txt" <<\'PATHS\'\n', 1)[1].split('\n          PATHS', 1)[0]
-        self.assertIn("packages/agent/src/core/tools/edit.ts", [line.strip() for line in paths.splitlines()])
+        for path in ("packages/agent/src/core/tools/edit.ts", "packages/agent/src/core/search-manager.ts",
+                     "packages/agent/src/core/handlers/search-handlers.ts"):
+            self.assertIn(path, [line.strip() for line in paths.splitlines()])
 
     def setUp(self):
         temp = tempfile.TemporaryDirectory()
@@ -54,11 +83,27 @@ class BrcHardeningTests(unittest.TestCase):
         self.edit = self.root / "packages/agent/src/core/tools/edit.ts"
         self.edit.parent.mkdir(parents=True)
         self.edit.write_text(EDIT, encoding="utf-8")
+        self.search = self.root / "packages/agent/src/core/search-manager.ts"
+        self.search.write_text(SEARCH_MANAGER, encoding="utf-8")
+        self.search_handlers = self.root / "packages/agent/src/core/handlers/search-handlers.ts"
+        self.search_handlers.parent.mkdir(parents=True)
+        self.search_handlers.write_text(SEARCH_HANDLERS, encoding="utf-8")
         guard = patch("scripts.h15_brc_apply_policy_patch.evaluate", return_value={
             "status": "SOURCE_PIN_VERIFIED"
         })
         guard.start()
         self.addCleanup(guard.stop)
+
+    def test_changed_search_inputs_refuse_before_any_source_write(self):
+        for target, original in ((self.search, SEARCH_MANAGER), (self.search_handlers, SEARCH_HANDLERS)):
+            with self.subTest(path=target.name):
+                target.write_text(original.replace("isComplete", "unexpectedState"), encoding="utf-8")
+                paths = (self.dispatcher, self.edit, self.search, self.search_handlers)
+                before = {p: p.read_bytes() for p in paths}
+                with self.assertRaisesRegex(AuditError, "unreviewed_search_timeout"):
+                    apply(self.root)
+                self.assertEqual({p: p.read_bytes() for p in paths}, before)
+                target.write_text(original, encoding="utf-8")
 
     def test_patch_removes_policy_mutation_and_external_file_host(self):
         result = apply(self.root)

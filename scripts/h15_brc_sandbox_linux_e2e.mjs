@@ -4,6 +4,8 @@
 import fs from 'node:fs';
 import { setTimeout as pause } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
+import childProcess from 'node:child_process';
+import { syncBuiltinESMExports } from 'node:module';
 
 const source = '/opt/brc/packages/agent/dist/dispatcher.js';
 const { listTools, callTool } = await import(pathToFileURL(source).href);
@@ -47,6 +49,56 @@ const edited = await callTool('edit_block', {
 assert(edited.isError !== true &&
        fs.readFileSync(editPath, 'utf8') === 'same\nsame\nunique-after\n',
        'MCP_EDIT_UNIQUE_SUCCESS');
+
+// Drive the real compiled search manager with a controlled, real child process.
+// Timing/output are synthetic; SIGTERM, result retention and MCP flags are real.
+const originalSpawn = childProcess.spawn;
+const searchText = result => result.content.map(item => item.text || '').join('\n');
+async function finishSearch(started) {
+  const id = searchText(started).match(/session: (\S+)/)?.[1];
+  if (!id) throw Error('SEARCH_SESSION_ID_MISSING');
+  for (let i = 0; i < 100; i++) {
+    const result = await callTool('get_more_search_results', {sessionId:id,offset:0,length:10});
+    if (/Status: (COMPLETED|INCOMPLETE)|encountered an error:/.test(searchText(result))) {
+      await callTool('stop_search', {sessionId:id});
+      return result;
+    }
+    await pause(20);
+  }
+  throw Error('SEARCH_DID_NOT_FINISH');
+}
+const searchArgs = {path:'/workspace',pattern:'timeout-fixture',searchType:'content',
+  filePattern:'timeout-fixture.txt',literalSearch:true};
+try {
+  for (const partial of [false,true]) {
+    const match = {type:'match',data:{path:{text:'/workspace/timeout-fixture.txt'},
+      line_number:1,lines:{text:'partial-marker\n'}}};
+    const program = (partial ? `process.stdout.write(${JSON.stringify(JSON.stringify(match)+'\n')});` : '') +
+      'setInterval(()=>{},1000);';
+    childProcess.spawn = (_binary,_args,options) => originalSpawn(process.execPath,['-e',program],options);
+    syncBuiltinESMExports();
+    const started = await callTool('start_search', {...searchArgs,timeout_ms:partial?500:1});
+    if (!partial) assert(started.isError === true && searchText(started).includes('INCOMPLETE'),
+      'MCP_SEARCH_INITIAL_TIMEOUT_ERROR');
+    const result = await finishSearch(started);
+    assert(result.isError === true && !searchText(result).includes('✅ Search completed.'),
+      partial?'MCP_SEARCH_PARTIAL_TIMEOUT_ERROR':'MCP_SEARCH_EMPTY_TIMEOUT_ERROR');
+    if (partial) assert(searchText(result).includes('partial-marker') &&
+      searchText(result).includes('INCOMPLETE'), 'MCP_SEARCH_TIMEOUT_RETAINS_PARTIAL_RESULTS');
+  }
+} finally {
+  childProcess.spawn = originalSpawn;
+  syncBuiltinESMExports();
+}
+fs.mkdirSync('/workspace/search-complete');
+fs.writeFileSync('/workspace/search-complete/plain.txt','real-ripgrep-marker\n');
+for (const [pattern,expected] of [['real-ripgrep-marker','real-ripgrep-marker'],['absent-marker','No matches found.']]) {
+  const result = await finishSearch(await callTool('start_search', {...searchArgs,
+    path:'/workspace/search-complete',filePattern:'plain.txt',pattern,timeout_ms:5000}));
+  assert(result.isError !== true && searchText(result).includes(expected) &&
+    searchText(result).includes('✅ Search completed.'),
+    pattern==='absent-marker'?'MCP_SEARCH_TRUE_NO_MATCH_SUCCESS':'MCP_SEARCH_REAL_RIPGREP_SUCCESS');
+}
 
 const forbidden = await callTool('write_file', {
   path: '/opt/brc/package.json', content: 'unapproved-tampering',
