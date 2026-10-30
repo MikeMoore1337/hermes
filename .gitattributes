@@ -4,5 +4,6 @@ deploy/install-yfc-infrastructure-emitter.sh text eol=lf
 deploy/install-hermes-yfc-pull.sh text eol=lf
 deploy/hermes-yfc-metrics-emit.sh text eol=lf
 scripts/h454_wss_fixture_certificates.sh text eol=lf
+scripts/h454_offline_restore_order_e2e.sh text eol=lf
 # Preserve exact byte-for-byte owner-licensed upstream source (including CRLF).
 third_party/statejnik/** -text

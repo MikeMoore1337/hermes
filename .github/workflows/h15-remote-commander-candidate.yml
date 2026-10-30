@@ -17,6 +17,7 @@ on:
       - scripts/h454_agent_pinned_wss_e2e.mjs
       - scripts/h454_wss_relay_proxy.mjs
       - scripts/h454_wss_fixture_certificates.sh
+      - scripts/h454_offline_restore_order_e2e.sh
       - deploy/h15/Dockerfile.brc-agent-pinned-wss
       - tests/test_h454_agent_pinned_wss.py
       - scripts/h15_brc_workspace_gateway.py
@@ -55,6 +56,7 @@ on:
       - scripts/h454_agent_pinned_wss_e2e.mjs
       - scripts/h454_wss_relay_proxy.mjs
       - scripts/h454_wss_fixture_certificates.sh
+      - scripts/h454_offline_restore_order_e2e.sh
       - deploy/h15/Dockerfile.brc-agent-pinned-wss
       - tests/test_h454_agent_pinned_wss.py
       - scripts/h15_brc_harden_relay.py
@@ -565,6 +567,12 @@ jobs:
               console.log("H454_SYNTHETIC_IMAGE_READONLY=PASS");
             '
           echo "H454_PINNED_WSS_SYNTHETIC_E2E=PASS" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify synthetic offline staging and restart order
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/h454_offline_restore_order_e2e.sh "hermes-brc-relay-eval:${GITHUB_SHA:0:12}"
 
       - name: Verify dedicated owner UID/GID image runtime (CI-only, no host mounts)
         shell: bash

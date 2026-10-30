@@ -108,6 +108,11 @@ original plaintext bearer remains open.
 - A Windows PowerShell 5.1 and Schannel fixture verified the generated
   launcher's TLS probe against a synthetic trusted certificate; untrusted,
   wrong-name, missing-CA and changed-CA cases failed closed.
+- A disposable container from the pinned baseline image passed two offline
+  start/stage cycles with synthetic credentials; its tmpfs was empty after
+  restart and an extra stage refused overwrite. This does not test the actual
+  original container or its return to the network. The candidate CI includes
+  a separate synthetic Docker network-order test, not a Windows rollout.
 - These tests do not establish certificate deployment, host ACLs, actual SSH
   forwarding, complete process-tree cleanup, login/reboot recovery, a real
   power-loss guarantee, live MCP recovery or production activation.
