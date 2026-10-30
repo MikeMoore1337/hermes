@@ -48,12 +48,13 @@ class ProbeTests(unittest.TestCase):
     def test_url_policy_matches_existing_preview(self):
         self.assertEqual(probe.RESERVED, frozenset(PROJECTS))
         self.assertEqual(probe.WINDOWS_DEVICES, WINDOWS_DEVICES)
-        for url in ("https://github.com/example/project", "https://github.com/Example/Project.git/"):
+        for url in ("https://github.com/example/project", "https://github.com/Example/Project.git/",
+                    "https://github.com/Example/v2_engine.test.git", "https://github.com/example/p"):
             self.assertEqual(probe.parse_url(url)[1], preview(url)["repository"])
         for url in ("https://github.com/example/project?token=secret",
                     "https://name:secret@github.com/example/project",
                     "https://github.com/example/../hermes", "https://evil.invalid/example/project",
-                    "https://github.com/example/project_with_underscore"):
+                    "https://github.com/example/project..name", "https://github.com/example/project."):
             with self.subTest(url=url):
                 with self.assertRaises(PreviewRejected):
                     preview(url)
@@ -65,6 +66,8 @@ class ProbeTests(unittest.TestCase):
             probe.probe("https://github.com/example/hermes", root=self.root, remote=self.remote)
         with self.assertRaisesRegex(probe.ProbeRejected, "name_reserved"):
             probe.probe("https://github.com/example/com1", root=self.root, remote=self.remote)
+        with self.assertRaisesRegex(probe.ProbeRejected, "name_reserved"):
+            probe.probe("https://github.com/example/CoM1.txt", root=self.root, remote=self.remote)
         (self.root / "PrOjEcT").mkdir()
         with self.assertRaisesRegex(probe.ProbeRejected, "name_conflict"):
             probe.probe("https://github.com/example/project", root=self.root, remote=self.remote)

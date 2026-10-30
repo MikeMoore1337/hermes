@@ -35,13 +35,23 @@ class PreviewTests(unittest.TestCase):
         self.assertFalse(result["can_connect"])
 
     def test_windows_device_names_are_reserved_without_claiming_a_live_check(self):
-        for name in ("CON", "aux", "COM1", "lpt9"):
+        for name in ("CON", "aux", "COM1", "lpt9", "NUL.txt", "Com1.tool"):
             with self.subTest(name=name):
                 result = preview("https://github.com/example/" + name)
                 self.assertEqual(result["catalog"], "reserved")
                 self.assertEqual(result["filesystem"], "not_checked")
                 self.assertFalse(result["can_connect"])
         self.assertEqual(preview("https://github.com/example/com10")["catalog"], "not_reserved")
+
+    def test_common_github_names_are_normalized_without_changing_the_directory(self):
+        for name in ("p", "_config", "v2_engine.test", "a" * 100):
+            for suffix in ("", ".git", ".git/"):
+                with self.subTest(name=name, suffix=suffix):
+                    result = preview("https://github.com/Example/" + name + suffix)
+                    self.assertEqual(result["repository"], "https://github.com/Example/" + name + ".git")
+                    self.assertEqual(result["root"], "/workspace/projects/" + name)
+                    self.assertEqual(result["catalog"], "not_reserved")
+                    self.assertFalse(result["can_connect"])
 
     def test_urls_with_credentials_paths_or_other_hosts_are_rejected(self):
         for value in (
@@ -53,9 +63,11 @@ class PreviewTests(unittest.TestCase):
             "https://github.com/example/project?token=secret",
             "https://github.com/example/project#section",
             "https://github.com/example/project/subdir",
-            "https://github.com/example/project_with_underscore",
-            "https://github.com/example/p",
-            "https://github.com/example/" + "a" * 81,
+            "https://github.com/example/.hidden",
+            "https://github.com/example/-option",
+            "https://github.com/example/project.",
+            "https://github.com/example/project..name",
+            "https://github.com/example/" + "a" * 101,
             "file:///workspace/projects/project", "", None,
         ):
             with self.subTest(value=value), self.assertRaises(PreviewRejected):
@@ -92,6 +104,15 @@ class PublicRepositoryTests(unittest.TestCase):
     def test_public_identity_confirmed_without_credentials(self):
         self.assertEqual(self.check(self.Response()), "public_confirmed")
 
+    def test_public_metadata_for_underscored_dotted_name_uses_the_full_name(self):
+        response = self.Response(body=b'{"private":false,"visibility":"public","full_name":"Example/v2_engine.test"}')
+        with patch.object(brc_onboarding.http.client, "HTTPSConnection") as constructor:
+            connection = constructor.return_value
+            connection.getresponse.return_value = response
+            result = brc_onboarding.check_public_repository("https://github.com/Example/v2_engine.test.git")
+        self.assertEqual(result, "public_confirmed")
+        self.assertEqual(connection.request.call_args.args, ("GET", "/repos/Example/v2_engine.test"))
+
     def test_redirect_private_wrong_identity_ambiguous_and_oversize_fail_closed(self):
         for response in (
             self.Response(status=301), self.Response(status=404), self.Response(status=429),
@@ -108,6 +129,7 @@ class PublicRepositoryTests(unittest.TestCase):
     def test_reserved_invalid_and_busy_requests_do_not_access_network(self):
         with patch.object(brc_onboarding.http.client, "HTTPSConnection", side_effect=AssertionError("network")):
             self.assertEqual(brc_onboarding.check_public_repository("https://github.com/example/HERMES"), "not_checked")
+            self.assertEqual(brc_onboarding.check_public_repository("https://github.com/example/CoM1.txt"), "not_checked")
             with self.assertRaises(PreviewRejected):
                 brc_onboarding.check_public_repository("https://github.com/example/project?token=secret")
             self.assertTrue(brc_onboarding._public_checks.acquire(blocking=False))

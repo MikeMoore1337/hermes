@@ -24,7 +24,7 @@ RESERVED = frozenset(("hermes", "your-fitness-coach", "second-brain", "ai-develo
 WINDOWS_DEVICES = frozenset(("con", "prn", "aux", "nul", *(f"{prefix}{n}" for prefix in ("com", "lpt") for n in range(1, 10))))
 URL = re.compile(
     r"https://github\.com/([a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?)/"
-    r"([a-z][a-z0-9-]{1,79})(?:\.git)?/?\Z",
+    r"([a-z0-9_][a-z0-9_.-]{0,103})/?\Z",
     re.ASCII | re.IGNORECASE,
 )
 REF = re.compile(r"ref: refs/heads/([A-Za-z0-9][A-Za-z0-9._/-]{0,127})\tHEAD\Z", re.ASCII)
@@ -46,6 +46,10 @@ def parse_url(value: object) -> tuple[str, str]:
     if not match:
         _reject("invalid_repository")
     owner, repo = match.groups()
+    if repo.lower().endswith(".git"):
+        repo = repo[:-4]
+    if not repo or len(repo) > 100 or repo.endswith(".") or ".." in repo:
+        _reject("invalid_repository")
     name = repo.lower()
     return name, f"https://github.com/{owner}/{name}.git"
 
@@ -166,7 +170,7 @@ def _conflict(root_fd: int, name: str) -> bool:
 def probe(repository_url: object, *, root: Path = ROOT,
           remote: Callable[[str], bytes] = git_remote) -> dict:
     name, repository = parse_url(repository_url)
-    if name in RESERVED or name in WINDOWS_DEVICES:
+    if name in RESERVED or name.partition(".")[0] in WINDOWS_DEVICES:
         _reject("name_reserved")
     flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
     parent_fd = root_fd = None

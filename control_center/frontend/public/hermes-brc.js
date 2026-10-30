@@ -234,7 +234,7 @@
    const text={online:"на связи",offline:"не на связи",paused:"приостановлено",stale:"данные устарели"}[status];
    onboarding.device.textContent=text?"Windows sandbox — "+text+" (по снимку)":"Windows sandbox — нет свежих данных";
  }
- const githubUrl=/^https:\/\/github\.com\/([a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?)\/([a-z][a-z0-9-]{1,79})(?:\.git)?\/?$/i;
+ const githubUrl=/^https:\/\/github\.com\/([a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?)\/([a-z0-9_][a-z0-9_.-]{0,103})\/?$/i;
  let previewController=null;
  function resetOnboarding(){
    previewController?.abort();previewController=null;onboarding.form.reset();
@@ -263,8 +263,9 @@
    event.preventDefault();
    if(previewController)return;
    const input=onboarding.url.value.trim(),match=githubUrl.exec(input);
-   if(!match || input.length>200){
-     onboarding.error.textContent="Введите HTTPS-ссылку GitHub с именем проекта из букв, цифр и дефисов.";
+   const repository=match?.[2].replace(/\.git$/i,"");
+   if(!match || input.length>200 || !repository || repository.length>100 || repository.endsWith(".") || repository.includes("..")){
+     onboarding.error.textContent="Введите HTTPS-ссылку GitHub с допустимым именем проекта.";
      onboarding.url.setAttribute("aria-invalid","true");
      onboarding.url.focus();return;
    }
@@ -278,7 +279,7 @@
      });
      if(response.status===401||response.status===403)throw Error("auth");
      if(!response.ok)throw Error("unavailable");
-     const value=await response.json(), name=match[2].toLowerCase();
+     const value=await response.json(), name=repository.toLowerCase();
      if(!exact(value,["schema","status","repository","device","root","scope","catalog","remote","filesystem","can_connect"])||
        value.schema!==1||value.status!=="preview_only"||value.repository!=="https://github.com/"+match[1]+"/"+name+".git"||
        value.device!=="Windows sandbox"||value.root!=="/workspace/projects/"+name||value.scope!=="sandbox"||

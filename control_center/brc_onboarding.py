@@ -15,7 +15,7 @@ _public_checks = threading.BoundedSemaphore(2)
 
 GITHUB_URL = re.compile(
     r"https://github\.com/([a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?)/"
-    r"([a-z][a-z0-9-]{1,79})(?:\.git)?/?\Z",
+    r"([a-z0-9_][a-z0-9_.-]{0,103})/?\Z",
     re.ASCII | re.IGNORECASE,
 )
 
@@ -31,12 +31,16 @@ def preview(repository_url: object) -> dict:
     if not match:
         raise PreviewRejected("invalid_repository_url")
     owner, repo = match.groups()
+    if repo.lower().endswith(".git"):
+        repo = repo[:-4]
+    if not repo or len(repo) > 100 or repo.endswith(".") or ".." in repo:
+        raise PreviewRejected("invalid_repository_url")
     name = repo.lower()
     return {
         "schema": 1, "status": "preview_only",
         "repository": f"https://github.com/{owner}/{name}.git",
         "device": "Windows sandbox", "root": f"/workspace/projects/{name}",
-        "scope": "sandbox", "catalog": "reserved" if name in PROJECTS or name in WINDOWS_DEVICES else "not_reserved",
+        "scope": "sandbox", "catalog": "reserved" if name in PROJECTS or name.partition(".")[0] in WINDOWS_DEVICES else "not_reserved",
         "remote": "not_checked", "filesystem": "not_checked", "can_connect": False,
     }
 
@@ -50,6 +54,7 @@ def check_public_repository(repository_url: str) -> str:
     if match is None:
         raise PreviewRejected("invalid_repository_url")
     owner, repository = match.groups()
+    repository = repository[:-4]  # preview() always returns a canonical .git URL.
     if not _public_checks.acquire(blocking=False):
         return "unavailable"
     done = threading.Event()

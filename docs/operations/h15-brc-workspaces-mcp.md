@@ -76,7 +76,13 @@ live PASS, partial coverage and untested scenarios by device and tool.
 - New-project onboarding and Control Center workflow: **OPEN** (#454).
   The owner-approved visual direction has a source-level, read-only preview
   for a narrowly formatted GitHub URL. It checks syntax, reserved Windows
-  device names and collisions with the built-in catalog. An owner-initiated,
+  device names and collisions with the built-in catalog. A public repository
+  name may contain ASCII letters, digits, `_`, `-` and
+  internal dots; names beginning with a dot or hyphen, ending with a dot or
+  containing `..` remain unsupported. Windows device names remain reserved
+  even with an extension such as `CON.txt`, as described in [Windows naming
+  rules](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file).
+  The name is limited to 100 characters. An owner-initiated,
   credential-free request to the fixed GitHub API checks public repository
   metadata without following redirects; a timeout, rate limit or ambiguous
   response remains unavailable. The request sends the entered repository

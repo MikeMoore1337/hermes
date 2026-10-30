@@ -97,6 +97,23 @@ test("reserved catalog name cannot be connected",async({page})=>{
  await expect(dialog.getByRole("button",{name:"Подключить",exact:true})).toBeDisabled();
 });
 
+for(const name of ["v2_engine.test","p"]){
+test("common repository name keeps its exact sandbox preview: "+name,async({page})=>{
+ const url="https://github.com/example/"+name+".git";
+ await page.route("**/api/providers/hermes-brc",route=>route.fulfill({status:503,body:"{}"}));
+ await page.route("**/api/providers/hermes-brc/onboarding-preview",route=>{
+  expect(route.request().postDataJSON()).toEqual({repository_url:url});
+  return route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({...preview,
+   repository:url,root:"/workspace/projects/"+name})});
+ });
+ await page.goto("/hermes-brc");await page.getByRole("button",{name:"Подключить проект"}).click();
+ await page.getByLabel("Ссылка на репозиторий").fill(url);
+ await page.getByRole("button",{name:"Проверить",exact:true}).click();
+ await expect(page.getByRole("dialog")).toContainText("/workspace/projects/"+name);
+ await expect(page.getByRole("button",{name:"Подключить",exact:true})).toBeDisabled();
+});
+}
+
 test("unavailable GitHub check stays an unconnected preview",async({page})=>{
  await setup(page,{...preview,remote:"unavailable"});
  await page.getByLabel("Ссылка на репозиторий").fill("https://github.com/example/project");
@@ -151,10 +168,13 @@ test("invalid input never reaches preview endpoint",async({page})=>{
  await page.route("**/api/providers/hermes-brc",route=>route.fulfill({status:503,body:"{}"}));
  await page.route("**/api/providers/hermes-brc/onboarding-preview",route=>{calls++;return route.abort();});
  await page.goto("/hermes-brc");await page.getByRole("button",{name:"Подключить проект"}).click();
- await page.getByLabel("Ссылка на репозиторий").fill("https://github.com/example/project?token=secret");
- await page.getByRole("button",{name:"Проверить",exact:true}).click();
- await expect(page.getByRole("dialog")).toContainText("Введите HTTPS-ссылку GitHub");
- await expect(page.getByLabel("Ссылка на репозиторий")).toHaveAttribute("aria-invalid","true");
+ for(const url of ["https://github.com/example/project?token=secret",
+  "https://github.com/example/project..name","https://github.com/example/project."]){
+  await page.getByLabel("Ссылка на репозиторий").fill(url);
+  await page.getByRole("button",{name:"Проверить",exact:true}).click();
+  await expect(page.getByRole("dialog")).toContainText("Введите HTTPS-ссылку GitHub");
+  await expect(page.getByLabel("Ссылка на репозиторий")).toHaveAttribute("aria-invalid","true");
+ }
  expect(calls).toBe(0);
 });
 
