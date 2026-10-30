@@ -834,8 +834,10 @@ jobs:
           cat > "$bundle/EXPECTED_PATHS.txt" <<'PATHS'
           packages/agent/src/core/handlers/search-handlers.ts
           packages/agent/src/core/search-manager.ts
+          packages/agent/src/core/terminal-manager.ts
           packages/agent/src/core/tools/edit.ts
           packages/agent/src/core/tools/filesystem.ts
+          packages/agent/src/core/tools/improved-process-tools.ts
           packages/agent/src/dispatcher.ts
           packages/relay/src/app.ts
           packages/relay/src/device-hub.ts

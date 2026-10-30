@@ -59,6 +59,30 @@ FILESYSTEM = """    const info: Record<string, any> = {
     return info;
 """
 
+TERMINAL = """class TerminalManager {
+  forceTerminate(pid: number): boolean {
+    const session = this.sessions.get(pid);
+    setTimeout(() => {
+          if (this.sessions.has(pid)) {
+            session.process.kill('SIGKILL');
+          }
+    }, 1000);
+    return true;
+  }
+  listActiveSessions() { return []; }
+}
+"""
+
+PROCESS_TOOLS = """export async function forceTerminate(args: unknown): Promise<ServerResult> {
+  const success = terminalManager.forceTerminate(pid);
+  return {
+    content: [{ text: success ? `Successfully initiated termination of session ${pid}`
+      : `No active session found for PID ${pid}` }],
+  };
+}
+export async function listSessions() { return []; }
+"""
+
 SEARCH_MANAGER = """        if (!session.isComplete && !session.process.killed) {
           session.process.kill('SIGTERM');
         }
@@ -93,6 +117,7 @@ class BrcHardeningTests(unittest.TestCase):
                     ".github/workflows/h15-remote-commander-candidate.yml").read_text(encoding="utf-8")
         paths = workflow.split('cat > "$bundle/EXPECTED_PATHS.txt" <<\'PATHS\'\n', 1)[1].split('\n          PATHS', 1)[0]
         for path in ("packages/agent/src/core/tools/edit.ts", "packages/agent/src/core/tools/filesystem.ts",
+                     "packages/agent/src/core/tools/improved-process-tools.ts", "packages/agent/src/core/terminal-manager.ts",
                      "packages/agent/src/core/search-manager.ts",
                      "packages/agent/src/core/handlers/search-handlers.ts"):
             self.assertIn(path, [line.strip() for line in paths.splitlines()])
@@ -109,6 +134,10 @@ class BrcHardeningTests(unittest.TestCase):
         self.edit.write_text(EDIT, encoding="utf-8")
         self.filesystem = self.root / "packages/agent/src/core/tools/filesystem.ts"
         self.filesystem.write_text(FILESYSTEM, encoding="utf-8")
+        self.terminal = self.root / "packages/agent/src/core/terminal-manager.ts"
+        self.terminal.write_text(TERMINAL, encoding="utf-8")
+        self.process_tools = self.root / "packages/agent/src/core/tools/improved-process-tools.ts"
+        self.process_tools.write_text(PROCESS_TOOLS, encoding="utf-8")
         self.search = self.root / "packages/agent/src/core/search-manager.ts"
         self.search.write_text(SEARCH_MANAGER, encoding="utf-8")
         self.search_handlers = self.root / "packages/agent/src/core/handlers/search-handlers.ts"
@@ -124,7 +153,8 @@ class BrcHardeningTests(unittest.TestCase):
         for target, original in ((self.search, SEARCH_MANAGER), (self.search_handlers, SEARCH_HANDLERS)):
             with self.subTest(path=target.name):
                 target.write_text(original.replace("isComplete", "unexpectedState"), encoding="utf-8")
-                paths = (self.dispatcher, self.edit, self.filesystem, self.search, self.search_handlers)
+                paths = (self.dispatcher, self.edit, self.filesystem, self.terminal, self.process_tools,
+                         self.search, self.search_handlers)
                 before = {p: p.read_bytes() for p in paths}
                 with self.assertRaisesRegex(AuditError, "unreviewed_search_timeout"):
                     apply(self.root)
@@ -221,7 +251,8 @@ class BrcHardeningTests(unittest.TestCase):
 
     def test_unreviewed_mutation_dispatcher_refuses_without_writing(self):
         self.dispatcher.write_text(ORIGINAL.replace("  move_file:", "  unexpected_move:"), encoding="utf-8")
-        paths = (self.dispatcher, self.edit, self.filesystem, self.search, self.search_handlers)
+        paths = (self.dispatcher, self.edit, self.filesystem, self.terminal, self.process_tools,
+                 self.search, self.search_handlers)
         before = {p: p.read_bytes() for p in paths}
         with self.assertRaisesRegex(AuditError, "unreviewed_file_mutation_dispatcher"):
             apply(self.root)
@@ -229,11 +260,24 @@ class BrcHardeningTests(unittest.TestCase):
 
     def test_changed_file_info_refuses_before_any_source_write(self):
         self.filesystem.write_text(FILESYSTEM.replace("fileInfo.created", "unreviewed.created"), encoding="utf-8")
-        paths = (self.dispatcher, self.edit, self.filesystem, self.search, self.search_handlers)
+        paths = (self.dispatcher, self.edit, self.filesystem, self.terminal, self.process_tools,
+                 self.search, self.search_handlers)
         before = {p: p.read_bytes() for p in paths}
         with self.assertRaisesRegex(AuditError, "unreviewed_file_info_birthtime"):
             apply(self.root)
         self.assertEqual({p: p.read_bytes() for p in paths}, before)
+
+    def test_unreviewed_termination_refuses_without_writing(self):
+        for target, original in ((self.terminal, TERMINAL), (self.process_tools, PROCESS_TOOLS)):
+            with self.subTest(path=target.name):
+                target.write_text(original.replace("forceTerminate", "unexpectedTermination"), encoding="utf-8")
+                paths = (self.dispatcher, self.edit, self.filesystem, self.terminal, self.process_tools,
+                         self.search, self.search_handlers)
+                before = {p: p.read_bytes() for p in paths}
+                with self.assertRaisesRegex(AuditError, "unreviewed_terminal_termination"):
+                    apply(self.root)
+                self.assertEqual({p: p.read_bytes() for p in paths}, before)
+                target.write_text(original, encoding="utf-8")
 
     def test_changed_edit_branch_refuses_before_any_source_write(self):
         changed = EDIT.replace("count !== expectedReplacements", "count >= expectedReplacements")
