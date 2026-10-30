@@ -143,19 +143,21 @@ const absentTermination = await callTool('force_terminate', {pid:2147483647});
 const absentText = absentTermination.content.map(item => item.text || '').join('\n');
 assert(absentTermination.isError === true && absentText.includes('No active session or unable to initiate'),
   'MCP_TERMINATE_MISSING_IS_ERROR');
-const fakePids = [2147483646, 2147483645, 2147483644, 2147483643];
+const fakePids = [2147483646, 2147483645, 2147483644, 2147483643, 2147483642, 2147483641];
 if (fakePids.some(pid => terminalManager.sessions.has(pid))) throw Error('SYNTHETIC_PID_OCCUPIED');
-const oldSignals = [], replacementSignals = [], sameSignals = [];
-const oldSession = {process:{kill:signal => oldSignals.push(signal)}};
-const replacementSession = {process:{kill:signal => replacementSignals.push(signal)}};
-const sameSession = {process:{kill:signal => sameSignals.push(signal)}};
-const failingSession = {process:{kill:signal => {if (signal === 'SIGKILL') throw Error('synthetic failure');}}};
+const oldSignals = [], replacementSignals = [], sameSignals = [], rejectedSignals = [];
+const oldSession = {process:{kill:signal => {oldSignals.push(signal); return true;}}};
+const replacementSession = {process:{kill:signal => {replacementSignals.push(signal); return true;}}};
+const sameSession = {process:{kill:signal => {sameSignals.push(signal); return true;}}};
+const failingSession = {process:{kill:signal => {if (signal === 'SIGKILL') throw Error('synthetic failure'); return true;}}};
 const refusedSession = {process:{kill:() => {throw Error('synthetic refusal');}}};
+const rejectedSession = {process:{kill:signal => {rejectedSignals.push(signal); return false;}}};
+const rejectedEscalationSession = {process:{kill:signal => signal !== 'SIGKILL'}};
 const originalConsoleError = console.error;
-let escalationLogged = false;
+let escalationLogs = 0;
 try {
   console.error = (...args) => {
-    if (args[0] === 'HERMES_TERMINATION_ESCALATION_FAILED') escalationLogged = true;
+    if (args[0] === 'HERMES_TERMINATION_ESCALATION_FAILED') escalationLogs++;
     else originalConsoleError(...args);
   };
   terminalManager.sessions.set(fakePids[0], oldSession);
@@ -167,13 +169,22 @@ try {
   const failingInitiated = await callTool('force_terminate', {pid:fakePids[2]});
   terminalManager.sessions.set(fakePids[3], refusedSession);
   const refused = await callTool('force_terminate', {pid:fakePids[3]});
+  terminalManager.sessions.set(fakePids[4], rejectedSession);
+  const rejected = await callTool('force_terminate', {pid:fakePids[4]});
+  terminalManager.sessions.set(fakePids[5], rejectedEscalationSession);
+  const rejectedEscalation = await callTool('force_terminate', {pid:fakePids[5]});
   await pause(1200);
   assert(initiated.isError !== true && oldSignals.join(',') === 'SIGINT' && replacementSignals.length === 0,
     'MCP_TERMINATE_REPLACEMENT_SESSION_UNTOUCHED');
+  assert(initiated.content.some(item => item.text?.includes('descendants may remain')),
+    'MCP_TERMINATE_SCOPE_DISCLOSED');
   assert(sameInitiated.isError !== true && sameSignals.join(',') === 'SIGINT,SIGKILL',
     'MCP_TERMINATE_SAME_SESSION_ESCALATES');
-  assert(failingInitiated.isError !== true && escalationLogged, 'MCP_TERMINATE_ESCALATION_ERROR_CONTAINED');
+  assert(failingInitiated.isError !== true && rejectedEscalation.isError !== true && escalationLogs === 2,
+    'MCP_TERMINATE_ESCALATION_ERRORS_CONTAINED');
   assert(refused.isError === true, 'MCP_TERMINATE_REFUSAL_IS_ERROR');
+  assert(rejected.isError === true && rejectedSignals.join(',') === 'SIGINT',
+    'MCP_TERMINATE_FALSE_SIGNAL_IS_ERROR');
 } finally {
   console.error = originalConsoleError;
   for (const pid of fakePids) terminalManager.sessions.delete(pid);

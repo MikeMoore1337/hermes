@@ -162,6 +162,15 @@ def safe_termination(manager: str, tools: str) -> tuple[str, str]:
     if first >= last:
         raise AuditError("unreviewed_terminal_termination")
     branch = manager[first:last]
+    initial = r"(?m)^([ ]*)session\.process\.kill\('SIGINT'\);$"
+    initial_matches = list(re.finditer(initial, branch))
+    if len(initial_matches) != 1:
+        raise AuditError("unreviewed_terminal_termination")
+    match = initial_matches[0]
+    indent = match.group(1)
+    replacement = (indent + "if (!session.process.kill('SIGINT')) {\n"
+                   + indent + "  return false;\n" + indent + "}")
+    branch = branch[:match.start()] + replacement + branch[match.end():]
     pattern = r"(?m)^([ ]*)if \(this\.sessions\.has\(pid\)\) \{\n([ ]*)session\.process\.kill\('SIGKILL'\);\n\1\}"
     matches = list(re.finditer(pattern, branch))
     if len(matches) != 1:
@@ -169,7 +178,7 @@ def safe_termination(manager: str, tools: str) -> tuple[str, str]:
     match = matches[0]
     indent, inner = match.groups()
     replacement = (indent + "if (this.sessions.get(pid) === session) {\n"
-                   + inner + "try { session.process.kill('SIGKILL'); }\n"
+                   + inner + "try { if (!session.process.kill('SIGKILL')) console.error('HERMES_TERMINATION_ESCALATION_FAILED'); }\n"
                    + inner + "catch { console.error('HERMES_TERMINATION_ESCALATION_FAILED'); }\n"
                    + indent + "}")
     branch = branch[:match.start()] + replacement + branch[match.end():]
@@ -185,12 +194,15 @@ def safe_termination(manager: str, tools: str) -> tuple[str, str]:
     pattern = r"(?m)^([ ]*)const success = terminalManager\.forceTerminate\(pid\);\n\1return \{\n"
     matches = list(re.finditer(pattern, branch))
     old = "No active session found for PID ${pid}"
-    if len(matches) != 1 or branch.count(old) != 1 or "isError: !success" in branch:
+    success = "Successfully initiated termination of session ${pid}"
+    if (len(matches) != 1 or branch.count(old) != 1 or branch.count(success) != 1
+            or "isError: !success" in branch):
         raise AuditError("unreviewed_terminal_termination")
     match = matches[0]
     indent = match.group(1)
     branch = (branch[:match.end()] + indent + indent + "isError: !success,\n" + branch[match.end():])
     branch = branch.replace(old, "No active session or unable to initiate termination for PID ${pid}", 1)
+    branch = branch.replace(success, success + ". Only the tracked process is signaled; descendants may remain.", 1)
     return manager, tools[:first] + branch + tools[last:]
 
 
