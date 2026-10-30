@@ -114,8 +114,9 @@ the ambiguous epoch sentinel as `created: null` with
 `createdStatus: unavailable_or_epoch`; other values are unchanged. This is an
 intentional response change for that sentinel: consumers must accept `null`
 and the additional status field. A genuine epoch-zero date is also ambiguous,
-and `ctime` fallback cannot be detected reliably. Source and CI evidence do
-not establish activation of the candidate on any device.
+and `ctime` fallback cannot be detected reliably. At the time of this initial
+observation, source and CI evidence did not establish activation on any device;
+see the later Windows rollout below.
 
 ## Concurrent MCP mutation boundary (2026-10-30)
 
@@ -148,9 +149,55 @@ The candidate also escalates a delayed SIGKILL only while the registry still
 contains the same session object, and contains a failed escalation without
 crashing the dispatcher. Controlled tests use synthetic session objects, not
 real processes, to check replacement, normal escalation and failure. This is
-not an OS-level process-handle guarantee against PID reuse outside the agent;
-live Codex termination acceptance and runtime rollout remain NOT VERIFIED.
+not an OS-level process-handle guarantee against PID reuse outside the agent.
+At the time of this initial test, live Codex termination acceptance and runtime
+rollout were not verified; see the later Windows rollout below.
 See the [Issue record](https://github.com/MikeMoore1337/hermes/issues/454#issuecomment-6521362507).
+
+## Follow-up after Windows integrity rollout (2026-10-30)
+
+The owner-approved Windows window switched device `h15-win-05be75515428` to
+container `cd9e3d466bcd3adbbffbe0e641c0aaa1a8ab8fb042d33d9fac00b0a370d673cf`
+and image `sha256:6c7e8eac8b3b4c527e4d6ca83b1672a538a0d1822f2e6489c6a1d3d063be9f61`.
+Under `runtime.lock`, real Codex MCP checked an owned file, epoch-zero creation
+metadata, conflict and unique edits, search, and an error for a deliberately
+absent termination session. Independent post-checks confirmed state changed only
+in imageId, the new container ran, four prior containers remained stopped, the
+launcher and Task XML were unchanged, and the lock was released. The first
+fixture-cleanup command failed due to test-command escaping; the corrected
+cleanup exited 0. No live rollback was needed. See the [window receipt](https://github.com/MikeMoore1337/hermes/issues/454#issuecomment-6521973212).
+
+The table below records **additional** live Codex evidence. The earlier
+ChatGPT baseline remains historical; ChatGPT was not retested after this
+Windows image switch. `Process-backed` means a shell/Node operation, not a
+dedicated binary, copy or delete MCP protocol.
+
+| Follow-up | Windows sandbox | Hermes VPS sandbox | YFC VPS sandbox |
+| --- | --- | --- | --- |
+| 4 MiB binary create, MCP metadata/move, hash and cleanup | PASS, process-backed | PASS, process-backed | PASS, process-backed |
+| Binary copy, exclusive no-overwrite and delete | PASS, process-backed | PASS, process-backed | PASS, process-backed |
+| Two simultaneous processes and isolated output | PASS | PASS | PASS |
+| Local Git branch/commit/push/fetch/diff | PASS, local bare fixture only | Previously observed Git missing; not retested | Previously observed Git missing; not retested |
+| New created-time and absent-session error contract | PASS, real MCP | NOT DELIVERED | NOT DELIVERED |
+
+Evidence: [4 MiB](https://github.com/MikeMoore1337/hermes/issues/454#issuecomment-6521476563),
+[copy/delete](https://github.com/MikeMoore1337/hermes/issues/454#issuecomment-6522290597),
+[concurrent processes](https://github.com/MikeMoore1337/hermes/issues/454#issuecomment-6521776491),
+[local Git push](https://github.com/MikeMoore1337/hermes/issues/454#issuecomment-6521728408)
+and [local Git fetch](https://github.com/MikeMoore1337/hermes/issues/454#issuecomment-6522306431).
+The two simultaneous processes were bounded Node timers, not interactive REPLs.
+The deterministic write-race barrier and session-replacement tests remained
+isolated synthetic tests; shell and external writers are not serialized by the
+MCP mutation guard.
+
+The prepared container-preserving launcher was regenerated for this image after
+fixing label-order-dependent profile hashes in [#687](https://github.com/MikeMoore1337/hermes/pull/687).
+The profile matched in a read-only live check. The ordinary context could not
+read the existing SSH command line; a separately approved limited query matched
+the system OpenSSH executable, but does not prove tunnel arguments. Therefore
+launcher installation, Task Run, login/reboot recovery and live rollback remain
+unverified. The ChatGPT web client was reachable, but its plugin list and BRC
+conversation failed to load during this attempt; no new ChatGPT PASS is claimed.
 
 ## Remaining Desktop Commander replacement gaps
 
