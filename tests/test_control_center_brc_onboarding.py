@@ -11,6 +11,7 @@ import unittest
 from unittest.mock import patch
 
 from control_center.auth import AuthConfig, ORIGIN
+from control_center import brc_onboarding
 from control_center.brc_onboarding import PreviewRejected, preview
 from control_center.server import make_handler
 
@@ -66,6 +67,69 @@ class Owner:
         return cookie == "test_owner"
 
 
+class PublicRepositoryTests(unittest.TestCase):
+    class Response:
+        def __init__(self, status=200, body=b'{"private":false,"visibility":"public","full_name":"Example/Project"}'):
+            self.status, self.body = status, body
+
+        def read(self, limit):
+            return self.body[:limit]
+
+    def check(self, response):
+        with patch.object(brc_onboarding.http.client, "HTTPSConnection") as constructor:
+            connection = constructor.return_value
+            connection.getresponse.return_value = response
+            result = brc_onboarding.check_public_repository("https://github.com/Example/Project.git")
+        constructor.assert_called_once_with("api.github.com", timeout=4)
+        connection.close.assert_called_once_with()
+        method, target = connection.request.call_args.args
+        headers = connection.request.call_args.kwargs["headers"]
+        self.assertEqual((method, target), ("GET", "/repos/Example/project"))
+        self.assertNotIn("Authorization", headers)
+        self.assertNotIn("Cookie", headers)
+        return result
+
+    def test_public_identity_confirmed_without_credentials(self):
+        self.assertEqual(self.check(self.Response()), "public_confirmed")
+
+    def test_redirect_private_wrong_identity_ambiguous_and_oversize_fail_closed(self):
+        for response in (
+            self.Response(status=301), self.Response(status=404), self.Response(status=429),
+            self.Response(body=b'{"private":true,"visibility":"private","full_name":"Example/Project"}'),
+            self.Response(body=b'{"private":false,"visibility":"public","full_name":"other/project"}'),
+            self.Response(body=b'{"private":false,"private":false,"visibility":"public","full_name":"Example/Project"}'),
+            self.Response(body=b'{"private":false,"visibility":"public","full_name":"Example/Project","x":NaN}'),
+            self.Response(body=b'x' * (brc_onboarding.PUBLIC_RESPONSE_LIMIT + 1)),
+            self.Response(body=b'\xff'),
+        ):
+            with self.subTest(status=response.status, length=len(response.body)):
+                self.assertEqual(self.check(response), "unavailable")
+
+    def test_reserved_invalid_and_busy_requests_do_not_access_network(self):
+        with patch.object(brc_onboarding.http.client, "HTTPSConnection", side_effect=AssertionError("network")):
+            self.assertEqual(brc_onboarding.check_public_repository("https://github.com/example/HERMES"), "not_checked")
+            with self.assertRaises(PreviewRejected):
+                brc_onboarding.check_public_repository("https://github.com/example/project?token=secret")
+            self.assertTrue(brc_onboarding._public_checks.acquire(blocking=False))
+            self.assertTrue(brc_onboarding._public_checks.acquire(blocking=False))
+            try:
+                self.assertEqual(brc_onboarding.check_public_repository("https://github.com/example/project"), "unavailable")
+            finally:
+                brc_onboarding._public_checks.release()
+                brc_onboarding._public_checks.release()
+
+    def test_network_failure_is_unavailable(self):
+        with patch.object(brc_onboarding.http.client, "HTTPSConnection", side_effect=OSError("private diagnostic")):
+            self.assertEqual(brc_onboarding.check_public_repository("https://github.com/example/project"), "unavailable")
+
+    def test_non_ascii_casefold_confusable_is_not_the_requested_repository(self):
+        body = json.dumps({"private": False, "visibility": "public", "full_name": "example/ta\u017fk"}).encode()
+        with patch.object(brc_onboarding.http.client, "HTTPSConnection") as constructor:
+            constructor.return_value.getresponse.return_value = self.Response(body=body)
+            result = brc_onboarding.check_public_repository("https://github.com/example/task")
+        self.assertEqual(result, "unavailable")
+
+
 class PreviewHttpTests(unittest.TestCase):
     def setUp(self):
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(
@@ -94,27 +158,38 @@ class PreviewHttpTests(unittest.TestCase):
         with response:
             return response.status, response.headers, response.read()
 
-    def test_owner_gets_preview_without_executing_or_claiming_live_checks(self):
-        with patch("subprocess.run", side_effect=AssertionError("process")):
+    def test_owner_gets_public_metadata_without_claiming_filesystem_access(self):
+        with patch("subprocess.run", side_effect=AssertionError("process")), \
+             patch("control_center.server.check_brc_public_repository", return_value="public_confirmed") as check:
             status, headers, body = self.post()
+        check.assert_called_once_with("https://github.com/example/project.git")
         self.assertEqual(status, 200)
         self.assertEqual(headers["Cache-Control"], "no-store")
         value = json.loads(body)
         self.assertFalse(value["can_connect"])
         self.assertEqual(value["filesystem"], "not_checked")
-        self.assertEqual(value["remote"], "not_checked")
+        self.assertEqual(value["remote"], "public_confirmed")
+
+    def test_remote_unavailable_cannot_enable_connection(self):
+        with patch("control_center.server.check_brc_public_repository", return_value="unavailable"):
+            status, _, body = self.post()
+        self.assertEqual(status, 200)
+        value = json.loads(body)
+        self.assertEqual(value["remote"], "unavailable")
+        self.assertFalse(value["can_connect"])
 
     def test_auth_origin_intent_and_fetch_site_fail_closed(self):
-        for headers, status in (
-            ({"Cookie": ""}, 401),
-            ({"Origin": "https://evil.example"}, 403),
-            ({"X-Hermes-Onboarding-Intent": ""}, 403),
-            ({"Sec-Fetch-Site": "cross-site"}, 403),
-            ({"Host": "evil.example"}, 400),
-            ({"Content-Type": "text/plain"}, 415),
-        ):
-            with self.subTest(headers=headers):
-                self.assertEqual(self.post(headers=headers)[0], status)
+        with patch("control_center.server.check_brc_public_repository", side_effect=AssertionError("network")):
+            for headers, status in (
+                ({"Cookie": ""}, 401),
+                ({"Origin": "https://evil.example"}, 403),
+                ({"X-Hermes-Onboarding-Intent": ""}, 403),
+                ({"Sec-Fetch-Site": "cross-site"}, 403),
+                ({"Host": "evil.example"}, 400),
+                ({"Content-Type": "text/plain"}, 415),
+            ):
+                with self.subTest(headers=headers):
+                    self.assertEqual(self.post(headers=headers)[0], status)
 
     def test_invalid_or_ambiguous_bodies_rejected_without_reflection(self):
         for body in (

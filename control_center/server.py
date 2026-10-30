@@ -41,7 +41,8 @@ from control_center.desktop_commander_history import read as read_desktop_histor
 from control_center.brc_snapshot import (DEFAULT_OUTPUT as BRC_OUTPUT,
     read_snapshot as read_brc_snapshot, SnapshotRejected as BrcSnapshotRejected)
 from control_center.brc_source_check import source_check as check_brc_source
-from control_center.brc_onboarding import preview as preview_brc_onboarding
+from control_center.brc_onboarding import (preview as preview_brc_onboarding,
+                                           check_public_repository as check_brc_public_repository)
 from control_center.credentials import load_runtime_credentials
 from control_center.yfc_editorial import (
     EditorialTransportError, get_draft as get_yfc_draft,
@@ -700,6 +701,7 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
                 if not isinstance(body, dict) or set(body) != {"repository_url"}:
                     raise ValueError("invalid_fields")
                 result = preview_brc_onboarding(body["repository_url"])
+                result["remote"] = check_brc_public_repository(result["repository"])
             except (ValueError, UnicodeDecodeError, TimeoutError):
                 return self.respond(400, "application/json", b'{"error":"invalid_preview_request"}')
             return self.respond(200, "application/json; charset=utf-8",

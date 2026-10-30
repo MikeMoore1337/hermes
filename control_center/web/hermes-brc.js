@@ -269,7 +269,7 @@
      onboarding.url.focus();return;
    }
    const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),8000);
-   previewController=controller;onboarding.preview.disabled=true;onboarding.error.textContent="Проверяем формат и встроенный каталог…";
+   previewController=controller;onboarding.preview.disabled=true;onboarding.error.textContent="Проверяем адрес и публичный репозиторий…";
    try{
      const response=await fetch("/api/providers/hermes-brc/onboarding-preview",{
        method:"POST",credentials:"same-origin",cache:"no-store",signal:controller.signal,
@@ -282,13 +282,16 @@
      if(!exact(value,["schema","status","repository","device","root","scope","catalog","remote","filesystem","can_connect"])||
        value.schema!==1||value.status!=="preview_only"||value.repository!=="https://github.com/"+match[1]+"/"+name+".git"||
        value.device!=="Windows sandbox"||value.root!=="/workspace/projects/"+name||value.scope!=="sandbox"||
-       !["reserved","not_reserved"].includes(value.catalog)||value.remote!=="not_checked"||
+       !["reserved","not_reserved"].includes(value.catalog)||
+       (value.catalog==="reserved"?value.remote!=="not_checked":!["public_confirmed","unavailable"].includes(value.remote))||
        value.filesystem!=="not_checked"||value.can_connect!==false)throw Error("invalid");
      if(!dialog.open||previewController!==controller)return;
      onboarding.repository.textContent=value.repository;onboarding.root.textContent=value.root;renderOnboardingDevice();
      onboarding["result-note"].textContent=value.catalog==="reserved"?
        "Имя зарезервировано или уже есть во встроенном каталоге. Подключение заблокировано.":
-       "Формат адреса проверен; это имя отсутствует во встроенном каталоге.";
+       value.remote==="public_confirmed"?
+       "Публичный репозиторий найден на GitHub; это имя отсутствует во встроенном каталоге.":
+       "Не удалось подтвердить публичный репозиторий. Проверьте адрес или повторите позже.";
      onboarding.entry.hidden=true;onboarding.result.hidden=false;onboarding.step.textContent="Шаг 2 из 2";
      onboarding["result-title"].focus();
    }catch(error){
