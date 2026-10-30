@@ -7,7 +7,7 @@ from scripts.h454_windows_launcher_guard import ANCHOR, GUARD, patch_launcher
 
 class LauncherGuardTests(unittest.TestCase):
     def test_guard_runs_inside_lock_before_reading_state(self):
-        patched = patch_launcher("before\n" + ANCHOR + "after\n")
+        patched = patch_launcher("before\n" + ANCHOR + "PERSISTENT_STATE_MISSING\nafter\n")
         self.assertEqual(patched.count(GUARD), 1)
         self.assertLess(patched.index("FileShare]::None"), patched.index("h454-wss-transition.pending"))
         self.assertLess(patched.index("H454_RECOVERY_REQUIRED"), patched.index("PERSISTENT_STATE_MISSING"))

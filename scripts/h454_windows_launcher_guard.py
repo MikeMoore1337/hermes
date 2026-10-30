@@ -6,7 +6,6 @@ from scripts.h15_remote_commander_candidate_audit import AuditError
 ANCHOR = """    $runtimeLock = [IO.File]::Open($lockPath, [IO.FileMode]::OpenOrCreate,
         [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
     try {
-    Require (Test-Path -LiteralPath $STATE_PATH -PathType Leaf) 'PERSISTENT_STATE_MISSING'
 """
 GUARD = """    $h454PendingExists = $false; $h454Entries = 0
     foreach ($h454Entry in [IO.Directory]::EnumerateFileSystemEntries([IO.Path]::GetDirectoryName($STATE_PATH))) {
@@ -23,6 +22,4 @@ GUARD = """    $h454PendingExists = $false; $h454Entries = 0
 def patch_launcher(source: str) -> str:
     if source.count(ANCHOR) != 1 or "h454-wss-transition.pending" in source:
         raise AuditError("unreviewed_launcher_guard_source")
-    return source.replace(ANCHOR, ANCHOR.replace(
-        "    Require (Test-Path -LiteralPath $STATE_PATH -PathType Leaf) 'PERSISTENT_STATE_MISSING'\n",
-        GUARD + "    Require (Test-Path -LiteralPath $STATE_PATH -PathType Leaf) 'PERSISTENT_STATE_MISSING'\n"), 1)
+    return source.replace(ANCHOR, ANCHOR + GUARD, 1)

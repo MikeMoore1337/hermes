@@ -12,7 +12,8 @@ import unittest
 from unittest.mock import patch
 
 from scripts import h454_windows_launcher_preserve as subject
-from scripts.h454_windows_launcher_patch import RUN, RUN_END, PatchRefused
+from scripts.h454_windows_launcher_patch import LOCK, RUN, RUN_END, PatchRefused
+from scripts.h454_windows_launcher_guard import GUARD, patch_launcher
 
 FIXTURE = ("""# fixture only
 function Stop-TunnelByPid([int]$tunnelProcessId) {
@@ -60,6 +61,14 @@ class LauncherPreserveTests(unittest.TestCase):
     def prepare(self, source=FIXTURE, profile=PROFILE, image=IMAGE):
         with patch.object(subject, "SOURCE_SHA256", hashlib.sha256(source).hexdigest()):
             return subject.prepare(source, profile, image)
+
+    def test_pending_transition_guard_composes_with_identity_launcher(self):
+        locked = FIXTURE.replace(RUN.encode(), (RUN + LOCK).encode(), 1).replace(
+            RUN_END.encode(), ("\n    } finally { $runtimeLock.Dispose() }" + RUN_END).encode(), 1)
+        preserved = self.prepare(locked).decode()
+        guarded = patch_launcher(preserved)
+        self.assertEqual(guarded.replace(GUARD, "", 1), preserved)
+        self.assertLess(guarded.index("FileShare]::None"), guarded.index("H454_RECOVERY_REQUIRED"))
 
     def test_existing_run_is_guarded_and_non_run_bytes_are_preserved(self):
         result = self.prepare().decode()
