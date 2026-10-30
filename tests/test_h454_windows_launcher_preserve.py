@@ -73,6 +73,8 @@ class LauncherPreserveTests(unittest.TestCase):
         self.assertIn("synthetic-stage", run)
         self.assertIn("Save-H454State", run)
         self.assertIn("H454_STATE_READ_DRIFT", run)
+        self.assertIn("tunnelCreatedUtcTicks", run)
+        self.assertIn("$SSH_PROCESS.StartTime.ToUniversalTime().Ticks", run)
         self.assertNotIn("[IO.File]::WriteAllText($STATE_PATH,($state | ConvertTo-Json)", run)
         self.assertIn(PROFILE.upper(), run)
         self.assertIn(IMAGE, run)
@@ -89,6 +91,7 @@ class LauncherPreserveTests(unittest.TestCase):
                     FIXTURE.replace(b"-FilePath 'ssh.exe'", b"-FilePath 'other.exe'", 1),
                     FIXTURE.replace(b"Get-Content -LiteralPath $STATE_PATH", b"Get-Content -LiteralPath $OTHER_PATH", 1),
                     FIXTURE.replace(b"[IO.File]::WriteAllText($STATE_PATH", b"[IO.File]::AppendAllText($STATE_PATH", 1),
+                    FIXTURE.replace(b"$state.tunnelPid = $SSH_PROCESS.Id", b"$state.tunnelPid = 0", 1),
                     FIXTURE.replace(b"Assert-ManagedContainer", b"Other-Assert", 1)):
             with self.subTest(bad=hashlib.sha256(bad).hexdigest()[:8]):
                 with self.assertRaisesRegex(PatchRefused, "SOURCE_STRUCTURE_MISMATCH"):

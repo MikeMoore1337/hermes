@@ -115,6 +115,12 @@ HELPERS = r"""    # Keep the verified container across task retries and logons.
             $h454PidField.Value -is [long]) -and $h454PidField.Value -ge 0 -and
             $h454PidField.Value -le [int]::MaxValue) 'H454_TUNNEL_PID_INVALID'
         $h454Pid = [int]$h454PidField.Value
+        $h454CreatedField = $state.PSObject.Properties['tunnelCreatedUtcTicks']
+        if ($null -ne $h454CreatedField) {
+            Require (($h454CreatedField.Value -is [int] -or $h454CreatedField.Value -is [long]) -and
+                $h454CreatedField.Value -gt 0 -and $h454CreatedField.Value -le [DateTime]::MaxValue.Ticks -and
+                $h454Pid -gt 0) 'H454_TUNNEL_CREATION_INVALID'
+        }
         $h454NetErrors = @()
         $h454Listeners = @(Get-NetTCPConnection -LocalAddress '127.0.0.1' -LocalPort 38180 -State Listen `
             -ErrorAction SilentlyContinue -ErrorVariable +h454NetErrors)
@@ -135,6 +141,29 @@ HELPERS = r"""    # Keep the verified container across task retries and logons.
         }
         Require ($h454Listeners.Count -eq 0 -or [int]$h454Listeners[0].OwningProcess -eq $h454Pid) 'H454_TUNNEL_LISTENER_CONFLICT'
         $h454Tunnel = $h454Processes[0]
+        if ($null -ne $h454CreatedField) {
+            # shortcut: same-user state tampering can forge identity; require OS-bound state if trust expands.
+            $h454Probe = $null
+            try {
+                $h454Probe = Get-Process -Id $h454Pid -ErrorAction Stop
+                $null = $h454Probe.Handle
+                $h454ActualTicks = $h454Probe.StartTime.ToUniversalTime().Ticks
+                $h454CimTicks = ([DateTime]$h454Tunnel.CreationDate).ToUniversalTime().Ticks
+                Require ([Math]::Abs($h454ActualTicks - $h454CimTicks) -le 10) 'H454_TUNNEL_PID_REUSED'
+                if ($h454ActualTicks -ne [long]$h454CreatedField.Value) {
+                    Require ($h454Listeners.Count -eq 0) 'H454_TUNNEL_LISTENER_CONFLICT'
+                    $h454RetryErrors = @()
+                    $h454Retry = @(Get-NetTCPConnection -LocalAddress '127.0.0.1' -LocalPort 38180 -State Listen `
+                        -ErrorAction SilentlyContinue -ErrorVariable +h454RetryErrors)
+                    foreach ($h454Error in $h454RetryErrors) {
+                        Require ($h454Error.CategoryInfo.Category -eq [Management.Automation.ErrorCategory]::ObjectNotFound) 'H454_TUNNEL_LISTENER_QUERY'
+                    }
+                    Require ($h454Retry.Count -eq 0) 'H454_TUNNEL_LISTENER_CONFLICT'
+                    return
+                }
+            } catch { throw 'H454_TUNNEL_PROCESS_IDENTITY' }
+            finally { if ($null -ne $h454Probe) { $h454Probe.Dispose() } }
+        }
         $h454Command = [string]$h454Tunnel.CommandLine
         Require ($h454Tunnel.Name -ieq 'ssh.exe' -and
             [string]::Equals([string]$h454Tunnel.ExecutablePath, $script:h454SshExe, [StringComparison]::OrdinalIgnoreCase) -and
@@ -301,11 +330,19 @@ def prepare(source: bytes, profile_sha256: str, image_id: str) -> bytes:
     block = text[start:end]
     state_read = "$state = Get-Content -LiteralPath $STATE_PATH -Raw | ConvertFrom-Json"
     state_write = "[IO.File]::WriteAllText($STATE_PATH,($state | ConvertTo-Json),[Text.UTF8Encoding]::new($false))"
-    if block.count(state_read) != 1 or block.count(state_write) != 1:
+    state_pid = "$state.tunnelPid = $SSH_PROCESS.Id"
+    if block.count(state_read) != 1 or block.count(state_write) != 1 or block.count(state_pid) != 1:
         raise PatchRefused("SOURCE_STRUCTURE_MISMATCH")
     block = block.replace(state_read, "Assert-H454PrivateState $STATE_PATH\n    $h454StateHash = (Get-FileHash -LiteralPath $STATE_PATH).Hash\n    "
                           + state_read + "\n    Require ((Get-FileHash -LiteralPath $STATE_PATH).Hash -ceq $h454StateHash) 'H454_STATE_READ_DRIFT'", 1)
     block = block.replace(state_write, "Save-H454State $h454StateHash $state", 1)
+    pid_pos = block.index(state_pid)
+    pid_indent = block[block.rfind("\n", 0, pid_pos) + 1:pid_pos]
+    if not pid_indent or pid_indent.strip():
+        raise PatchRefused("SOURCE_STRUCTURE_MISMATCH")
+    block = block.replace(state_pid, state_pid + "\n" + pid_indent +
+        "$state | Add-Member -MemberType NoteProperty -Name tunnelCreatedUtcTicks "
+        "-Value ([long]$SSH_PROCESS.StartTime.ToUniversalTime().Ticks) -Force", 1)
     old_tunnel = "Stop-TunnelByPid ([int]$state.tunnelPid)"
     start_ssh = "$SSH_PROCESS = Start-Process -FilePath 'ssh.exe' -ArgumentList $sshArgs -PassThru -WindowStyle Hidden"
     cleanup_ssh = ("        if ($SSH_PROCESS -and -not $SSH_PROCESS.HasExited) {\n"

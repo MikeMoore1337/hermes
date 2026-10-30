@@ -81,7 +81,10 @@ $h454Path=Join-Path $env:SystemRoot 'System32\cmd.exe'
 . ([scriptblock]::Create($h454Loops[0].Extent.Text))
 function Get-NetTCPConnection {
     [CmdletBinding()]param([string]$LocalAddress,[int]$LocalPort,[string]$State)
+    $script:h454NetworkCalls++
     if($script:h454NetFailure){Write-Error -Category PermissionDenied -Message 'synthetic-network-query';return}
+    if($script:h454SecondNetFailure -and $script:h454NetworkCalls -gt 1){Write-Error -Category PermissionDenied -Message 'synthetic-second-query';return}
+    if($script:h454AppearsOnRecheck -and $script:h454NetworkCalls -gt 1){return [pscustomobject]@{OwningProcess=999}}
     if($script:h454NoListener){Write-Error -Category ObjectNotFound -Message 'synthetic-empty';return}
     [pscustomobject]@{OwningProcess=$script:h454ListenerPid}
 }
@@ -129,10 +132,12 @@ function Reset-H454Fixture {
     $script:h454CreateDrift=$false;$script:h454CreateBadId=$false
     $state.imageId='sha256:'+('a'*64)
     $state.tunnelPid=101
+    if($null -ne $state.PSObject.Properties['tunnelCreatedUtcTicks']){$state.PSObject.Properties.Remove('tunnelCreatedUtcTicks')}
     $script:h454OriginalTunnel=$null
     $script:h454TunnelEvents=[Collections.Generic.List[string]]::new()
     $script:h454KillMode='normal'
     $script:h454NetFailure=$false;$script:h454NoListener=$false;$script:h454ListenerPid=101
+    $script:h454NetworkCalls=0;$script:h454SecondNetFailure=$false;$script:h454AppearsOnRecheck=$false
     $script:h454CimFailure=$false;$script:h454TunnelExists=$true
     $script:h454StartTime=[DateTime]::UtcNow.AddMinutes(-5)
     $script:h454StateTime=[DateTime]::UtcNow.AddMinutes(-1)
@@ -208,6 +213,37 @@ try {
     $h454PS51=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
     $h454Child=Start-Process -FilePath $h454PS51 -ArgumentList '-NoProfile -NonInteractive -Command Start-Sleep -Seconds 30' -WindowStyle Hidden -PassThru
     $null=$h454Child.Handle
+    $h454PidAssignment=@($h454Ast.FindAll({param($x)$x -is [Management.Automation.Language.AssignmentStatementAst] -and
+        $x.Left.Extent.Text -ceq '$state.tunnelPid'},$true))
+    $h454MarkerAssignment=@($h454Ast.FindAll({param($x)$x -is [Management.Automation.Language.PipelineAst] -and
+        $x.Extent.Text.StartsWith('$state | Add-Member -MemberType NoteProperty -Name tunnelCreatedUtcTicks ')},$true))
+    Require ($h454PidAssignment.Count -eq 1 -and $h454MarkerAssignment.Count -eq 1) 'STATE_IDENTITY_SCOPE'
+    $h454PreviousState=$state
+    try {
+        $state=[pscustomobject]@{tunnelPid=0;keep='same'};$SSH_PROCESS=$h454Child
+        . ([scriptblock]::Create($h454PidAssignment[0].Extent.Text))
+        . ([scriptblock]::Create($h454MarkerAssignment[0].Extent.Text))
+        $h454Roundtrip=$state|ConvertTo-Json|ConvertFrom-Json
+        Require ($h454Roundtrip.tunnelPid -eq $h454Child.Id -and $h454Roundtrip.keep -ceq 'same' -and
+            $h454Roundtrip.tunnelCreatedUtcTicks -is [long] -and
+            $h454Roundtrip.tunnelCreatedUtcTicks -eq $h454Child.StartTime.ToUniversalTime().Ticks) 'STATE_IDENTITY_ROUNDTRIP'
+        $state.tunnelCreatedUtcTicks=[long]1
+        . ([scriptblock]::Create($h454MarkerAssignment[0].Extent.Text))
+        Require ($state.tunnelCreatedUtcTicks -eq $h454Child.StartTime.ToUniversalTime().Ticks) 'STATE_IDENTITY_UPDATE'
+    } finally { $state=$h454PreviousState }
+    $h454GetProcessMock=${function:Get-Process};$h454CimMock=${function:Get-CimInstance}
+    try {
+        Remove-Item -LiteralPath Function:\Get-Process,Function:\Get-CimInstance
+        $state=[pscustomobject]@{tunnelPid=$h454Child.Id;tunnelCreatedUtcTicks=[long]($h454Child.StartTime.ToUniversalTime().Ticks-10000000)}
+        $script:h454OriginalTunnel=$null;$script:h454NoListener=$true;$script:h454NetworkCalls=0
+        $script:h454SecondNetFailure=$false;$script:h454AppearsOnRecheck=$false;$script:h454NetFailure=$false
+        Assert-H454ExistingTunnel
+        Require ($null -eq $script:h454OriginalTunnel -and -not $h454Child.HasExited) 'OWN_STALE_PID_SIGNALED'
+    } finally {
+        Set-Item -LiteralPath Function:\Get-Process -Value $h454GetProcessMock
+        Set-Item -LiteralPath Function:\Get-CimInstance -Value $h454CimMock
+        $state=$h454PreviousState
+    }
     Stop-H454TunnelHandle $h454Child
     $h454Child=$null
 } finally {
@@ -240,9 +276,27 @@ Assert-H454ExistingTunnel
 Reset-H454Fixture
 $script:h454NoListener=$true;$state.tunnelPid=0
 Assert-H454ExistingTunnel
+Reset-H454Fixture
+$state|Add-Member -MemberType NoteProperty -Name tunnelCreatedUtcTicks -Value ([long]$script:h454StartTime.AddSeconds(-10).Ticks)
+$script:h454NoListener=$true
+$script:h454Tunnel.Name='unrelated.exe';$script:h454Tunnel.ExecutablePath=$null;$script:h454Tunnel.CommandLine=$null
+Assert-H454ExistingTunnel
+Stop-H454ExistingTunnel
+Require ($null -eq $script:h454OriginalTunnel -and ($script:h454TunnelEvents -join ',') -ceq 'dispose') 'STALE_PID_SIGNALED'
+Reset-H454Fixture
+$state|Add-Member -MemberType NoteProperty -Name tunnelCreatedUtcTicks -Value ([long]$script:h454StartTime.AddSeconds(10).Ticks)
+$script:h454NoListener=$true;$script:h454Tunnel.Name='unrelated.exe';$script:h454Tunnel.ExecutablePath=$null;$script:h454Tunnel.CommandLine=$null
+Assert-H454ExistingTunnel
+Stop-H454ExistingTunnel
+Require (($script:h454TunnelEvents -join ',') -ceq 'dispose') 'FUTURE_STALE_PID_SIGNALED'
+Reset-H454Fixture
+$state|Add-Member -MemberType NoteProperty -Name tunnelCreatedUtcTicks -Value ([long]$script:h454StartTime.Ticks)
+Assert-H454ExistingTunnel
+Stop-H454ExistingTunnel
+Require (($script:h454TunnelEvents -join ',') -ceq 'dispose,kill,dispose') 'MATCHED_TUNNEL_NOT_STOPPED'
 
 # An unverified or replaced tunnel must fail before stopping the live container.
-foreach($h454Case in @('unavailable','name','path','target','forward','listener','stale-listener','zero-listener','neterror','cimerror','age','reused','pid')) {
+foreach($h454Case in @('unavailable','name','path','target','forward','listener','stale-listener','zero-listener','neterror','cimerror','age','reused','marker-listener','marker-invalid','marker-negative','marker-zero-pid','marker-cim-drift','marker-race','marker-neterror','pid')) {
     Reset-H454Fixture
     switch($h454Case) {
         'unavailable' {$script:h454Tunnel.CommandLine=$null}
@@ -257,6 +311,13 @@ foreach($h454Case in @('unavailable','name','path','target','forward','listener'
         'cimerror' {$script:h454CimFailure=$true}
         'age' {$script:h454StartTime=[DateTime]::UtcNow}
         'reused' {$script:h454Tunnel.CreationDate=$script:h454StartTime.AddSeconds(1)}
+        'marker-listener' {$state|Add-Member -MemberType NoteProperty -Name tunnelCreatedUtcTicks -Value ([long]$script:h454StartTime.AddSeconds(-10).Ticks)}
+        'marker-invalid' {$state|Add-Member -MemberType NoteProperty -Name tunnelCreatedUtcTicks -Value 'invalid'}
+        'marker-negative' {$state|Add-Member -MemberType NoteProperty -Name tunnelCreatedUtcTicks -Value ([long]-1)}
+        'marker-zero-pid' {$state.tunnelPid=0;$state|Add-Member -MemberType NoteProperty -Name tunnelCreatedUtcTicks -Value ([long]$script:h454StartTime.Ticks)}
+        'marker-cim-drift' {$script:h454NoListener=$true;$state|Add-Member -MemberType NoteProperty -Name tunnelCreatedUtcTicks -Value ([long]$script:h454StartTime.AddSeconds(-10).Ticks);$script:h454Tunnel.CreationDate=$script:h454StartTime.AddSeconds(1)}
+        'marker-race' {$script:h454NoListener=$true;$script:h454AppearsOnRecheck=$true;$state|Add-Member -MemberType NoteProperty -Name tunnelCreatedUtcTicks -Value ([long]$script:h454StartTime.AddSeconds(-10).Ticks)}
+        'marker-neterror' {$script:h454NoListener=$true;$script:h454SecondNetFailure=$true;$state|Add-Member -MemberType NoteProperty -Name tunnelCreatedUtcTicks -Value ([long]$script:h454StartTime.AddSeconds(-10).Ticks)}
         'pid' {$state.tunnelPid='not-a-pid'}
     }
     $h454Refused=$false
