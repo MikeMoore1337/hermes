@@ -287,7 +287,7 @@
      if(!dialog.open||previewController!==controller)return;
      onboarding.repository.textContent=value.repository;onboarding.root.textContent=value.root;renderOnboardingDevice();
      onboarding["result-note"].textContent=value.catalog==="reserved"?
-       "Такое имя уже есть во встроенном каталоге. Подключение заблокировано.":
+       "Имя зарезервировано или уже есть во встроенном каталоге. Подключение заблокировано.":
        "Формат адреса проверен; это имя отсутствует во встроенном каталоге.";
      onboarding.entry.hidden=true;onboarding.result.hidden=false;onboarding.step.textContent="Шаг 2 из 2";
      onboarding["result-title"].focus();

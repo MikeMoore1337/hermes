@@ -14,7 +14,7 @@ from unittest.mock import patch
 if os.name != "posix":
     raise unittest.SkipTest("Linux sandbox preflight")
 
-from control_center.brc_onboarding import PreviewRejected, preview
+from control_center.brc_onboarding import PreviewRejected, WINDOWS_DEVICES, preview
 from control_center.brc_snapshot import PROJECTS
 from scripts import h454_sandbox_project_probe as probe
 
@@ -47,6 +47,7 @@ class ProbeTests(unittest.TestCase):
 
     def test_url_policy_matches_existing_preview(self):
         self.assertEqual(probe.RESERVED, frozenset(PROJECTS))
+        self.assertEqual(probe.WINDOWS_DEVICES, WINDOWS_DEVICES)
         for url in ("https://github.com/example/project", "https://github.com/Example/Project.git/"):
             self.assertEqual(probe.parse_url(url)[1], preview(url)["repository"])
         for url in ("https://github.com/example/project?token=secret",

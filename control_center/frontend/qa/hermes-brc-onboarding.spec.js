@@ -92,7 +92,7 @@ test("reserved catalog name cannot be connected",async({page})=>{
  await page.getByLabel("Ссылка на репозиторий").fill("https://github.com/example/project");
  await page.getByRole("button",{name:"Проверить",exact:true}).click();
  const dialog=page.getByRole("dialog");
- await expect(dialog).toContainText("имя уже есть во встроенном каталоге");
+ await expect(dialog).toContainText("Имя зарезервировано или уже есть во встроенном каталоге");
  await expect(dialog.getByRole("button",{name:"Подключить",exact:true})).toBeDisabled();
 });
 

@@ -5,6 +5,8 @@ import re
 
 from control_center.brc_snapshot import PROJECTS
 
+WINDOWS_DEVICES = frozenset(("con", "prn", "aux", "nul", *(f"{prefix}{n}" for prefix in ("com", "lpt") for n in range(1, 10))))
+
 GITHUB_URL = re.compile(
     r"https://github\.com/([a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?)/"
     r"([a-z][a-z0-9-]{1,79})(?:\.git)?/?\Z",
@@ -28,6 +30,6 @@ def preview(repository_url: object) -> dict:
         "schema": 1, "status": "preview_only",
         "repository": f"https://github.com/{owner}/{name}.git",
         "device": "Windows sandbox", "root": f"/workspace/projects/{name}",
-        "scope": "sandbox", "catalog": "reserved" if name in PROJECTS else "not_reserved",
+        "scope": "sandbox", "catalog": "reserved" if name in PROJECTS or name in WINDOWS_DEVICES else "not_reserved",
         "remote": "not_checked", "filesystem": "not_checked", "can_connect": False,
     }

@@ -75,8 +75,8 @@ live PASS, partial coverage and untested scenarios by device and tool.
   Advanced binary/concurrency/reconnect tests remain incomplete.
 - New-project onboarding and Control Center workflow: **OPEN** (#454).
   The owner-approved visual direction has a source-level, read-only preview
-  for a narrowly formatted GitHub URL. It checks syntax and collisions with
-  the built-in catalog only; remote visibility and the device filesystem are
+  for a narrowly formatted GitHub URL. It checks syntax, reserved Windows
+  device names and collisions with the built-in catalog only; remote visibility and the device filesystem are
   **not checked**, and connecting is disabled. The device label uses only an
   existing fresh, validated observation and says when it is unavailable; it
   does not prove current command execution. It makes no MCP call and adds

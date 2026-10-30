@@ -33,6 +33,15 @@ class PreviewTests(unittest.TestCase):
         self.assertEqual(result["catalog"], "reserved")
         self.assertFalse(result["can_connect"])
 
+    def test_windows_device_names_are_reserved_without_claiming_a_live_check(self):
+        for name in ("CON", "aux", "COM1", "lpt9"):
+            with self.subTest(name=name):
+                result = preview("https://github.com/example/" + name)
+                self.assertEqual(result["catalog"], "reserved")
+                self.assertEqual(result["filesystem"], "not_checked")
+                self.assertFalse(result["can_connect"])
+        self.assertEqual(preview("https://github.com/example/com10")["catalog"], "not_reserved")
+
     def test_urls_with_credentials_paths_or_other_hosts_are_rejected(self):
         for value in (
             "http://github.com/example/project", "https://evil.example/example/project",
