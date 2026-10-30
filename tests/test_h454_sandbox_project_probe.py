@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import io
 import os
 from pathlib import Path
 import subprocess
@@ -147,6 +148,24 @@ class ProbeTests(unittest.TestCase):
     def test_duplicate_json_keys_are_refused_without_reflection(self):
         with self.assertRaisesRegex(probe.ProbeRejected, "invalid_request"):
             json.loads('{"repository_url":"one","repository_url":"two"}', object_pairs_hook=probe._unique_pairs)
+
+    def test_cli_rejects_extra_arguments_and_malformed_input_before_probe(self):
+        requests = ((["unexpected"], b'{"repository_url":"secret"}'),
+                    ([], b'{"repository_url":"secret","repository_url":"other"}'),
+                    ([], b'{"repository_url":NaN}'),
+                    ([], b'x' * (probe.MAX_INPUT + 1)))
+        for args, raw in requests:
+            with self.subTest(args=args, size=len(raw)):
+                stdin = io.TextIOWrapper(io.BytesIO(raw), encoding="utf-8")
+                stdout = io.StringIO()
+                with patch.object(sys, "argv", ["preflight", *args]), patch.object(sys, "stdin", stdin), \
+                     patch.object(sys, "stdout", stdout), patch.object(probe.os, "getuid", return_value=65534), \
+                     patch.object(probe.Path, "is_file", return_value=True), \
+                     patch.object(probe.os.path, "lexists", return_value=False), patch.object(probe, "probe") as call:
+                    self.assertEqual(probe.main(), 2)
+                call.assert_not_called()
+                self.assertEqual(json.loads(stdout.getvalue()),
+                                 {"status": "refused", "reason": "invalid_request", "can_connect": False})
 
 
 if __name__ == "__main__":
