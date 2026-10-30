@@ -97,8 +97,9 @@ test("reserved catalog name cannot be connected",async({page})=>{
  await expect(dialog.getByRole("button",{name:"Подключить",exact:true})).toBeDisabled();
 });
 
-for(const name of ["v2_engine.test","p"]){
-test("common repository name keeps its exact sandbox preview: "+name,async({page})=>{
+for(const [name,width] of [["v2_engine.test",1440],["p",1440],["a".repeat(100),320]]){
+test("repository name keeps its exact sandbox preview: "+name,async({page},testInfo)=>{
+ await page.setViewportSize({width,height:900});
  const url="https://github.com/example/"+name+".git";
  await page.route("**/api/providers/hermes-brc",route=>route.fulfill({status:503,body:"{}"}));
  await page.route("**/api/providers/hermes-brc/onboarding-preview",route=>{
@@ -111,6 +112,11 @@ test("common repository name keeps its exact sandbox preview: "+name,async({page
  await page.getByRole("button",{name:"Проверить",exact:true}).click();
  await expect(page.getByRole("dialog")).toContainText("/workspace/projects/"+name);
  await expect(page.getByRole("button",{name:"Подключить",exact:true})).toBeDisabled();
+ const sizes=await page.evaluate(()=>{const d=document.querySelector("#brc-onboard");
+  return {viewport:innerWidth,page:document.documentElement.scrollWidth,dialog:d.clientWidth,content:d.scrollWidth};});
+ expect(sizes.page).toBeLessThanOrEqual(sizes.viewport+1);
+ expect(sizes.content).toBeLessThanOrEqual(sizes.dialog+1);
+ if(width===320)await page.screenshot({path:testInfo.outputPath("h454-onboarding-long-name-320.png"),fullPage:true,animations:"disabled"});
 });
 }
 
