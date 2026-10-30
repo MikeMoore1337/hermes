@@ -104,3 +104,22 @@ failure must remain HOLD. Actual rollback and DPAPI staging are NOT TESTED.
 Stopping BRC, installing the prepared launcher and changing the task still
 require the separate concrete maintenance approval. No reboot or native
 original-folder permission is implied by the read-only UAC approval.
+
+## Approved Windows delivery, 2026-10-30
+
+The owner approved the bounded Apply/Install window and conditional rollback.
+The init candidate is now active with existing credential staging and the
+same device identity; the original is retained stopped. Real MCP UTF-8
+file/process checks passed. Two orphan children reported PPID=1 and were
+reaped; zombies=0 on samples at 35 and 199 seconds. Fixtures were removed.
+This is bounded reaping evidence, not a lasting burn-in guarantee.
+
+The prepared launcher was installed atomically; its exact hash and original
+backup were verified. Task XML/settings and device-state bytes remain
+unchanged, SSH unchanged, no reboot or native grant. Actual rollback was not
+needed and did not run. [Delivery receipt](https://github.com/MikeMoore1337/hermes/issues/454#issuecomment-6515625089).
+
+Source main `01b9573b36ed3c192ad0a761de0b9480e6d07815` was deployed with
+3074 server tests; the active agent is still the older immutable image.
+The later [minimal edit-error image preparation](h454-agent-edit-image.md)
+does not activate that code fix or change this completed window's scope.
