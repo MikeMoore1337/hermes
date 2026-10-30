@@ -176,16 +176,19 @@ dedicated binary, copy or delete MCP protocol.
 | --- | --- | --- | --- |
 | 4 MiB binary create, MCP metadata/move, hash and cleanup | PASS, process-backed | PASS, process-backed | PASS, process-backed |
 | Binary copy, exclusive no-overwrite and delete | PASS, process-backed | PASS, process-backed | PASS, process-backed |
-| Two simultaneous processes and isolated output | PASS | PASS | PASS |
+| Two simultaneous bounded processes and isolated output | PASS | PASS | PASS |
+| Two simultaneous interactive Node sessions | PASS | PASS | PASS |
 | Local Git branch/commit/push/fetch/diff | PASS, local bare fixture only | Previously observed Git missing; not retested | Previously observed Git missing; not retested |
 | New created-time and absent-session error contract | PASS, real MCP | NOT DELIVERED | NOT DELIVERED |
 
 Evidence: [4 MiB](https://github.com/MikeMoore1337/hermes/issues/454#issuecomment-6521476563),
 [copy/delete](https://github.com/MikeMoore1337/hermes/issues/454#issuecomment-6522290597),
 [concurrent processes](https://github.com/MikeMoore1337/hermes/issues/454#issuecomment-6521776491),
+[interactive sessions](https://github.com/MikeMoore1337/hermes/issues/454#issuecomment-6522467341),
 [local Git push](https://github.com/MikeMoore1337/hermes/issues/454#issuecomment-6521728408)
 and [local Git fetch](https://github.com/MikeMoore1337/hermes/issues/454#issuecomment-6522306431).
-The two simultaneous processes were bounded Node timers, not interactive REPLs.
+The bounded process check used Node timers; the separate interactive check used
+two REPLs per device, distinct input/output markers and clean `.exit`.
 The deterministic write-race barrier and session-replacement tests remained
 isolated synthetic tests; shell and external writers are not serialized by the
 MCP mutation guard.
