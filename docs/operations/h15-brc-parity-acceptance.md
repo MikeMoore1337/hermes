@@ -280,9 +280,14 @@ from `/proc`, and bounded probes observed zero zombies. This proves the
 tested short reaping scenario, not a long burn-in or login/reboot recovery.
 Exact fixtures were removed and no active test sessions remained.
 
-The running image is still `8d28b0e`; the edit-error source fix requires a
-separate approved image rollout. The [prepared derived image](h454-agent-edit-image.md)
-has isolated image-handler evidence only. Actual delivery receipt:
+At this init-only checkpoint the image was still `8d28b0e`. The later
+separately approved [derived-image activation](h454-agent-edit-image.md)
+promoted `ac9f8ce0` in container `194e06ea9584`; real Codex MCP conflict-error
+and unchanged-byte checks passed, then only the persistent imageId changed.
+Both older containers remain stopped for rollback. Current exact-file content
+search passed; a directory search with exact filePattern returned no matches
+and is not a PASS. Login/reboot and ChatGPT acceptance remain unverified.
+Initial init delivery receipt:
 [#454 comment](https://github.com/MikeMoore1337/hermes/issues/454#issuecomment-6515625089).
 
 ### One independent ChatGPT acceptance pass

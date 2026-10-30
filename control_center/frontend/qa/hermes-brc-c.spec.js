@@ -35,6 +35,10 @@ test("concept C reads only sanitized source and switches four projects",async({p
   await expect(page.locator("#brc-selected-name")).toHaveText(title);
   await expect(page.locator("#brc-path")).toHaveText("/workspace/projects/"+repo);
   await expect(page.locator("#brc-branch")).toHaveText(branch);
+  for(const [_,cardRepo,cardBranch] of projects){
+   await expect(page.locator(`#brc-projects button[data-project="${cardRepo}"] small`))
+    .toHaveText(cardBranch+" · Git не проверен");
+  }
  }
  await expect(page.locator(".brc-facts")).toContainText("Не проверено");
  await expect(page.getByRole("button",{name:"Скопировать запрос проверки"})).toBeEnabled();

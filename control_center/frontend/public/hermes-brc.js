@@ -86,7 +86,6 @@
      const isCurrent=btn.dataset.project===p.id;
      btn.classList.toggle("selected",isCurrent);
      btn.setAttribute("aria-pressed",String(isCurrent));
-     btn.querySelector("small").textContent=p.branch+" · Git не проверен";
    }
  }
  function render(){
