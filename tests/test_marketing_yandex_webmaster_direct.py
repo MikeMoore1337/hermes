@@ -473,12 +473,47 @@ class YandexLiveProbeTests(unittest.TestCase):
                            "--diagnose-full", "--token-file", "/private/synthetic"])
         result = json.loads(output.getvalue())
         self.assertEqual(2, rc)
-        self.assertEqual("NORMALIZE", result["stage"])
-        self.assertEqual("YANDEX_RESPONSE_CONTRACT_CHANGED", result["reason"])
+        self.assertEqual("POPULAR_DATA", result["stage"])
+        self.assertEqual("counter_invalid", result["reason"])
         self.assertEqual(6, result["requests_attempted"])
         self.assertEqual(6, len(called))
         self.assertNotIn(TOKEN, output.getvalue())
         self.assertNotIn("bad", output.getvalue())
+
+    def test_diagnose_full_sanitizes_which_api_section_failed(self):
+        for stage_name, index, invalid in (
+            ("POPULAR_DATA", 2, {"queries": [], "date_from": "bad",
+                                 "date_to": "2026-10-19", "count": 0}),
+            ("ALL_HISTORY_DATA", 3, {"indicators": {"TOTAL_SHOWS": "bad"}}),
+            ("INDEXING_DATA", 4, {"indicators": {"HTTP_2XX": "bad"}}),
+            ("SITEMAPS_DATA", 5, {"sitemaps": "bad"}),
+        ):
+            with self.subTest(stage=stage_name):
+                payloads = [
+                    {"user_id": 100},
+                    {"hosts": [{"host_id": HOST, "verified": True,
+                                "ascii_host_url": "https://your-fitness-coach.ru/"}]},
+                    fixture()["popular"], fixture()["all_history"],
+                    fixture()["index_history"], fixture()["sitemaps"],
+                ]
+                payloads[index] = invalid
+                seq, calls = mocked_sequence(responses=payloads)
+                with patch("marketing.yandex_webmaster_direct.read_private_token",
+                           return_value=TOKEN), patch(
+                           "marketing.yandex_webmaster_direct._transport",
+                           side_effect=seq):
+                    output = io.StringIO()
+                    with patch("sys.stdout", output):
+                        rc = main(["--date", "2026-10-23", "--execute-read",
+                                   "--diagnose-full",
+                                   "--token-file", "/private/synthetic"])
+                receipt = json.loads(output.getvalue())
+                self.assertEqual(2, rc)
+                self.assertEqual(stage_name, receipt["stage"])
+                self.assertEqual(6, receipt["requests_attempted"])
+                self.assertEqual(6, len(calls))
+                self.assertNotIn("100", output.getvalue())
+                self.assertNotIn(TOKEN, output.getvalue())
 
     def test_diagnose_full_redacts_poison_and_unknown_errors(self):
         def poison(*args):

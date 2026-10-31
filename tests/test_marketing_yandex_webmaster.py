@@ -108,6 +108,56 @@ class YandexWebmasterOfflineTests(unittest.TestCase):
         self.assertFalse(r["search_metrics_combined"])
         self.assertFalse(r["publication_allowed"])
 
+    def test_provider_popular_period_accepts_offset_aware_datetimes(self):
+        for start, end in (
+            ("2026-10-01T00:00:00.000+03:00", "2026-10-19T00:00:00,000+0300"),
+            ("2026-10-01T00:00:00Z", "2026-10-19T00:00:00+00:00"),
+        ):
+            with self.subTest(start=start, end=end):
+                sample = fixture()
+                sample["popular"]["date_from"] = start
+                sample["popular"]["date_to"] = end
+                report = normalize_export(sample, as_of=DAY)
+                self.assertEqual("2026-10-01", report["popular_coverage"]["period_start"])
+                self.assertEqual("2026-10-19", report["popular_coverage"]["period_end"])
+                self.assertEqual("OFFLINE_SOURCE_NOT_PROVIDER_VERIFIED", report["status"])
+
+    def test_provider_popular_period_rejects_ambiguous_dates(self):
+        for value in (
+            "2026-10-01T00:00:00", "2026-10-01T25:00:00+03:00",
+            "2026-10-01T00:00:00+99:00", "2026-10-01T00:00:00+03:00junk",
+            "2026-13-01", "2026-10-01 00:00:00+03:00",
+        ):
+            with self.subTest(value=value):
+                sample = fixture()
+                sample["popular"]["date_from"] = value
+                with self.assertRaises(WebmasterDenied):
+                    normalize_export(sample, as_of=DAY)
+
+    def test_section_diagnostic_safe_fixed_reason_and_default_unchanged(self):
+        from marketing.yandex_webmaster import (
+            WebmasterContractDiagnosticDenied,
+        )
+        for section, corrupt in (
+            ("POPULAR_DATA", lambda p: p["popular"].update(count="invalid")),
+            ("ALL_HISTORY_DATA", lambda p: p["all_history"].update(indicators=[])),
+            ("INDEXING_DATA", lambda p: p["index_history"].update(indicators=[])),
+            ("SITEMAPS_DATA", lambda p: p["sitemaps"].update(sitemaps="invalid")),
+        ):
+            with self.subTest(section=section):
+                sample = fixture()
+                corrupt(sample)
+                with self.assertRaises(WebmasterDenied) as original:
+                    normalize_export(sample, as_of=DAY)
+                self.assertNotIsInstance(
+                    original.exception, WebmasterContractDiagnosticDenied,
+                )
+                with self.assertRaises(WebmasterContractDiagnosticDenied) as diag:
+                    normalize_export(sample, as_of=DAY, diagnostic=True)
+                self.assertEqual(section, diag.exception.section)
+                self.assertNotIn("secret", str(diag.exception))
+                self.assertNotIn("восстановление", str(diag.exception))
+
     def test_site_history_indexing_and_sitemaps_stay_separate(self):
         r = normalize_export(fixture(), as_of=DAY)
         self.assertEqual(21, r["site_history"]["TOTAL_SHOWS"][0]["value"])
