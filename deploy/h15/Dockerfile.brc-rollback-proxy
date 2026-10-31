@@ -1,0 +1,9 @@
+# Offline recipe only: the caller verifies the local base image ID and CA.
+ARG H454_BASE_IMAGE
+FROM ${H454_BASE_IMAGE}
+USER 0:0
+RUN mkdir -p /opt/hermes-rollback && chmod 0755 /opt/hermes-rollback
+COPY --chown=0:0 --chmod=0444 h454_isolated_rollback_proxy.mjs /opt/hermes-rollback/proxy.mjs
+COPY --chown=0:0 --chmod=0444 relay-ca.pem /opt/hermes-rollback/relay-ca.pem
+USER 65534:65534
+ENTRYPOINT ["node", "/opt/hermes-rollback/proxy.mjs"]

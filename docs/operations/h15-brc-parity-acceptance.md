@@ -167,18 +167,37 @@ post-commit check passed; the prior container and launcher were retained.
 Task Run, login/reboot and process-tree cleanup remain unverified. See the
 [window receipt](https://github.com/MikeMoore1337/hermes/issues/454#issuecomment-6523646903).
 
-The next launcher **source candidate** replaces a direct state rewrite with a
+The atomic-state launcher replaces a direct state rewrite with a
 private, flushed temporary file and atomic `File.Replace`. It checks the
 previous state hash before replacement, rejects unsafe ACLs/reparse points,
 and preserves a backup if a post-replacement check detects drift. This uses the
 existing cooperative runtime lock; it is not an OS-wide compare-and-swap
-against uncooperative writers. It is not installed by source delivery.
+against uncooperative writers. It was installed in the later owner-approved
+timing window, not by source delivery alone.
+
+A later launcher source candidate records the SSH process creation time with
+its PID in atomic state. If that saved time differs from a currently held
+process handle, the guard can leave that process untouched only after observing
+no listener twice; matching or legacy state still requires the existing tunnel
+identity checks. Synthetic negative cases and a real owned-process fixture do
+not prove login or PID reuse across reboot. Before credential decryption and
+staging, the candidate also requires the listener to belong to the newly
+started, still-live SSH process; it repeats this check during monitoring.
+These checks narrow a localhost listener race but cannot authenticate the relay
+end to end or eliminate a change after a check. Same-user state tampering is
+not excluded by this guard. If a saved
+legacy PID is already occupied, this guard needs a separately approved state
+migration to help that recovery. The previously prepared timing-window
+launcher does not include it.
 
 The signal image's verbose start timing retained and changed its event array
 after returning: an isolated, no-network test grew it from 8 to 40 events.
-The next source candidate stops recording on response and caps start/interaction
-timing at 128 events with an explicit truncation notice. This is not yet a live
-image rollout. On all three sandboxes a 200 ms MCP wait returned a running
+The owner-approved timing window activated image `sha256:0c95960c02e0dbe00a6a11ee6253d4055e4a7abf7671404b3f876dfdb95bd5d8`,
+which stops recording on response and caps start/interaction timing at 128
+events with an explicit truncation notice. The real post-commit MCP smoke
+verified the deployed module hashes; the 128-event cap itself was tested in
+isolated CI, not stressed on the live device. See the [window receipt](https://github.com/MikeMoore1337/hermes/issues/454#issuecomment-6525154238).
+On all three sandboxes a 200 ms MCP wait returned a running
 process that later completed normally; that parameter does not enforce a process
 lifetime limit. Stdout/stderr markers, exit code 7 and a paginated output read
 were observed on each; the output is combined, not separately typed by channel.

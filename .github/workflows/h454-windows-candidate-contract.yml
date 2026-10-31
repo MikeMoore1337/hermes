@@ -3,6 +3,7 @@ name: H454 Windows candidate preparation and contract
 on:
   pull_request:
     paths:
+      - .gitattributes
       - scripts/h454_windows_candidate_contract.py
       - scripts/h454_windows_prepare_init_candidate.py
       - scripts/h454_windows_native_preflight.ps1
@@ -10,6 +11,26 @@ on:
       - scripts/h454_windows_launcher_patch.py
       - tests/test_h454_windows_launcher_patch.py
       - scripts/h454_windows_launcher_preserve.py
+      - scripts/h454_windows_launcher_guard.py
+      - scripts/h454_windows_wss_launcher.py
+      - scripts/h454_windows_wss_identity.ps1
+      - scripts/h454_windows_wss_identity.mjs
+      - tests/h454_windows_wss_identity.test.mjs
+      - tests/h454_windows_wss_identity_fixture.ps1
+      - scripts/h454_wss_fixture_certificates.sh
+      - scripts/h454_windows_launcher_guard_e2e.ps1
+      - scripts/h454_windows_secure_credential.ps1
+      - scripts/h454_windows_secure_credential_e2e.ps1
+      - scripts/h454_windows_offline_recovery.ps1
+      - scripts/h454_windows_offline_recovery_e2e.ps1
+      - scripts/h454_windows_network_guard.ps1
+      - scripts/h454_windows_network_guard_e2e.ps1
+      - scripts/h454_windows_cutover_engine.ps1
+      - scripts/h454_windows_cutover_engine_e2e.ps1
+      - tests/test_h454_windows_launcher_guard.py
+      - tests/test_h454_windows_wss_launcher.py
+      - tests/fixtures/h454_legacy_launcher_e37f.ps1.txt
+      - tests/h454_windows_wss_reconnect_fixture.ps1
       - tests/test_h454_windows_launcher_preserve.py
       - tests/h454_windows_launcher_preserve_fixture.ps1
       - scripts/h454_agent_edit_image.py
@@ -24,6 +45,7 @@ on:
   push:
     branches: [main]
     paths:
+      - .gitattributes
       - scripts/h454_windows_candidate_contract.py
       - scripts/h454_windows_prepare_init_candidate.py
       - scripts/h454_windows_native_preflight.ps1
@@ -31,6 +53,26 @@ on:
       - scripts/h454_windows_launcher_patch.py
       - tests/test_h454_windows_launcher_patch.py
       - scripts/h454_windows_launcher_preserve.py
+      - scripts/h454_windows_launcher_guard.py
+      - scripts/h454_windows_wss_launcher.py
+      - scripts/h454_windows_wss_identity.ps1
+      - scripts/h454_windows_wss_identity.mjs
+      - tests/h454_windows_wss_identity.test.mjs
+      - tests/h454_windows_wss_identity_fixture.ps1
+      - scripts/h454_wss_fixture_certificates.sh
+      - scripts/h454_windows_launcher_guard_e2e.ps1
+      - scripts/h454_windows_secure_credential.ps1
+      - scripts/h454_windows_secure_credential_e2e.ps1
+      - scripts/h454_windows_offline_recovery.ps1
+      - scripts/h454_windows_offline_recovery_e2e.ps1
+      - scripts/h454_windows_network_guard.ps1
+      - scripts/h454_windows_network_guard_e2e.ps1
+      - scripts/h454_windows_cutover_engine.ps1
+      - scripts/h454_windows_cutover_engine_e2e.ps1
+      - tests/test_h454_windows_launcher_guard.py
+      - tests/test_h454_windows_wss_launcher.py
+      - tests/fixtures/h454_legacy_launcher_e37f.ps1.txt
+      - tests/h454_windows_wss_reconnect_fixture.ps1
       - tests/test_h454_windows_launcher_preserve.py
       - tests/h454_windows_launcher_preserve_fixture.ps1
       - scripts/h454_agent_edit_image.py
@@ -69,13 +111,45 @@ jobs:
         run: python -B -m unittest discover -s tests -p "test_h454_windows_launcher_patch.py" -v
       - name: Launcher preservation and PowerShell 5.1 lifecycle fixtures
         run: python -B -m unittest discover -s tests -p "test_h454_windows_launcher_preserve.py" -v
+      - name: WSS launcher composition and Windows TLS health
+        env:
+          H454_WINDOWS_WSS_HEALTH: '1'
+        run: python -B -m unittest discover -s tests -p "test_h454_windows_wss_launcher.py" -v
       - name: Immutable edit layer safety contracts (no owner Docker or credentials)
         run: python -B -m unittest discover -s tests -p "test_h454_agent_edit_image.py" -v
       - name: Parse disposable image smoke
         run: node --check scripts/h454_agent_edit_image_smoke.mjs
+      - name: Synthetic SSH identity format and rejection tests
+        run: node --test tests/h454_windows_wss_identity.test.mjs
       - name: Real PowerShell 5.1 stdin and failure diagnostics (no host services)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           python -B -m unittest discover -s tests -p "test_h454_windows_native_preflight.py" -v
           if ($LASTEXITCODE -ne 0) { throw 'H454_NATIVE_PREFLIGHT_TESTS_FAILED' }
+      - name: PowerShell 5.1 recovery guard and synthetic WSS credentials
+        if: runner.os == 'Windows' && matrix.python-version == '3.11'
+        shell: pwsh
+        run: |
+          $env:H454_GUARD_FIXTURE = Join-Path $env:RUNNER_TEMP 'h454-guard-block.ps1'
+          python -B -c "import os; from pathlib import Path; from scripts.h454_windows_launcher_guard import GUARD; Path(os.environ['H454_GUARD_FIXTURE']).write_text(GUARD, encoding='utf-8')"
+          if ($LASTEXITCODE -ne 0) { throw 'H454_GUARD_GENERATION_FAILED' }
+          & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/h454_windows_launcher_guard_e2e.ps1 -GuardPath $env:H454_GUARD_FIXTURE -FixtureParent $env:RUNNER_TEMP
+          if ($LASTEXITCODE -ne 0) { throw 'H454_GUARD_TEST_FAILED' }
+          & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/h454_windows_secure_credential_e2e.ps1 -Source (Resolve-Path scripts/h454_windows_secure_credential.ps1).Path
+          if ($LASTEXITCODE -ne 0) { throw 'H454_CREDENTIAL_TEST_FAILED' }
+          & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/h454_windows_offline_recovery_e2e.ps1 -Source (Resolve-Path scripts/h454_windows_offline_recovery.ps1).Path -GuardPath $env:H454_GUARD_FIXTURE -FixtureParent $env:RUNNER_TEMP
+          if ($LASTEXITCODE -ne 0) { throw 'H454_RECOVERY_TEST_FAILED' }
+          & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/h454_windows_network_guard_e2e.ps1 -Source (Resolve-Path scripts/h454_windows_network_guard.ps1).Path
+          if ($LASTEXITCODE -ne 0) { throw 'H454_NETWORK_GUARD_TEST_FAILED' }
+          & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/h454_windows_cutover_engine_e2e.ps1 -Source (Resolve-Path scripts/h454_windows_cutover_engine.ps1).Path -FixtureParent $env:RUNNER_TEMP
+          if ($LASTEXITCODE -ne 0) { throw 'H454_CUTOVER_ENGINE_TEST_FAILED' }
+      - name: Synthetic Windows DPAPI and SSH-agent identity recovery
+        if: runner.os == 'Windows' && matrix.python-version == '3.11'
+        shell: pwsh
+        run: |
+          $service = Get-Service ssh-agent
+          if ($service.StartType -eq 'Disabled') { Set-Service ssh-agent -StartupType Manual }
+          if ($service.Status -ne 'Running') { Start-Service ssh-agent }
+          & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests/h454_windows_wss_identity_fixture.ps1 -FixtureParent $env:RUNNER_TEMP
+          if ($LASTEXITCODE -ne 0) { throw 'H454_IDENTITY_TEST_FAILED' }
