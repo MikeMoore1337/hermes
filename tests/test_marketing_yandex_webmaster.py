@@ -158,6 +158,49 @@ class YandexWebmasterOfflineTests(unittest.TestCase):
                 self.assertNotIn("secret", str(diag.exception))
                 self.assertNotIn("восстановление", str(diag.exception))
 
+    def test_popular_position_problem_categories_are_fixed_and_non_reversible(self):
+        from marketing.yandex_webmaster import classify_popular_position_problem
+        start, end = date(2026, 10, 1), date(2026, 10, 19)
+        for value, category in (
+            (None, "NULL"), (0, "ZERO"), (0.0, "ZERO"),
+            (-2.0, "NEGATIVE"), (1001.0, "ABOVE_LIMIT"),
+            (True, "BOOLEAN"), ("2.25", "NUMERIC_STRING"),
+            ("secret=do-not-echo", "STRING"), ([], "OTHER_TYPE"),
+            (float("nan"), "NONFINITE"), (float("inf"), "NONFINITE"),
+        ):
+            with self.subTest(category=category):
+                payload = fixture()["popular"]
+                indicators = payload["queries"][0]["indicators"]
+                indicators["AVG_SHOW_POSITION"] = value
+                result = classify_popular_position_problem(
+                    payload, start=start, end=end,
+                )
+                self.assertEqual({
+                    "indicator": "AVG_SHOW_POSITION", "value_class": category,
+                }, result)
+                self.assertNotIn("secret", repr(result))
+                self.assertNotIn("восстановление", repr(result))
+
+    def test_popular_position_classifier_only_handles_position_errors(self):
+        from marketing.yandex_webmaster import classify_popular_position_problem
+        start, end = date(2026, 10, 1), date(2026, 10, 19)
+        valid = fixture()["popular"]
+        self.assertEqual(
+            {"indicator": "NONE", "value_class": "NO_INVALID_POSITION"},
+            classify_popular_position_problem(valid, start=start, end=end),
+        )
+        other = fixture()["popular"]
+        other["count"] = "not-a-count"
+        with self.assertRaisesRegex(WebmasterDenied, "counter_invalid"):
+            classify_popular_position_problem(other, start=start, end=end)
+        click = fixture()["popular"]
+        click["queries"][0]["indicators"].pop("AVG_SHOW_POSITION")
+        click["queries"][0]["indicators"]["AVG_CLICK_POSITION"] = 0
+        self.assertEqual(
+            {"indicator": "AVG_CLICK_POSITION", "value_class": "ZERO"},
+            classify_popular_position_problem(click, start=start, end=end),
+        )
+
     def test_site_history_indexing_and_sitemaps_stay_separate(self):
         r = normalize_export(fixture(), as_of=DAY)
         self.assertEqual(21, r["site_history"]["TOTAL_SHOWS"][0]["value"])
