@@ -1,9 +1,11 @@
 # H454: authenticated BRC transport and interrupted-update recovery
 
-**Source and synthetic tests only. No new listener, certificate, Windows
-launcher, container or service is installed by this change.** The live
-cutover remains HOLD until its exact artifacts, certificate custody, network
-and recovery procedure are verified and the owner approves a concrete window.
+**Transport and cutover remain source-only.** A separate Windows SSH identity
+and a private relay request have been prepared; the server has not authorized
+the key. No new listener, certificate, Windows launcher, container or service
+is installed by this change. The live cutover remains HOLD until its exact
+artifacts, certificate custody, network and recovery procedure are verified
+and the owner approves a concrete window.
 
 ## Connection boundary
 
@@ -146,8 +148,20 @@ refusal of the old port for the new key, and new-key revocation passed. Temporar
 fixtures were removed and the real second filename remained absent. Neither
 fixture installed a real key or tested the production adapter.
 The server-side operator's snapshot also passed a read-only check against the
-current relay and the newly prepared public key. No real server authorization
-was installed by that check.
+current relay and the newly prepared public key. A root-only request was then
+prepared and checked again against that snapshot; no real server authorization
+was installed.
+
+`h454_relay_tls_identity.py` prepares a separate root-only CA and an RSA-3072
+server certificate with a fixed name, no-overwrite atomic publication and
+verified private-file permissions. The CA key is not needed by the sidecar;
+only the server key and public certificate are intended for a read-only mount.
+The verifier rejects an unexpected name, key mismatch, unsafe files and a leaf
+with less than 30 days remaining. The CA and leaf are issued for 730 and 180
+days respectively; renewal and deployment are not automated. Disposable Linux
+fixtures exercised the operator, and a synthetic RSA-3072 certificate passed
+Windows Schannel with the correct CA and name while a wrong name was rejected.
+No real TLS identity or listener has been created by these tests.
 [OpenSSH supports selecting an agent identity using its public key](https://man.openbsd.org/ssh_config#IdentityFile),
 and [Windows can store a key in its SSH agent](https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_keymanagement),
 and a synthetic Windows-to-loopback-sshd test authenticated using a temporary
