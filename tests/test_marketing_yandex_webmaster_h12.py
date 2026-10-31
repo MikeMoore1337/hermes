@@ -10,6 +10,7 @@ from unittest.mock import patch
 from marketing.yandex_webmaster_direct import collect
 from marketing.yandex_webmaster_h12 import (
     YandexH12Denied, build_h12_handoff, summarized_h12_handoff,
+    build_h12_observed_batch, summarized_h12_batch,
 )
 from tests.test_marketing_yandex_webmaster_direct import AS_OF, TOKEN, mocked_sequence
 
@@ -100,6 +101,74 @@ class YandexWebmasterH12Tests(unittest.TestCase):
         self.assertEqual("NO_CONFIRMED_DEMAND", packet["evidence_kind"])
         self.assertEqual("NO_DATA", packet["status"])
         self.assertFalse(packet["publication_allowed"])
+
+    def test_bulk_h12_gapless_uses_only_observed_queries_in_memory(self):
+        original = synthetic_read()
+        original_copy = copy.deepcopy(original)
+        with patch("marketing.yandex_webmaster_direct._transport",
+                   side_effect=AssertionError("handoff never makes HTTP")):
+            batch = build_h12_observed_batch(original, as_of=AS_OF)
+        receipt = summarized_h12_batch(batch)
+        self.assertEqual("IN_MEMORY_H12_BATCH_UNATTESTED", receipt["status"])
+        self.assertEqual("SYNTHETIC_TRANSPORT_CHECK", receipt["source_transport"])
+        self.assertEqual(1, receipt["h12_packet_count"])
+        self.assertEqual(1, receipt["h12_observation_count"])
+        self.assertFalse(receipt["site_gap_assessed"])
+        self.assertEqual("NO_DATA", receipt["h12_packet_status"])
+        self.assertEqual("NO_CONFIRMED_DEMAND", receipt["h12_evidence_kind"])
+        self.assertEqual(0, receipt["provider_gets_during_handoff"])
+        self.assertEqual(0, receipt["filesystem_writes"])
+        self.assertFalse(receipt["publication_allowed"])
+        self.assertEqual(original_copy, original)
+        packet = batch["handoffs"][0]["packet"]
+        self.assertEqual(QUERY, packet["selected_query"])
+        self.assertIsNone(packet["site_gap"])
+        self.assertIn("SITE_GAP_NOT_ASSESSED", packet["reasons"])
+        self.assertEqual("OWNER_EXPORT_UNVERIFIED",
+                         packet["observations"][0]["data_quality"])
+        self.assertNotIn(QUERY, json.dumps(receipt, ensure_ascii=False))
+        self.assertNotIn(TOKEN, json.dumps(receipt, ensure_ascii=False))
+
+    def test_gapless_batch_cannot_claim_provider_attestation(self):
+        report = synthetic_read()
+        report["status"] = "LIVE_GET_RESPONSE_UNATTESTED"
+        batch = build_h12_observed_batch(report, as_of=AS_OF)
+        receipt = summarized_h12_batch(batch)
+        self.assertEqual("LIVE_GET_RESPONSE_UNATTESTED", receipt["source_transport"])
+        self.assertEqual("NO_CONFIRMED_DEMAND", receipt["h12_evidence_kind"])
+        self.assertEqual("NO_DATA", receipt["h12_packet_status"])
+
+    def test_gapless_batch_refuses_missing_or_untrusted_queries(self):
+        report = synthetic_read()
+        report["data"]["seo_research_input_observations"] = []
+        with self.assertRaisesRegex(YandexH12Denied, "^H12_NO_OBSERVED_QUERIES$"):
+            build_h12_observed_batch(report, as_of=AS_OF)
+        report = synthetic_read()
+        report["data"]["seo_research_input_observations"][0]["query"] = "X<secret"
+        with self.assertRaisesRegex(YandexH12Denied, "^H12_PACKET_REJECTED$"):
+            build_h12_observed_batch(report, as_of=AS_OF)
+
+    def test_gapless_single_handoff_refuses_unobserved_query(self):
+        with self.assertRaisesRegex(YandexH12Denied, "^H12_QUERY_NOT_OBSERVED$"):
+            build_h12_handoff(
+                synthetic_read(), as_of=AS_OF,
+                selected_query="not present", site_gap=None,
+            )
+
+    def test_gapless_batch_summary_refuses_privilege_tampering(self):
+        batch = build_h12_observed_batch(synthetic_read(), as_of=AS_OF)
+        for key, invalid in (
+            ("publication_allowed", True),
+            ("source_provenance", "PROVIDER_VERIFIED"),
+            ("filesystem_writes", 1),
+            ("site_gap_assessed", True),
+            ("status", "PRIVILEGE_UPGRADED"),
+        ):
+            with self.subTest(key=key):
+                damaged = copy.deepcopy(batch)
+                damaged[key] = invalid
+                with self.assertRaises(YandexH12Denied):
+                    summarized_h12_batch(damaged)
 
     def test_unknown_query_remains_no_data_and_does_not_invent_demand(self):
         other = "несуществующий запрос"
