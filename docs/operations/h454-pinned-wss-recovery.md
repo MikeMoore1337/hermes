@@ -195,8 +195,13 @@ original container. A safe and tested way to do that without exposing the
 original plaintext bearer remains open.
 
 `h454_isolated_rollback_proxy.mjs` is a source-only experiment for that gap.
-It listens on one detected private IPv4 address and forwards no agent bytes
-until a separate TLS connection authenticates the pinned CA and server name.
+It selects one private IPv4 interface using the operator-pinned isolated
+network CIDR, rejects ambiguous interfaces and an upstream in that CIDR, and
+forwards no agent bytes until a separate TLS connection authenticates the pinned
+CA and server name. With two disposable Docker networks, a local restart test
+retained the isolated listener and pinned TLS route while the upstream interface
+refused the plaintext port. The operator must verify the CIDR against the exact
+inspected Docker network and configure the intended restart policy.
 Its image recipe places the CA and code in a root-owned, read-only directory.
 The proxy cannot itself establish that Docker's network is internal, that its
 DNS alias resolves uniquely to this proxy, or that no other container can join

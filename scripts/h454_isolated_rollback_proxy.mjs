@@ -15,12 +15,34 @@ function privateIPv4(address) {
   return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
 }
 
-export function isolatedIPv4(interfaces) {
+function ipv4Number(address) {
+  return address.split('.').reduce((value, octet) => value * 256 + Number(octet), 0);
+}
+
+function isolatedNetwork(cidr) {
+  if (typeof cidr !== 'string' || !/^(?:\d{1,3}\.){3}\d{1,3}\/(?:[8-9]|[12]\d|30)$/.test(cidr))
+    throw Error('H454_ISOLATED_NETWORK');
+  const [address, bits] = cidr.split('/'), prefix = Number(bits);
+  if (!privateIPv4(address)) throw Error('H454_ISOLATED_NETWORK');
+  const mask = (0xffffffff << (32 - prefix)) >>> 0, base = ipv4Number(address);
+  const end = (base | (~mask >>> 0)) >>> 0;
+  const last = [end >>> 24, (end >>> 16) & 255, (end >>> 8) & 255, end & 255].join('.');
+  if (((base & mask) >>> 0) !== base || !privateIPv4(last)) throw Error('H454_ISOLATED_NETWORK');
+  return { base, mask, prefix };
+}
+
+export function isolatedIPv4(interfaces, cidr) {
+  const network = isolatedNetwork(cidr);
   const addresses = Object.values(interfaces).flatMap(entries => entries ?? [])
-    .filter(entry => entry && !entry.internal && entry.family === 'IPv4')
-    .map(entry => entry.address);
-  if (addresses.length !== 1 || !privateIPv4(addresses[0])) throw Error('H454_ISOLATED_INTERFACE');
-  return addresses[0];
+    .filter(entry => entry && !entry.internal && entry.family === 'IPv4');
+  if (addresses.length < 1 || addresses.length > 2 || addresses.some(entry => !privateIPv4(entry.address)))
+    throw Error('H454_ISOLATED_INTERFACE');
+  const matching = addresses.filter(entry => ((ipv4Number(entry.address) & network.mask) >>> 0) === network.base &&
+    entry.cidr === `${entry.address}/${network.prefix}`);
+  if (matching.length !== 1 || addresses.filter(entry =>
+    ((ipv4Number(entry.address) & network.mask) >>> 0) === network.base).length !== 1)
+    throw Error('H454_ISOLATED_INTERFACE');
+  return matching[0].address;
 }
 
 export function createRollbackProxy({ upstreamHost, upstreamPort, ca }) {
@@ -70,9 +92,10 @@ export function readPinnedCa(expectedHash) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
-    if (process.argv.length !== 4 || !privateIPv4(process.argv[2])) throw Error('H454_PROXY_ARGUMENTS');
-    const listenHost = isolatedIPv4(os.networkInterfaces());
-    if (listenHost === process.argv[2]) throw Error('H454_PROXY_ROUTE');
+    if (process.argv.length !== 5 || !privateIPv4(process.argv[2])) throw Error('H454_PROXY_ARGUMENTS');
+    const network = isolatedNetwork(process.argv[4]);
+    const listenHost = isolatedIPv4(os.networkInterfaces(), process.argv[4]);
+    if (((ipv4Number(process.argv[2]) & network.mask) >>> 0) === network.base) throw Error('H454_PROXY_ROUTE');
     const ca = readPinnedCa(process.argv[3]);
     const server = createRollbackProxy({ upstreamHost: process.argv[2], upstreamPort: 38184, ca });
     server.on('error', () => { console.error('H454_ROLLBACK_PROXY_ERROR'); process.exitCode = 1; });

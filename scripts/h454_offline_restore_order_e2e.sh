@@ -164,7 +164,7 @@ echo 'H454_CI_SYNTHETIC_LISTENER_RECEIVED_NO_STAGED_TOKEN=PASS'
 # Feasibility only: no TLS sidecar or live Windows behavior is implied.
 network_id="$(docker network create --internal --label "com.hermes.h454.fixture=$nonce" "h454-internal-$nonce")"
 sidecar="$(docker create --pull never --network "$network_id" --network-alias host.docker.internal \
-  --read-only --init --cap-drop ALL --security-opt no-new-privileges --user 65534:65534 \
+  --restart unless-stopped --read-only --init --cap-drop ALL --security-opt no-new-privileges --user 65534:65534 \
   --memory 128m --pids-limit 32 --label "com.hermes.h454.fixture=$nonce" --entrypoint node "$image" -e '
     const http=require("node:http");
     http.createServer((q,r)=>{console.log(q.headers.authorization?"H454_SYNTHETIC_AUTH":"H454_SYNTHETIC_PROBE");r.writeHead(401);r.end()})
@@ -257,10 +257,12 @@ docker logs "$relay" 2>&1 | grep -q '^H454_TEST_TLS_READY$'
 relay_ip="$(docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$relay")"
 node -e 'if(require("node:net").isIP(process.argv[1])!==4)process.exit(1)' "$relay_ip"
 ca_hash="$(sha256sum "$tmp/relay-ca.pem" | cut -d' ' -f1)"
+isolated_cidr="$(docker network inspect --format '{{(index .IPAM.Config 0).Subnet}}' "$network_id")"
+isolated_name="$(docker network inspect --format '{{.Name}}' "$network_id")"
 sidecar="$(docker create --pull never --network "$network_id" --network-alias host.docker.internal \
   --read-only --init --cap-drop ALL --security-opt no-new-privileges --user 65534:65534 \
   --memory 128m --pids-limit 32 --label "com.hermes.h454.fixture=$nonce" \
-  "$proxy_image" "$relay_ip" "$ca_hash")"
+  "$proxy_image" "$relay_ip" "$ca_hash" "$isolated_cidr")"
 docker start "$sidecar" >/dev/null
 for _ in $(seq 1 50); do
   docker logs "$sidecar" 2>&1 | grep -q '^H454_ROLLBACK_PROXY_READY$' && break
@@ -270,10 +272,24 @@ docker logs "$sidecar" 2>&1 | grep -q '^H454_ROLLBACK_PROXY_READY$'
 side_ip="$(docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$sidecar")"
 docker network connect --alias "h454-u-$nonce" "$upstream_network" "$sidecar"
 test "$(docker inspect --format '{{len .NetworkSettings.Networks}}' "$sidecar")" = 2
-docker exec "$relay" node -e '
-  const net=require("node:net"),s=net.connect(38180,process.argv[1]);
-  s.on("connect",()=>process.exit(1));s.on("error",e=>process.exit(e.code==="ECONNREFUSED"?0:1));
-  setTimeout(()=>process.exit(1),2000).unref();' "h454-u-$nonce"
+assert_upstream_closed() {
+  docker exec "$relay" node -e '
+    const net=require("node:net"),s=net.connect(38180,process.argv[1]);
+    s.on("connect",()=>process.exit(1));s.on("error",e=>process.exit(e.code==="ECONNREFUSED"?0:1));
+    setTimeout(()=>process.exit(1),2000).unref();' "h454-u-$nonce"
+}
+assert_upstream_closed
+docker restart --time 1 "$sidecar" >/dev/null
+for _ in $(seq 1 50); do
+  ready_count="$(docker logs "$sidecar" 2>&1 | grep -c '^H454_ROLLBACK_PROXY_READY$' || true)"
+  test "$ready_count" -ge 2 && test "$(docker inspect --format '{{.State.Running}}' "$sidecar")" = true && break
+  sleep 0.1
+done
+test "$ready_count" -ge 2
+test "$(docker inspect --format '{{.State.Running}}' "$sidecar")" = true
+assert_upstream_closed
+side_ip="$(docker inspect --format '{{json .NetworkSettings.Networks}}' "$sidecar" | \
+  python3 -c 'import json,sys;print(json.load(sys.stdin)[sys.argv[1]]["IPAddress"])' "$isolated_name")"
 docker start "$isolated" >/dev/null
 docker exec "$isolated" /bin/sh -c 'test ! -e /run/brc/ready && test ! -e /run/brc/device.json'
 test "$(docker inspect --format '{{len .NetworkSettings.Networks}}' "$isolated")" = 1
@@ -290,6 +306,7 @@ docker logs "$relay" 2>&1 | grep -q '^H454_TEST_TLS_AUTH$'
 test "$(grep -c '^auth$' "$tmp/events")" = 1
 echo 'H454_SYNTHETIC_RESTAGE_VIA_ISOLATED_PINNED_TLS=PASS'
 echo 'H454_SYNTHETIC_PROXY_UPSTREAM_LISTENER_CLOSED=PASS'
+echo 'H454_SYNTHETIC_ROLLBACK_PROXY_TWO_NETWORK_RESTART=PASS'
 
 # A namespace-sharing WSS proxy must rejoin the relay after its container restarts.
 cp scripts/h454_wss_relay_proxy.mjs "$tmp/"

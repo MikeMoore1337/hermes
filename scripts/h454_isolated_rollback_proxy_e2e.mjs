@@ -14,13 +14,19 @@ const read = name => fs.readFileSync(path.join(fixture, name));
 const ca = read('ca.crt');
 const marker = Buffer.from('Bearer brc_dev_' + 'a'.repeat(43));
 
+const isolated = { address:'172.18.0.2', family:'IPv4', internal:false, cidr:'172.18.0.2/16' };
+const upstreamInterface = { address:'10.0.0.2', family:'IPv4', internal:false, cidr:'10.0.0.2/8' };
 assert.equal(isolatedIPv4({ lo:[{ address:'127.0.0.1', family:'IPv4', internal:true }],
-  eth0:[{ address:'172.18.0.2', family:'IPv4', internal:false }] }), '172.18.0.2');
+  eth0:[isolated] }, '172.18.0.0/16'), '172.18.0.2');
+assert.equal(isolatedIPv4({ eth0:[isolated], eth1:[upstreamInterface] }, '172.18.0.0/16'), '172.18.0.2');
 for (const interfaces of [{}, { eth0:[{ address:'8.8.8.8', family:'IPv4', internal:false }] },
-  { a:[{ address:'10.0.0.2', family:'IPv4', internal:false }],
-    b:[{ address:'172.18.0.2', family:'IPv4', internal:false }] }]) {
-  assert.throws(() => isolatedIPv4(interfaces), /H454_ISOLATED_INTERFACE/);
+  { a:[upstreamInterface] }, { a:[{ ...isolated, cidr:'172.18.0.2/24' }] },
+  { a:[isolated], b:[{ ...isolated, address:'172.18.0.3', cidr:'172.18.0.3/16' }] },
+  { a:[isolated], b:[upstreamInterface], c:[{ ...upstreamInterface, address:'10.1.0.2' }] }]) {
+  assert.throws(() => isolatedIPv4(interfaces, '172.18.0.0/16'), /H454_ISOLATED_INTERFACE/);
 }
+for (const cidr of ['172.18.0.2/16', '172.16.0.0/11', '127.0.0.0/8', '10.0.0.0/08', '0.0.0.0/0', 'invalid'])
+  assert.throws(() => isolatedIPv4({ eth0:[isolated] }, cidr), /H454_ISOLATED_NETWORK/);
 for (const invalid of [
   {upstreamHost:'invalid', upstreamPort:38184, ca},
   {upstreamHost:'127.0.0.1', upstreamPort:0, ca},

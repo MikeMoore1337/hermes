@@ -620,7 +620,7 @@ jobs:
             '
           ca_hash="$(sha256sum "$fixture/relay-ca.pem" | cut -d" " -f1)"
           if docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
-            --user 65534:65534 --memory 128m --pids-limit 32 "$proxy_image" 172.17.0.1 "$ca_hash"; then
+            --user 65534:65534 --memory 128m --pids-limit 32 "$proxy_image" 172.18.0.1 "$ca_hash" 172.17.0.0/16; then
             echo 'H454_ROLLBACK_PROXY_MISSING_INTERFACE_NOT_REFUSED' >&2; exit 1
           fi
           echo "H454_SYNTHETIC_ROLLBACK_PROXY_TLS=PASS" >> "$GITHUB_STEP_SUMMARY"
