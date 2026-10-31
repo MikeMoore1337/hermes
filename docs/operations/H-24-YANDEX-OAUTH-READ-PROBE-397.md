@@ -59,6 +59,24 @@ runuser -u hermes-seo -- env -i HOME=/var/lib/hermes-seo PATH=/usr/bin:/bin PYTH
 
 `NORMALIZE / YANDEX_RESPONSE_CONTRACT_CHANGED` означает, что все шесть GET были предприняты, но API-формат не соответствует валидатору; это **не доказательство**, что данные действительно отсутствуют. Нормализатор теперь допускает документированное отсутствие необязательного `sitemaps[].last_access_date` как `None`, сохраняя требование остальных полей и HTTPS URL. Официальные `popular.date_from/date_to` принимают `YYYY-MM-DD` либо datetime с явным часовым поясом, не меняя строгий формат операторской `--date`. В случае отказа нормализации стадия уточняется до `POPULAR_DATA|ALL_HISTORY_DATA|INDEXING_DATA|SITEMAPS_DATA|SEO_PACKET` с фиксированным безопасным кодом `reason` (`counter_invalid`, `popular_period_invalid`, `sitemap_row_invalid` и др.). Эти коды показывают только семейство нарушения схемы, не provider payload и не конкретные значения. Синтетические тесты не доказывают, что именно такая ошибка возникла в реальном ответе. Отсутствующие метрики не становятся нулями, собственная ручная публикация владельца остаётся обязательной.
 
+## Узкая диагностика одной некорректной позиции (не более 3 GET)
+
+Если owner-run `--diagnose-full` вернул `stage=POPULAR_DATA` и `reason=position_invalid`, **не разрешается** угадывать значение или автоматически превращать `0`/`null`/строку в позицию. По официальной документации Яндекса показатель может отсутствовать; из одного `position_invalid` нельзя установить конкретное представление. Полный six-GET smoke повторять не нужно.
+
+Только после отдельного точечного owner grant и проверки правильного Hermes VPS, exact release SHA/receipt, пяти исходных blobs и приватных прав токена можно однократно выполнить:
+
+```sh
+cd "/opt/hermes-agent-owner/releases/main-$(cat /var/lib/hermes-main-deploy/last-success.sha)"
+runuser -u hermes-seo -- env -i HOME=/var/lib/hermes-seo PATH=/usr/bin:/bin PYTHONDONTWRITEBYTECODE=1 \
+  /usr/bin/python3 -B -m marketing.yandex_webmaster_direct \
+  --date "$(date -u +%F)" --execute-read --diagnose-position \
+  --token-file /var/lib/hermes-seo/private/yandex-oauth-token
+```
+
+Новый `--diagnose-position` использует тот же `collect` и тот же проверенный HTTPS transport, но **жёстко ограничен тремя последовательными GET**: `/user` -> verified YFC `/hosts` -> `/search-queries/popular`. Таймаут 8 секунд на запрос, TLS CA обязателен, 0 retries, 0 proxies/redirects. Результат `LIVE_POPULAR_POSITION_CLASS_ONLY` сообщает только fixed `position_indicator=AVG_SHOW_POSITION|AVG_CLICK_POSITION|NONE` и `position_value_class=ZERO|NEGATIVE|NULL|NUMERIC_STRING|STRING|BOOLEAN|ABOVE_LIMIT|NONFINITE|OTHER_TYPE|NO_INVALID_POSITION`. Никаких actual value, поискового текста, UID, raw API response или токена; `search_metrics_verified=false`, `publication_allowed=false`. При отказе сообщает только fixed `stage`, allowlisted `reason` и `requests_attempted<=3`. Запросы к indexing, sitemap и all-history **не выполняются**.
+
+Этот одноразовый диагностический этап не превращает результат в SEO Research packet и не подтверждает положительный спрос. Синтетическая проверка явно маркируется отдельно, отсутствие ошибки в следующем ответе не доказывает исправление исторической ошибки. Любое дальнейшее full read требует нового разрешения владельца.
+
 ## Реальный запуск на авторизованном Linux VPS после установки OAuth
 
 1. У владельца **уже был** подтверждён сайт YFC в UI Webmaster. Не создавать снова verification-файлы или другой сайт. Официальный [OAuth guide](https://yandex.ru/dev/webmaster/doc/ru/tasks/how-to-get-oauth): отдельное приложение, redirect `https://oauth.yandex.ru/verification_code`, scope `webmaster:hostinfo` для только чтения. Если для **явно согласованного управления** позднее потребуется `webmaster:verify`, предоставить её отдельному специально ограниченному клиенту и проверить операции/квоты, не переводить read-collector на все permissions по умолчанию.
