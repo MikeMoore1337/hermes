@@ -20,7 +20,8 @@ from urllib.request import (
 )
 
 from marketing.yandex_webmaster import (
-    BASE, HOST, INPUT_SCHEMA, WebmasterDenied, normalize_export, read_plan,
+    BASE, HOST, INPUT_SCHEMA, CONTRACT_DIAGNOSTIC_CODES,
+    WebmasterContractDiagnosticDenied, WebmasterDenied, normalize_export, read_plan,
 )
 
 RESPONSE_LIMIT = 64 * 1024
@@ -206,10 +207,19 @@ def collect(
                     name, _safe_read_diagnostic_reason(exc), request_count,
                 ) from None
             raise
-        except WebmasterDenied:
+        except WebmasterDenied as exc:
             if diagnostic:
+                section = (exc.section if isinstance(
+                    exc, WebmasterContractDiagnosticDenied,
+                ) else name)
+                reason = exc.args[0] if len(exc.args) == 1 else None
+                safe_reason = (
+                    reason if type(reason) is str
+                    and reason in CONTRACT_DIAGNOSTIC_CODES
+                    else "YANDEX_RESPONSE_CONTRACT_CHANGED"
+                )
                 raise YandexReadDiagnosticDenied(
-                    name, "YANDEX_RESPONSE_CONTRACT_CHANGED", request_count,
+                    section, safe_reason, request_count,
                 ) from None
             raise YandexLiveDenied("Yandex_RESPONSE_CONTRACT_CHANGED") from None
         except Exception:
@@ -270,7 +280,9 @@ def collect(
         "popular": payloads[0], "all_history": payloads[1],
         "index_history": payloads[2], "sitemaps": payloads[3],
     }
-    report = stage("NORMALIZE", lambda: normalize_export(envelope, as_of=as_of))
+    report = stage("NORMALIZE", lambda: normalize_export(
+        envelope, as_of=as_of, diagnostic=diagnostic,
+    ))
     # The nested report explicitly remains owner-export / NOT provider-attested.
     # A synthetic or caller-injected transport cannot manufacture VERIFIED.
     return {
@@ -358,7 +370,7 @@ def _safe_host_probe_reason(exc: YandexLiveDenied) -> str:
 READ_DIAGNOSTIC_REFUSALS = HOST_PROBE_REFUSALS | frozenset({
     "REQUEST_BUDGET_EXCEEDED", "PLAN_INVALID",
     "YANDEX_RESPONSE_CONTRACT_CHANGED",
-})
+}) | CONTRACT_DIAGNOSTIC_CODES
 
 
 def _safe_read_diagnostic_reason(exc: YandexLiveDenied) -> str:
