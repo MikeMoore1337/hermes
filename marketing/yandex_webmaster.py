@@ -122,6 +122,53 @@ def _positive(value: Any) -> float:
     return float(value)
 
 
+def _position_value_class(value: Any) -> str:
+    """Fixed, non-reversible category; never return a provider value."""
+    if value is None:
+        return "NULL"
+    if type(value) is bool:
+        return "BOOLEAN"
+    if type(value) in (int, float):
+        if not math.isfinite(value):
+            return "NONFINITE"
+        if value == 0:
+            return "ZERO"
+        if value < 0:
+            return "NEGATIVE"
+        if value > 1000:
+            return "ABOVE_LIMIT"
+        return "VALID"
+    if type(value) is str:
+        return ("NUMERIC_STRING" if re.fullmatch(
+            r"[+-]?(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)", value,
+        ) else "STRING")
+    return "OTHER_TYPE"
+
+
+def classify_popular_position_problem(
+    source: Any, *, start: date, end: date,
+) -> dict[str, str]:
+    """Classify one invalid position without returning queries or raw values.
+
+    The existing full parser must first reject specifically a position,
+    otherwise we do not infer that its other fields are correct.
+    """
+    try:
+        _popular(source, start=start, end=end)
+    except WebmasterDenied as exc:
+        if exc.args != ("position_invalid",):
+            raise
+        for item in source["queries"]:
+            indicators = item["indicators"]
+            for name in ("AVG_SHOW_POSITION", "AVG_CLICK_POSITION"):
+                if name in indicators:
+                    category = _position_value_class(indicators[name])
+                    if category != "VALID":
+                        return {"indicator": name, "value_class": category}
+        raise WebmasterDenied("position_invalid") from None
+    return {"indicator": "NONE", "value_class": "NO_INVALID_POSITION"}
+
+
 def _series(container: Any, *, allowed: frozenset[str], as_of: date) -> dict[str, list[dict[str, Any]]]:
     if type(container) is not dict or set(container) != {"indicators"}:
         raise WebmasterDenied("series_schema_invalid")
