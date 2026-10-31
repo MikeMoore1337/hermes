@@ -164,6 +164,7 @@ class YandexWebmasterOfflineTests(unittest.TestCase):
         for value, category in (
             (None, "NULL"), (0, "ZERO"), (0.0, "ZERO"),
             (-2.0, "NEGATIVE"), (1001.0, "ABOVE_LIMIT"),
+            (10 ** 1000, "ABOVE_LIMIT"),
             (True, "BOOLEAN"), ("2.25", "NUMERIC_STRING"),
             ("secret=do-not-echo", "STRING"), ([], "OTHER_TYPE"),
             (float("nan"), "NONFINITE"), (float("inf"), "NONFINITE"),
@@ -180,6 +181,12 @@ class YandexWebmasterOfflineTests(unittest.TestCase):
                 }, result)
                 self.assertNotIn("secret", repr(result))
                 self.assertNotIn("восстановление", repr(result))
+
+    def test_popular_giant_integer_is_a_fixed_denial_not_an_overflow(self):
+        sample = fixture()
+        sample["popular"]["queries"][0]["indicators"]["AVG_SHOW_POSITION"] = 10 ** 1000
+        with self.assertRaisesRegex(WebmasterDenied, "^position_invalid$"):
+            normalize_export(sample, as_of=DAY)
 
     def test_popular_position_classifier_only_handles_position_errors(self):
         from marketing.yandex_webmaster import classify_popular_position_problem
