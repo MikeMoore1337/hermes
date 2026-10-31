@@ -1,0 +1,46 @@
+name: H695 isolated UI design inputs
+
+on:
+  push:
+    branches: [design/h695-operator-desk-a]
+    paths:
+      - .github/workflows/h695-ui-design-preview.yml
+
+permissions:
+  contents: read
+
+jobs:
+  prepare-ui:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Install existing locked UI dependencies without scripts
+        working-directory: control_center/frontend
+        run: npm ci --ignore-scripts --no-fund --no-audit
+      - name: Verify the unchanged frontend baseline
+        working-directory: control_center/frontend
+        run: |
+          npm run test
+          npm run build
+      - name: Package public tracked source and isolated UI dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/h695-ui-inputs"
+          git archive --format=tar HEAD > "$RUNNER_TEMP/h695-ui-inputs/source.tar"
+          tar -czf "$RUNNER_TEMP/h695-ui-inputs/ui-dependencies.tar.gz" -C control_center/frontend node_modules
+          printf '%s\n' "$GITHUB_SHA" > "$RUNNER_TEMP/h695-ui-inputs/SOURCE_SHA"
+          (cd "$RUNNER_TEMP/h695-ui-inputs" && sha256sum source.tar ui-dependencies.tar.gz SOURCE_SHA > SHA256SUMS)
+      - name: Attach inputs for local design verification only
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: h695-ui-design-inputs
+          path: ${{ runner.temp }}/h695-ui-inputs/
+          retention-days: 3
+          if-no-files-found: error
