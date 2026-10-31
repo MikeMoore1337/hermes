@@ -140,8 +140,21 @@ fixture installed a real key or tested the production adapter.
 and [Windows can store a key in its SSH agent](https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_keymanagement),
 and a synthetic Windows-to-loopback-sshd test authenticated using a temporary
 agent-loaded key with only its public file present. The synthetic agent entry
-was removed afterward. Real key enrollment, backup, restart behavior and
-identity availability have not been verified for this BRC.
+was removed afterward.
+
+The source-only `h454_windows_wss_identity.ps1` prepares a separate Ed25519
+identity under the existing protected Windows state directory. It refuses to
+replace an existing backup or public key, protects the private record for the
+current Windows user with DPAPI and loads it into the Windows SSH agent through
+an anonymous pipe. `Restore` validates the protected record and public key
+before loading the same identity again. Its executable and existing launcher
+hashes must be independently reviewed and pinned by the caller. An interrupted
+or timed-out load requires inspection before retry; it is not proof that the
+agent was unchanged. A disposable Windows fixture checked DPAPI recovery,
+repeat restore, mismatch refusal and corrupt-backup refusal with a random key,
+then removed only that key. A read-only preflight accepted the current task and
+protected state directory. No real identity has been generated or enrolled;
+automatic identity recovery, agent-service restart and reboot remain unverified.
 
 ## Interruption and rollback boundary
 
