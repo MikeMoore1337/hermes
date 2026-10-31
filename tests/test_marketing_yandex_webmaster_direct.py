@@ -15,7 +15,7 @@ from unittest.mock import patch
 from marketing.yandex_webmaster import BASE, HOST
 from marketing.yandex_webmaster_direct import (
     YandexLiveDenied, _json_unique, _parse_response, _safe_url, _uid,
-    _verify_host, collect, main, probe_user, read_private_token,
+    _verify_host, collect, main, probe_user, probe_host, read_private_token,
     summarized_receipt,
 )
 from tests.test_marketing_yandex_webmaster import fixture
@@ -300,6 +300,130 @@ class YandexLiveProbeTests(unittest.TestCase):
         self.assertFalse(data["host_verified"])
         self.assertFalse(data["publication_allowed"])
         self.assertNotIn("123456", output.getvalue())
+        self.assertNotIn(TOKEN, output.getvalue())
+
+    def test_two_get_host_probe_verified_without_accessing_search_data(self):
+        send, calls = mocked_sequence()
+        result = probe_host(token=TOKEN, transport=send)
+        self.assertEqual([BASE + "/user", BASE + "/user/100/hosts"], calls)
+        self.assertEqual("SYNTHETIC_VERIFIED_YFC_HOST_ONLY", result["status"])
+        self.assertTrue(result["host_verified"])
+        self.assertEqual(2, result["request_count"])
+        self.assertEqual(2, result["request_limit"])
+        self.assertFalse(result["search_metrics_verified"])
+        self.assertFalse(result["indexing_verified"])
+        self.assertFalse(result["sitemap_verified"])
+        self.assertFalse(result["publication_allowed"])
+        self.assertNotIn("100", json.dumps(result))
+        self.assertNotIn(TOKEN, json.dumps(result))
+
+    def test_host_probe_fails_closed_on_missing_site_and_bad_mirror(self):
+        for target, expected in (
+            ({"hosts": []}, "TARGET_HOST_NOT_VERIFIED"),
+            ({"hosts": [{"host_id": HOST, "verified": True,
+                        "ascii_host_url": "http://your-fitness-coach.ru/"}]},
+             "TARGET_HOST_URL_MISMATCH"),
+            ({"hosts": [{"host_id": HOST, "verified": True,
+                        "ascii_host_url": "https://your-fitness-coach.ru/",
+                        "main_mirror": {"host_id": "http:your-fitness-coach.ru:80"}}]},
+             "PRIMARY_MIRROR_MISMATCH"),
+        ):
+            with self.subTest(expected=expected):
+                send, calls = mocked_sequence(responses=[{"user_id": 100}, target])
+                with self.assertRaises(YandexLiveDenied) as ctx:
+                    probe_host(token=TOKEN, transport=send)
+                self.assertEqual(expected, str(ctx.exception))
+                self.assertEqual("HOSTS", ctx.exception.stage)
+                self.assertEqual(2, len(calls))
+
+    def test_host_probe_stage_and_http_errors_only_fixed_safe_codes(self):
+        cmd = ["--date", "2026-10-23", "--execute-read", "--probe-host",
+               "--token-file", "/private/synthetic"]
+        for stage, error_at, reason in (
+            ("USER", 0, "AUTH_REQUIRED"),
+            ("USER", 0, "RATE_LIMITED"),
+            ("HOSTS", 1, "ACCESS_DENIED"),
+            ("HOSTS", 1, "UPSTREAM_UNAVAILABLE"),
+            ("HOSTS", 1, "HOST_NOT_VERIFIED_OR_UNAVAILABLE"),
+            ("HOSTS", 1, "secret=do-not-echo"),
+        ):
+            with self.subTest(stage=stage, reason=reason):
+                send, calls = mocked_sequence(error=(error_at, reason))
+                with patch("marketing.yandex_webmaster_direct.read_private_token",
+                           return_value=TOKEN), patch(
+                           "marketing.yandex_webmaster_direct._transport",
+                           side_effect=send):
+                    output = io.StringIO()
+                    with patch("sys.stdout", output):
+                        rc = main(cmd)
+                self.assertEqual(2, rc)
+                receipt = json.loads(output.getvalue())
+                self.assertEqual(stage, receipt["stage"])
+                self.assertEqual(min(error_at + 1, 2), len(calls))
+                self.assertEqual(2, receipt["request_limit"])
+                self.assertEqual("REFUSED", receipt["status"])
+                self.assertEqual(
+                    "AUTH_OR_RESPONSE_NOT_VERIFIED" if reason.startswith("secret=")
+                    else reason, receipt["reason"])
+                self.assertFalse(receipt["publication_allowed"])
+                self.assertNotIn(TOKEN, output.getvalue())
+                self.assertNotIn("secret=", output.getvalue())
+                self.assertNotIn("100", output.getvalue())
+
+    def test_host_probe_transport_poison_redacted(self):
+        def poison(url, token):
+            raise RuntimeError("sensitive token=" + token + " user=100")
+        with patch("marketing.yandex_webmaster_direct.read_private_token",
+                   return_value=TOKEN), patch(
+                   "marketing.yandex_webmaster_direct._transport",
+                   side_effect=poison):
+            output = io.StringIO()
+            with patch("sys.stdout", output):
+                rc = main(["--date", "2026-10-23", "--execute-read", "--probe-host",
+                           "--token-file", "/private/synthetic"])
+        self.assertEqual(2, rc)
+        receipt = json.loads(output.getvalue())
+        self.assertEqual("REQUEST_FAILED", receipt["reason"])
+        self.assertEqual("USER", receipt["stage"])
+        self.assertNotIn("sensitive", output.getvalue())
+        self.assertNotIn(TOKEN, output.getvalue())
+
+    def test_host_probe_requires_explicit_execution_and_token(self):
+        for argv, reason in (
+            (["--date", "2026-10-23", "--probe-host"], "EXPLICIT_EXECUTION_REQUIRED"),
+            (["--date", "2026-10-23", "--probe-host", "--execute-read"],
+             "TOKEN_FILE_REQUIRED"),
+        ):
+            with self.subTest(reason=reason), patch(
+                "marketing.yandex_webmaster_direct._transport",
+                side_effect=AssertionError("network forbidden")):
+                output = io.StringIO()
+                with patch("sys.stdout", output):
+                    rc = main(argv)
+            self.assertEqual(2, rc)
+            receipt = json.loads(output.getvalue())
+            self.assertEqual(reason, receipt["reason"])
+            self.assertEqual("PREFLIGHT", receipt["stage"])
+            self.assertEqual(2, receipt["request_limit"])
+
+    def test_host_probe_cli_success_only_asserts_host_not_metrics(self):
+        send, called = mocked_sequence()
+        with patch("marketing.yandex_webmaster_direct.read_private_token",
+                   return_value=TOKEN), patch(
+                   "marketing.yandex_webmaster_direct._transport",
+                   side_effect=send):
+            output = io.StringIO()
+            with patch("sys.stdout", output):
+                rc = main(["--date", "2026-10-23", "--execute-read", "--probe-host",
+                           "--token-file", "/private/synthetic"])
+        self.assertEqual(0, rc)
+        self.assertEqual(2, len(called))
+        receipt = json.loads(output.getvalue())
+        self.assertEqual("LIVE_VERIFIED_YFC_HOST_ONLY", receipt["status"])
+        self.assertTrue(receipt["host_verified"])
+        self.assertFalse(receipt["search_metrics_verified"])
+        self.assertFalse(receipt["publication_allowed"])
+        self.assertNotIn("100", output.getvalue())
         self.assertNotIn(TOKEN, output.getvalue())
 
     def test_no_exec_cli_does_not_load_credentials_or_network(self):
