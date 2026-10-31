@@ -630,10 +630,10 @@ class YandexLiveProbeTests(unittest.TestCase):
     def test_diagnose_position_reads_only_three_authenticated_endpoints(self):
         cmd = ["--date", "2026-10-23", "--execute-read",
                "--diagnose-position", "--token-file", "/private/synthetic"]
-        for position, indicator, category in (
-            (0, "AVG_SHOW_POSITION", "ZERO"),
-            (None, "NONE", "NO_INVALID_POSITION"),
-            ("2.0", "AVG_SHOW_POSITION", "NUMERIC_STRING"),
+        for position, input_indicator, expected_indicator, category in (
+            (0, "AVG_SHOW_POSITION", "AVG_SHOW_POSITION", "ZERO"),
+            (None, "AVG_CLICK_POSITION", "NONE", "NO_INVALID_POSITION"),
+            ("2.0", "AVG_SHOW_POSITION", "AVG_SHOW_POSITION", "NUMERIC_STRING"),
         ):
             with self.subTest(category=category):
                 payloads = [p for p in [
@@ -644,7 +644,7 @@ class YandexLiveProbeTests(unittest.TestCase):
                 ]]
                 indicators = payloads[2]["queries"][0]["indicators"]
                 indicators.pop("AVG_SHOW_POSITION", None)
-                indicators[indicator] = position
+                indicators[input_indicator] = position
                 sent, calls = mocked_sequence(responses=payloads)
                 with patch("marketing.yandex_webmaster_direct.read_private_token",
                            return_value=TOKEN), patch(
@@ -664,7 +664,7 @@ class YandexLiveProbeTests(unittest.TestCase):
                 self.assertTrue(result["host_verified"])
                 self.assertEqual(3, result["request_count"])
                 self.assertEqual(3, result["request_limit"])
-                self.assertEqual(indicator, result["position_indicator"])
+                self.assertEqual(expected_indicator, result["position_indicator"])
                 self.assertEqual(category, result["position_value_class"])
                 for field in ("search_metrics_verified", "indexing_verified",
                               "sitemap_verified", "publication_allowed"):
