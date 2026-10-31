@@ -1,5 +1,6 @@
 // Actual compiled agent and relay; synthetic certificates and token only.
 import assert from 'node:assert/strict';
+import { X509Certificate } from 'node:crypto';
 import dns from 'node:dns';
 import fs from 'node:fs';
 import https from 'node:https';
@@ -48,7 +49,9 @@ let connections = 0, upstreamUpgrades = 0;
 proxy.on('secureConnection', socket => { connections++; proxySockets.add(socket); socket.once('close', () => proxySockets.delete(socket)); });
 relay.http.on('upgrade', () => { upstreamUpgrades++; });
 await listen(proxy);
-let client;
+let client, fake;
+const fakeSockets = new Set();
+let refused = 0;
 try {
   const status = await new Promise((resolve, reject) => {
     https.get({ host: '127.0.0.1', port: 38184, path: '/not-ws', ca: read('ca.crt'),
@@ -70,7 +73,9 @@ try {
     });
   }
   assert.equal(upstreamUpgrades, 0, 'invalid WebSocket request reached relay');
-  client = new WsClient(options(token));
+  client = new WsClient({ ...options(token), log: (_level, message) => {
+    if (typeof message === 'string' && message.includes('ECONNREFUSED')) refused++;
+  } });
   client.start();
   await until(() => !!relay.hub.get('synthetic-wss-device'));
   const call = await invokeTool(relay.hub, relay.store, { userId: owner.id, clientId: 'fixture' }, 'read_file',
@@ -85,17 +90,46 @@ try {
   const again = await invokeTool(relay.hub, relay.store, { userId: owner.id, clientId: 'fixture' }, 'read_file',
     { deviceId: 'synthetic-wss-device', path: '/workspace/fixture' });
   assert.equal(again.ok, true);
-  let refused = 0;
+  const secondSocket = relay.hub.get('synthetic-wss-device').socket;
+  for (const socket of proxySockets) socket.destroy();
+  await close(proxy);
+  await until(() => refused > 0);
+  let fakeAttempted = false, fakeSettled = false, fakeDataBytes = 0;
+  fake = tls.createServer({ key: read('fake.key'), cert: read('fake.crt') }, socket => {
+    socket.on('data', data => { fakeDataBytes += data.length; socket.destroy(); });
+    socket.on('error', () => {});
+  });
+  fake.on('connection', socket => {
+    fakeAttempted = true; fakeSockets.add(socket);
+    socket.once('close', () => { fakeSockets.delete(socket); fakeSettled = true; });
+  });
+  fake.on('tlsClientError', () => {});
+  await listen(fake);
+  await until(() => fakeAttempted && fakeSettled);
+  assert.equal(fakeDataBytes, 0, 'application bytes reached the replacement listener');
+  for (const socket of fakeSockets) socket.destroy();
+  await close(fake); fake = null;
+  await listen(proxy);
+  await until(() => !!relay.hub.get('synthetic-wss-device') &&
+    relay.hub.get('synthetic-wss-device').socket !== secondSocket);
+  const restored = await invokeTool(relay.hub, relay.store, { userId: owner.id, clientId: 'fixture' }, 'read_file',
+    { deviceId: 'synthetic-wss-device', path: '/workspace/fixture' });
+  assert.equal(restored.ok, true);
+  assert.equal(restored.result.content[0].text, 'synthetic-result');
+  let unauthorized = 0;
   const invalid = new WsClient({ ...options('brc_dev_' + 'x'.repeat(43)),
-    onUnauthorized: async () => { refused++; return true; } });
+    onUnauthorized: async () => { unauthorized++; return true; } });
   invalid.start();
-  await until(() => refused === 1);
+  await until(() => unauthorized === 1);
   invalid.stop();
   assert.ok(relay.hub.get('synthetic-wss-device'));
   console.log('PINNED_WSS_REAL_RELAY_TOOL_AND_RECONNECT=PASS');
+  console.log('PINNED_WSS_ABSENT_AND_FAKE_LISTENER_RECOVERY=PASS');
   console.log('PROXY_INVALID_HTTP_AND_UNAUTHORIZED=PASS');
 } finally {
   client?.stop();
+  for (const socket of fakeSockets) socket.destroy();
+  if (fake) await close(fake);
   for (const socket of proxySockets) socket.destroy();
   await close(proxy);
   await relay.close();
@@ -128,7 +162,9 @@ try {
   process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
   await rejectFake('fake');
   await rejectFake('wrong');
-  assert.ok(tls.getCACertificates('default').includes(read('fake.crt').toString('utf8')));
+  const fakeFingerprint = new X509Certificate(read('fake.crt')).fingerprint256;
+  assert.ok(tls.getCACertificates('default').some(cert =>
+    new X509Certificate(cert).fingerprint256 === fakeFingerprint));
   console.log('GLOBALLY_TRUSTED_FAKE_AND_WRONG_HOST_NO_BEARER=PASS');
 } finally {
   tls.setDefaultCACertificates(originalRoots);

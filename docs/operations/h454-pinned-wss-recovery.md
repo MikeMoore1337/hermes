@@ -124,6 +124,12 @@ and must not be deployed as a standalone recovery procedure.
   isolated container with synthetic certificates and token: tool call and
   reconnect passed; fake globally trusted and wrong-name certificates did not
   receive the token. Invalid HTTP routes and unauthorized tokens were refused.
+- An isolated listener outage produced a refused connection; an untrusted TLS
+  listener then received no application bytes, and the agent reconnected and
+  completed another tool call after the trusted listener returned. A local
+  synthetic client mutation disabling certificate verification was correctly
+  rejected by that test. This does not test automatic restart of the Windows
+  SSH process or the live agent.
 - The image recipe was exercised on the locally prepared no-auto-pair base
   with a synthetic CA. Its inherited layers and runtime configuration matched;
   the non-root process could read but could not overwrite the CA or module.
