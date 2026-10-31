@@ -103,8 +103,7 @@ class WssLauncherTests(unittest.TestCase):
         self.assertTrue(output.startswith(b"\xef\xbb\xbf"))
         self.assertNotIn(b"\n", output.replace(b"\r\n", b""))
 
-    @unittest.skipUnless(os.name == "nt", "PowerShell 5.1 is Windows-only")
-    def test_windows_reconnect_monitor_keeps_container_and_tracks_processes(self):
+    def _assert_windows_reconnect_monitor_keeps_container_and_tracks_processes(self):
         source = fixture()
         output = wss.prepare(source, source_sha256=hashlib.sha256(source).hexdigest(), ca_sha256="a" * 64)
         with tempfile.TemporaryDirectory(prefix="h454-wss-monitor-") as tmp:
@@ -116,6 +115,9 @@ class WssLauncherTests(unittest.TestCase):
                                     capture_output=True, text=True, encoding="utf-8", timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("H454_WSS_RECONNECT_FIXTURE=PASS", result.stdout)
+
+    if os.name == "nt":
+        test_windows_reconnect_monitor_keeps_container_and_tracks_processes = _assert_windows_reconnect_monitor_keeps_container_and_tracks_processes
 
     def _assert_windows_tls_health_checks_synthetic_certificates(self):
         bash = Path(os.environ["ProgramFiles"]) / "Git" / "bin" / "bash.exe"
