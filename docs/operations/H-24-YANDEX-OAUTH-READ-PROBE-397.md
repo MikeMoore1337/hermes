@@ -43,6 +43,22 @@ runuser -u hermes-seo -- env -i HOME=/var/lib/hermes-seo PATH=/usr/bin:/bin PYTH
 
 Успех `LIVE_VERIFIED_YFC_HOST_ONLY` подтверждает **только** доступ к точному проверенному HTTPS-host, ASCII URL и требуемому главному зеркалу (если указан), **не** реальное получение SEO-статистики и не право публикации. При отказе выводятся только `stage=USER|HOSTS|PREFLIGHT` и allowlisted `reason` (`TARGET_HOST_NOT_VERIFIED`, `TARGET_HOST_URL_MISMATCH`, `PRIMARY_MIRROR_MISMATCH`, `ACCESS_DENIED`, `NETWORK_UNAVAILABLE` и прочие фиксированные коды). Ни ответ Яндекса, ни URL списка сайтов, ни user ID, ни OAuth-token не печатаются. Результаты синтетического транспорта `SYNTHETIC_VERIFIED_YFC_HOST_ONLY` **не** считаются live evidence. Повторный live запуск требует отдельного разрешения, даже если предыдущий отказ не был диагностирован.
 
+## Строго отдельная диагностика полного read-only сбора
+
+После успешного owner-run `--probe-host` со статусом `LIVE_VERIFIED_YFC_HOST_ONLY` остаётся независимая проверка четырёх источников SEO-данных. Обычный `--execute-read` по умолчанию **по-прежнему** маскирует причину отказа. Новая опция `--diagnose-full` использует тот же существующий `collect` и 6-GET budget (не второй движок), но при отказе сообщает только `stage=USER|HOSTS|PLAN|POPULAR|ALL_HISTORY|INDEXING|SITEMAPS|NORMALIZE|PREFLIGHT`, фиксированный код `reason`, `requests_attempted` (число попыток GET, **не** успешно завершённых ответов), `request_limit=6`. Никакие сырые ответы, идентификатор аккаунта, токен, строки поисковых запросов, URL других сайтов и исключения провайдера не выводятся.
+
+Запуск возможен **только после отдельного точечного разрешения** и проверки установленного SHA, Git blob, квитанции production, UID, прав локального token-file. Один запуск - максимум 6 GET без повторов, 8 секунд каждый, TLS/no proxy/no redirect, никаких записей:
+
+```sh
+cd "/opt/hermes-agent-owner/releases/main-$(cat /var/lib/hermes-main-deploy/last-success.sha)"
+runuser -u hermes-seo -- env -i HOME=/var/lib/hermes-seo PATH=/usr/bin:/bin PYTHONDONTWRITEBYTECODE=1 \
+  /usr/bin/python3 -B -m marketing.yandex_webmaster_direct \
+  --date "$(date -u +%F)" --execute-read --diagnose-full \
+  --token-file /var/lib/hermes-seo/private/yandex-oauth-token
+```
+
+`NORMALIZE / YANDEX_RESPONSE_CONTRACT_CHANGED` означает, что все шесть GET были предприняты, но API-формат не соответствует валидатору; это **не доказательство**, что данные действительно отсутствуют. Нормализатор теперь допускает документированное отсутствие необязательного `sitemaps[].last_access_date` как `None`, сохраняя требование остальных полей и HTTPS URL. Отсутствующие метрики не становятся нулями, собственная ручная публикация владельца остаётся обязательной.
+
 ## Реальный запуск на авторизованном Linux VPS после установки OAuth
 
 1. У владельца **уже был** подтверждён сайт YFC в UI Webmaster. Не создавать снова verification-файлы или другой сайт. Официальный [OAuth guide](https://yandex.ru/dev/webmaster/doc/ru/tasks/how-to-get-oauth): отдельное приложение, redirect `https://oauth.yandex.ru/verification_code`, scope `webmaster:hostinfo` для только чтения. Если для **явно согласованного управления** позднее потребуется `webmaster:verify`, предоставить её отдельному специально ограниченному клиенту и проверить операции/квоты, не переводить read-collector на все permissions по умолчанию.
