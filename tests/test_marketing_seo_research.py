@@ -85,6 +85,44 @@ class H12OfflineResearchTests(unittest.TestCase):
         self.assertFalse(packet["paid_api_used"])
         self.assertFalse(packet["live_api_used"])
 
+    def test_market_research_explicit_unknown_gap_preserves_real_observations(self):
+        data = input_packet()
+        data["theme"] = "market_research"
+        data["research_item"] = None
+        data["site_gap"] = None
+        row = mock_search()
+        row.update(source_type="owner_export",
+                   owner_attested=False, evidence_sha256="a" * 64)
+        data["observations"] = [row]
+        result = build_packet(data)
+        self.assertEqual("NO_DATA", result["status"])
+        self.assertEqual("NO_CONFIRMED_DEMAND", result["evidence_kind"])
+        self.assertIn("SITE_GAP_NOT_ASSESSED", result["reasons"])
+        self.assertIn("NO_FRESH_ATTESTED_SEARCH_DEMAND", result["reasons"])
+        self.assertEqual(1, len(result["observations"]))
+        self.assertEqual("OWNER_EXPORT_UNVERIFIED",
+                         result["observations"][0]["data_quality"])
+        self.assertIsNone(result["site_gap"])
+        self.assertIn("Метод проверки покрытия: NOT_ASSESSED", result["markdown"])
+        self.assertFalse(result["publication_allowed"])
+        self.assertFalse(result["yfc_write_allowed"])
+
+    def test_unknown_gap_cannot_promote_synthetic_demand_to_ready(self):
+        data = input_packet()
+        data.update(theme="market_research", research_item=None,
+                    site_gap=None, observations=[mock_search()])
+        result = build_packet(data)
+        self.assertEqual("HOLD", result["status"])
+        self.assertIn("SITE_GAP_NOT_ASSESSED", result["reasons"])
+        self.assertNotEqual("READY_FOR_REVIEW", result["status"])
+        self.assertFalse(result["publication_allowed"])
+
+    def test_unknown_gap_rejected_for_scientific_themes(self):
+        data = input_packet()
+        data["site_gap"] = None
+        with self.assertRaisesRegex(SeoResearchDenied, "^site_gap_required_for_science$"):
+            build_packet(data)
+
     def test_absent_observations_are_not_zero(self):
         p = build_packet(input_packet())
         self.assertEqual(p["status"], "NO_DATA")
