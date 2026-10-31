@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from unittest.mock import patch
 
@@ -67,6 +68,34 @@ function Test-LocalHealth {
 
 
 class WssLauncherTests(unittest.TestCase):
+    # This synthetic launcher is the e37f6b41 output for public test inputs.
+    def test_installed_legacy_launcher_reaches_the_same_guarded_wss_output(self):
+        legacy = (Path(__file__).parent / "fixtures/h454_legacy_launcher_e37f.ps1.txt").read_text(encoding="utf-8").encode()
+        actual = wss.prepare_from_installed(legacy, source_sha256=hashlib.sha256(legacy).hexdigest(),
+                                            ca_sha256="a" * 64, identity_sha256="c" * 64)
+        source = fixture()
+        expected = wss.prepare(source, source_sha256=hashlib.sha256(source).hexdigest(),
+                               ca_sha256="a" * 64, identity_sha256="c" * 64)
+        self.assertEqual(actual, expected)
+        self.assertIn(GUARD.encode(), actual)
+        self.assertIn(b"Initialize-H454TunnelJob $PSCommandPath", actual)
+
+    def test_installed_legacy_launcher_refuses_drift_and_preserves_newlines(self):
+        legacy = (Path(__file__).parent / "fixtures/h454_legacy_launcher_e37f.ps1.txt").read_text(encoding="utf-8").encode()
+        digest = hashlib.sha256(legacy).hexdigest()
+        changed = legacy.replace(b"H454_STATE_ACL", b"H454_STATE_OTHER", 1)
+        for altered, pin in ((changed, digest), (changed, hashlib.sha256(changed).hexdigest()),
+                             (legacy.replace(b"ExitOnForwardFailure=yes", b"ExitOnForwardFailure=no"), None),
+                             (legacy.replace(b"$ready=$true", b"$ready=$false", 1), None)):
+            with self.subTest(length=len(altered)), self.assertRaises(AuditError):
+                wss.prepare_from_installed(altered, source_sha256=pin or hashlib.sha256(altered).hexdigest(),
+                                           ca_sha256="a" * 64, identity_sha256="c" * 64)
+        crlf = b"\xef\xbb\xbf" + legacy.replace(b"\n", b"\r\n")
+        result = wss.prepare_from_installed(crlf, source_sha256=hashlib.sha256(crlf).hexdigest(),
+                                            ca_sha256="a" * 64, identity_sha256="c" * 64)
+        self.assertTrue(result.startswith(b"\xef\xbb\xbf"))
+        self.assertNotIn(b"\n", result.replace(b"\r\n", b""))
+
     def test_composed_launcher_uses_tls_and_in_memory_credentials(self):
         source = fixture()
         output = wss.prepare(source, source_sha256=hashlib.sha256(source).hexdigest(), ca_sha256="a" * 64,
@@ -80,6 +109,8 @@ class WssLauncherTests(unittest.TestCase):
         self.assertIn("C" * 64, output)
         self.assertIn("$sshArgs = @('-F','NUL',", output)
         self.assertIn("$KEY = $script:h454WssIdentity", output)
+        self.assertLess(output.index("Initialize-H454TunnelJob $PSCommandPath"),
+                        output.index("$SSH_PROCESS = Restart-H454WssTunnel $null $sshArgs"))
         self.assertLess(output.index("Assert-H454WssIdentity\n        $h454Preflight"),
                         output.index("Stop-H454ExistingTunnel\n"))
         self.assertIn("$h454Curl -q --proto '=https' --noproxy '*'", output)
@@ -152,6 +183,100 @@ class WssLauncherTests(unittest.TestCase):
 
     if os.name == "nt":
         test_windows_reconnect_monitor_keeps_container_and_tracks_processes = _assert_windows_reconnect_monitor_keeps_container_and_tracks_processes
+
+    def _assert_windows_launcher_death_kills_only_its_children(self):
+        import ctypes
+        from ctypes import wintypes
+
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel.OpenProcess.restype = wintypes.HANDLE
+        kernel.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+        kernel.WaitForSingleObject.restype = wintypes.DWORD
+        kernel.TerminateProcess.argtypes = [wintypes.HANDLE, wintypes.UINT]
+        kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+        powershell = Path(os.environ["SystemRoot"]) / "System32/WindowsPowerShell/v1.0/powershell.exe"
+        with tempfile.TemporaryDirectory(prefix="h454-job-") as tmp:
+            root = Path(tmp)
+            script = root / "parent.ps1"
+            pid_file = root / "child.pid"
+            script.write_text(
+                "param([string]$PidFile)\n$ErrorActionPreference='Stop'\n"
+                "function Require([bool]$Ok,[string]$Why){if(-not $Ok){throw $Why}}\n" +
+                wss.JOB_GUARD +
+                "Initialize-H454TunnelJob $PSCommandPath\n"
+                "$exe=Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'\n"
+                "$child=Start-Process -FilePath $exe -ArgumentList '-NoProfile -NonInteractive -Command \"Start-Sleep -Seconds 60\"' -PassThru -WindowStyle Hidden\n"
+                "[IO.File]::WriteAllText($PidFile+'.new',[string]$child.Id)\n"
+                "[IO.File]::Move($PidFile+'.new',$PidFile)\n"
+                "[Console]::WriteLine('READY')\nStart-Sleep -Seconds 60\n", encoding="utf-8")
+            sibling = subprocess.Popen([str(powershell), "-NoProfile", "-NonInteractive", "-Command",
+                                        "Start-Sleep -Seconds 60"], creationflags=subprocess.CREATE_NO_WINDOW)
+            parent = None
+            child = None
+            owned_child = False
+            try:
+                parent = subprocess.Popen([str(powershell), "-NoProfile", "-NonInteractive", "-File",
+                                           str(script), str(pid_file)], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                          creationflags=subprocess.CREATE_NO_WINDOW)
+                deadline = time.monotonic() + 20
+                while not pid_file.is_file() and parent.poll() is None and time.monotonic() < deadline:
+                    time.sleep(0.1)
+                if not pid_file.is_file():
+                    if parent.poll() is None:
+                        parent.terminate()
+                    _, error = parent.communicate(timeout=5)
+                    self.fail("synthetic launcher did not start its child: " + error.decode(errors="replace"))
+                child_pid = int(pid_file.read_text(encoding="ascii"))
+                child = kernel.OpenProcess(0x00100001, False, child_pid)  # SYNCHRONIZE | PROCESS_TERMINATE
+                self.assertTrue(child, "cannot hold the synthetic child process handle")
+                self.assertEqual(kernel.WaitForSingleObject(child, 0), 0x102, "synthetic child already exited")
+                observed = subprocess.run([str(powershell), "-NoProfile", "-NonInteractive", "-Command",
+                    f"(Get-CimInstance Win32_Process -Filter 'ProcessId={child_pid}').ParentProcessId"],
+                    capture_output=True, text=True, timeout=10, creationflags=subprocess.CREATE_NO_WINDOW)
+                self.assertEqual(observed.returncode, 0)
+                self.assertEqual(observed.stdout.strip(), str(parent.pid), "child is not owned by the fixture launcher")
+                owned_child = True
+                parent.terminate()
+                parent.wait(timeout=5)
+                self.assertEqual(kernel.WaitForSingleObject(child, 10000), 0, "child survived launcher death")
+                self.assertIsNone(sibling.poll(), "unrelated sibling was terminated")
+
+                source = ("$ErrorActionPreference='Stop'\n"
+                          "function Require([bool]$Ok,[string]$Why){if(-not $Ok){throw $Why}}\n" +
+                          wss.JOB_GUARD + "Initialize-H454TunnelJob 'C:\\synthetic.ps1'\n")
+                encoded = base64.b64encode(source.encode("utf-16le")).decode("ascii")
+                refused = subprocess.run([str(powershell), "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded],
+                                         capture_output=True, timeout=15, creationflags=subprocess.CREATE_NO_WINDOW)
+                self.assertNotEqual(refused.returncode, 0)
+                self.assertIn(b"H454_DEDICATED_PROCESS_REQUIRED", refused.stderr)
+                forged_source = ("$ErrorActionPreference='Stop'\n"
+                    "function Require([bool]$Ok,[string]$Why){if(-not $Ok){throw $Why}}\n" + wss.JOB_GUARD +
+                    "Assert-H454DedicatedProcess -h454Args @('powershell.exe','-NoProfile','-Command','x','-File','C:\\synthetic.ps1') "
+                    "-ScriptPath 'C:\\synthetic.ps1'\n")
+                forged_encoded = base64.b64encode(forged_source.encode("utf-16le")).decode("ascii")
+                forged = subprocess.run([str(powershell), "-NoProfile", "-NonInteractive", "-EncodedCommand", forged_encoded],
+                                        capture_output=True, timeout=15, creationflags=subprocess.CREATE_NO_WINDOW)
+                self.assertNotEqual(forged.returncode, 0)
+                self.assertIn(b"H454_DEDICATED_PROCESS_REQUIRED", forged.stderr)
+            finally:
+                if parent is not None and parent.poll() is None:
+                    parent.terminate()
+                    parent.wait(timeout=5)
+                if child:
+                    if owned_child and kernel.WaitForSingleObject(child, 0) == 0x102:
+                        kernel.TerminateProcess(child, 1)
+                        kernel.WaitForSingleObject(child, 5000)
+                    kernel.CloseHandle(child)
+                if sibling.poll() is None:
+                    sibling.terminate()
+                sibling.wait(timeout=5)
+                if parent is not None:
+                    parent.stdout.close()
+                    parent.stderr.close()
+
+    if os.name == "nt":
+        test_windows_launcher_death_kills_only_its_children = _assert_windows_launcher_death_kills_only_its_children
 
     def _assert_windows_tls_health_checks_synthetic_certificates(self):
         bash = Path(os.environ["ProgramFiles"]) / "Git" / "bin" / "bash.exe"

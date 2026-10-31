@@ -17,6 +17,7 @@ on:
       - scripts/h454_agent_pinned_wss_e2e.mjs
       - scripts/h454_windows_wss_launcher.py
       - tests/test_h454_windows_wss_launcher.py
+      - tests/fixtures/h454_legacy_launcher_e37f.ps1.txt
       - scripts/h454_wss_relay_proxy.mjs
       - scripts/h454_wss_relay_watchdog_e2e.mjs
       - scripts/h454_relay_authorized_keys.py
@@ -68,6 +69,7 @@ on:
       - scripts/h454_agent_pinned_wss_e2e.mjs
       - scripts/h454_windows_wss_launcher.py
       - tests/test_h454_windows_wss_launcher.py
+      - tests/fixtures/h454_legacy_launcher_e37f.ps1.txt
       - scripts/h454_wss_relay_proxy.mjs
       - scripts/h454_wss_relay_watchdog_e2e.mjs
       - scripts/h454_relay_authorized_keys.py

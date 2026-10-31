@@ -21,7 +21,13 @@ and `pairedAt=manual`, rejecting unexpected fields or identity.
 
 `h454_windows_wss_launcher.py` prepares a Run-only launcher from an exact,
 independently pinned guarded launcher, public CA hash and second SSH public-key
-hash; the caller must not trust hashes calculated from unreviewed input. It
+hash; the caller must not trust hashes calculated from unreviewed input. Its
+`prepare_from_installed` entry also accepts the specifically identified legacy
+preserving launcher: it checks the full input digest and the exact historical
+helper body before adding the current identity checks and pending-marker guard.
+The current installed launcher was composed this way in memory and parsed by
+PowerShell 5.1 with synthetic CA and public-key pins. That structural check
+does not independently approve its calculated input digest or install it. It
 uses only that public key with the default Windows SSH agent, ignores external
 SSH configuration, and refuses an overridden agent socket or changed key.
 It switches the forward and temporary credential copy to WSS and checks local
@@ -39,6 +45,12 @@ a lost SSH process with a bounded readiness attempt and a five-second retry dela
 It checks the new process and TLS endpoint, atomically records the new process
 identity, and leaves the already running container in place without restaging.
 Unexpected state drift stops the monitor instead of overwriting the state.
+Before touching a tunnel, the launcher requires a dedicated `powershell.exe -File`
+process and assigns it to a Windows job whose non-inherited handle stays open
+until that process exits. Windows then terminates its SSH child even if the
+launcher dies before recording the child's identity; a job assignment failure
+holds before the tunnel is changed. This also covers the launcher's other child
+processes, not unrelated processes or the Docker containers themselves.
 Retry requires the launcher process to remain running; task termination,
 login and reboot recovery are not established by it.
 The Windows curl readiness probe allows an unavailable revocation endpoint
@@ -259,6 +271,13 @@ and must not be deployed as a standalone recovery procedure.
   production relay were not used. The previous private launcher was composed
   with synthetic image, profile and CA pins and passed the same extracted
   fixture; the launcher was not installed or executed.
+- A separate Windows PowerShell 5.1 fixture abruptly terminated a synthetic
+  launcher after it started a child in the Windows job; the child exited and an
+  unrelated sibling survived. A separate local run used the real Windows SSH
+  executable with a temporary test forward and observed that both the SSH
+  process and its listener exited with the synthetic launcher. No BRC bearer,
+  scheduled task or actual container was changed. This does not prove that the
+  real scheduled task restarts the launcher or that reboot recovery works.
 - The rollback route guard passed PowerShell 5.1 negative fixtures for extra
   network members, changed identities, host overrides, alias and DNS drift,
   CIDR and gateway mismatch, overlapping upstream addresses and bad prefixes.

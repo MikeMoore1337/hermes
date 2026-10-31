@@ -6,13 +6,93 @@ from pathlib import Path
 import re
 
 from scripts.h15_remote_commander_candidate_audit import AuditError
-from scripts.h454_windows_launcher_guard import GUARD
+from scripts.h454_windows_launcher_guard import GUARD, patch_launcher
+from scripts.h454_windows_launcher_patch import RUN_END
+from scripts.h454_windows_launcher_preserve import HELPERS as PRESERVE_HELPERS
 
 CREDENTIAL_SOURCE_SHA256 = "4ec857e4b91f6f29191b1931c20d874948a80e4b8abcbf2a221d2847686ca48b"
+LEGACY_HELPER_SHA256 = "33a56a172df7de5a4feade38939f2f193691e3872c249ba44dc1f2ba3b92a2f3"
 ERROR_POLICY = "$ErrorActionPreference = 'Stop'\n"
 RUN = "if ($Mode -eq 'Run') {\n"
 LISTENER = "-LocalAddress '127.0.0.1' -LocalPort 38180 -State Listen"
 DEVICE = "        Require ($json.deviceId -ceq $state.deviceId) 'DPAPI_DEVICE_ID_MISMATCH'\n"
+
+JOB_GUARD = """    function Assert-H454DedicatedProcess([string[]]$h454Args,[string]$ScriptPath) {
+        $h454Seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+        $h454Index = 1
+        while ($h454Index -lt $h454Args.Length -and $h454Args[$h454Index] -ine '-File') {
+            $h454Switch = $h454Args[$h454Index]
+            Require ($h454Seen.Add($h454Switch)) 'H454_DEDICATED_PROCESS_REQUIRED'
+            if ($h454Switch -iin @('-NoProfile','-NonInteractive','-NoLogo')) { $h454Index++; continue }
+            if ($h454Switch -ieq '-ExecutionPolicy') { $h454Allowed = @('Bypass','RemoteSigned','AllSigned','Restricted','Unrestricted','Default','Undefined') }
+            elseif ($h454Switch -ieq '-WindowStyle') { $h454Allowed = @('Normal','Hidden','Minimized','Maximized') }
+            else { throw 'H454_DEDICATED_PROCESS_REQUIRED' }
+            $h454Index++
+            Require ($h454Index -lt $h454Args.Length -and $h454Args[$h454Index] -iin $h454Allowed) 'H454_DEDICATED_PROCESS_REQUIRED'
+            $h454Index++
+        }
+        Require ($h454Seen.Contains('-NoProfile') -and $h454Index + 1 -lt $h454Args.Length -and
+            $h454Args[$h454Index] -ieq '-File' -and
+            -not [string]::IsNullOrEmpty($ScriptPath) -and
+            [IO.Path]::GetFullPath($h454Args[$h454Index + 1]) -ieq [IO.Path]::GetFullPath($ScriptPath)) 'H454_DEDICATED_PROCESS_REQUIRED'
+    }
+    function Initialize-H454TunnelJob([string]$ScriptPath) {
+        Assert-H454DedicatedProcess ([Environment]::GetCommandLineArgs()) $ScriptPath
+        Require ($null -eq ('H454TunnelJob' -as [type])) 'H454_JOB_TYPE_OCCUPIED'
+        Add-Type -ErrorAction Stop -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class H454TunnelJob {
+    [StructLayout(LayoutKind.Sequential)]
+    struct Basic {
+        public long PerProcessUserTimeLimit, PerJobUserTimeLimit;
+        public uint LimitFlags;
+        public UIntPtr MinimumWorkingSetSize, MaximumWorkingSetSize;
+        public uint ActiveProcessLimit;
+        public UIntPtr Affinity;
+        public uint PriorityClass, SchedulingClass;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    struct Counters {
+        public ulong ReadOperationCount, WriteOperationCount, OtherOperationCount;
+        public ulong ReadTransferCount, WriteTransferCount, OtherTransferCount;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    struct Extended {
+        public Basic BasicLimitInformation;
+        public Counters IoInfo;
+        public UIntPtr ProcessMemoryLimit, JobMemoryLimit, PeakProcessMemoryUsed, PeakJobMemoryUsed;
+    }
+    [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
+    static extern IntPtr CreateJobObject(IntPtr attributes, string name);
+    [DllImport("kernel32.dll", SetLastError=true)]
+    static extern bool SetInformationJobObject(IntPtr job, int infoClass, ref Extended info, uint length);
+    [DllImport("kernel32.dll", SetLastError=true)]
+    static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
+    [DllImport("kernel32.dll")]
+    static extern IntPtr GetCurrentProcess();
+    [DllImport("kernel32.dll", SetLastError=true)]
+    static extern bool CloseHandle(IntPtr handle);
+    static IntPtr ownedJob;
+    public static bool Attach() {
+        if (ownedJob != IntPtr.Zero) return false;
+        IntPtr job = CreateJobObject(IntPtr.Zero, null);
+        if (job == IntPtr.Zero) return false;
+        Extended info = new Extended();
+        info.BasicLimitInformation.LimitFlags = 0x2000;
+        if (!SetInformationJobObject(job, 9, ref info, (uint)Marshal.SizeOf(typeof(Extended))) ||
+            !AssignProcessToJobObject(job, GetCurrentProcess())) {
+            CloseHandle(job); return false;
+        }
+        // The non-inheritable handle remains open until the launcher process exits.
+        ownedJob = job;
+        return true;
+    }
+}
+'@
+        Require ([H454TunnelJob]::Attach()) 'H454_JOB_ASSIGN_FAILED'
+    }
+"""
 
 IDENTITY = """    $script:h454WssIdentity = Join-Path ([IO.Path]::GetDirectoryName($STATE_PATH)) 'wss-ssh-identity.pub'
     function Assert-H454WssIdentity {
@@ -122,6 +202,86 @@ if (-not $h454Healthy) {
 }"""
 
 
+def prepare_from_installed(source: bytes, *, source_sha256: str, ca_sha256: str, identity_sha256: str) -> bytes:
+    """Prepare the known installed legacy variant entirely in memory."""
+    if (not isinstance(source, bytes) or len(source) > 200_000 or
+            not isinstance(source_sha256, str) or not re.fullmatch(r"[a-f0-9]{64}", source_sha256) or
+            hashlib.sha256(source).hexdigest() != source_sha256):
+        raise AuditError("unreviewed_installed_launcher")
+    bom = source.startswith(b"\xef\xbb\xbf")
+    try:
+        text = source.decode("utf-8-sig")
+    except UnicodeError as exc:
+        raise AuditError("unreviewed_installed_launcher") from exc
+    newline = "\r\n" if "\r\n" in text else "\n"
+    text = text.replace("\r\n", "\n")
+    first = "    # Keep the verified container across task retries and logons.\n"
+    last = "    function Assert-H454PreservedStarted {\n"
+    if text.count(first) != 1 or text.count(last) != 1 or text.count(RUN) != 1 or text.count(RUN_END) != 1:
+        raise AuditError("unreviewed_installed_launcher")
+    begin = text.index(first)
+    end = text.find("\n    }\n", text.index(last, begin))
+    if end < 0:
+        raise AuditError("unreviewed_installed_launcher")
+    end += len("\n    }\n")
+    run_start = text.index(RUN) + len(RUN)
+    run_end = text.find(RUN_END, run_start)
+    if run_end < 0 or not (run_start <= begin < end <= run_end):
+        raise AuditError("unreviewed_installed_launcher")
+    helper = text[begin:end]
+    pins = {}
+    for placeholder, name, value in (
+        ("__PROFILE_SHA256__", "h454ExpectedProfile", r"[A-F0-9]{64}"),
+        ("__IMAGE_ID__", "h454ExpectedImage", r"sha256:[a-f0-9]{64}"),
+        ("__TUNNEL_NEEDLE__", "h454TunnelNeedle", r"127\.0\.0\.1:38180:[A-Za-z0-9._-]+:3000"),
+    ):
+        matches = list(re.finditer(r"(?m)^    \$script:" + name + r" = '" + value + r"'$", helper))
+        if len(matches) != 1:
+            raise AuditError("unreviewed_installed_launcher_pins")
+        declaration = matches[0].group()
+        pins[placeholder] = declaration.split("'", 2)[1]
+        helper = helper.replace(declaration, declaration.replace(pins[placeholder], placeholder), 1)
+    if hashlib.sha256(helper.encode("utf-8")).hexdigest() != LEGACY_HELPER_SHA256:
+        raise AuditError("unreviewed_installed_launcher_helpers")
+    hardened = PRESERVE_HELPERS
+    for placeholder, value in pins.items():
+        hardened = hardened.replace(placeholder, value)
+    text = text[:begin] + hardened + text[end:]
+    start = text.index(RUN) + len(RUN)
+    finish = text.index(RUN_END, start)
+    block = text[start:finish]
+    state_pid = "$state.tunnelPid = $SSH_PROCESS.Id"
+    ready = "if (Test-LocalHealth) { $ready=$true; break }"
+    anchors = (
+        "$encrypted = Get-Content -LiteralPath $CRED_PATH -Raw",
+        "$credentials | & $script:h454Docker --host $script:h454DockerHost exec --interactive $CONTAINER /bin/sh /usr/local/bin/h15-stage.sh",
+        "if (-not (Test-LocalHealth)) {",
+    )
+    if (any(block.count(anchor) != 1 for anchor in (state_pid, ready, *anchors)) or
+            block.count("ExitOnForwardFailure=yes") != 1):
+        raise AuditError("unreviewed_installed_launcher_run")
+    pos = block.index(state_pid)
+    indent = block[block.rfind("\n", 0, pos) + 1:pos]
+    if not indent or indent.strip():
+        raise AuditError("unreviewed_installed_launcher_run")
+    block = block.replace(state_pid, state_pid + "\n" + indent +
+        "$state | Add-Member -MemberType NoteProperty -Name tunnelCreatedUtcTicks "
+        "-Value ([long]$SSH_PROCESS.StartTime.ToUniversalTime().Ticks) -Force", 1)
+    block = block.replace(ready, "if (Test-LocalHealth) { Assert-H454StartedTunnel $SSH_PROCESS; $ready=$true; break }", 1)
+    for anchor in anchors:
+        pos = block.index(anchor)
+        indent = block[block.rfind("\n", 0, pos) + 1:pos]
+        if not indent or indent.strip():
+            raise AuditError("unreviewed_installed_launcher_run")
+        block = block.replace(anchor, "Assert-H454StartedTunnel $SSH_PROCESS\n" + indent + anchor, 1)
+    text = patch_launcher(text[:start] + block + text[finish:])
+    guarded = text.replace("\n", newline).encode("utf-8")
+    if bom:
+        guarded = b"\xef\xbb\xbf" + guarded
+    return prepare(guarded, source_sha256=hashlib.sha256(guarded).hexdigest(),
+                   ca_sha256=ca_sha256, identity_sha256=identity_sha256)
+
+
 def prepare(source: bytes, *, source_sha256: str, ca_sha256: str, identity_sha256: str) -> bytes:
     if (not isinstance(source, bytes) or len(source) > 200_000 or
         not isinstance(source_sha256, str) or not isinstance(ca_sha256, str) or not isinstance(identity_sha256, str) or
@@ -185,7 +345,8 @@ def prepare(source: bytes, *, source_sha256: str, ca_sha256: str, identity_sha25
         raise AuditError("unreviewed_wss_ssh_arguments")
     text = (text[:args.start()] + args.group("indent") + "$KEY = $script:h454WssIdentity\n" +
         args.group("indent") + "$sshArgs = @('-F','NUL'," + body + ")\n" + text[args.end():])
-    text = claim.sub(lambda match: match.group("indent") + "Assert-H454ExistingTunnel\n" +
+    text = claim.sub(lambda match: match.group("indent") + "Initialize-H454TunnelJob $PSCommandPath\n" +
+                     match.group("indent") + "Assert-H454ExistingTunnel\n" +
                      match.group("indent") + "Assert-H454WssIdentity\n" +
                      match.group("indent") + "$h454Preflight = Get-H454PreservedContainer\n" +
                      match.group("indent") + "$script:h454PreflightContainerId = if ($null -eq $h454Preflight) { $null } else { [string]$h454Preflight.Id }\n" +
@@ -220,7 +381,7 @@ def prepare(source: bytes, *, source_sha256: str, ca_sha256: str, identity_sha25
     text = text.replace(RUN, RUN + "    Require ($PORT -eq 38180 -and $RELAY -cmatch '^[A-Za-z0-9._-]+:3000$') 'H454_RELAY_PIN'\n"
         "    $PORT = 38184\n    $RELAY = $RELAY.Substring(0, $RELAY.Length - 4) + '3001'\n"
         "    $h454KeepContainer = $false; $script:h454WssRetryReported = $false\n" +
-        IDENTITY.replace("__IDENTITY_SHA256__", identity_sha256.upper()) +
+        JOB_GUARD + IDENTITY.replace("__IDENTITY_SHA256__", identity_sha256.upper()) +
         STAGED_HELPER.replace("__VERIFY_STAGED_JS__", VERIFY_STAGED_JS) + RECONNECT, 1)
     text = re.sub(r"(?m)^    \$script:h454TunnelNeedle = '127\.0\.0\.1:38180:[A-Za-z0-9._-]+:3000'\n",
                   lambda _: '    $script:h454TunnelNeedle = "127.0.0.1:${PORT}:$RELAY"\n', text, count=1)

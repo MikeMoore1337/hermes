@@ -24,6 +24,7 @@ on:
       - scripts/h454_windows_cutover_engine_e2e.ps1
       - tests/test_h454_windows_launcher_guard.py
       - tests/test_h454_windows_wss_launcher.py
+      - tests/fixtures/h454_legacy_launcher_e37f.ps1.txt
       - tests/h454_windows_wss_reconnect_fixture.ps1
       - tests/test_h454_windows_launcher_preserve.py
       - tests/h454_windows_launcher_preserve_fixture.ps1
@@ -60,6 +61,7 @@ on:
       - scripts/h454_windows_cutover_engine_e2e.ps1
       - tests/test_h454_windows_launcher_guard.py
       - tests/test_h454_windows_wss_launcher.py
+      - tests/fixtures/h454_legacy_launcher_e37f.ps1.txt
       - tests/h454_windows_wss_reconnect_fixture.ps1
       - tests/test_h454_windows_launcher_preserve.py
       - tests/h454_windows_launcher_preserve_fixture.ps1
