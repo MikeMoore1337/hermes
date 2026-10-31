@@ -83,6 +83,36 @@ It writes nothing and does not supply locking, an atomic install or rollback;
 those remain operator
 requirements. A read-only preview matched the current key without changing it.
 
+An alternative `h454_relay_second_authorized_key.py` primitive publishes a
+distinct key restricted to port 3001 through an exclusively created hard link;
+it never replaces the first authorized-keys file. It requires a root-owned
+private registry, a pinned service-user SSH directory on the same filesystem,
+an exact digest for the first file, and an unoccupied second filename. Its
+receipt pins the new inode for idempotent revocation without deleting or
+truncating a concurrently replaced SSH filename. If installation cannot confirm
+revocation after a failure, it reports `KEY_INSTALL_UNSETTLED`. Emptying the
+pinned inode prevents future logins through that inode; the caller must also
+check other authorized-key paths and stop existing SSH connections by their
+verified owners. A revoked slot cannot yet be reused automatically.
+
+The production caller must open and recheck the real directory paths, verify
+effective sshd configuration and permissions, securely provision and pin the
+new identity, use a dedicated root-only registry for this key and account,
+manage interruption recovery and validate the real connection.
+The current server's effective configuration lists the second key file and that
+filename was absent at inspection. A separate synthetic sshd bound only to the
+VPS loopback accepted both restricted fixture keys, denied their opposite ports,
+and rejected the second after inode-pinned revocation while the first still
+worked. A second loopback fixture exercised the actual install and revoke
+functions with synthetic keys and the service UID; old and new authentication,
+refusal of the old port for the new key, and new-key revocation passed. Temporary
+fixtures were removed and the real second filename remained absent. Neither
+fixture installed a real key or tested the production adapter.
+[OpenSSH supports selecting an agent identity using its public key](https://man.openbsd.org/ssh_config#IdentityFile),
+and [Windows can store a key in its SSH agent](https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_keymanagement),
+but enrollment, restart behavior and identity availability have not been
+verified for this BRC.
+
 ## Interruption and rollback boundary
 
 The rollout must acquire the exclusive runtime lock, persist verified snapshots,

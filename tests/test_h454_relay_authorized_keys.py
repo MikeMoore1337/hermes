@@ -2,7 +2,7 @@ import base64
 import hashlib
 import unittest
 
-from scripts.h454_relay_authorized_keys import ForwardAuthorizationError, prepare
+from scripts.h454_relay_authorized_keys import ForwardAuthorizationError, prepare, restricted_second_key
 
 
 KEY = "ssh-ed25519 " + base64.b64encode(b"\0\0\0\x0bssh-ed25519\0\0\0\x20" + bytes(range(32))).decode()
@@ -42,6 +42,15 @@ class RelayForwardAuthorizationTests(unittest.TestCase):
                      {"public_key": KEY + "\n" + KEY}):
             with self.subTest(args=args), self.assertRaises(ForwardAuthorizationError):
                 self.prepare(LINE.encode(), **args)
+
+    def test_distinct_key_only_allows_the_new_private_forward(self):
+        result = restricted_second_key(KEY + " comment", HOST)
+        self.assertEqual(result, (f'command="/usr/sbin/nologin",restrict,port-forwarding,'
+                                  f'permitopen="{HOST}:3001" {KEY}\n').encode())
+        for public_key, relay_ip in ((KEY, "8.8.8.8"), (KEY, "0172.20.0.4"),
+                                     ("ssh-ed25519 AAAA", HOST), (KEY + "\n" + KEY, HOST)):
+            with self.subTest(relay_ip=relay_ip), self.assertRaises(ForwardAuthorizationError):
+                restricted_second_key(public_key, relay_ip)
 
 
 if __name__ == "__main__":
