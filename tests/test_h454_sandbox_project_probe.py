@@ -106,12 +106,19 @@ class ProbeTests(unittest.TestCase):
     def test_remote_parser_rejects_ambiguous_or_unsafe_heads(self):
         for raw in (b"", b"x" * (probe.MAX_OUTPUT + 1),
                     b"ref: refs/tags/main\tHEAD\n" + b"a"*40 + b"\tHEAD\n",
+                    b"ref: refs/heads/-invalid\tHEAD\n" + b"a"*40 + b"\tHEAD\n",
                     b"ref: refs/heads/main..bad\tHEAD\n" + b"a"*40 + b"\tHEAD\n",
                     b"ref: refs/heads/main.lock\tHEAD\n" + b"a"*40 + b"\tHEAD\n",
                     b"ref: refs/heads/main\tHEAD\n" + b"z"*40 + b"\tHEAD\n",
                     REMOTE + b"extra\n", b"\xff"):
             with self.subTest(raw=raw[:40]), self.assertRaises(probe.ProbeRejected):
                 probe.parse_remote(raw)
+
+    def test_preflight_accepts_underscore_prefixed_default_branch(self):
+        remote = b"ref: refs/heads/_integration/2026\tHEAD\n" + b"a" * 40 + b"\tHEAD\n"
+        result = probe.probe("https://github.com/example/project", root=self.root, remote=lambda _: remote)
+        self.assertEqual((result["branch"], result["head"]), ("_integration/2026", "a" * 40))
+        self.assertEqual(list(self.root.iterdir()), [])
 
     def test_git_runner_has_clean_environment_and_bounded_output(self):
         actual_popen = subprocess.Popen

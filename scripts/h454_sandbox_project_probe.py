@@ -27,7 +27,7 @@ URL = re.compile(
     r"([a-z0-9_][a-z0-9_.-]{0,103})/?\Z",
     re.ASCII | re.IGNORECASE,
 )
-REF = re.compile(r"ref: refs/heads/([A-Za-z0-9][A-Za-z0-9._/-]{0,127})\tHEAD\Z", re.ASCII)
+REF = re.compile(r"ref: refs/heads/([A-Za-z0-9_][A-Za-z0-9._/-]{0,127})\tHEAD\Z", re.ASCII)
 HEAD = re.compile(r"([a-f0-9]{40})\tHEAD\Z", re.ASCII)
 
 
