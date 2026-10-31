@@ -117,7 +117,9 @@ def _count(value: Any) -> int:
 
 
 def _positive(value: Any) -> float:
-    if type(value) not in (float, int) or not math.isfinite(value) or not 0 < value <= 1000:
+    # Compare bounds before float conversion: a valid JSON integer can be
+    # enormous, and math.isfinite(huge_int) raises OverflowError.
+    if type(value) not in (float, int) or not 0 < value <= 1000:
         raise WebmasterDenied("position_invalid")
     return float(value)
 
@@ -128,9 +130,9 @@ def _position_value_class(value: Any) -> str:
         return "NULL"
     if type(value) is bool:
         return "BOOLEAN"
+    if type(value) is float and not math.isfinite(value):
+        return "NONFINITE"
     if type(value) in (int, float):
-        if not math.isfinite(value):
-            return "NONFINITE"
         if value == 0:
             return "ZERO"
         if value < 0:
