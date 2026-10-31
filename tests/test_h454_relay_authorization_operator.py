@@ -250,8 +250,17 @@ if os.name == 'posix' and os.geteuid() == 0:
             with mock.patch.object(subject.sys, 'argv', ['operator', 'prepare']), \
                  mock.patch.object(subject.sys, 'stdin', stdin), redirect_stdout(output):
                 self.assertEqual(subject.main(), 2)
-            self.assertEqual(output.getvalue(), 'H454_RELAY_AUTHORIZATION=HOLD\n')
+            self.assertEqual(output.getvalue(), 'H454_RELAY_AUTHORIZATION=HOLD\nH454_REASON=DUPLICATE_INPUT\n')
             self.assertFalse(self.registry.exists())
+
+        def test_unexpected_error_does_not_disclose_server_details(self):
+            body = json.dumps({'account': 'brc_fixture', 'public_key': key(2)}).encode()
+            output = io.StringIO()
+            with mock.patch.object(subject.sys, 'argv', ['operator', 'prepare']), \
+                 mock.patch.object(subject.sys, 'stdin', SimpleNamespace(buffer=io.BytesIO(body))), \
+                 mock.patch.object(subject, 'snapshot', side_effect=OSError('private server detail')), redirect_stdout(output):
+                self.assertEqual(subject.main(), 2)
+            self.assertEqual(output.getvalue(), 'H454_RELAY_AUTHORIZATION=HOLD\n')
 
         def test_cli_requires_approval_and_runs_real_install_and_revoke(self):
             def call(arguments, body=b''):

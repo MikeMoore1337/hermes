@@ -407,6 +407,12 @@ def main():
     except Unsettled:
         print('H454_RELAY_AUTHORIZATION=HOLD_UNSETTLED')
         return 2
+    except (Hold, key_slot.SecondKeyHold) as error:
+        print('H454_RELAY_AUTHORIZATION=HOLD')
+        reason = str(error)
+        if re.fullmatch(r'[A-Z0-9_]{1,80}', reason) is not None:
+            print('H454_REASON=' + reason)
+        return 2
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError, ForwardAuthorizationError):
         print('H454_RELAY_AUTHORIZATION=HOLD')
         return 2
