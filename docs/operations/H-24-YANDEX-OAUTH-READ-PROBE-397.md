@@ -29,6 +29,20 @@ runuser -u hermes-seo -- env -i HOME=/var/lib/hermes-seo PATH=/usr/bin:/bin PYTH
 
 Новый `--probe-user` запускает только **один HTTPS GET** `https://api.webmaster.yandex.net/v4/user` (8 секунд, без proxy/redirect/retry) и никогда не обращается к `hosts`, поисковым запросам, индексации или sitemap. Положительный результат `LIVE_USER_ENDPOINT_ONLY` подтверждает только валидный `/user` ответ при локально переданном OAuth-токене, **не** наличие YFC в аккаунте или пригодность данных. Отказ выдаёт только заранее разрешённый код: `TOKEN_INVALID`, `AUTH_REQUIRED`, `ACCESS_DENIED`, `NETWORK_UNAVAILABLE`, `USER_ID_INVALID`, `RESPONSE_JSON_INVALID` и прочие фиксированные состояния; неизвестное исключение никогда не выводится наружу. Никакие token/UID/provider response не печатаются. Обычный полный `--execute-read` сохраняет прежний обобщённый отказ. Все проверочные тесты синтетические; необходимость живого smoke сохраняется.
 
+## Отдельная проверка привязки YFC после полного REFUSED (не более 2 GET)
+
+Если `--probe-user` ранее выдал `LIVE_USER_ENDPOINT_ONLY`, но полный `--execute-read` завершился `AUTH_OR_RESPONSE_NOT_VERIFIED`, **не повторять полный сбор**: прежняя квитанция не показывает этап отказа и не подтверждает шесть фактических GET. `--probe-host` запускается только после отдельного owner approval и проверки текущего release SHA/blob/receipt, UID и приватного token mode. Он выполняет **не более 2 последовательных GET**: `/v4/user` и `/v4/user/{id}/hosts`, каждый с таймаутом 8 секунд, без повторов/proxy/redirect. Не запрашивает метрики, индексацию и sitemap.
+
+```sh
+cd "/opt/hermes-agent-owner/releases/main-$(cat /var/lib/hermes-main-deploy/last-success.sha)"
+runuser -u hermes-seo -- env -i HOME=/var/lib/hermes-seo PATH=/usr/bin:/bin PYTHONDONTWRITEBYTECODE=1 \
+  /usr/bin/python3 -B -m marketing.yandex_webmaster_direct \
+  --date "$(date -u +%F)" --execute-read --probe-host \
+  --token-file /var/lib/hermes-seo/private/yandex-oauth-token
+```
+
+Успех `LIVE_VERIFIED_YFC_HOST_ONLY` подтверждает **только** доступ к точному проверенному HTTPS-host, ASCII URL и требуемому главному зеркалу (если указан), **не** реальное получение SEO-статистики и не право публикации. При отказе выводятся только `stage=USER|HOSTS|PREFLIGHT` и allowlisted `reason` (`TARGET_HOST_NOT_VERIFIED`, `TARGET_HOST_URL_MISMATCH`, `PRIMARY_MIRROR_MISMATCH`, `ACCESS_DENIED`, `NETWORK_UNAVAILABLE` и прочие фиксированные коды). Ни ответ Яндекса, ни URL списка сайтов, ни user ID, ни OAuth-token не печатаются. Результаты синтетического транспорта `SYNTHETIC_VERIFIED_YFC_HOST_ONLY` **не** считаются live evidence. Повторный live запуск требует отдельного разрешения, даже если предыдущий отказ не был диагностирован.
+
 ## Реальный запуск на авторизованном Linux VPS после установки OAuth
 
 1. У владельца **уже был** подтверждён сайт YFC в UI Webmaster. Не создавать снова verification-файлы или другой сайт. Официальный [OAuth guide](https://yandex.ru/dev/webmaster/doc/ru/tasks/how-to-get-oauth): отдельное приложение, redirect `https://oauth.yandex.ru/verification_code`, scope `webmaster:hostinfo` для только чтения. Если для **явно согласованного управления** позднее потребуется `webmaster:verify`, предоставить её отдельному специально ограниченному клиенту и проверить операции/квоты, не переводить read-collector на все permissions по умолчанию.
