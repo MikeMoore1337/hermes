@@ -275,7 +275,9 @@ def _popular(source: Any, *, start: date, end: date) -> tuple[list[dict[str, Any
         for key, value in metrics.items():
             if key in {"TOTAL_SHOWS", "TOTAL_CLICKS"}:
                 parsed[INDICATORS[key]] = _count(value)
-            else:
+            elif value is not None:
+                # Provider-confirmed undefined average position: omit the
+                # metric, never coerce null into rank 0 or another number.
                 parsed[INDICATORS[key]] = _positive(value)
         if "impressions" in parsed and "clicks" in parsed:
             if parsed["clicks"] > parsed["impressions"]:
