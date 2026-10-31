@@ -109,7 +109,12 @@ it neither validates Docker or credentials itself nor is a standalone operator.
 The production adapter, its exact artifacts and an approved cutover are still
 missing. `h454_windows_network_guard.ps1` verifies a fresh Docker network
 snapshot's immutable identity, internal bridge mode, label and exact two-member
-set; it does not prevent a Docker administrator changing the network later.
+set. Its rollback route check also requires the original agent on only that
+network, the proxy on that and one pinned upstream network, the intended alias,
+no host override, and a fresh DNS observation resolving only to the proxy.
+These checks consume observations supplied by the caller; they do not prove
+the proxy's upstream interface is closed or prevent a Docker administrator
+changing the network later.
 
 The former image still uses plaintext transport. Automatically restarting it
 after a failed TLS migration would reintroduce the bearer exposure. Until a
@@ -164,6 +169,11 @@ and must not be deployed as a standalone recovery procedure.
   production relay were not used. The previous private launcher was composed
   with synthetic image, profile and CA pins and passed the same extracted
   fixture; the launcher was not installed or executed.
+- The rollback route guard passed PowerShell 5.1 negative fixtures for extra
+  network members, changed identities, host overrides, alias and DNS drift.
+  It also accepted fresh Docker Desktop metadata from disposable containers
+  and isolated networks; those resources were removed. This did not stage
+  credentials or alter the original container.
 - A Windows PowerShell 5.1 and Schannel fixture verified the generated
   launcher's TLS probe against a synthetic trusted certificate; untrusted,
   wrong-name, missing-CA and changed-CA cases failed closed.
