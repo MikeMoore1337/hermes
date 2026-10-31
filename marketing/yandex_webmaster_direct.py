@@ -21,7 +21,8 @@ from urllib.request import (
 
 from marketing.yandex_webmaster import (
     BASE, HOST, INPUT_SCHEMA, CONTRACT_DIAGNOSTIC_CODES,
-    WebmasterContractDiagnosticDenied, WebmasterDenied, normalize_export, read_plan,
+    WebmasterContractDiagnosticDenied, WebmasterDenied,
+    classify_popular_position_problem, normalize_export, read_plan,
 )
 
 RESPONSE_LIMIT = 64 * 1024
@@ -185,8 +186,9 @@ def _verify_host(response: dict[str, Any]) -> None:
 def collect(
     *, as_of: date, token: str, transport: Callable[[str, str], bytes] | None = None,
     device: str = "ALL", diagnostic: bool = False,
+    popular_position_probe: bool = False,
 ) -> dict[str, Any]:
-    """Only six GETs in fixed order, gate user and verified primary host first.
+    """Bounded GETs; gate user and verified primary host first.
 
     An injected transport is for synthetic tests; this API cannot attest such
     a transport's real-network identity. Returned evidence stays unverified.
@@ -194,8 +196,11 @@ def collect(
     if (type(as_of) is not date or type(token) is not str or
             not TOKEN_PATTERN.fullmatch(token)):
         raise YandexLiveDenied("INPUT_INVALID")
+    if popular_position_probe and not diagnostic:
+        raise YandexLiveDenied("EXPLICIT_EXECUTION_REQUIRED")
     endpoint = transport if transport is not None else _transport
     total_bytes, request_count = 0, 0
+    request_limit = 3 if popular_position_probe else MAX_REQUESTS
 
     def stage(name: str, action: Callable[[], Any]) -> Any:
         """Guard diagnostic output; never expose provider exception messages."""
@@ -232,7 +237,7 @@ def collect(
     def read(url: str) -> dict[str, Any]:
         nonlocal total_bytes, request_count
         _safe_url(url)
-        if request_count >= MAX_REQUESTS:
+        if request_count >= request_limit:
             raise YandexLiveDenied("REQUEST_BUDGET_EXCEEDED")
         request_count += 1
         try:
@@ -264,6 +269,24 @@ def collect(
         return plan
 
     plan = stage("PLAN", create_plan)
+    if popular_position_probe:
+        popular = stage("POPULAR", lambda: read(plan["requests"][2]["url"]))
+        finding = stage("POPULAR_DATA", lambda: classify_popular_position_problem(
+            popular, start=start, end=end,
+        ))
+        return {
+            "status": ("SYNTHETIC_POPULAR_POSITION_CLASS_ONLY"
+                       if transport is not None else "LIVE_POPULAR_POSITION_CLASS_ONLY"),
+            "request_count": request_count,
+            "request_limit": request_limit,
+            "host_verified": True,
+            "position_indicator": finding["indicator"],
+            "position_value_class": finding["value_class"],
+            "search_metrics_verified": False,
+            "indexing_verified": False,
+            "sitemap_verified": False,
+            "publication_allowed": False,
+        }
     payloads = [
         stage(name, lambda url=row["url"]: read(url))
         for name, row in zip(
@@ -460,10 +483,14 @@ def main(argv: list[str] | None = None) -> int:
         "--diagnose-full", action="store_true",
         help="Explicit bounded six-GET read with fixed stage and reason on refusal",
     )
+    probes.add_argument(
+        "--diagnose-position", action="store_true",
+        help="Three GETs maximum; classify only a popular-query position value",
+    )
     args = parser.parse_args(argv)
     try:
         as_of = date.fromisoformat(args.date)
-        if (args.probe_user or args.probe_host or args.diagnose_full) and not args.execute_read:
+        if (args.probe_user or args.probe_host or args.diagnose_full or args.diagnose_position) and not args.execute_read:
             raise YandexLiveDenied("EXPLICIT_EXECUTION_REQUIRED")
         if not args.execute_read:
             result = {"status": "NOT_EXECUTED", "scope": SCOPE, "max_gets": 6}
@@ -475,6 +502,11 @@ def main(argv: list[str] | None = None) -> int:
                 result = probe_user(token=token)
             elif args.probe_host:
                 result = probe_host(token=token)
+            elif args.diagnose_position:
+                result = collect(
+                    as_of=as_of, token=token, diagnostic=True,
+                    popular_position_probe=True,
+                )
             else:
                 result = summarized_receipt(collect(
                     as_of=as_of, token=token, diagnostic=args.diagnose_full,
@@ -485,7 +517,8 @@ def main(argv: list[str] | None = None) -> int:
             "status": "REFUSED",
             "reason": (_safe_probe_reason(exc) if args.probe_user
                        else _safe_host_probe_reason(exc) if args.probe_host
-                       else _safe_read_diagnostic_reason(exc) if args.diagnose_full
+                       else _safe_read_diagnostic_reason(exc)
+                       if args.diagnose_full or args.diagnose_position
                        else "AUTH_OR_RESPONSE_NOT_VERIFIED"),
         }
         if args.probe_user:
@@ -496,21 +529,23 @@ def main(argv: list[str] | None = None) -> int:
                 else "PREFLIGHT",
                 request_limit=2, publication_allowed=False,
             )
-        elif args.diagnose_full:
+        elif args.diagnose_full or args.diagnose_position:
             result.update(
                 stage=exc.stage if isinstance(exc, YandexReadDiagnosticDenied)
                 else "PREFLIGHT",
                 requests_attempted=exc.requests_attempted
                 if isinstance(exc, YandexReadDiagnosticDenied) else 0,
-                request_limit=6, publication_allowed=False,
+                request_limit=3 if args.diagnose_position else 6,
+                publication_allowed=False,
             )
         code = 2
     except ValueError:
         result = {"status": "REFUSED", "reason": "DATE_INVALID"}
-        if args.diagnose_full:
+        if args.diagnose_full or args.diagnose_position:
             result.update(
                 stage="PREFLIGHT", requests_attempted=0,
-                request_limit=6, publication_allowed=False,
+                request_limit=3 if args.diagnose_position else 6,
+                publication_allowed=False,
             )
         code = 2
     print(json.dumps(result, sort_keys=True))

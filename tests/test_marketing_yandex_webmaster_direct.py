@@ -573,6 +573,117 @@ class YandexLiveProbeTests(unittest.TestCase):
         self.assertFalse(report["publication_allowed"])
         self.assertNotIn(TOKEN, output.getvalue())
 
+    def test_diagnose_position_reads_only_three_authenticated_endpoints(self):
+        cmd = ["--date", "2026-10-23", "--execute-read",
+               "--diagnose-position", "--token-file", "/private/synthetic"]
+        for position, indicator, category in (
+            (0, "AVG_SHOW_POSITION", "ZERO"),
+            (None, "AVG_CLICK_POSITION", "NULL"),
+            ("2.0", "AVG_SHOW_POSITION", "NUMERIC_STRING"),
+        ):
+            with self.subTest(category=category):
+                payloads = [p for p in [
+                    {"user_id": 100},
+                    {"hosts": [{"host_id": HOST, "verified": True,
+                                "ascii_host_url": "https://your-fitness-coach.ru/"}]},
+                    fixture()["popular"],
+                ]]
+                indicators = payloads[2]["queries"][0]["indicators"]
+                indicators.pop("AVG_SHOW_POSITION", None)
+                indicators[indicator] = position
+                sent, calls = mocked_sequence(responses=payloads)
+                with patch("marketing.yandex_webmaster_direct.read_private_token",
+                           return_value=TOKEN), patch(
+                    "marketing.yandex_webmaster_direct._transport",
+                    side_effect=sent,
+                ):
+                    output = io.StringIO()
+                    with patch("sys.stdout", output):
+                        rc = main(cmd)
+                result = json.loads(output.getvalue())
+                self.assertEqual(0, rc)
+                self.assertEqual([BASE + "/user", BASE + "/user/100/hosts"],
+                                 calls[:2])
+                self.assertEqual(3, len(calls))
+                self.assertIn("/search-queries/popular?", calls[2])
+                self.assertEqual("LIVE_POPULAR_POSITION_CLASS_ONLY", result["status"])
+                self.assertTrue(result["host_verified"])
+                self.assertEqual(3, result["request_count"])
+                self.assertEqual(3, result["request_limit"])
+                self.assertEqual(indicator, result["position_indicator"])
+                self.assertEqual(category, result["position_value_class"])
+                for field in ("search_metrics_verified", "indexing_verified",
+                              "sitemap_verified", "publication_allowed"):
+                    self.assertFalse(result[field])
+                self.assertNotIn("восстановление", output.getvalue())
+                self.assertNotIn(TOKEN, output.getvalue())
+                self.assertNotIn("100", output.getvalue())
+
+    def test_diagnose_position_preflight_refuses_without_network(self):
+        for flags, reason in (
+            (["--date", "2026-10-23", "--diagnose-position"],
+             "EXPLICIT_EXECUTION_REQUIRED"),
+            (["--date", "2026-10-23", "--diagnose-position", "--execute-read"],
+             "TOKEN_FILE_REQUIRED"),
+            (["--date", "bad", "--diagnose-position", "--execute-read"],
+             "DATE_INVALID"),
+        ):
+            with self.subTest(reason=reason), patch(
+                "marketing.yandex_webmaster_direct._transport",
+                side_effect=AssertionError("network must not run"),
+            ):
+                output = io.StringIO()
+                with patch("sys.stdout", output):
+                    rc = main(flags)
+            result = json.loads(output.getvalue())
+            self.assertEqual(2, rc)
+            self.assertEqual("PREFLIGHT", result["stage"])
+            self.assertEqual(reason, result["reason"])
+            self.assertEqual(0, result["requests_attempted"])
+            self.assertEqual(3, result["request_limit"])
+
+    def test_diagnose_position_stops_on_host_mismatch_and_transport_error(self):
+        cmd = ["--date", "2026-10-23", "--execute-read",
+               "--diagnose-position", "--token-file", "/private/synthetic"]
+        bad_hosts = {"hosts": [{"host_id": HOST, "verified": False}]}
+        for error_at, reason, responses in (
+            (None, "TARGET_HOST_NOT_VERIFIED", [{"user_id":100}, bad_hosts]),
+            (0, "RATE_LIMITED", None),
+            (2, "UPSTREAM_UNAVAILABLE", None),
+        ):
+            with self.subTest(reason=reason):
+                sent, calls = mocked_sequence(
+                    responses=responses, error=(error_at, reason)
+                    if error_at is not None else None,
+                )
+                with patch("marketing.yandex_webmaster_direct.read_private_token",
+                           return_value=TOKEN), patch(
+                    "marketing.yandex_webmaster_direct._transport",
+                    side_effect=sent,
+                ):
+                    output = io.StringIO()
+                    with patch("sys.stdout", output):
+                        rc = main(cmd)
+                result = json.loads(output.getvalue())
+                self.assertEqual(2, rc)
+                self.assertEqual(reason, result["reason"])
+                self.assertTrue(result["requests_attempted"] <= 3)
+                self.assertEqual(3, result["request_limit"])
+                self.assertNotIn(TOKEN, output.getvalue())
+
+    def test_diagnose_position_keeps_normal_collect_unchanged(self):
+        sent, calls = mocked_sequence()
+        result = collect(as_of=AS_OF, token=TOKEN, transport=sent)
+        self.assertEqual(6, result["requests"])
+        self.assertEqual(6, len(calls))
+        self.assertEqual("SYNTHETIC_TRANSPORT_CHECK", result["status"])
+        with self.assertRaisesRegex(YandexLiveDenied,
+                                    "EXPLICIT_EXECUTION_REQUIRED"):
+            collect(
+                as_of=AS_OF, token=TOKEN, transport=lambda *_: b"{}",
+                popular_position_probe=True, diagnostic=False,
+            )
+
     def test_no_exec_cli_does_not_load_credentials_or_network(self):
         stdout = io.StringIO()
         with patch("sys.stdout", stdout):
