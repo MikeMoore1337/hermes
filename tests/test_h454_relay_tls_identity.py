@@ -46,6 +46,16 @@ if os.name == 'posix' and os.geteuid() == 0 and Path('/usr/bin/openssl').is_file
                 subject.prepare()
             self.assertEqual(sentinel.read_text(encoding='ascii'), 'keep')
 
+        def test_interrupted_staging_is_preserved_and_blocks_new_identity(self):
+            stale = self.parent / ('.h454-tls-' + 'a' * 32)
+            stale.mkdir(mode=0o700)
+            sentinel = stale / 'ca.key'
+            sentinel.write_bytes(b'synthetic unfinished key')
+            with self.assertRaisesRegex(subject.Hold, 'TLS_STAGING_PENDING'):
+                subject.prepare()
+            self.assertEqual(sentinel.read_bytes(), b'synthetic unfinished key')
+            self.assertFalse((self.parent / subject.NAME).exists())
+
         def test_cli_requires_approval_and_sanitizes_unexpected_failure(self):
             output = io.StringIO()
             with mock.patch.object(sys, 'argv', ['operator', 'prepare']), redirect_stdout(output):

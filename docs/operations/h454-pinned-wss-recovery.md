@@ -156,6 +156,8 @@ was installed.
 server certificate with a fixed name, no-overwrite atomic publication and
 verified private-file permissions. The CA key is not needed by the sidecar;
 only the server key and public certificate are intended for a read-only mount.
+An unfinished staging directory blocks another creation and is retained for
+inspection; it is not silently deleted or treated as a complete identity.
 The verifier rejects an unexpected name, key mismatch, unsafe files and a leaf
 with less than 30 days remaining. The CA and leaf are issued for 730 and 180
 days respectively; renewal and deployment are not automated. Disposable Linux

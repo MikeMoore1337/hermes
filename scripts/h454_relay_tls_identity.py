@@ -131,6 +131,15 @@ def _remove_owned_staging(parent, name, expected):
     os.fsync(parent)
 
 
+def _assert_no_staging(parent):
+    count = 0
+    with os.scandir(parent) as entries:
+        for entry in entries:
+            count += 1
+            demand(count <= 8192, 'TLS_PARENT_SIZE')
+            demand(re.fullmatch(r'\.h454-tls-[a-f0-9]{32}', entry.name) is None, 'TLS_STAGING_PENDING')
+
+
 def prepare():
     demand(os.name == 'posix' and os.geteuid() == 0, 'ROOT')
     parent = _directory(PARENT, owner=0)
@@ -144,6 +153,7 @@ def prepare():
             pass
         else:
             raise Hold('TLS_TARGET_OCCUPIED')
+        _assert_no_staging(parent)
         os.mkdir(temp, 0o700, dir_fd=parent)
         info = os.stat(temp, dir_fd=parent, follow_symlinks=False)
         temp_identity = (info.st_dev, info.st_ino)
