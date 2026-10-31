@@ -49,6 +49,16 @@ test('the public-only pipe returns no private seed and rejects oversized input',
   assert.equal(valid.status, 0);
   assert.equal(valid.stdout, identity.publicKey);
   assert.ok(!valid.stdout.includes(identity.seed));
+  const withBom = spawnSync(process.execPath, [modulePath, 'public'], {
+    input: Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(JSON.stringify(identity))]), encoding: 'utf8',
+  });
+  assert.equal(withBom.status, 0);
+  assert.equal(withBom.stdout, identity.publicKey);
+  const duplicateBom = spawnSync(process.execPath, [modulePath, 'public'], {
+    input: Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf, 0xef, 0xbb, 0xbf]), Buffer.from(JSON.stringify(identity))]), encoding: 'utf8',
+  });
+  assert.equal(duplicateBom.status, 2);
+  assert.equal(duplicateBom.stdout, '');
   const large = spawnSync(process.execPath, [modulePath, 'public'], { input: 'x'.repeat(4097), encoding: 'utf8' });
   assert.equal(large.status, 2);
   assert.equal(large.stdout, '');

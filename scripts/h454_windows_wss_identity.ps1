@@ -9,7 +9,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$script:h454ModuleHash = '0EE71955970241E42659A9FBB93C72A6C37937AD7D83506EB96EEFE8413B9286'
+$script:h454ModuleHash = '4ABB1B6282A6C67C8AAC75EA57C7A65BC25E71C99D29837512E8C4C0604B8CDA'
 $script:h454Entropy = [Text.Encoding]::UTF8.GetBytes('Hermes-H454-WSS-SSH-Identity-v1')
 
 function Require-H454([bool]$Condition,[string]$Reason) { if(-not $Condition){throw $Reason} }

@@ -70,7 +70,9 @@ async function readRecord() {
     size += chunk.length; if (size > 4096) throw Error('H454_IDENTITY_INPUT');
     chunks.push(chunk);
   }
-  return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  const text = Buffer.concat(chunks).toString('utf8');
+  // Windows PowerShell 5.1 may prefix its redirected input stream with a UTF-8 BOM.
+  return JSON.parse(text.startsWith('\uFEFF') ? text.slice(1) : text);
 }
 
 export async function run(mode, sshAddPath) {
