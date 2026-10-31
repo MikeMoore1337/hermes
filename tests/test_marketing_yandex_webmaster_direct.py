@@ -426,6 +426,118 @@ class YandexLiveProbeTests(unittest.TestCase):
         self.assertNotIn("100", output.getvalue())
         self.assertNotIn(TOKEN, output.getvalue())
 
+    def test_diagnose_full_reports_fixed_stage_and_attempts(self):
+        cmd = ["--date", "2026-10-23", "--execute-read", "--diagnose-full",
+               "--token-file", "/private/synthetic"]
+        for index, stage_name in (
+            (0, "USER"), (1, "HOSTS"), (2, "POPULAR"),
+            (3, "ALL_HISTORY"), (4, "INDEXING"), (5, "SITEMAPS"),
+        ):
+            with self.subTest(stage=stage_name):
+                send, called = mocked_sequence(error=(index, "ACCESS_DENIED"))
+                with patch("marketing.yandex_webmaster_direct.read_private_token",
+                           return_value=TOKEN), patch(
+                           "marketing.yandex_webmaster_direct._transport",
+                           side_effect=send):
+                    output = io.StringIO()
+                    with patch("sys.stdout", output):
+                        rc = main(cmd)
+                report = json.loads(output.getvalue())
+                self.assertEqual(2, rc)
+                self.assertEqual("REFUSED", report["status"])
+                self.assertEqual("ACCESS_DENIED", report["reason"])
+                self.assertEqual(stage_name, report["stage"])
+                self.assertEqual(index + 1, report["requests_attempted"])
+                self.assertEqual(index + 1, len(called))
+                self.assertEqual(6, report["request_limit"])
+                self.assertFalse(report["publication_allowed"])
+                self.assertNotIn(TOKEN, output.getvalue())
+                self.assertNotIn("100", output.getvalue())
+
+    def test_diagnose_full_contract_error_after_six_gets(self):
+        bad = fixture()
+        bad["popular"]["count"] = "bad"
+        seq, called = mocked_sequence(responses=[
+            {"user_id": 100},
+            {"hosts": [{"host_id": HOST, "verified": True,
+                        "ascii_host_url": "https://your-fitness-coach.ru/"}]},
+            bad["popular"], bad["all_history"],
+            bad["index_history"], bad["sitemaps"],
+        ])
+        with patch("marketing.yandex_webmaster_direct.read_private_token",
+                   return_value=TOKEN), patch(
+                   "marketing.yandex_webmaster_direct._transport", side_effect=seq):
+            output = io.StringIO()
+            with patch("sys.stdout", output):
+                rc = main(["--date", "2026-10-23", "--execute-read",
+                           "--diagnose-full", "--token-file", "/private/synthetic"])
+        result = json.loads(output.getvalue())
+        self.assertEqual(2, rc)
+        self.assertEqual("NORMALIZE", result["stage"])
+        self.assertEqual("YANDEX_RESPONSE_CONTRACT_CHANGED", result["reason"])
+        self.assertEqual(6, result["requests_attempted"])
+        self.assertEqual(6, len(called))
+        self.assertNotIn(TOKEN, output.getvalue())
+        self.assertNotIn("bad", output.getvalue())
+
+    def test_diagnose_full_redacts_poison_and_unknown_errors(self):
+        def poison(*args):
+            raise ValueError("secret=" + TOKEN + " user=100")
+        with patch("marketing.yandex_webmaster_direct.read_private_token",
+                   return_value=TOKEN), patch(
+                   "marketing.yandex_webmaster_direct._transport", side_effect=poison):
+            output = io.StringIO()
+            with patch("sys.stdout", output):
+                rc = main(["--date", "2026-10-23", "--diagnose-full",
+                           "--execute-read", "--token-file", "/private/synthetic"])
+        result = json.loads(output.getvalue())
+        self.assertEqual(2, rc)
+        self.assertEqual("USER", result["stage"])
+        self.assertEqual(1, result["requests_attempted"])
+        self.assertEqual("REQUEST_FAILED", result["reason"])
+        self.assertNotIn(TOKEN, output.getvalue())
+        self.assertNotIn("secret=", output.getvalue())
+
+    def test_diagnose_full_preflight_without_any_get(self):
+        for argv, reason in (
+            (["--date", "2026-10-23", "--diagnose-full"],
+             "EXPLICIT_EXECUTION_REQUIRED"),
+            (["--date", "2026-10-23", "--execute-read", "--diagnose-full"],
+             "TOKEN_FILE_REQUIRED"),
+            (["--date", "invalid", "--execute-read", "--diagnose-full"],
+             "DATE_INVALID"),
+        ):
+            with self.subTest(reason=reason), patch(
+                    "marketing.yandex_webmaster_direct._transport",
+                    side_effect=AssertionError("must not call")):
+                output = io.StringIO()
+                with patch("sys.stdout", output):
+                    rc = main(argv)
+            report = json.loads(output.getvalue())
+            self.assertEqual(2, rc)
+            self.assertEqual("PREFLIGHT", report["stage"])
+            self.assertEqual(0, report["requests_attempted"])
+            self.assertEqual(reason, report["reason"])
+            self.assertEqual(6, report["request_limit"])
+
+    def test_diagnose_full_positive_retains_unattested_provenance(self):
+        seq, called = mocked_sequence()
+        with patch("marketing.yandex_webmaster_direct.read_private_token",
+                   return_value=TOKEN), patch(
+                   "marketing.yandex_webmaster_direct._transport", side_effect=seq):
+            output = io.StringIO()
+            with patch("sys.stdout", output):
+                rc = main(["--date", "2026-10-23", "--diagnose-full",
+                           "--execute-read", "--token-file", "/private/synthetic"])
+        self.assertEqual(0, rc)
+        self.assertEqual(6, len(called))
+        report = json.loads(output.getvalue())
+        self.assertEqual("LIVE_GET_RESPONSE_UNATTESTED", report["status"])
+        self.assertEqual("OFFLINE_SOURCE_NOT_PROVIDER_VERIFIED",
+                         report["source_provenance"])
+        self.assertFalse(report["publication_allowed"])
+        self.assertNotIn(TOKEN, output.getvalue())
+
     def test_no_exec_cli_does_not_load_credentials_or_network(self):
         stdout = io.StringIO()
         with patch("sys.stdout", stdout):
