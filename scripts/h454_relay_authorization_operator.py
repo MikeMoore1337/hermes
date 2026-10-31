@@ -188,7 +188,7 @@ def _read_record(registry, name, optional=False):
                stat.S_IMODE(info.st_mode) == 0o600, 'RECORD')
         if info.st_nlink > 1:
             aliases = []
-            for entry in os.listdir(registry):
+            for entry in _names(registry):
                 if re.fullmatch(r'\.h454-[a-f0-9]{32}', entry) is None:
                     continue
                 candidate = os.stat(entry, dir_fd=registry, follow_symlinks=False)
@@ -233,6 +233,15 @@ def _bytes(value):
     return json.dumps(value, ensure_ascii=True, sort_keys=True, separators=(',', ':')).encode('ascii')
 
 
+def _names(registry):
+    names = set()
+    with os.scandir(registry) as entries:
+        for entry in entries:
+            names.add(entry.name)
+            demand(len(names) <= 512, 'REGISTRY_SIZE')
+    return names
+
+
 def _request(registry, pin):
     demand(isinstance(pin, str) and HEX.fullmatch(pin) is not None, 'REQUEST_PIN')
     raw = _read_record(registry, 'request.json')
@@ -254,6 +263,10 @@ def prepare(account, public_key):
     registry = _registry(True)
     lock = None
     try:
+        names = _names(registry)
+        known = {'operator.lock', 'request.json', 'receipt.json', key_slot.SLOT}
+        demand(all(name in known or re.fullmatch(r'\.h454-[a-f0-9]{32}', name) is not None for name in names) and
+               ('request.json' in names or not names.intersection({'receipt.json', key_slot.SLOT})), 'REGISTRY_OCCUPIED')
         lock = _locked(registry)
         previous = _read_record(registry, 'request.json', optional=True)
         if previous is None:

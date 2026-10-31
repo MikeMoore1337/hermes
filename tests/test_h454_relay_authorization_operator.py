@@ -107,6 +107,24 @@ if os.name == 'posix' and os.geteuid() == 0:
             self.assertEqual(target.read_bytes(), b'foreign')
             self.assertEqual(self.original.read_bytes(), self.original_bytes)
 
+        def test_foreign_registry_contents_are_untouched(self):
+            self.registry.mkdir(mode=0o700)
+            foreign = self.registry / 'foreign'
+            foreign.write_bytes(b'foreign')
+            with self.assertRaises(subject.Hold):
+                self.prepare()
+            self.assertEqual(foreign.read_bytes(), b'foreign')
+            self.assertFalse((self.registry / 'operator.lock').exists())
+
+        def test_oversized_registry_is_refused_before_writes(self):
+            self.registry.mkdir(mode=0o700)
+            for index in range(513):
+                (self.registry / ('entry-' + str(index))).touch()
+            with self.assertRaises(subject.Hold):
+                self.prepare()
+            self.assertEqual(len(list(self.registry.iterdir())), 513)
+            self.assertFalse((self.registry / 'operator.lock').exists())
+
         def test_receipt_failure_revokes_the_installed_inode(self):
             pin = self.prepare()
             original_write = subject._write_once
