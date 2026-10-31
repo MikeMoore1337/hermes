@@ -85,7 +85,7 @@ function Invoke-H454IdentityNode([string]$Action,[byte[]]$InputBytes,[string]$No
     $args='--input-type=module -e "'+$code+'" '+$Action
     if($Action -ceq 'load'){$args+=' "'+$SshAdd+'"'}
     $result=Invoke-H454Process $Node $args $InputBytes
-    Require-H454 ($result.Code -eq 0 -and $result.Output.Length -le 4096) 'H454_IDENTITY_NODE_FAILED'
+    Require-H454 ($result.Code -eq 0 -and $result.Output.Length -le 4096) ('H454_IDENTITY_NODE_FAILED_'+$Action.ToUpperInvariant())
     return [string]$result.Output
 }
 

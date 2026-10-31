@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import { generateIdentity, privateKeyForAgent, verifiedPublicKey } from '../scripts/h454_windows_wss_identity.mjs';
@@ -54,12 +56,18 @@ test('the public-only pipe returns no private seed and rejects oversized input',
 });
 
 if (process.platform !== 'win32') {
-  test('OpenSSH derives the same public key from a synthetic private key on stdin', () => {
+  test('OpenSSH derives the same public key from a synthetic private key', () => {
     const identity = generateIdentity(), pem = privateKeyForAgent(identity);
+    const directory = mkdtempSync(join(tmpdir(), 'h454-test-key-')), keyFile = join(directory, 'key');
     try {
-      const result = spawnSync('ssh-keygen', ['-y', '-f', '/dev/stdin'], { input: pem, encoding: 'utf8', timeout: 10000 });
+      writeFileSync(keyFile, pem, { flag: 'wx', mode: 0o600 });
+      const result = spawnSync('ssh-keygen', ['-y', '-f', keyFile], { encoding: 'utf8', timeout: 10000 });
       assert.equal(result.status, 0, 'ssh-keygen rejected synthetic key');
       assert.equal(result.stdout.trim().split(/\s+/).slice(0, 2).join(' '), identity.publicKey.split(' ').slice(0, 2).join(' '));
-    } finally { pem.fill(0); }
+    } finally {
+      pem.fill(0);
+      try { unlinkSync(keyFile); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+      rmdirSync(directory);
+    }
   });
 }

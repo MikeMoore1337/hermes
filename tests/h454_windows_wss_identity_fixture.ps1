@@ -40,6 +40,7 @@ try{
     Require-H454 ([string]::IsNullOrEmpty($env:SSH_AUTH_SOCK) -and [string]::IsNullOrEmpty($env:NODE_OPTIONS) -and
         [string]::IsNullOrEmpty($env:NODE_PATH)) 'FIXTURE_ENV'
     Add-Type -AssemblyName System.Security
+    Write-Output 'H454_IDENTITY_FIXTURE_GENERATE'
     $json=Invoke-H454IdentityNode 'generate' $null $node $module64 $ssh
     $plain=[Text.UTF8Encoding]::new($false).GetBytes($json);$json=$null
     $key=Invoke-H454IdentityNode 'public' $plain $node $module64 $ssh
@@ -53,6 +54,7 @@ try{
     $rejected=$false;try{Restore-H454Identity $dir $node $module64 $ssh}catch{$rejected=$_.Exception.Message -ceq 'H454_IDENTITY_PUBLIC_DRIFT'}
     Require-H454 ($rejected -and [IO.File]::ReadAllText($public) -ceq 'DO_NOT_OVERWRITE') 'FIXTURE_PUBLIC_OVERWRITE'
     [IO.File]::Delete($public)
+    Write-Output 'H454_IDENTITY_FIXTURE_RESTORE'
     Restore-H454Identity $dir $node $module64 $ssh
     Require-H454 ([IO.File]::ReadAllText($public) -ceq ($key+"`n")) 'FIXTURE_PUBLIC'
     $hash=(Get-FileHash -LiteralPath $backup -Algorithm SHA256).Hash
