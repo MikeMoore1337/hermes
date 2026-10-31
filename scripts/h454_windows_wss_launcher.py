@@ -202,7 +202,8 @@ if (-not $h454Healthy) {
 }"""
 
 
-def prepare_from_installed(source: bytes, *, source_sha256: str, ca_sha256: str, identity_sha256: str) -> bytes:
+def prepare_from_installed(source: bytes, *, source_sha256: str, ca_sha256: str, identity_sha256: str,
+                           candidate_image_id: str, candidate_profile_sha256: str) -> bytes:
     """Prepare the known installed legacy variant entirely in memory."""
     if (not isinstance(source, bytes) or len(source) > 200_000 or
             not isinstance(source_sha256, str) or not re.fullmatch(r"[a-f0-9]{64}", source_sha256) or
@@ -243,6 +244,14 @@ def prepare_from_installed(source: bytes, *, source_sha256: str, ca_sha256: str,
         helper = helper.replace(declaration, declaration.replace(pins[placeholder], placeholder), 1)
     if hashlib.sha256(helper.encode("utf-8")).hexdigest() != LEGACY_HELPER_SHA256:
         raise AuditError("unreviewed_installed_launcher_helpers")
+    if (not isinstance(candidate_image_id, str) or
+            not re.fullmatch(r"sha256:[a-f0-9]{64}", candidate_image_id) or
+            candidate_image_id == pins["__IMAGE_ID__"] or
+            not isinstance(candidate_profile_sha256, str) or
+            not re.fullmatch(r"[A-Fa-f0-9]{64}", candidate_profile_sha256)):
+        raise AuditError("unreviewed_wss_candidate_pins")
+    pins["__IMAGE_ID__"] = candidate_image_id
+    pins["__PROFILE_SHA256__"] = candidate_profile_sha256.upper()
     hardened = PRESERVE_HELPERS
     for placeholder, value in pins.items():
         hardened = hardened.replace(placeholder, value)

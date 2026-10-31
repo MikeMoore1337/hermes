@@ -71,9 +71,12 @@ class WssLauncherTests(unittest.TestCase):
     # This synthetic launcher is the e37f6b41 output for public test inputs.
     def test_installed_legacy_launcher_reaches_the_same_guarded_wss_output(self):
         legacy = (Path(__file__).parent / "fixtures/h454_legacy_launcher_e37f.ps1.txt").read_text(encoding="utf-8").encode()
+        candidate_image = "sha256:" + "b" * 64
+        candidate_profile = "d" * 64
         actual = wss.prepare_from_installed(legacy, source_sha256=hashlib.sha256(legacy).hexdigest(),
-                                            ca_sha256="a" * 64, identity_sha256="c" * 64)
-        source = fixture()
+                                            ca_sha256="a" * 64, identity_sha256="c" * 64,
+                                            candidate_image_id=candidate_image, candidate_profile_sha256=candidate_profile)
+        source = fixture().replace(IMAGE.encode(), candidate_image.encode()).replace(PROFILE.upper().encode(), candidate_profile.upper().encode())
         expected = wss.prepare(source, source_sha256=hashlib.sha256(source).hexdigest(),
                                ca_sha256="a" * 64, identity_sha256="c" * 64)
         self.assertEqual(actual, expected)
@@ -83,16 +86,22 @@ class WssLauncherTests(unittest.TestCase):
     def test_installed_legacy_launcher_refuses_drift_and_preserves_newlines(self):
         legacy = (Path(__file__).parent / "fixtures/h454_legacy_launcher_e37f.ps1.txt").read_text(encoding="utf-8").encode()
         digest = hashlib.sha256(legacy).hexdigest()
+        candidate = {"candidate_image_id": "sha256:" + "b" * 64, "candidate_profile_sha256": "d" * 64}
         changed = legacy.replace(b"H454_STATE_ACL", b"H454_STATE_OTHER", 1)
         for altered, pin in ((changed, digest), (changed, hashlib.sha256(changed).hexdigest()),
                              (legacy.replace(b"ExitOnForwardFailure=yes", b"ExitOnForwardFailure=no"), None),
                              (legacy.replace(b"$ready=$true", b"$ready=$false", 1), None)):
             with self.subTest(length=len(altered)), self.assertRaises(AuditError):
                 wss.prepare_from_installed(altered, source_sha256=pin or hashlib.sha256(altered).hexdigest(),
-                                           ca_sha256="a" * 64, identity_sha256="c" * 64)
+                                           ca_sha256="a" * 64, identity_sha256="c" * 64, **candidate)
+        for image, profile in ((IMAGE, "d" * 64), ("sha256:bad", "d" * 64), ("sha256:" + "b" * 64, "bad")):
+            with self.subTest(image=image, profile=profile), self.assertRaises(AuditError):
+                wss.prepare_from_installed(legacy, source_sha256=digest, ca_sha256="a" * 64,
+                                           identity_sha256="c" * 64, candidate_image_id=image,
+                                           candidate_profile_sha256=profile)
         crlf = b"\xef\xbb\xbf" + legacy.replace(b"\n", b"\r\n")
         result = wss.prepare_from_installed(crlf, source_sha256=hashlib.sha256(crlf).hexdigest(),
-                                            ca_sha256="a" * 64, identity_sha256="c" * 64)
+                                            ca_sha256="a" * 64, identity_sha256="c" * 64, **candidate)
         self.assertTrue(result.startswith(b"\xef\xbb\xbf"))
         self.assertNotIn(b"\n", result.replace(b"\r\n", b""))
 

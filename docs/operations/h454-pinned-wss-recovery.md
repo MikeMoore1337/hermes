@@ -25,6 +25,8 @@ hash; the caller must not trust hashes calculated from unreviewed input. Its
 `prepare_from_installed` entry also accepts the specifically identified legacy
 preserving launcher: it checks the full input digest and the exact historical
 helper body before adding the current identity checks and pending-marker guard.
+It requires a different candidate image ID and a candidate profile hash, which
+the operator must independently verify against the built WSS image and container.
 The current installed launcher was composed this way in memory and parsed by
 PowerShell 5.1 with synthetic CA and public-key pins. That structural check
 does not independently approve its calculated input digest or install it. It
