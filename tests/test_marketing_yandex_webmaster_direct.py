@@ -573,12 +573,66 @@ class YandexLiveProbeTests(unittest.TestCase):
         self.assertFalse(report["publication_allowed"])
         self.assertNotIn(TOKEN, output.getvalue())
 
+    def test_full_collect_accepts_real_null_click_position_without_fabrication(self):
+        responses = [
+            {"user_id": 100},
+            {"hosts": [{"host_id": HOST, "verified": True,
+                        "ascii_host_url": "https://your-fitness-coach.ru/"}]},
+            fixture()["popular"], fixture()["all_history"],
+            fixture()["index_history"], fixture()["sitemaps"],
+        ]
+        responses[2]["queries"][0]["indicators"]["AVG_CLICK_POSITION"] = None
+        responses[2]["queries"][0]["indicators"]["TOTAL_CLICKS"] = 0
+        send, calls = mocked_sequence(responses=responses)
+        report = collect(as_of=AS_OF, token=TOKEN, transport=send, diagnostic=True)
+        self.assertEqual(6, len(calls))
+        self.assertEqual(6, report["requests"])
+        self.assertEqual("SYNTHETIC_TRANSPORT_CHECK", report["status"])
+        observation = report["data"]["seo_research_observations"][0]
+        self.assertEqual(0, observation["metrics"]["clicks"])
+        self.assertEqual(100, observation["metrics"]["impressions"])
+        self.assertEqual(0, observation["metrics"]["ctr"])
+        self.assertEqual(14.5, observation["metrics"]["average_position"])
+        self.assertNotIn("average_click_position",
+                         report["data"]["seo_research_input_observations"][0])
+        self.assertFalse(report["external_publication_allowed"])
+
+    def test_cli_full_diagnostic_with_null_click_position_sanitizes_summary(self):
+        responses = [
+            {"user_id": 100},
+            {"hosts": [{"host_id": HOST, "verified": True,
+                        "ascii_host_url": "https://your-fitness-coach.ru/"}]},
+            fixture()["popular"], fixture()["all_history"],
+            fixture()["index_history"], fixture()["sitemaps"],
+        ]
+        responses[2]["queries"][0]["indicators"]["AVG_CLICK_POSITION"] = None
+        send, calls = mocked_sequence(responses=responses)
+        with patch("marketing.yandex_webmaster_direct.read_private_token",
+                   return_value=TOKEN), patch(
+                   "marketing.yandex_webmaster_direct._transport",
+                   side_effect=send):
+            output = io.StringIO()
+            with patch("sys.stdout", output):
+                rc = main(["--date", "2026-10-23", "--execute-read",
+                           "--diagnose-full", "--token-file", "/private/synthetic"])
+        self.assertEqual(0, rc)
+        self.assertEqual(6, len(calls))
+        result = json.loads(output.getvalue())
+        self.assertEqual("LIVE_GET_RESPONSE_UNATTESTED", result["status"])
+        self.assertEqual(1, result["query_rows"])
+        self.assertEqual("OFFLINE_SOURCE_NOT_PROVIDER_VERIFIED",
+                         result["source_provenance"])
+        self.assertFalse(result["publication_allowed"])
+        self.assertNotIn(TOKEN, output.getvalue())
+        self.assertNotIn("восстановление", output.getvalue())
+        self.assertNotIn("100.0", output.getvalue())
+
     def test_diagnose_position_reads_only_three_authenticated_endpoints(self):
         cmd = ["--date", "2026-10-23", "--execute-read",
                "--diagnose-position", "--token-file", "/private/synthetic"]
         for position, indicator, category in (
             (0, "AVG_SHOW_POSITION", "ZERO"),
-            (None, "AVG_CLICK_POSITION", "NULL"),
+            (None, "NONE", "NO_INVALID_POSITION"),
             ("2.0", "AVG_SHOW_POSITION", "NUMERIC_STRING"),
         ):
             with self.subTest(category=category):
