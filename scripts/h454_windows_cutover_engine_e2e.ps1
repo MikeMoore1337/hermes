@@ -15,8 +15,8 @@ function Assert-H454RecoveryLock([string]$StateDir,[IO.FileStream]$Lock){
 $names=@('Preflight','Snapshot','InstallGuard','WriteMarker','RecheckBeforeStop',
     'StopOriginal','ActivateCandidate','StageCandidate','ConfirmCandidateMcp',
     'CommitLauncher','CommitState','VerifyCommit','ClearMarker',
-    'VerifyRollbackState','StopCandidate','ReactivateOriginal','StageOriginal',
-    'ConfirmOriginalMcp','RestoreControls','VerifyRecovery')
+    'VerifyRollbackState','StopCandidate','RestoreControls','ReactivateOriginal','StageOriginal',
+    'ConfirmOriginalMcp','VerifyRecovery')
 function MakeAction([string]$Name,[object]$Context){
     return {
         $Context.Events.Add($Name)
@@ -66,12 +66,14 @@ function MakeAction([string]$Name,[object]$Context){
             'StageOriginal' {if($Context.Case -ceq 'rollback-stage'){throw 'FIXTURE_STAGE_ORIGINAL'};$Context.OriginalStaged=$true}
             'ConfirmOriginalMcp' {
                 if($Context.Case -ceq 'rollback-smoke'){throw 'FIXTURE_SMOKE_ORIGINAL'}
-                Require-H454 ($Context.Original -and ($Context.OriginalStaged -or $Context.Case -ceq 'stop-before')) 'FIXTURE_ORIGINAL_NOT_STAGED'
+                Require-H454 ($Context.Original -and -not $Context.Launcher -and -not $Context.State -and
+                    ($Context.OriginalStaged -or $Context.Case -ceq 'stop-before')) 'FIXTURE_ORIGINAL_NOT_STAGED'
                 $Context.OriginalSmoke=$true
             }
             'RestoreControls' {
                 if($Context.Case -ceq 'rollback-controls'){throw 'FIXTURE_RESTORE_CONTROLS'}
-                Require-H454 ($Context.OriginalSmoke -and $Context.Marker) 'FIXTURE_RESTORE_ORDER'
+                Require-H454 ($Context.Marker -and -not $Context.Candidate -and
+                    (-not $Context.Original -or (-not $Context.Launcher -and -not $Context.State))) 'FIXTURE_RESTORE_ORDER'
                 $Context.Launcher=$false;$Context.State=$false
             }
             'VerifyRecovery' {
@@ -119,6 +121,7 @@ try {
             Require-H454 ($result.Status -ceq 'ROLLBACK_HOLD' -and $context.Marker -and
                 -not $context.Events.Contains('ClearMarker')) 'FIXTURE_ROLLBACK_FALSE_PASS'
             if($case -ceq 'rollback-stop'){Require-H454 (-not $context.Events.Contains('ReactivateOriginal')) 'FIXTURE_UNSAFE_RESTART'}
+            if($case -ceq 'rollback-controls'){Require-H454 (-not $context.Events.Contains('ReactivateOriginal')) 'FIXTURE_CONTROL_FAILURE_RESTART'}
         }elseif($case -cin @('clear-before','clear-after')){
             Require-H454 ($result.Status -ceq 'FINALIZATION_HOLD' -and $context.Candidate -and -not $context.Original -and
                 -not $context.Events.Contains('VerifyRollbackState')) 'FIXTURE_AMBIGUOUS_FINALIZATION'
@@ -126,13 +129,15 @@ try {
             Require-H454 ($result.Status -ceq 'ROLLBACK_VERIFIED_PENDING' -and $context.Original -and
                 -not $context.Candidate -and $context.Marker -and -not $context.Events.Contains('ClearMarker')) 'FIXTURE_ROLLBACK'
             Require-H454 (($case -ceq 'stop-before') -eq (-not $context.Events.Contains('StageOriginal'))) 'FIXTURE_RESTAGE'
-            Require-H454 ($context.Events.IndexOf('ConfirmOriginalMcp') -lt $context.Events.IndexOf('RestoreControls')) 'FIXTURE_RECOVERY_ORDER'
+            Require-H454 ($context.Events.IndexOf('RestoreControls') -lt $context.Events.IndexOf('ReactivateOriginal') -and
+                $context.Events.IndexOf('ReactivateOriginal') -lt $context.Events.IndexOf('ConfirmOriginalMcp')) 'FIXTURE_RECOVERY_ORDER'
         }
     }
     foreach($case in @('stop-before','interrupted','VerifyRollbackState')){
         $context=[pscustomobject]@{Case=$case;Events=[Collections.Generic.List[string]]::new();
             Guard=$true;Marker=$true;Original=($case -ceq 'stop-before');Candidate=($case -cne 'stop-before');
-            CandidateStaged=$true;CandidateSmoke=$true;OriginalStaged=$false;OriginalSmoke=$false;Launcher=$true;State=$false}
+            CandidateStaged=$true;CandidateSmoke=$true;OriginalStaged=$false;OriginalSmoke=$false;
+            Launcher=($case -cne 'stop-before');State=$false}
         $actions=@{};foreach($name in $names){$actions[$name]=MakeAction $name $context}
         $result=Invoke-H454RecoveryEngine $fixture $script:ownedLock $actions -OwnerApproved
         if($case -ceq 'VerifyRollbackState'){

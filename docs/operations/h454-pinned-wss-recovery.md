@@ -103,9 +103,13 @@ files. Only an adapter-confirmed, settled failure enters rollback automatically;
 an exception, timeout or other ambiguous outcome retains the marker and stops
 without further mutation because a Docker operation might still be in flight.
 The adapter must not report `FAILED_SETTLED` or resume recovery unless it can
-establish that no earlier daemon operation can still mutate state. A successful rollback must
-stop the candidate, restore and if needed restage the original, verify original
-MCP and restore known control files while retaining the marker. If marker
+establish that no earlier daemon operation can still mutate state. A successful
+rollback stops the candidate and restores known control files before starting
+and, if needed, restaging the original. It then verifies original MCP while
+retaining the marker. The offline control-file primitive requires both known
+containers stopped; if the original is already running, an adapter may skip
+file writes only after verifying that the old control hashes already match.
+Otherwise it must HOLD. If marker
 removal has an ambiguous result after a verified commit, it reports HOLD without
 starting a second rollback. The same ordered recovery entry can be called after
 an interruption, with fresh inspected state and the lock reacquired; repeated
@@ -167,6 +171,10 @@ and must not be deployed as a standalone recovery procedure.
 - Windows PowerShell 5.1 fixtures exercised exclusive locking, known and
   unknown states, idempotent offline recovery, and termination of an owned
   test process between two real `File.Replace` operations.
+- The recovery engine was exercised with the actual offline file-replacement
+  primitive and synthetic container callbacks: controls were restored before
+  original startup, the marker remained, and repeated recovery skipped staging.
+  This does not exercise a production Docker adapter or real credentials.
 - A PowerShell 5.1 fixture exercised startup retry before container claim,
   substitution of that container during the wait, failed and successful
   reconnects, an unexpected listener identity, a readiness timeout,

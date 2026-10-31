@@ -3,7 +3,8 @@ import http from 'node:http';
 import { relayHealthy, relayWatchdog } from './h454_wss_relay_proxy.mjs';
 
 let status = 200;
-const relay = http.createServer((_request, response) => {
+const relay = http.createServer((request, response) => {
+  if (request.method !== 'GET' || request.url !== '/health') { response.writeHead(404); response.end(); return; }
   if (status !== 0) { response.writeHead(status); response.end(); }
 });
 await new Promise((resolve, reject) => { relay.once('error', reject); relay.listen(0, '127.0.0.1', resolve); });

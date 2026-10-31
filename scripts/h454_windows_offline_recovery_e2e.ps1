@@ -3,6 +3,7 @@ param([Parameter(Mandatory=$true)][string]$Source,[Parameter(Mandatory=$true)][s
       [Parameter(Mandatory=$true)][string]$FixtureParent,[string]$Fixture='',[switch]$CrashChild)
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
+Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Utility\Microsoft.PowerShell.Utility.psd1') -ErrorAction Stop
 . $Source
 function Require-H454([bool]$Condition,[string]$Reason){if(-not $Condition){throw $Reason}}
 function Require([bool]$Condition,[string]$Reason){if(-not $Condition){throw $Reason}}
@@ -75,6 +76,49 @@ try {
     Require-H454 ((New-H454TransitionMarker $stateDir $markerBytes $lock) -ceq $pins.MarkerHash) 'MARKER_CREATE'
     $refused=$false;try { $null=New-H454TransitionMarker $stateDir $markerBytes $lock } catch { $refused=$true }
     Require-H454 ($refused -and (Get-FileHash $marker).Hash -ceq $pins.MarkerHash) 'MARKER_OVERWRITE'
+    . (Join-Path $PSScriptRoot 'h454_windows_cutover_engine.ps1')
+    $integration=[pscustomobject]@{Events=[Collections.Generic.List[string]]::new();Staged=$false;Smoke=$false}
+    $actions=@{
+        VerifyRollbackState={Require-H454 ([IO.File]::Exists($marker)) 'INTEGRATION_MARKER';$true}
+        StopCandidate={Require-H454 (-not $script:containers[$pins.CandidateId].State.Running) 'INTEGRATION_CANDIDATE';$true}
+        RestoreControls={
+            $integration.Events.Add('restore')
+            if(-not $script:containers[$pins.OriginalId].State.Running){
+                Require-H454 ((Repair-H454OfflineControl $stateDir $runDir $lock $pins) -ceq 'RECOVERED_OFFLINE_START_BLOCKED') 'INTEGRATION_RESTORE'
+            }else{
+                Require-H454 ((Get-FileHash $STATE_PATH).Hash -ceq $pins.OldStateHash -and
+                    (Get-FileHash $launcher).Hash -ceq $pins.GuardOldHash) 'INTEGRATION_RUNNING_CONTROL_DRIFT'
+            }
+            $true
+        }
+        ReactivateOriginal={
+            $integration.Events.Add('start')
+            Require-H454 ((Get-FileHash $STATE_PATH).Hash -ceq $pins.OldStateHash -and
+                (Get-FileHash $launcher).Hash -ceq $pins.GuardOldHash -and [IO.File]::Exists($marker)) 'INTEGRATION_START_ORDER'
+            if($script:containers[$pins.OriginalId].State.Running){'ALREADY_STAGED_VERIFIED'}else{
+                $script:containers[$pins.OriginalId].State.Running=$true
+                $script:containers[$pins.OriginalId].State.Status='running'
+                'RESTAGE_REQUIRED'
+            }
+        }
+        StageOriginal={$integration.Events.Add('stage');$integration.Staged=$true;$true}
+        ConfirmOriginalMcp={Require-H454 ($integration.Staged -and [IO.File]::Exists($marker)) 'INTEGRATION_SMOKE';$integration.Smoke=$true;$true}
+        VerifyRecovery={Require-H454 ($integration.Smoke -and [IO.File]::Exists($marker)) 'INTEGRATION_FINAL';$true}
+    }
+    $result=Invoke-H454RecoveryEngine $stateDir $lock $actions -OwnerApproved
+    Require-H454 ($result.Status -ceq 'ROLLBACK_VERIFIED_PENDING' -and
+        ($integration.Events -join ',') -ceq 'restore,start,stage' -and [IO.File]::Exists($marker)) 'INTEGRATION_ROLLBACK'
+    $integration.Events.Clear()
+    $result=Invoke-H454RecoveryEngine $stateDir $lock $actions -OwnerApproved
+    Require-H454 ($result.Status -ceq 'ROLLBACK_VERIFIED_PENDING' -and
+        ($integration.Events -join ',') -ceq 'restore,start') 'INTEGRATION_REPEAT'
+    [IO.File]::WriteAllBytes($launcher,$guardNew)
+    $integration.Events.Clear()
+    $result=Invoke-H454RecoveryEngine $stateDir $lock $actions -OwnerApproved
+    Require-H454 ($result.Status -ceq 'ROLLBACK_HOLD' -and $result.Phase -ceq 'RestoreControls' -and
+        ($integration.Events -join ',') -ceq 'restore' -and (Get-FileHash $launcher).Hash -ceq $pins.GuardNewHash -and
+        [IO.File]::Exists($marker)) 'INTEGRATION_RUNNING_DRIFT'
+    Reset-Fixture
     foreach($stateBytes in @($oldState,$newState)){
         foreach($launcherBytes in @($guardOld,$guardNew)){
             [IO.File]::WriteAllBytes($STATE_PATH,$stateBytes);[IO.File]::WriteAllBytes($launcher,$launcherBytes)

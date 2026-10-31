@@ -310,7 +310,7 @@ ns_network="$(docker network create --internal --label "com.hermes.h454.fixture=
 ns_relay="$(docker create --pull never --network "$ns_network" --read-only --init --cap-drop ALL \
   --security-opt no-new-privileges --user 65534:65534 --memory 128m --pids-limit 32 \
   --label "com.hermes.h454.fixture=$nonce" --entrypoint node "$base" -e '
-  require("node:http").createServer((_q,r)=>{r.writeHead(200);r.end()}).listen(3000,"127.0.0.1")')"
+  require("node:http").createServer((q,r)=>{r.writeHead(q.method==="GET"&&q.url==="/health"?200:404);r.end()}).listen(3000,"127.0.0.1")')"
 docker start "$ns_relay" >/dev/null
 ns_proxy="$(docker create --pull never --network "container:$ns_relay" --restart unless-stopped \
   --read-only --init --cap-drop ALL --security-opt no-new-privileges --user 65534:65534 \

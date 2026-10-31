@@ -4,8 +4,8 @@ function Invoke-H454RecoveryEngine(
     [string]$StateDir, [IO.FileStream]$Lock, [hashtable]$Actions, [switch]$OwnerApproved
 ) {
     if(-not $OwnerApproved){return [pscustomobject]@{Status='OWNER_APPROVAL_REQUIRED';Phase='NONE'}}
-    $names=@('VerifyRollbackState','StopCandidate','ReactivateOriginal','StageOriginal',
-        'ConfirmOriginalMcp','RestoreControls','VerifyRecovery')
+    $names=@('VerifyRollbackState','StopCandidate','RestoreControls','ReactivateOriginal','StageOriginal',
+        'ConfirmOriginalMcp','VerifyRecovery')
     foreach($name in $names){
         Require-H454 ($null -ne $Actions -and @($Actions.Keys | Where-Object {$_ -is [string] -and $_ -ceq $name}).Count -eq 1 -and
             $Actions[$name] -is [scriptblock]) 'CUTOVER_ACTIONS'
@@ -35,8 +35,8 @@ function Invoke-H454CutoverEngine(
     $names=@('Preflight','Snapshot','InstallGuard','WriteMarker','RecheckBeforeStop',
         'StopOriginal','ActivateCandidate','StageCandidate','ConfirmCandidateMcp',
         'CommitLauncher','CommitState','VerifyCommit','ClearMarker',
-        'VerifyRollbackState','StopCandidate','ReactivateOriginal','StageOriginal',
-        'ConfirmOriginalMcp','RestoreControls','VerifyRecovery')
+        'VerifyRollbackState','StopCandidate','RestoreControls','ReactivateOriginal','StageOriginal',
+        'ConfirmOriginalMcp','VerifyRecovery')
     Require-H454 ($null -ne $Actions -and $Actions.Count -eq $names.Count) 'CUTOVER_ACTIONS'
     foreach($name in $names){
         Require-H454 (@($Actions.Keys | Where-Object {$_ -is [string] -and $_ -ceq $name}).Count -eq 1 -and
