@@ -156,8 +156,6 @@ def install(registry_fd: int, ssh_fd: int, *, uid: int, original_sha256: str,
                     return {"device": info.st_dev, "inode": info.st_ino,
                             "sha256": hashlib.sha256(entry).hexdigest()}
                 except Exception as exc:
-                    if isinstance(exc, SecondKeyHold) and str(exc) == "KEY_INSTALL_UNSETTLED":
-                        raise
                     if authorized:
                         try:
                             _require(_read(fd, 4096) in (b"", entry), "SLOT_DRIFT")
@@ -166,6 +164,8 @@ def install(registry_fd: int, ssh_fd: int, *, uid: int, original_sha256: str,
                             _require(_read(fd, 4096) == b"", "REVOCATION_FAILED")
                         except (OSError, SecondKeyHold) as revoke_error:
                             raise SecondKeyHold("KEY_INSTALL_UNSETTLED") from revoke_error
+                        if isinstance(exc, SecondKeyHold) and str(exc) == "KEY_INSTALL_UNSETTLED":
+                            raise
                         raise SecondKeyHold("KEY_INSTALL_REVOKED") from exc
                     raise
             finally:

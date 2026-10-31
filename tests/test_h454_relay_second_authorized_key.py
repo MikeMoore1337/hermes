@@ -197,6 +197,7 @@ if os.name == "posix" and os.geteuid() == 0:
                 with self.assertRaisesRegex(subject.SecondKeyHold, "KEY_INSTALL_UNSETTLED"):
                     self.install()
             self.assertEqual(target.read_bytes(), b"concurrent data")
+            self.assertEqual((self.registry / subject.SLOT).read_bytes(), b"")
             self.assertEqual(self.original.read_bytes(), self.original_bytes)
 
         def test_revoke_never_truncates_a_replaced_target(self):
