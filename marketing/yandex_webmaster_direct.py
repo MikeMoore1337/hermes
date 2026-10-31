@@ -35,6 +35,14 @@ class YandexLiveDenied(ValueError):
     """Stable public refusal codes only; never include URLs, token or raw API text."""
 
 
+class YandexHostProbeDenied(YandexLiveDenied):
+    """Sanitized stage for a bounded two-GET host probe."""
+
+    def __init__(self, stage: str, reason: str) -> None:
+        super().__init__(reason)
+        self.stage = stage
+
+
 class _NoRedirect(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
@@ -289,6 +297,69 @@ def _safe_probe_reason(exc: YandexLiveDenied) -> str:
             else "AUTH_OR_RESPONSE_NOT_VERIFIED")
 
 
+
+# Host-specific fixed codes stay separate from the pre-existing user-only
+# probe allowlist. Never surface provider text, tokens or account IDs.
+HOST_PROBE_REFUSALS = USER_PROBE_REFUSALS | frozenset({
+    "HOST_LIST_INVALID", "TARGET_HOST_NOT_VERIFIED",
+    "TARGET_HOST_URL_MISMATCH", "PRIMARY_MIRROR_MISMATCH",
+    "TARGET_SITE_DATA_UNAVAILABLE",
+})
+
+
+def _safe_host_probe_reason(exc: YandexLiveDenied) -> str:
+    reason = exc.args[0] if len(exc.args) == 1 else None
+    return (reason if type(reason) is str and reason in HOST_PROBE_REFUSALS
+            else "AUTH_OR_RESPONSE_NOT_VERIFIED")
+
+
+def probe_host(*, token: str,
+               transport: Callable[[str, str], bytes] | None = None) -> dict[str, Any]:
+    """Check user then one exact YFC verified host; never read SEO reports.
+
+    Two GETs max (8s each in real transport), no retries. Both success and
+    refusal receipts omit account ID, private host lists and provider bodies.
+    """
+    if type(token) is not str or not TOKEN_PATTERN.fullmatch(token):
+        raise YandexLiveDenied("INPUT_INVALID")
+    endpoint = _transport if transport is None else transport
+
+    def read(url: str, stage: str) -> dict[str, Any]:
+        try:
+            _safe_url(url)
+            return _parse_response(endpoint(url, token))
+        except YandexLiveDenied as exc:
+            raise YandexHostProbeDenied(
+                stage, _safe_host_probe_reason(exc)) from None
+        except Exception:
+            raise YandexHostProbeDenied(stage, "REQUEST_FAILED") from None
+
+    user = read(BASE + "/user", "USER")
+    try:
+        uid = _uid(user)
+    except YandexLiveDenied as exc:
+        raise YandexHostProbeDenied("USER", _safe_host_probe_reason(exc)) from None
+
+    hosts = read(BASE + f"/user/{uid}/hosts", "HOSTS")
+    try:
+        _verify_host(hosts)
+    except YandexLiveDenied as exc:
+        raise YandexHostProbeDenied(
+            "HOSTS", _safe_host_probe_reason(exc)) from None
+
+    return {
+        "status": ("LIVE_VERIFIED_YFC_HOST_ONLY" if transport is None
+                   else "SYNTHETIC_VERIFIED_YFC_HOST_ONLY"),
+        "request_count": 2,
+        "request_limit": 2,
+        "host_verified": True,
+        "search_metrics_verified": False,
+        "indexing_verified": False,
+        "sitemap_verified": False,
+        "publication_allowed": False,
+    }
+
+
 def summarized_receipt(report: dict[str, Any]) -> dict[str, Any]:
     """Safe operator output, deliberately omits query strings and credentials."""
     data = report["data"]
@@ -310,14 +381,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--date", required=True)
     parser.add_argument("--token-file")
     parser.add_argument("--execute-read", action="store_true")
-    parser.add_argument(
+    probes = parser.add_mutually_exclusive_group()
+    probes.add_argument(
         "--probe-user", action="store_true",
         help="One authorized GET /v4/user only; outputs fixed diagnostic codes",
+    )
+    probes.add_argument(
+        "--probe-host", action="store_true",
+        help="Two GETs: /v4/user and verified YFC host identity only",
     )
     args = parser.parse_args(argv)
     try:
         as_of = date.fromisoformat(args.date)
-        if args.probe_user and not args.execute_read:
+        if (args.probe_user or args.probe_host) and not args.execute_read:
             raise YandexLiveDenied("EXPLICIT_EXECUTION_REQUIRED")
         if not args.execute_read:
             result = {"status": "NOT_EXECUTED", "scope": SCOPE, "max_gets": 6}
@@ -327,6 +403,8 @@ def main(argv: list[str] | None = None) -> int:
             token = read_private_token(args.token_file)
             if args.probe_user:
                 result = probe_user(token=token)
+            elif args.probe_host:
+                result = probe_host(token=token)
             else:
                 result = summarized_receipt(collect(as_of=as_of, token=token))
         code = 0
@@ -334,10 +412,17 @@ def main(argv: list[str] | None = None) -> int:
         result = {
             "status": "REFUSED",
             "reason": (_safe_probe_reason(exc) if args.probe_user
+                       else _safe_host_probe_reason(exc) if args.probe_host
                        else "AUTH_OR_RESPONSE_NOT_VERIFIED"),
         }
         if args.probe_user:
             result.update(request_limit=1, publication_allowed=False)
+        elif args.probe_host:
+            result.update(
+                stage=exc.stage if isinstance(exc, YandexHostProbeDenied)
+                else "PREFLIGHT",
+                request_limit=2, publication_allowed=False,
+            )
         code = 2
     except ValueError:
         result = {"status": "REFUSED", "reason": "DATE_INVALID"}
