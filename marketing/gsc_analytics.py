@@ -47,12 +47,19 @@ def _text(raw: object, limit: int = 300) -> str:
 
 
 def _page(raw: object) -> str:
+    """Validate HTTP(S) page URLs within the selected GSC Domain property."""
     value = _text(raw)
     try:
         p = urlsplit(value)
-        if (p.scheme != "https" or p.hostname != "your-fitness-coach.ru"
+        host = p.hostname
+        # A Domain property contains HTTP and HTTPS on the apex and subdomains.
+        # A DNS label boundary prevents lookalike domains passing this check.
+        allowed_ports = {"http": (None, 80), "https": (None, 443)}
+        if (p.scheme not in allowed_ports or host is None
+                or (host != "your-fitness-coach.ru"
+                    and not host.endswith(".your-fitness-coach.ru"))
                 or p.username is not None or p.password is not None
-                or p.port not in (None, 443) or p.fragment):
+                or p.port not in allowed_ports[p.scheme] or p.fragment):
             raise GscEvidenceError("page_invalid")
     except ValueError:
         raise GscEvidenceError("page_invalid") from None
