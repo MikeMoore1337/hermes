@@ -23,8 +23,10 @@ on:
       - scripts/h454_wss_relay_watchdog_e2e.mjs
       - scripts/h454_relay_authorized_keys.py
       - scripts/h454_relay_second_authorized_key.py
+      - scripts/h454_relay_authorization_operator.py
       - tests/test_h454_relay_authorized_keys.py
       - tests/test_h454_relay_second_authorized_key.py
+      - tests/test_h454_relay_authorization_operator.py
       - scripts/h454_wss_fixture_certificates.sh
       - scripts/h454_offline_restore_order_e2e.sh
       - scripts/h454_isolated_rollback_proxy.mjs
@@ -76,8 +78,10 @@ on:
       - scripts/h454_wss_relay_watchdog_e2e.mjs
       - scripts/h454_relay_authorized_keys.py
       - scripts/h454_relay_second_authorized_key.py
+      - scripts/h454_relay_authorization_operator.py
       - tests/test_h454_relay_authorized_keys.py
       - tests/test_h454_relay_second_authorized_key.py
+      - tests/test_h454_relay_authorization_operator.py
       - scripts/h454_wss_fixture_certificates.sh
       - scripts/h454_offline_restore_order_e2e.sh
       - scripts/h454_isolated_rollback_proxy.mjs
@@ -194,6 +198,9 @@ jobs:
 
       - name: Second SSH key no-overwrite and revocation contract
         run: sudo -n python3 -B -m unittest -v tests.test_h454_relay_second_authorized_key
+
+      - name: Relay SSH authorization operator and interruption recovery
+        run: sudo -n python3 -B -m unittest -v tests.test_h454_relay_authorization_operator
 
       - name: Fetch exact upstream Git commit (not tag, latest or npm install)
         shell: bash

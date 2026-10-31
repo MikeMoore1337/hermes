@@ -127,6 +127,15 @@ The production caller must open and recheck the real directory paths, verify
 effective sshd configuration and permissions, securely provision and pin the
 new identity, use a dedicated root-only registry for this key and account,
 manage interruption recovery and validate the real connection.
+`h454_relay_authorization_operator.py` now supplies the server-side part of
+that workflow: it records a no-overwrite request, rechecks the relay and
+effective sshd policy against its digest before and after installation, and
+stores an inode-pinned receipt. An interrupted request-link or installation
+before receipt can be reconciled; revocation can also empty the pinned slot
+without a receipt. A failure that cannot confirm revocation reports unsettled.
+Revoking the slot does not terminate existing SSH sessions or verify other
+key sources. The exact source and request still need a verified delivery and
+owner-controlled caller; this is not the Windows cutover operator.
 The current server's effective configuration lists the second key file and that
 filename was absent at inspection. A separate synthetic sshd bound only to the
 VPS loopback accepted both restricted fixture keys, denied their opposite ports,
@@ -136,6 +145,9 @@ functions with synthetic keys and the service UID; old and new authentication,
 refusal of the old port for the new key, and new-key revocation passed. Temporary
 fixtures were removed and the real second filename remained absent. Neither
 fixture installed a real key or tested the production adapter.
+The server-side operator's snapshot also passed a read-only check against the
+current relay and the newly prepared public key. No real server authorization
+was installed by that check.
 [OpenSSH supports selecting an agent identity using its public key](https://man.openbsd.org/ssh_config#IdentityFile),
 and [Windows can store a key in its SSH agent](https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_keymanagement),
 and a synthetic Windows-to-loopback-sshd test authenticated using a temporary
@@ -285,6 +297,16 @@ and must not be deployed as a standalone recovery procedure.
   retained the original auto-pair CLI, and a changed CLI failed the recipe's
   digest check. The real container was not restarted and no real credentials
   were staged.
+- The current original container has no Docker `ExtraHosts` entries and no
+  `host.docker.internal` entry in its hosts file. A read-only check decrypted
+  the existing Windows credential in memory, validated its device identity,
+  and matched it against the credential already staged in that same running
+  container. No token was printed, no restaging was performed, and neither
+  check establishes a working rollback or an MCP connection.
+- A disposable container using the original image connected through
+  `host.docker.internal` to a temporary Windows loopback listener on port
+  38184 and exchanged only a synthetic marker. This verifies local TCP
+  reachability, not SSH authentication, TLS or the real relay.
 - Windows PowerShell 5.1 fixtures exercised exclusive locking, known and
   unknown states, idempotent offline recovery, and termination of an owned
   test process between two real `File.Replace` operations.
