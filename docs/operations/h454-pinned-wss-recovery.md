@@ -60,6 +60,15 @@ relay side and must never enter the Windows agent image or test artifacts.
 This design assumes the relay namespace and its host are trusted; it does not
 protect an already compromised agent process or Docker administrator.
 
+`h454_relay_authorized_keys.py` prepares bytes for the one pinned Ed25519 key
+only when the entire input hash, private relay address and exact existing
+`nologin,restrict,port-forwarding` policy match. It adds port 3001 alongside
+the existing port 3000 and preserves all other bytes; OpenSSH supports
+[multiple `permitopen` options](https://man.openbsd.org/sshd.8#AUTHORIZED_KEYS_FILE_FORMAT).
+It writes nothing and does not supply locking, an atomic install or rollback;
+those remain operator
+requirements. A read-only preview matched the current key without changing it.
+
 ## Interruption and rollback boundary
 
 The rollout must acquire the exclusive runtime lock, persist verified snapshots,
@@ -152,9 +161,9 @@ and must not be deployed as a standalone recovery procedure.
   reconnects, an unexpected listener identity, a readiness timeout,
   state-hash drift and startup versus monitor cleanup. It also terminated and
   replaced an owned Windows test process; the actual SSH process and
-  production relay were not used. The previous private launcher was composed with synthetic image,
-  profile and CA pins and passed the same extracted fixture; the launcher was
-  not installed or executed.
+  production relay were not used. The previous private launcher was composed
+  with synthetic image, profile and CA pins and passed the same extracted
+  fixture; the launcher was not installed or executed.
 - A Windows PowerShell 5.1 and Schannel fixture verified the generated
   launcher's TLS probe against a synthetic trusted certificate; untrusted,
   wrong-name, missing-CA and changed-CA cases failed closed.

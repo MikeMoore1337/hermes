@@ -16,6 +16,8 @@ on:
       - scripts/h454_agent_pinned_wss.py
       - scripts/h454_agent_pinned_wss_e2e.mjs
       - scripts/h454_wss_relay_proxy.mjs
+      - scripts/h454_relay_authorized_keys.py
+      - tests/test_h454_relay_authorized_keys.py
       - scripts/h454_wss_fixture_certificates.sh
       - scripts/h454_offline_restore_order_e2e.sh
       - scripts/h454_isolated_rollback_proxy.mjs
@@ -60,6 +62,8 @@ on:
       - scripts/h454_agent_pinned_wss.py
       - scripts/h454_agent_pinned_wss_e2e.mjs
       - scripts/h454_wss_relay_proxy.mjs
+      - scripts/h454_relay_authorized_keys.py
+      - tests/test_h454_relay_authorized_keys.py
       - scripts/h454_wss_fixture_certificates.sh
       - scripts/h454_offline_restore_order_e2e.sh
       - scripts/h454_isolated_rollback_proxy.mjs
@@ -254,7 +258,7 @@ jobs:
           set -euo pipefail
           source="$RUNNER_TEMP/brc-upstream"
           bundle="$RUNNER_TEMP/h454-pinned-wss"
-          python3 -m unittest tests.test_h454_agent_pinned_wss
+          python3 -m unittest tests.test_h454_agent_pinned_wss tests.test_h454_relay_authorized_keys
           python3 -m scripts.h454_agent_pinned_wss --source-dir "$source"
           (cd "$source" && pnpm --filter brc-agent build)
           mkdir -p "$bundle"
