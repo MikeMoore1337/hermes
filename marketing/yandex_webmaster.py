@@ -185,9 +185,13 @@ def _sitemaps(source: Any, *, as_of: date) -> list[dict[str, Any]]:
         raise WebmasterDenied("sitemaps_invalid")
     result, seen = [], set()
     for row in source["sitemaps"]:
-        required = {"sitemap_id", "sitemap_url", "last_access_date", "errors_count",
+        required = {"sitemap_id", "sitemap_url", "errors_count",
                     "urls_count", "children_count", "sources", "sitemap_type"}
-        if type(row) is not dict or set(row) != required:
+        # Official Webmaster v4 schema marks last_access_date optional.
+        # Missing or explicit null remains unknown, never an invented date.
+        allowed = required | {"last_access_date"}
+        if (type(row) is not dict or not required.issubset(row)
+                or not set(row).issubset(allowed)):
             raise WebmasterDenied("sitemap_row_invalid")
         uri = row["sitemap_url"]
         if type(uri) is not str or len(uri) > 300:
@@ -200,7 +204,7 @@ def _sitemaps(source: Any, *, as_of: date) -> list[dict[str, Any]]:
                 raise WebmasterDenied("sitemap_url_invalid")
         except ValueError:
             raise WebmasterDenied("sitemap_url_invalid") from None
-        accessed = row["last_access_date"]
+        accessed = row.get("last_access_date")
         if accessed is not None:
             if type(accessed) is not str or len(accessed) > 40:
                 raise WebmasterDenied("sitemap_date_invalid")
