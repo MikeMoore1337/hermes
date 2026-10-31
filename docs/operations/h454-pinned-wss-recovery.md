@@ -153,8 +153,10 @@ or timed-out load requires inspection before retry; it is not proof that the
 agent was unchanged. A disposable Windows fixture checked DPAPI recovery,
 repeat restore, mismatch refusal and corrupt-backup refusal with a random key,
 then removed only that key. A read-only preflight accepted the current task and
-protected state directory. No real identity has been generated or enrolled;
-automatic identity recovery, agent-service restart and reboot remain unverified.
+protected state directory. A separate real identity was then created there;
+its agent entry was removed and restored from the DPAPI backup while other
+agent entries were preserved. The real server has not authorized the key.
+Automatic identity recovery, agent-service restart and reboot remain unverified.
 
 ## Interruption and rollback boundary
 
