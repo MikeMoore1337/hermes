@@ -47,7 +47,7 @@
       <button class="brc-project" type="button" data-project="second-brain" aria-pressed="false"><strong>Second Brain</strong><small>main · Git не проверен</small></button>
       <button class="brc-project" type="button" data-project="ai-development-toolkit" aria-pressed="false"><strong>AI Development Toolkit</strong><small>main · Git не проверен</small></button>
    </div>
-   <div class="brc-project-foot"><strong>Каталог проектов</strong><p>Наличие пути не подтверждает Git HEAD, чистоту репозитория или права записи.</p></div>
+   <div class="brc-project-foot"><strong>Каталог проектов</strong><p>Наличие пути не подтверждает Git HEAD, чистоту репозитория или права записи.</p><button id="brc-onboard-open" class="brc-onboard-open" type="button">Подключить проект</button></div>
   </section>
   <section class="brc-panel brc-detail" aria-labelledby="brc-selected-name">
     <header class="brc-detail-head"><div><span class="brc-eyebrow">ВЫБРАННЫЙ КОНТЕКСТ</span><h2 id="brc-selected-name">Hermes Agent</h2><p id="brc-selected-caption">Рабочее пространство Hermes</p></div><span id="brc-selected-state" class="brc-state unknown">НЕ ПРОВЕРЕНО</span></header>
@@ -82,5 +82,34 @@
  <footer class="brc-footer"><div><small>HERMES BRC / РАБОЧИЕ КОНТЕКСТЫ</small><strong>Только подтверждённая телеметрия</strong></div><p>Online не означает право или успешное выполнение команды. <a href="/desktop-commander-archive">Архив Desktop Commander</a> · <a href="/">К основному Control Center</a></p></footer>
 </main>
 </div>
+<dialog id="brc-onboard" class="brc-onboard" aria-labelledby="brc-onboard-title" aria-describedby="brc-onboard-help">
+ <div class="brc-onboard-header"><div><h2 id="brc-onboard-title">Подключить проект</h2><p id="brc-onboard-step">Шаг 1 из 2</p></div><button id="brc-onboard-close" type="button" aria-label="Закрыть">×</button></div>
+ <form id="brc-onboard-form" novalidate>
+  <div id="brc-onboard-entry">
+   <div class="brc-onboard-label">Источник</div>
+   <div class="brc-onboard-sources">
+    <div class="brc-onboard-source selected"><strong>Git-репозиторий в sandbox</strong><small>Изолированная рабочая копия</small></div>
+    <div class="brc-onboard-source" aria-disabled="true"><strong>Папка Windows</strong><small>Требуется отдельное разрешение</small></div>
+   </div>
+   <label class="brc-onboard-label" for="brc-onboard-url">Ссылка на репозиторий</label>
+   <input id="brc-onboard-url" name="repository_url" type="url" maxlength="200" placeholder="https://github.com/owner/repository" autocomplete="off" aria-describedby="brc-onboard-help brc-onboard-error" required>
+   <p id="brc-onboard-help" class="brc-onboard-help">Проверяем формат, встроенный каталог и публичный доступ к GitHub. Папка на устройстве пока не проверяется.</p>
+   <p id="brc-onboard-error" class="brc-onboard-error" role="status" aria-live="polite"></p>
+   <div class="brc-onboard-actions"><button id="brc-onboard-cancel" type="button">Отмена</button><button id="brc-onboard-preview" class="primary" type="submit">Проверить</button></div>
+  </div>
+  <div id="brc-onboard-result" hidden>
+   <h3 id="brc-onboard-result-title" tabindex="-1">Проверьте подключение</h3>
+   <dl class="brc-onboard-summary">
+    <div><dt>Репозиторий</dt><dd id="brc-onboard-repository"></dd></div>
+    <div><dt>Устройство</dt><dd id="brc-onboard-device">Windows sandbox — нет свежих данных</dd></div>
+    <div><dt>Каталог</dt><dd id="brc-onboard-root"></dd></div>
+    <div><dt>Доступ</dt><dd>Только sandbox</dd></div>
+   </dl>
+   <p id="brc-onboard-result-note" class="brc-onboard-help" role="status"></p>
+   <p class="brc-onboard-help">Оригинальные папки Windows не затрагиваются. Подключение пока недоступно: инструменты и конфликты файлов не проверены.</p>
+   <div class="brc-onboard-actions"><button id="brc-onboard-back" type="button">Назад</button><button class="primary" type="button" disabled>Подключить</button></div>
+  </div>
+ </form>
+</dialog>
 </body>
 </html>

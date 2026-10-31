@@ -73,8 +73,37 @@ live PASS, partial coverage and untested scenarios by device and tool.
   E2E: **PASS** on 2026-10-24; exact scoped Git verification PASS for all
   four Windows sandbox clones. See [owner-reported client trace](https://github.com/MikeMoore1337/hermes/issues/454#issuecomment-6388962086).
   Advanced binary/concurrency/reconnect tests remain incomplete.
-- New-project onboarding and Control Center workflow: **OPEN** (#455,
-  visual approval required before UI implementation).
+- New-project onboarding and Control Center workflow: **OPEN** (#454).
+  The owner-approved visual direction has a source-level, read-only preview
+  for a narrowly formatted GitHub URL. It checks syntax, reserved Windows
+  device names and collisions with the built-in catalog. A public repository
+  name may contain ASCII letters, digits, `_`, `-` and
+  internal dots; names beginning with a dot or hyphen, ending with a dot or
+  containing `..` remain unsupported. Windows device names remain reserved
+  even with an extension such as `CON.txt`, as described in [Windows naming
+  rules](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file).
+  The name is limited to 100 characters. An owner-initiated,
+  credential-free request to the fixed GitHub API checks public repository
+  metadata without following redirects; a timeout, rate limit or ambiguous
+  response remains unavailable. The request sends the entered repository
+  name to GitHub, uses a four-second socket timeout and returns unavailable
+  after six seconds. At most two checks run per Control Center process; a
+  stalled DNS lookup may continue in its bounded background slot.
+  Runtime use requires the separately approved `api.github.com` egress; it
+  does not require new credentials. This does not verify Git HEAD or the
+  device filesystem, and connecting is disabled. The device label uses only an
+  existing fresh, validated observation and says when it is unavailable; it
+  does not prove current command execution. It makes no MCP call and adds
+  no registry entry. Runtime delivery and actual onboarding require separate
+  implementation, authorization and live verification.
+- `scripts/h454_sandbox_project_probe.py` is a separate, non-installed
+  read-only helper for the existing Windows sandbox. With a verified script
+  supplied to that sandbox and a public GitHub URL on stdin, it checks the
+  public HEAD and an instant of root/name availability, without cloning or
+  creating a reservation. Its UID and container checks prevent accidents;
+  they do not establish an OS security boundary. It does not feed the UI,
+  enable connection or add a workspace. Recheck immediately before any
+  separately approved operation because the directory can change afterward.
 - Windows login/reboot and outage recovery: **OPEN** (#445; do not perform
   unapproved reboot).
 - Original Windows read-only access was separately owner-approved for
