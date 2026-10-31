@@ -176,13 +176,16 @@ class H397YandexOneShotTests(unittest.TestCase):
         self.assertFalse(data["publication_allowed"])
 
     def test_sanitized_cli_h12_error_after_six_reads_does_not_repeat(self):
-        source = simulated_responses()
-        source[2]["queries"][0]["query_text"] = "x<secret"
-        sender, calls = mocked_sequence(responses=source)
+        from marketing.yandex_webmaster_h12 import YandexH12Denied
+
+        sender, calls = mocked_sequence(responses=simulated_responses())
         with patch("scripts.hermes_yandex_h12_once.read_private_token",
                    return_value=TOKEN), patch(
             "marketing.yandex_webmaster_direct._transport",
             side_effect=sender,
+        ), patch(
+            "scripts.hermes_yandex_h12_once.build_h12_observed_batch",
+            side_effect=YandexH12Denied("H12_PACKET_REJECTED"),
         ):
             output = io.StringIO()
             with contextlib.redirect_stdout(output):
@@ -196,7 +199,8 @@ class H397YandexOneShotTests(unittest.TestCase):
         self.assertEqual("H12_HANDOFF", data["stage"])
         self.assertEqual("H12_PACKET_REJECTED", data["reason"])
         self.assertEqual(6, data["requests_attempted"])
-        self.assertNotIn("secret", output.getvalue())
+        self.assertNotIn("восстановление", output.getvalue())
+        self.assertNotIn(TOKEN, output.getvalue())
 
     def test_provider_exception_text_is_never_printed(self):
         with patch("scripts.hermes_yandex_h12_once.read_private_token",
