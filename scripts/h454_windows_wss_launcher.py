@@ -35,6 +35,50 @@ HEALTH = """function Test-LocalHealth {
 }
 """
 
+RECONNECT = """    function Restart-H454WssTunnel([object]$Previous, [string[]]$Arguments) {
+        Stop-H454TunnelHandle $Previous
+        Start-Sleep -Seconds 5
+        $h454Next = $null; $h454Ready = $false
+        try {
+            $h454Next = Start-Process -FilePath $script:h454SshExe -ArgumentList $Arguments -PassThru -WindowStyle Hidden
+            $null = $h454Next.Handle
+            for ($h454Attempt = 0; $h454Attempt -lt 15; $h454Attempt++) {
+                if ($h454Next.HasExited) { break }
+                if (Test-LocalHealth) {
+                    Assert-H454StartedTunnel $h454Next
+                    $h454Ready = $true; break
+                }
+                Start-Sleep -Seconds 1
+            }
+        } catch { $h454Ready = $false }
+        finally { if (-not $h454Ready -and $null -ne $h454Next) { Stop-H454TunnelHandle $h454Next } }
+        if ($h454Ready) {
+            if ($script:h454WssRetryReported) { Write-Host 'H454_WSS_TUNNEL_RESTORED' }
+            $script:h454WssRetryReported = $false
+            return $h454Next
+        }
+        if (-not $script:h454WssRetryReported) { Write-Warning 'H454_WSS_TUNNEL_RETRY' }
+        $script:h454WssRetryReported = $true
+        return $null
+    }
+"""
+
+MONITOR = """if ($null -eq $SSH_PROCESS -or $SSH_PROCESS.HasExited) {
+    $h454Previous = $SSH_PROCESS; $SSH_PROCESS = $null
+    $SSH_PROCESS = Restart-H454WssTunnel $h454Previous $sshArgs
+    if ($null -eq $SSH_PROCESS) { continue }
+    $state.tunnelPid = $SSH_PROCESS.Id
+    $state | Add-Member -MemberType NoteProperty -Name tunnelCreatedUtcTicks -Value ([long]$SSH_PROCESS.StartTime.ToUniversalTime().Ticks) -Force
+    $h454StateHash = Save-H454State $h454StateHash $state
+}
+$h454Healthy = $false
+try { Assert-H454StartedTunnel $SSH_PROCESS; $h454Healthy = Test-LocalHealth } catch {}
+if (-not $h454Healthy) {
+    $h454Previous = $SSH_PROCESS; $SSH_PROCESS = $null
+    Stop-H454TunnelHandle $h454Previous
+    continue
+}"""
+
 
 def prepare(source: bytes, *, source_sha256: str, ca_sha256: str) -> bytes:
     if (not isinstance(source, bytes) or len(source) > 200_000 or
@@ -61,6 +105,48 @@ def prepare(source: bytes, *, source_sha256: str, ca_sha256: str) -> bytes:
         text.count("Assert-H454StartedTunnel $SSH_PROCESS") < 3 or
         "Convert-H454SecureCredential" in text):
         raise AuditError("unreviewed_wss_launcher_source")
+    monitor = re.compile(r"(?m)^(?P<indent> +)Assert-H454StartedTunnel \$SSH_PROCESS\n"
+                         r"(?P=indent)if \(-not \(Test-LocalHealth\)\) \{ throw 'TUNNEL_HEALTH_LOST' \}$")
+    cleanup = re.compile(r"(?m)^(?P<indent> +)try \{ Stop-H454PreservedContainer \} catch \{\}$")
+    state_end = "    }\n    function Assert-H454ExistingTunnel {"
+    state_save = "Save-H454State $h454StateHash $state"
+    claim_check = "        $h454Item = Get-H454PreservedContainer\n        if ($null -eq $h454Item) {"
+    loop = "while (-not $SSH_PROCESS.HasExited) {"
+    claim = re.compile(r"(?m)^(?P<indent> +)Assert-H454ExistingTunnel\n"
+                       r"(?P=indent)Stop-H454PreservedContainer -Claim\n"
+                       r"(?P=indent)Stop-H454ExistingTunnel$")
+    startup = re.compile(r"(?m)^(?P<indent> +)\$SSH_PROCESS = Start-Process -FilePath \$script:h454SshExe "
+                         r"-ArgumentList \$sshArgs -PassThru -WindowStyle Hidden\n"
+                         r"(?P=indent)\$null = \$SSH_PROCESS.Handle\n"
+                         r"(?P=indent)\$ready=\$false\n"
+                         r"(?P=indent)for \(\$i=0; \$i -lt 30; \$i\+\+\) \{\n"
+                         r"(?P=indent)    if \(\$SSH_PROCESS.HasExited\) \{ throw 'SSH_TUNNEL_EXITED' \}\n"
+                         r"(?P=indent)    if \(Test-LocalHealth\) \{ Assert-H454StartedTunnel \$SSH_PROCESS; \$ready=\$true; break \}\n"
+                         r"(?P=indent)    Start-Sleep -Seconds 1\n(?P=indent)\}\n"
+                         r"(?P=indent)Require \$ready 'SSH_TUNNEL_NOT_READY'$")
+    if (len(monitor.findall(text)) != 1 or len(cleanup.findall(text)) != 1 or
+        len(claim.findall(text)) != 1 or len(startup.findall(text)) != 1 or
+        text.count(state_end) != 1 or text.count(state_save) != 1 or text.count(loop) != 1 or
+        text.count(claim_check) != 1):
+        raise AuditError("unreviewed_wss_launcher_source")
+    text = claim.sub(lambda match: match.group("indent") + "Assert-H454ExistingTunnel\n" +
+                     match.group("indent") + "$h454Preflight = Get-H454PreservedContainer\n" +
+                     match.group("indent") + "$script:h454PreflightContainerId = if ($null -eq $h454Preflight) { $null } else { [string]$h454Preflight.Id }\n" +
+                     match.group("indent") + "Stop-H454ExistingTunnel", text, count=1)
+    text = text.replace(claim_check, "        $h454Item = Get-H454PreservedContainer\n"
+        "        if ($Claim) {\n"
+        "            Require (($null -eq $h454Item -and $null -eq $script:h454PreflightContainerId) -or\n"
+        "                ($null -ne $h454Item -and $h454Item.Id -ceq $script:h454PreflightContainerId)) 'H454_CONTAINER_PREFLIGHT_DRIFT'\n"
+        "        }\n        if ($null -eq $h454Item) {", 1)
+    text = startup.sub(lambda match: match.group("indent") + "$SSH_PROCESS = Restart-H454WssTunnel $null $sshArgs\n" +
+                       match.group("indent") + "while ($null -eq $SSH_PROCESS) { $SSH_PROCESS = Restart-H454WssTunnel $null $sshArgs }\n" +
+                       match.group("indent") + "Stop-H454PreservedContainer -Claim", text, count=1)
+    text = text.replace(state_end, "        return $h454NewHash\n" + state_end, 1)
+    text = text.replace(state_save, "$h454StateHash = " + state_save + "\n        $h454KeepContainer = $true", 1)
+    text = text.replace(loop, "while ($true) {", 1)
+    text = monitor.sub(lambda match: "\n".join(match.group("indent") + line for line in MONITOR.splitlines()), text, count=1)
+    text = cleanup.sub(lambda match: match.group("indent") +
+                       "if (-not $h454KeepContainer) { try { Stop-H454PreservedContainer } catch {} }", text, count=1)
     identities = list(re.finditer(r"(?m)^    \$script:h454TunnelNeedle = '127\.0\.0\.1:38180:[A-Za-z0-9._-]+:3000'\n", text))
     if len(identities) != 1:
         raise AuditError("unreviewed_wss_launcher_source")
@@ -73,7 +159,8 @@ def prepare(source: bytes, *, source_sha256: str, ca_sha256: str) -> bytes:
         raise AuditError("unreviewed_wss_launcher_source")
     text = text.replace(ERROR_POLICY, ERROR_POLICY + "if ($Mode -ne 'Run') { throw 'H454_OWNER_OPERATOR_REQUIRED' }\n", 1)
     text = text.replace(RUN, RUN + "    Require ($PORT -eq 38180 -and $RELAY -cmatch '^[A-Za-z0-9._-]+:3000$') 'H454_RELAY_PIN'\n"
-        "    $PORT = 38184\n    $RELAY = $RELAY.Substring(0, $RELAY.Length - 4) + '3001'\n", 1)
+        "    $PORT = 38184\n    $RELAY = $RELAY.Substring(0, $RELAY.Length - 4) + '3001'\n"
+        "    $h454KeepContainer = $false; $script:h454WssRetryReported = $false\n" + RECONNECT, 1)
     text = re.sub(r"(?m)^    \$script:h454TunnelNeedle = '127\.0\.0\.1:38180:[A-Za-z0-9._-]+:3000'\n",
                   lambda _: '    $script:h454TunnelNeedle = "127.0.0.1:${PORT}:$RELAY"\n', text, count=1)
     text = text.replace(LISTENER, "-LocalAddress '127.0.0.1' -LocalPort $PORT -State Listen")

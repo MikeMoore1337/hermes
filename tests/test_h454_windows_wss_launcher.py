@@ -33,6 +33,11 @@ function Test-LocalHealth {
 }
 """
     source = FIXTURE.decode().replace("38180:fixture", "127.0.0.1:38180:fixture-relay:3000")
+    source = source.replace("throw 'RELAY_NOT_READY'", "throw 'TUNNEL_HEALTH_LOST'")
+    source = source.replace("'SSH_EXITED'", "'SSH_TUNNEL_EXITED'").replace("'SSH_NOT_READY'", "'SSH_TUNNEL_NOT_READY'")
+    source = source.replace("if (-not (Test-LocalHealth)) { throw 'TUNNEL_HEALTH_LOST' }\n",
+                            "if (-not (Test-LocalHealth)) { throw 'TUNNEL_HEALTH_LOST' }\n"
+                            "            Start-Sleep -Seconds 20\n", 1)
     source = source.replace(RUN, RUN + LOCK, 1).replace(
         RUN_END, "\n    } finally { $runtimeLock.Dispose() }" + RUN_END, 1)
     source = source.replace("        $encrypted = Get-Content -LiteralPath $CRED_PATH -Raw\n",
@@ -42,6 +47,9 @@ function Test-LocalHealth {
     raw = (prefix + source).encode()
     with patch.object(preserve, "SOURCE_SHA256", hashlib.sha256(raw).hexdigest()):
         preserved = preserve.prepare(raw, PROFILE, IMAGE).decode()
+    preserved = preserved.replace("        Stop-H454PreservedContainer\n        if ($null -ne $script:h454OriginalTunnel)",
+                                  "        try { Stop-H454PreservedContainer } catch {}\n"
+                                  "        if ($null -ne $script:h454OriginalTunnel)", 1)
     return patch_launcher(preserved).encode()
 
 
@@ -60,13 +68,26 @@ class WssLauncherTests(unittest.TestCase):
         self.assertLess(output.index("$credentials = Convert-H454SecureCredential"),
                         output.index("$credentials | & $script:h454Docker"))
         self.assertEqual(output.count(GUARD), 1)
+        self.assertIn("while ($true) {", output)
+        self.assertIn("$SSH_PROCESS = Restart-H454WssTunnel $h454Previous $sshArgs", output)
+        self.assertLess(output.index("$h454Preflight = Get-H454PreservedContainer"),
+                        output.index("$SSH_PROCESS = Restart-H454WssTunnel $null $sshArgs"))
+        self.assertLess(output.index("$SSH_PROCESS = Restart-H454WssTunnel $null $sshArgs"),
+                        output.index("Stop-H454PreservedContainer -Claim"))
+        self.assertIn("if (-not $h454KeepContainer) { try { Stop-H454PreservedContainer } catch {} }", output)
+        self.assertIn("H454_CONTAINER_PREFLIGHT_DRIFT", output)
+        self.assertEqual(output.count("$h454StateHash = Save-H454State $h454StateHash $state"), 2)
 
     def test_changed_input_bad_hash_and_missing_security_anchors_refuse(self):
         source = fixture()
         for altered in (source.replace(b"H454_RECOVERY_REQUIRED", b"REMOVED"),
                         source.replace(b"Assert-H454StartedTunnel", b"MissingTunnelGuard"),
                         source.replace(b"DPAPI_DEVICE_ID_MISMATCH", b"OTHER"),
-                        source.replace(b"-LocalPort 38180", b"-LocalPort 1")):
+                        source.replace(b"-LocalPort 38180", b"-LocalPort 1"),
+                        source.replace(b"TUNNEL_HEALTH_LOST", b"OTHER"),
+                        source.replace(b"SSH_TUNNEL_NOT_READY", b"OTHER"),
+                        source.replace(b"Stop-H454PreservedContainer -Claim", b"Other-Claim"),
+                        source.replace(b"try { Stop-H454PreservedContainer } catch {}", b"Other-Cleanup")):
             with self.subTest(length=len(altered)), self.assertRaises(AuditError):
                 wss.prepare(altered, source_sha256=hashlib.sha256(altered).hexdigest(), ca_sha256="a" * 64)
         with self.assertRaises(AuditError):
@@ -81,6 +102,20 @@ class WssLauncherTests(unittest.TestCase):
         output = wss.prepare(source, source_sha256=hashlib.sha256(source).hexdigest(), ca_sha256="b" * 64)
         self.assertTrue(output.startswith(b"\xef\xbb\xbf"))
         self.assertNotIn(b"\n", output.replace(b"\r\n", b""))
+
+    @unittest.skipUnless(os.name == "nt", "PowerShell 5.1 is Windows-only")
+    def test_windows_reconnect_monitor_keeps_container_and_tracks_processes(self):
+        source = fixture()
+        output = wss.prepare(source, source_sha256=hashlib.sha256(source).hexdigest(), ca_sha256="a" * 64)
+        with tempfile.TemporaryDirectory(prefix="h454-wss-monitor-") as tmp:
+            launcher = Path(tmp) / "launcher.ps1"
+            launcher.write_bytes(output)
+            powershell = Path(os.environ["SystemRoot"]) / "System32/WindowsPowerShell/v1.0/powershell.exe"
+            harness = Path(__file__).with_name("h454_windows_wss_reconnect_fixture.ps1")
+            result = subprocess.run([str(powershell), "-NoProfile", "-NonInteractive", "-File", str(harness), str(launcher)],
+                                    capture_output=True, text=True, encoding="utf-8", timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("H454_WSS_RECONNECT_FIXTURE=PASS", result.stdout)
 
     def _assert_windows_tls_health_checks_synthetic_certificates(self):
         bash = Path(os.environ["ProgramFiles"]) / "Git" / "bin" / "bash.exe"

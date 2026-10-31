@@ -24,6 +24,16 @@ independently pinned guarded launcher and public CA hash; the caller must not
 trust a hash calculated from unreviewed input. It switches the forward and
 temporary credential copy to WSS and checks local TLS readiness without
 sending a bearer. Other launcher modes require a separate owner operator.
+Before stopping an existing container, the launcher checks its profile and
+identity and retries the SSH tunnel until the process and TLS endpoint pass
+readiness. It refuses the stop if the container was replaced during that wait.
+After successful credential staging and state commit, its monitor also retries
+a lost SSH process with a bounded readiness attempt and a five-second retry delay.
+It checks the new process and TLS endpoint, atomically records the new process
+identity, and leaves the already running container in place without restaging.
+Unexpected state drift stops the monitor instead of overwriting the state.
+Retry requires the launcher process to remain running; task termination,
+login and reboot recovery are not established by it.
 The Windows curl readiness probe allows an unavailable revocation endpoint
 (`--ssl-revoke-best-effort`); the Node agent independently validates the
 configured CA and server name, but neither check establishes certificate
@@ -137,6 +147,14 @@ and must not be deployed as a standalone recovery procedure.
 - Windows PowerShell 5.1 fixtures exercised exclusive locking, known and
   unknown states, idempotent offline recovery, and termination of an owned
   test process between two real `File.Replace` operations.
+- A PowerShell 5.1 fixture exercised startup retry before container claim,
+  substitution of that container during the wait, failed and successful
+  reconnects, an unexpected listener identity, a readiness timeout,
+  state-hash drift and startup versus monitor cleanup. It also terminated and
+  replaced an owned Windows test process; the actual SSH process and
+  production relay were not used. The previous private launcher was composed with synthetic image,
+  profile and CA pins and passed the same extracted fixture; the launcher was
+  not installed or executed.
 - A Windows PowerShell 5.1 and Schannel fixture verified the generated
   launcher's TLS probe against a synthetic trusted certificate; untrusted,
   wrong-name, missing-CA and changed-CA cases failed closed.
