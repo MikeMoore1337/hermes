@@ -27,10 +27,14 @@ SSH configuration, and refuses an overridden agent socket or changed key.
 It switches the forward and temporary credential copy to WSS and checks local
 TLS readiness without sending a bearer. Other launcher modes require a separate
 owner operator.
-Before stopping an existing container, the launcher checks its profile and
-identity and retries the SSH tunnel until the process and TLS endpoint pass
-readiness. It refuses the stop if the container was replaced during that wait.
-After successful credential staging and state commit, its monitor also retries
+The launcher checks the container profile and identity and retries the SSH
+tunnel until the process and TLS endpoint pass readiness. If the verified
+container is already running, it compares staged credentials with the
+DPAPI-derived expected values inside the container and adopts it without
+stopping or restaging it. Changed identity, file permissions, symlinks or a
+credential mismatch cause a hold. A stopped container may be started and
+staged; an unexpectedly running container cannot be claimed for a stop.
+Its monitor retries
 a lost SSH process with a bounded readiness attempt and a five-second retry delay.
 It checks the new process and TLS endpoint, atomically records the new process
 identity, and leaves the already running container in place without restaging.
@@ -245,9 +249,12 @@ and must not be deployed as a standalone recovery procedure.
   original startup, the marker remained, and repeated recovery skipped staging.
   This does not exercise a production Docker adapter or real credentials.
 - A PowerShell 5.1 fixture exercised startup retry before container claim,
-  substitution of that container during the wait, failed and successful
-  reconnects, an unexpected listener identity, a readiness timeout,
-  state-hash drift and startup versus monitor cleanup. It also terminated and
+  adoption of a matching running container, refusal of staged credential or
+  container drift, failed and successful reconnects, an unexpected listener
+  identity, a readiness timeout, state-hash drift and startup versus monitor
+  cleanup. A disposable Docker container also passed the actual staged
+  credential verifier with synthetic data and refused a changed token, unsafe
+  file mode and symlink. The fixture also terminated and
   replaced an owned Windows test process; the actual SSH process and
   production relay were not used. The previous private launcher was composed
   with synthetic image, profile and CA pins and passed the same extracted

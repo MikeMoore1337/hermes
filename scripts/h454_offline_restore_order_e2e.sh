@@ -160,6 +160,18 @@ for cycle in 1 2; do
 done
 echo 'H454_CI_ISOLATED_OFFLINE_STAGING_ORDER=PASS'
 echo 'H454_CI_SYNTHETIC_LISTENER_RECEIVED_NO_STAGED_TOKEN=PASS'
+verifier="$(python3 -c 'from scripts.h454_windows_wss_launcher import VERIFY_STAGED_JS; print(VERIFY_STAGED_JS)')"
+result="$(printf '%s' "$credential" | docker exec --interactive --user 65534:65534 "$container" node -e "$verifier")"
+test "$result" = H454_STAGED_CREDENTIAL_MATCH
+wrong_token="brc_dev_$(printf 'b%.0s' $(seq 1 43))"
+wrong_credential="${credential/$token/$wrong_token}"
+if printf '%s' "$wrong_credential" | docker exec --interactive --user 65534:65534 "$container" node -e "$verifier" >/dev/null 2>&1; then exit 2; fi
+docker exec "$container" /bin/sh -c 'chmod 0644 /run/brc/device.json'
+if printf '%s' "$credential" | docker exec --interactive --user 65534:65534 "$container" node -e "$verifier" >/dev/null 2>&1; then exit 2; fi
+docker exec "$container" /bin/sh -c 'chmod 0600 /run/brc/device.json; mv /run/brc/device.json /run/brc/device.saved; ln -s device.saved /run/brc/device.json'
+if printf '%s' "$credential" | docker exec --interactive --user 65534:65534 "$container" node -e "$verifier" >/dev/null 2>&1; then exit 2; fi
+docker exec "$container" /bin/sh -c 'rm /run/brc/device.json; mv /run/brc/device.saved /run/brc/device.json'
+echo 'H454_SYNTHETIC_RUNNING_CREDENTIAL_VERIFICATION=PASS'
 
 # Feasibility only: no TLS sidecar or live Windows behavior is implied.
 network_id="$(docker network create --internal --label "com.hermes.h454.fixture=$nonce" "h454-internal-$nonce")"

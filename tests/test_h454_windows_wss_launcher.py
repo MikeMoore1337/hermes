@@ -46,8 +46,17 @@ function Test-LocalHealth {
         RUN_END, "\n    } finally { $runtimeLock.Dispose() }" + RUN_END, 1)
     source = source.replace("        $encrypted = Get-Content -LiteralPath $CRED_PATH -Raw\n",
         "        $encrypted = Get-Content -LiteralPath $CRED_PATH -Raw\n"
+        "        $ss = ConvertTo-SecureString -String ($encrypted.Trim())\n"
+        "        $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($ss)\n"
+        "        try { $credentials = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) }\n"
+        "        finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr); $ss.Dispose() }\n"
         "        $json = $credentials | ConvertFrom-Json\n"
         "        Require ($json.deviceId -ceq $state.deviceId) 'DPAPI_DEVICE_ID_MISMATCH'\n", 1)
+    source = source.replace("        $state.tunnelPid = $SSH_PROCESS.Id\n",
+        "        $credentials = $null; $json = $null\n        $state.tunnelPid = $SSH_PROCESS.Id\n", 1)
+    source = source.replace("$credentials | & docker.exe exec --interactive $CONTAINER /bin/sh /usr/local/bin/h15-stage.sh | Out-Null\n",
+        "$credentials | & docker.exe exec --interactive $CONTAINER /bin/sh /usr/local/bin/h15-stage.sh | Out-Null\n"
+        "        Require ($LASTEXITCODE -eq 0) 'STAGE_FAILED'\n", 1)
     raw = (prefix + source).encode()
     with patch.object(preserve, "SOURCE_SHA256", hashlib.sha256(raw).hexdigest()):
         preserved = preserve.prepare(raw, PROFILE, IMAGE).decode()
@@ -83,7 +92,11 @@ class WssLauncherTests(unittest.TestCase):
         self.assertLess(output.index("$h454Preflight = Get-H454PreservedContainer"),
                         output.index("$SSH_PROCESS = Restart-H454WssTunnel $null $sshArgs"))
         self.assertLess(output.index("$SSH_PROCESS = Restart-H454WssTunnel $null $sshArgs"),
-                        output.index("Stop-H454PreservedContainer -Claim"))
+                        output.index("if ($script:h454PreflightWasRunning)"))
+        self.assertIn("Assert-H454StagedCredential $h454Running.Id $credentials", output)
+        self.assertIn("H454_RUNNING_CONTAINER_CLAIM_REFUSED", output)
+        self.assertNotIn('"', wss.VERIFY_STAGED_JS)
+        self.assertNotIn('$', wss.VERIFY_STAGED_JS)
         self.assertIn("if (-not $h454KeepContainer) { try { Stop-H454PreservedContainer } catch {} }", output)
         self.assertIn("H454_CONTAINER_PREFLIGHT_DRIFT", output)
         self.assertEqual(output.count("$h454StateHash = Save-H454State $h454StateHash $state"), 2)

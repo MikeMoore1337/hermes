@@ -25,6 +25,36 @@ IDENTITY = """    $script:h454WssIdentity = Join-Path ([IO.Path]::GetDirectoryNa
     }
 """
 
+VERIFY_STAGED_JS = (
+    "const f=require('node:fs'),c=require('node:crypto');try{"
+    "const e=JSON.parse(f.readFileSync(0,'utf8'));"
+    "const r=f.lstatSync('/run/brc/ready',{bigint:true});"
+    "if(!r.isFile()||r.uid!==65534n||r.gid!==65534n||(r.mode&0o777n)!==0o600n||r.nlink!==1n)throw 0;"
+    "const d=f.openSync('/run/brc/device.json',f.constants.O_RDONLY|f.constants.O_NOFOLLOW);"
+    "const x=f.fstatSync(d,{bigint:true});"
+    "if(!x.isFile()||x.uid!==65534n||x.gid!==65534n||(x.mode&0o777n)!==0o600n||x.nlink!==1n||x.size>65536n)throw 0;"
+    "const raw=f.readFileSync(d),y=f.fstatSync(d,{bigint:true});f.closeSync(d);"
+    "if(x.dev!==y.dev||x.ino!==y.ino||x.size!==y.size||x.mtimeNs!==y.mtimeNs||x.ctimeNs!==y.ctimeNs||y.nlink!==1n)throw 0;"
+    "const a=JSON.parse(raw.toString('utf8')),k=['deviceId','deviceToken','name','pairedAt','relayUrl'];"
+    "const valid=o=>o&&typeof o==='object'&&!Array.isArray(o)&&Object.keys(o).sort().join(',')===k.join(',')&&k.every(p=>typeof o[p]==='string');"
+    "if(!valid(a)||!valid(e)||k.some(p=>p!=='deviceToken'&&a[p]!==e[p]))throw 0;"
+    "const t=Buffer.from(a.deviceToken),u=Buffer.from(e.deviceToken);"
+    "if(t.length!==u.length||!c.timingSafeEqual(t,u))throw 0;"
+    "process.stdout.write('H454_STAGED_CREDENTIAL_MATCH')}catch{process.exit(2)}"
+)
+
+STAGED_HELPER = """    function Assert-H454StagedCredential([string]$ContainerId,[string]$Credential) {
+        Require ($ContainerId -cmatch '^[a-f0-9]{64}$' -and -not [string]::IsNullOrEmpty($Credential)) 'H454_STAGED_INPUT'
+        $h454OutputEncoding = $OutputEncoding; $h454Exit = -1
+        try {
+            $OutputEncoding = [Text.UTF8Encoding]::new($false)
+            $h454Result = @($Credential | & $script:h454Docker --host $script:h454DockerHost exec --interactive --user '65534:65534' $ContainerId node -e "__VERIFY_STAGED_JS__" 2>$null)
+            $h454Exit = $LASTEXITCODE
+        } finally { $OutputEncoding = $h454OutputEncoding }
+        Require ($h454Exit -eq 0 -and $h454Result.Count -eq 1 -and $h454Result[0] -ceq 'H454_STAGED_CREDENTIAL_MATCH') 'H454_STAGED_CREDENTIAL_DRIFT'
+    }
+"""
+
 HEALTH = """function Test-LocalHealth {
     try {
         $h454Ca = Join-Path ([IO.Path]::GetDirectoryName($STATE_PATH)) 'wss-relay-ca.pem'
@@ -159,11 +189,13 @@ def prepare(source: bytes, *, source_sha256: str, ca_sha256: str, identity_sha25
                      match.group("indent") + "Assert-H454WssIdentity\n" +
                      match.group("indent") + "$h454Preflight = Get-H454PreservedContainer\n" +
                      match.group("indent") + "$script:h454PreflightContainerId = if ($null -eq $h454Preflight) { $null } else { [string]$h454Preflight.Id }\n" +
+                     match.group("indent") + "$script:h454PreflightWasRunning = ($null -ne $h454Preflight -and $h454Preflight.State.Running)\n" +
                      match.group("indent") + "Stop-H454ExistingTunnel", text, count=1)
     text = text.replace(claim_check, "        $h454Item = Get-H454PreservedContainer\n"
         "        if ($Claim) {\n"
         "            Require (($null -eq $h454Item -and $null -eq $script:h454PreflightContainerId) -or\n"
         "                ($null -ne $h454Item -and $h454Item.Id -ceq $script:h454PreflightContainerId)) 'H454_CONTAINER_PREFLIGHT_DRIFT'\n"
+        "            if ($null -ne $h454Item) { Require (-not $h454Item.State.Running) 'H454_RUNNING_CONTAINER_CLAIM_REFUSED' }\n"
         "        }\n        if ($null -eq $h454Item) {", 1)
     text = startup.sub(lambda match: match.group("indent") + "$SSH_PROCESS = Restart-H454WssTunnel $null $sshArgs\n" +
                        match.group("indent") + "while ($null -eq $SSH_PROCESS) { $SSH_PROCESS = Restart-H454WssTunnel $null $sshArgs }\n" +
@@ -188,12 +220,47 @@ def prepare(source: bytes, *, source_sha256: str, ca_sha256: str, identity_sha25
     text = text.replace(RUN, RUN + "    Require ($PORT -eq 38180 -and $RELAY -cmatch '^[A-Za-z0-9._-]+:3000$') 'H454_RELAY_PIN'\n"
         "    $PORT = 38184\n    $RELAY = $RELAY.Substring(0, $RELAY.Length - 4) + '3001'\n"
         "    $h454KeepContainer = $false; $script:h454WssRetryReported = $false\n" +
-        IDENTITY.replace("__IDENTITY_SHA256__", identity_sha256.upper()) + RECONNECT, 1)
+        IDENTITY.replace("__IDENTITY_SHA256__", identity_sha256.upper()) +
+        STAGED_HELPER.replace("__VERIFY_STAGED_JS__", VERIFY_STAGED_JS) + RECONNECT, 1)
     text = re.sub(r"(?m)^    \$script:h454TunnelNeedle = '127\.0\.0\.1:38180:[A-Za-z0-9._-]+:3000'\n",
                   lambda _: '    $script:h454TunnelNeedle = "127.0.0.1:${PORT}:$RELAY"\n', text, count=1)
     text = text.replace(LISTENER, "-LocalAddress '127.0.0.1' -LocalPort $PORT -State Listen")
     text = text.replace(original_health, HEALTH.replace("__CA_SHA256__", ca_sha256.upper()) +
                         credential.decode("utf-8").replace("#requires -Version 5.1\n", "", 1), 1)
     text = text.replace(DEVICE, DEVICE + "        $credentials = Convert-H454SecureCredential $credentials $state.deviceId 'http://host.docker.internal:38180'\n", 1)
+    stage_pipe = re.compile(r"(?m)^(?P<indent> +)(?P<pipe>\$credentials \| & \$script:h454Docker[^\n]*/usr/local/bin/h15-stage\.sh[^\n]*)\n"
+                            r"(?P=indent)Require \(\$LASTEXITCODE -eq 0\) (?P<reason>'[^'\n]+')$")
+    if len(stage_pipe.findall(text)) != 1:
+        raise AuditError("unreviewed_wss_staging_source")
+    text = stage_pipe.sub(lambda match: match.group("indent") + "$h454OutputEncoding = $OutputEncoding; $h454StageExit = -1\n" +
+        match.group("indent") + "try {\n" + match.group("indent") + "    $OutputEncoding = [Text.UTF8Encoding]::new($false)\n" +
+        match.group("indent") + "    " + match.group("pipe") + "\n" + match.group("indent") + "    $h454StageExit = $LASTEXITCODE\n" +
+        match.group("indent") + "} finally { $OutputEncoding = $h454OutputEncoding }\n" +
+        match.group("indent") + "Require ($h454StageExit -eq 0) " + match.group("reason"), text, count=1)
+    stage_start = "        Stop-H454PreservedContainer -Claim\n"
+    stage_end = "        $credentials = $null; $json = $null\n"
+    decrypt_start = "        $encrypted = Get-Content -LiteralPath $CRED_PATH -Raw\n"
+    decrypt_end = "        Assert-H454StartedTunnel $SSH_PROCESS\n        $h454OutputEncoding = $OutputEncoding; $h454StageExit = -1\n"
+    if (text.count(stage_start) != 1 or text.count(stage_end) != 1 or
+        text.count(decrypt_start) != 1 or text.count(decrypt_end) != 1):
+        raise AuditError("unreviewed_wss_staging_source")
+    start = text.index(stage_start)
+    end = text.index(stage_end, start) + len(stage_end)
+    normal = text[start:end]
+    decrypt = normal[normal.index(decrypt_start):normal.index(decrypt_end)]
+    indent = lambda value: "".join("    " + line if line.strip() else line for line in value.splitlines(keepends=True))
+    adoption = ("        if ($script:h454PreflightWasRunning) {\n"
+        "            $h454Running = Get-H454PreservedContainer\n"
+        "            Require ($null -ne $h454Running -and $h454Running.Id -ceq $script:h454PreflightContainerId -and $h454Running.State.Running) 'H454_RUNNING_CONTAINER_DRIFT'\n"
+        "            Assert-H454StartedTunnel $SSH_PROCESS\n"
+        "            $credentials = $null; $json = $null\n"
+        "            try {\n" + indent(indent(decrypt)) +
+        "                Assert-H454StagedCredential $h454Running.Id $credentials\n"
+        "            } finally { $credentials = $null; $json = $null; $encrypted = $null }\n"
+        "            $h454Rechecked = Get-H454PreservedContainer\n"
+        "            Require ($null -ne $h454Rechecked -and $h454Rechecked.Id -ceq $h454Running.Id -and $h454Rechecked.State.Running) 'H454_RUNNING_CONTAINER_DRIFT'\n"
+        "            $script:h454ContainerId = [string]$h454Running.Id; $h454KeepContainer = $true\n"
+        "        } else {\n" + indent(normal) + "        }\n")
+    text = text[:start] + adoption + text[end:]
     result = text.replace("\n", newline).encode("utf-8")
     return (b"\xef\xbb\xbf" if bom else b"") + result

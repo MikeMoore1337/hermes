@@ -3,6 +3,7 @@ param([Parameter(Mandatory=$true)][string]$Launcher)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Utility\Microsoft.PowerShell.Utility.psd1') -ErrorAction Stop
+Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Security\Microsoft.PowerShell.Security.psd1') -ErrorAction Stop
 $tokens = $null; $errors = $null
 $ast = [Management.Automation.Language.Parser]::ParseFile($Launcher, [ref]$tokens, [ref]$errors)
 if (@($errors).Count -ne 0) { throw 'FIXTURE_PARSE' }
@@ -18,9 +19,17 @@ $claimHelpers = @($ast.FindAll({ param($x) $x -is [Management.Automation.Languag
     $x.Name -ceq 'Stop-H454PreservedContainer' }, $true))
 $identityHelpers = @($ast.FindAll({ param($x) $x -is [Management.Automation.Language.FunctionDefinitionAst] -and
     $x.Name -ceq 'Assert-H454WssIdentity' }, $true))
+$credentialHelpers = @($ast.FindAll({ param($x) $x -is [Management.Automation.Language.FunctionDefinitionAst] -and
+    $x.Name -ceq 'Convert-H454SecureCredential' }, $true))
+$stagedHelpers = @($ast.FindAll({ param($x) $x -is [Management.Automation.Language.FunctionDefinitionAst] -and
+    $x.Name -ceq 'Assert-H454StagedCredential' }, $true))
+$adoptions = @($ast.FindAll({ param($x) $x -is [Management.Automation.Language.IfStatementAst] -and
+    $x.Extent.Text.StartsWith('if ($script:h454PreflightWasRunning) {') }, $true))
 if ($functions.Count -ne 1 -or $loops.Count -ne 1 -or $cleanups.Count -ne 1 -or $stateHelpers.Count -ne 1 -or
-    $claimHelpers.Count -ne 1 -or $identityHelpers.Count -ne 1) { throw 'FIXTURE_SCOPE' }
+    $claimHelpers.Count -ne 1 -or $identityHelpers.Count -ne 1 -or $credentialHelpers.Count -ne 1 -or $stagedHelpers.Count -ne 1 -or
+    $adoptions.Count -ne 1) { throw 'FIXTURE_SCOPE' }
 . ([scriptblock]::Create($functions[0].Extent.Text))
+. ([scriptblock]::Create($credentialHelpers[0].Extent.Text))
 function Require([bool]$Condition, [string]$Code) { if (-not $Condition) { throw $Code } }
 
 $script:starts = 0; $script:healthCalls = 0; $script:saves = 0
@@ -33,7 +42,7 @@ $script:h454DockerHost = 'synthetic-docker'
 $script:h454Docker = { $global:LASTEXITCODE = 0; 'true' }
 $CONTAINER = 'synthetic-container'
 $sshArgs = @('synthetic-arguments')
-$state = [pscustomobject]@{tunnelPid=101; tunnelCreatedUtcTicks=1}
+$state = [pscustomobject]@{tunnelPid=101; tunnelCreatedUtcTicks=1; deviceId='fixture-device'}
 $h454StateHash = $script:expectedHash
 $SSH_PROCESS = [pscustomobject]@{Id=101; HasExited=$true; Handle=[IntPtr]101; StartTime=[DateTime]::UtcNow}
 
@@ -76,12 +85,48 @@ function Stop-H454PreservedContainer([switch]$Claim) {
     $script:claims++
 }
 $startText = '$SSH_PROCESS = Restart-H454WssTunnel $null $sshArgs'
-$endText = 'Stop-H454PreservedContainer -Claim'
+$endText = 'if ($script:h454PreflightWasRunning) {'
 $start = $ast.Extent.Text.IndexOf($startText, [StringComparison]::Ordinal)
 $end = $ast.Extent.Text.IndexOf($endText, $start, [StringComparison]::Ordinal)
 Require ($start -ge 0 -and $end -gt $start) 'FIXTURE_STARTUP_SCOPE'
-. ([scriptblock]::Create($ast.Extent.Text.Substring($start, $end + $endText.Length - $start)))
-Require ($script:claims -eq 1 -and $SSH_PROCESS.Id -eq 202 -and ($script:stopped -join ',') -ceq '201') 'FIXTURE_STARTUP_RETRY'
+. ([scriptblock]::Create($ast.Extent.Text.Substring($start, $end - $start)))
+Require ($script:claims -eq 0 -and $SSH_PROCESS.Id -eq 202 -and ($script:stopped -join ',') -ceq '201') 'FIXTURE_STARTUP_RETRY'
+$CRED_PATH = Join-Path ([IO.Path]::GetDirectoryName($Launcher)) 'fixture-credential.dpapi'
+$syntheticToken = 'brc_dev_' + ('s' * 43)
+$syntheticJson = '{"relayUrl":"http://host.docker.internal:38180","deviceId":"fixture-device","deviceToken":"' +
+    $syntheticToken + '","name":"fixture","pairedAt":"fixture"}'
+$secure = ConvertTo-SecureString -String $syntheticJson -AsPlainText -Force
+try { [IO.File]::WriteAllText($CRED_PATH, (ConvertFrom-SecureString $secure)) } finally { $secure.Dispose() }
+$script:h454PreflightWasRunning=$true;$script:h454PreflightContainerId='a'*64;$script:h454ContainerId=$null
+$script:fixtureContainer=[pscustomobject]@{Id=('a'*64);State=[pscustomobject]@{Running=$true}}
+$script:credentialChecks=0;$script:rejectCredential=$false;$script:fixtureQueries=0;$script:replaceOnSecond=$false
+function Get-H454PreservedContainer {
+    $script:fixtureQueries++
+    if($script:replaceOnSecond -and $script:fixtureQueries -eq 2){
+        return [pscustomobject]@{Id=('b'*64);State=[pscustomobject]@{Running=$true}}
+    }
+    return $script:fixtureContainer
+}
+function Assert-H454StagedCredential([string]$ContainerId,[string]$Credential) {
+    $script:credentialChecks++
+    $value=ConvertFrom-Json $Credential
+    Require ($ContainerId -ceq ('a'*64) -and $value.deviceId -ceq 'fixture-device' -and
+        $value.deviceToken -ceq $syntheticToken -and $value.relayUrl -ceq 'https://host.docker.internal:38184' -and
+        $value.pairedAt -ceq 'manual' -and -not $script:rejectCredential) 'FIXTURE_STAGED_CREDENTIAL'
+}
+$adoption=[scriptblock]::Create($adoptions[0].Extent.Text)
+$h454KeepContainer=$false
+. $adoption
+Require ($script:credentialChecks -eq 1 -and $script:claims -eq 0 -and $h454KeepContainer -and
+    $script:h454ContainerId -ceq ('a'*64) -and $null -eq $credentials) 'FIXTURE_ADOPT_RUNNING'
+$script:rejectCredential=$true;$script:h454ContainerId=$null;$h454KeepContainer=$false;$refused=$false
+try { . $adoption } catch { $refused=$_.Exception.Message -ceq 'FIXTURE_STAGED_CREDENTIAL' }
+Require ($refused -and $script:claims -eq 0 -and $null -eq $script:h454ContainerId -and -not $h454KeepContainer -and
+    $null -eq $credentials) 'FIXTURE_ADOPTION_MISMATCH'
+$script:rejectCredential=$false;$script:replaceOnSecond=$true;$script:fixtureQueries=0;$refused=$false
+try { . $adoption } catch { $refused=$_.Exception.Message -ceq 'H454_RUNNING_CONTAINER_DRIFT' }
+Require ($refused -and $script:claims -eq 0 -and $null -eq $script:h454ContainerId) 'FIXTURE_ADOPTION_REPLACED'
+$script:replaceOnSecond=$false
 $script:starts = 0; $script:healthCalls = 0; $script:stopped.Clear()
 $SSH_PROCESS = [pscustomobject]@{Id=101; HasExited=$true; Handle=[IntPtr]101; StartTime=[DateTime]::UtcNow}
 
@@ -121,11 +166,15 @@ $script:fixtureContainer = $null; $refused = $false
 try { Stop-H454PreservedContainer -Claim } catch { $refused = $true }
 Require ($refused -and $script:containerStopIds.Count -eq 0) 'FIXTURE_CONTAINER_DISAPPEARED'
 $script:fixtureContainer = [pscustomobject]@{Id=('a' * 64); State=[pscustomobject]@{Running=$true}}
+$refused = $false
+try { Stop-H454PreservedContainer -Claim } catch { $refused=$_.Exception.Message -ceq 'H454_RUNNING_CONTAINER_CLAIM_REFUSED' }
+Require ($refused -and $script:containerStopIds.Count -eq 0) 'FIXTURE_RUNNING_CONTAINER_STOP'
+$script:fixtureContainer.State.Running=$false
 Stop-H454PreservedContainer -Claim
-Require ($script:containerStopIds.Count -eq 1 -and $script:containerStopIds[0] -ceq ('a' * 64)) 'FIXTURE_CONTAINER_ID'
+Require ($script:containerStopIds.Count -eq 0 -and $script:h454ContainerId -ceq ('a'*64)) 'FIXTURE_STOPPED_CONTAINER_ID'
 $script:h454ContainerId = $null; $script:h454PreflightContainerId = $null; $refused = $false
 try { Stop-H454PreservedContainer -Claim } catch { $refused = $true }
-Require ($refused -and $script:containerStopIds.Count -eq 1) 'FIXTURE_CONTAINER_APPEARED'
+Require ($refused -and $script:containerStopIds.Count -eq 0) 'FIXTURE_CONTAINER_APPEARED'
 
 $cleanupText = $cleanups[0].Finally.Extent.Text
 $cleanup = [scriptblock]::Create($cleanupText.Substring(1, $cleanupText.Length - 2))
@@ -165,6 +214,20 @@ try {
 
 . ([scriptblock]::Create($stateHelpers[0].Extent.Text))
 function Assert-H454PrivateState([string]$Path) { Require ([IO.File]::Exists($Path)) 'FIXTURE_STATE_FILE' }
+. ([scriptblock]::Create($stagedHelpers[0].Extent.Text))
+$script:extraVerifierOutput=$false
+$script:h454Docker = {
+    $received=@($input)
+    Require ($received.Count -eq 1 -and $received[0] -ceq $syntheticJson -and
+        $args -ccontains ('a'*64) -and -not (($args -join ' ').Contains($syntheticToken))) 'FIXTURE_STAGED_STDIN'
+    $global:LASTEXITCODE=0
+    'H454_STAGED_CREDENTIAL_MATCH'
+    if($script:extraVerifierOutput){'unexpected'}
+}
+Assert-H454StagedCredential ('a'*64) $syntheticJson
+$script:extraVerifierOutput=$true;$refused=$false
+try { Assert-H454StagedCredential ('a'*64) $syntheticJson } catch { $refused=$_.Exception.Message -ceq 'H454_STAGED_CREDENTIAL_DRIFT' }
+Require $refused 'FIXTURE_STAGED_OUTPUT_REFUSAL'
 . ([scriptblock]::Create($identityHelpers[0].Extent.Text))
 $script:h454WssIdentity = Join-Path ([IO.Path]::GetDirectoryName($Launcher)) 'wss-ssh-identity.pub'
 $savedAgentSock = [Environment]::GetEnvironmentVariable('SSH_AUTH_SOCK', 'Process')

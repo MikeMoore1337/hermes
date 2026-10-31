@@ -15,6 +15,8 @@ on:
       - tests/test_h454_agent_no_auto_pair.py
       - scripts/h454_agent_pinned_wss.py
       - scripts/h454_agent_pinned_wss_e2e.mjs
+      - scripts/h454_windows_wss_launcher.py
+      - tests/test_h454_windows_wss_launcher.py
       - scripts/h454_wss_relay_proxy.mjs
       - scripts/h454_wss_relay_watchdog_e2e.mjs
       - scripts/h454_relay_authorized_keys.py
@@ -64,6 +66,8 @@ on:
       - tests/test_h454_agent_no_auto_pair.py
       - scripts/h454_agent_pinned_wss.py
       - scripts/h454_agent_pinned_wss_e2e.mjs
+      - scripts/h454_windows_wss_launcher.py
+      - tests/test_h454_windows_wss_launcher.py
       - scripts/h454_wss_relay_proxy.mjs
       - scripts/h454_wss_relay_watchdog_e2e.mjs
       - scripts/h454_relay_authorized_keys.py
