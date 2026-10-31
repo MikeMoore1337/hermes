@@ -54,6 +54,23 @@ try {
     try {Save-H454State $h454Before $h454State} catch {$h454Refused=$true}
     Require ($h454Refused -and (Get-FileHash -LiteralPath $STATE_PATH).Hash -ceq $h454Before) 'STATE_BROAD_ACL_NOT_REFUSED'
     [IO.Directory]::SetAccessControl($h454StateDir,$h454Acl)
+    function Get-Acl {
+        param([string]$LiteralPath)
+        $real = Microsoft.PowerShell.Security\Get-Acl -LiteralPath $LiteralPath
+        if (-not [string]::Equals($LiteralPath, $script:h454UntrustedOwnerPath, [StringComparison]::OrdinalIgnoreCase)) { return $real }
+        $fake = [pscustomobject]@{AreAccessRulesProtected=$real.AreAccessRulesProtected;Access=$real.Access}
+        $fake | Add-Member -MemberType ScriptMethod -Name GetOwner -Value {
+            param($Type) return [Security.Principal.SecurityIdentifier]::new('S-1-1-0')
+        }
+        return $fake
+    }
+    try {
+        foreach ($script:h454UntrustedOwnerPath in @($STATE_PATH, $h454StateDir)) {
+            $h454Refused=$false
+            try { Assert-H454PrivateState $STATE_PATH } catch { $h454Refused=$_.Exception.Message -ceq 'H454_STATE_UNTRUSTED_OWNER' }
+            Require $h454Refused 'STATE_UNTRUSTED_OWNER_NOT_REFUSED'
+        }
+    } finally { Remove-Item Function:\Get-Acl; $script:h454UntrustedOwnerPath=$null }
     $h454Before=(Get-FileHash -LiteralPath $STATE_PATH).Hash
     [IO.File]::WriteAllText($STATE_PATH,'external-state-must-survive',[Text.UTF8Encoding]::new($false))
     $h454Refused=$false

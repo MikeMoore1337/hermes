@@ -33,6 +33,10 @@ function Test-LocalHealth {
 }
 """
     source = FIXTURE.decode().replace("38180:fixture", "127.0.0.1:38180:fixture-relay:3000")
+    source = source.replace("$sshArgs = @('-o','ExitOnForwardFailure=yes')",
+        """$sshArgs = @('-p',[string]$SSH_PORT,'-i',"`"$KEY`"",'-N','-T',
+            '-o','IdentitiesOnly=yes','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes',
+            '-o','ExitOnForwardFailure=yes','-L',"127.0.0.1:${PORT}:$RELAY",$TUNNEL_TARGET)""")
     source = source.replace("throw 'RELAY_NOT_READY'", "throw 'TUNNEL_HEALTH_LOST'")
     source = source.replace("'SSH_EXITED'", "'SSH_TUNNEL_EXITED'").replace("'SSH_NOT_READY'", "'SSH_TUNNEL_NOT_READY'")
     source = source.replace("if (-not (Test-LocalHealth)) { throw 'TUNNEL_HEALTH_LOST' }\n",
@@ -56,13 +60,19 @@ function Test-LocalHealth {
 class WssLauncherTests(unittest.TestCase):
     def test_composed_launcher_uses_tls_and_in_memory_credentials(self):
         source = fixture()
-        output = wss.prepare(source, source_sha256=hashlib.sha256(source).hexdigest(), ca_sha256="a" * 64).decode()
+        output = wss.prepare(source, source_sha256=hashlib.sha256(source).hexdigest(), ca_sha256="a" * 64,
+                             identity_sha256="c" * 64).decode()
         self.assertIn("if ($Mode -ne 'Run') { throw 'H454_OWNER_OPERATOR_REQUIRED' }", output)
         self.assertIn("$PORT = 38184", output)
         self.assertIn("$RELAY.Substring(0, $RELAY.Length - 4) + '3001'", output)
         self.assertIn("-LocalPort $PORT -State Listen", output)
         self.assertIn("$script:h454TunnelNeedle = \"127.0.0.1:${PORT}:$RELAY\"", output)
         self.assertIn("A" * 64, output)
+        self.assertIn("C" * 64, output)
+        self.assertIn("$sshArgs = @('-F','NUL',", output)
+        self.assertIn("$KEY = $script:h454WssIdentity", output)
+        self.assertLess(output.index("Assert-H454WssIdentity\n        $h454Preflight"),
+                        output.index("Stop-H454ExistingTunnel\n"))
         self.assertIn("$h454Curl -q --proto '=https' --noproxy '*'", output)
         self.assertIn("--ssl-revoke-best-effort", output)
         self.assertLess(output.index("$credentials = Convert-H454SecureCredential"),
@@ -86,28 +96,39 @@ class WssLauncherTests(unittest.TestCase):
                         source.replace(b"-LocalPort 38180", b"-LocalPort 1"),
                         source.replace(b"TUNNEL_HEALTH_LOST", b"OTHER"),
                         source.replace(b"SSH_TUNNEL_NOT_READY", b"OTHER"),
+                        source.replace(b"'IdentitiesOnly=yes'", b"'IdentitiesOnly=no'"),
+                        source.replace(b"'IdentitiesOnly=yes'", b"'IdentitiesOnly=yes','-o','IdentityFile=other'"),
+                        source.replace(b"'IdentitiesOnly=yes'", b"'IdentitiesOnly=yes','-o','ProxyCommand=other'"),
+                        source.replace(b"'-i'", b"'-j'"),
                         source.replace(b"Stop-H454PreservedContainer -Claim", b"Other-Claim"),
                         source.replace(b"try { Stop-H454PreservedContainer } catch {}", b"Other-Cleanup")):
             with self.subTest(length=len(altered)), self.assertRaises(AuditError):
-                wss.prepare(altered, source_sha256=hashlib.sha256(altered).hexdigest(), ca_sha256="a" * 64)
+                wss.prepare(altered, source_sha256=hashlib.sha256(altered).hexdigest(), ca_sha256="a" * 64,
+                            identity_sha256="c" * 64)
         with self.assertRaises(AuditError):
-            wss.prepare(source, source_sha256="0" * 64, ca_sha256="a" * 64)
+            wss.prepare(source, source_sha256="0" * 64, ca_sha256="a" * 64, identity_sha256="c" * 64)
         with self.assertRaises(AuditError):
-            wss.prepare(source, source_sha256=hashlib.sha256(source).hexdigest(), ca_sha256="invalid")
+            wss.prepare(source, source_sha256=hashlib.sha256(source).hexdigest(), ca_sha256="invalid", identity_sha256="c" * 64)
+        with self.assertRaises(AuditError):
+            wss.prepare(source, source_sha256=hashlib.sha256(source).hexdigest(), ca_sha256="a" * 64, identity_sha256="invalid")
         with patch.object(wss, "CREDENTIAL_SOURCE_SHA256", "0" * 64), self.assertRaises(AuditError):
-            wss.prepare(source, source_sha256=hashlib.sha256(source).hexdigest(), ca_sha256="a" * 64)
+            wss.prepare(source, source_sha256=hashlib.sha256(source).hexdigest(), ca_sha256="a" * 64, identity_sha256="c" * 64)
 
     def test_crlf_and_bom_preserved(self):
         source = b"\xef\xbb\xbf" + fixture().replace(b"\n", b"\r\n")
-        output = wss.prepare(source, source_sha256=hashlib.sha256(source).hexdigest(), ca_sha256="b" * 64)
+        output = wss.prepare(source, source_sha256=hashlib.sha256(source).hexdigest(), ca_sha256="b" * 64,
+                             identity_sha256="c" * 64)
         self.assertTrue(output.startswith(b"\xef\xbb\xbf"))
         self.assertNotIn(b"\n", output.replace(b"\r\n", b""))
 
     def _assert_windows_reconnect_monitor_keeps_container_and_tracks_processes(self):
         source = fixture()
-        output = wss.prepare(source, source_sha256=hashlib.sha256(source).hexdigest(), ca_sha256="a" * 64)
         with tempfile.TemporaryDirectory(prefix="h454-wss-monitor-") as tmp:
             launcher = Path(tmp) / "launcher.ps1"
+            identity = Path(tmp) / "wss-ssh-identity.pub"
+            identity.write_bytes(b"synthetic-public-identity\n")
+            output = wss.prepare(source, source_sha256=hashlib.sha256(source).hexdigest(), ca_sha256="a" * 64,
+                                 identity_sha256=hashlib.sha256(identity.read_bytes()).hexdigest())
             launcher.write_bytes(output)
             powershell = Path(os.environ["SystemRoot"]) / "System32/WindowsPowerShell/v1.0/powershell.exe"
             harness = Path(__file__).with_name("h454_windows_wss_reconnect_fixture.ps1")
@@ -133,7 +154,7 @@ class WssLauncherTests(unittest.TestCase):
             shutil.copyfile(root / "ca.crt", ca)
             source = fixture()
             launcher = wss.prepare(source, source_sha256=hashlib.sha256(source).hexdigest(),
-                                   ca_sha256=hashlib.sha256(ca.read_bytes()).hexdigest()).decode()
+                                   ca_sha256=hashlib.sha256(ca.read_bytes()).hexdigest(), identity_sha256="c" * 64).decode()
             health = launcher.split("function Test-LocalHealth {\n", 1)[1].split("\n}\n", 1)[0]
             powershell = Path(os.environ["SystemRoot"]) / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
             parse = ("$tokens=$null;$errors=$null;$null=[Management.Automation.Language.Parser]::ParseInput("

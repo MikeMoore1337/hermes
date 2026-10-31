@@ -63,7 +63,10 @@ HELPERS = r"""    # Keep the verified container across task retries and logons.
         Require ((Get-Acl -LiteralPath $h454Dir.FullName).AreAccessRulesProtected) 'H454_STATE_ACL_INHERITANCE'
         foreach ($h454Target in @($Path,$h454Dir.FullName)) {
             $h454OwnerFound = $false
-            foreach ($h454Rule in (Get-Acl -LiteralPath $h454Target).Access) {
+            $h454Acl = Get-Acl -LiteralPath $h454Target
+            $h454OwnerSid = $h454Acl.GetOwner([Security.Principal.SecurityIdentifier]).Value
+            Require ($h454OwnerSid -in $h454Allowed) 'H454_STATE_UNTRUSTED_OWNER'
+            foreach ($h454Rule in $h454Acl.Access) {
                 $h454Sid = $h454Rule.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value
                 Require ($h454Sid -in $h454Allowed) 'H454_STATE_ACL'
                 if ($h454Sid -ceq $h454Allowed[0] -and $h454Rule.AccessControlType -eq 'Allow') { $h454OwnerFound = $true }

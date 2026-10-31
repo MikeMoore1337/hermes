@@ -14,6 +14,17 @@ RUN = "if ($Mode -eq 'Run') {\n"
 LISTENER = "-LocalAddress '127.0.0.1' -LocalPort 38180 -State Listen"
 DEVICE = "        Require ($json.deviceId -ceq $state.deviceId) 'DPAPI_DEVICE_ID_MISMATCH'\n"
 
+IDENTITY = """    $script:h454WssIdentity = Join-Path ([IO.Path]::GetDirectoryName($STATE_PATH)) 'wss-ssh-identity.pub'
+    function Assert-H454WssIdentity {
+        Require ([string]::IsNullOrEmpty([Environment]::GetEnvironmentVariable('SSH_AUTH_SOCK', 'Process'))) 'H454_SSH_AGENT_OVERRIDE'
+        Assert-H454PrivateState $script:h454WssIdentity
+        $h454IdentityItem = Get-Item -LiteralPath $script:h454WssIdentity -Force
+        Require (-not $h454IdentityItem.PSIsContainer -and $h454IdentityItem.Length -gt 0 -and
+            $h454IdentityItem.Length -le 4096) 'H454_SSH_IDENTITY_FORMAT'
+        Require ((Get-FileHash -LiteralPath $script:h454WssIdentity -Algorithm SHA256).Hash -ceq '__IDENTITY_SHA256__') 'H454_SSH_IDENTITY_DRIFT'
+    }
+"""
+
 HEALTH = """function Test-LocalHealth {
     try {
         $h454Ca = Join-Path ([IO.Path]::GetDirectoryName($STATE_PATH)) 'wss-relay-ca.pem'
@@ -37,6 +48,7 @@ HEALTH = """function Test-LocalHealth {
 
 RECONNECT = """    function Restart-H454WssTunnel([object]$Previous, [string[]]$Arguments) {
         Stop-H454TunnelHandle $Previous
+        Assert-H454WssIdentity
         Start-Sleep -Seconds 5
         $h454Next = $null; $h454Ready = $false
         try {
@@ -80,12 +92,12 @@ if (-not $h454Healthy) {
 }"""
 
 
-def prepare(source: bytes, *, source_sha256: str, ca_sha256: str) -> bytes:
+def prepare(source: bytes, *, source_sha256: str, ca_sha256: str, identity_sha256: str) -> bytes:
     if (not isinstance(source, bytes) or len(source) > 200_000 or
-        not isinstance(source_sha256, str) or not isinstance(ca_sha256, str) or
+        not isinstance(source_sha256, str) or not isinstance(ca_sha256, str) or not isinstance(identity_sha256, str) or
         not re.fullmatch(r"[a-f0-9]{64}", source_sha256) or
         hashlib.sha256(source).hexdigest() != source_sha256 or
-        not re.fullmatch(r"[A-Fa-f0-9]{64}", ca_sha256)):
+        not re.fullmatch(r"[A-Fa-f0-9]{64}", ca_sha256) or not re.fullmatch(r"[A-Fa-f0-9]{64}", identity_sha256)):
         raise AuditError("unreviewed_wss_launcher_input")
     credential_file = Path(__file__).with_name("h454_windows_secure_credential.ps1")
     if credential_file.is_symlink() or not credential_file.is_file():
@@ -129,7 +141,22 @@ def prepare(source: bytes, *, source_sha256: str, ca_sha256: str) -> bytes:
         text.count(state_end) != 1 or text.count(state_save) != 1 or text.count(loop) != 1 or
         text.count(claim_check) != 1):
         raise AuditError("unreviewed_wss_launcher_source")
+    before_start = text[:startup.search(text).start()]
+    argument_blocks = list(re.finditer(r"(?ms)^(?P<indent> +)\$sshArgs = @\((?P<body>.*?)\)\n", before_start))
+    if len(argument_blocks) != 1:
+        raise AuditError("unreviewed_wss_ssh_arguments")
+    args = argument_blocks[0]
+    body = args.group("body")
+    if (body.count("'-i'") != 1 or body.count("$KEY") != 1 or
+        not re.search(r"'-i'\s*,[^\n]{0,80}\$KEY", body) or
+        any(body.count(option) != 1 for option in ("'IdentitiesOnly=yes'", "'BatchMode=yes'",
+            "'StrictHostKeyChecking=yes'", "'ExitOnForwardFailure=yes'", "$TUNNEL_TARGET", "$RELAY")) or
+        "'-F'" in body or re.search(r"(?i)\b(?:identityfile|identityagent|proxycommand|proxyjump|hostkeyalias)=", body)):
+        raise AuditError("unreviewed_wss_ssh_arguments")
+    text = (text[:args.start()] + args.group("indent") + "$KEY = $script:h454WssIdentity\n" +
+        args.group("indent") + "$sshArgs = @('-F','NUL'," + body + ")\n" + text[args.end():])
     text = claim.sub(lambda match: match.group("indent") + "Assert-H454ExistingTunnel\n" +
+                     match.group("indent") + "Assert-H454WssIdentity\n" +
                      match.group("indent") + "$h454Preflight = Get-H454PreservedContainer\n" +
                      match.group("indent") + "$script:h454PreflightContainerId = if ($null -eq $h454Preflight) { $null } else { [string]$h454Preflight.Id }\n" +
                      match.group("indent") + "Stop-H454ExistingTunnel", text, count=1)
@@ -160,7 +187,8 @@ def prepare(source: bytes, *, source_sha256: str, ca_sha256: str) -> bytes:
     text = text.replace(ERROR_POLICY, ERROR_POLICY + "if ($Mode -ne 'Run') { throw 'H454_OWNER_OPERATOR_REQUIRED' }\n", 1)
     text = text.replace(RUN, RUN + "    Require ($PORT -eq 38180 -and $RELAY -cmatch '^[A-Za-z0-9._-]+:3000$') 'H454_RELAY_PIN'\n"
         "    $PORT = 38184\n    $RELAY = $RELAY.Substring(0, $RELAY.Length - 4) + '3001'\n"
-        "    $h454KeepContainer = $false; $script:h454WssRetryReported = $false\n" + RECONNECT, 1)
+        "    $h454KeepContainer = $false; $script:h454WssRetryReported = $false\n" +
+        IDENTITY.replace("__IDENTITY_SHA256__", identity_sha256.upper()) + RECONNECT, 1)
     text = re.sub(r"(?m)^    \$script:h454TunnelNeedle = '127\.0\.0\.1:38180:[A-Za-z0-9._-]+:3000'\n",
                   lambda _: '    $script:h454TunnelNeedle = "127.0.0.1:${PORT}:$RELAY"\n', text, count=1)
     text = text.replace(LISTENER, "-LocalAddress '127.0.0.1' -LocalPort $PORT -State Listen")

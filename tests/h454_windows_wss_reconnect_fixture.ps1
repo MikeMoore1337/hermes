@@ -16,13 +16,15 @@ $stateHelpers = @($ast.FindAll({ param($x) $x -is [Management.Automation.Languag
     $x.Name -ceq 'Save-H454State' }, $true))
 $claimHelpers = @($ast.FindAll({ param($x) $x -is [Management.Automation.Language.FunctionDefinitionAst] -and
     $x.Name -ceq 'Stop-H454PreservedContainer' }, $true))
+$identityHelpers = @($ast.FindAll({ param($x) $x -is [Management.Automation.Language.FunctionDefinitionAst] -and
+    $x.Name -ceq 'Assert-H454WssIdentity' }, $true))
 if ($functions.Count -ne 1 -or $loops.Count -ne 1 -or $cleanups.Count -ne 1 -or $stateHelpers.Count -ne 1 -or
-    $claimHelpers.Count -ne 1) { throw 'FIXTURE_SCOPE' }
+    $claimHelpers.Count -ne 1 -or $identityHelpers.Count -ne 1) { throw 'FIXTURE_SCOPE' }
 . ([scriptblock]::Create($functions[0].Extent.Text))
 function Require([bool]$Condition, [string]$Code) { if (-not $Condition) { throw $Code } }
 
 $script:starts = 0; $script:healthCalls = 0; $script:saves = 0
-$script:badIdentity = $false; $script:alwaysUnhealthy = $false
+$script:badIdentity = $false; $script:alwaysUnhealthy = $false; $script:keyDrift = $false
 $script:h454WssRetryReported = $false
 $script:stopped = [Collections.Generic.List[int]]::new()
 $script:expectedHash = 'A' * 64
@@ -38,6 +40,7 @@ $SSH_PROCESS = [pscustomobject]@{Id=101; HasExited=$true; Handle=[IntPtr]101; St
 function Stop-H454TunnelHandle([object]$Process) {
     if ($null -ne $Process) { $script:stopped.Add($Process.Id); $Process.HasExited = $true }
 }
+function Assert-H454WssIdentity { if ($script:keyDrift) { throw 'FIXTURE_KEY_DRIFT' } }
 function Start-Process {
     param([string]$FilePath, [string[]]$ArgumentList, [switch]$PassThru, [string]$WindowStyle)
     Require ($FilePath -ceq 'synthetic-ssh' -and $ArgumentList[0] -ceq 'synthetic-arguments' -and
@@ -96,6 +99,10 @@ $before = $script:healthCalls
 $next = Restart-H454WssTunnel $null $sshArgs
 Require ($null -eq $next -and $script:stopped[-1] -eq 205 -and $script:saves -eq 2 -and
     ($script:healthCalls - $before) -eq 15) 'FIXTURE_UNHEALTHY_TIMEOUT'
+$script:keyDrift = $true; $before = $script:starts; $refused = $false
+try { $null = Restart-H454WssTunnel $null $sshArgs } catch { $refused = $_.Exception.Message -ceq 'FIXTURE_KEY_DRIFT' }
+Require ($refused -and $script:starts -eq $before) 'FIXTURE_KEY_DRIFT_RECONNECT'
+$script:keyDrift = $false
 
 . ([scriptblock]::Create($claimHelpers[0].Extent.Text))
 $script:h454ContainerId = $null; $script:h454PreflightContainerId = 'a' * 64
@@ -158,6 +165,21 @@ try {
 
 . ([scriptblock]::Create($stateHelpers[0].Extent.Text))
 function Assert-H454PrivateState([string]$Path) { Require ([IO.File]::Exists($Path)) 'FIXTURE_STATE_FILE' }
+. ([scriptblock]::Create($identityHelpers[0].Extent.Text))
+$script:h454WssIdentity = Join-Path ([IO.Path]::GetDirectoryName($Launcher)) 'wss-ssh-identity.pub'
+$savedAgentSock = [Environment]::GetEnvironmentVariable('SSH_AUTH_SOCK', 'Process')
+try {
+    [Environment]::SetEnvironmentVariable('SSH_AUTH_SOCK', $null, 'Process')
+    Assert-H454WssIdentity
+    [Environment]::SetEnvironmentVariable('SSH_AUTH_SOCK', 'synthetic-override', 'Process'); $refused = $false
+    try { Assert-H454WssIdentity } catch { $refused = $_.Exception.Message -ceq 'H454_SSH_AGENT_OVERRIDE' }
+    Require $refused 'FIXTURE_AGENT_OVERRIDE'
+    [Environment]::SetEnvironmentVariable('SSH_AUTH_SOCK', $null, 'Process')
+    [IO.File]::AppendAllText($script:h454WssIdentity, 'changed')
+    $refused = $false
+    try { Assert-H454WssIdentity } catch { $refused = $_.Exception.Message -ceq 'H454_SSH_IDENTITY_DRIFT' }
+    Require $refused 'FIXTURE_IDENTITY_DRIFT'
+} finally { [Environment]::SetEnvironmentVariable('SSH_AUTH_SOCK', $savedAgentSock, 'Process') }
 $STATE_PATH = Join-Path ([IO.Path]::GetDirectoryName($Launcher)) 'fixture-state.json'
 [IO.File]::WriteAllText($STATE_PATH, '{"tunnelPid":101}', [Text.UTF8Encoding]::new($false))
 $oldHash = (Get-FileHash -LiteralPath $STATE_PATH).Hash

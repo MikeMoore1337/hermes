@@ -20,10 +20,13 @@ mounts over the agent code and CA. The old encrypted credentials stay intact;
 and `pairedAt=manual`, rejecting unexpected fields or identity.
 
 `h454_windows_wss_launcher.py` prepares a Run-only launcher from an exact,
-independently pinned guarded launcher and public CA hash; the caller must not
-trust a hash calculated from unreviewed input. It switches the forward and
-temporary credential copy to WSS and checks local TLS readiness without
-sending a bearer. Other launcher modes require a separate owner operator.
+independently pinned guarded launcher, public CA hash and second SSH public-key
+hash; the caller must not trust hashes calculated from unreviewed input. It
+uses only that public key with the default Windows SSH agent, ignores external
+SSH configuration, and refuses an overridden agent socket or changed key.
+It switches the forward and temporary credential copy to WSS and checks local
+TLS readiness without sending a bearer. Other launcher modes require a separate
+owner operator.
 Before stopping an existing container, the launcher checks its profile and
 identity and retries the SSH tunnel until the process and TLS endpoint pass
 readiness. It refuses the stop if the container was replaced during that wait.
@@ -110,8 +113,10 @@ fixtures were removed and the real second filename remained absent. Neither
 fixture installed a real key or tested the production adapter.
 [OpenSSH supports selecting an agent identity using its public key](https://man.openbsd.org/ssh_config#IdentityFile),
 and [Windows can store a key in its SSH agent](https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_keymanagement),
-but enrollment, restart behavior and identity availability have not been
-verified for this BRC.
+and a synthetic Windows-to-loopback-sshd test authenticated using a temporary
+agent-loaded key with only its public file present. The synthetic agent entry
+was removed afterward. Real key enrollment, backup, restart behavior and
+identity availability have not been verified for this BRC.
 
 ## Interruption and rollback boundary
 
