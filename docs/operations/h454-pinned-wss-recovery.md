@@ -107,7 +107,18 @@ the existing rollout operator and do not automatically restore availability.
 local operator adapter: it checks the held recovery lock at each step, installs
 the guard and marker before attempting the stop, requires each action to
 confirm its postconditions, and requires candidate MCP before changing control
-files. Only an adapter-confirmed, settled failure enters rollback automatically;
+files. It requires explicit UTC start and end times for the owner's maintenance
+window, checks the window before quiescing the launcher and again before the
+original stop, and holds without stopping if the window expires. Recovery after
+a stop remains possible after the window ends; this check does not guarantee
+that the outage finishes before the window ends. The trusted adapter must quiesce
+the legacy scheduled launcher before installing the guard and verify that no
+old launcher or owned child can start or continue unguarded; disabling a task
+alone does not prove that an already running process has exited. If the old
+launcher holds `runtime.lock`, the adapter must first validate the agreed window
+and quiesce it before acquiring the lock; the callback rechecks quiescence under
+the lock. These callbacks and the agreed window are not supplied by the
+ordering core. Only an adapter-confirmed, settled failure enters rollback automatically;
 an exception, timeout or other ambiguous outcome retains the marker and stops
 without further mutation because a Docker operation might still be in flight.
 The adapter must not report `FAILED_SETTLED` or resume recovery unless it can

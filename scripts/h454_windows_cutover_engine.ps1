@@ -29,10 +29,17 @@ function Invoke-H454RecoveryEngine(
 }
 
 function Invoke-H454CutoverEngine(
-    [string]$StateDir, [IO.FileStream]$Lock, [hashtable]$Actions, [switch]$OwnerApproved
+    [string]$StateDir, [IO.FileStream]$Lock, [hashtable]$Actions, [switch]$OwnerApproved,
+    [datetime]$WindowStartUtc, [datetime]$WindowEndUtc
 ) {
     if(-not $OwnerApproved){return [pscustomobject]@{Status='OWNER_APPROVAL_REQUIRED';Phase='NONE'}}
-    $names=@('Preflight','Snapshot','InstallGuard','WriteMarker','RecheckBeforeStop',
+    $now=[DateTime]::UtcNow
+    if($null -eq $WindowStartUtc -or $null -eq $WindowEndUtc -or
+        $WindowStartUtc.Kind -ne [DateTimeKind]::Utc -or $WindowEndUtc.Kind -ne [DateTimeKind]::Utc -or
+        $WindowStartUtc -ge $WindowEndUtc -or $now -lt $WindowStartUtc -or $now -ge $WindowEndUtc){
+        return [pscustomobject]@{Status='MAINTENANCE_WINDOW_REQUIRED';Phase='NONE'}
+    }
+    $names=@('Preflight','Snapshot','QuiesceLegacyLauncher','InstallGuard','WriteMarker','RecheckBeforeStop',
         'StopOriginal','ActivateCandidate','StageCandidate','ConfirmCandidateMcp',
         'CommitLauncher','CommitState','VerifyCommit','ClearMarker',
         'VerifyRollbackState','StopCandidate','RestoreControls','ReactivateOriginal','StageOriginal',
@@ -44,11 +51,17 @@ function Invoke-H454CutoverEngine(
     }
     $phase='Preflight';$stopAttempted=$false
     try {
-        foreach($name in @('Preflight','Snapshot','InstallGuard','WriteMarker','RecheckBeforeStop',
+        foreach($name in @('Preflight','Snapshot','QuiesceLegacyLauncher','InstallGuard','WriteMarker','RecheckBeforeStop',
             'StopOriginal','ActivateCandidate','StageCandidate','ConfirmCandidateMcp',
             'CommitLauncher','CommitState','VerifyCommit')){
             $phase=$name
             Assert-H454RecoveryLock $StateDir $Lock
+            if($name -cin @('QuiesceLegacyLauncher','StopOriginal')){
+                $now=[DateTime]::UtcNow
+                if($now -lt $WindowStartUtc -or $now -ge $WindowEndUtc){
+                    return [pscustomobject]@{Status='PREFLIGHT_HOLD';Phase='MAINTENANCE_WINDOW'}
+                }
+            }
             if($name -ceq 'StopOriginal'){$stopAttempted=$true}
             $confirmed=@(& $Actions[$name])
             if($confirmed.Count -eq 1 -and $confirmed[0] -is [string] -and $confirmed[0] -ceq 'FAILED_SETTLED'){
