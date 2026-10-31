@@ -16,6 +16,7 @@ on:
       - scripts/h454_agent_pinned_wss.py
       - scripts/h454_agent_pinned_wss_e2e.mjs
       - scripts/h454_wss_relay_proxy.mjs
+      - scripts/h454_wss_relay_watchdog_e2e.mjs
       - scripts/h454_relay_authorized_keys.py
       - tests/test_h454_relay_authorized_keys.py
       - scripts/h454_wss_fixture_certificates.sh
@@ -62,6 +63,7 @@ on:
       - scripts/h454_agent_pinned_wss.py
       - scripts/h454_agent_pinned_wss_e2e.mjs
       - scripts/h454_wss_relay_proxy.mjs
+      - scripts/h454_wss_relay_watchdog_e2e.mjs
       - scripts/h454_relay_authorized_keys.py
       - tests/test_h454_relay_authorized_keys.py
       - scripts/h454_wss_fixture_certificates.sh
@@ -174,6 +176,9 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m unittest -v tests.test_h15_workspace_router tests.test_h15_brc_workspace_gateway tests.test_h15_brc_upgrade_preflight tests.test_h15_brc_transactional_upgrade tests.test_h15_brc_owner_artifact_stage tests.test_h15_brc_owner_handoff tests.test_h15_brc_native_read_gateway tests.test_h15_native_windows_relay_contract tests.test_h454_brc_native_three_tool_cutover
+
+      - name: WSS relay watchdog failure and recovery contract
+        run: node scripts/h454_wss_relay_watchdog_e2e.mjs
 
       - name: Fetch exact upstream Git commit (not tag, latest or npm install)
         shell: bash

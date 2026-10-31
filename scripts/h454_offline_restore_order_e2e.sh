@@ -11,6 +11,7 @@ tmp="$(mktemp -d "${RUNNER_TEMP:?}/h454-offline.XXXXXX")"
 image="h454-offline-fixture:$nonce"
 proxy_image="h454-offline-proxy:$nonce"
 relay_image="h454-offline-relay:$nonce"
+wss_proxy_image="h454-wss-restart-fixture:$nonce"
 container=''
 isolated=''
 sidecar=''
@@ -18,14 +19,17 @@ relay=''
 network_id=''
 upstream_network=''
 server_pid=''
+ns_relay=''
+ns_proxy=''
+ns_network=''
 cleanup() {
-  for fixture in "$container" "$isolated" "$sidecar" "$relay"; do
+  for fixture in "$ns_proxy" "$ns_relay" "$container" "$isolated" "$sidecar" "$relay"; do
     if test -n "$fixture"; then
       label="$(docker inspect --format '{{index .Config.Labels "com.hermes.h454.fixture"}}' "$fixture" 2>/dev/null || true)"
       if test "$label" = "$nonce"; then docker rm --force "$fixture" >/dev/null 2>&1 || true; fi
     fi
   done
-  for network in "$network_id" "$upstream_network"; do
+  for network in "$ns_network" "$network_id" "$upstream_network"; do
     if test -n "$network"; then
       label="$(docker network inspect --format '{{index .Labels "com.hermes.h454.fixture"}}' "$network" 2>/dev/null || true)"
       if test "$label" = "$nonce"; then docker network rm "$network" >/dev/null 2>&1 || true; fi
@@ -35,7 +39,7 @@ cleanup() {
     kill "$server_pid" 2>/dev/null || true
     wait "$server_pid" 2>/dev/null || true
   fi
-  for fixture_image in "$image" "$proxy_image" "$relay_image"; do
+  for fixture_image in "$wss_proxy_image" "$image" "$proxy_image" "$relay_image"; do
     label="$(docker image inspect --format '{{index .Config.Labels "com.hermes.h454.fixture"}}' "$fixture_image" 2>/dev/null || true)"
     if test "$label" = "$nonce"; then docker image rm "$fixture_image" >/dev/null 2>&1 || true; fi
   done
@@ -285,3 +289,59 @@ docker logs "$relay" 2>&1 | grep -q '^H454_TEST_TLS_AUTH$'
 test "$(grep -c '^auth$' "$tmp/events")" = 1
 echo 'H454_SYNTHETIC_RESTAGE_VIA_ISOLATED_PINNED_TLS=PASS'
 echo 'H454_SYNTHETIC_PROXY_UPSTREAM_LISTENER_CLOSED=PASS'
+
+# A namespace-sharing WSS proxy must rejoin the relay after its container restarts.
+cp scripts/h454_wss_relay_proxy.mjs "$tmp/"
+cat > "$tmp/Dockerfile.wss-restart" <<'DOCKER'
+ARG H454_TEST_BASE
+FROM ${H454_TEST_BASE}
+USER 0:0
+COPY h454_wss_relay_proxy.mjs /opt/h454-wss-proxy.mjs
+COPY trusted.key /run/h454-wss/relay.key
+COPY trusted.crt /run/h454-wss/relay.crt
+COPY relay-ca.pem /run/h454-wss/relay-ca.pem
+USER 65534:65534
+ENTRYPOINT ["node", "/opt/h454-wss-proxy.mjs"]
+DOCKER
+docker build --quiet --pull=false --network none --build-arg "H454_TEST_BASE=$base" \
+  --label "com.hermes.h454.fixture=$nonce" --file "$tmp/Dockerfile.wss-restart" \
+  --tag "$wss_proxy_image" "$tmp" >/dev/null
+ns_network="$(docker network create --internal --label "com.hermes.h454.fixture=$nonce" "h454-ns-$nonce")"
+ns_relay="$(docker create --pull never --network "$ns_network" --read-only --init --cap-drop ALL \
+  --security-opt no-new-privileges --user 65534:65534 --memory 128m --pids-limit 32 \
+  --label "com.hermes.h454.fixture=$nonce" --entrypoint node "$base" -e '
+  require("node:http").createServer((_q,r)=>{r.writeHead(200);r.end()}).listen(3000,"127.0.0.1")')"
+docker start "$ns_relay" >/dev/null
+ns_proxy="$(docker create --pull never --network "container:$ns_relay" --restart unless-stopped \
+  --read-only --init --cap-drop ALL --security-opt no-new-privileges --user 65534:65534 \
+  --memory 128m --pids-limit 32 --label "com.hermes.h454.fixture=$nonce" "$wss_proxy_image")"
+docker start "$ns_proxy" >/dev/null
+ns_of() { docker exec "$1" node -e 'console.log(require("node:fs").readlinkSync("/proc/self/ns/net"))'; }
+probe_proxy() {
+  docker exec "$ns_proxy" node -e '
+    const fs=require("node:fs"),tls=require("node:tls");
+    const s=tls.connect({host:"127.0.0.1",port:3001,ca:fs.readFileSync("/run/h454-wss/relay-ca.pem"),
+      servername:"brc-agent.internal",rejectUnauthorized:true},()=>{s.destroy();process.exit(0)});
+    s.on("error",()=>process.exit(1));setTimeout(()=>process.exit(1),3000).unref();'
+}
+before_ns="$(ns_of "$ns_relay")"
+[[ "$before_ns" =~ ^net:\[[0-9]+\]$ ]]
+test "$before_ns" = "$(ns_of "$ns_proxy")"
+test "$(docker inspect --format '{{.RestartCount}}' "$ns_proxy")" = 0
+probe_proxy
+test "$(docker inspect --format '{{index .Config.Labels "com.hermes.h454.fixture"}}' "$ns_relay")" = "$nonce"
+docker restart --time 1 "$ns_relay" >/dev/null
+recovered=false
+for _ in $(seq 1 120); do
+  count="$(docker inspect --format '{{.RestartCount}}' "$ns_proxy")"
+  relay_ns="$(ns_of "$ns_relay" 2>/dev/null || true)"
+  proxy_ns="$(ns_of "$ns_proxy" 2>/dev/null || true)"
+  if [[ "$count" =~ ^[0-9]+$ ]] && test "$count" -gt 0 &&
+      [[ "$relay_ns" =~ ^net:\[[0-9]+\]$ ]] && test "$relay_ns" = "$proxy_ns"; then
+    recovered=true; break
+  fi
+  sleep 0.25
+done
+test "$recovered" = true
+probe_proxy
+echo 'H454_WSS_PROXY_NAMESPACE_RESTART=PASS_SYNTHETIC_ONLY'

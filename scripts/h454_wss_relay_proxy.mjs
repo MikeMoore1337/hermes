@@ -4,6 +4,33 @@ import http from 'node:http';
 import https from 'node:https';
 import { pathToFileURL } from 'node:url';
 
+export function relayHealthy(port) {
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('UPSTREAM_PORT');
+  return new Promise(resolve => {
+    let done = false;
+    const finish = ok => { if (!done) { done = true; resolve(ok); } };
+    const request = http.get({ host: '127.0.0.1', port, path: '/health', agent: false }, response => {
+      finish(response.statusCode === 200);
+      response.destroy();
+    });
+    request.on('error', () => finish(false));
+    request.setTimeout(2000, () => request.destroy());
+  });
+}
+
+export function relayWatchdog(probe, onLost) {
+  let failures = 0, running = false, lost = false;
+  return async () => {
+    if (running || lost) return;
+    running = true;
+    let healthy = false;
+    try { healthy = await probe() === true; } catch {}
+    finally { running = false; }
+    failures = healthy ? 0 : failures + 1;
+    if (failures >= 3) { lost = true; onLost(); }
+  };
+}
+
 export function createProxy({ key, cert, upstreamPort }) {
   if (!Number.isInteger(upstreamPort) || upstreamPort < 1 || upstreamPort > 65535)
     throw new Error('UPSTREAM_PORT');
@@ -66,6 +93,13 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     const server = createProxy({ key: readFileSync('/run/h454-wss/relay.key'),
       cert: readFileSync('/run/h454-wss/relay.crt'), upstreamPort: 3000 });
     server.on('error', () => { console.error('H454_WSS_PROXY_ERROR'); process.exitCode = 1; });
+    const watch = relayWatchdog(() => relayHealthy(3000), () => {
+      console.error('H454_WSS_RELAY_LOST');
+      process.exit(1);
+    });
+    const timer = setInterval(watch, 5000);
+    timer.unref();
+    server.once('close', () => clearInterval(timer));
     server.listen(3001, '0.0.0.0');
   } catch {
     console.error('H454_WSS_PROXY_START_FAILED');

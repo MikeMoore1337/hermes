@@ -59,6 +59,12 @@ must be checked before any activation. The TLS private key must remain on the
 relay side and must never enter the Windows agent image or test artifacts.
 This design assumes the relay namespace and its host are trusted; it does not
 protect an already compromised agent process or Docker administrator.
+When run as a namespace-sharing sidecar, the proxy checks the relay's loopback
+health every five seconds and exits after three consecutive failures. The
+operator must configure and verify Docker's `unless-stopped` restart policy;
+the agent can then reconnect after the proxy rejoins the restarted relay.
+Replacing the relay with a different container ID requires explicit sidecar
+reconciliation and remains outside this restart check.
 
 `h454_relay_authorized_keys.py` prepares bytes for the one pinned Ed25519 key
 only when the entire input hash, private relay address and exact existing
@@ -174,6 +180,12 @@ and must not be deployed as a standalone recovery procedure.
   It also accepted fresh Docker Desktop metadata from disposable containers
   and isolated networks; those resources were removed. This did not stage
   credentials or alter the original container.
+- A Docker Desktop fixture restarted a disposable relay while a TLS proxy
+  shared its network namespace. The proxy detected the lost loopback relay,
+  Docker restarted it into the relay's new namespace, and a pinned TLS probe
+  passed. The fixture used synthetic certificates, did not call real MCP,
+  and removed its containers, network and image. Equivalent CI coverage uses
+  isolated disposable containers.
 - A Windows PowerShell 5.1 and Schannel fixture verified the generated
   launcher's TLS probe against a synthetic trusted certificate; untrusted,
   wrong-name, missing-CA and changed-CA cases failed closed.
