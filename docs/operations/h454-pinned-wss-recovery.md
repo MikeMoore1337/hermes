@@ -63,10 +63,17 @@ prerequisites. Readiness is not a substitute for authenticated MCP smoke.
 
 `deploy/h15/Dockerfile.brc-agent-pinned-wss` is a recipe, not an image or a
 deployment. Its build context must contain only the verified compiled module,
-map and public CA. Resolve the supplied local base tag to its approved image ID
+its map, the verified no-auto-pair CLI and its map, and the public CA. The
+current original image contains the unmodified CLI, so the WSS transport alone
+does not disable automatic pairing if credentials are missing. Both compiled
+variants must come from the same reviewed upstream and Hermes CI revision.
+The recipe rejects a no-auto-pair CLI or map whose digest differs from the
+currently pinned build; the caller must separately verify the transport and CA.
+Resolve the supplied local base tag to its approved image ID
 before and after the build, prohibit pulls, compare inherited layers/config,
 and verify as UID 65534 that the root-owned 0755 trust directory and 0444 CA
-and module are readable but immutable under the actual read-only runtime.
+and all four compiled files are readable but immutable under the actual
+read-only runtime.
 
 The private `h454_wss_relay_proxy.mjs` accepts only an agent WebSocket upgrade
 at `/ws` with a well-formed bearer, limits handshakes and connections, and
@@ -255,6 +262,14 @@ and must not be deployed as a standalone recovery procedure.
   with a synthetic CA. Its inherited layers and runtime configuration matched;
   the non-root process could read but could not overwrite the CA or module.
   The disposable test image was removed.
+- A later Docker Desktop fixture built the combined WSS and no-auto-pair image
+  from the same immutable image ID as the running original. Its base layers and
+  runtime configuration matched except for the fixture label. With synthetic
+  credentials and TLS, missing credentials did not start pairing and a denied
+  credential remained intact. The same test rejected a disposable image that
+  retained the original auto-pair CLI, and a changed CLI failed the recipe's
+  digest check. The real container was not restarted and no real credentials
+  were staged.
 - Windows PowerShell 5.1 fixtures exercised exclusive locking, known and
   unknown states, idempotent offline recovery, and termination of an owned
   test process between two real `File.Replace` operations.
