@@ -225,6 +225,14 @@ and must not be deployed as a standalone recovery procedure.
   synthetic client mutation disabling certificate verification was correctly
   rejected by that test. This does not test automatic restart of the Windows
   SSH process or the live agent.
+- A cross-host synthetic test combined the Windows SSH agent, a public-only
+  identity file, an isolated loopback sshd using the second-key primitive,
+  and the WSS proxy in a disposable VPS Docker network. A synthetic WebSocket
+  upgrade succeeded through pinned TLS; an untrusted CA sent no application
+  bytes to the synthetic relay, and revoking the test key refused a new SSH
+  login without changing the first fixture key. The temporary agent identity,
+  files, containers and network were removed. No real BRC bearer or MCP call
+  was used, and the live relay and original container were not changed.
 - The image recipe was exercised on the locally prepared no-auto-pair base
   with a synthetic CA. Its inherited layers and runtime configuration matched;
   the non-root process could read but could not overwrite the CA or module.
