@@ -43,7 +43,8 @@ const relay = buildRelay({ port: 0, host: '127.0.0.1', publicUrl: 'http://127.0.
 await new Promise((resolve, reject) => { relay.http.once('error', reject); relay.http.listen(0, '127.0.0.1', resolve); });
 const owner = relay.store.getUserByName('fixture-only');
 const token = relay.store.issueDeviceToken('synthetic-wss-device', owner.id, 'fixture', 'linux');
-const proxy = createProxy({ key: read('trusted.key'), cert: read('trusted.crt'), upstreamPort: relay.http.address().port });
+const proxy = createProxy({ key: read('trusted.key'), cert: read('trusted.crt'),
+  upstreamPort: relay.http.address().port, allowedPeer: '127.0.0.1' });
 const proxySockets = new Set();
 let connections = 0, upstreamUpgrades = 0;
 proxy.on('secureConnection', socket => { connections++; proxySockets.add(socket); socket.once('close', () => proxySockets.delete(socket)); });
@@ -53,6 +54,15 @@ let client, fake;
 const fakeSockets = new Set();
 let refused = 0;
 try {
+  await new Promise((resolve, reject) => {
+    const socket = tls.connect({ host: '127.0.0.1', localAddress: '127.0.0.2', port: 38184,
+      ca: read('ca.crt'), servername: 'brc-agent.internal' }, () => reject(Error('disallowed peer accepted')));
+    socket.setTimeout(3000, () => socket.destroy(Error('peer rejection timeout')));
+    socket.on('error', error => { if (error.code !== 'ECONNRESET') reject(error); });
+    socket.on('close', resolve);
+  });
+  assert.equal(connections, 0, 'disallowed peer completed TLS');
+  assert.equal(upstreamUpgrades, 0, 'disallowed peer reached relay');
   const status = await new Promise((resolve, reject) => {
     https.get({ host: '127.0.0.1', port: 38184, path: '/not-ws', ca: read('ca.crt'),
       servername: 'brc-agent.internal' }, response => { response.resume(); resolve(response.statusCode); }).on('error', reject);

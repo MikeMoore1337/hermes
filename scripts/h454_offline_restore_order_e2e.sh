@@ -21,9 +21,10 @@ upstream_network=''
 server_pid=''
 ns_relay=''
 ns_proxy=''
+ns_probe=''
 ns_network=''
 cleanup() {
-  for fixture in "$ns_proxy" "$ns_relay" "$container" "$isolated" "$sidecar" "$relay"; do
+  for fixture in "$ns_proxy" "$ns_probe" "$ns_relay" "$container" "$isolated" "$sidecar" "$relay"; do
     if test -n "$fixture"; then
       label="$(docker inspect --format '{{index .Config.Labels "com.hermes.h454.fixture"}}' "$fixture" 2>/dev/null || true)"
       if test "$label" = "$nonce"; then docker rm --force "$fixture" >/dev/null 2>&1 || true; fi
@@ -312,22 +313,42 @@ ns_relay="$(docker create --pull never --network "$ns_network" --read-only --ini
   --label "com.hermes.h454.fixture=$nonce" --entrypoint node "$base" -e '
   require("node:http").createServer((q,r)=>{r.writeHead(q.method==="GET"&&q.url==="/health"?200:404);r.end()}).listen(3000,"127.0.0.1")')"
 docker start "$ns_relay" >/dev/null
+ns_probe="$(docker create --pull never --network "$ns_network" --read-only --init --cap-drop ALL \
+  --security-opt no-new-privileges --user 65534:65534 --memory 128m --pids-limit 32 \
+  --label "com.hermes.h454.fixture=$nonce" --entrypoint node "$wss_proxy_image" -e 'setInterval(()=>{},1000)')"
+docker start "$ns_probe" >/dev/null
+ns_peer="$(docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$ns_probe")"
+node -e 'if(require("node:net").isIP(process.argv[1])!==4)process.exit(1)' "$ns_peer"
 ns_proxy="$(docker create --pull never --network "container:$ns_relay" --restart unless-stopped \
   --read-only --init --cap-drop ALL --security-opt no-new-privileges --user 65534:65534 \
-  --memory 128m --pids-limit 32 --label "com.hermes.h454.fixture=$nonce" "$wss_proxy_image")"
+  --memory 128m --pids-limit 32 --env "H454_SSH_SOURCE_IPV4=$ns_peer" \
+  --label "com.hermes.h454.fixture=$nonce" "$wss_proxy_image")"
 docker start "$ns_proxy" >/dev/null
 ns_of() { docker exec "$1" node -e 'console.log(require("node:fs").readlinkSync("/proc/self/ns/net"))'; }
 probe_proxy() {
-  docker exec "$ns_proxy" node -e '
+  local relay_ip
+  relay_ip="$(docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$ns_relay")"
+  docker exec "$ns_probe" node -e '
     const fs=require("node:fs"),tls=require("node:tls");
-    const s=tls.connect({host:"127.0.0.1",port:3001,ca:fs.readFileSync("/run/h454-wss/relay-ca.pem"),
+    const s=tls.connect({host:process.argv[1],port:3001,ca:fs.readFileSync("/run/h454-wss/relay-ca.pem"),
       servername:"brc-agent.internal",rejectUnauthorized:true},()=>{s.destroy();process.exit(0)});
-    s.on("error",()=>process.exit(1));setTimeout(()=>process.exit(1),3000).unref();'
+    s.on("error",()=>process.exit(1));setTimeout(()=>process.exit(1),3000).unref();' "$relay_ip"
 }
 before_ns="$(ns_of "$ns_relay")"
 [[ "$before_ns" =~ ^net:\[[0-9]+\]$ ]]
 test "$before_ns" = "$(ns_of "$ns_proxy")"
 test "$(docker inspect --format '{{.RestartCount}}' "$ns_proxy")" = 0
+ready=false
+for _ in $(seq 1 40); do
+  if probe_proxy; then ready=true; break; fi
+  sleep 0.25
+done
+test "$ready" = true
+docker exec "$ns_proxy" node -e '
+  const fs=require("node:fs"),tls=require("node:tls");
+  const s=tls.connect({host:"127.0.0.1",port:3001,ca:fs.readFileSync("/run/h454-wss/relay-ca.pem"),
+    servername:"brc-agent.internal",rejectUnauthorized:true},()=>process.exit(1));
+  s.on("error",e=>process.exit(e.code==="ECONNRESET"?0:1));setTimeout(()=>process.exit(1),3000).unref();'
 probe_proxy
 test "$(docker inspect --format '{{index .Config.Labels "com.hermes.h454.fixture"}}' "$ns_relay")" = "$nonce"
 docker restart --time 1 "$ns_relay" >/dev/null
@@ -337,7 +358,7 @@ for _ in $(seq 1 120); do
   relay_ns="$(ns_of "$ns_relay" 2>/dev/null || true)"
   proxy_ns="$(ns_of "$ns_proxy" 2>/dev/null || true)"
   if [[ "$count" =~ ^[0-9]+$ ]] && test "$count" -gt 0 &&
-      [[ "$relay_ns" =~ ^net:\[[0-9]+\]$ ]] && test "$relay_ns" = "$proxy_ns"; then
+      [[ "$relay_ns" =~ ^net:\[[0-9]+\]$ ]] && test "$relay_ns" = "$proxy_ns" && probe_proxy; then
     recovered=true; break
   fi
   sleep 0.25
@@ -345,3 +366,4 @@ done
 test "$recovered" = true
 probe_proxy
 echo 'H454_WSS_PROXY_NAMESPACE_RESTART=PASS_SYNTHETIC_ONLY'
+echo 'H454_WSS_PROXY_UNAPPROVED_PEER_REFUSED=PASS_SYNTHETIC_ONLY'

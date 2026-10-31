@@ -2,7 +2,14 @@
 import { readFileSync } from 'node:fs';
 import http from 'node:http';
 import https from 'node:https';
+import net from 'node:net';
 import { pathToFileURL } from 'node:url';
+
+export function privateIPv4(address) {
+  if (typeof address !== 'string' || net.isIP(address) !== 4) return false;
+  const [a, b] = address.split('.').map(Number);
+  return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
+}
 
 export function relayHealthy(port) {
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('UPSTREAM_PORT');
@@ -31,13 +38,15 @@ export function relayWatchdog(probe, onLost) {
   };
 }
 
-export function createProxy({ key, cert, upstreamPort }) {
-  if (!Number.isInteger(upstreamPort) || upstreamPort < 1 || upstreamPort > 65535)
-    throw new Error('UPSTREAM_PORT');
+export function createProxy({ key, cert, upstreamPort, allowedPeer }) {
+  if (!Number.isInteger(upstreamPort) || upstreamPort < 1 || upstreamPort > 65535 ||
+      typeof allowedPeer !== 'string' || net.isIP(allowedPeer) !== 4 || allowedPeer === '0.0.0.0')
+    throw new Error('H454_PROXY_CONFIGURATION');
   const server = https.createServer({ key, cert, minVersion: 'TLSv1.2', maxHeaderSize: 8192,
     handshakeTimeout: 10000 },
     (_req, res) => { res.writeHead(404, { Connection: 'close' }); res.end(); });
   server.maxConnections = 8;
+  server.prependListener('connection', socket => { if (socket.remoteAddress !== allowedPeer) socket.destroy(); });
   server.headersTimeout = 10000;
   server.requestTimeout = 15000;
   server.on('tlsClientError', () => {});
@@ -90,8 +99,10 @@ export function createProxy({ key, cert, upstreamPort }) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
+    const allowedPeer = process.env.H454_SSH_SOURCE_IPV4;
+    if (!privateIPv4(allowedPeer)) throw new Error('H454_SSH_SOURCE_IPV4');
     const server = createProxy({ key: readFileSync('/run/h454-wss/relay.key'),
-      cert: readFileSync('/run/h454-wss/relay.crt'), upstreamPort: 3000 });
+      cert: readFileSync('/run/h454-wss/relay.crt'), upstreamPort: 3000, allowedPeer });
     server.on('error', () => { console.error('H454_WSS_PROXY_ERROR'); process.exitCode = 1; });
     const watch = relayWatchdog(() => relayHealthy(3000), () => {
       console.error('H454_WSS_RELAY_LOST');

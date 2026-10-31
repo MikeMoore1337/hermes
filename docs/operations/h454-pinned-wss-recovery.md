@@ -57,6 +57,14 @@ The actual namespace, relay address, SSH `PermitOpen`, port availability,
 key ownership, certificate name, validity, rotation and bounded rollback
 must be checked before any activation. The TLS private key must remain on the
 relay side and must never enter the Windows agent image or test artifacts.
+The sidecar requires `H454_SSH_SOURCE_IPV4` to be one private IPv4 address;
+it immediately closes connections from other addresses. The operator must pin
+the freshly inspected internal network gateway and confirm the SSH forwarding
+source before starting it. One separate, credential-free SSH test on the
+current host observed the gateway as its source at port 3000; that observation
+does not prove the future port 3001 path or survive network changes. Source
+filtering limits exposure to neighboring containers but is not authentication;
+the Docker host and its network administrator remain trusted.
 This design assumes the relay namespace and its host are trusted; it does not
 protect an already compromised agent process or Docker administrator.
 When run as a namespace-sharing sidecar, the proxy checks the relay's loopback
