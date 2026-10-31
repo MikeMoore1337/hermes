@@ -35,13 +35,14 @@ class YandexH12Denied(ValueError):
 
 def build_h12_handoff(
     read_result: Any, *, as_of: date,
-    selected_query: str, site_gap: dict[str, Any],
+    selected_query: str, site_gap: dict[str, Any] | None,
 ) -> dict[str, Any]:
-    """Build the existing #64 packet from an already collected H-24 report.
+    """Build a #64 packet from an existing bounded H-24 report.
 
-    No HTTP or filesystem interaction. The caller supplies an actual
-    Statejnik site-gap and selected query; neither is inferred or invented.
-    Payload remains private in caller memory. owner_attested=False survives.
+    None explicitly means no verified Statejnik gap is available.
+    In that case the query MUST be present in the provider's observations;
+    #64 returns NO_DATA (or HOLD), never invented coverage or editor READY.
+    No HTTP, filesystem writes, owner/provider attestation, or publishing.
     """
     if (type(as_of) is not date or type(read_result) is not dict
             or read_result.get("schema") != READ_SCHEMA
@@ -75,9 +76,12 @@ def build_h12_handoff(
             ]):
         raise YandexH12Denied("H12_PROVENANCE_INVALID")
 
-    # H-12 must receive a real site-gap for the same verified HTTPS property.
-    if (type(site_gap) is not dict
-            or site_gap.get("site") not in CANONICAL_SITES):
+    # A real Statejnik result is accepted as before. An explicit None means
+    # no site coverage assessment was performed; never invent a gap.
+    if site_gap is not None and (
+        type(site_gap) is not dict
+        or site_gap.get("site") not in CANONICAL_SITES
+    ):
         raise YandexH12Denied("H12_SITE_GAP_INVALID")
     observations = data.get("seo_research_input_observations")
     digest = data.get("evidence_sha256")
@@ -92,6 +96,16 @@ def build_h12_handoff(
                 or row.get("owner_attested") is not False
                 or row.get("evidence_sha256") != digest):
             raise YandexH12Denied("H12_OBSERVATIONS_INVALID")
+
+    if site_gap is None and (
+        type(selected_query) is not str
+        or not any(
+            type(row.get("query")) is str
+            and row["query"].casefold() == selected_query.casefold()
+            for row in observations
+        )
+    ):
+        raise YandexH12Denied("H12_QUERY_NOT_OBSERVED")
 
     try:
         packet = build_packet({
@@ -119,6 +133,13 @@ def build_h12_handoff(
         for row in packet["observations"]
     ):
         raise YandexH12Denied("H12_PRIVILEGE_PROMOTION_DENIED")
+    if site_gap is None and (
+        packet.get("site_gap") is not None
+        or "SITE_GAP_NOT_ASSESSED" not in packet.get("reasons", ())
+        or packet["status"] not in {"HOLD", "NO_DATA"}
+        or not packet["observations"]
+    ):
+        raise YandexH12Denied("H12_PRIVILEGE_PROMOTION_DENIED")
 
     return {
         "schema": HANDOFF_SCHEMA,
@@ -127,6 +148,100 @@ def build_h12_handoff(
         "transport_status": read_result["status"],
         "source_provenance": data["status"],
         "packet": packet,
+        "publication_allowed": False,
+        "yfc_write_allowed": False,
+        "provider_gets_during_handoff": 0,
+        "filesystem_writes": 0,
+    }
+
+
+BATCH_SCHEMA = "hermes-h24-yandex-h12-in-memory-batch-v1"
+
+
+def build_h12_observed_batch(
+    read_result: Any, *, as_of: date,
+) -> dict[str, Any]:
+    """Deliver every *actually observed* popular query to existing H-12.
+
+    Query selection is derived from the real normalized observations, never
+    from an invented gap or text supplied by this adapter. All packets stay
+    private in memory. Site coverage is explicitly NOT_ASSESSED.
+    """
+    data = read_result.get("data") if type(read_result) is dict else None
+    rows = data.get("seo_research_input_observations") if type(data) is dict else None
+    if type(rows) is not list or not 1 <= len(rows) <= 50:
+        raise YandexH12Denied("H12_NO_OBSERVED_QUERIES")
+
+    handoffs = []
+    for row in rows:
+        if type(row) is not dict or type(row.get("query")) is not str:
+            raise YandexH12Denied("H12_OBSERVATIONS_INVALID")
+        handoff = build_h12_handoff(
+            read_result, as_of=as_of, selected_query=row["query"],
+            site_gap=None,
+        )
+        packet = handoff["packet"]
+        if (len(packet["observations"]) != 1
+                or packet["observations"][0]["query"] != row["query"]
+                or packet["site_gap"] is not None
+                or packet["status"] != "NO_DATA"
+                or packet["evidence_kind"] != "NO_CONFIRMED_DEMAND"):
+            raise YandexH12Denied("H12_PRIVILEGE_PROMOTION_DENIED")
+        handoffs.append(handoff)
+
+    return {
+        "schema": BATCH_SCHEMA,
+        "status": "IN_MEMORY_H12_BATCH_UNATTESTED",
+        "source_transport": read_result["status"],
+        "source_provenance": data["status"],
+        "handoffs": handoffs,
+        "site_gap_assessed": False,
+        "publication_allowed": False,
+        "yfc_write_allowed": False,
+        "provider_gets_during_handoff": 0,
+        "filesystem_writes": 0,
+    }
+
+
+def summarized_h12_batch(batch: Any) -> dict[str, Any]:
+    """Return only predefined metadata, never queries, numbers or packet text."""
+    if (type(batch) is not dict
+            or batch.get("schema") != BATCH_SCHEMA
+            or batch.get("status") != "IN_MEMORY_H12_BATCH_UNATTESTED"
+            or batch.get("source_transport") not in ALLOWED_READ_STATUSES
+            or batch.get("source_provenance") != "OFFLINE_SOURCE_NOT_PROVIDER_VERIFIED"
+            or batch.get("site_gap_assessed") is not False
+            or batch.get("publication_allowed") is not False
+            or batch.get("yfc_write_allowed") is not False
+            or batch.get("provider_gets_during_handoff") != 0
+            or batch.get("filesystem_writes") != 0):
+        raise YandexH12Denied("H12_BATCH_RECEIPT_INVALID")
+
+    handoffs = batch.get("handoffs")
+    if type(handoffs) is not list or not 1 <= len(handoffs) <= 50:
+        raise YandexH12Denied("H12_BATCH_RECEIPT_INVALID")
+    for entry in handoffs:
+        if (type(entry) is not dict
+                or entry.get("transport_status") != batch["source_transport"]):
+            raise YandexH12Denied("H12_BATCH_RECEIPT_INVALID")
+        receipt = summarized_h12_handoff(entry)
+        if (receipt["packet_status"] != "NO_DATA"
+                or receipt["packet_evidence_kind"] != "NO_CONFIRMED_DEMAND"
+                or receipt["matching_observation_count"] != 1):
+            raise YandexH12Denied("H12_BATCH_RECEIPT_INVALID")
+        if entry["packet"].get("site_gap") is not None:
+            raise YandexH12Denied("H12_BATCH_RECEIPT_INVALID")
+
+    return {
+        "status": batch["status"],
+        "source_transport": batch["source_transport"],
+        "source_provenance": batch["source_provenance"],
+        "h12_packet_schema": H12_OUTPUT_SCHEMA,
+        "h12_packet_count": len(handoffs),
+        "h12_observation_count": len(handoffs),
+        "h12_evidence_kind": "NO_CONFIRMED_DEMAND",
+        "h12_packet_status": "NO_DATA",
+        "site_gap_assessed": False,
         "publication_allowed": False,
         "yfc_write_allowed": False,
         "provider_gets_during_handoff": 0,
