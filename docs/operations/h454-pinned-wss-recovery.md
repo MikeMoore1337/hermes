@@ -173,9 +173,11 @@ it neither validates Docker or credentials itself nor is a standalone operator.
 The production adapter, its exact artifacts and an approved cutover are still
 missing. `h454_windows_network_guard.ps1` verifies a fresh Docker network
 snapshot's immutable identity, internal bridge mode, label and exact two-member
-set. Its rollback route check also requires the original agent on only that
-network, the proxy on that and one pinned upstream network, the intended alias,
-no host override, and a fresh DNS observation resolving only to the proxy.
+set. Its rollback route check also requires the exact private IPv4 CIDR and
+gateway from Docker IPAM, matching member addresses, an upstream outside that
+subnet, the original agent on only the isolated network, the proxy on that and
+one pinned upstream network, the intended alias, no host override, and a fresh
+DNS observation resolving only to the proxy.
 These checks consume observations supplied by the caller; they do not prove
 the proxy's upstream interface is closed or prevent a Docker administrator
 changing the network later.
@@ -243,10 +245,11 @@ and must not be deployed as a standalone recovery procedure.
   with synthetic image, profile and CA pins and passed the same extracted
   fixture; the launcher was not installed or executed.
 - The rollback route guard passed PowerShell 5.1 negative fixtures for extra
-  network members, changed identities, host overrides, alias and DNS drift.
+  network members, changed identities, host overrides, alias and DNS drift,
+  CIDR and gateway mismatch, overlapping upstream addresses and bad prefixes.
   It also accepted fresh Docker Desktop metadata from disposable containers
-  and isolated networks; those resources were removed. This did not stage
-  credentials or alter the original container.
+  and isolated networks with the pinned CIDR; those resources were removed.
+  This did not stage credentials or alter the original container.
 - A Docker Desktop fixture restarted a disposable relay while a TLS proxy
   shared its network namespace. The proxy detected the lost loopback relay,
   Docker restarted it into the relay's new namespace, and a pinned TLS probe

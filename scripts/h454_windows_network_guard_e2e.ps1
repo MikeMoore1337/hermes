@@ -35,6 +35,8 @@ foreach($case in @('foreign','missing','replacement','internal','ipv6','driver',
 }
 function TestRoute {
     $network=TestNetwork
+    $network | Add-Member -NotePropertyName IPAM -NotePropertyValue ([pscustomobject]@{
+        Config=@([pscustomobject]@{Subnet='172.20.0.0/16';Gateway='172.20.0.1'})})
     $network.Containers.PSObject.Properties[$agentId].Value=[pscustomobject]@{IPv4Address='172.20.0.2/16'}
     $network.Containers.PSObject.Properties[$proxyId].Value=[pscustomobject]@{IPv4Address='172.20.0.3/16'}
     $agentEndpoint=[pscustomobject]@{NetworkID=$networkId;IPAddress='172.20.0.2';GlobalIPv6Address='';Aliases=@()}
@@ -47,16 +49,30 @@ function TestRoute {
             NetworkSettings=[pscustomobject]@{Networks=[pscustomobject]$agentNetworks}};
         Proxy=[pscustomobject]@{Id=$proxyId;State=[pscustomobject]@{Running=$true};
             NetworkSettings=[pscustomobject]@{Networks=[pscustomobject]$proxyNetworks}};
-        Resolved=@('172.20.0.3');Override=$false}
+        Cidr='172.20.0.0/16';Resolved=@('172.20.0.3');Override=$false}
 }
 function CheckRoute([object]$Route) {
     Assert-H454RollbackAgentRoute $Route.Network $Route.Agent $Route.Proxy $networkId $networkName $labelName $labelValue `
-        $agentId $proxyId ('f'*64) 'h454-upstream' $Route.Resolved $Route.Override
+        $agentId $proxyId ('f'*64) 'h454-upstream' $Route.Cidr $Route.Resolved $Route.Override
 }
 CheckRoute (TestRoute)
+foreach($subnet in @(
+    @('10.0.0.0/8','10.0.0.1','10.0.0.2','10.0.0.3',8),
+    @('192.168.0.0/16','192.168.0.1','192.168.0.2','192.168.0.3',16)
+)){
+    $route=TestRoute;$route.Cidr=$subnet[0];$route.Network.IPAM.Config[0].Subnet=$subnet[0]
+    $route.Network.IPAM.Config[0].Gateway=$subnet[1]
+    $route.Agent.NetworkSettings.Networks.PSObject.Properties[$networkName].Value.IPAddress=$subnet[2]
+    $route.Proxy.NetworkSettings.Networks.PSObject.Properties[$networkName].Value.IPAddress=$subnet[3]
+    $route.Network.Containers.PSObject.Properties[$agentId].Value.IPv4Address=$subnet[2]+'/'+$subnet[4]
+    $route.Network.Containers.PSObject.Properties[$proxyId].Value.IPv4Address=$subnet[3]+'/'+$subnet[4]
+    $route.Resolved=@($subnet[3]);CheckRoute $route
+}
 foreach($case in @('agent-extra','proxy-extra','wrong-upstream','missing-alias','upstream-alias','upstream-alias-case','host-file','unknown-host-file',
                    'extra-hosts','dns-empty','dns-wrong','dns-mixed','dns-scalar','wrong-member-address','public-address','ipv6-address',
-                   'agent-id','proxy-stopped','foreign-member')) {
+                   'agent-id','proxy-stopped','foreign-member','missing-ipam','multiple-subnets','wrong-cidr','cidr-host-bits',
+                   'prefix-drift','gateway-outside','address-outside','gateway-as-address','public-cidr',
+                   'upstream-overlap','upstream-public','upstream-missing')) {
     $route=TestRoute
     $agentEndpoint=$route.Agent.NetworkSettings.Networks.PSObject.Properties[$networkName].Value
     $proxyEndpoint=$route.Proxy.NetworkSettings.Networks.PSObject.Properties[$networkName].Value
@@ -81,6 +97,18 @@ foreach($case in @('agent-extra','proxy-extra','wrong-upstream','missing-alias',
         'agent-id' {$route.Agent.Id=$otherId}
         'proxy-stopped' {$route.Proxy.State.Running=$false}
         'foreign-member' {$route.Network.Containers | Add-Member -NotePropertyName $otherId -NotePropertyValue ([pscustomobject]@{})}
+        'missing-ipam' {$route.Network.IPAM.Config=@()}
+        'multiple-subnets' {$route.Network.IPAM.Config+=@([pscustomobject]@{Subnet='172.21.0.0/16';Gateway='172.21.0.1'})}
+        'wrong-cidr' {$route.Cidr='172.21.0.0/16'}
+        'cidr-host-bits' {$route.Cidr='172.20.0.2/16';$route.Network.IPAM.Config[0].Subnet=$route.Cidr}
+        'prefix-drift' {$route.Network.Containers.PSObject.Properties[$proxyId].Value.IPv4Address='172.20.0.3/24'}
+        'gateway-outside' {$route.Network.IPAM.Config[0].Gateway='172.21.0.1'}
+        'address-outside' {$proxyEndpoint.IPAddress='172.21.0.3';$route.Network.Containers.PSObject.Properties[$proxyId].Value.IPv4Address='172.21.0.3/16';$route.Resolved=@('172.21.0.3')}
+        'gateway-as-address' {$agentEndpoint.IPAddress='172.20.0.1';$route.Network.Containers.PSObject.Properties[$agentId].Value.IPv4Address='172.20.0.1/16'}
+        'public-cidr' {$route.Cidr='172.0.0.0/8';$route.Network.IPAM.Config[0].Subnet=$route.Cidr}
+        'upstream-overlap' {$upstreamEndpoint.IPAddress='172.20.0.99'}
+        'upstream-public' {$upstreamEndpoint.IPAddress='8.8.8.8'}
+        'upstream-missing' {$upstreamEndpoint.IPAddress=''}
     }
     $refused=$false;try {CheckRoute $route} catch {$refused=$true}
     Require-H454 $refused ('ROUTE_FIXTURE_ACCEPTED_'+$case)
