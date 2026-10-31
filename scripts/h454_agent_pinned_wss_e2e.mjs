@@ -139,11 +139,11 @@ const originalRoots = tls.getCACertificates('default');
 const originalInsecure = process.env.NODE_TLS_REJECT_UNAUTHORIZED;
 tls.setDefaultCACertificates([...originalRoots, read('fake.crt').toString('utf8')]);
 async function rejectFake(name) {
-  let gotBearer = false, attempted = false, finished;
+  let receivedBytes = 0, attempted = false, finished;
   const event = new Promise(resolve => { finished = resolve; });
   const sockets = new Set();
   const server = tls.createServer({ key: read(`${name}.key`), cert: read(`${name}.crt`) }, socket => {
-    socket.on('data', data => { gotBearer ||= data.toString('utf8').includes(token); finished(); });
+    socket.on('data', data => { receivedBytes += data.length; finished(); });
     socket.on('error', () => {});
   });
   server.on('connection', socket => { attempted = true; sockets.add(socket); socket.once('close', () => sockets.delete(socket)); });
@@ -154,7 +154,7 @@ async function rejectFake(name) {
   await Promise.race([event, new Promise(resolve => setTimeout(resolve, 3000))]);
   attemptedClient.stop();
   assert.ok(attempted, 'fake listener was not contacted');
-  assert.equal(gotBearer, false, 'bearer reached fake listener');
+  assert.equal(receivedBytes, 0, 'application bytes reached fake listener');
   for (const socket of sockets) socket.destroy();
   await close(server);
 }
