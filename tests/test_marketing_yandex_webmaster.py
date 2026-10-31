@@ -323,6 +323,31 @@ class YandexWebmasterOfflineTests(unittest.TestCase):
         with self.assertRaises(WebmasterDenied):
             normalize_export(sample, as_of=DAY)
 
+    def test_optional_sitemap_last_access_date_remains_unknown(self):
+        for present in (False, True):
+            with self.subTest(present=present):
+                sample = fixture()
+                item = sample["sitemaps"]["sitemaps"][0]
+                if present:
+                    item["last_access_date"] = None
+                else:
+                    del item["last_access_date"]
+                report = normalize_export(sample, as_of=DAY)
+                self.assertIsNone(report["sitemaps"][0]["last_access_date"])
+                self.assertEqual(0, report["sitemaps"][0]["errors"])
+                self.assertFalse(report["publication_allowed"])
+
+    def test_optional_sitemap_date_rejects_bad_values_and_extra_fields(self):
+        for change in (
+            lambda row: row.update(last_access_date="bad-date"),
+            lambda row: row.update(last_access_date="2026-11-01T00:00:00+03:00"),
+            lambda row: row.update(raw_response="secrets"),
+        ):
+            sample = fixture()
+            change(sample["sitemaps"]["sitemaps"][0])
+            with self.assertRaises(WebmasterDenied):
+                normalize_export(sample, as_of=DAY)
+
     def test_untrusted_sitemap_redirects_or_credentials_refused(self):
         for url in (
             "http://your-fitness-coach.ru/sitemap.xml",
