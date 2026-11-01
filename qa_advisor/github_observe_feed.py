@@ -164,7 +164,9 @@ def from_runs(response: object, *, now: datetime) -> dict:
         subject = _ident(int(number_text))
         run_id = _ident(run.get("id"))
         stamp = utc(run.get("created_at"))
-        if stamp > at + SKEW or at - stamp > WINDOW:
+        if stamp > at + SKEW:
+            raise FeedRefused("workflow_timestamp_future")
+        if at - stamp > WINDOW:
             continue
         entries.append({
             "event": kind, "action": action, "subject_number": subject,
