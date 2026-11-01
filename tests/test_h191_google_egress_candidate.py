@@ -169,7 +169,7 @@ class H191GoogleEgressCandidateTests(unittest.TestCase):
                 h191._decode(raw)
 
     def test_live_capture_requires_correct_host_before_network(self):
-        with patch.object(h191.os, "uname", return_value=("other",)), \
+        with patch.object(h191.socket, "gethostname", return_value="other"), \
              patch.object(h191, "_fetch_public_ranges") as fetch:
             with self.assertRaisesRegex(h191.CandidateError, "wrong_host"):
                 h191.public_preview_evidence()
@@ -186,7 +186,7 @@ class H191GoogleEgressCandidateTests(unittest.TestCase):
             value = GOOGLE_V4 if host == h191.TARGETS[0] else GOOGLE_V6
             return [(socket_type, 0, 0, "", (value, 443))]
         socket_type = 2  # structure irrelevant to the consumed address tuple
-        with patch.object(h191.os, "uname", return_value=(h191.HOST,)), \
+        with patch.object(h191.socket, "gethostname", return_value=h191.HOST), \
              patch.object(h191, "_fetch_public_ranges", side_effect=fake_fetch), \
              patch.object(h191, "_dns_nameservers", return_value=[h191.DNS_STUB]), \
              patch.object(h191.socket, "getaddrinfo", side_effect=fake_getaddr):
