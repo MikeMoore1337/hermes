@@ -32,7 +32,8 @@ SKEW = timedelta(minutes=2)
 TITLE = re.compile(
     r"observe:(issues|issue_comment|pull_request_target|workflow_run):"
     r"(opened|reopened|created|synchronize|ready_for_review|completed):"
-    r"([1-9][0-9]{0,17}):(none|success|failure|cancelled|timed_out|startup_failure|neutral|skipped|action_required)\Z"
+    r"([1-9][0-9]{0,17}):(none|success|failure|cancelled|timed_out|startup_failure|neutral|skipped|action_required):"
+    r"([1-9][0-9]{0,17})\Z"
 )
 API_PATH = (
     f"/repos/{REPO}/actions/workflows/{OBSERVE_WORKFLOW_ID}/runs?"
@@ -157,14 +158,18 @@ def from_runs(response: object, *, now: datetime) -> dict:
         match = TITLE.fullmatch(name)
         if match is None:
             continue  # Historical untrusted Issue/PR titles never become events.
-        kind, action, number_text, outcome = match.groups()
+        kind, action, number_text, outcome, signed_run_id = match.groups()
+        run_id = _ident(run.get("id"))
+        # Older workflow runs used PR/Issue titles (attacker-editable).
+        # New run-name binds these fixed labels to GitHub-assigned run IDs.
+        if int(signed_run_id) != run_id:
+            raise FeedRefused("run_title_identity_mismatch")
         if run.get("event") != kind:
             raise FeedRefused("event_identity_mismatch")
         candidate = _candidate(kind, action, outcome)
         if candidate == "NONE":
             continue
         subject = _ident(int(number_text))
-        run_id = _ident(run.get("id"))
         stamp = utc(run.get("created_at"))
         if stamp > at + SKEW:
             raise FeedRefused("workflow_timestamp_future")
