@@ -131,10 +131,29 @@ class H191GoogleEgressGuardTests(TestCase):
         self.assertNotIn("ExecStart=/opt/hermes-gsc/venv/", text)
         self.assertNotIn("webmasters", text)
 
+    def test_effective_systemd_guard_and_exact_ip_allowlist(self):
+        allow = "127.0.0.0/8 ::1/128 " + " ".join(PINS)
+        base = iter(["no", "0.0.0.0/0 ::/0", guard.USER, guard.USER,
+                     str(guard.DROPIN), "AF_UNIX AF_INET AF_INET6",
+                     allow, "loaded"])
+        with mock.patch.object(guard, "_run",
+                               side_effect=lambda *_args, **_kw: next(base)):
+            guard._installed_unit_trusted(PINS)
+
+    def test_effective_systemd_rejects_broad_ip_allowlist(self):
+        bad = iter(["no", "0.0.0.0/0 ::/0", guard.USER, guard.USER,
+                    str(guard.DROPIN), "AF_UNIX AF_INET AF_INET6",
+                    "127.0.0.0/8 ::1/128 0.0.0.0/0 " + " ".join(PINS)])
+        with mock.patch.object(guard, "_run",
+                               side_effect=lambda *_args, **_kw: next(bad)):
+            with self.assertRaisesRegex(guard.GuardError, "effective_ip_allowlist_drift"):
+                guard._installed_unit_trusted(PINS)
+
     def test_current_dns_change_fails_closed_before_nft_mutation(self):
         with mock.patch.object(guard, "_key_metadata"), \
              mock.patch.object(guard, "_read_record", return_value=PINS), \
              mock.patch.object(guard, "_verify_files"), \
+             mock.patch.object(guard, "_installed_unit_trusted"), \
              mock.patch.object(guard, "_current_pins", return_value=(V4, "142.251.1.10/32")), \
              mock.patch.object(guard, "_nft_state") as state, \
              mock.patch.object(guard, "_nft_create") as create:
@@ -147,6 +166,7 @@ class H191GoogleEgressGuardTests(TestCase):
         with mock.patch.object(guard, "_key_metadata"), \
              mock.patch.object(guard, "_read_record", return_value=PINS), \
              mock.patch.object(guard, "_verify_files"), \
+             mock.patch.object(guard, "_installed_unit_trusted"), \
              mock.patch.object(guard, "_current_pins") as live, \
              mock.patch.object(guard, "_nft_state", return_value="EXACT") as state, \
              mock.patch.object(guard, "_nft_create") as create:
@@ -159,6 +179,7 @@ class H191GoogleEgressGuardTests(TestCase):
         with mock.patch.object(guard, "_key_metadata"), \
              mock.patch.object(guard, "_read_record", return_value=PINS), \
              mock.patch.object(guard, "_verify_files"), \
+             mock.patch.object(guard, "_installed_unit_trusted"), \
              mock.patch.object(guard, "_current_pins", return_value=(V4,)), \
              mock.patch.object(guard, "_nft_state", side_effect=["MISSING", "EXACT"]), \
              mock.patch.object(guard, "_nft_create") as create:
@@ -215,6 +236,7 @@ class H191GoogleEgressGuardTests(TestCase):
              mock.patch.object(guard, "_store_text", side_effect=count_files), \
              mock.patch.object(guard, "_run", side_effect=["", "", "no"]), \
              mock.patch.object(guard, "_verify_files"), \
+             mock.patch.object(guard, "_installed_unit_trusted"), \
              mock.patch.object(guard, "_nft_state", return_value="EXACT"):
             guard.install(UID, GID)
         self.assertEqual(order, ["nft", "pins", "guard_unit", "dropin"])
@@ -238,6 +260,7 @@ class H191GoogleEgressGuardTests(TestCase):
         with mock.patch.object(guard, "_unit_state"), \
              mock.patch.object(guard, "_read_record", return_value=PINS), \
              mock.patch.object(guard, "_verify_files"), \
+             mock.patch.object(guard, "_base_unit_trusted"), \
              mock.patch.object(guard, "_nft_state", side_effect=["EXACT", "MISSING"]), \
              mock.patch.object(guard, "POLICY", policy), \
              mock.patch.object(guard, "GUARD_FILE", unit), \
