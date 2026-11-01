@@ -184,6 +184,66 @@ venv, отключённые units и dry-run. Это не LIVE_GSC_SNAPSHOT_SAV
 не AUTONOMOUS_ACTIVE: фактический OAuth, 7 API-вызовов и автоматический tick
 требуют отдельных подтверждений и owner gates.
 
+## Закрытая передача существующего Google service-account JSON
+
+**Отдельный owner gate. Не выполнять без разрешения на provisioning secret.**
+Учётная запись Google существует по прежним свидетельствам владельца,
+но key-файл по штатному пути VPS отсутствует. Не создавать новую Google
+учётную запись, секрет или DNS без доказанной необходимости и согласования.
+Workload Identity Federation обычно безопаснее постоянного JSON-ключа,
+но текущий H-24 клиент рассчитан именно на service-account JSON.
+
+Подготовлены два отдельно запускаемых средства:
+- scripts/h191_gsc_key_send.py - локальный Python-отправитель, совместимый
+  с Windows и прямым SSH, без PowerShell text pipeline;
+- scripts/h191_gsc_credential_provision.py - принимающий скрипт на VPS
+  из точно доставленного root-owned Hermes release, в изолированном venv.
+
+До передачи отправитель запрашивает metadata-only статус без секрета.
+Разрешены только проверенный SSH host key (StrictHostKeyChecking=yes),
+авторизация SSH-ключом (BatchMode=yes), строго заданный root@host и SHA;
+ProxyJump/ProxyCommand и пересылка SSH agent отключены. Если ключ уже
+существует или preflight не пройден, secret-файл не отправляется.
+
+Пример PowerShell на Windows из доверенного checkout проекта, только
+после разрешения владельца на secret transfer и проверки known_hosts:
+
+    py -3 scripts/h191_gsc_key_send.py --key-file "C:\SECURE\existing-service-account.json" --ssh-target "root@YOUR-APPROVED-SSH-HOST" --release-sha "EXACT_40_CHARACTER_DEPLOYED_SHA" --confirm-owner-key-transfer
+
+Пути и SSH-host выбирает и проверяет сам владелец. Не использовать
+GitHub Actions deploy-ключ как shell, BRC, Commander, email, чат,
+GitHub Issues, общественные файлообменники, env или shell arguments для
+содержимого ключа. Скрипт передаёт исходные байты исключительно как stdin
+зашифрованного SSH-канала. Флаг подтверждения обязателен.
+
+Приёмник на правильном VPS сверяет hostname, SHA, release receipt, UID/GID,
+права /etc/hermes-gsc и уже существующие files. Он проверяет размер,
+формат JSON, запрещает повторяющиеся имена полей и чужие token_uri,
+валидирует offline private key форматом google-auth из отдельного venv.
+Никаких Google network requests. Создаёт
+/etc/hermes-gsc/service-account.json строго однократно, mode 0400,
+владельцем hermes-gsc, атомарно и без перезаписи существующего файла
+или symlink. Секреты не выводятся. Ротация - отдельно согласуемое действие.
+
+Ожидаемое сообщение локального отправителя:
+
+    H191_KEY_TRANSFER=PASS
+    H191_GOOGLE_OAUTH=NOT_RUN
+    H191_TIMER=NOT_ENABLED
+
+Этот статус означает только credential file metadata READY, не
+подтверждение OAuth или доступности GSC property. После получения
+реального ключа сохраняется NO_GO на OAuth и systemd timer до review
+реально действующего сетевого ограничения.
+
+**Google-only egress ещё не реализован.** В активируемом шаблоне
+PrivateNetwork=yes, RestrictAddressFamilies=AF_UNIX и IPAddressDeny=any.
+systemd IPAddressAllow принимает IP/CIDR, но не hostname или порт 443.
+Для перехода нужен самостоятельный проверенный механизм DNS/IP,
+ограничения 443, TLS hostname, negative network tests и отдельный owner GO;
+не снимать deny-all ради успешного smoke. Также остаётся независимая
+проверка фактически установленных транзитивных wheel dependencies.
+
 ## Статусы исполнения и измерений
 
 Отдельно учитывать:
