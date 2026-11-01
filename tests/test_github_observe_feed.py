@@ -153,6 +153,7 @@ class GithubFeedTests(unittest.TestCase):
         self.assertEqual(request.call_count, 1)
         self.assertEqual(request.call_args.args[0], feed.API_PATH)
         self.assertEqual(request.call_args.kwargs["token"], "REDACTED_VALIDATED")
+        self.assertEqual(request.call_args.kwargs["timeout"], 5)
         self.assertEqual(feed.API_PATH, (
             "/repos/MikeMoore1337/hermes/actions/workflows/403765637/runs?per_page=12"
         ))
