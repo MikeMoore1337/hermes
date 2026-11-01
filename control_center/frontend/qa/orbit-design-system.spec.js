@@ -137,3 +137,33 @@ test("read-only archive uses Orbit mark, icons and typography",async({page})=>{
  expect(g.doc).toBeLessThanOrEqual(g.viewport+1);
  expect(unexpected).toEqual([]);
 });
+
+test("authorized YFC editor retains owner gate with Orbit typography",async({page},testInfo)=>{
+ const unexpected=await isolate(page),errors=[];
+ page.on("pageerror",e=>errors.push(e.message));
+ await page.route("http://127.0.0.1:9133/",async route=>{
+  const response=await route.fetch();
+  const html=await response.text();
+  const old=' data-auth-mode="proxy" data-authenticated="true"';
+  expect(html).toContain(old);
+  await route.fulfill({response,body:html.replace(old,
+    ' data-auth-mode="github" data-authenticated="true"')});
+ });
+ await page.setViewportSize({width:393,height:844});
+ await page.goto("/");
+ await navigate(page,"Статьи YFC",393);
+ await expect(page.locator(".ye-root")).toBeVisible();
+ await expect(page.locator(".orbit-topbar")).toBeVisible();
+ const heading=page.locator(".ye-header h1");
+ await expect(heading).toBeVisible();
+ const font=await heading.evaluate(el=>getComputedStyle(el).fontFamily);
+ expect(font.toLowerCase()).toContain("sans-serif");
+ expect(font).not.toContain("Georgia");
+ const g=await geometry(page);
+ expect(g.doc).toBeLessThanOrEqual(g.viewport+1);
+ await testInfo.attach("orbit-editor-393.png",{
+  body:await page.screenshot({fullPage:true,animations:"disabled"}),contentType:"image/png"
+ });
+ expect(errors).toEqual([]);
+ expect(unexpected).toEqual([]);
+});
