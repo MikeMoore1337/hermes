@@ -38,6 +38,9 @@ class StaticContracts(unittest.TestCase):
     def test_raster_branded_assets_are_locally_served(self):
         for route, mime, signature in (
             ("/brand.webp", "image/webp", b"RIFF"),
+            ("/orbit-brand.svg", "image/svg+xml", b"<svg"),
+            ("/favicon.svg", "image/svg+xml", b"<svg"),
+            ("/pwa-orbit.svg", "image/svg+xml", b"<svg"),
             ("/pwa-maskable-192.png", "image/png", b"\x89PNG"),
             ("/pwa-maskable-512.png", "image/png", b"\x89PNG"),
             ("/favicon.png", "image/png", b"\x89PNG"),
