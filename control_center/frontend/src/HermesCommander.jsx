@@ -239,7 +239,7 @@ export default function HermesCommander(){
      <button id="brc-copy" type="button" onClick={copyPath} aria-label="Скопировать путь sandbox">
        {copied==="Скопировано"?<Check size={18}/>:<Clipboard size={18}/>}
        <span>{copied||"Копировать"}</span></button></div>
-    <div className="oc-context-facts">
+    <div className="oc-context-facts brc-facts">
      <div><span>ИЗОЛИРОВАННАЯ СРЕДА</span><strong>Windows sandbox</strong></div>
      <div><span>ВЕТКА (КОНТРАКТ)</span><strong id="brc-branch">{current.branch}</strong></div>
      <div><span>GIT HEAD / CLEAN</span><strong className="oc-unverified">Не проверено</strong></div>
