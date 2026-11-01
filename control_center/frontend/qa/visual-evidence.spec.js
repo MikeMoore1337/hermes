@@ -56,7 +56,7 @@ test("visual evidence: synthetic Control Center across representative viewports"
     await page.setViewportSize(viewport);
     await page.goto("/");
     await expect(page.getByRole("main")).toHaveCount(1);
-    await expect(page.getByRole("navigation", { name: "Разделы управления" })).toHaveCount(1);
+    await expect(page.getByRole("navigation", { name: "Разделы управления" })).toHaveCount(width <= 980 ? 0 : 1);
     await expect(page.getByRole("heading", { name: /Вся система/ })).toBeVisible();
     const search = page.getByRole("textbox", { name: "Поиск по службам" });
     await expect(search).toBeVisible();
