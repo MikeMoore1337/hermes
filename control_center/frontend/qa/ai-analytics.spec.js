@@ -1,4 +1,15 @@
 import {test,expect} from "@playwright/test";
+async function chooseOrbitView(page,label){
+ const width=page.viewportSize()?.width||1280;
+ if(width<=980){
+  const quickName=label==="QA и CI"?"QA / CI":label==="Operator Inbox"?"Входящие":label;
+  const bottom=page.locator(".orbit-app-mobilebar").getByRole("button",{name:quickName,exact:true});
+  if(await bottom.count()){await bottom.click();return;}
+  await page.locator(".orbit-app-mobilebar").getByRole("button",{name:"Ещё"}).click();
+ }
+ await page.locator(".atlas-section-nav").getByRole("button",{name:label,exact:true}).click();
+}
+
 import {mkdirSync} from "node:fs";
 import {resolve} from "node:path";
 
@@ -37,7 +48,7 @@ for(const width of [393,1440]){
   expect(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1)).toBe(false);
   mkdirSync(output,{recursive:true});
   await page.screenshot({path:resolve(output,"analytics-"+width+".png"),fullPage:true});
-  await page.locator(".atlas-section-nav").getByRole("button",{name:"Обзор"}).click();
+  await chooseOrbitView(page,"Обзор");
   await expect(panel).toBeHidden();
  });
 }
