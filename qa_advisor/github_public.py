@@ -70,7 +70,7 @@ def _private_token(path: Path) -> str:
     return token
 
 
-def get_json(path: str, *, opener: Any = None, token: str | None = None) -> dict[str, Any]:
+def get_json(path: str, *, opener: Any = None, token: str | None = None, timeout: int = 12) -> dict[str, Any]:
     # The second approved path reads only the established GitHub Observe
     # workflow metadata. Never expand this to arbitrary API endpoints.
     allowed_ci = re.fullmatch(
@@ -82,6 +82,8 @@ def get_json(path: str, *, opener: Any = None, token: str | None = None) -> dict
     )
     if not (allowed_ci or allowed_observe):
         raise GithubPublicError("endpoint_not_allowlisted")
+    if type(timeout) is not int or not 1 <= timeout <= 12:
+        raise GithubPublicError("http_timeout_invalid")
     is_private = path.startswith("/repos/MikeMoore1337/hermes/")
     if is_private and token is None:
         raise GithubPublicError("github_private_token_required")
@@ -102,7 +104,7 @@ def get_json(path: str, *, opener: Any = None, token: str | None = None) -> dict
         API_ORIGIN + path, headers=headers, method="GET"
     )
     try:
-        with (opener or public_opener()).open(request, timeout=12) as response:
+        with (opener or public_opener()).open(request, timeout=timeout) as response:
             if response.status != 200:
                 raise GithubPublicError("public_api_unavailable")
             body = response.read(MAX_BODY_BYTES + 1)
