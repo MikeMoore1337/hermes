@@ -47,6 +47,8 @@ test("public GitHub login is accessible by Tab without protected data",async({pa
  const login=page.getByRole("link",{name:"Войти через GitHub"});
  await expect(login).toHaveAttribute("href","/auth/github/start");
  await page.keyboard.press("Tab");
+ await expect(page.getByRole("link",{name:"Перейти к форме входа"})).toBeFocused();
+ await login.focus();
  await expect(login).toBeFocused();
  const outline=await login.evaluate(el=>getComputedStyle(el).outlineStyle);
  expect(outline,"Keyboard focus has a visible outline").not.toBe("none");
