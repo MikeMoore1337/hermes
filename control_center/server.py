@@ -60,7 +60,8 @@ ASSETS = {
     "/style.css": ("style.css", "text/css; charset=utf-8"),
     "/desktop-commander.js": ("desktop-commander.js", "text/javascript; charset=utf-8"),
     "/desktop-commander.css": ("desktop-commander.css", "text/css; charset=utf-8"),
-    "/hermes-brc": ("hermes-brc.html", "text/html; charset=utf-8"),
+    # Deep link to the same protected React shell, not a second static app.
+    "/hermes-brc": ("index.html", "text/html; charset=utf-8"),
     "/desktop-commander-archive": ("desktop-commander-archive.html", "text/html; charset=utf-8"),
     "/desktop-commander-archive.js": ("desktop-commander-archive.js", "text/javascript; charset=utf-8"),
     "/desktop-commander-archive.css": ("desktop-commander-archive.css", "text/css; charset=utf-8"),
@@ -520,7 +521,7 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
                 return self.respond(200, "application/json; charset=utf-8", raw)
             if path in ASSETS:
                 name, mime = ASSETS[path]
-                if name in ("hermes-brc.html", "desktop-commander-archive.html") and config.mode == "github" and not oauth.authenticated(
+                if path in ("/hermes-brc", "/desktop-commander-archive") and config.mode == "github" and not oauth.authenticated(
                         self._cookie(SESSION_COOKIE)):
                     return self.respond(401, "text/plain", b"Authentication required")
                 try:
