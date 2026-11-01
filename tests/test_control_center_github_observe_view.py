@@ -22,7 +22,7 @@ def sample():
         "repository": {"full_name": qa.REPO},
         "event": "pull_request_target", "status": "completed",
         "conclusion": "success",
-        "display_title": "observe:pull_request_target:opened:512:none",
+        "display_title": "observe:pull_request_target:opened:512:none:1998",
         "created_at": (NOW-timedelta(minutes=3)).isoformat(),
         "html_url": "https://untrusted.example/SAMPLE_SECRET",
     }
