@@ -14,6 +14,7 @@ from urllib.request import Request, urlopen
 from control_center.auth import AuthConfig
 from control_center.server import make_handler
 from control_center.snapshot import UNITS
+from qa_advisor.github_observe_feed import from_runs, OBSERVE_WORKFLOW_ID, OBSERVE_WORKFLOW
 
 
 class _FakeOAuth:
@@ -89,6 +90,31 @@ class InboxHttpTests(unittest.TestCase):
             port, "/api/operator/inbox", cookie="hermes_cc_session=owner-session")
         self.assertEqual(code, 200)
         self.assertEqual(json.loads(raw)["mode"], "read_only")
+
+    def test_existing_owner_api_includes_sanitized_github_events(self):
+        clock = dt.datetime.now(dt.timezone.utc)
+        item = {
+            "id": 9001, "workflow_id": OBSERVE_WORKFLOW_ID,
+            "name": OBSERVE_WORKFLOW,
+            "repository": {"full_name": "MikeMoore1337/hermes"},
+            "event": "issues", "status": "completed", "conclusion": "success",
+            "display_title": "observe:issues:opened:712:none:9001",
+            "created_at": clock.isoformat(),
+            "body": "NEVER_COPY_SECRET_HERE",
+        }
+        data = json.loads(self.snapshot.read_text(encoding="utf-8"))
+        data["github_observe_feed"] = from_runs({"workflow_runs": [item]}, now=clock)
+        self.snapshot.write_text(json.dumps(data), encoding="utf-8")
+        port = self.serve()
+        status, headers, body = self.request(port, "/api/operator/inbox")
+        self.assertEqual(status, 200)
+        self.assertEqual(headers["Cache-Control"], "no-store")
+        reply = json.loads(body)
+        self.assertEqual(reply["sources"]["github_observe"]["status"], "PARTIAL")
+        self.assertTrue(any(e["event_id"] == "github_observe:issues:712"
+                            for e in reply["events"]))
+        self.assertFalse(reply["actions_enabled"])
+        self.assertNotIn("NEVER_COPY_SECRET_HERE", body.decode())
 
     def test_missing_or_stale_snapshot_not_reported_healthy(self):
         port = self.serve()

@@ -11,6 +11,7 @@ from control_center.operator_inbox import (
     InboxUnavailable, MAX_EVENTS, assemble, load_overview,
 )
 from control_center.snapshot import UNITS
+from qa_advisor.github_observe_feed import from_runs, OBSERVE_WORKFLOW_ID, OBSERVE_WORKFLOW
 
 NOW = dt.datetime(2026, 10, 22, 12, 0, tzinfo=dt.timezone.utc)
 
@@ -47,6 +48,7 @@ class InboxTests(unittest.TestCase):
         self.assertEqual(result["sources"]["brc"]["status"], "NOT_AVAILABLE")
         self.assertEqual(result["sources"]["delivery"]["status"], "NOT_AVAILABLE")
         self.assertEqual(result["sources"]["ops_incidents"]["status"], "NOT_AVAILABLE")
+        self.assertEqual(result["sources"]["github_observe"]["status"], "NOT_AVAILABLE")
         self.assertIn("не доказывает", result["note"])
 
     def test_incidents_and_stable_ids(self):
@@ -60,7 +62,7 @@ class InboxTests(unittest.TestCase):
         self.assertEqual(len({e["event_id"] for e in a["events"]}), 5)
         self.assertEqual(a["events"][0]["category"], "failure")
         self.assertTrue(all(e["scope"] == "owner_read_only" for e in a["events"]))
-        self.assertEqual(a["summary"]["source_count"], 5)
+        self.assertEqual(a["summary"]["source_count"], 6)
         self.assertNotIn("secret-id-do-not-echo", json.dumps(a))
         self.assertNotIn("token=never-echo", json.dumps(a))
 
@@ -120,6 +122,67 @@ class InboxTests(unittest.TestCase):
             file.write_text(json.dumps({"schema": 1, "mode": "write"}))
             with self.assertRaises(InboxUnavailable):
                 load_overview(file)
+
+    def github_feed(self, *, now=NOW):
+        def entry(number, run_id, kind, action, outcome="none"):
+            return {
+                "id": run_id, "workflow_id": OBSERVE_WORKFLOW_ID,
+                "name": OBSERVE_WORKFLOW, "repository": {"full_name": "MikeMoore1337/hermes"},
+                "event": kind, "status": "completed", "conclusion": "success",
+                "display_title": f"observe:{kind}:{action}:{number}:{outcome}:{run_id}",
+                "created_at": (now-dt.timedelta(minutes=2)).isoformat(),
+                "body": "SAMPLE_SECRET_PROMPT_INJECTION",
+                "html_url": "https://evil.example/SAMPLE_SECRET_PROMPT_INJECTION",
+            }
+        return from_runs({"workflow_runs": [
+            entry(42, 1000, "issues", "opened"),
+            entry(42, 1001, "issue_comment", "created"),
+            entry(777, 1002, "workflow_run", "completed", "failure"),
+        ]}, now=now)
+
+    def test_github_feed_uses_approved_dynamic_inbox_without_new_ui(self):
+        overview = fixture()
+        overview["github_observe_feed"] = self.github_feed()
+        result = assemble(overview, scheduler(), now=NOW)
+        self.assertEqual(result["sources"]["github_observe"]["status"], "PARTIAL")
+        self.assertEqual(result["summary"]["available_sources"], 3)
+        self.assertEqual(result["summary"]["critical"], 1)
+        self.assertEqual(result["summary"]["review"], 2)
+        self.assertEqual(result["summary"]["total"], 3)
+        self.assertFalse(result["actions_enabled"])
+        events = [e for e in result["events"] if e["source"] == "github_observe"]
+        self.assertEqual(len(events), 3)
+        self.assertTrue(all(e["evidence_link"] is None for e in events))
+        self.assertTrue(all(e["scope"] == "owner_read_only" for e in events))
+        self.assertTrue(any("№42" in e["title"] for e in events))
+        self.assertTrue(any(e["event_id"] == "github_observe:workflow_run:777"
+                            and e["category"] == "failure" for e in events))
+        raw = json.dumps(result, ensure_ascii=False)
+        self.assertNotIn("SAMPLE_SECRET_PROMPT_INJECTION", raw)
+        self.assertNotIn("evil.example", raw)
+        self.assertNotIn("GRANTED", raw)
+
+    def test_missing_or_stale_github_feed_never_proves_health(self):
+        baseline = assemble(fixture(), scheduler(), now=NOW)
+        self.assertEqual(baseline["sources"]["github_observe"]["status"], "NOT_AVAILABLE")
+        overview = fixture()
+        overview["github_observe_feed"] = self.github_feed(now=NOW-dt.timedelta(minutes=46))
+        stale = assemble(overview, scheduler(), now=NOW)
+        self.assertEqual(stale["sources"]["github_observe"]["status"], "STALE")
+        self.assertEqual(stale["summary"]["review"], 1)
+        self.assertEqual(stale["events"][0]["event_id"], "github_observe:stale")
+        self.assertNotIn("№777", json.dumps(stale, ensure_ascii=False))
+
+    def test_forged_permission_in_snapshot_is_hidden_from_operator(self):
+        overview = fixture()
+        source = self.github_feed()
+        source["execution_authorized"] = True
+        overview["github_observe_feed"] = source
+        result = assemble(overview, scheduler(), now=NOW)
+        self.assertEqual(result["sources"]["github_observe"]["status"], "PARTIAL")
+        self.assertEqual(result["summary"]["total"], 0)
+        self.assertFalse(result["actions_enabled"])
+        self.assertNotIn("GRANTED", json.dumps(result))
 
     def test_no_unauthorized_details_or_brc_fetch(self):
         data = fixture({"ops": "failed"})

@@ -1,5 +1,9 @@
 name: Hermes GitHub event observe (no executor)
 
+# Only GitHub-generated enums and numeric object IDs. No user-supplied strings.
+run-name: >-
+  observe:${{ github.event_name }}:${{ github.event.action }}:${{ github.event.issue.number || github.event.pull_request.number || github.event.workflow_run.id || 0 }}:${{ github.event.workflow_run.conclusion || 'none' }}:${{ github.run_id }}
+
 # GitHub pushes event data to this job; no poller, paid API, token extension,
 # daemon, scheduler or Hermes agent is started.
 on:

@@ -31,6 +31,35 @@ class MainCIScheduleTests(unittest.TestCase):
                 self.assertEqual(set(sent),{"schema","repo","workflow","status","run_id","head_sha","observed_at"})
                 self.assertIn('"outbound_notifications": 0',out.getvalue())
 
+    def test_observe_feed_uses_one_read_without_new_authority(self):
+        result = {"status": "SUCCESS", "run_id": 999, "head_sha": "a"*40}
+        report = {"schema": "hermes-gh-observe-inbox-v1", "events": []}
+        with patch.object(watch_once, "inspect_once", return_value=result):
+            with patch.object(watch_once, "store", return_value="STORED_SAFE_CI_SIGNAL"):
+                with patch.object(watch_once.observe_feed, "poll", return_value=report) as poll:
+                    with patch.object(watch_once.observe_feed, "save",
+                                      return_value="STORED_SAFE_GITHUB_OBSERVATIONS") as save:
+                        with patch("sys.stdout", new_callable=io.StringIO) as out:
+                            self.assertEqual(watch_once.main(["--execute"]), 0)
+        self.assertEqual(poll.call_count, 1)
+        save.assert_called_once_with(report)
+        self.assertEqual(__import__("json").loads(out.getvalue())["github_observe_feed"], "STORED")
+
+    def test_observer_network_failure_preserves_original_ci_result(self):
+        from qa_advisor.github_public import GithubPublicError
+        ci = {"status": "FAILURE", "run_id": 999, "head_sha": "a"*40}
+        with patch.object(watch_once, "inspect_once", return_value=ci):
+            with patch.object(watch_once, "store", return_value="STORED_SAFE_CI_SIGNAL") as store:
+                with patch.object(watch_once.observe_feed, "poll",
+                                  side_effect=GithubPublicError("github_forbidden_or_rate_limited")):
+                    with patch("sys.stdout", new_callable=io.StringIO) as out:
+                        self.assertEqual(watch_once.main(["--execute"]), 0)
+        store.assert_called_once()
+        result = __import__("json").loads(out.getvalue())
+        self.assertEqual(result["signal"], "FAILURE")
+        self.assertEqual(result["github_observe_feed"], "UNAVAILABLE")
+        self.assertEqual(result["outbound_notifications"], 0)
+
     def test_auth_or_network_failure_no_db_and_no_sender(self):
         from qa_advisor.github_public import GithubPublicError
         with patch.object(watch_once,"inspect_once",
