@@ -50,11 +50,11 @@ async function assertDesktopCaption(page){
 test("approved C+B Atlas with C+A fonts, working asset and navigation",async({page})=>{
  await page.setViewportSize({width:1440,height:900});await mock(page);
  await page.goto("/");
- await expect(page.getByRole("heading",{name:"Система. Под наблюдением."})).toBeVisible();
+ await expect(page.getByRole("heading",{name:/Вся система/})).toBeVisible();
  await expect(page.getByRole("row",{name:/Ops Watch/})).toBeVisible();
- await expect(page.getByText("H-01 Ops AI / полный агент",{exact:true})).toBeVisible();
- await expect(page.locator('img[src="/brand.webp"]').first()).toHaveJSProperty("complete",true);
- const imageLoaded=await page.locator('img[src="/brand.webp"]').first().evaluate(x=>x.naturalWidth>0);
+ await expect(page.getByRole("button",{name:/Полный AI Agent/})).toBeVisible();
+ await expect(page.locator('img[src="/orbit-brand.svg"]').first()).toHaveJSProperty("complete",true);
+ const imageLoaded=await page.locator('img[src="/orbit-brand.svg"]').first().evaluate(x=>x.naturalWidth>0);
  expect(imageLoaded).toBe(true);
  expect((await page.request.get("/favicon.png")).status()).toBe(200);
  await page.screenshot({path:resolve(folder,"atlas-1440.png"),fullPage:true});
@@ -69,9 +69,9 @@ test("approved C+B Atlas with C+A fonts, working asset and navigation",async({pa
 });
 test("approved typography is sans-serif throughout Atlas",async({page})=>{
  await page.setViewportSize({width:1440,height:900});await mock(page);await page.goto("/");
- const families=await page.locator(".atlas-hero h1, .atlas-nav button, .atlas-section-nav .nav-link, .stat-tile strong, .registry-panel h2").evaluateAll(els=>els.map(el=>getComputedStyle(el).fontFamily));
+ const families=await page.locator(".orbit-intro-copy h1, .atlas-section-nav .nav-link, .orbit-stats strong, .registry-panel h2").evaluateAll(els=>els.map(el=>getComputedStyle(el).fontFamily));
  for(const family of families){expect(family).not.toContain("Georgia");expect(family.toLowerCase()).toContain("sans-serif");}
- await expect(page.getByRole("heading",{name:"Система. Под наблюдением."})).toBeVisible();
+ await expect(page.getByRole("heading",{name:/Вся система/})).toBeVisible();
  await expect(page.getByRole("table")).toBeVisible();
  await expect(page.getByText("История инцидентов и доставки уведомлений пока не подключена.")).toBeVisible();
  await page.screenshot({path:resolve(folder,"atlas-fonts-1440.png"),fullPage:true});
@@ -84,7 +84,7 @@ test("login design is a preview only, OAuth button disabled",async({page})=>{
  await expect(page.getByRole("button",{name:/Войти через GitHub/})).toBeDisabled();
  await expect(page.getByText(/OAuth не включён/)).toBeVisible();
  const logo=page.locator(".orbit-auth-brand img");
- await expect(logo).toHaveJSProperty("naturalWidth",1096);
+ await expect(logo).toHaveJSProperty("naturalWidth",128);
  await assertDesktopCaption(page);
  await page.getByRole("button",{name:"Этап 02: Проверка доступа"}).click();
  await expect(page.getByText(/Сервер проверяет разрешения/)).toBeVisible();
@@ -97,7 +97,7 @@ for(const width of [320,360,393,430,750,768,1920]){
   await expect(page.getByRole("table")).toBeVisible();
   await assertNoOverflow(page);
   if(width===393)await page.screenshot({path:resolve(folder,"atlas-393.png"),fullPage:true});
-  await expect(page.getByRole("heading",{name:"Система. Под наблюдением."})).toBeVisible();
+  await expect(page.getByRole("heading",{name:/Вся система/})).toBeVisible();
   await assertNoOverflow(page);
   await page.goto("/?preview=login");
   await expect(page.getByRole("button",{name:/Войти через GitHub/})).toBeDisabled();
@@ -117,7 +117,7 @@ test("keyboard-only Atlas navigation retains labels and read-only boundaries",as
  await page.setViewportSize({width:360,height:780});await mock(page);
  await page.goto("/");
  await expect(page.locator("html")).toHaveAttribute("lang","ru");
- const qa=page.locator(".atlas-section-nav").getByRole("button",{name:"QA и CI"});
+ const qa=page.locator(".orbit-app-mobilebar").getByRole("button",{name:"QA / CI"});
  await qa.focus();
  await expect(qa).toBeFocused();
  await qa.press("Enter");
@@ -185,7 +185,7 @@ test("owner GitHub session can log out and loses snapshot view",async({page})=>{
   return route.fulfill({status:204,body:""});
  });
  await page.goto("/");
- await expect(page.getByRole("heading",{name:"Система. Под наблюдением."})).toBeVisible();
+ await expect(page.getByRole("heading",{name:/Вся система/})).toBeVisible();
  await expect(page.getByRole("table")).toBeVisible();
  await page.getByRole("button",{name:"Выйти"}).click();
  await expect(page.getByRole("heading",{name:"Вход в систему"})).toBeVisible();
