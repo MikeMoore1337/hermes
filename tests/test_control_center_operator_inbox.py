@@ -127,7 +127,7 @@ class InboxTests(unittest.TestCase):
         def entry(number, run_id, kind, action, outcome="none"):
             return {
                 "id": run_id, "workflow_id": OBSERVE_WORKFLOW_ID,
-                "name": OBSERVE_WORKFLOW, "repository": {"full_name": "MikeMoore1337/hermes"},
+                "name": f"observe:{kind}:{action}:{number}:{outcome}:{run_id}", "repository": {"full_name": "MikeMoore1337/hermes"},
                 "event": kind, "status": "completed", "conclusion": "success",
                 "display_title": f"observe:{kind}:{action}:{number}:{outcome}:{run_id}",
                 "created_at": (now-dt.timedelta(minutes=2)).isoformat(),
