@@ -132,3 +132,48 @@ test("visual evidence: login preview remains non-interactive at mobile and deskt
   expect(denied, "Unexpected OAuth or external network request").toEqual([]);
   expect(errors, "Uncaught browser errors").toEqual([]);
 });
+
+
+test("visual evidence: integrated BRC shares Orbit shell with synthetic devices", async ({page}, testInfo) => {
+  test.setTimeout(180_000);
+  const denied=await isolateEvidenceNetwork(page);
+  const pageErrors=[];
+  page.on("pageerror",error=>pageErrors.push(error.message));
+  const devices=["H15 Windows permanent sandbox","H15 Hermes VPS sandbox","H15 YFC VPS sandbox"];
+  const projects=[["hermes","main"],["your-fitness-coach","master"],
+    ["second-brain","main"],["ai-development-toolkit","main"]];
+  await page.route("**/api/providers/hermes-brc",route=>route.fulfill({
+    status:200,contentType:"application/json",body:JSON.stringify({
+      schema:1,source:"hermes_brc_mcp",status:"online",
+      observed_at:new Date().toISOString(),execution_verified:false,
+      native_host_access:false,onboarding_enabled:false,
+      devices:devices.map(name=>({name,status:"online",last_seen_age_seconds:8,
+        command_execution:"not_verified"})),
+      workspaces:projects.map(([name,branch])=>({name,branch,
+        root:"/workspace/projects/"+name,git_verified:false,
+        state:"reachable_not_git_verified"}))
+    })
+  }));
+  await syntheticOverview(page);
+  await page.emulateMedia({reducedMotion:"reduce"});
+  for(const width of [320,393,768,1440]){
+    await page.setViewportSize({width,height:width<768?844:900});
+    await page.goto("/hermes-brc");
+    await expect(page.getByRole("main")).toHaveCount(1);
+    await expect(page.locator(".orbit-topbar")).toBeVisible();
+    await expect(page.getByRole("heading",{name:"Рабочие пространства"})).toBeVisible();
+    await expect(page.locator("#brc-devices li")).toHaveCount(3);
+    await page.locator('button[data-project="your-fitness-coach"]').click();
+    await expect(page.locator("#brc-path")).toHaveText("/workspace/projects/your-fitness-coach");
+    await expect(page.locator("body")).not.toContainText("D:\\Pet-projects");
+    const geometry=await page.evaluate(()=>({
+      inner:innerWidth,scroll:document.documentElement.scrollWidth
+    }));
+    expect(geometry.scroll,"BRC overflow at "+width).toBeLessThanOrEqual(geometry.inner+1);
+    await testInfo.attach("orbit-brc-integrated-"+width+".png",{
+      body:await page.screenshot({fullPage:true,animations:"disabled"}),contentType:"image/png"
+    });
+  }
+  expect(pageErrors).toEqual([]);
+  expect(denied).toEqual([]);
+});
