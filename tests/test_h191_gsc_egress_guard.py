@@ -218,6 +218,9 @@ class H191GoogleEgressGuardTests(TestCase):
             item.exists.return_value = False
             item.is_symlink.return_value = False
         dropin.parent.is_symlink.return_value = False
+        policy.parent.lstat.return_value.st_uid = 0
+        policy.parent.lstat.return_value.st_gid = GID
+        policy.parent.lstat.return_value.st_mode = 0o40750
         dropin.parent.stat.return_value.st_uid = 0
         dropin.parent.stat.return_value.st_mode = 0o40755
         def count_nft(*args): order.append("nft")
