@@ -98,7 +98,7 @@ class InboxHttpTests(unittest.TestCase):
             "name": OBSERVE_WORKFLOW,
             "repository": {"full_name": "MikeMoore1337/hermes"},
             "event": "issues", "status": "completed", "conclusion": "success",
-            "display_title": "observe:issues:opened:712:none",
+            "display_title": "observe:issues:opened:712:none:9001",
             "created_at": clock.isoformat(),
             "body": "NEVER_COPY_SECRET_HERE",
         }
