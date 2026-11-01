@@ -264,17 +264,14 @@ function OperatorApp({authMode,onLogout}){
     <div className="atlas-section-nav" onClickCapture={event=>{
       const widget=event.target.closest(".ai272-nav,.quota295-nav,.infra294-nav");
       if(!widget)return;
+      if(window.location.pathname!=="/")window.history.pushState({widget:true},"","/");
       setActiveWidget(widget.matches(".ai272-nav")?"AI Usage Analytics":
        widget.matches(".quota295-nav")?"Квоты и инструменты":"Инфраструктура");
       if(menuOpen)setMenuOpen(false);
       const target=widget.matches(".ai272-nav")?".ai272-panel":
        widget.matches(".quota295-nav")?".quota295-panel":".infra294-panel";
-      requestAnimationFrame(()=>{
-       const panel=document.querySelector(target);
-       if(panel&&!panel.hidden){
-        panel.scrollIntoView({block:"start",behavior:window.matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth"});
-       }
-      });
+      // The selected widget becomes the main content, never a panel below Overview.
+      requestAnimationFrame(()=>document.getElementById("main-content")?.focus());
      }}>
      <Nav view={view} mode={authMode} onView={onView} activeWidget={activeWidget}/>
      {view!=="commander"&&<div className="orbit-side-refresh">
@@ -290,7 +287,9 @@ function OperatorApp({authMode,onLogout}){
    <div className="orbit-content">
     <Header view={view} authMode={authMode} onLogout={onLogout} onMenu={()=>setMenuOpen(v=>!v)} menuOpen={menuOpen} activeWidget={activeWidget}/>
     <main id="main-content" className="orbit-main" tabIndex={-1}>
-     {view==="all"?<><OrbitOverview snapshot={snapshot} error={error} onView={onView} onRefresh={reload} busy={busy} Registry={Registry}
+     {activeWidget?<section className="orbit-widget-only" aria-label={activeWidget}>
+      <h1 className="sr-only">{activeWidget}</h1><div className="center-area"/></section>:
+      view==="all"?<><OrbitOverview snapshot={snapshot} error={error} onView={onView} onRefresh={reload} busy={busy} Registry={Registry}
       registryProps={{snapshot,view,search,setSearch,filter,setFilter}}/><div className="center-area orbit-compact-codex" aria-label="Данные Codex и дополнительные панели"><CodexPanel compact/></div></>:
       <div className="orbit-module-shell">
        {view!=="inbox"&&view!=="articles"&&view!=="commander"&&<OrbitModuleIntro view={view}/>}
