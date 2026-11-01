@@ -53,7 +53,7 @@ class MainCIScheduleTests(unittest.TestCase):
                 with patch.object(watch_once.observe_feed, "poll",
                                   side_effect=GithubPublicError("github_forbidden_or_rate_limited")):
                     with patch("sys.stdout", new_callable=io.StringIO) as out:
-                        self.assertEqual(watch_once.main(["--execute", "--observe-feed"]), 0)
+                        self.assertEqual(watch_once.main(["--execute"]), 0)
         store.assert_called_once()
         result = __import__("json").loads(out.getvalue())
         self.assertEqual(result["signal"], "FAILURE")
