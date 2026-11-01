@@ -473,12 +473,27 @@ def install(uid: int, gid: int) -> None:
         raise GuardError("preexisting_policy_files")
     if _run(["systemctl", "show", "-P", "DropInPaths", UNIT]):
         raise GuardError("unreviewed_existing_service_dropins")
-    pins = _current_pins(uid)
-    _nft_create(pins, uid)  # Drop all other hermes-gsc traffic BEFORE widening unit.
+    private_dir = POLICY.parent
+    try:
+        meta = private_dir.lstat()
+    except OSError:
+        raise GuardError("private_policy_directory_missing") from None
+    if (not stat.S_ISDIR(meta.st_mode) or meta.st_uid != 0
+            or meta.st_gid != gid or stat.S_IMODE(meta.st_mode) != 0o750):
+        raise GuardError("private_policy_directory_unsafe")
     folder = DROPIN.parent
     if folder.is_symlink():
         raise GuardError("dropin_directory_symlink")
+    created_folder = not folder.exists()
+    if not created_folder:
+        meta = folder.stat()
+        if meta.st_uid != 0 or stat.S_IMODE(meta.st_mode) != 0o755:
+            raise GuardError("dropin_directory_unsafe")
+    pins = _current_pins(uid)
+    _nft_create(pins, uid)  # Drop UID traffic BEFORE widening the unit.
     folder.mkdir(mode=0o755, exist_ok=True)
+    if created_folder:
+        os.chmod(folder, 0o755)  # Only our new directory; honor restrictive umask.
     if folder.stat().st_uid != 0 or stat.S_IMODE(folder.stat().st_mode) != 0o755:
         raise GuardError("dropin_directory_unsafe")
     _store_text(POLICY, _pins_record(pins, uid, gid), 0o600)
