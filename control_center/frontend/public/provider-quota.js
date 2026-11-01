@@ -277,7 +277,9 @@
     if(!nav||!target)return;
     if(!tab||!tab.isConnected){
       tab=add("button","nav-link quota295-nav",nav);tab.type="button";
-      add("span","nav-number",tab,"09");add("span","",tab,"Квоты и инструменты");
+      add("span","nav-number",tab,"09");
+      const icon=window.HermesOrbitIcons?.make("quota");if(icon)tab.append(icon);
+      add("span","",tab,"Квоты и инструменты");
       tab.onclick=show;
     }
     if(!section||!section.isConnected){
@@ -286,7 +288,9 @@
       const head=add("div","quota295-head",section);
       const title=add("div","",head);
       add("span","eyebrow",title,"H-15 / #295");
-      add("h2","",title,"Ресурсы AI и инструменты");
+      const titleHeading=add("h2","",title,"Ресурсы AI и инструменты");
+      const titleIcon=window.HermesOrbitIcons?.make("quota","heading");
+      if(titleIcon)titleHeading.prepend(titleIcon);
       add("p","quota295-note",title,
         "Каждому сервису - отдельная карточка. Неизвестное потребление не равно нулю.");
       const button=add("button","quota295-reload",head,"Обновить");button.type="button";button.onclick=refresh;

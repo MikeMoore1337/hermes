@@ -67,6 +67,7 @@ ASSETS = {
     "/desktop-commander-archive.css": ("desktop-commander-archive.css", "text/css; charset=utf-8"),
     "/hermes-brc.js": ("hermes-brc.js", "text/javascript; charset=utf-8"),
     "/hermes-brc.css": ("hermes-brc.css", "text/css; charset=utf-8"),
+    "/orbit-ui-icons.js": ("orbit-ui-icons.js", "text/javascript; charset=utf-8"),
     "/ai-analytics.js": ("ai-analytics.js", "text/javascript; charset=utf-8"),
     "/ai-analytics.css": ("ai-analytics.css", "text/css; charset=utf-8"),
     "/infrastructure.js": ("infrastructure.js", "text/javascript; charset=utf-8"),
@@ -539,6 +540,7 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
                         if authenticated and parsed.query != "preview=login":
                             # Load operator-only widgets on authorized pages only.
                             raw = raw.replace(b"</head>", (
+                                b'<script src="/orbit-ui-icons.js" defer></script>'
                                 b'<link rel="stylesheet" href="/ai-analytics.css">'
                                 b'<script src="/ai-analytics.js" defer></script>'
                                 b'<link rel="stylesheet" href="/infrastructure.css">'

@@ -89,6 +89,23 @@ class StaticContracts(unittest.TestCase):
         self.assertNotIn(b'brc-shell', brc)
         self.assertIn("default-src 'none'", brc_headers["Content-Security-Policy"])
 
+    def test_unified_orbit_icons_are_local_and_owner_only_on_the_document(self):
+        status, headers, body = self.get("/orbit-ui-icons.js")
+        self.assertEqual(status, 200)
+        self.assertEqual(headers["Content-Type"], "text/javascript; charset=utf-8")
+        self.assertEqual(headers["Cache-Control"], "private, no-cache")
+        self.assertIn(b"HermesOrbitIcons", body)
+        self.assertNotIn(b"fetch(", body)
+        self.assertNotIn(b"eval(", body)
+        self.assertIn("script-src 'self'", headers["Content-Security-Policy"])
+        status, headers, root = self.get("/")
+        self.assertEqual(status, 200)
+        self.assertIn(b'src="/orbit-ui-icons.js" defer', root)
+        self.assertLess(root.index(b'/orbit-ui-icons.js'), root.index(b'/ai-analytics.js'))
+        preview = self.get("/?preview=login")[2]
+        self.assertNotIn(b'/orbit-ui-icons.js', preview)
+        self.assertEqual(self.get("/orbit-ui-icons.js?debug=1")[0], 404)
+
     def test_static_assets_revalidate_without_caching_html_or_sw(self):
         status, headers, body = self.get("/app.js")
         self.assertEqual(status, 200)
