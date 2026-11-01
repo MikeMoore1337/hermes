@@ -142,6 +142,7 @@ function mount(){
   draw();
  }
 }
+window.addEventListener("hermes:orbit-view-change",hide);
 document.addEventListener("click",e=>{
  if(active&&e.target.closest(".nav-link:not(.ai272-nav),.atlas-nav button"))hide();
 },true);
