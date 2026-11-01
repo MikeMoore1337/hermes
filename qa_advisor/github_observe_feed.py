@@ -196,7 +196,9 @@ def from_runs(response: object, *, now: datetime) -> dict:
 def poll(*, now: datetime, opener=None, token_file: Path = TOKEN_FILE) -> dict:
     """Exactly one fixed GET, with the existing protected Actions:read token."""
     token = _private_token(token_file)
-    response = get_json(API_PATH, opener=opener, token=token)
+    # Legacy main CI read may take 12s; cap this extra GET at 5s so the
+    # existing 22s systemd oneshot remains within its original budget.
+    response = get_json(API_PATH, opener=opener, token=token, timeout=5)
     return from_runs(response, now=now)
 
 
