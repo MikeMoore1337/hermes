@@ -147,17 +147,25 @@ def from_runs(response: object, *, now: datetime) -> dict:
         if (type(run.get("workflow_id")) is not int
                 or run["workflow_id"] != OBSERVE_WORKFLOW_ID
                 or type(run.get("repository")) is not dict
-                or run["repository"].get("full_name") != REPO
-                or run.get("name") != OBSERVE_WORKFLOW):
+                or run["repository"].get("full_name") != REPO):
             raise FeedRefused("workflow_identity_invalid")
         if run.get("status") != "completed" or run.get("conclusion") != "success":
             continue  # A failed observer provides NO action recommendation.
-        name = run.get("display_title")
-        if type(name) is not str or len(name) > 120:
+        name = run.get("name")
+        display_title = run.get("display_title")
+        # GitHub replaces BOTH 'name' and 'display_title' when run-name
+        # is configured. Before #717, name was the static workflow name
+        # and the display title was attacker-controlled Issue/PR text.
+        if name == OBSERVE_WORKFLOW:
+            continue
+        if (type(name) is not str or type(display_title) is not str
+                or len(name) > 120 or len(display_title) > 120):
             continue
         match = TITLE.fullmatch(name)
         if match is None:
-            continue  # Historical untrusted Issue/PR titles never become events.
+            continue
+        if name != display_title:
+            raise FeedRefused("workflow_run_name_mismatch")
         kind, action, number_text, outcome, signed_run_id = match.groups()
         run_id = _ident(run.get("id"))
         # Older workflow runs used PR/Issue titles (attacker-editable).

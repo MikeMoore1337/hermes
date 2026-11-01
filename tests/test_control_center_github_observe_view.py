@@ -18,7 +18,7 @@ def sample():
     run = {
         "id": 1998,
         "workflow_id": qa.OBSERVE_WORKFLOW_ID,
-        "name": qa.OBSERVE_WORKFLOW,
+        "name": "observe:pull_request_target:opened:512:none:1998",
         "repository": {"full_name": qa.REPO},
         "event": "pull_request_target", "status": "completed",
         "conclusion": "success",
