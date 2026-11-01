@@ -200,7 +200,7 @@ def _dns_nameservers() -> list[str]:
 
 def public_preview_evidence() -> dict:
     """Public GET and DNS only, no Google OAuth or GSC private resources."""
-    if os.uname().nodename.split(".")[0] != HOST:
+    if socket.gethostname().split(".")[0] != HOST:
         raise CandidateError("wrong_host")
     sources = {"goog": GOOG_URL, "cloud": CLOUD_URL}
     result: dict = {
