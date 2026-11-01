@@ -166,49 +166,53 @@ class H191GoogleEgressGuardTests(TestCase):
             create.assert_called_once_with(PINS, UID)
 
     def test_install_rejects_preexisting_files_before_nft(self):
+        policy = mock.Mock()
+        policy.exists.return_value = True
         with mock.patch.object(guard, "_unit_state"), \
              mock.patch.object(guard, "_key_metadata"), \
-             mock.patch.object(guard.POLICY, "exists", return_value=True), \
+             mock.patch.object(guard, "POLICY", policy), \
              mock.patch.object(guard, "_nft_create") as nft:
             with self.assertRaisesRegex(guard.GuardError, "preexisting_policy_files"):
                 guard.install(UID, GID)
             nft.assert_not_called()
 
     def test_install_stages_guard_before_widening_systemd(self):
-        from unittest.mock import call
         order = []
+        policy, unit, dropin = (mock.Mock() for _ in range(3))
+        for item in (policy, unit, dropin):
+            item.exists.return_value = False
+            item.is_symlink.return_value = False
+        dropin.parent.is_symlink.return_value = False
+        dropin.parent.stat.return_value.st_uid = 0
+        dropin.parent.stat.return_value.st_mode = 0o40755
         def count_nft(*args): order.append("nft")
         def count_files(path, *_args):
-            if path == guard.POLICY: order.append("pins")
-            elif path == guard.GUARD_FILE: order.append("guard_unit")
-            elif path == guard.DROPIN: order.append("dropin")
+            if path is policy: order.append("pins")
+            elif path is unit: order.append("guard_unit")
+            elif path is dropin: order.append("dropin")
         with mock.patch.object(guard, "_unit_state"), \
              mock.patch.object(guard, "_key_metadata"), \
-             mock.patch.object(guard.POLICY, "exists", return_value=False), \
-             mock.patch.object(guard.POLICY, "is_symlink", return_value=False), \
-             mock.patch.object(guard.DROPIN, "exists", return_value=False), \
-             mock.patch.object(guard.DROPIN, "is_symlink", return_value=False), \
-             mock.patch.object(guard.GUARD_FILE, "exists", return_value=False), \
-             mock.patch.object(guard.GUARD_FILE, "is_symlink", return_value=False), \
-             mock.patch.object(guard.DROPIN.parent, "is_symlink", return_value=False), \
-             mock.patch.object(guard.DROPIN.parent, "mkdir"), \
-             mock.patch.object(guard.DROPIN.parent, "stat") as stat_mock, \
+             mock.patch.object(guard, "POLICY", policy), \
+             mock.patch.object(guard, "GUARD_FILE", unit), \
+             mock.patch.object(guard, "DROPIN", dropin), \
              mock.patch.object(guard, "_current_pins", return_value=PINS), \
              mock.patch.object(guard, "_nft_create", side_effect=count_nft), \
              mock.patch.object(guard, "_store_text", side_effect=count_files), \
-             mock.patch.object(guard, "_run") as run, \
+             mock.patch.object(guard, "_run", side_effect=["", "", "no"]), \
              mock.patch.object(guard, "_verify_files"), \
              mock.patch.object(guard, "_nft_state", return_value="EXACT"):
-            stat_mock.return_value.st_uid = 0
-            stat_mock.return_value.st_mode = 0o40755
-            run.side_effect = ["", "", "no"]
             guard.install(UID, GID)
         self.assertEqual(order, ["nft", "pins", "guard_unit", "dropin"])
 
     def test_owner_rollback_restores_default_deny_before_dropping_owned_nft(self):
         events = []
-        def record_unlink(path):
-            return lambda: events.append(path.name)
+        policy, unit, dropin = (mock.Mock() for _ in range(3))
+        for item in (policy, unit, dropin):
+            item.is_file.return_value = True
+            item.is_symlink.return_value = False
+        policy.unlink.side_effect = lambda: events.append("policy")
+        unit.unlink.side_effect = lambda: events.append("guard")
+        dropin.unlink.side_effect = lambda: events.append("dropin")
         def run_cmd(parts, **kwargs):
             events.append("systemctl" if parts[0] == "systemctl" else "nft_delete")
             if "PrivateNetwork" in parts:
@@ -220,32 +224,26 @@ class H191GoogleEgressGuardTests(TestCase):
              mock.patch.object(guard, "_read_record", return_value=PINS), \
              mock.patch.object(guard, "_verify_files"), \
              mock.patch.object(guard, "_nft_state", side_effect=["EXACT", "MISSING"]), \
-             mock.patch.object(guard.DROPIN, "is_file", return_value=True), \
-             mock.patch.object(guard.DROPIN, "is_symlink", return_value=False), \
-             mock.patch.object(guard.DROPIN, "unlink", side_effect=record_unlink(guard.DROPIN)), \
-             mock.patch.object(guard.GUARD_FILE, "is_file", return_value=True), \
-             mock.patch.object(guard.GUARD_FILE, "is_symlink", return_value=False), \
-             mock.patch.object(guard.GUARD_FILE, "unlink", side_effect=record_unlink(guard.GUARD_FILE)), \
-             mock.patch.object(guard.POLICY, "is_file", return_value=True), \
-             mock.patch.object(guard.POLICY, "is_symlink", return_value=False), \
-             mock.patch.object(guard.POLICY, "unlink", side_effect=record_unlink(guard.POLICY)), \
+             mock.patch.object(guard, "POLICY", policy), \
+             mock.patch.object(guard, "GUARD_FILE", unit), \
+             mock.patch.object(guard, "DROPIN", dropin), \
              mock.patch.object(guard, "_run", side_effect=run_cmd):
             guard.rollback(UID, GID)
-        self.assertEqual(events[:3], [guard.DROPIN.name, guard.GUARD_FILE.name,
-                                      guard.POLICY.name])
+        self.assertEqual(events[:3], ["dropin", "guard", "policy"])
         self.assertEqual(events[-1], "nft_delete")
         self.assertGreater(events.index("nft_delete"), events.index("systemctl"))
 
     def test_rollback_unsafe_files_refuse_before_changes(self):
+        dropin = mock.Mock()
+        dropin.is_file.return_value = False
         with mock.patch.object(guard, "_unit_state"), \
              mock.patch.object(guard, "_read_record", return_value=PINS), \
              mock.patch.object(guard, "_verify_files"), \
              mock.patch.object(guard, "_nft_state", return_value="EXACT"), \
-             mock.patch.object(guard.DROPIN, "is_file", return_value=False), \
-             mock.patch.object(guard.DROPIN, "unlink") as remove:
+             mock.patch.object(guard, "DROPIN", dropin):
             with self.assertRaisesRegex(guard.GuardError, "rollback_file_untrusted"):
                 guard.rollback(UID, GID)
-            remove.assert_not_called()
+            dropin.unlink.assert_not_called()
 
     def test_no_activation_or_credentials_open_in_source(self):
         content = Path(guard.__file__).read_text(encoding="utf-8")
