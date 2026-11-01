@@ -56,3 +56,31 @@ workflow даёт \`UNKNOWN\`, а не ложное OK.
 После [PR #88](https://github.com/MikeMoore1337/hermes/pull/88) и успешного CI установлены `hermes-qa-watch.service` и `hermes-qa-watch.timer` с частотой 15 минут и без повторов/догоняющих запусков. Первый реальный запрос вернул `SUCCESS`, записал только минимальный сигнал в `/var/lib/hermes-qa-watch/ci-signal.json` (`0600 root:root`). Ops Watch collector вручную проверен после установки: `active_codes=[]`, queue 0, новостной конвейер и Telegram sender активны. [Доказательства и rollback](../docs/audits/H-04-private-ci-watch-vps-2026-10-15.md).
 
 Появление нового CI failure ведёт к событию `ci_failed` в **том же уже разрешённом** Telegram-канале Ops Watch. Пока настоящий красный `main` workflow не возник, такая автоматическая доставка не доказана. При UNKNOWN/RUNNING и устаревшем ответе API ранее открытый инцидент не закрывается. Read-only API, без доступа к сырым логам или изменению GitHub.
+
+## GitHub Events: наблюдение за задачами и PR (Issue #707)
+
+В дополнение к прежнему 15-минутному CI-наблюдателю добавлен **событийный**, а не периодический режим: [`.github/workflows/github-event-observe.yml`](../.github/workflows/github-event-observe.yml) обрабатывает события GitHub от репозитория Hermes. Он запускается в бесплатном GitHub Actions на `issues.opened/reopened`, `issue_comment.created`, `pull_request_target.opened/reopened/synchronize/ready_for_review` и `workflow_run.completed` **только для существующего Hermes repository checks на main**. Внешние REST/MCP запросы и новые PAT не требуются. Сам CI-наблюдатель `watch_once`, его защищённый токен и действующий таймер **не изменены**.
+
+Запуск события выполняет `python3 -m qa_advisor.github_event_observe --observe --event "$GITHUB_EVENT_NAME"` над единственным переданным GitHub JSON-файлом. Используется строго основной исходный код (`main`) с закреплённым для события SHA; `pull_request_target` никогда не исполняет код участника PR. GITHUB_TOKEN не передаётся скрипту; разрешение Actions ограничено `contents: read` и ничего не записывает в GitHub. Результат находится **только в журнале и Summary соответствующего GitHub Actions запуска**, а не в Hermes Control Center.
+
+| Событие | Безопасное предложение | Состояние |
+| --- | --- | --- |
+| Создана/переоткрыта задача | `REVIEW_ISSUE` | `WOULD_REVIEW` |
+| Новый комментарий в Issue или PR | `REVIEW_FOLLOWUP` | `WOULD_REVIEW` |
+| Создан/обновлён PR в main | `REVIEW_PR` | `WOULD_REVIEW` |
+| Сбой обязательного CI на main | `REVIEW_CI_FAILURE` | `WOULD_REVIEW` |
+| Успех обязательного CI на main | `NONE` | `NO_REVIEW` |
+| Отменённый/неподтверждённый CI | `REVIEW_CI_UNCERTAIN` | `WOULD_REVIEW` |
+
+Вывод содержит только фиксированные коды, числовой ID/номер и хеш `observation_key`. Исходные тексты Issue/PR/комментариев, произвольные ссылки, журналы CI и секреты **не передаются**. Все записи возвращают `mode=OBSERVE_ONLY`, `owner_approval=NOT_GRANTED`, `action_authorized=false`, `execution_authorized=false`, `model_calls=0`, `state_writes=0`. `observation_key` стабилен для повтора одного GitHub Actions run ID; **глобального дедупа между разными событиями нет**, поскольку новой БД не создаётся. Даже `WOULD_REVIEW` не означает вызов агента. Никакие новые действия в Hermes, YFC и Second Brain не выполняются.
+
+Для локального воспроизводимого теста без GitHub и моделей:
+
+```bash
+python3 -m unittest tests.test_github_event_observe -v
+python3 -m qa_advisor.github_event_observe
+```
+
+Вторая команда без `--observe` возвращает `NOT_EXECUTED` и ничего не читает. Чтобы проверить фикстуру явным образом, использовать `--observe --event issues --event-file /absolute/path/event.json --run-id 1` с вымышленным JSON; он должен содержать корректные `repository.full_name`, `action` и типизированный объект события.
+
+**Приёмка:** обязательны exact-head GitHub CI, main CI и хотя бы один настоящий запуск GitHub Actions observer после слияния. Эти проверки не доказывают наличие работающего автономного Hermes Agent или передачу разрешения от владельца. Будущий автоматический исполнитель - отдельная работа с подтверждёнными OS/инструментальными полномочиями, владельческими разрешениями и квотами. Источник архитектурной идеи - [DeepSeek research prototype](https://github.com/deepseek-ai/dsh-superagent-prototype/tree/6337fc823ce20251c8de8085948165c81aaa701e), без подключения его runtime.
