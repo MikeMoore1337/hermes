@@ -205,6 +205,48 @@ class H191GoogleEgressGuardTests(TestCase):
             guard.install(UID, GID)
         self.assertEqual(order, ["nft", "pins", "guard_unit", "dropin"])
 
+    def test_owner_rollback_restores_default_deny_before_dropping_owned_nft(self):
+        events = []
+        def record_unlink(path):
+            return lambda: events.append(path.name)
+        def run_cmd(parts, **kwargs):
+            events.append("systemctl" if parts[0] == "systemctl" else "nft_delete")
+            if "PrivateNetwork" in parts:
+                return "yes"
+            if "RestrictAddressFamilies" in parts:
+                return "AF_UNIX"
+            return ""
+        with mock.patch.object(guard, "_unit_state"), \
+             mock.patch.object(guard, "_read_record", return_value=PINS), \
+             mock.patch.object(guard, "_verify_files"), \
+             mock.patch.object(guard, "_nft_state", side_effect=["EXACT", "MISSING"]), \
+             mock.patch.object(guard.DROPIN, "is_file", return_value=True), \
+             mock.patch.object(guard.DROPIN, "is_symlink", return_value=False), \
+             mock.patch.object(guard.DROPIN, "unlink", side_effect=record_unlink(guard.DROPIN)), \
+             mock.patch.object(guard.GUARD_FILE, "is_file", return_value=True), \
+             mock.patch.object(guard.GUARD_FILE, "is_symlink", return_value=False), \
+             mock.patch.object(guard.GUARD_FILE, "unlink", side_effect=record_unlink(guard.GUARD_FILE)), \
+             mock.patch.object(guard.POLICY, "is_file", return_value=True), \
+             mock.patch.object(guard.POLICY, "is_symlink", return_value=False), \
+             mock.patch.object(guard.POLICY, "unlink", side_effect=record_unlink(guard.POLICY)), \
+             mock.patch.object(guard, "_run", side_effect=run_cmd):
+            guard.rollback(UID, GID)
+        self.assertEqual(events[:3], [guard.DROPIN.name, guard.GUARD_FILE.name,
+                                      guard.POLICY.name])
+        self.assertEqual(events[-1], "nft_delete")
+        self.assertGreater(events.index("nft_delete"), events.index("systemctl"))
+
+    def test_rollback_unsafe_files_refuse_before_changes(self):
+        with mock.patch.object(guard, "_unit_state"), \
+             mock.patch.object(guard, "_read_record", return_value=PINS), \
+             mock.patch.object(guard, "_verify_files"), \
+             mock.patch.object(guard, "_nft_state", return_value="EXACT"), \
+             mock.patch.object(guard.DROPIN, "is_file", return_value=False), \
+             mock.patch.object(guard.DROPIN, "unlink") as remove:
+            with self.assertRaisesRegex(guard.GuardError, "rollback_file_untrusted"):
+                guard.rollback(UID, GID)
+            remove.assert_not_called()
+
     def test_no_activation_or_credentials_open_in_source(self):
         content = Path(guard.__file__).read_text(encoding="utf-8")
         for forbidden in (
