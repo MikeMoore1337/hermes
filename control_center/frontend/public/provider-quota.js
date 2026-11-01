@@ -298,6 +298,7 @@
       render();
     }
   }
+  window.addEventListener("hermes:orbit-view-change",hide);
   document.addEventListener("click",event=>{
     if(active && event.target.closest(".nav-link:not(.quota295-nav),.atlas-nav button"))hide();
   },true);
