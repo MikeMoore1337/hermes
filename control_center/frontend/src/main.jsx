@@ -228,7 +228,11 @@ function OperatorApp({authMode,onLogout}){
    <aside className={"orbit-rail"+(menuOpen?" is-open":"")} aria-label="Разделы и рабочее пространство">
     <div className="orbit-rail-brand"><Brand/></div>
     <div className="orbit-rail-label"><span>РАБОЧАЯ ПАНЕЛЬ</span><span>01-09</span></div>
-    <div className="atlas-section-nav">
+    <div className="atlas-section-nav" onClickCapture={event=>{
+      if(menuOpen&&event.target.closest(".ai272-nav,.quota295-nav,.infra294-nav")){
+       setMenuOpen(false);requestAnimationFrame(()=>document.getElementById("main-content")?.focus());
+      }
+     }}>
      <Nav view={view} mode={authMode} onView={onView}/>
      <div className="orbit-side-refresh">
       <button className="refresh-button" type="button" onClick={reload} disabled={busy}><RefreshCw size={16} className={busy?"spin":""}/> Обновить снимок</button>
@@ -244,7 +248,7 @@ function OperatorApp({authMode,onLogout}){
     <Header view={view} authMode={authMode} onLogout={onLogout} onMenu={()=>setMenuOpen(v=>!v)} menuOpen={menuOpen}/>
     <main id="main-content" className="orbit-main" tabIndex={-1}>
      {view==="all"?<><OrbitOverview snapshot={snapshot} error={error} onView={onView} onRefresh={reload} busy={busy} Registry={Registry}
-      registryProps={{snapshot,view,search,setSearch,filter,setFilter}}/><section className="orbit-compact-codex" aria-label="Сводка лимитов Codex"><CodexPanel compact/></section></>:
+      registryProps={{snapshot,view,search,setSearch,filter,setFilter}}/><div className="center-area orbit-compact-codex" aria-label="Данные Codex и дополнительные панели"><CodexPanel compact/></div></>:
       <div className="orbit-module-shell">
        <h1 className="sr-only">{navName(view)}</h1>
        {view==="articles"?<YfcArticles/>:view==="inbox"?<OperatorInbox/>:
