@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Hermes - крылатая H"><defs>
+ <linearGradient id="metal" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#E4F6FF"/><stop offset=".36" stop-color="#82CEFF"/><stop offset=".76" stop-color="#3B89C7"/><stop offset="1" stop-color="#83DFFF"/></linearGradient>
+ <linearGradient id="frost" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#F8FCFF"/><stop offset=".42" stop-color="#94D9FF"/><stop offset=".73" stop-color="#C7EEFF"/><stop offset="1" stop-color="#529BDE"/></linearGradient></defs>
+ <path d="M9 20L40 31V46L17 38Z" fill="url(#metal)"/>
+ <path d="M10 42L40 53V67L20 60Z" fill="url(#metal)"/>
+ <path d="M18 67L40 74V88L27 84Z" fill="url(#metal)"/>
+ <path d="M119 20L88 31V46L111 38Z" fill="url(#metal)"/>
+ <path d="M118 42L88 53V67L108 60Z" fill="url(#metal)"/>
+ <path d="M110 67L88 74V88L101 84Z" fill="url(#metal)"/>
+ <path d="M40 30L54 35V61H74V35L88 30V99L74 104V75H54V104L40 99Z" fill="url(#frost)"/>
+ <path d="M54 61H74V75H54Z" fill="#D9F5FF"/>
+ <path d="M43 33L50 36V96L43 94Z" fill="#427EB3" opacity=".6"/>
+ <path d="M85 33L78 36V96L85 94Z" fill="#4479AB" opacity=".5"/></svg>
