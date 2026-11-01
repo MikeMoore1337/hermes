@@ -18,8 +18,6 @@ from qa_advisor import github_observe_feed as observe_feed
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Hermes owner CI read-only one-shot monitor")
     parser.add_argument("--execute", action="store_true")
-    parser.add_argument("--observe-feed", action="store_true",
-                        help="Read one additional fixed Actions workflow metadata window")
     args = parser.parse_args(argv)
     if not args.execute:
         print(json.dumps({"status": "NOT_EXECUTED"}))
