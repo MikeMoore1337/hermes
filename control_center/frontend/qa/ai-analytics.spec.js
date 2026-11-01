@@ -1,4 +1,12 @@
 import {test,expect} from "@playwright/test";
+
+async function openOrbitWidget(page,label){
+ if((page.viewportSize()?.width||1280)<=980){
+  const more=page.locator(".orbit-app-mobilebar").getByRole("button",{name:"Ещё"});
+  if(await more.getAttribute("aria-expanded")!=="true")await more.click();
+ }
+ await page.getByRole("button",{name:label,exact:true}).click();
+}
 async function chooseOrbitView(page,label){
  const width=page.viewportSize()?.width||1280;
  if(width<=980){
@@ -38,7 +46,7 @@ for(const width of [393,1440]){
   await page.setViewportSize({width,height:900});
   await setup(page);
   await page.goto("/");
-  await page.getByRole("button",{name:"AI Usage Analytics"}).click();
+  await openOrbitWidget(page,"AI Usage Analytics");
   const panel=page.getByRole("region",{name:"AI Usage Analytics"});
   await expect(panel).toBeVisible();
   await expect(panel.locator("[data-summary]").getByText("1 900",{exact:true})).toBeVisible();
@@ -55,7 +63,7 @@ for(const width of [393,1440]){
 
 test("Unknown usage is never represented as observed zero",async({page})=>{
  await setup(page,true);await page.goto("/");
- await page.getByRole("button",{name:"AI Usage Analytics"}).click();
+ await openOrbitWidget(page,"AI Usage Analytics");
  const panel=page.getByRole("region",{name:"AI Usage Analytics"});
  await expect(panel.getByText("Нет данных",{exact:true}).first()).toBeVisible();
  await expect(panel.getByText("0",{exact:true})).toHaveCount(0);
@@ -64,7 +72,7 @@ test("Unknown usage is never represented as observed zero",async({page})=>{
 
 test("Period and read-only filters do not execute Codex",async({page})=>{
  await setup(page);await page.goto("/");
- await page.getByRole("button",{name:"AI Usage Analytics"}).click();
+ await openOrbitWidget(page,"AI Usage Analytics");
  const panel=page.getByRole("region",{name:"AI Usage Analytics"});
  await panel.getByLabel("Период").selectOption("24h");
  await expect(panel.locator("[data-summary]").getByText("1 900",{exact:true})).toBeVisible();
