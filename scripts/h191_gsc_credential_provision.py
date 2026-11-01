@@ -6,7 +6,6 @@ Run only on the approved VPS after a separate owner credential approval.
 from __future__ import annotations
 
 import argparse
-import grp
 import json
 import os
 import re
@@ -137,6 +136,7 @@ def _check_installed_release(
 
 def _account():
     try:
+        import grp
         import pwd
         acct = pwd.getpwnam("hermes-gsc")
     except (KeyError, ImportError):
@@ -191,7 +191,7 @@ def _check_credential_file(dirfd: int, uid: int, gid: int) -> bool:
 
 def install_key_exclusive(
     dirfd: int, raw: bytes, *, uid: int, gid: int,
-    chown: Callable[[int, int, int], None] = os.fchown,
+    chown: Callable[[int, int, int], None] | None = None,
 ) -> None:
     """Create 0400 key atomically, no overwrite, using trusted directory fd."""
     if _check_credential_file(dirfd, uid, gid):
@@ -204,7 +204,7 @@ def install_key_exclusive(
             | getattr(os, "O_CLOEXEC", 0),
             0o400, dir_fd=dirfd,
         )
-        chown(fd, uid, gid)
+        (chown or os.fchown)(fd, uid, gid)
         os.fchmod(fd, 0o400)
         with os.fdopen(fd, "wb") as output:
             fd = None
