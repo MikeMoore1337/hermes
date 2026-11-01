@@ -229,6 +229,7 @@ def nft_is_exact(payload: object, pins: tuple[str, ...], uid: int) -> bool:
         kind, expected_ips = expected_sets.pop(name)
         elems = item.get("elem")
         if (item.get("type") != kind or type(elems) is not list
+                or not all(type(x) is str for x in elems)
                 or len(elems) != len(expected_ips)
                 or set(elems) != set(expected_ips)):
             return False
@@ -416,8 +417,27 @@ def _lock():
         raise GuardError("lock_unavailable") from None
 
 
+
+def _base_unit_trusted() -> None:
+    """Prove original inactive GSC unit is DENY_ALL before nft mutation."""
+    expected = {
+        "PrivateNetwork": "yes",
+        "IPAddressDeny": "0.0.0.0/0 ::/0",
+        "IPAddressAllow": "",
+        "RestrictAddressFamilies": "AF_UNIX",
+        "User": USER,
+        "Group": USER,
+        "DropInPaths": "",
+    }
+    for key, value in expected.items():
+        if _run(["systemctl", "show", "-P", key, UNIT],
+                timeout=SYSTEMD_TIMEOUT) != value:
+            raise GuardError("original_service_boundary_drift")
+
+
 def install(uid: int, gid: int) -> None:
     _unit_state(install=True)
+    _base_unit_trusted()
     _key_metadata(uid, gid)
     if (POLICY.exists() or POLICY.is_symlink() or
             DROPIN.exists() or DROPIN.is_symlink() or
