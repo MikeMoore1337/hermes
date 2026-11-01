@@ -33,7 +33,9 @@ def main(argv: list[str] | None = None) -> int:
     # The extra read is isolated: an unavailable observer cannot erase or
     # convert the existing CI result into a false recovery.
     feed_status = "DISABLED"
-    if args.observe_feed:
+    # The deployed unit invokes --execute only. Keep the original systemd
+    # configuration unchanged and make the extra bounded read fail-safe.
+    if args.execute:
         try:
             receipt_feed = observe_feed.poll(now=datetime.now(UTC))
             observe_feed.save(receipt_feed)
