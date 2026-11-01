@@ -33,18 +33,27 @@ class MainDeployContractTests(unittest.TestCase):
             'PrivateNetwork=yes',
             'ProtectSystem=strict',
             'NoNewPrivileges=yes',
-            'RuntimeMaxSec=240',
+            'runtime_max_sec=240',
+            'runtime_max_sec=360',
+            '-p "RuntimeMaxSec=$runtime_max_sec"',
+            'if [[ "${1:-}" == "--full-unit-suite" ]]',
             'MemoryMax=1G',
             'TasksMax=128',
             'OFFLINE_UNIT_SUITE_FAILED_OR_TIMED_OUT',
             'isolated_python scripts/validate_repo.py',
             'isolated_python scripts/check_policy_index.py',
             'isolated_python scripts/check_markdown_links.py',
-            'isolated_python -m unittest discover -s tests -q',
+            'isolated_python --full-unit-suite -m unittest discover -s tests -q',
             'PRODUCTION_DEPLOYED=',
         ):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, script)
+        # The 360s exception is scoped to the full suite; preflight remains 240s.
+        self.assertEqual(script.count('runtime_max_sec=360'), 1)
+        self.assertEqual(script.count('--full-unit-suite'), 2)
+        self.assertNotIn('runtime_max_sec=0', script)
+        self.assertNotIn('RuntimeMaxSec=0', script)
+        self.assertNotIn('RuntimeMaxSec=infinity', script)
         self.assertNotIn('timeout 180s python3 -m unittest', script)
         self.assertNotIn('RuntimeMaxSec=infinity', script)
         self.assertNotIn('PrivateNetwork=no', script)
