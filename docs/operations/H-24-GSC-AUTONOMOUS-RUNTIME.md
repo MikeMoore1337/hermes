@@ -126,6 +126,64 @@ Google Cloud service account, не даёт согласия на расходы
 Владелец уже подтвердил Wordstat/YFC/GSC исторические данные;
 повторно эти evidence не запрашивать.
 
+## Preactivation - подготовка без OAuth и таймера
+
+После независимого dry-run используем reviewed
+[операторский установщик](../../deploy/h191-gsc-runtime-prepare.sh),
+который запускается **только из доставленного release** на
+Hermes VPS vps1777112993 через ранее разрешённый прямой SSH.
+Не использовать BRC, Commander или GitHub deploy-ключ как shell.
+
+Команды от root в разрешённом SSH-терминале (никаких секретов в аргументах):
+
+    set -euo pipefail
+    sha="$(cat /var/lib/hermes-main-deploy/last-success.sha)"
+    script="/opt/hermes-agent-owner/releases/main-$sha/deploy/h191-gsc-runtime-prepare.sh"
+    bash "$script" --plan
+    bash "$script" --prepare
+
+Установщик сначала проверяет совпадение release SHA/receipt, root ownership,
+отсутствие изменённых исходников и активных GSC units. Затем:
+
+- Создаёт только системного пользователя hermes-gsc, без интерактивного входа
+  и дополнительных групп, и каталоги /etc/hermes-gsc (root:hermes-gsc 0750),
+  /var/lib/hermes-gsc (hermes-gsc:hermes-gsc 0700),
+  /opt/hermes-gsc (root:root 0755).
+- Создаёт отдельный root-owned Python venv; устанавливает только binary
+  wheels из официального PyPI для google-auth==2.62.0 и requests==2.32.5
+  вместе с зависимостями; проверяет версии и pip check. Не запускает apt
+  и не изменяет Python других сервисов. Нужен установленный Python 3.10+
+  с venv; при отсутствии fail-closed.
+- Выполняет CLI dry-run от hermes-gsc без credentials, сети и записи snapshot.
+- Только после этого размещает выключенные systemd service/timer,
+  проверяет шаблоны и выполняет daemon-reload без start/enable/restart.
+  Существующие чужие конфигурации, symlink, небезопасные права и
+  непроверенные credentials отклоняются.
+
+Важная граница: **network policy пока DENY_ALL**, а не Google allowlist.
+Новый шаблон включает PrivateNetwork=yes, IPAddressDeny=any и
+RestrictAddressFamilies=AF_UNIX; никакой OAuth не работает и не должен
+работать до отдельного approved egress cutover. systemd IPAddressAllow
+не умеет ограничивать исходящие подключения по DNS-именам. Для допуска
+только oauth2.googleapis.com:443 и www.googleapis.com:443 необходима
+отдельная reviewed OS/transport policy и проверка её реального применения.
+Нельзя просто отключать сетевые ограничения для успешного live smoke.
+
+Credentials не создаются и не копируются установщиком. Для последующего
+ключа нужен отдельный защищённый канал и разрешение. Файл должен быть
+обычным (не symlink), принадлежать hermes-gsc, иметь права 0400/0600
+и соответствовать требованиям клиента; его содержимое не помещать в
+GitHub, shell history, CI, логи или ChatGPT.
+
+Прямые версии зависимостей закреплены. Транзитивный lock и wheel
+SHA256 пока не зафиксированы независимо: перед первым live-запуском
+следует провести проверку поставленных зависимостей.
+
+Результат H191_PREPARE=PASS подтверждает только OS identity, каталоги,
+venv, отключённые units и dry-run. Это не LIVE_GSC_SNAPSHOT_SAVED и
+не AUTONOMOUS_ACTIVE: фактический OAuth, 7 API-вызовов и автоматический tick
+требуют отдельных подтверждений и owner gates.
+
 ## Статусы исполнения и измерений
 
 Отдельно учитывать:
