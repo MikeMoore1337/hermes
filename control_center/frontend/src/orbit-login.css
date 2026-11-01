@@ -172,3 +172,12 @@
  .orbit-auth .orbit-line-signal{animation:none;stroke-dasharray:none}
  .orbit-auth *,.orbit-auth *:before,.orbit-auth *:after{transition-duration:.01ms!important;animation-duration:.01ms!important}
 }
+
+/* Orbit 3.0 accepted identity: vector winged H and purpose-drawn security icons. */
+.orbit-core-symbol img{width:clamp(49px,8vw,86px);height:auto;display:block;filter:drop-shadow(0 0 13px #5facdd80)}
+.orbit-access-emblem{width:72px;height:72px;background:#14314b;clip-path:none;border-color:#406d91}
+.orbit-access-emblem img{width:65px;height:65px;object-fit:contain}
+.orbit-node-name img{width:22px;height:22px;object-fit:contain;flex:none}
+.orbit-access-steps img{width:21px;height:21px;object-fit:contain;flex:none}
+.orbit-auth-core .orbit-core-symbol{display:grid;place-items:center}
+@media(max-width:520px){.orbit-core-symbol img{width:52px}.orbit-node-name img{width:16px;height:16px}.orbit-access-emblem{width:60px;height:60px}.orbit-access-emblem img{width:52px;height:52px}}
