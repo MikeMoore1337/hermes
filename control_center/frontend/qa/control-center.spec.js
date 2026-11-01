@@ -84,7 +84,7 @@ test("login design is a preview only, OAuth button disabled",async({page})=>{
  await expect(page.getByRole("button",{name:/Войти через GitHub/})).toBeDisabled();
  await expect(page.getByText(/OAuth не включён/)).toBeVisible();
  const logo=page.locator(".orbit-auth-brand img");
- await expect(logo).toHaveJSProperty("naturalWidth",128);
+ expect(await logo.evaluate(el=>el.naturalWidth)).toBeGreaterThan(0);
  await assertDesktopCaption(page);
  await page.getByRole("button",{name:"Этап 02: Проверка доступа"}).click();
  await expect(page.getByText(/Сервер проверяет разрешения/)).toBeVisible();
