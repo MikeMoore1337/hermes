@@ -211,7 +211,16 @@ function OperatorApp({authMode,onLogout}){
  const stats=counts(snapshot?.services||[]);
  const now=snapshot?formatTime(snapshot.generated_at):"Нет данных";
 
- const onView=key=>{setView(key);setMenuOpen(false);};
+ useEffect(()=>{
+  if(!menuOpen)return;
+  const onEscape=event=>{if(event.key==="Escape"){setMenuOpen(false);document.querySelector(".orbit-topbar-menu")?.focus();}};
+  window.addEventListener("keydown",onEscape);
+  return ()=>window.removeEventListener("keydown",onEscape);
+ },[menuOpen]);
+ const onView=key=>{
+  setView(key);setMenuOpen(false);
+  if(menuOpen)requestAnimationFrame(()=>document.getElementById("main-content")?.focus());
+ };
  return <div className="shell theme-orbit">
   <a href="#main-content" className="skip-link">Перейти к основному содержимому</a>
   <div className="orbit-app-layout">
