@@ -227,7 +227,10 @@ def nft_is_exact(payload: object, pins: tuple[str, ...], uid: int) -> bool:
         if name not in expected_sets or item.get("family") != "inet" or item.get("table") != TABLE:
             return False
         kind, expected_ips = expected_sets.pop(name)
-        if item.get("type") != kind or item.get("elem") != expected_ips:
+        elems = item.get("elem")
+        if (item.get("type") != kind or type(elems) is not list
+                or len(elems) != len(expected_ips)
+                or set(elems) != set(expected_ips)):
             return False
         if item.get("flags") or item.get("timeout") or item.get("policy"):
             return False
@@ -457,6 +460,36 @@ def check(uid: int, gid: int, *, ensure: bool) -> None:
         raise GuardError("network_guard_not_enforced")
 
 
+
+def rollback(uid: int, gid: int) -> None:
+    """Owner-only exact-state rollback. Restore DENY_ALL before deleting nft."""
+    _unit_state(install=True)
+    pins = _read_record(uid, gid)
+    _verify_files(pins)
+    state = _nft_state(pins, uid)
+    if state not in ("EXACT", "MISSING"):
+        raise GuardError("nft_rollback_state_untrusted")
+    # A symlink or unexpected file cannot be removed as if owned by this tool.
+    for path in (DROPIN, GUARD_FILE, POLICY):
+        if not path.is_file() or path.is_symlink():
+            raise GuardError("rollback_file_untrusted")
+    # Keep restrictive nft OUTPUT chain while restoring GSC systemd DENY_ALL.
+    DROPIN.unlink()
+    GUARD_FILE.unlink()
+    POLICY.unlink()
+    _run(["systemctl", "daemon-reload"], timeout=18)
+    if _run(["systemctl", "show", "-P", "PrivateNetwork", UNIT]) != "yes":
+        raise GuardError("rollback_denied_network_state_unverified")
+    families = _run(["systemctl", "show", "-P", "RestrictAddressFamilies", UNIT])
+    if "AF_UNIX" not in families or "AF_INET" in families:
+        raise GuardError("rollback_address_family_unverified")
+    _unit_state(install=True)
+    if state == "EXACT":
+        _run(["nft", "delete", "table", "inet", TABLE])
+        if _nft_state(pins, uid) != "MISSING":
+            raise GuardError("rollback_nft_table_still_present")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     a = parser.add_mutually_exclusive_group(required=True)
@@ -464,11 +497,14 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument("--install", action="store_true")
     a.add_argument("--check", action="store_true")
     a.add_argument("--ensure", action="store_true")
+    a.add_argument("--rollback", action="store_true")
     parser.add_argument("--confirm-owner-network-change", action="store_true")
     args = parser.parse_args(argv)
     try:
         uid, gid = _identity()
         if args.plan:
+            if args.confirm_owner_network_change:
+                raise GuardError("unexpected_owner_confirmation_for_plan")
             _unit_state(install=True)
             _key_metadata(uid, gid)
             pins = _current_pins(uid)
@@ -477,7 +513,7 @@ def main(argv: list[str] | None = None) -> int:
             _run(["nft", "-c", "-f", "-"], stdin=nft_program(pins, uid))
             print("H191_GUARD_PLAN=PASS_NO_MUTATION")
             return 0
-        if args.confirm_owner_network_change != args.install:
+        if args.confirm_owner_network_change != (args.install or args.rollback):
             raise GuardError("owner_approval_required_or_unexpected")
         fd = _lock()
         try:
@@ -486,6 +522,9 @@ def main(argv: list[str] | None = None) -> int:
                 print("H191_GUARD_INSTALLED=PASS")
                 print("H191_GSC_SERVICE=INACTIVE_DISABLED")
                 print("H191_GSC_TIMER=INACTIVE_DISABLED")
+            elif args.rollback:
+                rollback(uid, gid)
+                print("H191_GUARD_ROLLBACK=PASS")
             else:
                 check(uid, gid, ensure=args.ensure)
                 print("H191_GUARD_" + ("ENSURE" if args.ensure else "CHECK") + "=PASS")
