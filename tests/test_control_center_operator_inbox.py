@@ -129,7 +129,7 @@ class InboxTests(unittest.TestCase):
                 "id": run_id, "workflow_id": OBSERVE_WORKFLOW_ID,
                 "name": OBSERVE_WORKFLOW, "repository": {"full_name": "MikeMoore1337/hermes"},
                 "event": kind, "status": "completed", "conclusion": "success",
-                "display_title": f"observe:{kind}:{action}:{number}:{outcome}",
+                "display_title": f"observe:{kind}:{action}:{number}:{outcome}:{run_id}",
                 "created_at": (now-dt.timedelta(minutes=2)).isoformat(),
                 "body": "SAMPLE_SECRET_PROMPT_INJECTION",
                 "html_url": "https://evil.example/SAMPLE_SECRET_PROMPT_INJECTION",
