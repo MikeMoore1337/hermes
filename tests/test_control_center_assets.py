@@ -76,6 +76,19 @@ class StaticContracts(unittest.TestCase):
         self.assertNotIn(b'/desktop-commander.js', b[2])
         self.assertNotIn(b'/provider-quota.js', b[2])
 
+    def test_brc_deep_link_reuses_authenticated_react_shell(self):
+        home_status, home_headers, home = self.get("/")
+        brc_status, brc_headers, brc = self.get("/hermes-brc")
+        self.assertEqual((home_status, brc_status), (200, 200))
+        self.assertEqual(brc, home)
+        self.assertEqual(brc_headers["Content-Type"], "text/html; charset=utf-8")
+        self.assertEqual(brc_headers["Cache-Control"], "no-store")
+        self.assertIn(b'data-auth-mode="proxy" data-authenticated="true"', brc)
+        self.assertIn(b'/app.js', brc)
+        self.assertNotIn(b'/hermes-brc.js', brc)
+        self.assertNotIn(b'brc-shell', brc)
+        self.assertIn("default-src 'none'", brc_headers["Content-Security-Policy"])
+
     def test_static_assets_revalidate_without_caching_html_or_sw(self):
         status, headers, body = self.get("/app.js")
         self.assertEqual(status, 200)

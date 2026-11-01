@@ -12,6 +12,7 @@ import OperatorInbox from "./OperatorInbox.jsx";
 import YfcArticles from "./YfcArticles.jsx";
 import OrbitLogin from "./OrbitLogin.jsx";
 import OrbitOverview from "./OrbitOverview.jsx";
+import HermesCommander from "./HermesCommander.jsx";
 import "./orbit-operator.css";
 
 const ISSUE33="https://github.com/MikeMoore1337/hermes/issues/33";
@@ -37,7 +38,7 @@ function Nav({view,onView,mode}){
  {nav.filter(key=>key!=="articles"||mode==="github").map((key,i)=>{
   const Icon=navIcons[key]||LayoutDashboard;
   return <button key={key} type="button" className={"nav-link"+(view===key?" is-active":"")} aria-current={view===key?"page":undefined}
-   onClick={()=>key==="commander"?window.location.assign("/hermes-brc"):onView(key)}>
+   onClick={()=>onView(key)}>
    <span className="nav-number" aria-hidden="true">{String(i+1).padStart(2,"0")}</span>
    <span className="orbit-nav-icon"><Icon size={18} strokeWidth={1.65} aria-hidden="true"/></span><span>{navName(key)}</span>
   </button>;
@@ -182,7 +183,7 @@ function SignalPanel({snapshot,error}){
  </aside>;
 }
 function OperatorApp({authMode,onLogout}){
- const [view,setView]=useState("all");
+ const [view,setView]=useState(()=>window.location.pathname==="/hermes-brc"?"commander":"all");
  const [menuOpen,setMenuOpen]=useState(false);
  const [snapshot,setSnapshot]=useState(null),[error,setError]=useState(""),[busy,setBusy]=useState(false);
  const [search,setSearch]=useState(""),[filter,setFilter]=useState("all");
@@ -198,6 +199,8 @@ function OperatorApp({authMode,onLogout}){
   finally{setBusy(false);}
  },[]);
  useEffect(()=>{
+  // The BRC route reads only its own sanitized endpoints, never systemd on entry.
+  if(view==="commander")return;
   let live=true,controller=new AbortController();
   const load=async()=>{
    try{const res=await fetch("/api/overview",{cache:"no-store",credentials:"same-origin",signal:controller.signal});
@@ -208,7 +211,7 @@ function OperatorApp({authMode,onLogout}){
   };
   load();const id=setInterval(()=>{if(!document.hidden)load();},60000);
   return()=>{live=false;controller.abort();clearInterval(id);};
- },[]);
+ },[view]);
  const stats=counts(snapshot?.services||[]);
  const now=snapshot?formatTime(snapshot.generated_at):"Нет данных";
 
@@ -218,10 +221,21 @@ function OperatorApp({authMode,onLogout}){
   window.addEventListener("keydown",onEscape);
   return ()=>window.removeEventListener("keydown",onEscape);
  },[menuOpen]);
+ useEffect(()=>{
+  const restore=()=>{
+   window.dispatchEvent(new Event("hermes:orbit-view-change"));
+   setView(window.location.pathname==="/hermes-brc"?"commander":"all");
+   setMenuOpen(false);
+  };
+  window.addEventListener("popstate",restore);
+  return()=>window.removeEventListener("popstate",restore);
+ },[]);
  const onView=key=>{
   // Close independent monitoring overlays when switching React views,
   // including the mobile navigation that has no .nav-link event target.
   window.dispatchEvent(new Event("hermes:orbit-view-change"));
+  const target=key==="commander"?"/hermes-brc":"/";
+  if(window.location.pathname!==target)window.history.pushState({view:key},"",target);
   setView(key);setMenuOpen(false);
   if(menuOpen)requestAnimationFrame(()=>document.getElementById("main-content")?.focus());
  };
@@ -245,9 +259,9 @@ function OperatorApp({authMode,onLogout}){
       });
      }}>
      <Nav view={view} mode={authMode} onView={onView}/>
-     <div className="orbit-side-refresh">
+     {view!=="commander"&&<div className="orbit-side-refresh">
       <button className="refresh-button" type="button" onClick={reload} disabled={busy}><RefreshCw size={16} className={busy?"spin":""}/> Обновить снимок</button>
-     </div>
+     </div>}
     </div>
     <div className="orbit-rail-bottom"><span>РАБОЧЕЕ ПРОСТРАНСТВО</span>
      <div className="orbit-workspace-pill"><img src="/orbit-brand.svg" width="38" height="38" alt=""/><div><strong>Hermes</strong><small>Изолированный контур</small></div></div>
@@ -261,8 +275,8 @@ function OperatorApp({authMode,onLogout}){
      {view==="all"?<><OrbitOverview snapshot={snapshot} error={error} onView={onView} onRefresh={reload} busy={busy} Registry={Registry}
       registryProps={{snapshot,view,search,setSearch,filter,setFilter}}/><div className="center-area orbit-compact-codex" aria-label="Данные Codex и дополнительные панели"><CodexPanel compact/></div></>:
       <div className="orbit-module-shell">
-       {view!=="inbox"&&view!=="articles"&&<h1 className="sr-only">{navName(view)}</h1>}
-       {view==="articles"?<YfcArticles/>:view==="inbox"?<OperatorInbox/>:
+       {view!=="inbox"&&view!=="articles"&&view!=="commander"&&<h1 className="sr-only">{navName(view)}</h1>}
+       {view==="commander"?<HermesCommander/>:view==="articles"?<YfcArticles/>:view==="inbox"?<OperatorInbox/>:
        <>
         {error&&<div className="inline-error" role="alert"><AlertTriangle size={17}/>{error}</div>}
         <div className="operator-grid">
