@@ -1,4 +1,12 @@
 import {test,expect} from "@playwright/test";
+
+async function openOrbitWidget(page,label){
+ if((page.viewportSize()?.width||1280)<=980){
+  const more=page.locator(".orbit-app-mobilebar").getByRole("button",{name:"Ещё"});
+  if(await more.getAttribute("aria-expanded")!=="true")await more.click();
+ }
+ await page.getByRole("button",{name:label,exact:true}).click();
+}
 async function chooseOrbitView(page,label){
  const width=page.viewportSize()?.width||1280;
  if(width<=980){
@@ -46,7 +54,7 @@ for(const width of [320,393,1440]){
   await page.setViewportSize({width,height:900});
   await setup(page);
   await page.goto("/");
-  await page.getByRole("button",{name:"Инфраструктура"}).click();
+  await openOrbitWidget(page,"Инфраструктура");
   const panel=page.getByRole("region",{name:"Мониторинг VPS Hermes и YFC"});
   await expect(panel).toBeVisible();
   const hermes=panel.locator(".infra294-card").nth(0);
@@ -81,7 +89,7 @@ for(const width of [320,393,1440]){
 test("Unconnected YFC never displays a fabricated zero",async({page})=>{
  await setup(page,"partial");
  await page.goto("/");
- await page.getByRole("button",{name:"Инфраструктура"}).click();
+ await openOrbitWidget(page,"Инфраструктура");
  const panel=page.getByRole("region",{name:"Мониторинг VPS Hermes и YFC"});
  const yfc=panel.locator(".infra294-card").nth(1);
  await expect(yfc.getByText("Не подключён")).toBeVisible();
