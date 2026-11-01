@@ -49,6 +49,7 @@ function Header({view,authMode,onLogout,onMenu,menuOpen}){
    <button type="button" className="orbit-topbar-menu" onClick={onMenu} aria-expanded={menuOpen} aria-label={menuOpen?"Закрыть меню разделов":"Открыть меню разделов"}>
     {menuOpen?<X size={20}/>:<Menu size={20}/>}
    </button>
+   <img className="orbit-topbar-mobile-brand" src="/orbit-brand.svg" alt="" width="31" height="31" aria-hidden="true"/>
    <div className="orbit-topbar-breadcrumb"><span>HERMES</span><ChevronRight size={15}/><span>COMMAND CENTER</span><ChevronRight size={15}/><strong>{navName(view)}</strong></div>
    <div className="orbit-topbar-tools">
     <InfoBadge tone="outline"><LockKeyhole size={13} aria-hidden="true"/> {view==="articles"?"Публикация вручную":"Только чтение"}</InfoBadge>
