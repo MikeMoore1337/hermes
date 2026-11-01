@@ -1,7 +1,9 @@
-"""Run one bounded private main CI read and persist only fixed outcome signal.
+"""Keep the existing main CI signal and a bounded GitHub Observe feed.
 
-Does not call Telegram or Ops Watch. Unknown access failures leave prior
-durable state intact; unattended timer performs at most one GET per tick.
+The legacy main CI check remains first. With --execute, at most one extra
+fixed Actions:read GET (5s timeout) updates a separate sanitized snapshot.
+Observer failures cannot erase or upgrade the original CI evidence.
+No extra scheduler, model, outbound message or GitHub write occurs.
 """
 from __future__ import annotations
 
@@ -12,6 +14,7 @@ from datetime import UTC, datetime
 from qa_advisor.ci_snapshot import SnapshotRefused, inspect_once
 from qa_advisor.github_public import GithubPublicError
 from qa_advisor.signal_store import SignalError, from_ci, store
+from qa_advisor import github_observe_feed as observe_feed
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -27,10 +30,24 @@ def main(argv: list[str] | None = None) -> int:
     except (GithubPublicError, SnapshotRefused, SignalError, OSError, TimeoutError):
         print(json.dumps({"status": "UNKNOWN", "reason": "ci_read_or_store_unavailable"}))
         return 2
+    # The extra read is isolated: an unavailable observer cannot erase or
+    # convert the existing CI result into a false recovery.
+    feed_status = "DISABLED"
+    # The deployed unit invokes --execute only. Keep the original systemd
+    # configuration unchanged and make the extra bounded read fail-safe.
+    if args.execute:
+        try:
+            receipt_feed = observe_feed.poll(now=datetime.now(UTC))
+            observe_feed.save(receipt_feed)
+            feed_status = "STORED"
+        except (observe_feed.FeedRefused, GithubPublicError, SignalError,
+                OSError, TimeoutError, ValueError):
+            feed_status = "UNAVAILABLE"
     # No token, SHA, raw text, full URL or HTTP body.
     print(json.dumps({
         "status": "STORED" if receipt == "STORED_SAFE_CI_SIGNAL" else "PRESERVED",
         "signal": current["status"], "outbound_notifications": 0,
+        "github_observe_feed": feed_status,
     }, sort_keys=True))
     return 0
 
