@@ -233,8 +233,8 @@ function OperatorApp({authMode,onLogout}){
    <div className="orbit-content">
     <Header view={view} authMode={authMode} onLogout={onLogout} onMenu={()=>setMenuOpen(v=>!v)} menuOpen={menuOpen}/>
     <main id="main-content" className="orbit-main" tabIndex={-1}>
-     {view==="all"?<OrbitOverview snapshot={snapshot} error={error} onView={onView} onRefresh={reload} busy={busy} Registry={Registry}
-      registryProps={{snapshot,view,search,setSearch,filter,setFilter}}/>:
+     {view==="all"?<><OrbitOverview snapshot={snapshot} error={error} onView={onView} onRefresh={reload} busy={busy} Registry={Registry}
+      registryProps={{snapshot,view,search,setSearch,filter,setFilter}}/><section className="orbit-compact-codex" aria-label="Сводка лимитов Codex"><CodexPanel compact/></section></>:
       <div className="orbit-module-shell">
        <h1 className="sr-only">{navName(view)}</h1>
        {view==="articles"?<YfcArticles/>:view==="inbox"?<OperatorInbox/>:
