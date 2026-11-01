@@ -177,7 +177,8 @@
  .orbit-attention-item{padding:12px}
  .theme-orbit .operator-grid{grid-template-columns:1fr}
  .orbit-rail{position:fixed;width:240px;left:0;top:0;transform:translateX(-102%);transition:transform .22s}
- .orbit-rail.is-open{transform:translateX(0)}
+ .orbit-rail:not(.is-open){visibility:hidden;pointer-events:none}
+ .orbit-rail.is-open{transform:translateX(0);visibility:visible}
  .orbit-rail-backdrop.is-open{display:block;position:fixed;inset:0;background:#020712a8;border:0;z-index:42}
  .orbit-app-layout{display:block}
  .orbit-topbar-menu{display:flex}
