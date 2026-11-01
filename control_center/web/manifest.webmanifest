@@ -12,6 +12,7 @@
   "theme_color": "#080f1a",
   "orientation": "any",
   "icons": [
+    {"src": "/pwa-orbit.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable"},
     {
       "src": "/pwa-192.png",
       "sizes": "192x192",
