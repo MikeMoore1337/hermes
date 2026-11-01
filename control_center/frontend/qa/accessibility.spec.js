@@ -111,7 +111,7 @@ for(const width of [320,393,1440]){
  test(`accessible controls remain usable at ${width}px`,async({page})=>{
   await page.setViewportSize({width,height:844});
   await fixture(page);await page.goto("/");
-  const overview=page.locator(".atlas-section-nav").getByRole("button",{name:"Обзор"});
+  const overview=width<=980?page.locator(".orbit-app-mobilebar").getByRole("button",{name:"Обзор"}):page.locator(".atlas-section-nav").getByRole("button",{name:"Обзор"});
   await expect(overview).toBeVisible();
   const search=page.getByRole("textbox",{name:"Поиск по службам"});
   await search.focus();await search.fill("Ops");

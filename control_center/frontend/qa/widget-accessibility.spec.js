@@ -1,5 +1,13 @@
 import {test,expect} from "@playwright/test";
 
+async function openOrbitWidget(page,label){
+ if((page.viewportSize()?.width||1280)<=980){
+  const more=page.locator(".orbit-app-mobilebar").getByRole("button",{name:"Ещё"});
+  if(await more.getAttribute("aria-expanded")!=="true")await more.click();
+ }
+ await page.getByRole("button",{name:label,exact:true}).click();
+}
+
 // #179 screen-reader-facing contracts. All API responses are synthetic, never production.
 test.use({serviceWorkers:"block"});
 
@@ -60,7 +68,7 @@ test("Provider quota transition announces named status, not a fabricated availab
    {id:"desktop_commander",status:"not_connected",windows:[],notes:"not_configured"}]})
  }));
  await page.goto("/");
- await page.getByRole("button",{name:"Квоты и инструменты"}).click();
+ await openOrbitWidget(page,"Квоты и инструменты");
  const panel=page.getByRole("region",{name:"Квоты и инструменты Hermes"});
  await expect(panel).toBeVisible();
  const announcement=panel.getByRole("status");
@@ -84,7 +92,7 @@ test("AI usage status is announced and exposes pending work via aria-busy",async
   })
  }));
  await page.goto("/");
- await page.getByRole("button",{name:"AI Usage Analytics"}).click();
+ await openOrbitWidget(page,"AI Usage Analytics");
  const panel=page.getByRole("region",{name:"AI Usage Analytics"});
  await expect(panel.getByRole("status")).toHaveText("Частично");
  await expect(panel).not.toHaveAttribute("aria-busy",/./);

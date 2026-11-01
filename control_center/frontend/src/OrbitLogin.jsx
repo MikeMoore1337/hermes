@@ -14,13 +14,13 @@ const phases=[
 ];
 
 function Mark({className=""}){
- return <img className={className} src="/brand.webp" alt="Фирменная эмблема Hermes - крылатая H"/>;
+ return <img className={className} src="/orbit-brand.svg" alt="Фирменная эмблема Hermes - крылатая H"/>;
 }
 function Step({id,number,name,caption,selected,onClick,Icon}){
  return <button type="button" onClick={onClick} aria-pressed={selected}
    className={"orbit-route-node orbit-node-"+id+(selected?" is-current":"")}>
    <span className="orbit-node-label">{caption}<small>{number}</small></span>
-   <span className="orbit-node-name"><Icon size={18} aria-hidden="true"/>{name}</span>
+   <span className="orbit-node-name">{id==="identity"?<Icon size={18} aria-hidden="true"/>:<img src={id==="policy"?"/orbit-policy.svg":"/orbit-workspace.svg"} width="22" height="22" alt="" aria-hidden="true"/>}{name}</span>
    <span className="orbit-node-state"><span aria-hidden="true"/> {id==="identity"?"Поставщик входа":id==="policy"?"Проверка на сервере":"После разрешения"}</span>
  </button>;
 }
@@ -60,7 +60,7 @@ export default function OrbitLogin({active=false,unavailable=false,onBack}){
        <Step id="identity" number="01" name="GitHub" Icon={Github} caption="ID PROVIDER" selected={selected==="identity"} onClick={()=>setSelected("identity")}/>
        <div className="orbit-auth-core" aria-label="Hermes Core - визуальная схема, не состояние реального агента">
         <div className="orbit-core-top">H / SECURITY GATE</div>
-        <div className="orbit-core-symbol"><span>H</span><i/></div>
+        <div className="orbit-core-symbol"><img src="/orbit-brand.svg" alt="" width="86" height="86" aria-hidden="true"/></div>
         <strong>HERMES <span>CORE</span></strong><small>ACCESS ROUTER</small>
        </div>
        <Step id="policy" number="02" name="Политика доступа" Icon={ShieldCheck} caption="AUTHORIZATION" selected={selected==="policy"} onClick={()=>setSelected("policy")}/>
@@ -81,7 +81,7 @@ export default function OrbitLogin({active=false,unavailable=false,onBack}){
     <div className="orbit-access-form" id="orbit-auth-form" tabIndex={-1}>
      <div className="orbit-access-top"><span>ACCESS / 001</span><span><LockKeyhole size={12} aria-hidden="true"/> OAUTH</span></div>
      <div className="orbit-access-content">
-      <div className="orbit-access-emblem"><LockKeyhole size={29} aria-hidden="true"/></div>
+      <div className="orbit-access-emblem"><img src="/orbit-brand.svg" alt="" width="60" height="60" aria-hidden="true"/></div>
       <p className="orbit-access-tag"><span/> ЗАЩИЩЁННЫЙ ВХОД</p>
       <h2 className="orbit-access-label">Вход в систему</h2>
       <h3>Добро пожаловать<br/>в Hermes.</h3>
@@ -100,8 +100,8 @@ export default function OrbitLogin({active=false,unavailable=false,onBack}){
       <div className="orbit-access-steps">
        <div className="orbit-access-steps-head"><span>ПОСЛЕ ВХОДА</span><span>01 → 03</span></div>
        <div><Github size={17} aria-hidden="true"/><span><strong>Идентификация</strong><small>Подтверждение через GitHub</small></span><b>01</b></div>
-       <div><ShieldCheck size={17} aria-hidden="true"/><span><strong>Проверка доступа</strong><small>Разрешения и сессия на сервере</small></span><b>02</b></div>
-       <div><Workflow size={17} aria-hidden="true"/><span><strong>Рабочее пространство</strong><small>Только в пределах разрешений</small></span><b>03</b></div>
+       <div><img src="/orbit-policy.svg" alt="" width="21" height="21" aria-hidden="true"/><span><strong>Проверка доступа</strong><small>Разрешения и сессия на сервере</small></span><b>02</b></div>
+       <div><img src="/orbit-workspace.svg" alt="" width="21" height="21" aria-hidden="true"/><span><strong>Рабочее пространство</strong><small>Только в пределах разрешений</small></span><b>03</b></div>
       </div>
       {onBack&&!active&&!unavailable&&<button className="orbit-preview-link" type="button" onClick={onBack}>
        Открыть демонстрацию панели <ArrowUpRight size={16} aria-hidden="true"/>

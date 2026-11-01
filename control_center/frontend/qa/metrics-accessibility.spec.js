@@ -1,5 +1,13 @@
 import {test,expect} from "@playwright/test";
 
+async function openOrbitWidget(page,label){
+ if((page.viewportSize()?.width||1280)<=980){
+  const more=page.locator(".orbit-app-mobilebar").getByRole("button",{name:"Ещё"});
+  if(await more.getAttribute("aria-expanded")!=="true")await more.click();
+ }
+ await page.getByRole("button",{name:label,exact:true}).click();
+}
+
 // #179: deterministic semantic contracts without production API, credentials or model calls.
 test.use({serviceWorkers:"block"});
 
@@ -25,7 +33,7 @@ async function analytics(page,completed){
 test("unknown AI cycles remain unknown instead of a fabricated zero",async({page})=>{
  await overview(page);await analytics(page,null);
  await page.goto("/");
- await page.getByRole("button",{name:"AI Usage Analytics"}).click();
+ await openOrbitWidget(page,"AI Usage Analytics");
  const panel=page.getByRole("region",{name:"AI Usage Analytics"});
  await panel.getByLabel("Показатель").selectOption("cycles");
  await expect(panel.getByText("Число завершённых циклов неизвестно.")).toBeVisible();
@@ -36,7 +44,7 @@ test("unknown AI cycles remain unknown instead of a fabricated zero",async({page
 test("a confirmed zero completed AI cycles stays a real zero",async({page})=>{
  await overview(page);await analytics(page,0);
  await page.goto("/");
- await page.getByRole("button",{name:"AI Usage Analytics"}).click();
+ await openOrbitWidget(page,"AI Usage Analytics");
  const panel=page.getByRole("region",{name:"AI Usage Analytics"});
  await panel.getByLabel("Показатель").selectOption("cycles");
  await expect(panel.locator("[data-chart] .ai272-row")).toHaveCount(1);
@@ -65,7 +73,7 @@ test("same CPU label identifies Hermes and YFC hosts, history identifies its own
    ]})});
  });
  await page.goto("/");
- await page.getByRole("button",{name:"Инфраструктура"}).click();
+ await openOrbitWidget(page,"Инфраструктура");
  const region=page.getByRole("region",{name:"Мониторинг VPS Hermes и YFC"});
  const hermes=region.getByRole("progressbar",{name:"VPS Hermes: CPU"});
  const yfc=region.getByRole("progressbar",{name:"VPS YFC: CPU"});
@@ -94,7 +102,7 @@ test("quota progressbars report usage and remaining with provider context",async
   ]})
  }));
  await page.goto("/");
- await page.getByRole("button",{name:"Квоты и инструменты"}).click();
+ await openOrbitWidget(page,"Квоты и инструменты");
  const panel=page.getByRole("region",{name:"Квоты и инструменты Hermes"});
  const codex=panel.getByRole("progressbar",{name:"Codex / ChatGPT: Пять часов"});
  await expect(codex).toHaveAttribute("aria-valuenow","81");

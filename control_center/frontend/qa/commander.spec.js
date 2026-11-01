@@ -1,4 +1,15 @@
 import {test,expect} from "@playwright/test";
+async function chooseOrbitView(page,label){
+ const width=page.viewportSize()?.width||1280;
+ if(width<=980){
+  const quickName=label==="QA и CI"?"QA / CI":label==="Operator Inbox"?"Входящие":label;
+  const bottom=page.locator(".orbit-app-mobilebar").getByRole("button",{name:quickName,exact:true});
+  if(await bottom.count()){await bottom.click();return;}
+  await page.locator(".orbit-app-mobilebar").getByRole("button",{name:"Ещё"}).click();
+ }
+ await page.locator(".atlas-section-nav").getByRole("button",{name:label,exact:true}).click();
+}
+
 // Approved C replaces the historical React Explorer in primary navigation.
 test.use({serviceWorkers:"block"});
 async function overview(page){
@@ -13,7 +24,7 @@ for(const width of [320,393,768,1440]){
   await page.setViewportSize({width,height:width<=393?844:900});
   await page.emulateMedia({reducedMotion:"reduce"});await overview(page);
   await page.goto("/");
-  await page.locator(".atlas-section-nav").getByRole("button",{name:"Hermes Commander"}).click();
+  await chooseOrbitView(page,"Hermes Commander");
   await expect(page).toHaveURL(/\/hermes-brc$/);
   await expect(page.getByRole("heading",{name:"Рабочие пространства"})).toBeVisible();
   await expect(page.locator("#brc-error")).toBeVisible();
