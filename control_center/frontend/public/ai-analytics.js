@@ -106,12 +106,12 @@ function hide(){
 function show(){
  active=true;document.documentElement.classList.add("ai272-active");
  button.classList.add("is-active");button.setAttribute("aria-current","page");
- panel.hidden=false;refresh();
+ if(panel){panel.hidden=false;refresh();}
 }
 function mount(){
  const nav=document.querySelector(".atlas-section-nav .nav-list");
  const target=document.querySelector(".center-area");
- if(!nav||!target)return;
+ if(!nav)return;
  if(!button||!button.isConnected){
   button=el("button","nav-link ai272-nav",nav);
   button.type="button";button.setAttribute("aria-label","AI Usage Analytics");
@@ -120,6 +120,7 @@ function mount(){
   el("span","",button,"AI Usage Analytics");
   button.onclick=show;
  }
+ if(!target)return;
  if(!panel||!panel.isConnected){
   panel=el("section","ai272-panel",target);
   panel.setAttribute("aria-label","AI Usage Analytics");
@@ -144,6 +145,7 @@ function mount(){
   choices(panel.querySelector("[data-activity]"),[["tokens","Токены"],["cycles","Циклы"]],activity,v=>{activity=v;draw();});
   panel.querySelector("[data-reload]").onclick=refresh;
   draw();
+  if(active)refresh();
  }
 }
 window.addEventListener("hermes:orbit-view-change",hide);

@@ -268,13 +268,14 @@
   }
   function show(){
     active=true;document.documentElement.classList.add("quota295-active");
-    section.hidden=false;tab.classList.add("is-active");tab.setAttribute("aria-current","page");
-    refresh();
+    if(section)section.hidden=false;
+    tab.classList.add("is-active");tab.setAttribute("aria-current","page");
+    if(section)refresh();
   }
   function mount(){
     const nav=document.querySelector(".atlas-section-nav .nav-list");
     const target=document.querySelector(".center-area");
-    if(!nav||!target)return;
+    if(!nav)return;
     if(!tab||!tab.isConnected){
       tab=add("button","nav-link quota295-nav",nav);tab.type="button";
       add("span","nav-number",tab,"09");
@@ -282,6 +283,7 @@
       add("span","",tab,"Квоты и инструменты");
       tab.onclick=show;
     }
+    if(!target)return;
     if(!section||!section.isConnected){
       section=add("section","quota295-panel",target);
       section.hidden=!active;section.setAttribute("aria-label","Квоты и инструменты Hermes");
@@ -300,6 +302,7 @@
       announcement.setAttribute("aria-atomic","true");
       lastAnnouncement="";
       render();
+      if(active)refresh();
     }
   }
   window.addEventListener("hermes:orbit-view-change",hide);

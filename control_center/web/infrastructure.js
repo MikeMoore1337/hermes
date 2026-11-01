@@ -220,15 +220,15 @@
   function show() {
     active = true;
     document.documentElement.classList.add("infra294-active");
-    panel.hidden = false;
+    if(panel)panel.hidden = false;
     button.classList.add("is-active");
     button.setAttribute("aria-current", "page");
-    refresh();
+    if(panel)refresh();
   }
   function mount() {
     const nav = document.querySelector(".atlas-section-nav .nav-list");
     const target = document.querySelector(".center-area");
-    if (!nav || !target) return;
+    if (!nav) return;
     if (!button || !button.isConnected) {
       button = el("button", "nav-link infra294-nav", nav);
       button.type = "button";
@@ -238,6 +238,7 @@
       el("span", "", button, "Инфраструктура");
       button.onclick = show;
     }
+    if (!target) return;
     if (!panel || !panel.isConnected) {
       panel = el("section", "infra294-panel", target);
       panel.hidden = !active;
@@ -257,6 +258,7 @@
       announcement.setAttribute("aria-atomic", "true");
       lastAnnouncement = "";
       render(latest);
+      if(active)refresh();
     }
   }
   window.addEventListener("hermes:orbit-view-change", hide);
