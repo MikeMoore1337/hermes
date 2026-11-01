@@ -31,8 +31,8 @@ for(const width of [320,393,1440]){
   const shown=await link.boundingBox();
   expect(shown.y,"Keyboard link must become visible").toBeGreaterThanOrEqual(0);
   expect(shown.x).toBeGreaterThanOrEqual(0);
-  const header=page.locator(".site-header");
-  const logo=header.locator(".brand img");
+  const header=width<=980?page.locator(".orbit-topbar"):page.locator(".orbit-rail-brand");
+  const logo=width<=980?header.locator(".orbit-topbar-mobile-brand"):header.locator(".brand img");
   await expect(logo).toBeVisible();
   const headerBox=await header.boundingBox();
   const logoBox=await logo.boundingBox();
