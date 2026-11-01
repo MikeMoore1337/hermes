@@ -112,7 +112,7 @@ export default function OrbitOverview({snapshot,error,onView,onRefresh,busy,Regi
       </button>)
      }
     </div>
-    <p className="orbit-attention-note"><LockKeyhole size={15}/> История инцидентов и действия по управлению здесь не моделируются.</p>
+    <p className="orbit-attention-note"><LockKeyhole size={15}/> История инцидентов и доставки уведомлений пока не подключена. Команды управления недоступны.</p>
     <button type="button" className="orbit-attention-cta" onClick={()=>onView("inbox")}>Открыть входящие <ArrowUpRight size={15}/></button>
    </aside>
   </div>
