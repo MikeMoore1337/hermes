@@ -124,6 +124,8 @@ def _validate(record: object) -> dict:
         if key in seen:
             raise FeedRefused("feed_duplicate_event")
         seen.add(key)
+    if len(rows) > record["inspected_count"]:
+        raise FeedRefused("feed_window_invalid")
     return record
 
 
