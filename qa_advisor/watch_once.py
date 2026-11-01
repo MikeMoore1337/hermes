@@ -1,7 +1,9 @@
-"""Run one bounded private main CI read and persist only fixed outcome signal.
+"""Keep the existing main CI signal and a bounded GitHub Observe feed.
 
-Does not call Telegram or Ops Watch. Unknown access failures leave prior
-durable state intact; unattended timer performs at most one GET per tick.
+The legacy main CI check remains first. With --execute, at most one extra
+fixed Actions:read GET (5s timeout) updates a separate sanitized snapshot.
+Observer failures cannot erase or upgrade the original CI evidence.
+No extra scheduler, model, outbound message or GitHub write occurs.
 """
 from __future__ import annotations
 
