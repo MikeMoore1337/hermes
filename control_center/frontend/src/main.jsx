@@ -219,6 +219,9 @@ function OperatorApp({authMode,onLogout}){
   return ()=>window.removeEventListener("keydown",onEscape);
  },[menuOpen]);
  const onView=key=>{
+  // Close independent monitoring overlays when switching React views,
+  // including the mobile navigation that has no .nav-link event target.
+  window.dispatchEvent(new Event("hermes:orbit-view-change"));
   setView(key);setMenuOpen(false);
   if(menuOpen)requestAnimationFrame(()=>document.getElementById("main-content")?.focus());
  };
@@ -258,7 +261,7 @@ function OperatorApp({authMode,onLogout}){
      {view==="all"?<><OrbitOverview snapshot={snapshot} error={error} onView={onView} onRefresh={reload} busy={busy} Registry={Registry}
       registryProps={{snapshot,view,search,setSearch,filter,setFilter}}/><div className="center-area orbit-compact-codex" aria-label="Данные Codex и дополнительные панели"><CodexPanel compact/></div></>:
       <div className="orbit-module-shell">
-       <h1 className="sr-only">{navName(view)}</h1>
+       {view!=="inbox"&&view!=="articles"&&<h1 className="sr-only">{navName(view)}</h1>}
        {view==="articles"?<YfcArticles/>:view==="inbox"?<OperatorInbox/>:
        <>
         {error&&<div className="inline-error" role="alert"><AlertTriangle size={17}/>{error}</div>}

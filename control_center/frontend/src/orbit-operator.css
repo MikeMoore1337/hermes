@@ -20,7 +20,7 @@
 .orbit-rail-label{display:flex;justify-content:space-between;gap:10px;margin:32px 20px 15px;text-transform:uppercase;color:#789dbb;font-size:10px;font-weight:700;letter-spacing:1.1px}
 .theme-orbit .atlas-section-nav{display:block;position:static;background:transparent;border:0;border-radius:0;padding:0 12px}
 .theme-orbit .atlas-section-nav .nav-list{display:flex;flex-direction:column;gap:5px;overflow:visible}
-.theme-orbit .atlas-section-nav .nav-link{display:flex;align-items:center;min-height:43px;width:100%;text-align:left;white-space:normal;border:1px solid transparent;border-radius:6px;color:#a7c1d8;background:transparent;font-size:12px;font-weight:600;padding:9px 10px;gap:13px}
+.theme-orbit .atlas-section-nav .nav-link{display:flex;align-items:center;min-height:43px;width:100%;text-align:left;white-space:normal;border:1px solid transparent;border-radius:6px;color:#a7c1d8;background:transparent;font-family:Inter,"Segoe UI",Arial,sans-serif;font-size:12px;font-weight:600;padding:9px 10px;gap:13px}
 .theme-orbit .atlas-section-nav .nav-link:hover{color:#f0f9ff;background:#12273a}
 .theme-orbit .atlas-section-nav .nav-link.is-active{background:#13314a;color:#f0f8ff;border-color:#2c668c}
 .theme-orbit .atlas-section-nav .nav-link:focus-visible,.theme-orbit button:focus-visible,.theme-orbit a:focus-visible{outline:2px solid #b7e5ff;outline-offset:2px}
@@ -233,4 +233,14 @@
 @media(prefers-reduced-motion:reduce){
  .orbit-graph-wires .orbit-wire-glow{animation:none;stroke-dasharray:none;opacity:.4}
  .orbit-rail{transition:none}
+}
+
+/* Keep article mode in the mobile viewport while the full manual-publication
+   indicator remains in the editorial header (.ye-manual). */
+@media(max-width:430px){
+ .theme-orbit .orbit-topbar{gap:5px}
+ .theme-orbit .orbit-topbar-breadcrumb{min-width:0;flex:1;overflow:hidden}
+ .theme-orbit .orbit-topbar-breadcrumb strong{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+ .theme-orbit .orbit-topbar-tools{gap:3px;flex:none}
+ .theme-orbit .orbit-topbar-tools .badge{display:none}
 }

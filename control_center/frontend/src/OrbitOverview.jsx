@@ -103,7 +103,7 @@ export default function OrbitOverview({snapshot,error,onView,onRefresh,busy,Regi
      <h2 id="orbit-attention-title">Требует решения <span>{snapshot?String(attention.length).padStart(2,"0"):"—"}</span></h2>
     </div>
     <div className="orbit-attention-items">
-     {!snapshot?<p className="orbit-empty-state">Нет проверенного снимка. Состояния служб не определены.</p>:
+     {!snapshot?<p className="orbit-empty-state">Состояния служб не определены: проверенный снимок отсутствует.</p>:
       !attention.length?<p className="orbit-empty-state">По текущему снимку нет служб в состояниях «Сбой», «Нет данных» или «Запущен без допуска».</p>:
       attention.slice(0,5).map((s,i)=><button key={s.id} className="orbit-attention-item" type="button" onClick={()=>onView(s.id==="qa"?"qa":s.id==="research"?"research":s.id.startsWith("agent")?"agent":"ops")}>
       <div className="orbit-attention-meta"><span>{String(i+1).padStart(2,"0")} / {s.unit}</span><span>{stateLabel(s.state)}</span></div>
