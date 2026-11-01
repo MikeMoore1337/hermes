@@ -95,7 +95,7 @@ class InboxHttpTests(unittest.TestCase):
         clock = dt.datetime.now(dt.timezone.utc)
         item = {
             "id": 9001, "workflow_id": OBSERVE_WORKFLOW_ID,
-            "name": OBSERVE_WORKFLOW,
+            "name": "observe:issues:opened:712:none:9001",
             "repository": {"full_name": "MikeMoore1337/hermes"},
             "event": "issues", "status": "completed", "conclusion": "success",
             "display_title": "observe:issues:opened:712:none:9001",
