@@ -165,10 +165,24 @@ class H191GoogleEgressGuardTests(TestCase):
             guard.check(UID, GID, ensure=True)
             create.assert_called_once_with(PINS, UID)
 
+    def test_untrusted_base_service_blocks_nft_install(self):
+        with mock.patch.object(guard, "_run", side_effect=[
+            "yes", "0.0.0.0/0 ::/0", "", "AF_UNIX AF_INET",
+        ]):
+            with self.assertRaisesRegex(guard.GuardError, "original_service_boundary_drift"):
+                guard._base_unit_trusted()
+
+    def test_trusted_base_service_has_all_required_fail_closed_properties(self):
+        expected = iter(["yes", "0.0.0.0/0 ::/0", "", "AF_UNIX",
+                         guard.USER, guard.USER, ""])
+        with mock.patch.object(guard, "_run", side_effect=lambda *_args, **_kw: next(expected)):
+            guard._base_unit_trusted()
+
     def test_install_rejects_preexisting_files_before_nft(self):
         policy = mock.Mock()
         policy.exists.return_value = True
         with mock.patch.object(guard, "_unit_state"), \
+             mock.patch.object(guard, "_base_unit_trusted"), \
              mock.patch.object(guard, "_key_metadata"), \
              mock.patch.object(guard, "POLICY", policy), \
              mock.patch.object(guard, "_nft_create") as nft:
@@ -191,6 +205,7 @@ class H191GoogleEgressGuardTests(TestCase):
             elif path is unit: order.append("guard_unit")
             elif path is dropin: order.append("dropin")
         with mock.patch.object(guard, "_unit_state"), \
+             mock.patch.object(guard, "_base_unit_trusted"), \
              mock.patch.object(guard, "_key_metadata"), \
              mock.patch.object(guard, "POLICY", policy), \
              mock.patch.object(guard, "GUARD_FILE", unit), \
