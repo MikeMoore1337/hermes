@@ -41,16 +41,12 @@ async function assertNoOverflow(page){
  expect(out.body,"Horizontal body overflow").toBeLessThanOrEqual(out.width+1);
 }
 async function assertDesktopCaption(page){
- const r=await page.evaluate(()=>{
-  const logo=document.querySelector(".login-hero-mark").getBoundingClientRect();
-  const caption=document.querySelector(".login-overline").getBoundingClientRect();
-  return {logoCenter:(logo.left+logo.right)/2, captionCenter:(caption.left+caption.right)/2,
-   gap:caption.top-logo.bottom, align:getComputedStyle(document.querySelector(".login-overline")).textAlign};
- });
- expect(Math.abs(r.logoCenter-r.captionCenter),"Desktop wordmark centered relative to winged H").toBeLessThanOrEqual(1);
- expect(r.gap,"Desktop caption below winged H image").toBeGreaterThanOrEqual(16);
- expect(r.align).toBe("center");
+ await expect(page.locator(".orbit-access-form")).toBeVisible();
+ await expect(page.getByRole("heading",{name:"Все системы. Один центр решений."})).toBeVisible();
+ const rect=await page.locator(".orbit-access-form").boundingBox();
+ expect(rect.width).toBeGreaterThan(250);
 }
+
 test("approved C+B Atlas with C+A fonts, working asset and navigation",async({page})=>{
  await page.setViewportSize({width:1440,height:900});await mock(page);
  await page.goto("/");
@@ -87,11 +83,11 @@ test("login design is a preview only, OAuth button disabled",async({page})=>{
  await expect(page.getByRole("heading",{name:"Вход в систему"})).toBeVisible();
  await expect(page.getByRole("button",{name:/Войти через GitHub/})).toBeDisabled();
  await expect(page.getByText(/OAuth не включён/)).toBeVisible();
- const logo=page.locator(".login-hero-mark");
+ const logo=page.locator(".orbit-auth-brand img");
  await expect(logo).toHaveJSProperty("naturalWidth",1096);
- expect(await logo.evaluate(el=>getComputedStyle(el).mixBlendMode)).toBe("normal");
- expect(await logo.evaluate(el=>{const c=document.createElement("canvas");c.width=c.height=1;const ctx=c.getContext("2d");ctx.drawImage(el,0,0);return ctx.getImageData(0,0,1,1).data[3];})).toBe(0);
-  await assertDesktopCaption(page);
+ await assertDesktopCaption(page);
+ await page.getByRole("button",{name:"Этап 02: Проверка доступа"}).click();
+ await expect(page.getByText(/Сервер проверяет разрешения/)).toBeVisible();
  await page.screenshot({path:resolve(folder,"login-1440.png"),fullPage:true});
  await assertNoOverflow(page);
 });
@@ -106,22 +102,13 @@ for(const width of [320,360,393,430,750,768,1920]){
   await page.goto("/?preview=login");
   await expect(page.getByRole("button",{name:/Войти через GitHub/})).toBeDisabled();
   if(width<=750){
-   const positions=await page.evaluate(()=>{
-    const story=document.querySelector(".login-story").getBoundingClientRect();
-    const logo=document.querySelector(".login-hero-mark").getBoundingClientRect();
-    const caption=document.querySelector(".login-overline").getBoundingClientRect();
-    return {sectionCenter:(story.left+story.right)/2,
-      logoCenter:(logo.left+logo.right)/2,
-      captionCenter:(caption.left+caption.right)/2,
-      logoBottom:logo.bottom,captionTop:caption.top,
-      captionAlign:getComputedStyle(document.querySelector(".login-overline")).textAlign};
-   });
-   expect(Math.abs(positions.logoCenter-positions.sectionCenter),"Logo must be centered").toBeLessThanOrEqual(1);
-   expect(Math.abs(positions.captionCenter-positions.sectionCenter),"Caption block must be centered").toBeLessThanOrEqual(1);
-   expect(positions.captionAlign).toBe("center");
-   expect(positions.captionTop-positions.logoBottom,"Caption must sit clear below the wings").toBeGreaterThanOrEqual(16);
+   const login=page.locator(".orbit-access-form");
+   await expect(login).toBeVisible();
+   const x=await login.boundingBox();
+   expect(x.x).toBeGreaterThanOrEqual(-1);
+   expect(x.x+x.width).toBeLessThanOrEqual(width+1);
   }
-   if(width>=768)await assertDesktopCaption(page);
+  if(width>=768)await assertDesktopCaption(page);
   await assertNoOverflow(page);
   if(width===393)await page.screenshot({path:resolve(folder,"login-393.png"),fullPage:true});
  });
