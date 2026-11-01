@@ -171,9 +171,65 @@ def observe(event_type: str, payload: object, *, delivery_run_id: int) -> dict:
     }
 
 
+# The report contains no user-supplied title, body, comment, URL or instruction.
+# Destination URLs are reconstructed from the already-validated numeric subject.
+REVIEW_LABELS = {
+    "REVIEW_ISSUE": "Проверить задачу",
+    "REVIEW_FOLLOWUP": "Проверить новое обсуждение",
+    "REVIEW_PR": "Проверить PR",
+    "REVIEW_CI_FAILURE": "Разобрать сбой CI",
+    "REVIEW_CI_UNCERTAIN": "Проверить неопределённый результат CI",
+    "NONE": "Проверка не требуется",
+}
+SUBJECT_NAMES = {
+    "issue": ("Issue", "issues"),
+    "issue_comment": ("Issue", "issues"),
+    "pr_comment": ("PR", "pull"),
+    "pull_request": ("PR", "pull"),
+    "ci_run": ("CI", "actions/runs"),
+}
+
+
+def render_summary(report: object) -> str:
+    """Safe, human-readable GitHub Actions Summary; not an executable mandate."""
+    data = _object(report, "summary_invalid")
+    kind, candidate, number = (
+        data.get("subject_type"), data.get("candidate"), data.get("subject_number")
+    )
+    if (data.get("schema") != SCHEMA or data.get("mode") != "OBSERVE_ONLY"
+            or data.get("repo") != REPO
+            or type(kind) is not str or kind not in SUBJECT_NAMES
+            or type(candidate) is not str or candidate not in REVIEW_LABELS
+            or type(number) is not int or not 1 <= number <= MAX_ID
+            or data.get("action_authorized") is not False
+            or data.get("execution_authorized") is not False
+            or data.get("owner_approval") != "NOT_GRANTED"
+            or data.get("source_trust") != "UNTRUSTED_EVENT_CONTEXT"):
+        raise ObserveRefused("summary_invalid")
+    category, path = SUBJECT_NAMES[kind]
+    url = f"https://github.com/{REPO}/{path}/{number}"
+    verdict = "Нужна проверка" if candidate != "NONE" else "Без действий"
+    tick = chr(96)
+    # URL components are constants or a strictly validated positive integer.
+    # No untrusted strings are interpolated into Markdown.
+    return "\n".join((
+        "### Hermes · Наблюдение GitHub",
+        "",
+        f"**{verdict}** · {REVIEW_LABELS[candidate]}",
+        "",
+        f"- Источник: [{category} #{number}]({url})",
+        f"- Предложение: {tick}{candidate}{tick}",
+        f"- Режим: {tick}OBSERVE_ONLY{tick}, только информация",
+        "- Разрешения на запуск или запись: **не выдавались**",
+        "- Решение принимает владелец после проверки источника и полномочий.",
+        "",
+    ))
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="GitHub event observer (no execution)")
     parser.add_argument("--observe", action="store_true")
+    parser.add_argument("--summary", action="store_true", help="Safe GitHub Actions Markdown")
     parser.add_argument("--event", choices=sorted(EVENT_ACTIONS))
     parser.add_argument("--event-file", type=Path)
     parser.add_argument("--run-id", type=int)
@@ -198,7 +254,7 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({"status": "REFUSED", "reason": "observation_unavailable",
                           "execution_authorized": False, "model_calls": 0}))
         return 2
-    print(json.dumps(result, sort_keys=True))
+    print(render_summary(result) if args.summary else json.dumps(result, sort_keys=True))
     return 0
 
 
