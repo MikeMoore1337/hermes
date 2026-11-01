@@ -40,7 +40,7 @@ class MainCIScheduleTests(unittest.TestCase):
                     with patch.object(watch_once.observe_feed, "save",
                                       return_value="STORED_SAFE_GITHUB_OBSERVATIONS") as save:
                         with patch("sys.stdout", new_callable=io.StringIO) as out:
-                            self.assertEqual(watch_once.main(["--execute", "--observe-feed"]), 0)
+                            self.assertEqual(watch_once.main(["--execute"]), 0)
         self.assertEqual(poll.call_count, 1)
         save.assert_called_once_with(report)
         self.assertEqual(__import__("json").loads(out.getvalue())["github_observe_feed"], "STORED")
@@ -80,7 +80,7 @@ class MainCIScheduleTests(unittest.TestCase):
             "StateDirectoryMode=0700", "User=root",
             "InaccessiblePaths=/var/lib/hermes /var/lib/hermes-agent ",
             "ExecStart=/usr/bin/python3 -m qa_advisor.watch_once --execute",
-            "MemoryMax=96M", "TimeoutStartSec=40s",
+            "MemoryMax=96M", "TimeoutStartSec=22s",
         ):
             with self.subTest(required=required):
                 self.assertIn(required,service)
