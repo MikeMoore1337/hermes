@@ -435,6 +435,34 @@ def _base_unit_trusted() -> None:
             raise GuardError("original_service_boundary_drift")
 
 
+
+def _installed_unit_trusted(pins: tuple[str, ...]) -> None:
+    """Verify actual systemd runtime policy, not just a text drop-in."""
+    expected = {
+        "PrivateNetwork": "no",
+        "IPAddressDeny": "0.0.0.0/0 ::/0",
+        "User": USER,
+        "Group": USER,
+        "DropInPaths": str(DROPIN),
+    }
+    for key, value in expected.items():
+        if _run(["systemctl", "show", "-P", key, UNIT],
+                timeout=SYSTEMD_TIMEOUT) != value:
+            raise GuardError("effective_service_boundary_drift")
+    address_families = set(_run([
+        "systemctl", "show", "-P", "RestrictAddressFamilies", UNIT,
+    ]).split())
+    if address_families != {"AF_UNIX", "AF_INET", "AF_INET6"}:
+        raise GuardError("effective_address_family_drift")
+    address_allow = set(_run([
+        "systemctl", "show", "-P", "IPAddressAllow", UNIT,
+    ]).split())
+    if address_allow != {"127.0.0.0/8", "::1/128", *pins}:
+        raise GuardError("effective_ip_allowlist_drift")
+    if _run(["systemctl", "show", "-P", "LoadState", GUARD]) != "loaded":
+        raise GuardError("guard_service_not_loaded")
+
+
 def install(uid: int, gid: int) -> None:
     _unit_state(install=True)
     _base_unit_trusted()
@@ -461,14 +489,14 @@ def install(uid: int, gid: int) -> None:
     if _nft_state(pins, uid) != "EXACT":
         raise GuardError("guard_postinstall_invalid")
     _unit_state(install=True)
-    if _run(["systemctl", "show", "-P", "PrivateNetwork", UNIT]) != "no":
-        raise GuardError("network_namespace_override_invalid")
+    _installed_unit_trusted(pins)
 
 
 def check(uid: int, gid: int, *, ensure: bool) -> None:
     _key_metadata(uid, gid)
     pins = _read_record(uid, gid)
     _verify_files(pins)
+    _installed_unit_trusted(pins)
     if ensure:
         # Old pins are safe only when currently observed DNS is a subset.
         current = set(_current_pins(uid))
@@ -498,11 +526,7 @@ def rollback(uid: int, gid: int) -> None:
     GUARD_FILE.unlink()
     POLICY.unlink()
     _run(["systemctl", "daemon-reload"], timeout=18)
-    if _run(["systemctl", "show", "-P", "PrivateNetwork", UNIT]) != "yes":
-        raise GuardError("rollback_denied_network_state_unverified")
-    families = _run(["systemctl", "show", "-P", "RestrictAddressFamilies", UNIT])
-    if "AF_UNIX" not in families or "AF_INET" in families:
-        raise GuardError("rollback_address_family_unverified")
+    _base_unit_trusted()
     _unit_state(install=True)
     if state == "EXACT":
         _run(["nft", "delete", "table", "inet", TABLE])
