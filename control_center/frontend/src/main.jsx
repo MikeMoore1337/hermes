@@ -9,6 +9,7 @@ import {registerPwa} from "./register-pwa.js";
 import CodexPanel from "./CodexPanel.jsx";
 import OperatorInbox from "./OperatorInbox.jsx";
 import YfcArticles from "./YfcArticles.jsx";
+import OrbitLogin from "./OrbitLogin.jsx";
 
 const ISSUE33="https://github.com/MikeMoore1337/hermes/issues/33";
 const ISSUE163="https://github.com/MikeMoore1337/hermes/issues/163";
@@ -234,28 +235,7 @@ function OperatorApp({authMode,onLogout}){
  </div>;
 }
 function LoginPreview({onBack,active=false,unavailable=false}){
- return <div className="login-root">
-  <header className="login-header"><Brand/><span>ОПЕРАЦИОННЫЙ КОНТУР H-15</span></header>
-  <main className="login-content">
-   <section className="login-story">
-    <img src="/brand.webp" alt="Эмблема Hermes Agent: крылатая H" className="login-hero-mark"/>
-    <p className="login-overline">H E R M E S &nbsp; / &nbsp; C O N T R O L &nbsp; C E N T E R</p>
-    <h1>Безопасный доступ<br/>к мониторингу и управлению.</h1>
-    <p>Единая система контроля, наблюдения и защиты.<br/>Для владельца. Конфиденциально.</p>
-    <blockquote>«Наблюдение, контроль, уверенность.»</blockquote>
-   </section>
-   <section className="login-form" aria-label={active?"Вход через GitHub":"Предпросмотр экрана входа"}>
-    <InfoBadge tone="outline">{active?"GITHUB OAUTH · ТОЛЬКО ВЛАДЕЛЕЦ":unavailable?"ВХОД НЕДОСТУПЕН":"ПРЕДПРОСМОТР · OAuth не включён"}</InfoBadge>
-    <h2>Вход в систему</h2><p className="login-form-subtitle">Для доступа к Hermes Control Center потребуется подтверждение владельца через GitHub.</p>
-    {active?<a className="github-action" href="/auth/github/start"><Github size={24}/> Войти через GitHub <ArrowRight size={19}/></a>:<button type="button" className="github-action" disabled><Github size={24}/> Войти через GitHub <ArrowRight size={19}/></button>}
-    <p className="login-notice">{active?"Доступ предоставляется только разрешённому GitHub ID. Никаких прав записи.":unavailable?"Проверка состояния авторизации не удалась. Доступ закрыт.":"Авторизация пока не подключена. Действующая панель защищена Basic Auth."}</p>
-    <div className="login-features"><span><LockKeyhole size={20}/> Только владелец</span><span><ShieldCheck size={20}/> Защищённый сеанс</span><span><Eye size={20}/> Только чтение</span></div>
-    <div className="login-policy"><LockKeyhole size={22}/><div><strong>Доступ к AI ограничен</strong><p>Полный AI Agent не допущен, H-01 работает только в утверждённых пределах.</p></div></div>
-    {!active&&!unavailable&&<button className="back-dashboard" type="button" onClick={onBack}>← Вернуться к предварительному просмотру дашборда</button>}
-   </section>
-  </main>
-  <footer className="login-footer">HERMES CONTROL CENTER · Только для владельца <a target="_blank" rel="noopener noreferrer" href={ISSUE33}>Политика доступа ↗</a></footer>
- </div>;
+ return <OrbitLogin onBack={onBack} active={active} unavailable={unavailable}/>;
 }
 function serverAuthBootstrap(){
  const root=document.getElementById("root");
