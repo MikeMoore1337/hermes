@@ -244,6 +244,77 @@ systemd IPAddressAllow принимает IP/CIDR, но не hostname или п�
 не снимать deny-all ради успешного smoke. Также остаётся независимая
 проверка фактически установленных транзитивных wheel dependencies.
 
+## Egress H191 - Google IP + nftables candidate (preview only)
+
+**Состояние: REVIEW ONLY / НЕ АКТИВИРОВАНО.** По прямому SSH владелец
+подтвердил наличие приватного JSON service account и права 0400.
+Сервис и таймер остаются отключёнными, Google OAuth/7 API запросов не
+проводились. Эта подготовка **не изменяет** текущий DENY_ALL.
+
+См. scripts/h191_google_egress_candidate.py. Утилита из стандартной
+библиотеки Python работает в одном режиме --preview, без --apply:
+- Выполняет **два публичных HTTPS GET без credentials**, только на
+  https://www.gstatic.com/ipranges/goog.json и
+  https://www.gstatic.com/ipranges/cloud.json, с проверкой TLS, без
+  прокси, редиректов и непредусмотренных адресов;
+- Снимает DNS A/AAAA **только** для oauth2.googleapis.com и
+  www.googleapis.com, обнаруживает имена DNS resolvers в /etc/resolv.conf;
+- Для эскиза требует именно systemd-resolved DNS stub 127.0.0.53.
+  При другой схеме резолвинга не расширяет разрешения автоматически;
+- Проверяет, что наблюдаемые public IP входят в опубликованные Google
+  prefixes и не попадают в customer Google Cloud ranges. Результат -
+  только актуальные /32 и /128 адреса, не широкие диапазоны Google;
+- Проверяет дату/возраст снимка (не более 15 минут), VPS hostname и
+  числовой UID конкретного пользователя. Все повреждённые, неподтверждённые
+  или неочевидные ответы обрабатываются как HOLD, а не как разрешение;
+- Строит **только печатный** черновик systemd drop-in и отдельной
+  nftables OUTPUT-chain, ограниченной по socket UID hermes-gsc (meta
+  skuid) и портам (локальный DNS 53, фиксированные Google IP:443).
+  Остальным пользователям этой кандидатной цепочкой правила не назначаются.
+
+Владелец может выполнить **только проверку кандидата**, без секрета и
+без применения firewall, после доставки этого кода в release:
+
+    set -euo pipefail
+    [[ "$(hostname -s)" == "vps1777112993" ]]
+    sha="$(cat /var/lib/hermes-main-deploy/last-success.sha)"
+    uid="$(id -u hermes-gsc)"
+    python3 -B "/opt/hermes-agent-owner/releases/main-$sha/scripts/h191_google_egress_candidate.py" --preview --uid "$uid"
+
+Пример успешного статуса (остальные выводимые IP и правила - лишь
+черновик для независимого аудита):
+
+    H191_EGRESS_PLAN=CANDIDATE_ONLY
+    H191_NETWORK_CHANGED=NO
+    H191_SECRET_ACCESSED=NO
+    H191_OAUTH_RUN=NO
+    H191_TIMER_ENABLED=NO
+
+Нельзя применять этот вывод напрямую. Google официально предупреждает,
+что адреса для default API domains часто меняются и точный диапазон
+отдельной службы нельзя зафиксировать навсегда:
+https://docs.cloud.google.com/vpc/docs/configure-private-google-access
+
+**Обязательные оставшиеся live-gates, не выполняемые утилитой:**
+1. Независимый review доверия DNS/Google HTTPS источников, реальных
+   IP/IPv6, работающего локального DNS и возможности соединения с ними.
+2. Отдельный root-owned nft guard на каждом запуске + восстановление
+   точного ограниченного policy при reboot/DNS change (без window
+   permissive); в шаблоне-кандидате специально есть Requires к
+   НЕУСТАНОВЛЕННОМУ hermes-gsc-egress-guard.service. Его отсутствие
+   должно блокировать активацию, а не сниматься ради успеха.
+3. Подтверждение реальной работы systemd cgroup IPAddressDeny/Allow и
+   nft meta skuid на Ubuntu systemd 255/cgroup2. Тесты reject любого
+   постороннего IP/порта, прямого доступа к YFC/SSH/локальным сервисам,
+   проверки TLS hostname и неутечки credentials.
+4. Проверка сохранения работоспособности остальных Hermes/YFC/Caddy/
+   Docker сервисов и обратимый rollback. Никаких широких IPAllow=any,
+   общесистемных flush ruleset, host-wide DNS/iptables правил.
+5. Только после отдельного разрешения владельца - ограниченное
+   внедрение network policy, один разрешённый OAuth+7-GSC smoke,
+   приватный snapshot и **отдельное разрешение** на включение таймера.
+   До этого реализация #191 не считается автономной.
+
 ## Статусы исполнения и измерений
 
 Отдельно учитывать:
