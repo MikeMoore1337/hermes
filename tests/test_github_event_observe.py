@@ -237,18 +237,82 @@ class GithubObserveTests(unittest.TestCase):
             self.assertEqual(file.read_bytes(), before)
             self.assertEqual(list(Path(folder).iterdir()), [file])
 
+
+    def test_operator_summary_links_are_reconstructed_and_safe(self):
+        cases = (
+            ("issues", "issues", 42, "Issue", "REVIEW_ISSUE"),
+            ("issue_comment", "issues", 42, "Issue", "REVIEW_FOLLOWUP"),
+            ("pull_request_target", "pull", 51, "PR", "REVIEW_PR"),
+            ("workflow_run", "actions/runs", 3100, "CI", "REVIEW_CI_FAILURE"),
+        )
+        for event_type, route, number, label, candidate in cases:
+            with self.subTest(event_type=event_type):
+                payload = event(event_type)
+                payload["untrusted_title"] = "SAMPLE_PRIVATE_VALUE"
+                payload["untrusted_url"] = "https://evil.example/instructions"
+                report = obs.observe(event_type, payload, delivery_run_id=111)
+                text = obs.render_summary(report)
+                self.assertIn("OBSERVE_ONLY", text)
+                self.assertIn("Разрешения на запуск или запись: **не выдавались**", text)
+                self.assertIn("https://github.com/MikeMoore1337/hermes/" + route
+                              + "/" + str(number), text)
+                self.assertIn("[" + label + " #" + str(number) + "]", text)
+                self.assertIn(candidate, text)
+                self.assertNotIn("SAMPLE_PRIVATE_VALUE", text)
+                self.assertNotIn("evil.example", text)
+                self.assertNotIn(SHA, text)
+
+    def test_summary_renderer_refuses_forged_execution_or_untrusted_identity(self):
+        original = obs.observe("issues", event("issues"), delivery_run_id=91)
+        for changes in (
+            {"execution_authorized": True},
+            {"action_authorized": True},
+            {"owner_approval": "GRANTED"},
+            {"mode": "AUTO"},
+            {"repo": "untrusted/foreign"},
+            {"subject_number": "42"},
+            {"subject_number": True},
+            {"candidate": "RUN_CLI"},
+            {"subject_type": "https://evil.example"},
+            {"source_trust": "TRUSTED"},
+        ):
+            with self.subTest(changes=changes), self.assertRaises(obs.ObserveRefused):
+                obs.render_summary({**original, **changes})
+
+    def test_cli_markdown_summary_is_opt_in_and_json_default_unmodified(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "safe.json"
+            path.write_text(json.dumps(event("pull_request_target")), encoding="utf-8")
+            common = ["--observe", "--event", "pull_request_target",
+                      "--event-file", str(path), "--run-id", "51"]
+            with patch.dict(os.environ, {"GITHUB_REPOSITORY": obs.REPO}, clear=True):
+                with patch("sys.stdout", new_callable=io.StringIO) as standard:
+                    self.assertEqual(obs.main(common), 0)
+                with patch("sys.stdout", new_callable=io.StringIO) as human:
+                    self.assertEqual(obs.main(common + ["--summary"]), 0)
+            record = json.loads(standard.getvalue())
+            self.check_safe(record)
+            self.assertIn("https://github.com/MikeMoore1337/hermes/pull/51",
+                          human.getvalue())
+            self.assertIn("REVIEW_PR", human.getvalue())
+            self.assertNotIn("SAMPLE_PRIVATE_VALUE", human.getvalue())
+            self.assertEqual(json.loads(standard.getvalue())["mode"], "OBSERVE_ONLY")
+
+
     def test_workflow_is_event_driven_and_runs_only_trusted_main_code(self):
         config = (ROOT / ".github/workflows/github-event-observe.yml").read_text(encoding="utf-8")
         for required in (
             "pull_request_target:", "issue_comment:", "issues:", "workflow_run:",
             "workflows: [\"Hermes repository checks\"]",
-            "contents: read", "ref: main", "persist-credentials: false",
+            "contents: read", "ref: ${{ github.sha }}", "persist-credentials: false",
+            "--summary", "test \"$(git rev-parse HEAD)\" = \"$EVENT_MAIN_SHA\"",
             "GITHUB_EVENT_NAME", "GITHUB_STEP_SUMMARY", "github-event-observe",
         ):
             # The command is a Python module; the workflow path remains fixed.
             if required == "github-event-observe":
                 required = "github_event_observe"
             self.assertIn(required, config)
+        self.assertNotIn("\n          ref: main\n", config)
         for forbidden in (
             "secrets.", "pull_request.head.sha", "permissions: write",
             "contents: write", "issues: write", "pull-requests: write",

@@ -23,13 +23,15 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
-      - name: Checkout trusted main, never the untrusted contributor branch
+      - name: Checkout event-pinned trusted base commit, never a PR head
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          ref: main
+          # For these event types github.sha is the default/base branch commit.
+          # A moving ref: main can cause a false failure during an unrelated push.
+          ref: ${{ github.sha }}
           persist-credentials: false
 
-      - name: Refuse a stale main checkout
+      - name: Verify checked out event SHA
         shell: bash
         env:
           EVENT_MAIN_SHA: ${{ github.sha }}
@@ -41,4 +43,4 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m qa_advisor.github_event_observe --observe --event "$GITHUB_EVENT_NAME" | tee "$GITHUB_STEP_SUMMARY"
+          python3 -m qa_advisor.github_event_observe --observe --summary --event "$GITHUB_EVENT_NAME" | tee "$GITHUB_STEP_SUMMARY"
