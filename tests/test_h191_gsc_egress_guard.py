@@ -235,6 +235,7 @@ class H191GoogleEgressGuardTests(TestCase):
              mock.patch.object(guard, "GUARD_FILE", unit), \
              mock.patch.object(guard, "DROPIN", dropin), \
              mock.patch.object(guard, "_current_pins", return_value=PINS), \
+             mock.patch.object(guard, "_sha", return_value="a" * 40), \
              mock.patch.object(guard, "_nft_create", side_effect=count_nft), \
              mock.patch.object(guard, "_store_text", side_effect=count_files), \
              mock.patch.object(guard, "_run", side_effect=["", "", "no"]), \
