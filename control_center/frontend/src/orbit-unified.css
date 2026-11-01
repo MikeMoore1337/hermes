@@ -151,6 +151,10 @@
 .theme-orbit .orbit-module-shell>:not(.oc-page){
  min-width:0;
 }
+/* Selected read-only widgets are first-class Orbit sections, never appendices
+   under the home topology. The shared React main layout owns their viewport. */
+.theme-orbit .orbit-widget-only{min-width:0;width:100%;display:block}
+.theme-orbit .orbit-widget-only>.center-area{min-width:0;width:100%;margin:0;padding:0}
 .theme-orbit .orbit-module-intro{
  display:flex;
  align-items:center;
