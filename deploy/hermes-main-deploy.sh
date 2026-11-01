@@ -135,23 +135,30 @@ done
 chmod 0755 "$work" "$work/src"
 chmod -R a+rX,go-w "$work/src"
 isolated_python() {
+  # Fast prechecks retain 240s; only the growing full unit suite gets a
+  # separately bounded 360s budget. Never disable DynamicUser or isolation.
+  local runtime_max_sec=240
+  if [[ "${1:-}" == "--full-unit-suite" ]]; then
+    runtime_max_sec=360
+    shift
+  fi
   systemd-run --wait --collect --pipe --quiet \
     -p DynamicUser=yes -p "WorkingDirectory=$work/src" \
     -p PrivateNetwork=yes -p NoNewPrivileges=yes \
     -p ProtectSystem=strict -p ProtectHome=yes -p PrivateTmp=yes \
     -p PrivateDevices=yes -p MemoryMax=1G -p TasksMax=128 \
-    -p RuntimeMaxSec=240 -E PYTHONDONTWRITEBYTECODE=1 \
+    -p "RuntimeMaxSec=$runtime_max_sec" -E PYTHONDONTWRITEBYTECODE=1 \
     /usr/bin/python3 "$@"
 }
 isolated_python scripts/validate_repo.py || die "repo validation failed"
 isolated_python scripts/check_policy_index.py || die "policy check failed"
 isolated_python scripts/check_markdown_links.py || die "markdown links failed"
-# The 2-vCPU production host has twice reached the 180-second runtime
-# deadline while CI finished the same suite. Allow bounded headroom without
-# weakening DynamicUser, network isolation, memory or capability limits.
+# The 2-vCPU production host reached its 240s deadline on 2026-11-01
+# (3215 tests; identical exact-SHA CI passed). Provide a bounded 360s
+# suite-only budget without changing precheck limits, sandboxing or quotas.
 # On failure, print only allowlisted unittest summary lines: the arbitrary
 # fixture stdout/HTTP payload stays in the root-only on-host test log.
-isolated_python -m unittest discover -s tests -q > "$work/tests.log" 2>&1 || {
+isolated_python --full-unit-suite -m unittest discover -s tests -q > "$work/tests.log" 2>&1 || {
   grep -E '^(FAIL:|ERROR:|FAILED|Ran [0-9]+ tests|OK( |$))' "$work/tests.log" |
     tail -20 >&2 || :
   echo "OFFLINE_UNIT_SUITE_FAILED_OR_TIMED_OUT" >&2
