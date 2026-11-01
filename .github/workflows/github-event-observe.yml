@@ -1,0 +1,44 @@
+name: Hermes GitHub event observe (no executor)
+
+# GitHub pushes event data to this job; no poller, paid API, token extension,
+# daemon, scheduler or Hermes agent is started.
+on:
+  issues:
+    types: [opened, reopened]
+  issue_comment:
+    types: [created]
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+  workflow_run:
+    workflows: ["Hermes repository checks"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  observe:
+    if: github.repository == 'MikeMoore1337/hermes'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Checkout trusted main, never the untrusted contributor branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Refuse a stale main checkout
+        shell: bash
+        env:
+          EVENT_MAIN_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EVENT_MAIN_SHA"
+
+      - name: Observe event without creating tasks or changing privileges
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m qa_advisor.github_event_observe --observe --event "$GITHUB_EVENT_NAME" | tee "$GITHUB_STEP_SUMMARY"
