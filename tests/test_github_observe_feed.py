@@ -27,7 +27,7 @@ def run(run_id=300, *, event="issues", action="opened",
         "head_sha": "a"*40,
         "created_at": at.isoformat().replace("+00:00", "Z"),
         "display_title": title if title is not None
-            else f"observe:{event}:{action}:{subject}:{outcome}",
+            else f"observe:{event}:{action}:{subject}:{outcome}:{run_id}",
         "head_commit": {"message": "sk-proj-SAMPLE_DO_NOT_ECHO"},
         "html_url": "https://host.invalid/SAMPLE_DO_NOT_ECHO",
     }
@@ -79,9 +79,10 @@ class GithubFeedTests(unittest.TestCase):
             ({"workflow_id": True}, "workflow_identity_invalid"),
             ({"repository": {"full_name": "MikeMoore1337/second-brain"}}, "workflow_identity_invalid"),
             ({"name": "Other workflow"}, "workflow_identity_invalid"),
-            ({"event": "issues", "display_title": "observe:issue_comment:created:42:none"}, "event_identity_mismatch"),
-            ({"display_title": "observe:issues:deleted:42:none"}, None),
-            ({"display_title": "observe:issues:opened:42:success"}, "event_outcome_invalid"),
+            ({"event": "issues", "display_title": "observe:issue_comment:created:42:none:300"}, "event_identity_mismatch"),
+            ({"display_title": "observe:issues:deleted:42:none:300"}, None),
+            ({"display_title": "observe:issues:opened:42:success:300"}, "event_outcome_invalid"),
+            ({"display_title": "observe:issues:opened:42:none:999"}, "run_title_identity_mismatch"),
             ({"created_at": "not-a-timestamp"}, "timestamp_invalid"),
         ):
             with self.subTest(changes=changes):
@@ -104,6 +105,13 @@ class GithubFeedTests(unittest.TestCase):
             feed.from_runs(packet(run()), now=datetime(2026, 11, 1))
         with self.assertRaises(feed.FeedRefused):
             feed.from_runs(packet(run(10, when=NOW + timedelta(minutes=5))), now=NOW)
+
+    def test_legacy_user_controlled_title_cannot_forge_a_verified_observation(self):
+        source = run(888, title="observe:issues:opened:42:none")
+        self.assertEqual(feed.from_runs(packet(source), now=NOW)["events"], [])
+        forged = run(889, title="observe:issues:opened:42:none:888")
+        with self.assertRaisesRegex(feed.FeedRefused, "run_title_identity_mismatch"):
+            feed.from_runs(packet(forged), now=NOW)
 
     def test_latest_event_dedup_by_subject_not_git_run_attempt(self):
         rows = packet(
