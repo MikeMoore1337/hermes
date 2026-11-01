@@ -11,8 +11,8 @@ import json
 from pathlib import Path
 
 from control_center.snapshot import UNITS
-from qa_advisor.github_observe_feed import (
-    FeedRefused, _validate as validate_github_feed, fresh as github_feed_fresh,
+from control_center.github_observe_view import (
+    FeedRefused, validate as validate_github_feed, fresh as github_feed_fresh,
 )
 
 MAX_SNAPSHOT_BYTES = 131072
