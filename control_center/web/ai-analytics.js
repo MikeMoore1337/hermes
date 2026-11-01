@@ -115,7 +115,9 @@ function mount(){
  if(!button||!button.isConnected){
   button=el("button","nav-link ai272-nav",nav);
   button.type="button";button.setAttribute("aria-label","AI Usage Analytics");
-  el("span","nav-number",button,"07");el("span","",button,"AI Usage Analytics");
+  el("span","nav-number",button,"07");
+  const icon=window.HermesOrbitIcons?.make("analytics");if(icon)button.append(icon);
+  el("span","",button,"AI Usage Analytics");
   button.onclick=show;
  }
  if(!panel||!panel.isConnected){
@@ -136,6 +138,8 @@ function mount(){
    '<div data-breakdown class="ai272-breakdown"></div></div>',
    '<div data-source class="ai272-source"></div>'
   ].join("");
+  const titleIcon=window.HermesOrbitIcons?.make("analytics","heading");
+  if(titleIcon)panel.querySelector(".ai272-head h2")?.prepend(titleIcon);
   choices(panel.querySelector("[data-period]"),[["24h","24 ч"],["7d","7 дней"],["30d","30 дней"],["all","Всё время"]],period,v=>{period=v;refresh();});
   choices(panel.querySelector("[data-activity]"),[["tokens","Токены"],["cycles","Циклы"]],activity,v=>{activity=v;draw();});
   panel.querySelector("[data-reload]").onclick=refresh;

@@ -233,6 +233,8 @@
       button = el("button", "nav-link infra294-nav", nav);
       button.type = "button";
       el("span", "nav-number", button, "08");
+      const icon=window.HermesOrbitIcons?.make("infrastructure");
+      if(icon)button.append(icon);
       el("span", "", button, "Инфраструктура");
       button.onclick = show;
     }
@@ -243,7 +245,9 @@
       const head = el("div", "infra294-head", panel);
       const title = el("div", "", head);
       el("span", "eyebrow", title, "H-15 / #294");
-      el("h2", "", title, "Инфраструктура");
+      const titleHeading=el("h2", "", title, "Инфраструктура");
+      const titleIcon=window.HermesOrbitIcons?.make("infrastructure","heading");
+      if(titleIcon)titleHeading.prepend(titleIcon);
       el("p", "infra294-hint", title, "Каждый VPS отслеживается отдельно. Нет данных - не значит нулевая нагрузка.");
       const reload = el("button", "infra294-refresh", head, "Обновить");
       reload.type = "button"; reload.onclick = refresh;
