@@ -38,6 +38,7 @@
 .orbit-rail-foot i{width:7px;height:7px;border-radius:50%;background:var(--ob-blue)}
 .orbit-content{min-width:0;display:flex;flex-direction:column}
 .orbit-topbar{height:64px;min-height:64px;background:#06111c;border-bottom:1px solid #1d3449;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:0 clamp(17px,2.4vw,34px)}
+.orbit-topbar-mobile-brand{display:none;width:31px;height:31px;object-fit:contain;flex:none}
 .orbit-topbar-breadcrumb{display:flex;align-items:center;gap:11px;white-space:nowrap;color:#86aac9;font:700 11px Consolas,monospace;letter-spacing:.1em}
 .orbit-topbar-breadcrumb strong{color:#e4f1fd;font-family:Inter,"Segoe UI",sans-serif;letter-spacing:0}
 .orbit-topbar-breadcrumb svg{color:#527b9a}
@@ -182,6 +183,7 @@
  .orbit-rail-backdrop.is-open{display:block;position:fixed;inset:0;background:#020712a8;border:0;z-index:42}
  .orbit-app-layout{display:block}
  .orbit-topbar-menu{display:flex}
+ .orbit-topbar-mobile-brand{display:block}
  .orbit-main{padding-bottom:92px}
  .orbit-app-mobilebar{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:40;align-items:stretch;justify-content:space-around;background:#081c2beb;border-top:1px solid #35556e;min-height:64px;padding-bottom:env(safe-area-inset-bottom)}
  .orbit-app-mobilebar button{min-height:60px;display:grid;place-items:center;align-content:center;gap:3px;background:transparent;border:0;flex:1;color:#95b7d2;font-size:10px;padding:7px 1px}
