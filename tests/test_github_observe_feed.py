@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, MagicMock, patch
 
 from qa_advisor import github_observe_feed as feed
 from qa_advisor.github_public import get_json, GithubPublicError
@@ -159,7 +159,7 @@ class GithubFeedTests(unittest.TestCase):
 
     def test_added_allowlisted_endpoint_cannot_be_generalized(self):
         opener = Mock()
-        response = Mock()
+        response = MagicMock()
         response.status = 200
         response.read.return_value = json.dumps(packet(run())).encode()
         response.__enter__ = Mock(return_value=response)
