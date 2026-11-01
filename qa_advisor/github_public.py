@@ -71,10 +71,16 @@ def _private_token(path: Path) -> str:
 
 
 def get_json(path: str, *, opener: Any = None, token: str | None = None) -> dict[str, Any]:
-    if not re.fullmatch(
+    # The second approved path reads only the established GitHub Observe
+    # workflow metadata. Never expand this to arbitrary API endpoints.
+    allowed_ci = re.fullmatch(
         r"/repos/MikeMoore1337/(?:hermes|your-fitness-coach)/actions/runs\?(?:branch=main&)?per_page=3",
         path,
-    ):
+    )
+    allowed_observe = (
+        path == "/repos/MikeMoore1337/hermes/actions/workflows/403765637/runs?per_page=12"
+    )
+    if not (allowed_ci or allowed_observe):
         raise GithubPublicError("endpoint_not_allowlisted")
     is_private = path.startswith("/repos/MikeMoore1337/hermes/")
     if is_private and token is None:
