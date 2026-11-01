@@ -315,6 +315,71 @@ https://docs.cloud.google.com/vpc/docs/configure-private-google-access
    приватный snapshot и **отдельное разрешение** на включение таймера.
    До этого реализация #191 не считается автономной.
 
+## H191 Google-only nft guard - staged owner install (no OAuth)
+
+**Scope:** С этого этапа можно установить *только* отдельную сетевую
+политику UID \`hermes-gsc\`, без запуска чтения GSC и без таймера.
+Текущие исходные units \`hermes-gsc-readonly.service\` и \`.timer\`
+должны оставаться выключенными до отдельного owner GO.
+
+- \`scripts/h191_gsc_egress_guard.py --plan\` проверяет pinned release,
+  root-владение исходников, metadata ключа без чтения его содержимого,
+  отсутствие конфликтов и актуальные публичные Google ranges/DNS.
+  Выполняет \`nft -c\` только для новой уникальной таблицы; изменений нет.
+- \`--install --confirm-owner-network-change\` требует root, точного
+  релиза на \`vps1777112993\`, отсутствия других drop-in, выключенных
+  service/timer и ранее не установленной таблицы. Сначала ставит
+  независимую \`nft\` OUTPUT-цепь только для UID \`hermes-gsc\`:
+  локальный DNS stub \`127.0.0.53:53\` TCP/UDP, точные Google /32-/128
+  по TCP/443, остальное **drop**. Затем сохраняет root-only pin record
+  \`/etc/hermes-gsc/google-egress-policy.json\` (0600), собственный
+  \`hermes-gsc-egress-guard.service\` (oneshot, без автозапуска) и
+  \`90-google-only.conf\` (0644) для GSC service, делает
+  \`systemctl daemon-reload\`. Ни GSC service, ни timer НЕ запускаются.
+- \`--check\` сверяет pin record, метаданные файлов и **полную**
+  структуру собственной \`nft -j\` таблицы, включая порядок правил и
+  завершающий UID drop. Не делает сетевых запросов и не мутирует сеть.
+- \`--ensure\` вызывается как зависимость **перед** каждым будущим
+  GSC запуском. Проверяет, что новые DNS Google IP входят в ранее
+  одобренный набор, а действующая таблица точная. При отсутствии таблицы
+  после reboot создаёт её *до* допуска к GSC. Любой новый DNS IP,
+  изменение файлов или правил - **HOLD**, никакой fallback на
+  \`0.0.0.0/0\` или общий proxy. Плановый запуск при ротации адресов
+  может быть пропущен, пока owner не согласует обновление pins.
+- Таблица имеет уникальное имя \`inet hermes_gsc_egress\` и
+  \`meta skuid\` для фиксированного UID; никакие другие таблицы или
+  службы не меняются. Создание производится одним nft transaction.
+  Прямое \`--install\` никогда не выполняется из GitHub Actions.
+- Установщик НЕ содержит команды для включения таймера,
+  тестовых Google OAuth запросов, изменения credentials, Caddy,
+  YFC/Docker/Cloudflare или переключения иных услуг.
+
+Owner SSH-команда при **отдельном разрешении на изменение сетевой
+политики** из текущего production SHA (путь не должен указывать на
+устаревший release):
+
+    sha="$(cat /var/lib/hermes-main-deploy/last-success.sha)"
+    script="/opt/hermes-agent-owner/releases/main-$sha/scripts/h191_gsc_egress_guard.py"
+    python3 -B "$script" --plan
+    python3 -B "$script" --install --confirm-owner-network-change
+    python3 -B "$script" --check
+
+Внимание: первая установка намеренно **не имеет автоматического
+rollback при частичной ошибке**: если nft UID-drop уже создан, он
+остаётся в force-deny, пока оператор вручную не проверит и не устранит
+причину. Не удалять такую таблицу ради запуска GSC. Restore из
+последней проверенной конфигурации и ревокация по отдельному
+owner-approved rollback необходимы до включения GSC.
+
+**Незавершённые gates:** проверить доставку кода и 15 offline тестов,
+прямой root \`--plan\`, успешный \`--install\`, фактические
+systemd+UID nft IPv4/IPv6 TCP 443 allow/deny на production,
+наличие DNS и TLS-проверки обоих Google endpoints, отказ чужому IP
+и порту, системные службы и rollback. До этого статус
+\`H191_GOOGLE_ONLY_EGRESS=HOLD\`. Даже после PASS
+\`OAUTH_LIVE=NOT_RUN\`, \`GSC_7_API=NOT_RUN\`,
+\`SYSTEMD_TIMER=DISABLED\` до отдельного разрешения.
+
 ## Статусы исполнения и измерений
 
 Отдельно учитывать:
