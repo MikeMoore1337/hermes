@@ -11,6 +11,9 @@ import json
 from pathlib import Path
 
 from control_center.snapshot import UNITS
+from qa_advisor.github_observe_feed import (
+    FeedRefused, _validate as validate_github_feed, fresh as github_feed_fresh,
+)
 
 MAX_SNAPSHOT_BYTES = 131072
 MAX_EVENTS = 24
@@ -64,6 +67,69 @@ def _event(source, key, *, category, severity, status, observed, hint, evidence)
     }
 
 
+
+# Labels are fixed in source. GitHub never supplies UI text or an action.
+_GITHUB_CANDIDATES = {
+    "REVIEW_ISSUE": ("Новая задача GitHub", "Задача", "issues"),
+    "REVIEW_FOLLOWUP": ("Новое обсуждение GitHub", "Обсуждение", "issues"),
+    "REVIEW_PR": ("Обновление PR GitHub", "PR", "pull"),
+    "REVIEW_CI_FAILURE": ("Сбой CI GitHub", "Проверка CI", "actions/runs"),
+    "REVIEW_CI_UNCERTAIN": ("Результат CI не подтверждён", "Проверка CI", "actions/runs"),
+}
+
+
+def _add_github_observations(overview, now, coverage, events):
+    source = "github_observe"
+    if not isinstance(overview, dict):
+        return
+    raw = overview.get("github_observe_feed")
+    if raw is None:
+        return
+    try:
+        value = validate_github_feed(raw)
+    except (FeedRefused, AttributeError, TypeError, ValueError):
+        coverage[source]["status"] = "PARTIAL"
+        coverage[source]["details"] = "Недопустимый снимок GitHub; записи скрыты"
+        return
+    captured = value["observed_at"]
+    if not github_feed_fresh(value, now=now):
+        coverage[source]["status"] = "STALE"
+        coverage[source]["details"] = "Проверка GitHub давно не подтверждена"
+        events.append({
+            **_event(source, "stale", category="needs_review", severity="warning",
+                     status="needs_review", observed=captured,
+                     hint="Проверить доступность наблюдателя и существующего QA Advisor.",
+                     evidence=None),
+            "title": "Наблюдения GitHub устарели",
+            "detail": "Старый снимок не доказывает наличие новых или отсутствие ошибок.",
+        })
+        return
+    coverage[source]["status"] = "PARTIAL"
+    coverage[source]["details"] = (
+        "Только последние 12 запусков GitHub Actions; не полный журнал"
+    )
+    for record in value["events"]:
+        candidate = record["candidate"]
+        label, subject_label, route = _GITHUB_CANDIDATES[candidate]
+        number, run_id = record["subject_number"], record["run_id"]
+        is_failure = candidate == "REVIEW_CI_FAILURE"
+        events.append({
+            **_event(source, f'{record["event"]}:{number}',
+                     category="failure" if is_failure else "needs_review",
+                     severity="critical" if is_failure else "warning",
+                     status="failure" if is_failure else "needs_review",
+                     observed=record["occurred_at"],
+                     hint=(f"Проверить {subject_label.lower()} №{number} в "
+                           "MikeMoore1337/hermes и текущие разрешения. "
+                           "Наблюдение не запускает задачи."),
+                     evidence=None),
+            "title": f"{label} №{number}",
+            "detail": (f"Подтверждён запуск наблюдателя №{run_id}; "
+                       "содержимое GitHub не проверялось. "
+                       "Это рекомендация оператору, не разрешение на выполнение."),
+        })
+
+
 def assemble(overview: dict | None, scheduler: dict | None, *, now: dt.datetime | None = None) -> dict:
     """Only fixed labels and counts are copied. Never expose raw job IDs or error strings."""
     clock = now or dt.datetime.now(dt.timezone.utc)
@@ -75,6 +141,7 @@ def assemble(overview: dict | None, scheduler: dict | None, *, now: dt.datetime 
         "brc": {"status": "NOT_AVAILABLE", "label": "Hermes BRC", "details": "Нет подключённого источника состояния"},
         "delivery": {"status": "NOT_AVAILABLE", "label": "Подтверждение доставки", "details": "Нет отдельной квитанции"},
         "ops_incidents": {"status": "NOT_AVAILABLE", "label": "События Ops Watch", "details": "Журнал инцидентов не подключён"},
+        "github_observe": {"status": "NOT_AVAILABLE", "label": "GitHub Observe", "details": "Нет проверенного снимка наблюдений"},
     }
     if overview is not None:
         if not isinstance(overview, dict) or overview.get("schema") != SCHEMA or overview.get("mode") != "read_only":
@@ -153,6 +220,7 @@ def assemble(overview: dict | None, scheduler: dict | None, *, now: dt.datetime 
                     })
         else:
             coverage["scheduler"]["details"] = "Данные отсутствуют или недостаточны"
+    _add_github_observations(overview, clock, coverage, events)
     seen = set()
     unique = []
     for ev in events:
