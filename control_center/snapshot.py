@@ -21,6 +21,7 @@ if _RELEASE_ROOT not in sys.path:
 from research_scout.report_view import read_owner_view
 from control_center.infrastructure import collect as collect_host_metrics
 from control_center.infrastructure import save as save_host_metrics
+from qa_advisor.github_observe_feed import read as read_github_observe_feed, FeedRefused
 
 
 DEFAULT_OUTPUT = Path("/var/lib/hermes-control-center/overview.json")
@@ -65,6 +66,12 @@ def collect(runner=subprocess.run, now=None) -> dict:
             state = "unexpected_active" if state == "active" else "blocked"
         services.append({"id": ident, "name": label, "unit": unit,
                          "kind": kind, "state": state})
+    # Root-owned sanitized feed projected by the existing snapshot collector.
+    # The web server has no GitHub token or outbound network access.
+    try:
+        github_observe = read_github_observe_feed()
+    except (FeedRefused, OSError, ValueError):
+        github_observe = None
     bounded_state = next(x["state"] for x in services if x["id"] == "agent_bounded")
     policy = ("Ограниченный H-01 Ops AI: расписание активно. " if bounded_state == "active"
               else "Ограниченный H-01 Ops AI: расписание не подтверждено. ")
@@ -75,6 +82,7 @@ def collect(runner=subprocess.run, now=None) -> dict:
         "source": "systemd read-only snapshot",
         "mode": "read_only",
         "services": services,
+        "github_observe_feed": github_observe,
         "research": read_owner_view(),
         "agent_policy": policy,
         "agent_runtime": {"scope": "bounded_event_driven", "scheduler_state": bounded_state,
