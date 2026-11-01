@@ -21,7 +21,7 @@ if _RELEASE_ROOT not in sys.path:
 from research_scout.report_view import read_owner_view
 from control_center.infrastructure import collect as collect_host_metrics
 from control_center.infrastructure import save as save_host_metrics
-from qa_advisor.github_observe_feed import read as read_github_observe_feed, FeedRefused
+from control_center.github_observe_view import load as read_github_observe_feed, FeedRefused
 
 
 DEFAULT_OUTPUT = Path("/var/lib/hermes-control-center/overview.json")
