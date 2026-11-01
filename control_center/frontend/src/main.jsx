@@ -229,9 +229,17 @@ function OperatorApp({authMode,onLogout}){
     <div className="orbit-rail-brand"><Brand/></div>
     <div className="orbit-rail-label"><span>РАБОЧАЯ ПАНЕЛЬ</span><span>01-09</span></div>
     <div className="atlas-section-nav" onClickCapture={event=>{
-      if(menuOpen&&event.target.closest(".ai272-nav,.quota295-nav,.infra294-nav")){
-       setMenuOpen(false);requestAnimationFrame(()=>document.getElementById("main-content")?.focus());
-      }
+      const widget=event.target.closest(".ai272-nav,.quota295-nav,.infra294-nav");
+      if(!widget)return;
+      if(menuOpen)setMenuOpen(false);
+      const target=widget.matches(".ai272-nav")?".ai272-panel":
+       widget.matches(".quota295-nav")?".quota295-panel":".infra294-panel";
+      requestAnimationFrame(()=>{
+       const panel=document.querySelector(target);
+       if(panel&&!panel.hidden){
+        panel.scrollIntoView({block:"start",behavior:window.matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth"});
+       }
+      });
      }}>
      <Nav view={view} mode={authMode} onView={onView}/>
      <div className="orbit-side-refresh">
