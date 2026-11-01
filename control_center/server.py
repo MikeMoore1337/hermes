@@ -75,6 +75,7 @@ ASSETS = {
     "/brand.webp": ("brand.webp", "image/webp"),
     "/orbit-brand.svg": ("orbit-brand.svg", "image/svg+xml"),
     "/favicon.svg": ("favicon.svg", "image/svg+xml"),
+    "/pwa-orbit.svg": ("pwa-orbit.svg", "image/svg+xml"),
     "/orbit-policy.svg": ("orbit-policy.svg", "image/svg+xml"),
     "/orbit-workspace.svg": ("orbit-workspace.svg", "image/svg+xml"),
     "/orbit-lock.svg": ("orbit-lock.svg", "image/svg+xml"),
