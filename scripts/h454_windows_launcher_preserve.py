@@ -247,6 +247,9 @@ HELPERS = r"""    # Keep the verified container across task retries and logons.
             ($h454Oom.Value -is [bool] -and -not $h454Oom.Value))) 'H454_OOM_UNSAFE'
         foreach ($h454Prop in @($h454Item.HostConfig.PSObject.Properties | Sort-Object Name)) {
             if ($h454Prop.Name -ceq 'OomKillDisable') { $h454Host[$h454Prop.Name] = $false }
+            elseif ($h454Prop.Name -ceq 'Dns' -and $h454Prop.Value -is [array] -and $h454Prop.Value.Count -eq 0) {
+                $h454Host[$h454Prop.Name] = $null
+            }
             else { $h454Host[$h454Prop.Name] = $h454Prop.Value }
         }
         $h454Mounts = @(foreach ($h454Mount in $h454Item.Mounts) {

@@ -474,6 +474,17 @@ Require ((Get-H454ContainerProfileHash $script:h454Item) -ceq $script:h454Expect
 $script:h454Item.Config.PSObject.Properties.Remove('MacAddress')
 Require ((Get-H454ContainerProfileHash $script:h454Item) -ceq $script:h454ExpectedProfile) 'OMITTED_EMPTY_MAC'
 
+# Docker can report an unspecified DNS list as null or an empty array.
+Reset-H454Fixture
+$script:h454Item.HostConfig | Add-Member -NotePropertyName Dns -NotePropertyValue $null
+$h454DnsProfile=Get-H454ContainerProfileHash $script:h454Item
+$script:h454Item.HostConfig.Dns=@()
+Require ((Get-H454ContainerProfileHash $script:h454Item) -ceq $h454DnsProfile) 'EMPTY_DNS_CHANGED_PROFILE'
+$script:h454Item.HostConfig.Dns=@('192.0.2.53')
+Require ((Get-H454ContainerProfileHash $script:h454Item) -cne $h454DnsProfile) 'CUSTOM_DNS_ACCEPTED'
+$script:h454Item.HostConfig.Dns=@();$script:h454Item.HostConfig.Privileged=$true
+Require ((Get-H454ContainerProfileHash $script:h454Item) -cne $h454DnsProfile) 'PRIVILEGE_DRIFT_ACCEPTED'
+
 # Docker labels are a map: order must not change the pinned profile.
 Reset-H454Fixture
 $script:h454Item.Config.Labels=[pscustomobject][ordered]@{'z.example'='z';'com.hermes.scope'='synthetic';'A.example'='a'}

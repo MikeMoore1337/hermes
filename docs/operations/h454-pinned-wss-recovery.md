@@ -1,11 +1,14 @@
 # H454: authenticated BRC transport and interrupted-update recovery
 
-**Relay transport is partially active; the Windows cutover remains HOLD.** A
-private TLS proxy and a separately restricted SSH key are installed on the
-relay. A temporary Windows tunnel passed pinned TLS without credentials and was
-closed. The original Windows container is stopped; its secure restaging,
-production operator and live MCP remain unverified. A concrete maintenance
-window is required before stopping BRC for a later cutover.
+**The Windows WSS tunnel is active; the BRC cutover remains HOLD.** A private
+TLS proxy and a separately restricted SSH key are installed on the relay. The
+permanent Windows supervisor connected with pinned TLS and recovered its SSH
+child after a controlled termination while the original container was stopped.
+The original container is still stopped. Its raw profile differs from the old
+launcher pin only in the representation of an unspecified DNS list; the
+normalized comparison matches. Secure restaging, the production update
+operator and live MCP remain unverified. A concrete maintenance window is
+required before stopping BRC for a later cutover.
 
 While the original was already stopped, its legacy scheduled task was disabled
 after checking the exclusive runtime lock, original container identity and
@@ -325,8 +328,8 @@ and must not be deployed as a standalone recovery procedure.
 
 `h454_windows_wss_tunnel.ps1` is the canonical SSH-only supervisor. It revalidates
 its protected configuration and identity on each attempt, retries after failures,
-and places its child processes in an owned Windows job. The task is not
-running; registration alone does not restore the device.
+and places its child processes in an owned Windows job. Its real scheduled task
+is now running; the tunnel alone does not restore the device.
 
 `New-H454WssTaskDefinition` constructs the tested periodic task definition
 in memory with one-minute repetition, no execution time limit, no overlapping
@@ -370,10 +373,21 @@ three hashes, the disabled old task and closed listeners; the container
 remained stopped. Synthetic checks retained the marker and
 original-byte backup when a failure was injected before or after atomic
 replacement, then resumed under a reacquired lock. The five pinned WSS files
-are installed in the real state directory and the new task is registered
-disabled; independent checks verified its identity, the file hashes and closed
-listeners. Real encrypted credentials were decrypted only in memory and
-validated against the expected device and old relay; they were not sent.
+are installed in the real state directory and the new task is running.
+Independent checks verified its identity, the file hashes, pinned TLS, refusal
+of a wrong TLS name and a closed plaintext listener. The owned SSH process was
+terminated while the original was stopped; the same supervisor established a
+new pinned connection. Real encrypted credentials were decrypted only in
+memory and validated against the expected device and old relay; they were not
+sent. The original's raw Docker profile hash differs from the historical pin:
+the current `HostConfig.Dns` is an empty array where the pin used `null`. A
+read-only comparison matches the historical pin after this single normalization;
+synthetic nonempty DNS and privilege changes still fail. Docker Engine 29.9.2
+applies a DNS override only for a nonempty list in its
+[DNS implementation](https://github.com/moby/moby/blob/docker-v29.9.2/daemon/libnetwork/sandbox_dns_unix.go).
+The normalizer is prepared in generated launchers, not installed in the old
+launcher. The eventual recovery operator must still verify actual DNS and the
+isolated route before sending credentials.
 
 ## Evidence and limits
 
