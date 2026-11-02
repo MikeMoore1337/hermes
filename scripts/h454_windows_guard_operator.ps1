@@ -8,7 +8,7 @@ param(
     [Parameter(Mandatory=$true)][ValidatePattern('^[A-F0-9]{64}$')][string]$TaskBackupSha256,
     [Parameter(Mandatory=$true)][ValidatePattern('^[A-F0-9]{64}$')][string]$TaskSourceSha256,
     [Parameter(Mandatory=$true)][ValidatePattern('^[A-F0-9]{64}$')][string]$RecoverySourceSha256,
-    [switch]$PrepareWss,
+    [switch]$PrepareWss,[switch]$StartWss,
     [string]$FilesSourceSha256,[string]$SupervisorSha256,[string]$IdentitySha256,
     [string]$ModuleSha256,[string]$CaSha256,[string]$NodeSha256,[string]$PublicKeySha256,
     [string]$PublicCaPath,
@@ -91,6 +91,7 @@ function Get-H454Container([string]$Id){
 $lock=$null
 try{
     Require-H454 (-not $Apply -or $OwnerApproved) 'H454_GUARD_OPERATOR_APPROVAL'
+    Require-H454 (-not $StartWss -or ($PrepareWss -and $Apply -and $OwnerApproved)) 'H454_GUARD_OPERATOR_WSS_MODE'
     if($PrepareWss){
         foreach($pin in @($FilesSourceSha256,$SupervisorSha256,$IdentitySha256,$ModuleSha256,$CaSha256,$NodeSha256,$PublicKeySha256)){
             Require-H454 ($pin -cmatch '^[A-F0-9]{64}$') 'H454_GUARD_OPERATOR_WSS_PINS'
@@ -135,8 +136,13 @@ try{
         $result=Install-H454WssFiles $supervisor $identity $module $ca $SupervisorSha256 $IdentitySha256 $ModuleSha256 $CaSha256 `
             $NodeSha256 $PublicKeySha256 $OriginalLauncherSha256 $GuardedLauncherSha256 $markerHash $BackupName $lock -Apply:$Apply -OwnerApproved:$OwnerApproved
         if($Apply){
-            $taskStatus=Register-H454WssTaskDisabled $OriginalLauncherSha256 $GuardedLauncherSha256 $markerHash `
-                $SupervisorSha256 $result.ConfigSha256 $BackupName $lock -OwnerApproved
+            if($StartWss){
+                $taskStatus=Start-H454WssTask $OriginalLauncherSha256 $GuardedLauncherSha256 $markerHash `
+                    $SupervisorSha256 $result.ConfigSha256 $BackupName $lock -OwnerApproved
+            }else{
+                $taskStatus=Register-H454WssTaskDisabled $OriginalLauncherSha256 $GuardedLauncherSha256 $markerHash `
+                    $SupervisorSha256 $result.ConfigSha256 $BackupName $lock -OwnerApproved
+            }
         }
     }else{
         $result=Install-H454WssGuard $OriginalLauncherSha256 $GuardedLauncherSha256 $BackupName $lock -Apply:$Apply -OwnerApproved:$OwnerApproved

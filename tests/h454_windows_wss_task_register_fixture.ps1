@@ -43,6 +43,7 @@ $utf8=[Text.UTF8Encoding]::new($false)
 $user=[Security.Principal.WindowsIdentity]::GetCurrent().Name
 $powershell=Join-Path ([Environment]::GetFolderPath('System')) 'WindowsPowerShell\v1.0\powershell.exe'
 $script:createdTask=$null;$script:registrations=0;$script:drift=$false;$script:disables=0;$script:legacyDrift=$false;$script:legacyReads=0
+$script:enables=0;$script:starts=0;$script:stops=0;$script:startFault=$false;$script:startDrift=$false
 function Get-NetTCPConnection {[CmdletBinding()]param([int]$LocalPort,[string]$State)}
 function Get-H454Container([string]$Id){
     return [pscustomobject]@{Id=$Id;Image='sha256:0c95960c02e0dbe00a6a11ee6253d4055e4a7abf7671404b3f876dfdb95bd5d8';
@@ -90,7 +91,27 @@ function Disable-ScheduledTask {
     [CmdletBinding()]param([string]$TaskName,[string]$TaskPath)
     Require-H454 ($TaskName -ceq $FixtureTaskName -and $null -ne $script:createdTask) 'FIXTURE_DISABLE'
     if($RealScheduler){ScheduledTasks\Disable-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath -ErrorAction Stop | Out-Null;return}
-    $script:disables++;$script:createdTask.State='Disabled'
+    $script:disables++;$script:createdTask.Settings.Enabled=$false;$script:createdTask.State='Disabled'
+}
+function Enable-ScheduledTask {
+    [CmdletBinding()]param([string]$TaskName,[string]$TaskPath)
+    Require-H454 ($TaskName -ceq $FixtureTaskName -and $null -ne $script:createdTask) 'FIXTURE_ENABLE'
+    if($RealScheduler){ScheduledTasks\Enable-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath -ErrorAction Stop | Out-Null;return}
+    $script:enables++;$script:createdTask.Settings.Enabled=$true;$script:createdTask.State='Ready'
+}
+function Start-ScheduledTask {
+    [CmdletBinding()]param([string]$TaskName,[string]$TaskPath)
+    Require-H454 ($TaskName -ceq $FixtureTaskName -and $null -ne $script:createdTask) 'FIXTURE_START'
+    if($RealScheduler){ScheduledTasks\Start-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath -ErrorAction Stop;return}
+    $script:starts++;$script:createdTask.State='Running'
+    if($script:startFault){throw 'FIXTURE_START_FAILURE'}
+    if($script:startDrift){$script:createdTask.Actions=@([pscustomobject]@{Execute=$script:registeredAction.Execute;Arguments='unknown'})}
+}
+function Stop-ScheduledTask {
+    [CmdletBinding()]param([string]$TaskName,[string]$TaskPath)
+    Require-H454 ($TaskName -ceq $FixtureTaskName -and $null -ne $script:createdTask) 'FIXTURE_STOP'
+    if($RealScheduler){ScheduledTasks\Stop-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath -ErrorAction Stop;return}
+    $script:stops++
 }
 try{
     $parts=Get-H454WssTaskGuardParts
@@ -126,6 +147,9 @@ $TUNNEL_TARGET = "fixture@$HOST_ADDR"
     $lock=Open-H454RecoveryLock $state;$files.Add((Join-Path $state 'runtime.lock'))
     Require-H454 ((Get-Command Register-ScheduledTask).ScriptBlock.ToString().Contains('FIXTURE_REGISTER') -and
         (Get-Command Get-ScheduledTask).ScriptBlock.ToString().Contains('FIXTURE_UNEXPECTED_TASK') -and
+        (Get-Command Enable-ScheduledTask).ScriptBlock.ToString().Contains('FIXTURE_ENABLE') -and
+        (Get-Command Start-ScheduledTask).ScriptBlock.ToString().Contains('FIXTURE_START') -and
+        (Get-Command Stop-ScheduledTask).ScriptBlock.ToString().Contains('FIXTURE_STOP') -and
         (Get-Command Assert-H454WssNode).ScriptBlock.ToString().Contains('FIXTURE_NODE')) 'FIXTURE_MOCK_SCOPE'
     $nodeHash='D'*64
     foreach($bom in @($false,$true)){
@@ -206,6 +230,37 @@ $TUNNEL_TARGET = "fixture@$HOST_ADDR"
     Require-H454 ($again.Count -eq 1 -and $again[0] -ceq 'H454_WSS_TASK=ALREADY_REGISTERED_DISABLED' -and
         $script:registrations -eq 1) 'FIXTURE_IDEMPOTENT'
     if(-not $RealScheduler){
+    $refused=$false
+    try{$null=Start-H454WssTask $oldHash $guardHash $markerHash $supervisorHash $configHash $backupName $lock}
+    catch{$refused=$_.Exception.Message -ceq 'H454_WSS_TASK_APPROVAL'}
+    Require-H454 ($refused -and $script:enables -eq 0) 'FIXTURE_START_APPROVAL'
+    $script:createdTask.Actions=@([pscustomobject]@{Execute=$script:registeredAction.Execute;Arguments='unknown'})
+    $refused=$false
+    try{$null=Start-H454WssTask $oldHash $guardHash $markerHash $supervisorHash $configHash $backupName $lock -OwnerApproved}
+    catch{$refused=$_.Exception.Message -ceq 'H454_WSS_TASK_EXISTS'}
+    Require-H454 ($refused -and $script:enables -eq 0) 'FIXTURE_START_COLLISION'
+    $script:createdTask.Actions=@($script:registeredAction)
+    $script:startFault=$true;$refused=$false
+    try{$null=Start-H454WssTask $oldHash $guardHash $markerHash $supervisorHash $configHash $backupName $lock -OwnerApproved}
+    catch{$refused=$_.Exception.Message -ceq 'H454_WSS_TASK_ACTIVATION'}
+    Require-H454 ($refused -and $script:createdTask.State -ceq 'Disabled' -and
+        -not $script:createdTask.Settings.Enabled -and $script:stops -eq 1) 'FIXTURE_START_CLEANUP'
+    $script:startFault=$false
+    $started=@(Start-H454WssTask $oldHash $guardHash $markerHash $supervisorHash $configHash $backupName $lock -OwnerApproved)
+    Require-H454 ($started.Count -eq 1 -and $started[0] -ceq 'H454_WSS_TASK=START_REQUESTED' -and
+        $script:createdTask.State -ceq 'Running' -and $script:createdTask.Settings.Enabled -and
+        $script:enables -eq 2 -and $script:starts -eq 2) 'FIXTURE_START_SUCCESS'
+    $refused=$false
+    try{$null=Start-H454WssTask $oldHash $guardHash $markerHash $supervisorHash $configHash $backupName $lock -OwnerApproved}
+    catch{$refused=$_.Exception.Message -ceq 'H454_WSS_TASK_EXISTS'}
+    Require-H454 ($refused -and $script:starts -eq 2) 'FIXTURE_START_REPEAT'
+    $script:createdTask.Settings.Enabled=$false;$script:createdTask.State='Disabled'
+    $script:startDrift=$true;$refused=$false;$beforeDisables=$script:disables;$beforeStops=$script:stops
+    try{$null=Start-H454WssTask $oldHash $guardHash $markerHash $supervisorHash $configHash $backupName $lock -OwnerApproved}
+    catch{$refused=$_.Exception.Message -ceq 'H454_WSS_TASK_ACTIVATION_AMBIGUOUS'}
+    Require-H454 ($refused -and $script:disables -eq $beforeDisables -and $script:stops -eq $beforeStops) 'FIXTURE_START_DRIFT'
+    $script:startDrift=$false;$script:createdTask.Actions=@($script:registeredAction)
+    $script:createdTask.Settings.Enabled=$false;$script:createdTask.State='Disabled';$script:disables=0
     $script:createdTask.Actions=@([pscustomobject]@{Execute=$script:registeredAction.Execute;Arguments='unknown'})
     $refused=$false
     try{$null=Register-H454WssTaskDisabled $oldHash $guardHash $markerHash $supervisorHash $configHash $backupName $lock -OwnerApproved}

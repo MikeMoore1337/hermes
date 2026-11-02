@@ -326,8 +326,7 @@ and must not be deployed as a standalone recovery procedure.
 `h454_windows_wss_tunnel.ps1` is the canonical SSH-only supervisor. It revalidates
 its protected configuration and identity on each attempt, retries after failures,
 and places its child processes in an owned Windows job. The task is not
-registered; this source does not by itself restore the device or guarantee
-recovery if the supervisor process exits.
+running; registration alone does not restore the device.
 
 `New-H454WssTaskDefinition` constructs the tested periodic task definition
 in memory with one-minute repetition, no execution time limit, no overlapping
@@ -339,7 +338,10 @@ after interruption, but refuses an unknown or enabled task. It does not create
 the marker, install files, enable the task or operate the container; those
 remain the operator's responsibility. Synthetic registration tests exercise refusals with a mocked
 scheduler. A separate local test registered and removed a uniquely named,
-disabled task using the real scheduler; it did not install the BRC task.
+disabled task using the real scheduler. `Start-H454WssTask` separately checks
+the exact disabled task and requests its activation under the lock. If a start
+fails after activation, it disables and stops only the matching task. A start
+request does not prove TLS or MCP readiness.
 `h454_windows_wss_config.py` builds the supervisor configuration in memory
 only after verifying that the guarded launcher is the exact transformation of
 the pinned original and that its relay address is RFC 1918. Synthetic settings
@@ -358,18 +360,20 @@ the disabled legacy task, the exclusive lock, container identity and closed
 listeners before preparing the guarded launcher, its backup and the pending
 marker. Its default is a read-only preflight; applying it requires the owner
 switch. Its separate WSS preparation mode checks pinned source bytes and can
-install the supervisor files and register its task disabled. Neither mode
-enables the task, starts or stops a container, stages credentials or performs
-MCP. Supplied hashes must be established independently.
+install the supervisor files and register its task disabled. An explicit
+`StartWss` request can then activate that matching task; it does not start or
+stop a container, stage credentials or perform MCP. Supplied hashes must be
+established independently.
 On the real stopped container, the operator installed the guarded launcher,
 an original-byte backup and a pending marker. Independent checks confirmed the
 three hashes, the disabled old task and closed listeners; the container
 remained stopped. Synthetic checks retained the marker and
 original-byte backup when a failure was injected before or after atomic
-replacement, then resumed under a reacquired lock. WSS installation has not
-been applied to the real state directory. Its preflight passed against that
-guarded state and the real public CA and SSH public key; no supervisor files
-or WSS task were created by the preflight.
+replacement, then resumed under a reacquired lock. The five pinned WSS files
+are installed in the real state directory and the new task is registered
+disabled; independent checks verified its identity, the file hashes and closed
+listeners. Real encrypted credentials were decrypted only in memory and
+validated against the expected device and old relay; they were not sent.
 
 ## Evidence and limits
 

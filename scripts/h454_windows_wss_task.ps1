@@ -228,12 +228,14 @@ function Install-H454WssGuard(
     return [pscustomobject]@{Status='INSTALLED_PENDING';BackupName=$BackupName;MarkerSha256=$markerHash}
 }
 
-function Test-H454WssTaskMatch([object]$Task,[object]$Definition,[string]$ExpectedSid) {
+function Test-H454WssTaskMatch([object]$Task,[object]$Definition,[string]$ExpectedSid,[switch]$Enabled) {
     if($null -eq $Task){return $false}
     $actions=@($Task.Actions | Where-Object {$null -ne $_})
     $triggers=@($Task.Triggers | Where-Object {$null -ne $_})
     try{$sid=Get-H454WssTaskSid ([string]$Task.Principal.UserId)}catch{return $false}
-    if([string]$Task.State -cne 'Disabled' -or $Task.Settings.Enabled -ne $false -or $sid -cne $ExpectedSid -or
+    $stateOk=if($Enabled){$Task.Settings.Enabled -eq $true -and [string]$Task.State -cin @('Ready','Queued','Running')}
+        else{$Task.Settings.Enabled -eq $false -and [string]$Task.State -ceq 'Disabled'}
+    if(-not $stateOk -or $sid -cne $ExpectedSid -or
         [string]$Task.Principal.LogonType -cne 'Interactive' -or [string]$Task.Principal.RunLevel -cne 'Limited' -or
         $actions.Count -ne 1 -or [string]$actions[0].Execute -cne [string]$Definition.Action.Execute -or
         [string]$actions[0].Arguments -cne [string]$Definition.Action.Arguments -or
@@ -304,4 +306,45 @@ function Register-H454WssTaskDisabled(
     Assert-H454RecoveryLock $state $Lock
     Assert-H454WssLegacyUnchanged $legacy $legacySid
     'H454_WSS_TASK=REGISTERED_DISABLED'
+}
+
+function Start-H454WssTask(
+    [string]$OriginalLauncherSha256,[string]$GuardedLauncherSha256,[string]$MarkerSha256,
+    [string]$SupervisorSha256,[string]$ConfigSha256,[string]$BackupName,[IO.FileStream]$Lock,[switch]$OwnerApproved
+) {
+    if(-not $OwnerApproved){throw 'H454_WSS_TASK_APPROVAL'}
+    $context=Get-H454WssDisabledLegacy
+    $state=$context.StateDir;$name='HermesH454WssTunnel'
+    Assert-H454RecoveryLock $state $Lock
+    Assert-H454WssOriginalStopped
+    $supervisor=Join-Path $state 'h454-wss-tunnel.ps1'
+    $definition=New-H454WssTaskDefinition $supervisor $ConfigSha256 ([string]$context.Task.Principal.UserId) ((Get-Date).AddMinutes(5))
+    $existing=@(Get-ScheduledTask -TaskName $name -TaskPath '\' -ErrorAction Stop)
+    if($existing.Count -ne 1 -or -not (Test-H454WssTaskMatch $existing[0] $definition $context.Sid)){throw 'H454_WSS_TASK_EXISTS'}
+    $verified=@(Register-H454WssTaskDisabled $OriginalLauncherSha256 $GuardedLauncherSha256 $MarkerSha256 `
+        $SupervisorSha256 $ConfigSha256 $BackupName $Lock -OwnerApproved)
+    if($verified.Count -ne 1 -or $verified[0] -cne 'H454_WSS_TASK=ALREADY_REGISTERED_DISABLED'){throw 'H454_WSS_TASK_EXISTS'}
+    Assert-H454RecoveryLock $state $Lock
+    Assert-H454WssLegacyUnchanged $context.Task $context.Sid
+    Assert-H454WssOriginalStopped
+    try {
+        Enable-ScheduledTask -TaskName $name -TaskPath '\' -ErrorAction Stop | Out-Null
+        $current=Get-ScheduledTask -TaskName $name -TaskPath '\' -ErrorAction Stop
+        if(-not (Test-H454WssTaskMatch $current $definition $context.Sid -Enabled)){throw 'H454_WSS_TASK_ACTIVATION'}
+        Start-ScheduledTask -TaskName $name -TaskPath '\' -ErrorAction Stop
+        $current=Get-ScheduledTask -TaskName $name -TaskPath '\' -ErrorAction Stop
+        if(-not (Test-H454WssTaskMatch $current $definition $context.Sid -Enabled)){throw 'H454_WSS_TASK_ACTIVATION'}
+        Assert-H454RecoveryLock $state $Lock
+        Assert-H454WssLegacyUnchanged $context.Task $context.Sid
+        return 'H454_WSS_TASK=START_REQUESTED'
+    }catch{
+        $current=Get-ScheduledTask -TaskName $name -TaskPath '\' -ErrorAction Stop
+        if(Test-H454WssTaskMatch $current $definition $context.Sid -Enabled){
+            Disable-ScheduledTask -TaskName $name -TaskPath '\' -ErrorAction Stop | Out-Null
+            Stop-ScheduledTask -TaskName $name -TaskPath '\' -ErrorAction Stop
+        }elseif(-not (Test-H454WssTaskMatch $current $definition $context.Sid)){
+            throw 'H454_WSS_TASK_ACTIVATION_AMBIGUOUS'
+        }
+        throw 'H454_WSS_TASK_ACTIVATION'
+    }
 }
