@@ -186,6 +186,33 @@ class H191GoogleEgressGuardTests(TestCase):
             guard.check(UID, GID, ensure=True)
             create.assert_called_once_with(PINS, UID)
 
+    def test_disabled_units_use_successful_show_metadata_not_is_enabled(self):
+        # Real Ubuntu systemctl is-enabled disabled prints "disabled" but exits 1.
+        # _run(check=False) rejects any nonzero exit; show -P UnitFileState is 0.
+        actual = []
+        def fake_run(command, **_kwargs):
+            actual.append(command)
+            if command[3] in ("ActiveState", "UnitFileState"):
+                return "inactive" if command[3] == "ActiveState" else "disabled"
+            raise AssertionError("unexpected systemctl command")
+        with mock.patch.object(guard, "_run", side_effect=fake_run):
+            guard._unit_state(install=True)
+        self.assertEqual(actual, [
+            ["systemctl", "show", "-P", "ActiveState", guard.UNIT],
+            ["systemctl", "show", "-P", "UnitFileState", guard.UNIT],
+            ["systemctl", "show", "-P", "ActiveState", guard.TIMER],
+            ["systemctl", "show", "-P", "UnitFileState", guard.TIMER],
+        ])
+
+    def test_enabled_or_masked_units_still_refuse_install(self):
+        for state in ("enabled", "masked", "static", "indirect"):
+            with self.subTest(state=state):
+                def fake_run(command, **_kwargs):
+                    return "inactive" if command[3] == "ActiveState" else state
+                with mock.patch.object(guard, "_run", side_effect=fake_run):
+                    with self.assertRaisesRegex(guard.GuardError, "gsc_unit_not_disabled"):
+                        guard._unit_state(install=True)
+
     def test_untrusted_base_service_blocks_nft_install(self):
         with mock.patch.object(guard, "_run", side_effect=[
             "yes", "0.0.0.0/0 ::/0", "", "AF_UNIX AF_INET",
