@@ -343,6 +343,7 @@ def guard_unit_text() -> str:
         "NoNewPrivileges=yes\n"
         "PrivateNetwork=no\n"
         "ProtectSystem=strict\n"
+        "ReadWritePaths=/run/lock\n"
         "ProtectHome=yes\n"
         "PrivateTmp=yes\n"
         "PrivateDevices=yes\n"
