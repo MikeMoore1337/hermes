@@ -66,8 +66,10 @@ default bridge after checking the running original, isolated route, pinned image
 and inherited workspace mount. The stopped candidate has no credentials. A later
 cutover must connect it to the isolated network and disconnect the bridge before
 starting it. Docker Desktop refused connecting a container created with `none`.
-Disposable preparation and interruption fixtures passed; preparing the real
-candidate and switching to it have not yet been verified.
+Disposable preparation and interruption fixtures passed. The guarded operator
+prepared the actual candidate in stopped state without credentials; the original
+remained running and a subsequent real MCP call passed. Switching to the
+candidate and returning from it remain unverified.
 
 The legacy Windows route sent its bearer to a plaintext local SSH forward.
 Checking the SSH PID before connecting does not authenticate the process that
