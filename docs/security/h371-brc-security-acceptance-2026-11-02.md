@@ -23,7 +23,7 @@
 | Replay protection | `h15_brc_reconnect_socket_e2e.mjs`: socket+device binding, старые/чужие ответы отброшены | SYNTHETIC_PASS | Ответ-replay заблокирован; эффекты уже **выполненной** команды не откатываются автоматически |
 | Reconnect handling | Disconnect/reconnect, duplicate hello, heartbeat expiry в тесте настоящего DeviceHub | SYNTHETIC_PASS | Физический reboot/login Windows, SSH outage и reconnect настоящего сервиса - #454, NOT_VERIFIED |
 | Resource limits | GitHub CI Docker `--pids-limit`, `--memory`, `--cpus`; частичные caps вывода в dispatcher | SYNTHETIC_PASS | Полное дерево потомков, общий срок жизни и runtime quota на production требует независимой проверки |
-| Audit logging | `mcp/invoke.ts` пишет `store.audit` на принятые/завершившиеся вызовы; mock-счётчик | SOURCE_ONLY + SYNTHETIC_PASS | Отказ до `hub.call` не всегда имеет отдельную audit-квитанцию; проверить журнал production без утечки arguments |
+| Audit logging | `mcp/invoke.ts` пишет `store.audit` на принятые/завершившиеся вызовы; mock-счётчик | SOURCE_ONLY + SYNTHETIC_PASS | Новый fail-closed patch сохраняет только стабильный код ошибки вместо сырого текста удалённого агента; отказ до `hub.call` не всегда имеет отдельную audit-квитанцию; production-журнал независимо не проверен |
 | Secret isolation | CI не монтирует owner secrets, реальные sandbox-отказы на host-private; токены в SQLite как hash | SYNTHETIC_PASS + VERIFIED (частично) | Текущие production secrets, env, дескрипторы и журналы при активном shell независимо NOT_VERIFIED |
 
 ## Новые проверки этого PR (до первого точного CI - NOT_VERIFIED)
@@ -33,6 +33,8 @@
 3. Отказ `tools/call` при удалённой записи устройства, смене владельца, несовпадении token hash или паузе, даже если старый socket остаётся подключён.
 4. Отрицательные unit фикстуры для дрейфа upstream: патчеры не должны менять частично незнакомый код.
 5. Реальный loopback HTTP/WSS и скомпилированный gateway, существующие полный upstream/patch тесты, Docker OS denial и 2-agent OAuth MCP CI без host-полномочий.
+6. Санитизация сырых ошибок удалённого агента в MCP-ответах и audit-хранилище, проверка с синтетической строкой-секретом.
+7. OS-негативные symlink и `../` записи в read-only source, unmounted host-secret symlink.
 
 ## Не пересекаться с #454 / решение о закрытии
 
