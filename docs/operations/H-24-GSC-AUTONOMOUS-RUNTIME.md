@@ -428,6 +428,57 @@ systemd+UID nft IPv4/IPv6 TCP 443 allow/deny на production,
 \`OAUTH_LIVE=NOT_RUN\`, \`GSC_7_API=NOT_RUN\`,
 \`SYSTEMD_TIMER=DISABLED\` до отдельного разрешения.
 
+### H191 - точечное обновление Google IP после ротации (без OAuth)
+
+При фактической проверке на VPS (02.11.2026) один из двух хостов,
+`oauth2.googleapis.com`, сменил A/AAAA адреса: из-под root HTTPS
+к актуальному IPv4 проходил, а `hermes-gsc` останавливался системой
+UID-scoped nft. `www.googleapis.com` по закреплённым адресам
+оставался доступен. **Это штатный отказ при устаревших /32-/128 pins,
+не основание отключать DENY_ALL.**
+
+Подготовлена отдельная однократная owner-gated операция,
+`--refresh-pins --confirm-owner-network-change`:
+
+- Только при `hermes-gsc-readonly.service` и `.timer` в
+  `inactive/disabled`; existing nft JSON, policy 0600, drop-in 0644,
+  effective cgroup IPAddressDeny=any, UID, release SHA и ключевые
+  метаданные должны точно совпадать с ранее разрешённым состоянием.
+- Новые IP берутся исключительно из DNS двух фиксированных Google
+  hostname и проверяются по свежим публичным `goog.json` минус
+  Google Cloud customer ranges. Только индивидуальные /32-/128,
+  никакого `0.0.0.0/0`, SOCKS/HTTP прокси или дополнительных портов.
+- В одном `nft -f` transaction заменяется только таблица
+  `inet hermes_gsc_egress`: новая UID allowlist плюс обязательный
+  `meta skuid ... drop` в конце. Сначала переключается nft, затем
+  атомарно обновляются **только** root-owned policy/drop-in и
+  `systemctl daemon-reload`. Между этапами действуют пересекающиеся
+  ограничения nft и systemd, разрешённая сеть не расширяется.
+- Постпроверка требует exact nft JSON, effective systemd allowlist,
+  запрещённые service/timer и соответствие pinned release.
+  При частичной ошибке выполняется попытка восстановления прежних
+  exact state; если она не подтверждена, `HOLD` без ослабления firewall.
+- `--refresh-pins` не запускает OAuth, GSC API, service/timer и не
+  обновляет расписание. Повторные ручные операции без изменений
+  должны завершаться `PASS_UNCHANGED`.
+
+Пример отдельной операции владельца после доставки, с прямого
+доверенного root-терминала (после owner network-change approval):
+
+```bash
+sha="$(cat /var/lib/hermes-main-deploy/last-success.sha)"
+script="/opt/hermes-agent-owner/releases/main-$sha/scripts/h191_gsc_egress_guard.py"
+python3 -I -B "$script" --check
+python3 -I -B "$script" --refresh-pins --confirm-owner-network-change
+python3 -I -B "$script" --check
+```
+
+**Автоматизация DNS rotation не включена этой командой.** Для
+полностью автономной работы нужен отдельно проверенный краткоживущий
+root guard refresh перед дневным запуском, который не отключает
+cgroup DENY_ALL и не пытается исполнить live GSC при непроверенных
+адресах. До подтверждённого интеграционного E2E таймер остаётся OFF.
+
 ## Статусы исполнения и измерений
 
 Отдельно учитывать:
