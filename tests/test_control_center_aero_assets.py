@@ -39,6 +39,17 @@ class TestAeroAssets(unittest.TestCase):
                 self.assertNotIn("http://", content.replace("http://www.w3.org/2000/svg", ""))
                 self.assertNotIn("https://", content)
 
+    def test_metallic_mark_has_four_feathers_per_wing_and_no_embedded_images(self):
+        mark = (PUBLIC / "orbit-brand.svg").read_text(encoding="utf-8")
+        self.assertIn("Four separated feathers", mark)
+        self.assertEqual(mark.count("M10 15 L116 55 L116 79"), 2)
+        self.assertEqual(mark.count("M82 115 L116 127 L116 140"), 2)
+        self.assertIn("crossTop", mark)
+        self.assertIn("crossFront", mark)
+        self.assertNotIn("data:image", mark)
+        self.assertNotIn("<image", mark)
+        self.assertNotIn("<foreignObject", mark)
+
     def test_raster_sizes_and_signatures(self):
         for name, size in PNG_SIZES.items():
             with self.subTest(name=name):

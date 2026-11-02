@@ -1,17 +1,71 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 256" role="img" aria-label="HERMES COMMAND CENTER - Aero"><defs>
-<linearGradient id="metal" x1="0" y1="0" x2=".85" y2="1"><stop stop-color="#FAFDFF"/><stop offset=".32" stop-color="#C5E9FF"/><stop offset=".70" stop-color="#6DB9EE"/><stop offset="1" stop-color="#3283C6"/></linearGradient>
-<linearGradient id="wing" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#DDF3FF"/><stop offset=".55" stop-color="#82CBF7"/><stop offset="1" stop-color="#357FB9"/></linearGradient>
-<linearGradient id="surface" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#0A243B"/><stop offset="1" stop-color="#05101C"/></linearGradient>
-<radialGradient id="aura"><stop stop-color="#267DB1" stop-opacity=".26"/><stop offset="1" stop-color="#267DB1" stop-opacity="0"/></radialGradient>
-</defs><g transform="scale(0.5)"><g>
-<path d="M57 135L186 197V231L96 194Z" fill="url(#wing)"/>
-<path d="M77 214L186 247V277L107 254Z" fill="url(#metal)"/>
-<path d="M105 289L186 303V329L138 314Z" fill="url(#wing)"/>
-<g transform="translate(512 0) scale(-1 1)">
-<path d="M57 135L186 197V231L96 194Z" fill="url(#wing)"/>
-<path d="M77 214L186 247V277L107 254Z" fill="url(#metal)"/>
-<path d="M105 289L186 303V329L138 314Z" fill="url(#wing)"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1060 220" role="img" aria-label="Hermes Command Center Aero"><defs>
+<linearGradient id="wingMetal" x1="0" y1="0" x2=".78" y2="1"><stop stop-color="#F6FDFF"/><stop offset=".17" stop-color="#C9EEFF"/><stop offset=".51" stop-color="#84C8F2"/><stop offset=".78" stop-color="#4495D0"/><stop offset="1" stop-color="#205B8C"/></linearGradient>
+<linearGradient id="wingFacet" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#D9F6FF"/><stop offset=".5" stop-color="#6CB8E4"/><stop offset="1" stop-color="#1D4D74"/></linearGradient>
+<linearGradient id="wingEdge" x1="0" y1="0" x2=".92" y2="1"><stop stop-color="#173450"/><stop offset=".6" stop-color="#376F9B"/><stop offset="1" stop-color="#092740"/></linearGradient>
+<linearGradient id="cap" x1="0" y1="0" x2=".9" y2="1"><stop stop-color="#FBFFFF"/><stop offset=".35" stop-color="#DAF4FF"/><stop offset="1" stop-color="#7FC5EE"/></linearGradient>
+<linearGradient id="leftFace" x1="0" y1="0" x2="1" y2=".78"><stop stop-color="#EDFBFF"/><stop offset=".16" stop-color="#B5E5FE"/><stop offset=".61" stop-color="#61ACDA"/><stop offset="1" stop-color="#1A507A"/></linearGradient>
+<linearGradient id="rightFace" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#DDF5FF"/><stop offset=".35" stop-color="#82C8F3"/><stop offset=".65" stop-color="#3C82B7"/><stop offset="1" stop-color="#0B3C66"/></linearGradient>
+<linearGradient id="innerFace" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#4C9FCD"/><stop offset=".48" stop-color="#9CD4F6"/><stop offset="1" stop-color="#E7FAFF"/></linearGradient>
+<linearGradient id="crossTop" x1="0" y1="0" x2=".28" y2="1"><stop stop-color="#F0FBFF"/><stop offset=".51" stop-color="#BCE8FF"/><stop offset="1" stop-color="#72BCEA"/></linearGradient>
+<linearGradient id="crossFront" x1="0" y1="0" x2=".9" y2="1"><stop stop-color="#39799F"/><stop offset=".4" stop-color="#679FCA"/><stop offset="1" stop-color="#153F67"/></linearGradient>
+<linearGradient id="crossBottom" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#386A8A"/><stop offset="1" stop-color="#0D2B47"/></linearGradient>
+<linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#0B2841"/><stop offset=".45" stop-color="#081C2F"/><stop offset="1" stop-color="#03101D"/></linearGradient>
+<linearGradient id="type" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#FFFFFF"/><stop offset=".28" stop-color="#DDF5FF"/><stop offset=".57" stop-color="#7BBFEE"/><stop offset="1" stop-color="#498EC2"/></linearGradient>
+<radialGradient id="glow"><stop stop-color="#2C8CBF" stop-opacity=".22"/><stop offset="1" stop-color="#2C8CBF" stop-opacity="0"/></radialGradient>
+</defs><g transform="translate(6 24) scale(.83)"><g><g stroke-linejoin="round">
+<!-- Four separated feathers preserve the owner-approved Aero silhouette. -->
+<path d="M10 15 L116 55 L116 79 L35 49 Z" fill="#04233F" opacity=".85" transform="translate(1 3)"/>
+<path d="M10 15 L116 55 L116 76 L36 47 Z" fill="url(#wingMetal)" stroke="#B5E9FF" stroke-width=".7"/>
+<path d="M10 15 L116 55 L116 59 L13 19 Z" fill="#EEFCFF" opacity=".83"/>
+<path d="M35 47 L116 76 L116 82 L36 53 Z" fill="url(#wingEdge)"/>
+<path d="M37 55 L116 83 L116 97 L53 76 Z" fill="url(#wingFacet)" stroke="#8FD2F8" stroke-width=".6"/>
+<path d="M37 55 L116 83 L116 85 L41 58 Z" fill="#DAF6FF" opacity=".92"/>
+<path d="M53 77 L116 98 L116 104 L57 84 Z" fill="#0A2D4B"/>
+<path d="M57 83 L116 106 L116 119 L70 102 Z" fill="url(#wingMetal)" stroke="#75BBE3" stroke-width=".5"/>
+<path d="M57 83 L116 106 L116 108 L60 87 Z" fill="#DCFAFF" opacity=".73"/>
+<path d="M70 103 L116 121 L116 127 L75 109 Z" fill="#103B60"/>
+<path d="M82 115 L116 127 L116 140 L96 129 Z" fill="url(#wingFacet)" stroke="#6AB9EA" stroke-width=".45"/>
+<path d="M82 115 L116 127 L116 129 L85 119 Z" fill="#DDF6FF" opacity=".76"/>
+</g><g transform="translate(320 0) scale(-1 1)"><g stroke-linejoin="round">
+<!-- Four separated feathers preserve the owner-approved Aero silhouette. -->
+<path d="M10 15 L116 55 L116 79 L35 49 Z" fill="#04233F" opacity=".85" transform="translate(1 3)"/>
+<path d="M10 15 L116 55 L116 76 L36 47 Z" fill="url(#wingMetal)" stroke="#B5E9FF" stroke-width=".7"/>
+<path d="M10 15 L116 55 L116 59 L13 19 Z" fill="#EEFCFF" opacity=".83"/>
+<path d="M35 47 L116 76 L116 82 L36 53 Z" fill="url(#wingEdge)"/>
+<path d="M37 55 L116 83 L116 97 L53 76 Z" fill="url(#wingFacet)" stroke="#8FD2F8" stroke-width=".6"/>
+<path d="M37 55 L116 83 L116 85 L41 58 Z" fill="#DAF6FF" opacity=".92"/>
+<path d="M53 77 L116 98 L116 104 L57 84 Z" fill="#0A2D4B"/>
+<path d="M57 83 L116 106 L116 119 L70 102 Z" fill="url(#wingMetal)" stroke="#75BBE3" stroke-width=".5"/>
+<path d="M57 83 L116 106 L116 108 L60 87 Z" fill="#DCFAFF" opacity=".73"/>
+<path d="M70 103 L116 121 L116 127 L75 109 Z" fill="#103B60"/>
+<path d="M82 115 L116 127 L116 140 L96 129 Z" fill="url(#wingFacet)" stroke="#6AB9EA" stroke-width=".45"/>
+<path d="M82 115 L116 127 L116 129 L85 119 Z" fill="#DDF6FF" opacity=".76"/>
+</g></g><g stroke-linejoin="round">
+<path d="M111 45 L139 45 L139 86 L181 86 L181 45 L209 45 L209 160 L181 144 L181 112 L139 112 L139 144 L111 160 Z" fill="#082A47" stroke="#3E95C6" stroke-width="2"/>
+<path d="M111 158 L135 175 L135 144 Z" fill="#0C385C" opacity=".68"/>
+<path d="M209 158 L185 175 L185 144 Z" fill="#0C385C" opacity=".68"/>
+<path d="M111 44 L140 44 L140 143 L111 160 Z" fill="url(#leftFace)" stroke="#A1DFFD" stroke-width=".72"/>
+<path d="M111 44 L127 59 L127 146 L111 160 Z" fill="url(#leftFace)"/>
+<path d="M127 59 L140 44 L140 143 L127 146 Z" fill="url(#rightFace)"/>
+<path d="M111 44 L140 44 L127 61 Z" fill="url(#cap)"/>
+<path d="M111 44 L113 153 L117 151 L117 50 Z" fill="#F8FFFF" opacity=".42"/>
+<path d="M127 61 L133 69 L133 137 L127 146 Z" fill="#4FA6D7" opacity=".45"/>
+<path d="M111 160 L127 146 L140 143 L114 159 Z" fill="#B4E5FF" opacity=".55"/>
+<g transform="translate(320 0) scale(-1 1)">
+<path d="M111 44 L140 44 L140 143 L111 160 Z" fill="url(#leftFace)" stroke="#A1DFFD" stroke-width=".72"/>
+<path d="M111 44 L127 59 L127 146 L111 160 Z" fill="url(#leftFace)"/>
+<path d="M127 59 L140 44 L140 143 L127 146 Z" fill="url(#rightFace)"/>
+<path d="M111 44 L140 44 L127 61 Z" fill="url(#cap)"/>
+<path d="M111 44 L113 153 L117 151 L117 50 Z" fill="#F8FFFF" opacity=".42"/>
+<path d="M127 61 L133 69 L133 137 L127 146 Z" fill="#4FA6D7" opacity=".45"/>
+<path d="M111 160 L127 146 L140 143 L114 159 Z" fill="#B4E5FF" opacity=".55"/>
 </g>
-<path d="M188 175L226 187V239H286V187L324 175V351L286 340V277H226V340L188 351Z" fill="url(#metal)"/>
-<path d="M226 239H286V277H226Z" fill="#DDF7FF"/>
-</g></g><text x="296" y="133" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="94" letter-spacing="16" font-weight="750" fill="#EAF4FF">HERMES</text><path d="M302 169H350M977 169H1031" stroke="#76BDF1" stroke-width="2"/><text x="371" y="181" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="29" letter-spacing="10" fill="#96D4FA" font-weight="500">COMMAND CENTER</text></svg>
+<path d="M137 84 L183 84 L187 96 L183 112 L137 112 L133 96 Z" fill="url(#crossTop)" stroke="#A6DFF8" stroke-width=".75"/>
+<path d="M139 86 L181 86 L187 97 L133 97 Z" fill="url(#crossTop)"/>
+<path d="M133 97 L187 97 L183 110 L137 110 Z" fill="url(#crossFront)"/>
+<path d="M139 100 L181 100 L181 105 L139 105 Z" fill="url(#crossBottom)" opacity=".67"/>
+<path d="M133 97 L139 105 L139 141 L133 145 Z" fill="url(#innerFace)"/>
+<path d="M187 97 L181 105 L181 141 L187 145 Z" fill="url(#innerFace)"/>
+<path d="M134 96 L186 96" stroke="#E3F8FF" stroke-width="1.4" opacity=".9"/>
+<path d="M139 111 H181" stroke="#1B5B87" stroke-width="1.4"/>
+</g></g></g><text x="305" y="116" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="89" font-weight="750" letter-spacing="11" fill="url(#type)">HERMES</text><path d="M305 145H359 M968 145H1015" stroke="#9BCFF0" stroke-width="1.9"/><text x="372" y="157" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="29" letter-spacing="8.6" fill="#B3DDF9">COMMAND CENTER</text></svg>
