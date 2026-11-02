@@ -397,6 +397,10 @@ only an absent DNS override and, for a separately verified recovery network,
 the network name before comparing the remaining profile. The guard operator's
 read-only `CheckOriginal` mode passed against the actual stopped original; it
 does not create a route, start the container or stage credentials.
+That preflight uses `h454_windows_recovery_docker.ps1`, which pins the signed
+Docker executable and local engine socket, rejects host overrides and treats a
+timeout as ambiguous. A disposable, network-isolated container confirmed exact
+stdin bytes using synthetic data; the fixture was removed.
 
 ## Evidence and limits
 

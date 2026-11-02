@@ -528,6 +528,21 @@ try {
         [IO.File]::Delete($h454ProfileLauncher)
     }
 }
+. (Join-Path (Split-Path $PSScriptRoot -Parent) 'scripts/h454_windows_recovery_docker.ps1')
+foreach($h454BadArg in @('--host=other','--context=other','--config=other','-Hother','-cother','two words','$(fixture)')){
+    $h454Refused=$false
+    try{$null=Invoke-H454RecoveryDocker -Arguments @('container','inspect',$h454BadArg) -DockerSha256 ('A'*64)}
+    catch{$h454Refused=$_.Exception.Message -ceq 'H454_DOCKER_ARGUMENT'}
+    Require $h454Refused 'DOCKER_ARGUMENT_NOT_REFUSED'
+}
+$h454OldDockerHost=[Environment]::GetEnvironmentVariable('DOCKER_HOST','Process')
+try {
+    [Environment]::SetEnvironmentVariable('DOCKER_HOST','tcp://127.0.0.1:1234','Process')
+    $h454Refused=$false
+    try{$null=Invoke-H454RecoveryDocker -Arguments @('container','inspect',('1'*64)) -DockerSha256 ('A'*64)}
+    catch{$h454Refused=$_.Exception.Message -ceq 'H454_DOCKER_ENV'}
+    Require $h454Refused 'DOCKER_HOST_NOT_REFUSED'
+} finally {[Environment]::SetEnvironmentVariable('DOCKER_HOST',$h454OldDockerHost,'Process')}
 
 # Docker labels are a map: order must not change the pinned profile.
 Reset-H454Fixture
