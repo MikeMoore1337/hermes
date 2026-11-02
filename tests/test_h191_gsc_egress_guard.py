@@ -436,10 +436,10 @@ class H191GoogleEgressGuardTests(TestCase):
              mock.patch.object(guard, "_installed_unit_trusted"), \
              mock.patch.object(guard, "_current_pins", return_value=changed), \
              mock.patch.object(guard, "refresh_pins", return_value="UPDATED") as refresh, \
-             mock.patch.object(guard, "_nft_state") as state:
+             mock.patch.object(guard, "_nft_state", return_value="EXACT") as state:
             guard.check(UID, GID, ensure=True)
             refresh.assert_called_once_with(UID, GID, automatic=True)
-            state.assert_not_called()
+            state.assert_called_once_with(PINS, UID)
 
     def test_ensure_refresh_failure_is_fail_closed(self):
         with mock.patch.object(guard, "_key_metadata"), \
@@ -449,10 +449,46 @@ class H191GoogleEgressGuardTests(TestCase):
              mock.patch.object(guard, "_current_pins", return_value=(V4,)), \
              mock.patch.object(guard, "refresh_pins",
                                side_effect=guard.GuardError("provider_dns_evidence_unverified")), \
+             mock.patch.object(guard, "_nft_state", return_value="EXACT"), \
              mock.patch.object(guard, "_nft_create") as create:
             with self.assertRaisesRegex(guard.GuardError, "provider_dns_evidence_unverified"):
                 guard.check(UID, GID, ensure=True)
             create.assert_not_called()
+
+    def test_reboot_with_rotated_dns_recreates_nft_before_refresh(self):
+        changed = (V4, "142.251.1.10/32")
+        events = []
+        with mock.patch.object(guard, "_key_metadata"), \
+             mock.patch.object(guard, "_read_record", return_value=PINS), \
+             mock.patch.object(guard, "_verify_files"), \
+             mock.patch.object(guard, "_installed_unit_trusted"), \
+             mock.patch.object(guard, "_current_pins", return_value=changed), \
+             mock.patch.object(guard, "_nft_state", return_value="MISSING"), \
+             mock.patch.object(guard, "_nft_create",
+                               side_effect=lambda *_: events.append("restore")), \
+             mock.patch.object(guard, "refresh_pins",
+                               side_effect=lambda *_a, **_kw: events.append("refresh")):
+            guard.check(UID, GID, ensure=True)
+        self.assertEqual(events, ["restore", "refresh"])
+
+    def test_reboot_missing_nft_and_invalid_dns_fails_closed(self):
+        events = []
+        with mock.patch.object(guard, "_key_metadata"), \
+             mock.patch.object(guard, "_read_record", return_value=PINS), \
+             mock.patch.object(guard, "_verify_files"), \
+             mock.patch.object(guard, "_installed_unit_trusted"), \
+             mock.patch.object(guard, "_nft_state", return_value="MISSING"), \
+             mock.patch.object(guard, "_nft_create",
+                               side_effect=lambda *_: events.append("restore")), \
+             mock.patch.object(guard, "_current_pins",
+                               side_effect=guard.GuardError("provider_dns_evidence_unverified")), \
+             mock.patch.object(guard, "refresh_pins") as refresh:
+            with self.assertRaisesRegex(
+                guard.GuardError, "provider_dns_evidence_unverified"
+            ):
+                guard.check(UID, GID, ensure=True)
+            refresh.assert_not_called()
+        self.assertEqual(events, ["restore"])
 
     def test_automatic_refresh_allows_timer_active_only_without_gsc_pid(self):
         expected = [
