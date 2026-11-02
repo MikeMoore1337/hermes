@@ -342,6 +342,11 @@ the marker, install files, enable the task or operate the container; those
 remain the operator's responsibility. Synthetic registration tests exercise refusals with a mocked
 scheduler. A separate local test registered and removed a uniquely named,
 disabled task using the real scheduler; it did not install the BRC task.
+`h454_windows_wss_config.py` builds the supervisor configuration in memory
+only after verifying that the guarded launcher is the exact transformation of
+the pinned original and that its relay address is RFC 1918. Synthetic settings
+were accepted by the PowerShell validator; settings were also built in memory
+from the real launcher and public files without printing addresses or secrets.
 
 `h454_windows_guard_operator.ps1` is a bounded preparation operator for the
 already-stopped original. It verifies supplied source and task-backup pins,

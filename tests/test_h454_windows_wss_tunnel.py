@@ -1,3 +1,4 @@
+import hashlib
 import os
 from pathlib import Path
 import subprocess
@@ -6,6 +7,8 @@ import unittest
 from unittest import mock
 
 from scripts import h454_windows_wss_tunnel as subject
+from scripts.h454_windows_launcher_guard import ANCHOR, patch_launcher_bytes
+from scripts.h454_windows_wss_config import build as build_config
 from scripts.h454_windows_wss_launcher import JOB_GUARD
 
 
@@ -41,8 +44,18 @@ class WssTunnelTests(unittest.TestCase):
             with tempfile.TemporaryDirectory(prefix='h454-tunnel-test-') as temporary:
                 source = Path(temporary) / 'supervisor.ps1'
                 source.write_bytes(subject.build())
+                legacy = ("$HOST_ADDR = 'relay.example.test'\n$RELAY = '172.29.1.2:3000'\n$SSH_PORT = 2222\n"
+                          '$TUNNEL_TARGET = "fixture@$HOST_ADDR"\n' + ANCHOR).encode()
+                old_hash = hashlib.sha256(legacy).hexdigest()
+                guarded = patch_launcher_bytes(legacy, old_hash)
+                config = Path(temporary) / 'generated.json'
+                config.write_bytes(build_config(legacy, guarded, original_sha256=old_hash,
+                                                guarded_sha256=hashlib.sha256(guarded).hexdigest(),
+                                                ca_sha256='A' * 64, identity_sha256='B' * 64,
+                                                node_sha256='D' * 64, public_key_sha256='E' * 64))
                 result = subprocess.run([str(powershell), '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
-                                         '-File', str(fixture), '-Source', str(source), '-FixtureParent', temporary],
+                                         '-File', str(fixture), '-Source', str(source), '-FixtureParent', temporary,
+                                         '-GeneratedConfig', str(config)],
                                         capture_output=True, text=True, timeout=20, creationflags=subprocess.CREATE_NO_WINDOW)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertIn('H454_WSS_TUNNEL_FIXTURE=PASS', result.stdout)

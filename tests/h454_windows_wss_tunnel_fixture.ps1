@@ -1,5 +1,6 @@
 #requires -Version 5.1
-param([Parameter(Mandatory=$true)][string]$Source,[Parameter(Mandatory=$true)][string]$FixtureParent)
+param([Parameter(Mandatory=$true)][string]$Source,[Parameter(Mandatory=$true)][string]$FixtureParent,
+      [Parameter(Mandatory=$true)][string]$GeneratedConfig)
 $ErrorActionPreference='Stop'
 function Require([bool]$Condition,[string]$Reason){if(-not $Condition){throw $Reason}}
 $sourceText=[IO.File]::ReadAllText($Source)
@@ -56,6 +57,9 @@ try {
         try{. $configCheck}catch{$refused=$_.Exception.Message -ceq 'H454_TUNNEL_CONFIG'}
         Require $refused 'FIXTURE_CONFIG_REFUSAL'
     }
+    [IO.File]::WriteAllBytes($config,[IO.File]::ReadAllBytes($GeneratedConfig))
+    . $configCheck
+    . $legacyCheck
     $loopStart=$sourceText.IndexOf('$h454JobInitialized=$false',[StringComparison]::Ordinal)
     $tryStart=$sourceText.IndexOf('try {',$loopStart,[StringComparison]::Ordinal)
     $catchStart=$sourceText.LastIndexOf('}catch{',[StringComparison]::Ordinal)
