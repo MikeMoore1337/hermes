@@ -79,6 +79,7 @@ class RelayAuthTests(unittest.TestCase):
         with self.assertRaisesRegex(AuditError, 'unreviewed_ws_auth_source'):
             apply(self.root)
         self.assertEqual(self.target.read_text(encoding='utf-8'), altered)
+
     def test_unapproved_sha_refused(self):
         with self.assertRaisesRegex(AuditError, "unreviewed_upstream_sha"):
             apply(self.root, sha="f" * 40)
