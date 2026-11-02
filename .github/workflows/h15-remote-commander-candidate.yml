@@ -43,6 +43,8 @@ on:
       - scripts/h454_credential_broker_stage.cjs
       - scripts/h454_credential_broker_e2e.mjs
       - scripts/h454_windows_network_guard.ps1
+      - scripts/h454_windows_candidate_prepare.ps1
+      - tests/h454_windows_candidate_prepare_fixture.ps1
       - scripts/h454_windows_cutover_engine.ps1
       - deploy/h15/Dockerfile.brc-agent-pinned-wss
       - deploy/h15/Dockerfile.brc-agent-broker
@@ -111,6 +113,8 @@ on:
       - scripts/h454_credential_broker_stage.cjs
       - scripts/h454_credential_broker_e2e.mjs
       - scripts/h454_windows_network_guard.ps1
+      - scripts/h454_windows_candidate_prepare.ps1
+      - tests/h454_windows_candidate_prepare_fixture.ps1
       - scripts/h454_windows_cutover_engine.ps1
       - deploy/h15/Dockerfile.brc-agent-pinned-wss
       - deploy/h15/Dockerfile.brc-agent-broker

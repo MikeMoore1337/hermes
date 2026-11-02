@@ -61,6 +61,12 @@ Docker Desktop reported different source strings for a test bind mount and a
 `--volumes-from` copy, although both read the same synthetic sentinel and a
 candidate write appeared on the host. This does not verify the real workspace.
 
+The guarded operator can prepare a stopped broker-route candidate on Docker's
+`none` network after checking the running original, isolated route, pinned image
+and inherited workspace mount. It never starts or stops a container in this mode.
+Disposable Docker and interruption fixtures passed; preparing the real candidate
+and switching to it have not yet been verified.
+
 The legacy Windows route sent its bearer to a plaintext local SSH forward.
 Checking the SSH PID before connecting does not authenticate the process that
 accepts that particular connection. The pinned-agent source patch requires
