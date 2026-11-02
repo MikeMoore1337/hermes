@@ -2,11 +2,16 @@
 # The caller pins the original launcher and separately verifies the actual route.
 function Assert-H454OriginalProfile(
     [object]$Container,[string]$Launcher,[string]$LauncherSha256,
-    [string]$OriginalId,[string]$OriginalImage,[string]$OriginalName,[string]$NetworkName
+    [string]$OriginalId,[string]$OriginalImage,[string]$OriginalName,[string[]]$NetworkNames
 ) {
     Require-H454 ($OriginalId -cmatch '^[a-f0-9]{64}$' -and $OriginalImage -cmatch '^sha256:[a-f0-9]{64}$' -and
         $OriginalName -cmatch '^[a-zA-Z0-9][a-zA-Z0-9_.-]{1,127}$' -and
-        $NetworkName -cmatch '^[a-zA-Z0-9][a-zA-Z0-9_.-]{1,127}$') 'H454_ORIGINAL_PROFILE_PINS'
+        $null -ne $NetworkNames -and $NetworkNames.Count -ge 1 -and $NetworkNames.Count -le 2) 'H454_ORIGINAL_PROFILE_PINS'
+    $expected=[Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach($name in $NetworkNames){
+        Require-H454 ($name -cmatch '^[a-zA-Z0-9][a-zA-Z0-9_.-]{1,127}$' -and $expected.Add($name)) 'H454_ORIGINAL_PROFILE_PINS'
+    }
+    Require-H454 ($NetworkNames.Count -eq 1 -or $expected.Contains('bridge')) 'H454_ORIGINAL_PROFILE_PINS'
     Assert-H454WssTaskFile $Launcher $LauncherSha256 200000
     Require-H454 ($null -ne $Container -and $Container.Id -ceq $OriginalId -and
         $Container.Image -ceq $OriginalImage -and $Container.Name -ceq ('/'+$OriginalName) -and
@@ -16,8 +21,9 @@ function Assert-H454OriginalProfile(
     Require-H454 ($null -ne $dns -and ($null -eq $dns.Value -or ($dns.Value -is [array] -and $dns.Value.Count -eq 0)) -and
         $null -ne $networks -and $null -ne $networks.Value) 'H454_ORIGINAL_PROFILE_NETWORK'
     $names=@($networks.Value.PSObject.Properties.Name)
-    Require-H454 ($names.Count -eq 1 -and $names[0] -ceq $NetworkName -and
+    Require-H454 ($names.Count -eq $expected.Count -and
         ($null -eq $Container.HostConfig.ExtraHosts -or @($Container.HostConfig.ExtraHosts).Count -eq 0)) 'H454_ORIGINAL_PROFILE_NETWORK'
+    foreach($name in $names){Require-H454 ($expected.Contains($name)) 'H454_ORIGINAL_PROFILE_NETWORK'}
     $bytes=[IO.File]::ReadAllBytes($Launcher)
     Require-H454 ((Hash-H454Bytes $bytes) -ceq $LauncherSha256) 'H454_ORIGINAL_PROFILE_SOURCE'
     $text=[Text.UTF8Encoding]::new($false,$true).GetString($bytes)
@@ -33,7 +39,7 @@ function Assert-H454OriginalProfile(
     $oldDns=$dns.Value;$oldNetworks=$networks.Value
     try {
         $dns.Value=$null
-        if($NetworkName -cne 'bridge'){$networks.Value=[pscustomobject]@{bridge=[pscustomobject]@{}}}
+        if($expected.Count -ne 1 -or -not $expected.Contains('bridge')){$networks.Value=[pscustomobject]@{bridge=[pscustomobject]@{}}}
         $actual=Get-H454ContainerProfileHash $Container
     } finally {$dns.Value=$oldDns;$networks.Value=$oldNetworks}
     Require-H454 ($actual -ceq $pins[0].Groups[1].Value.ToUpperInvariant()) 'H454_ORIGINAL_PROFILE_DRIFT'

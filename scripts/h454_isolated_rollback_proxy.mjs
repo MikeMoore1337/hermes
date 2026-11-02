@@ -9,17 +9,17 @@ import { pathToFileURL } from 'node:url';
 const SERVER_NAME = 'brc-agent.internal';
 const CA_PATH = '/opt/hermes-rollback/relay-ca.pem';
 
-function privateIPv4(address) {
+export function privateIPv4(address) {
   if (net.isIP(address) !== 4) return false;
   const [a, b] = address.split('.').map(Number);
   return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
 }
 
-function ipv4Number(address) {
+export function ipv4Number(address) {
   return address.split('.').reduce((value, octet) => value * 256 + Number(octet), 0);
 }
 
-function isolatedNetwork(cidr) {
+export function isolatedNetwork(cidr) {
   if (typeof cidr !== 'string' || !/^(?:\d{1,3}\.){3}\d{1,3}\/(?:[8-9]|[12]\d|30)$/.test(cidr))
     throw Error('H454_ISOLATED_NETWORK');
   const [address, bits] = cidr.split('/'), prefix = Number(bits);

@@ -21,8 +21,18 @@ if os.name == 'nt':
                                   (['-OwnerApproved', '-StartWss'], 'H454_GUARD_OPERATOR_WSS_MODE'),
                                   (['-OwnerApproved', '-CheckOriginal'], 'H454_GUARD_OPERATOR_ORIGINAL_MODE'),
                                   (['-OwnerApproved', '-PrepareRecoveryRoute'], 'H454_GUARD_OPERATOR_ORIGINAL_MODE'),
+                                  (['-OwnerApproved', '-PrepareRecoveryBroker'], 'H454_GUARD_OPERATOR_ORIGINAL_MODE'),
                                   (['-OwnerApproved', '-PrepareRecoveryRoute', '-OriginalProfileSourceSha256', 'F' * 64,
                                     '-RecoveryDockerSourceSha256', 'F' * 64, '-DockerSha256', 'F' * 64], 'H454_GUARD_OPERATOR_ROUTE_PINS'),
+                                  (['-OwnerApproved', '-PrepareRecoveryRoute', '-PrepareRecoveryBroker',
+                                    '-OriginalProfileSourceSha256', 'F' * 64, '-RecoveryDockerSourceSha256', 'F' * 64,
+                                    '-DockerSha256', 'F' * 64], 'H454_GUARD_OPERATOR_ORIGINAL_MODE'),
+                                  (['-OwnerApproved', '-PrepareRecoveryBroker', '-OriginalProfileSourceSha256', 'F' * 64,
+                                    '-RecoveryDockerSourceSha256', 'F' * 64, '-DockerSha256', 'F' * 64,
+                                    '-RecoveryRouteSourceSha256', 'F' * 64, '-NetworkGuardSourceSha256', 'F' * 64,
+                                    '-WssConfigSha256', 'F' * 64, '-SupervisorSha256', 'F' * 64, '-CaSha256', 'F' * 64,
+                                    '-CurlSha256', 'F' * 64, '-ProxyImageId', 'sha256:' + 'a' * 64],
+                                   'H454_GUARD_OPERATOR_BROKER_PINS'),
                                   (['-OwnerApproved', '-PrepareWss'], 'H454_GUARD_OPERATOR_WSS_PINS')):
                 with self.subTest(reason=reason):
                     result = subprocess.run(arguments + extra, capture_output=True, text=True, timeout=10,

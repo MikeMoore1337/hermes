@@ -20,7 +20,31 @@ bytes are backed up and a pending transition marker is present. The guard
 refuses the launcher's run path while the marker remains. The backup is a
 control snapshot, not a verified secure rollback procedure.
 
+The isolated recovery network and the previously tested TLS proxy are now
+prepared on the Windows Docker host. Only that proxy is attached; the original
+container is still stopped on its old bridge and no real credential was staged.
+These resources alone do not restore the device.
+
 ## Connection boundary
+
+The original image's terminal dispatcher and agent run as the same UID. A
+disposable copy using a synthetic credential confirmed that `start_process`
+can read `/run/brc/device.json`; mode 0600 does not separate those processes.
+The prepared direct-WSS candidate would also expose a bearer staged there.
+Neither should be started with a real bearer until that exposure is addressed.
+
+The experimental `h454_credential_broker.mjs` keeps the real bearer in a
+separate container's memory. The original agent receives a local surrogate;
+the broker accepts only the agent WebSocket upgrade, substitutes the real
+bearer after pinned TLS verification, and accepts staging only on its own
+loopback interface. The agent and its terminal can still use or impersonate
+the local surrogate within their shared sandbox; it is not a per-command
+authorization boundary. A disposable test using the original image, synthetic
+credentials and a synthetic relay confirmed terminal access only to the
+surrogate, refusal of the broker's staging port from both networks, and
+restaging plus reconnection after broker restart. The test removed its own
+resources. The broker is not installed, monitored or wired into the production
+recovery operator; its use by the WSS candidate is not implemented.
 
 The existing Windows agent sends its bearer to a plaintext local SSH forward.
 Checking the SSH PID before connecting does not authenticate the process that

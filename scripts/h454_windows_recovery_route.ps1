@@ -40,14 +40,16 @@ function Assert-H454RecoveryNetwork([object]$Network,[string]$Name,[string]$Labe
 
 function Assert-H454RecoveryProxy(
     [object]$Proxy,[string]$Name,[string]$LabelValue,[string]$Image,[string]$HostAddress,
-    [string]$CaSha256,[object]$Network,[string]$BridgeId,[switch]$Connected
+    [string]$CaSha256,[object]$Network,[string]$BridgeId,[switch]$Connected,
+    [string]$EntrypointPath='/opt/hermes-rollback/proxy.mjs'
 ) {
-    Require-H454 ($null -ne $Proxy -and $Proxy.Id -cmatch '^[a-f0-9]{64}$' -and
+    Require-H454 ($EntrypointPath -cin @('/opt/hermes-rollback/proxy.mjs','/opt/hermes-rollback/broker.mjs') -and
+        $null -ne $Proxy -and $Proxy.Id -cmatch '^[a-f0-9]{64}$' -and
         $Proxy.Name -ceq ('/'+$Name) -and $Proxy.Image -ceq $Image -and
         $Proxy.Config.Labels.'com.hermes.h454.recovery' -ceq $LabelValue -and
         $Proxy.Config.User -ceq '65534:65534' -and @($Proxy.Config.Entrypoint).Count -eq 2 -and
         [string]$Proxy.Config.Entrypoint[0] -ceq 'node' -and
-        [string]$Proxy.Config.Entrypoint[1] -ceq '/opt/hermes-rollback/proxy.mjs') 'H454_ROUTE_PROXY'
+        [string]$Proxy.Config.Entrypoint[1] -ceq $EntrypointPath) 'H454_ROUTE_PROXY'
     Require-H454 ($Proxy.State.Running -is [bool] -and $Proxy.State.Paused -is [bool] -and -not $Proxy.State.Paused -and
         $Proxy.State.Restarting -is [bool] -and -not $Proxy.State.Restarting -and $Proxy.State.Dead -is [bool] -and -not $Proxy.State.Dead -and
         (($Proxy.State.Running -and [string]$Proxy.State.Status -ceq 'running') -or
@@ -87,13 +89,16 @@ function Assert-H454RecoveryProxy(
     }else{Require-H454 ($members.Count -eq 1) 'H454_ROUTE_PROXY_NETWORK'}
 }
 
-function Assert-H454RecoveryRouteMembers([object]$Network,[object]$Proxy,[string]$DockerSha256) {
+function Assert-H454RecoveryRouteMembers([object]$Network,[object]$Proxy,[string]$DockerSha256,[string]$AgentId='') {
+    Require-H454 ([string]::IsNullOrEmpty($AgentId) -or ($AgentId -cmatch '^[a-f0-9]{64}$' -and
+        ($null -eq $Proxy -or $AgentId -cne $Proxy.Id))) 'H454_ROUTE_MEMBERS'
     Require-H454 ($null -ne $Network -and $null -ne $Network.Containers) 'H454_ROUTE_MEMBERS'
     $members=@($Network.Containers.PSObject.Properties | ForEach-Object {$_.Name})
     foreach($member in $members){
-        Require-H454 ($null -ne $Proxy -and $member -ceq $Proxy.Id) 'H454_ROUTE_MEMBERS'
+        Require-H454 (($null -ne $Proxy -and $member -ceq $Proxy.Id) -or
+            (-not [string]::IsNullOrEmpty($AgentId) -and $member -ceq $AgentId)) 'H454_ROUTE_MEMBERS'
     }
-    Require-H454 ($members.Count -le 1) 'H454_ROUTE_MEMBERS'
+    Require-H454 ($members.Count -le 2 -and ($members.Count -le 1 -or -not [string]::IsNullOrEmpty($AgentId))) 'H454_ROUTE_MEMBERS'
     $list=Invoke-H454RecoveryDocker -Arguments @('container','ls','--all','--no-trunc','--format','{{.ID}}|{{.Networks}}') -DockerSha256 $DockerSha256
     Require-H454 ($list.Code -eq 0) 'H454_ROUTE_MEMBERS'
     $rows=@($list.Output -split "`r?`n" | Where-Object {-not [string]::IsNullOrWhiteSpace($_)})
@@ -104,7 +109,8 @@ function Assert-H454RecoveryRouteMembers([object]$Network,[object]$Proxy,[string
             $seen.Add($Matches[1])) 'H454_ROUTE_MEMBERS'
         $id=$Matches[1];$names=if([string]::IsNullOrEmpty($Matches[2])){@()}else{@($Matches[2].Split(','))}
         if($names -ccontains [string]$Network.Name){
-            Require-H454 ($null -ne $Proxy -and $id -ceq $Proxy.Id) 'H454_ROUTE_MEMBERS'
+            Require-H454 (($null -ne $Proxy -and $id -ceq $Proxy.Id) -or
+                (-not [string]::IsNullOrEmpty($AgentId) -and $id -ceq $AgentId)) 'H454_ROUTE_MEMBERS'
         }
     }
 }

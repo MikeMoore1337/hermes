@@ -516,6 +516,12 @@ try {
     $script:h454Item.NetworkSettings.Networks=[pscustomobject]@{'h454-test-route'=[pscustomobject]@{}}
     Check-H454Profile 'h454-test-route'
     Require ($null -ne $script:h454Item.NetworkSettings.Networks.PSObject.Properties['h454-test-route']) 'PROFILE_NETWORK_RESTORED'
+    $script:h454Item.NetworkSettings.Networks|Add-Member -NotePropertyName 'bridge' -NotePropertyValue ([pscustomobject]@{})
+    Assert-H454OriginalProfile $script:h454Item $h454ProfileLauncher $h454LauncherHash ('1'*64) ('sha256:'+('a'*64)) 'synthetic-agent' @('bridge','h454-test-route')
+    Expect-H454Refusal {Assert-H454OriginalProfile $script:h454Item $h454ProfileLauncher $h454LauncherHash ('1'*64) ('sha256:'+('a'*64)) 'synthetic-agent' @('bridge','foreign-network')}
+    Expect-H454Refusal {Assert-H454OriginalProfile $script:h454Item $h454ProfileLauncher $h454LauncherHash ('1'*64) ('sha256:'+('a'*64)) 'synthetic-agent' @('h454-test-route','foreign-network')}
+    Require ($null -ne $script:h454Item.NetworkSettings.Networks.PSObject.Properties['bridge']) 'PROFILE_TWO_NETWORKS_RESTORED'
+    $script:h454Item.NetworkSettings.Networks.PSObject.Properties.Remove('bridge')
     $script:h454Item.HostConfig.Dns=@('192.0.2.53');Expect-H454Refusal {Check-H454Profile 'h454-test-route'}
     $script:h454Item.HostConfig.Dns=@();$script:h454Item.HostConfig.Privileged=$true;Expect-H454Refusal {Check-H454Profile 'h454-test-route'}
     Require ($null -ne $script:h454Item.NetworkSettings.Networks.PSObject.Properties['h454-test-route'] -and

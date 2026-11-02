@@ -139,6 +139,12 @@ function CheckRecoveryRoute([object]$Route){
     Assert-H454RecoveryProxy $Route.Proxy $proxyName $recoveryValue $proxyImage '172.21.0.1' $caHash $plan ('f'*64) -Connected
 }
 CheckRecoveryRoute (TestRecoveryRoute)
+$brokerRoute=TestRecoveryRoute
+$brokerRoute.Proxy.Config.Entrypoint[1]='/opt/hermes-rollback/broker.mjs'
+$brokerPlan=Assert-H454RecoveryNetwork $brokerRoute.Network $recoveryName $recoveryValue
+Assert-H454RecoveryProxy $brokerRoute.Proxy $proxyName $recoveryValue $proxyImage '172.21.0.1' $caHash $brokerPlan ('f'*64) -Connected -EntrypointPath '/opt/hermes-rollback/broker.mjs'
+$refused=$false;try{CheckRecoveryRoute $brokerRoute}catch{$refused=$true}
+Require-H454 $refused 'RECOVERY_ROUTE_WRONG_ENTRYPOINT'
 function Invoke-H454RecoveryDocker {[CmdletBinding()]param([string[]]$Arguments,[string]$DockerSha256);$script:routeDockerCalls++;return [pscustomobject]@{Code=0;Output=$script:routeContainerListing}}
 $script:routeDockerCalls=0;$script:routeContainerListing=$proxyId+'|'+$recoveryName
 $stopped=TestRecoveryRoute
@@ -156,10 +162,15 @@ Require-H454 $refused 'RECOVERY_ROUTE_STOPPED_WRONG_NETWORK_ID'
 $membership=TestRecoveryRoute
 $refused=$false;try{Assert-H454RecoveryRouteMembers $membership.Network $membership.Proxy ('C'*64)}catch{$refused=$true}
 Require-H454 $refused 'RECOVERY_ROUTE_FOREIGN_MEMBER'
+$script:routeContainerListing=$proxyId+'|'+$recoveryName+"`n"+$agentId+'|'+$recoveryName
+Assert-H454RecoveryRouteMembers $membership.Network $membership.Proxy ('C'*64) $agentId
 $membership.Network.Containers.PSObject.Properties.Remove($agentId)
 $script:routeContainerListing=$proxyId+'|'+$recoveryName+"`n"+$agentId+'|'+$recoveryName
 $refused=$false;try{Assert-H454RecoveryRouteMembers $membership.Network $membership.Proxy ('C'*64)}catch{$refused=$true}
 Require-H454 $refused 'RECOVERY_ROUTE_STOPPED_FOREIGN_MEMBER'
+Assert-H454RecoveryRouteMembers $membership.Network $membership.Proxy ('C'*64) $agentId
+$refused=$false;try{Assert-H454RecoveryRouteMembers $membership.Network $membership.Proxy ('C'*64) $otherId}catch{$refused=$true}
+Require-H454 $refused 'RECOVERY_ROUTE_STOPPED_WRONG_AGENT'
 $script:routeContainerListing=$proxyId+'|'+$recoveryName
 Assert-H454RecoveryRouteMembers $membership.Network $membership.Proxy ('C'*64)
 $script:routeContainerListing=$proxyId+'|'+$recoveryName+"`n"+$proxyId+'|'+$recoveryName

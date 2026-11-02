@@ -8,11 +8,12 @@ param(
     [Parameter(Mandatory=$true)][ValidatePattern('^[A-F0-9]{64}$')][string]$TaskBackupSha256,
     [Parameter(Mandatory=$true)][ValidatePattern('^[A-F0-9]{64}$')][string]$TaskSourceSha256,
     [Parameter(Mandatory=$true)][ValidatePattern('^[A-F0-9]{64}$')][string]$RecoverySourceSha256,
-    [switch]$PrepareWss,[switch]$StartWss,[switch]$CheckOriginal,[switch]$PrepareRecoveryRoute,
+    [switch]$PrepareWss,[switch]$StartWss,[switch]$CheckOriginal,[switch]$PrepareRecoveryRoute,[switch]$PrepareRecoveryBroker,
     [string]$FilesSourceSha256,[string]$SupervisorSha256,[string]$IdentitySha256,
     [string]$ModuleSha256,[string]$CaSha256,[string]$NodeSha256,[string]$PublicKeySha256,
     [string]$PublicCaPath,[string]$OriginalProfileSourceSha256,[string]$RecoveryDockerSourceSha256,[string]$DockerSha256,
     [string]$RecoveryRouteSourceSha256,[string]$NetworkGuardSourceSha256,[string]$ProxyImageId,[string]$WssConfigSha256,[string]$CurlSha256,
+    [string]$BrokerRouteSourceSha256,[string]$BrokerImageId,
     [switch]$Apply,[switch]$OwnerApproved
 )
 $ErrorActionPreference='Stop'
@@ -93,17 +94,22 @@ $lock=$null
 try{
     Require-H454 (-not $Apply -or $OwnerApproved) 'H454_GUARD_OPERATOR_APPROVAL'
     Require-H454 (-not $StartWss -or ($PrepareWss -and $Apply -and $OwnerApproved)) 'H454_GUARD_OPERATOR_WSS_MODE'
-    if($CheckOriginal -or $PrepareRecoveryRoute){
-        Require-H454 (-not ($CheckOriginal -and $PrepareRecoveryRoute) -and (-not $CheckOriginal -or -not $Apply) -and
+    if($CheckOriginal -or $PrepareRecoveryRoute -or $PrepareRecoveryBroker){
+        Require-H454 (@(@($CheckOriginal,$PrepareRecoveryRoute,$PrepareRecoveryBroker)|Where-Object {$_}).Count -eq 1 -and
+            (-not $CheckOriginal -or -not $Apply) -and
             -not $PrepareWss -and -not $StartWss -and
             $OriginalProfileSourceSha256 -cmatch '^[A-F0-9]{64}$' -and
             $RecoveryDockerSourceSha256 -cmatch '^[A-F0-9]{64}$' -and $DockerSha256 -cmatch '^[A-F0-9]{64}$') 'H454_GUARD_OPERATOR_ORIGINAL_MODE'
     }
-    if($PrepareRecoveryRoute){
+    if($PrepareRecoveryRoute -or $PrepareRecoveryBroker){
         foreach($pin in @($RecoveryRouteSourceSha256,$NetworkGuardSourceSha256,$WssConfigSha256,$SupervisorSha256,$CaSha256,$CurlSha256)){
             Require-H454 ($pin -cmatch '^[A-F0-9]{64}$') 'H454_GUARD_OPERATOR_ROUTE_PINS'
         }
         Require-H454 ($ProxyImageId -cmatch '^sha256:[a-f0-9]{64}$') 'H454_GUARD_OPERATOR_ROUTE_PINS'
+    }
+    if($PrepareRecoveryBroker){
+        Require-H454 ($BrokerRouteSourceSha256 -cmatch '^[A-F0-9]{64}$' -and
+            $BrokerImageId -cmatch '^sha256:[a-f0-9]{64}$' -and $BrokerImageId -cne $ProxyImageId) 'H454_GUARD_OPERATOR_BROKER_PINS'
     }
     if($PrepareWss){
         foreach($pin in @($FilesSourceSha256,$SupervisorSha256,$IdentitySha256,$ModuleSha256,$CaSha256,$NodeSha256,$PublicKeySha256)){
@@ -133,7 +139,7 @@ try{
     $lockPath=Join-Path $state 'runtime.lock'
     Require-H454 (Test-Path -LiteralPath $lockPath -PathType Leaf) 'H454_GUARD_OPERATOR_LOCK'
     $lock=Open-H454RecoveryLock $state
-    if($CheckOriginal -or $PrepareRecoveryRoute){
+    if($CheckOriginal -or $PrepareRecoveryRoute -or $PrepareRecoveryBroker){
         $profileSource=Join-Path $PSScriptRoot 'h454_windows_original_profile.ps1'
         $dockerSource=Join-Path $PSScriptRoot 'h454_windows_recovery_docker.ps1'
         $profileText=Read-H454PinnedSource $profileSource $OriginalProfileSourceSha256
@@ -163,7 +169,7 @@ try{
         foreach($pair in @(@($profileSource,$OriginalProfileSourceSha256),@($dockerSource,$RecoveryDockerSourceSha256))){
             Require-H454 ((Get-FileHash -LiteralPath $pair[0] -Algorithm SHA256).Hash -ceq $pair[1]) 'H454_GUARD_OPERATOR_SOURCE_DRIFT'
         }
-        if($PrepareRecoveryRoute){
+        if($PrepareRecoveryRoute -or $PrepareRecoveryBroker){
             $routeSource=Join-Path $PSScriptRoot 'h454_windows_recovery_route.ps1'
             $networkSource=Join-Path $PSScriptRoot 'h454_windows_network_guard.ps1'
             $routeText=Read-H454PinnedSource $routeSource $RecoveryRouteSourceSha256
@@ -201,7 +207,15 @@ try{
                     'sha256:0c95960c02e0dbe00a6a11ee6253d4055e4a7abf7671404b3f876dfdb95bd5d8' 'hermes-h15-windows-permanent' 'bridge'
                 return $true
             }
-            $result=Prepare-H454RecoveryRoute $state $lock $markerHash $ProxyImageId $CaSha256 $DockerSha256 $safetyCheck -Apply:$Apply -OwnerApproved:$OwnerApproved
+            if($PrepareRecoveryBroker){
+                $brokerSource=Join-Path $PSScriptRoot 'h454_windows_broker_route.ps1'
+                $brokerText=Read-H454PinnedSource $brokerSource $BrokerRouteSourceSha256
+                . ([scriptblock]::Create($brokerText))
+                $result=Prepare-H454RecoveryBroker $state $lock $markerHash $ProxyImageId $BrokerImageId $CaSha256 $DockerSha256 $safetyCheck -Apply:$Apply -OwnerApproved:$OwnerApproved
+                Require-H454 ((Get-FileHash -LiteralPath $brokerSource -Algorithm SHA256).Hash -ceq $BrokerRouteSourceSha256) 'H454_GUARD_OPERATOR_SOURCE_DRIFT'
+            }else{
+                $result=Prepare-H454RecoveryRoute $state $lock $markerHash $ProxyImageId $CaSha256 $DockerSha256 $safetyCheck -Apply:$Apply -OwnerApproved:$OwnerApproved
+            }
             foreach($pair in @(@($routeSource,$RecoveryRouteSourceSha256),@($networkSource,$NetworkGuardSourceSha256))){
                 Require-H454 ((Get-FileHash -LiteralPath $pair[0] -Algorithm SHA256).Hash -ceq $pair[1]) 'H454_GUARD_OPERATOR_SOURCE_DRIFT'
             }
@@ -236,7 +250,9 @@ try{
     foreach($pair in @(@($taskSource,$TaskSourceSha256),@($recoverySource,$RecoverySourceSha256),@($taskBackup,$TaskBackupSha256))){
         Require-H454 ((Get-FileHash -LiteralPath $pair[0] -Algorithm SHA256).Hash -ceq $pair[1]) 'H454_GUARD_OPERATOR_SOURCE_DRIFT'
     }
-    if($PrepareRecoveryRoute){
+    if($PrepareRecoveryBroker){
+        'H454_RECOVERY_BROKER_OPERATOR='+$result.Status
+    }elseif($PrepareRecoveryRoute){
         'H454_RECOVERY_ROUTE_OPERATOR='+$result.Status
     }elseif($CheckOriginal){
         'H454_ORIGINAL_PROFILE_PREFLIGHT=PASS'
