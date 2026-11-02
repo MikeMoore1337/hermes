@@ -7,6 +7,16 @@ closed. The original Windows container is stopped; its secure restaging,
 production operator and live MCP remain unverified. A concrete maintenance
 window is required before stopping BRC for a later cutover.
 
+While the original was already stopped, its legacy scheduled task was disabled
+after checking the exclusive runtime lock, original container identity and
+closed local listeners. Its previous task XML was saved in the protected state
+directory. Disabling the task does not prevent a direct manual invocation of
+the old launcher; no transition marker or guarded launcher has been installed.
+The backup is a control snapshot, not a verified secure rollback procedure.
+The guard preparer was also run in memory against the independently pinned
+real launcher. The resulting bytes preserved the original encoding and passed
+PowerShell parsing; the guarded launcher and marker were not installed.
+
 ## Connection boundary
 
 The existing Windows agent sends its bearer to a plaintext local SSH forward.
