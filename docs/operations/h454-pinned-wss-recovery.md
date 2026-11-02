@@ -422,6 +422,14 @@ device or guarantee recovery if the supervisor process exits.
   terminated, a new owned SSH process restored the pinned connection and a
   wrong TLS name was refused. No BRC credential was sent; the temporary process
   and protected files were removed. This does not test a scheduled installation.
+- A combined temporary scheduled test initially failed because the scheduled
+  process could not see a separately created protected test directory. With
+  no-overwrite temporary files in the existing protected BRC state directory,
+  the scheduled supervisor reached the real relay, reconnected after its SSH
+  child was terminated, and was started again by the periodic trigger after
+  its own process was terminated. A wrong TLS name was refused. The temporary
+  task and files were removed; no BRC credential was sent. Login and reboot
+  recovery and a permanent installation remain unverified.
 - The rollback route guard passed PowerShell 5.1 negative fixtures for extra
   network members, changed identities, host overrides, alias and DNS drift,
   CIDR and gateway mismatch, overlapping upstream addresses and bad prefixes.
