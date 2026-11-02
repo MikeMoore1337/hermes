@@ -24,6 +24,8 @@ on:
       - scripts/h454_wss_relay_reconcile.py
       - scripts/h454_wss_relay_reconcile_e2e.py
       - tests/test_h454_wss_relay_reconcile.py
+      - scripts/h454_wss_relay_prepare.py
+      - tests/test_h454_wss_relay_prepare.py
       - scripts/h454_relay_authorized_keys.py
       - scripts/h454_relay_second_authorized_key.py
       - scripts/h454_relay_authorization_operator.py
@@ -84,6 +86,8 @@ on:
       - scripts/h454_wss_relay_reconcile.py
       - scripts/h454_wss_relay_reconcile_e2e.py
       - tests/test_h454_wss_relay_reconcile.py
+      - scripts/h454_wss_relay_prepare.py
+      - tests/test_h454_wss_relay_prepare.py
       - scripts/h454_relay_authorized_keys.py
       - scripts/h454_relay_second_authorized_key.py
       - scripts/h454_relay_authorization_operator.py
@@ -207,7 +211,7 @@ jobs:
         run: node scripts/h454_wss_relay_watchdog_e2e.mjs
 
       - name: WSS relay reconciler safety contracts
-        run: sudo -n python3 -B -m unittest -v tests.test_h454_wss_relay_reconcile
+        run: sudo -n python3 -B -m unittest -v tests.test_h454_wss_relay_reconcile tests.test_h454_wss_relay_prepare
 
       - name: Second SSH key no-overwrite and revocation contract
         run: sudo -n python3 -B -m unittest -v tests.test_h454_relay_second_authorized_key

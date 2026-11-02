@@ -116,10 +116,20 @@ the shared namespace and a pinned TLS probe before clearing a flushed pending
 marker; an uncertain start retains that marker and prevents another attempt.
 Docker may return the same mounts in a different order, so the profile sorts
 them by unique destination before hashing while still checking every mount.
-The root-only pin file and a scheduler are not installed by this code. The
+At first start Docker also changes the hostname from the sidecar ID to the
+relay ID and normalizes the OOM-killer setting; only those exact safe defaults
+are treated as equivalent. Unexpected names and disabled OOM killing fail.
+The reconciler itself does not install its root-only pin file or a scheduler. The
 operator must disable the scheduler before an intentional sidecar stop, and
 must investigate a pending marker before resuming. Replacing the relay with a
 different container ID requires explicit sidecar reconciliation.
+
+`h454_wss_relay_prepare.py` prepares that pin file and creates one stopped
+sidecar from the pinned relay image. It checks the existing authorization
+request, TLS identity, private static network, free port and exact code hashes;
+all new files use no-overwrite creation. A pending marker blocks activation if
+preparation is interrupted or Docker's result is uncertain. Preparation does
+not start the sidecar, install the SSH key or schedule reconciliation.
 
 `h454_relay_authorized_keys.py` prepares bytes for the one pinned Ed25519 key
 only when the entire input hash, private relay address and exact existing
@@ -391,6 +401,10 @@ and must not be deployed as a standalone recovery procedure.
   Its CI version stops the disposable sidecar after the watchdog fires, so it
   exercises the stopped case even on Docker versions that keep retrying. The
   live relay remained running and the fixture resources were removed.
+- A disposable relay fixture also prepared a stopped sidecar, started it with
+  the reconciler and refused a second listener on the same port. Its SSH
+  request and TLS manifest were synthetic stubs; it did not authorize a real
+  key, use real credentials or prove the Windows cutover.
 - A Windows PowerShell 5.1 and Schannel fixture verified the generated
   launcher's TLS probe against a synthetic trusted certificate; untrusted,
   wrong-name, missing-CA and changed-CA cases failed closed.

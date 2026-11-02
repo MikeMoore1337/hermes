@@ -11,6 +11,10 @@ import subprocess
 import sys
 import tempfile
 import time
+from unittest import mock
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from scripts import h454_wss_relay_prepare as prepare
 
 docker = ['/usr/bin/docker', '--host', 'unix:///var/run/docker.sock']
 nonce = secrets.token_hex(16)
@@ -23,6 +27,9 @@ uncertain = False
 passed = False
 image = None
 phase = 'PREPARE'
+prepared_id = None
+prepared_name = prefix + '-prepared'
+request_pin = hashlib.sha256(('synthetic-' + nonce).encode('ascii')).hexdigest()
 
 def run(args, timeout=20, expected=0):
     global uncertain
@@ -81,6 +88,16 @@ def profile_changes(before, after, prefix_name):
     old_mounts = sorted(before['Mounts'], key=lambda mount: mount['Destination'])
     new_mounts = sorted(after['Mounts'], key=lambda mount: mount['Destination'])
     print('H454_FIXTURE_' + prefix_name + '_MOUNT_SET=' + ('SAME' if old_mounts == new_mounts else 'CHANGED'))
+    old = {mount['Destination']: mount for mount in old_mounts}
+    new = {mount['Destination']: mount for mount in new_mounts}
+    for suffix, destination in (('PROXY', '/run/h454-wss/proxy.mjs'), ('KEY', '/run/h454-wss/relay.key'),
+                                ('CERT', '/run/h454-wss/relay.crt')):
+        if destination not in old or destination not in new:
+            print('H454_FIXTURE_' + prefix_name + '_' + suffix + '=MISSING')
+        else:
+            changed = sorted(k.upper() for k in set(old[destination]) | set(new[destination])
+                             if re.fullmatch(r'[A-Za-z0-9_]+', k) and old[destination].get(k) != new[destination].get(k))
+            print('H454_FIXTURE_' + prefix_name + '_' + suffix + '=' + (','.join(changed) if changed else 'NONE'))
 
 try:
     if os.geteuid() != 0:
@@ -141,6 +158,84 @@ try:
     relay_code = "require('node:http').createServer((q,s)=>{s.writeHead(q.url==='/health'?200:404);s.end()}).listen(3000,'127.0.0.1')"
     phase = 'CREATE_RELAY'
     relay = new_container('relay', ['--network', network, '--ip', relay_ip, '--entrypoint', 'node', image, '-e', relay_code])
+    phase = 'PREPARE_SIDECAR'
+    request = {'account': 'fixture', 'public_key': 'synthetic', 'relay_id': relay, 'relay_image': image,
+               'network_id': network, 'relay_ip': relay_ip}
+    manifest = {'ca_sha256': digest(tls + '/ca.crt'), 'certificate_sha256': digest(tls + '/relay.crt')}
+    with mock.patch.object(prepare, 'PARENT', Path(directory)), \
+         mock.patch.object(prepare, 'NAME', 'prepared'), mock.patch.object(prepare, 'CONTAINER', prepared_name), \
+         mock.patch.object(prepare.authorization, 'RELAY_NAME', prefix + '-relay'), \
+         mock.patch.object(prepare.authorization, 'NETWORK_NAME', prefix), \
+         mock.patch.object(prepare.authorization, '_registry', side_effect=lambda _create: os.open(directory, os.O_RDONLY)), \
+         mock.patch.object(prepare.authorization, '_locked', side_effect=lambda _fd: os.open('/dev/null', os.O_RDONLY)), \
+         mock.patch.object(prepare.authorization, '_request', return_value=request), \
+         mock.patch.object(prepare.authorization, 'snapshot', return_value=request), \
+         mock.patch.object(prepare.identity, 'PARENT', Path(directory)), \
+         mock.patch.object(prepare.identity, 'NAME', 'tls'), \
+         mock.patch.object(prepare.identity, 'verify', return_value=manifest):
+        try:
+            pin = prepare.prepare(request_pin, manifest['ca_sha256'], hashlib.sha256(proxy).hexdigest(),
+                                  hashlib.sha256(reconciler).hexdigest(), proxy, reconciler)
+        except subprocess.TimeoutExpired:
+            uncertain = True
+            raise ValueError('TIMEOUT')
+        prepared = inspect('container', prepared_name)
+        prepared_id = prepared['Id']
+        containers.append(prepared_id)
+        prepared_directory = directory + '/prepared'
+        pins_raw = Path(prepared_directory + '/pins.json').read_bytes()
+        if (hashlib.sha256(pins_raw).hexdigest() != pin or prepared['State']['Status'] != 'created' or
+                json.loads(pins_raw)['sidecar_id'] != prepared_id or
+                os.path.lexists(prepared_directory + '/prepare.pending')):
+            raise ValueError('PREPARED')
+        try:
+            if prepare.reconcile.reconcile(prepared_directory + '/pins.json') != 'RESTARTED' or \
+                    prepare.reconcile.reconcile(prepared_directory + '/pins.json') != 'READY':
+                raise ValueError('PREPARED')
+        except (prepare.reconcile.Hold, OSError):
+            current = inspect('container', prepared_id)
+            profile_changes(prepared, current, 'PREPARED_PROFILE')
+            def hostname_kind(value):
+                if value == '':
+                    return 'EMPTY'
+                if value == prepared_id[:12]:
+                    return 'SIDECAR_ID'
+                if value == relay[:12]:
+                    return 'RELAY_ID'
+                return 'OTHER'
+            def bool_kind(value):
+                return 'NULL' if value is None else 'TRUE' if value is True else 'FALSE' if value is False else 'OTHER'
+            print('H454_FIXTURE_HOSTNAME_BEFORE=' + hostname_kind(prepared['Config']['Hostname']))
+            print('H454_FIXTURE_HOSTNAME_AFTER=' + hostname_kind(current['Config']['Hostname']))
+            print('H454_FIXTURE_OOM_BEFORE=' + bool_kind(prepared['HostConfig']['OomKillDisable']))
+            print('H454_FIXTURE_OOM_AFTER=' + bool_kind(current['HostConfig']['OomKillDisable']))
+            print('H454_FIXTURE_PREPARED_STATE=' + ('RUNNING' if current['State']['Running'] else 'NOT_RUNNING'))
+            try:
+                current_relay, current_sidecar = prepare.reconcile._snapshot(json.loads(pins_raw), Path(prepared_directory), Path(tls))
+                prepare.reconcile._namespace(current_relay, current_sidecar)
+                prepare.reconcile._tls(json.loads(pins_raw), Path(tls + '/ca.crt').read_bytes())
+                print('H454_FIXTURE_PREPARED_PROBE=PASS')
+            except Exception as error:
+                reason = str(error)
+                print('H454_FIXTURE_PREPARED_PROBE=' + (reason if re.fullmatch(r'[A-Z_]{1,60}', reason) else 'OTHER'))
+            raise
+        try:
+            prepare._port_free(inspect('container', relay)['State']['Pid'])
+        except prepare.reconcile.Hold as error:
+            if str(error) != 'PORT_OCCUPIED':
+                raise
+        else:
+            raise ValueError('PORT_CHECK')
+        obj = inspect('container', prepared_id)
+        if (obj['Id'] != prepared_id or obj['Name'] != '/' + prepared_name or obj['Image'] != image or
+                obj['Config']['Labels'].get('com.hermes.h454.role') != 'wss-proxy' or
+                obj['Config']['Labels'].get('com.hermes.h454.request') != request_pin):
+            raise ValueError('CONTAINER_ID')
+        run(docker + ['rm', '-f', prepared_id], timeout=20)
+        containers.remove(prepared_id)
+        prepared_id = None
+        print('H454_FIXTURE_PREPARE_AND_START=PASS')
+        print('H454_FIXTURE_OCCUPIED_PORT=REFUSED')
     phase = 'CREATE_SIDECAR'
     sidecar = new_container('sidecar', ['--network', 'container:' + relay, '--restart', 'unless-stopped',
                             '-e', 'H454_SSH_SOURCE_IPV4=' + str(gateway),
@@ -150,6 +245,14 @@ try:
                             '--entrypoint', 'node', image, '/run/h454-wss/proxy.mjs'])
     sidecar_data = inspect('container', sidecar)
     profile = {key: sidecar_data[key] for key in ('Config', 'HostConfig', 'Mounts')}
+    profile['Config'] = dict(profile['Config'])
+    profile['HostConfig'] = dict(profile['HostConfig'])
+    oom = profile['HostConfig']['OomKillDisable']
+    if (profile['Config']['Hostname'] not in (sidecar[:12], relay[:12]) or
+            (oom is not None and oom is not False)):
+        raise ValueError('PROFILE')
+    profile['Config']['Hostname'] = '<docker-container-network>'
+    profile['HostConfig']['OomKillDisable'] = False
     profile['Mounts'] = sorted(profile['Mounts'], key=lambda mount: mount['Destination'])
     profile_raw = json.dumps(profile, sort_keys=True, separators=(',', ':'), ensure_ascii=True).encode('ascii')
     pins = {'version': 1, 'relay_id': relay, 'relay_name': prefix + '-relay', 'relay_image': image,
@@ -225,16 +328,36 @@ try:
     print('H454_FIXTURE_RECONCILE_PENDING=REFUSED')
     passed = True
 except Exception as error:
+    if isinstance(error, subprocess.TimeoutExpired):
+        uncertain = True
     reason = str(error)
+    if re.fullmatch(r'[A-Z_]{1,60}', reason):
+        print('H454_RECONCILE_FIXTURE_REASON=' + reason)
     print('H454_RECONCILE_FIXTURE_PHASE=' + phase)
     print('H454_RECONCILE_FIXTURE=HOLD_' + (reason if reason in
-          {'ROOT','IMAGE','NETWORK','COMMAND','TIMEOUT','CONTAINER_ID','INSPECT','INITIAL_READY','WATCHDOG','RECOVERY','REPEAT','PENDING'} else 'INTERNAL'))
+          {'ROOT','IMAGE','NETWORK','COMMAND','TIMEOUT','CONTAINER_ID','INSPECT','INITIAL_READY','WATCHDOG','RECOVERY','REPEAT','PENDING','PREPARED','PORT_CHECK'} else 'INTERNAL'))
 finally:
     if not uncertain:
         try:
+            if prepared_id is None:
+                found = run(docker + ['container', 'ls', '--all', '--filter', 'name=^/' + prepared_name + '$',
+                                      '--format', '{{.Names}}'])
+                if found:
+                    if found != prepared_name:
+                        raise ValueError('CLEANUP_PIN')
+                    obj = inspect('container', prepared_name)
+                    if (obj['Name'] != '/' + prepared_name or obj['Image'] != image or
+                            obj['Config']['Labels'].get('com.hermes.h454.role') != 'wss-proxy' or
+                            obj['Config']['Labels'].get('com.hermes.h454.request') != request_pin):
+                        raise ValueError('CLEANUP_PIN')
+                    containers.append(obj['Id'])
             for identity in reversed(containers):
                 obj = inspect('container', identity)
-                if obj['Id'] != identity or obj['Image'] != image or obj['Config']['Labels'].get('com.hermes.h454.fixture') != nonce:
+                fixture_owned = obj['Config']['Labels'].get('com.hermes.h454.fixture') == nonce
+                prepared_owned = (obj['Name'] == '/' + prepared_name and
+                                  obj['Config']['Labels'].get('com.hermes.h454.role') == 'wss-proxy' and
+                                  obj['Config']['Labels'].get('com.hermes.h454.request') == request_pin)
+                if obj['Id'] != identity or obj['Image'] != image or not (fixture_owned or prepared_owned):
                     raise ValueError('CLEANUP_PIN')
                 run(docker + ['rm', '-f', identity], timeout=20)
             if network:
@@ -245,8 +368,11 @@ finally:
             if os.path.realpath(directory) != directory or os.path.dirname(directory) != '/tmp' or not os.path.basename(directory).startswith(prefix + '-'):
                 raise ValueError('CLEANUP_PATH')
             for subdir, allowed in [('operator', {'proxy.mjs','reconcile.py','pins.json','reconcile.pending'}),
+                                    ('prepared', {'proxy.mjs','reconcile.py','pins.json','prepare.pending','reconcile.pending'}),
                                     ('tls', {'relay.key','relay.crt','ca.crt'})]:
                 path = os.path.join(directory, subdir)
+                if subdir == 'prepared' and not os.path.lexists(path):
+                    continue
                 if not os.path.isdir(path) or os.path.islink(path) or not set(os.listdir(path)) <= allowed:
                     raise ValueError('CLEANUP_FILES')
                 for name in os.listdir(path):

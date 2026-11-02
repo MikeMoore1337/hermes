@@ -59,11 +59,11 @@ if os.name == 'posix' and os.geteuid() == 0:
                             'Image': self.pins['sidecar_image'],
                             'State': {'Running': True, 'Paused': False, 'Restarting': False, 'Dead': False,
                                       'Status': 'running', 'Pid': 102},
-                            'Config': {'User': '65534:65534', 'Entrypoint': ['node'],
+                        'Config': {'User': '65534:65534', 'Hostname': self.pins['sidecar_id'][:12], 'Entrypoint': ['node'],
                                        'Cmd': ['/run/h454-wss/proxy.mjs'],
                                        'Env': ['H454_SSH_SOURCE_IPV4=172.29.0.1']},
                             'HostConfig': {'NetworkMode': 'container:' + self.pins['relay_id'],
-                                           'ReadonlyRootfs': True, 'Privileged': False, 'CapDrop': ['ALL'],
+                                       'ReadonlyRootfs': True, 'Privileged': False, 'CapDrop': ['ALL'], 'OomKillDisable': False,
                                            'SecurityOpt': ['no-new-privileges'],
                                            'PidsLimit': 32, 'Memory': 134_217_728,
                                            'RestartPolicy': {'Name': 'unless-stopped'},
@@ -109,15 +109,23 @@ if os.name == 'posix' and os.geteuid() == 0:
             docker.assert_not_called()
             self.assertFalse((self.directory / subject.MARKER).exists())
 
-        def test_exited_sidecar_starts_once_after_checks_and_clears_marker(self):
-            exited = copy.deepcopy(self.sidecar)
-            exited['State'].update(Running=False, Status='exited', Pid=0)
-            with mock.patch.object(subject, '_snapshot', side_effect=[(self.relay, exited), (self.relay, self.sidecar)]), \
-                 mock.patch.object(subject, '_namespace'), mock.patch.object(subject, '_tls'), \
-                 mock.patch.object(subject, '_docker', return_value=(self.pins['sidecar_id'] + '\n').encode()) as docker:
-                self.assertEqual(subject.reconcile(self.config), 'RESTARTED')
-            docker.assert_called_once_with('start', self.pins['sidecar_id'])
-            self.assertFalse((self.directory / subject.MARKER).exists())
+        def test_stopped_sidecar_starts_once_after_checks_and_clears_marker(self):
+            for status in ('created', 'exited'):
+                with self.subTest(status=status):
+                    stopped = copy.deepcopy(self.sidecar)
+                    stopped['State'].update(Running=False, Status=status, Pid=0)
+                    with mock.patch.object(subject, '_snapshot', side_effect=[(self.relay, stopped), (self.relay, self.sidecar)]), \
+                         mock.patch.object(subject, '_namespace'), mock.patch.object(subject, '_tls'), \
+                         mock.patch.object(subject, '_docker', return_value=(self.pins['sidecar_id'] + '\n').encode()) as docker:
+                        self.assertEqual(subject.reconcile(self.config), 'RESTARTED')
+                    docker.assert_called_once_with('start', self.pins['sidecar_id'])
+                    self.assertFalse((self.directory / subject.MARKER).exists())
+
+        def test_incomplete_preparation_blocks_start(self):
+            (self.directory / 'prepare.pending').write_text('synthetic', encoding='ascii')
+            with mock.patch.object(subject, '_docker') as docker, self.assertRaisesRegex(subject.Hold, 'PENDING'):
+                subject.reconcile(self.config)
+            docker.assert_not_called()
 
         def test_ambiguous_start_retains_marker_and_prevents_retry(self):
             exited = copy.deepcopy(self.sidecar)
@@ -182,6 +190,21 @@ if os.name == 'posix' and os.geteuid() == 0:
                 self.sidecar['Mounts'][0]['Destination'] = self.sidecar['Mounts'][1]['Destination']
                 with self.assertRaisesRegex(subject.Hold, 'SIDECAR_PROFILE'):
                     subject.profile_sha256(self.sidecar)
+
+        def test_docker_container_defaults_normalize_without_widening_profile(self):
+            original = subject.profile_sha256(self.sidecar)
+            self.sidecar['Config']['Hostname'] = self.pins['relay_id'][:12]
+            self.sidecar['HostConfig']['OomKillDisable'] = None
+            self.assertEqual(subject.profile_sha256(self.sidecar), original)
+            self.sidecar['Config']['Hostname'] = 'unrelated-host'
+            with self.assertRaisesRegex(subject.Hold, 'SIDECAR_PROFILE'):
+                subject.profile_sha256(self.sidecar)
+            self.sidecar['Config']['Hostname'] = self.pins['relay_id'][:12]
+            self.sidecar['HostConfig']['OomKillDisable'] = True
+            self.pins['profile_sha256'] = subject.profile_sha256(self.sidecar)
+            with mock.patch.object(subject, '_inspect', side_effect=self.inspect), \
+                 self.assertRaisesRegex(subject.Hold, 'SIDECAR_RUNTIME'):
+                subject._snapshot(self.pins, self.directory, self.tls)
 
         def test_directory_under_untrusted_nonsticky_parent_is_refused(self):
             parent = self.root / 'writable'

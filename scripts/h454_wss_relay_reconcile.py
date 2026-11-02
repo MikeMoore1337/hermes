@@ -128,7 +128,18 @@ def profile_sha256(sidecar):
     require(isinstance(mounts, list) and all(isinstance(mount, dict) and
             isinstance(mount.get('Destination'), str) for mount in mounts) and
             len({mount['Destination'] for mount in mounts}) == len(mounts), 'SIDECAR_PROFILE')
-    profile = {'Config': sidecar['Config'], 'HostConfig': sidecar['HostConfig'],
+    config = dict(sidecar['Config'])
+    host = dict(sidecar['HostConfig'])
+    require('Hostname' in config and 'OomKillDisable' in host, 'SIDECAR_PROFILE')
+    mode = host.get('NetworkMode')
+    relay_id = mode[10:] if isinstance(mode, str) and mode.startswith('container:') else ''
+    own_id = sidecar.get('Id')
+    require(isinstance(own_id, str) and HEX.fullmatch(own_id) and HEX.fullmatch(relay_id) and
+            config.get('Hostname') in (own_id[:12], relay_id[:12]), 'SIDECAR_PROFILE')
+    config['Hostname'] = '<docker-container-network>'
+    if host.get('OomKillDisable') is None or host.get('OomKillDisable') is False:
+        host['OomKillDisable'] = False
+    profile = {'Config': config, 'HostConfig': host,
                'Mounts': sorted(mounts, key=lambda mount: mount['Destination'])}
     raw = json.dumps(profile, sort_keys=True, separators=(',', ':'), ensure_ascii=True).encode('ascii')
     return hashlib.sha256(raw).hexdigest()
@@ -174,6 +185,7 @@ def _snapshot(pins, directory, tls_directory):
             'SIDECAR_ENVIRONMENT')
     require(host['NetworkMode'] == 'container:' + pins['relay_id'] and host['ReadonlyRootfs'] is True and
             host['Privileged'] is False and 'ALL' in (host.get('CapDrop') or []) and
+            (host.get('OomKillDisable') is None or host.get('OomKillDisable') is False) and
             not host.get('CapAdd') and not host.get('Devices') and not host.get('DeviceRequests') and
             host.get('PidMode') != 'host' and host.get('IpcMode') != 'host' and
             0 < host['PidsLimit'] <= 64 and 0 < host['Memory'] <= 268_435_456 and
@@ -228,11 +240,12 @@ def reconcile(config_path):
         named = os.stat('pins.json', dir_fd=dir_fd, follow_symlinks=False)
         require((locked.st_dev, locked.st_ino) == (named.st_dev, named.st_ino), 'PINS_DRIFT')
         pins = _pins(raw)
-        try:
-            os.stat(MARKER, dir_fd=dir_fd, follow_symlinks=False)
-            raise Hold('PENDING')
-        except FileNotFoundError:
-            pass
+        for marker_name in ('prepare.pending', MARKER):
+            try:
+                os.stat(marker_name, dir_fd=dir_fd, follow_symlinks=False)
+                raise Hold('PENDING')
+            except FileNotFoundError:
+                pass
         tls_directory = Path(pins['tls_directory'])
         tls_fd = _directory(tls_directory)
         for name, descriptor, mode, gid, digest in (
@@ -249,7 +262,7 @@ def reconcile(config_path):
             _namespace(relay, sidecar)
             _tls(pins, ca)
             return 'READY'
-        require(sidecar['State']['Status'] == 'exited' and not sidecar['State']['Paused'] and
+        require(sidecar['State']['Status'] in ('created', 'exited') and not sidecar['State']['Paused'] and
                 not sidecar['State']['Restarting'] and not sidecar['State']['Dead'], 'SIDECAR_STATE')
         marker = os.open(MARKER, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=dir_fd)
         try:
