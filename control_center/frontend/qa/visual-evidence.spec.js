@@ -51,7 +51,7 @@ test("visual evidence: synthetic Control Center across representative viewports"
   await syntheticOverview(page);
   await page.emulateMedia({ reducedMotion: "reduce" });
 
-  for (const width of [320, 393, 768, 1440]) {
+  for (const width of [320, 393, 768, 1440, 1920]) {
     const viewport = { width, height: width < 768 ? 844 : 900 };
     await page.setViewportSize(viewport);
     await page.goto("/");
@@ -114,7 +114,7 @@ test("visual evidence: login preview remains non-interactive at mobile and deskt
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.emulateMedia({ reducedMotion: "reduce" });
-  for (const width of [393, 1440]) {
+  for (const width of [393, 1440, 1920]) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto("/?preview=login");
     await expect(page.getByRole("heading", { name: "Вход в систему" })).toBeVisible();
@@ -156,7 +156,7 @@ test("visual evidence: integrated BRC shares Orbit shell with synthetic devices"
   }));
   await syntheticOverview(page);
   await page.emulateMedia({reducedMotion:"reduce"});
-  for(const width of [320,393,768,1440]){
+  for(const width of [320,393,768,1440,1920]){
     await page.setViewportSize({width,height:width<768?844:900});
     await page.goto("/hermes-brc");
     await expect(page.getByRole("main")).toHaveCount(1);
