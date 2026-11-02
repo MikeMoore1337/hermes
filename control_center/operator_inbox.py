@@ -14,6 +14,9 @@ from control_center.snapshot import UNITS
 from control_center.github_observe_view import (
     FeedRefused, validate as validate_github_feed, fresh as github_feed_fresh,
 )
+from control_center.github_projects_view import (
+    ProjectFeedRefused, validate as validate_public_feed, fresh as public_feed_fresh,
+)
 
 MAX_SNAPSHOT_BYTES = 131072
 MAX_EVENTS = 24
@@ -130,6 +133,67 @@ def _add_github_observations(overview, now, coverage, events):
         })
 
 
+
+_PUBLIC_SOURCES = {
+    "toolkit": ("gh_toolkit", "AI Development Toolkit"),
+    "yfc": ("gh_yfc", "Your Fitness Coach"),
+    "second_brain": ("gh_second_brain", "Second Brain (код)"),
+}
+
+
+def _add_public_projects(overview, now, coverage, events):
+    """Project messages are GitHub-run metadata, never execution approvals."""
+    if not isinstance(overview, dict) or overview.get("github_project_feed") is None:
+        return
+    try:
+        data = validate_public_feed(overview["github_project_feed"])
+    except (ProjectFeedRefused, ValueError, TypeError, AttributeError):
+        for source, label in _PUBLIC_SOURCES.values():
+            coverage[source]["details"] = "Снимок источника не прошёл проверку"
+        return
+    fresh = public_feed_fresh(data, now=now)
+    captured = data["observed_at"]
+    for key, (source, label) in _PUBLIC_SOURCES.items():
+        part = data["sources"][key]
+        if part["status"] != "PARTIAL":
+            coverage[source]["details"] = "Нет подтверждённого ответа от GitHub Actions"
+            continue
+        if not fresh:
+            coverage[source]["status"] = "STALE"
+            coverage[source]["details"] = "Последний подтверждённый опрос устарел"
+            events.append({
+                **_event(source, "stale", category="needs_review",
+                         severity="warning", status="needs_review",
+                         observed=captured, hint="Проверить QA Watcher и источник GitHub Actions.",
+                         evidence=None),
+                "title": f"{label}: устарели наблюдения",
+                "detail": "Прошлые события скрыты; состояние проекта не подтверждено.",
+            })
+            continue
+        coverage[source]["status"] = "PARTIAL"
+        coverage[source]["details"] = (
+            "Последние 6 запусков GitHub Actions; неполная история"
+        )
+        for item in part["events"]:
+            candidate = item["candidate"]
+            fixed_title, subject_label, _ = _GITHUB_CANDIDATES[candidate]
+            number, run_id = item["number"], item["run_id"]
+            failed = candidate == "REVIEW_CI_FAILURE"
+            events.append({
+                **_event(source, f'{item["kind"]}:{number}',
+                         category="failure" if failed else "needs_review",
+                         severity="critical" if failed else "warning",
+                         status="failure" if failed else "needs_review",
+                         observed=item["occurred_at"],
+                         hint=f"Проверить {subject_label.lower()} №{number} в {part['repo']}. "
+                              "Операции и разрешения проверяются отдельно.",
+                         evidence=None),
+                "title": f"{label}: {fixed_title} №{number}",
+                "detail": (f"GitHub Actions: проверенный запуск №{run_id}. "
+                           "Текст задач/комментариев не загружался. Запуск агента запрещён."),
+            })
+
+
 def assemble(overview: dict | None, scheduler: dict | None, *, now: dt.datetime | None = None) -> dict:
     """Only fixed labels and counts are copied. Never expose raw job IDs or error strings."""
     clock = now or dt.datetime.now(dt.timezone.utc)
@@ -142,6 +206,9 @@ def assemble(overview: dict | None, scheduler: dict | None, *, now: dt.datetime 
         "delivery": {"status": "NOT_AVAILABLE", "label": "Подтверждение доставки", "details": "Нет отдельной квитанции"},
         "ops_incidents": {"status": "NOT_AVAILABLE", "label": "События Ops Watch", "details": "Журнал инцидентов не подключён"},
         "github_observe": {"status": "NOT_AVAILABLE", "label": "GitHub Observe", "details": "Нет проверенного снимка наблюдений"},
+        "gh_toolkit": {"status": "NOT_AVAILABLE", "label": "AI Development Toolkit", "details": "Нет проверенного снимка GitHub"},
+        "gh_yfc": {"status": "NOT_AVAILABLE", "label": "Your Fitness Coach", "details": "Нет проверенного снимка GitHub"},
+        "gh_second_brain": {"status": "NOT_AVAILABLE", "label": "Second Brain (код)", "details": "Нет проверенного снимка GitHub"},
     }
     if overview is not None:
         if not isinstance(overview, dict) or overview.get("schema") != SCHEMA or overview.get("mode") != "read_only":
@@ -221,6 +288,7 @@ def assemble(overview: dict | None, scheduler: dict | None, *, now: dt.datetime 
         else:
             coverage["scheduler"]["details"] = "Данные отсутствуют или недостаточны"
     _add_github_observations(overview, clock, coverage, events)
+    _add_public_projects(overview, clock, coverage, events)
     seen = set()
     unique = []
     for ev in events:
