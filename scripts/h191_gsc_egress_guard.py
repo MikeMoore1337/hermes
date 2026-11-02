@@ -66,6 +66,7 @@ TIMER = "hermes-gsc-readonly.timer"
 GUARD = "hermes-gsc-egress-guard.service"
 DEPLOY_SHA = Path("/var/lib/hermes-main-deploy/last-success.sha")
 RELEASE_CREDENTIAL = "h191-deploy-sha"
+RELEASE_CREDENTIALS_ROOT = Path("/run/credentials")
 POLICY = Path("/etc/hermes-gsc/google-egress-policy.json")
 DROPIN = Path("/etc/systemd/system/hermes-gsc-readonly.service.d/90-google-only.conf")
 GUARD_FILE = Path("/etc/systemd/system/hermes-gsc-egress-guard.service")
@@ -105,7 +106,7 @@ def _sha() -> str:
     if credentials_directory is not None:
         directory = Path(credentials_directory)
         if (not directory.is_absolute()
-                or directory.parent != Path("/run/credentials")
+                or directory.parent != RELEASE_CREDENTIALS_ROOT
                 or directory.name != GUARD):
             raise GuardError("release_credential_directory_invalid")
         path = directory / RELEASE_CREDENTIAL
