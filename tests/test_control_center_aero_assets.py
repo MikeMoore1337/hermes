@@ -54,7 +54,7 @@ class TestAeroAssets(unittest.TestCase):
         import math
         import re
         svg = (ROOT / "assets/branding/hermes-aero-maskable.svg").read_text(encoding="utf-8")
-        transform = re.search(r'transform="translate\\((\\d+(?:\\.\\d+)?) (\\d+(?:\\.\\d+)?)\\) scale\\((\\d+(?:\\.\\d+)?)\\)"', svg)
+        transform = re.search(r'transform="translate\((\d+(?:\.\d+)?) (\d+(?:\.\d+)?)\) scale\((\d+(?:\.\d+)?)\)"', svg)
         self.assertIsNotNone(transform, "maskable emblem transform missing")
         tx, ty, scale = map(float, transform.groups())
         # Outer wing tips and the two bottom H facets are the bounding extremes.
