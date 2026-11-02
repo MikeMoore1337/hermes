@@ -5,6 +5,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 
 const base = process.env.PUBLIC_URL ?? 'http://localhost:3000';
+const pinnedDeviceId = 'h15-win-05be75515428';
 const user = process.env.BRC_ADMIN_USER ?? 'ci-owner';
 const pass = process.env.BRC_ADMIN_PASSWORD;
 if (!pass) throw Error('CI_PASSWORD_NOT_PROVIDED');
@@ -139,7 +140,7 @@ const workspaceCatalog = JSON.parse(workspaceList.content?.[0]?.text ?? '{}');
 must(workspaceList.isError !== true && workspaceCatalog.status === 'catalog' &&
      workspaceCatalog.workspaces?.length === 4 &&
      workspaceCatalog.workspaces.every(w => w.scope === 'sandbox' && w.git_verified === false &&
-       w.deviceId === 'ci-native-one' && w.device_status === 'online'),
+       w.deviceId === pinnedDeviceId && w.device_status === 'online'),
      'H15_OWNER_SCOPED_WORKSPACE_CATALOG_OVER_OAUTH_MCP');
 for (const [alias, expected] of [
   ['YFC', 'your-fitness-coach'],
@@ -151,7 +152,7 @@ for (const [alias, expected] of [
   const resolved = JSON.parse(result.content?.[0]?.text ?? '{}');
   must(result.isError !== true && resolved.status === 'resolved' &&
        resolved.workspace === expected && resolved.root === '/workspace/projects/' + expected &&
-       resolved.deviceId === 'ci-native-one' && resolved.git_verified === false &&
+       resolved.deviceId === pinnedDeviceId && resolved.git_verified === false &&
        resolved.verification_required_before_write === true,
        'H15_OAUTH_MCP_RESOLVE_' + expected.toUpperCase().replaceAll('-', '_'));
 }
@@ -170,13 +171,13 @@ for (const args of [
 const list = await call('list_devices', {});
 const discovered = JSON.parse(list.content[0].text).devices;
 const ids = new Set(discovered.filter((x) => x.online).map((x) => x.deviceId));
-must(ids.size === 2 && ids.has('ci-native-one') && ids.has('ci-native-two'),
+must(ids.size === 2 && ids.has(pinnedDeviceId) && ids.has('ci-native-two'),
      'TWO_NATIVE_REAL_MCP_DISCOVERY');
 const implicit = await call('read_file', { path: '/workspace/identity.txt' });
 must(implicit.isError === true, 'TWO_NATIVE_AMBIGUOUS_DEVICE_REFUSED');
 
 for (const [id, expected] of [
-  ['ci-native-one', 'real-ci-agent-one'],
+  [pinnedDeviceId, 'real-ci-agent-one'],
   ['ci-native-two', 'real-ci-agent-two'],
 ]) {
   const result = await call('read_file', {
@@ -185,17 +186,17 @@ for (const [id, expected] of [
   const text = JSON.stringify(result);
   must(result.isError !== true && text.includes(expected),
        'TWO_NATIVE_REAL_FILE_READ_' + id.toUpperCase().replaceAll('-', '_'));
-  must(!text.includes(id === 'ci-native-one' ? 'real-ci-agent-two' : 'real-ci-agent-one'),
+  must(!text.includes(id === pinnedDeviceId ? 'real-ci-agent-two' : 'real-ci-agent-one'),
        'TWO_NATIVE_NO_CROSS_DEVICE_CONTENT_' + id.toUpperCase().replaceAll('-', '_'));
 }
 
 const write = await call('write_file', {
-  deviceId: 'ci-native-one', path: '/workspace/mcp-owner-proof.txt',
+  deviceId: pinnedDeviceId, path: '/workspace/mcp-owner-proof.txt',
   content: 'owner-approved-ephemeral-mcp-file', mode: 'rewrite',
 });
 must(write.isError !== true, 'TWO_NATIVE_REAL_FILE_WRITE');
 const readBack = await call('read_file', {
-  deviceId: 'ci-native-one', path: '/workspace/mcp-owner-proof.txt',
+  deviceId: pinnedDeviceId, path: '/workspace/mcp-owner-proof.txt',
 });
 must(readBack.isError !== true &&
      JSON.stringify(readBack).includes('owner-approved-ephemeral-mcp-file'),
@@ -219,7 +220,7 @@ must(terminal.isError !== true &&
      JSON.stringify(terminal).includes('hermes-two-native-ci-shell'),
      'TWO_NATIVE_REAL_SHELL_ECHO');
 
-const disallowed = await call('get_config', { deviceId: 'ci-native-one' });
+const disallowed = await call('get_config', { deviceId: pinnedDeviceId });
 must(disallowed.isError === true, 'TWO_NATIVE_DIRECT_CONFIG_ACCESS_DENIED');
 
 // The synthetic admin can pause exactly one device while the other
@@ -235,7 +236,7 @@ const pauseResult = await call('read_file', {
 });
 must(pauseResult.isError === true, 'TWO_NATIVE_PAUSED_DEVICE_REFUSED');
 const unaffected = await call('read_file', {
-  deviceId: 'ci-native-one', path: '/workspace/identity.txt',
+  deviceId: pinnedDeviceId, path: '/workspace/identity.txt',
 });
 must(unaffected.isError !== true && JSON.stringify(unaffected).includes('real-ci-agent-one'),
      'TWO_NATIVE_OTHER_DEVICE_UNAFFECTED');
@@ -243,7 +244,7 @@ must(unaffected.isError !== true && JSON.stringify(unaffected).includes('real-ci
 // Pausing the unrelated VPS agent must not alter the selected Windows workspace.
 const stillOnline = await call('resolve_workspace', { project: 'YFC' });
 must(stillOnline.isError !== true &&
-     JSON.parse(stillOnline.content?.[0]?.text ?? '{}').deviceId === 'ci-native-one',
+     JSON.parse(stillOnline.content?.[0]?.text ?? '{}').deviceId === pinnedDeviceId,
      'H15_OWNER_WORKSPACE_UNRELATED_DEVICE_PAUSE_UNAFFECTED');
 
 const malformedToken = await fetch(base + '/mcp', {
@@ -256,7 +257,7 @@ must(malformedToken.status === 401, 'TWO_NATIVE_WRONG_OAUTH_TOKEN_REFUSED');
 const pauseWindows = await fetch(base + '/admin/device', {
   method: 'POST', redirect: 'manual',
   headers: { cookie, origin: base, 'content-type': 'application/x-www-form-urlencoded' },
-  body: form({ device_id: 'ci-native-one', action: 'pause' }),
+  body: form({ device_id: pinnedDeviceId, action: 'pause' }),
 });
 must(pauseWindows.status === 302, 'H15_WORKSPACE_DEVICE_OWNER_PAUSE_APPLIED');
 const stoppedWorkspace = await call('resolve_workspace', { project: 'YFC' });

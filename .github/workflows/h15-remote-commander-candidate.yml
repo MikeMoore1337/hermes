@@ -576,7 +576,7 @@ jobs:
           echo "::add-mask::$token_b"
           for name in "$agent_a" "$agent_b"; do
             if [ "$name" = "$agent_a" ]; then
-              token="$token_a"; device="ci-native-one"; workspace="$workspace_a"; display_name="H15 Windows permanent sandbox"
+              token="$token_a"; device="h15-win-05be75515428"; workspace="$workspace_a"; display_name="H15 Windows permanent sandbox"
             else
               token="$token_b"; device="ci-native-two"; workspace="$workspace_b"; display_name="ci-native-two"
             fi

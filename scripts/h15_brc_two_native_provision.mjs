@@ -7,7 +7,7 @@ const store = new SqliteStore(process.env.BRC_DB ?? '/state/relay.sqlite');
 try {
   const owner = store.getUserByName(process.env.BRC_ADMIN_USER ?? 'ci-owner');
   if (!owner) throw Error('NO_CI_OWNER_IN_EPHEMERAL_DB');
-  const one = store.issueDeviceToken('ci-native-one', owner.id, 'H15 Windows permanent sandbox', 'linux');
+  const one = store.issueDeviceToken('h15-win-05be75515428', owner.id, 'H15 Windows permanent sandbox', 'linux');
   const two = store.issueDeviceToken('ci-native-two', owner.id, 'ci-native-two', 'linux');
   process.stdout.write(JSON.stringify({ one, two }));
 } finally {
