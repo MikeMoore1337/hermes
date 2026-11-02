@@ -325,8 +325,8 @@ complete process and rollback sequence before staging real credentials. The
 isolation may remove normal project egress. The experiment is not an operator
 and must not be deployed as a standalone recovery procedure.
 
-`h454_windows_wss_tunnel.py` builds an SSH-only supervisor that revalidates its
-protected configuration and identity on each attempt, retries after failures,
+`h454_windows_wss_tunnel.ps1` is the canonical SSH-only supervisor. It revalidates
+its protected configuration and identity on each attempt, retries after failures,
 and places its child processes in an owned Windows job. The task is not
 registered; this source does not by itself restore the device or guarantee
 recovery if the supervisor process exits.

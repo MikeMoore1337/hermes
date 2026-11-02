@@ -14,6 +14,7 @@ on:
       - scripts/h454_windows_launcher_guard.py
       - scripts/h454_windows_wss_launcher.py
       - scripts/h454_windows_wss_tunnel.py
+      - scripts/h454_windows_wss_tunnel.ps1
       - scripts/h454_windows_wss_config.py
       - scripts/h454_windows_wss_bundle.py
       - scripts/h454_windows_wss_task.ps1
@@ -69,6 +70,7 @@ on:
       - scripts/h454_windows_launcher_guard.py
       - scripts/h454_windows_wss_launcher.py
       - scripts/h454_windows_wss_tunnel.py
+      - scripts/h454_windows_wss_tunnel.ps1
       - scripts/h454_windows_wss_config.py
       - scripts/h454_windows_wss_bundle.py
       - scripts/h454_windows_wss_task.ps1
@@ -143,6 +145,8 @@ jobs:
         run: python -B -m unittest discover -s tests -p "test_h454_windows_wss_launcher.py" -v
       - name: WSS tunnel supervisor validation
         run: python -B -m unittest discover -s tests -p "test_h454_windows_wss_tunnel.py" -v
+      - name: Fingerprint canonical WSS supervisor
+        run: python -B -c "import hashlib; from scripts.h454_windows_wss_tunnel import build; print('H454_SUPERVISOR_SHA256=' + hashlib.sha256(build()).hexdigest().upper())"
       - name: WSS tunnel configuration validation
         run: python -B -m unittest discover -s tests -p "test_h454_windows_wss_config.py" -v
       - name: WSS supervisor bundle validation

@@ -32,10 +32,23 @@ class WssTunnelTests(unittest.TestCase):
         self.assertLess(result.index('Assert-H454File $ca $settings.caSha256'), preflight)
         self.assertLess(preflight, result.index('Initialize-H454TunnelJob $PSCommandPath'))
 
-    def test_changed_template_anchor_is_refused(self):
-        with mock.patch.object(subject, 'TEMPLATE', 'no guard anchor'):
-            with self.assertRaisesRegex(ValueError, 'template drift'):
-                subject.build()
+    def test_changed_source_guard_is_refused(self):
+        with tempfile.TemporaryDirectory(prefix='h454-source-') as temporary:
+            source = Path(temporary) / 'supervisor.ps1'
+            for content in (b'#requires -Version 5.1\nno guard\n', subject.build().replace(b'\n', b'\r\n')):
+                source.write_bytes(content)
+                with mock.patch.object(subject, 'SOURCE', source):
+                    with self.assertRaisesRegex(ValueError, 'source drift'):
+                        subject.build()
+
+    if os.name != 'nt':
+        def test_linked_supervisor_source_is_refused(self):
+            with tempfile.TemporaryDirectory(prefix='h454-source-') as temporary:
+                link = Path(temporary) / 'supervisor.ps1'
+                link.symlink_to(subject.SOURCE)
+                with mock.patch.object(subject, 'SOURCE', link):
+                    with self.assertRaisesRegex(ValueError, 'source drift'):
+                        subject.build()
 
     if os.name == 'nt':
         def test_windows_generated_validation_refuses_drift(self):
