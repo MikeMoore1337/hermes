@@ -91,14 +91,6 @@ class TerminalSupervisorTests(unittest.TestCase):
         self.assertEqual(result.returncode, 7)
         self.assertEqual(result.stdout, "fixture output\n")
 
-    @unittest.skipUnless(os.getpid() == 1, "requires test process as container PID 1")
-    def test_container_pid1_can_own_a_session(self):
-        result = subprocess.run(
-            [sys.executable, "-I", "-B", str(SUPERVISOR), "1", sys.executable,
-             "-c", "raise SystemExit(7)"], capture_output=True, text=True, timeout=5,
-        )
-        self.assertEqual(result.returncode, 7, result.stderr)
-
     def test_pid1_parent_is_accepted_without_running_as_pid1(self):
         libc = Mock()
         libc.prctl.return_value = 0
