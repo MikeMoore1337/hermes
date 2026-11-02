@@ -9,11 +9,13 @@ param(
     [Parameter(Mandatory=$true)][ValidatePattern('^[A-F0-9]{64}$')][string]$TaskSourceSha256,
     [Parameter(Mandatory=$true)][ValidatePattern('^[A-F0-9]{64}$')][string]$RecoverySourceSha256,
     [switch]$PrepareWss,[switch]$StartWss,[switch]$CheckOriginal,[switch]$PrepareRecoveryRoute,[switch]$PrepareRecoveryBroker,
+    [switch]$RestoreOriginal,[switch]$RestageOnly,
     [string]$FilesSourceSha256,[string]$SupervisorSha256,[string]$IdentitySha256,
     [string]$ModuleSha256,[string]$CaSha256,[string]$NodeSha256,[string]$PublicKeySha256,
     [string]$PublicCaPath,[string]$OriginalProfileSourceSha256,[string]$RecoveryDockerSourceSha256,[string]$DockerSha256,
     [string]$RecoveryRouteSourceSha256,[string]$NetworkGuardSourceSha256,[string]$ProxyImageId,[string]$WssConfigSha256,[string]$CurlSha256,
-    [string]$BrokerRouteSourceSha256,[string]$BrokerImageId,
+    [string]$BrokerRouteSourceSha256,[string]$BrokerImageId,[string]$RestoreSourceSha256,
+    [string]$SecureCredentialSourceSha256,[string]$BrokerCredentialSourceSha256,[string]$VerifierSourceSha256,
     [switch]$Apply,[switch]$OwnerApproved
 )
 $ErrorActionPreference='Stop'
@@ -63,6 +65,32 @@ function Assert-H454PrivateAcl([string]$Path){
         Require-H454 $owner 'H454_GUARD_OPERATOR_ACL'
     }
 }
+function Get-H454LauncherLeaf([string]$Text,[string]$Variable){
+    $tokens=$null;$errors=$null;$ast=[Management.Automation.Language.Parser]::ParseInput($Text,[ref]$tokens,[ref]$errors)
+    $items=@($ast.FindAll({param($node) $node -is [Management.Automation.Language.AssignmentStatementAst] -and
+        $node.Left -is [Management.Automation.Language.VariableExpressionAst] -and $node.Left.VariablePath.UserPath -ceq $Variable},$true))
+    Require-H454 (@($errors).Count -eq 0 -and $items.Count -eq 1 -and
+        $items[0].Right -is [Management.Automation.Language.PipelineAst] -and @($items[0].Right.PipelineElements).Count -eq 1) 'H454_RESTORE_PATH_SOURCE'
+    $command=$items[0].Right.PipelineElements[0]
+    Require-H454 ($command -is [Management.Automation.Language.CommandAst] -and @($command.CommandElements).Count -eq 3 -and
+        $command.CommandElements[0] -is [Management.Automation.Language.StringConstantExpressionAst] -and
+        $command.CommandElements[0].Value -ceq 'Join-Path' -and
+        $command.CommandElements[1] -is [Management.Automation.Language.VariableExpressionAst] -and
+        $command.CommandElements[1].VariablePath.UserPath -ceq 'STATE_DIR' -and
+        $command.CommandElements[2] -is [Management.Automation.Language.StringConstantExpressionAst]) 'H454_RESTORE_PATH_SOURCE'
+    $leaf=[string]$command.CommandElements[2].Value
+    Require-H454 ($leaf -cmatch '^[A-Za-z0-9_.-]{1,128}$' -and $leaf -cnotin @('.','..') -and
+        [IO.Path]::GetFileName($leaf) -ceq $leaf) 'H454_RESTORE_PATH_SOURCE'
+    return $leaf
+}
+function Read-H454ProtectedText([string]$Path,[int]$MaxBytes){
+    Assert-H454PrivateAcl $Path
+    $item=Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+    Require-H454 (-not $item.PSIsContainer -and $item.Length -gt 0 -and $item.Length -le $MaxBytes) 'H454_RESTORE_PRIVATE_FILE'
+    $stream=[IO.File]::Open($Path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    $reader=[IO.StreamReader]::new($stream,[Text.UTF8Encoding]::new($false,$true),$true)
+    try{return $reader.ReadToEnd()}finally{$reader.Dispose();$stream.Dispose()}
+}
 function Get-H454Container([string]$Id){
     Require-H454 ($Id -ceq '1fbf00d9b711be215ab35eaea1f6ef549cc4a0930495e3d0776a965f8c75abb6') 'H454_GUARD_OPERATOR_CONTAINER'
     foreach($name in @('DOCKER_HOST','DOCKER_CONTEXT','DOCKER_TLS_VERIFY','DOCKER_CERT_PATH','DOCKER_CONFIG')){
@@ -94,22 +122,28 @@ $lock=$null
 try{
     Require-H454 (-not $Apply -or $OwnerApproved) 'H454_GUARD_OPERATOR_APPROVAL'
     Require-H454 (-not $StartWss -or ($PrepareWss -and $Apply -and $OwnerApproved)) 'H454_GUARD_OPERATOR_WSS_MODE'
-    if($CheckOriginal -or $PrepareRecoveryRoute -or $PrepareRecoveryBroker){
-        Require-H454 (@(@($CheckOriginal,$PrepareRecoveryRoute,$PrepareRecoveryBroker)|Where-Object {$_}).Count -eq 1 -and
+    Require-H454 (-not $RestageOnly -or ($RestoreOriginal -and $Apply -and $OwnerApproved)) 'H454_GUARD_OPERATOR_MONITOR_MODE'
+    if($CheckOriginal -or $PrepareRecoveryRoute -or $PrepareRecoveryBroker -or $RestoreOriginal){
+        Require-H454 (@(@($CheckOriginal,$PrepareRecoveryRoute,$PrepareRecoveryBroker,$RestoreOriginal)|Where-Object {$_}).Count -eq 1 -and
             (-not $CheckOriginal -or -not $Apply) -and
             -not $PrepareWss -and -not $StartWss -and
             $OriginalProfileSourceSha256 -cmatch '^[A-F0-9]{64}$' -and
             $RecoveryDockerSourceSha256 -cmatch '^[A-F0-9]{64}$' -and $DockerSha256 -cmatch '^[A-F0-9]{64}$') 'H454_GUARD_OPERATOR_ORIGINAL_MODE'
     }
-    if($PrepareRecoveryRoute -or $PrepareRecoveryBroker){
+    if($PrepareRecoveryRoute -or $PrepareRecoveryBroker -or $RestoreOriginal){
         foreach($pin in @($RecoveryRouteSourceSha256,$NetworkGuardSourceSha256,$WssConfigSha256,$SupervisorSha256,$CaSha256,$CurlSha256)){
             Require-H454 ($pin -cmatch '^[A-F0-9]{64}$') 'H454_GUARD_OPERATOR_ROUTE_PINS'
         }
         Require-H454 ($ProxyImageId -cmatch '^sha256:[a-f0-9]{64}$') 'H454_GUARD_OPERATOR_ROUTE_PINS'
     }
-    if($PrepareRecoveryBroker){
-        Require-H454 ($BrokerRouteSourceSha256 -cmatch '^[A-F0-9]{64}$' -and
-            $BrokerImageId -cmatch '^sha256:[a-f0-9]{64}$' -and $BrokerImageId -cne $ProxyImageId) 'H454_GUARD_OPERATOR_BROKER_PINS'
+    if($PrepareRecoveryBroker -or $RestoreOriginal){
+        Require-H454 ($BrokerImageId -cmatch '^sha256:[a-f0-9]{64}$' -and $BrokerImageId -cne $ProxyImageId) 'H454_GUARD_OPERATOR_BROKER_PINS'
+        if($PrepareRecoveryBroker){Require-H454 ($BrokerRouteSourceSha256 -cmatch '^[A-F0-9]{64}$') 'H454_GUARD_OPERATOR_BROKER_PINS'}
+    }
+    if($RestoreOriginal){
+        foreach($pin in @($RestoreSourceSha256,$SecureCredentialSourceSha256,$BrokerCredentialSourceSha256,$VerifierSourceSha256)){
+            Require-H454 ($pin -cmatch '^[A-F0-9]{64}$') 'H454_GUARD_OPERATOR_RESTORE_PINS'
+        }
     }
     if($PrepareWss){
         foreach($pin in @($FilesSourceSha256,$SupervisorSha256,$IdentitySha256,$ModuleSha256,$CaSha256,$NodeSha256,$PublicKeySha256)){
@@ -139,7 +173,7 @@ try{
     $lockPath=Join-Path $state 'runtime.lock'
     Require-H454 (Test-Path -LiteralPath $lockPath -PathType Leaf) 'H454_GUARD_OPERATOR_LOCK'
     $lock=Open-H454RecoveryLock $state
-    if($CheckOriginal -or $PrepareRecoveryRoute -or $PrepareRecoveryBroker){
+    if($CheckOriginal -or $PrepareRecoveryRoute -or $PrepareRecoveryBroker -or $RestoreOriginal){
         $profileSource=Join-Path $PSScriptRoot 'h454_windows_original_profile.ps1'
         $dockerSource=Join-Path $PSScriptRoot 'h454_windows_recovery_docker.ps1'
         $profileText=Read-H454PinnedSource $profileSource $OriginalProfileSourceSha256
@@ -159,17 +193,19 @@ try{
         $originals=@($inspect.Output | ConvertFrom-Json -ErrorAction Stop)
         Require-H454 ($originals.Count -eq 1) 'H454_ORIGINAL_PROFILE_INSPECT'
         $original=$originals[0]
-        Require-H454 ($original.State.Running -is [bool] -and -not $original.State.Running -and
-            [string]$original.State.Status -ceq 'exited' -and [string]$original.HostConfig.RestartPolicy.Name -ceq 'no') 'H454_ORIGINAL_PROFILE_STATE'
-        Assert-H454OriginalProfile $original $backup $OriginalLauncherSha256 `
-            '1fbf00d9b711be215ab35eaea1f6ef549cc4a0930495e3d0776a965f8c75abb6' `
-            'sha256:0c95960c02e0dbe00a6a11ee6253d4055e4a7abf7671404b3f876dfdb95bd5d8' 'hermes-h15-windows-permanent' 'bridge'
+        if(-not $RestoreOriginal){
+            Require-H454 ($original.State.Running -is [bool] -and -not $original.State.Running -and
+                [string]$original.State.Status -ceq 'exited' -and [string]$original.HostConfig.RestartPolicy.Name -ceq 'no') 'H454_ORIGINAL_PROFILE_STATE'
+            Assert-H454OriginalProfile $original $backup $OriginalLauncherSha256 `
+                '1fbf00d9b711be215ab35eaea1f6ef549cc4a0930495e3d0776a965f8c75abb6' `
+                'sha256:0c95960c02e0dbe00a6a11ee6253d4055e4a7abf7671404b3f876dfdb95bd5d8' 'hermes-h15-windows-permanent' 'bridge'
+        }
         Assert-H454RecoveryLock $state $lock
         Assert-H454WssLegacyUnchanged $context.Task $context.Sid
         foreach($pair in @(@($profileSource,$OriginalProfileSourceSha256),@($dockerSource,$RecoveryDockerSourceSha256))){
             Require-H454 ((Get-FileHash -LiteralPath $pair[0] -Algorithm SHA256).Hash -ceq $pair[1]) 'H454_GUARD_OPERATOR_SOURCE_DRIFT'
         }
-        if($PrepareRecoveryRoute -or $PrepareRecoveryBroker){
+        if($PrepareRecoveryRoute -or $PrepareRecoveryBroker -or $RestoreOriginal){
             $routeSource=Join-Path $PSScriptRoot 'h454_windows_recovery_route.ps1'
             $networkSource=Join-Path $PSScriptRoot 'h454_windows_network_guard.ps1'
             $routeText=Read-H454PinnedSource $routeSource $RecoveryRouteSourceSha256
@@ -197,17 +233,60 @@ try{
                 $health=@(& $curl -q --proto '=https' --noproxy '*' --ssl-revoke-best-effort --silent --connect-timeout 2 --max-time 4 `
                     --cacert $ca --resolve 'brc-agent.internal:38184:127.0.0.1' --output NUL --write-out '%{http_code}' 'https://brc-agent.internal:38184/' 2>$null)
                 Require-H454 ($LASTEXITCODE -eq 0 -and $health.Count -eq 1 -and $health[0] -ceq '404') 'H454_ROUTE_WSS_TLS'
-                $fresh=Invoke-H454RecoveryDocker -Arguments @('container','inspect','1fbf00d9b711be215ab35eaea1f6ef549cc4a0930495e3d0776a965f8c75abb6') -DockerSha256 $DockerSha256
-                Require-H454 ($fresh.Code -eq 0 -and $fresh.Output.Length -gt 0) 'H454_ORIGINAL_PROFILE_INSPECT'
-                $items=@($fresh.Output | ConvertFrom-Json -ErrorAction Stop)
-                Require-H454 ($items.Count -eq 1 -and $items[0].State.Running -is [bool] -and -not $items[0].State.Running -and
-                    [string]$items[0].State.Status -ceq 'exited' -and [string]$items[0].HostConfig.RestartPolicy.Name -ceq 'no') 'H454_ORIGINAL_PROFILE_STATE'
-                Assert-H454OriginalProfile $items[0] $backup $OriginalLauncherSha256 `
-                    '1fbf00d9b711be215ab35eaea1f6ef549cc4a0930495e3d0776a965f8c75abb6' `
-                    'sha256:0c95960c02e0dbe00a6a11ee6253d4055e4a7abf7671404b3f876dfdb95bd5d8' 'hermes-h15-windows-permanent' 'bridge'
+                if(-not $RestoreOriginal){
+                    $fresh=Invoke-H454RecoveryDocker -Arguments @('container','inspect','1fbf00d9b711be215ab35eaea1f6ef549cc4a0930495e3d0776a965f8c75abb6') -DockerSha256 $DockerSha256
+                    Require-H454 ($fresh.Code -eq 0 -and $fresh.Output.Length -gt 0) 'H454_ORIGINAL_PROFILE_INSPECT'
+                    $items=@($fresh.Output | ConvertFrom-Json -ErrorAction Stop)
+                    Require-H454 ($items.Count -eq 1 -and $items[0].State.Running -is [bool] -and -not $items[0].State.Running -and
+                        [string]$items[0].State.Status -ceq 'exited' -and [string]$items[0].HostConfig.RestartPolicy.Name -ceq 'no') 'H454_ORIGINAL_PROFILE_STATE'
+                    Assert-H454OriginalProfile $items[0] $backup $OriginalLauncherSha256 `
+                        '1fbf00d9b711be215ab35eaea1f6ef549cc4a0930495e3d0776a965f8c75abb6' `
+                        'sha256:0c95960c02e0dbe00a6a11ee6253d4055e4a7abf7671404b3f876dfdb95bd5d8' 'hermes-h15-windows-permanent' 'bridge'
+                }
                 return $true
             }
-            if($PrepareRecoveryBroker){
+            if($RestoreOriginal){
+                $restoreSource=Join-Path $PSScriptRoot 'h454_windows_original_restore.ps1'
+                $secureSource=Join-Path $PSScriptRoot 'h454_windows_secure_credential.ps1'
+                $brokerCredentialSource=Join-Path $PSScriptRoot 'h454_windows_broker_credential.ps1'
+                $verifierSource=Join-Path $PSScriptRoot 'h454_verify_staged.cjs'
+                . ([scriptblock]::Create((Read-H454PinnedSource $restoreSource $RestoreSourceSha256)))
+                . ([scriptblock]::Create((Read-H454PinnedSource $secureSource $SecureCredentialSourceSha256)))
+                . ([scriptblock]::Create((Read-H454PinnedSource $brokerCredentialSource $BrokerCredentialSourceSha256)))
+                $null=Read-H454PinnedBytes $verifierSource $VerifierSourceSha256
+                $restoreArgs=@{StateDir=$state;Lock=$lock;MarkerSha256=$markerHash;SafetyCheck=$safetyCheck;
+                    Launcher=$backup;LauncherSha256=$OriginalLauncherSha256;
+                    AgentId='1fbf00d9b711be215ab35eaea1f6ef549cc4a0930495e3d0776a965f8c75abb6';
+                    AgentImage='sha256:0c95960c02e0dbe00a6a11ee6253d4055e4a7abf7671404b3f876dfdb95bd5d8';
+                    AgentName='hermes-h15-windows-permanent';DeviceId='h15-win-05be75515428';
+                    OldImage=$ProxyImageId;BrokerImage=$BrokerImageId;CaSha256=$CaSha256;DockerSha256=$DockerSha256;
+                    VerifierPath=$verifierSource;VerifierSha256=$VerifierSourceSha256}
+                $result=Restore-H454Original @restoreArgs
+                if($Apply -and (-not $RestageOnly -or $result.Running)){
+                    $launcherText=Read-H454PinnedSource $backup $OriginalLauncherSha256
+                    $credentialPath=Join-Path $state (Get-H454LauncherLeaf $launcherText 'CRED_PATH')
+                    $statePath=Join-Path $state (Get-H454LauncherLeaf $launcherText 'STATE_PATH')
+                    $record=ConvertFrom-Json -InputObject (Read-H454ProtectedText $statePath 65536) -ErrorAction Stop
+                    Require-H454 ($record.deviceId -ceq $restoreArgs.DeviceId -and $record.imageId -ceq $restoreArgs.AgentImage) 'H454_RESTORE_SAVED_IDENTITY'
+                    $encrypted=(Read-H454ProtectedText $credentialPath 65536).Trim()
+                    $secure=ConvertTo-SecureString -String $encrypted -ErrorAction Stop
+                    $pointer=[Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
+                    try{$plaintext=[Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer)}
+                    finally{[Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer);$secure.Dispose()}
+                    $credential=Convert-H454BrokerCredential $plaintext $restoreArgs.DeviceId
+                    try {
+                        $result=Restore-H454Original @restoreArgs -TokenBytes $credential.TokenBytes -AgentBytes $credential.AgentBytes `
+                            -Apply -OwnerApproved:$OwnerApproved -RestageOnly:$RestageOnly
+                    } finally {
+                        [Array]::Clear($credential.TokenBytes,0,$credential.TokenBytes.Length)
+                        [Array]::Clear($credential.AgentBytes,0,$credential.AgentBytes.Length)
+                    }
+                }elseif($RestageOnly){$result=[pscustomobject]@{Status='MONITOR_WAITING'}}
+                foreach($pair in @(@($restoreSource,$RestoreSourceSha256),@($secureSource,$SecureCredentialSourceSha256),
+                    @($brokerCredentialSource,$BrokerCredentialSourceSha256),@($verifierSource,$VerifierSourceSha256))){
+                    Require-H454 ((Get-FileHash -LiteralPath $pair[0] -Algorithm SHA256).Hash -ceq $pair[1]) 'H454_GUARD_OPERATOR_SOURCE_DRIFT'
+                }
+            }elseif($PrepareRecoveryBroker){
                 $brokerSource=Join-Path $PSScriptRoot 'h454_windows_broker_route.ps1'
                 $brokerText=Read-H454PinnedSource $brokerSource $BrokerRouteSourceSha256
                 . ([scriptblock]::Create($brokerText))
@@ -250,7 +329,9 @@ try{
     foreach($pair in @(@($taskSource,$TaskSourceSha256),@($recoverySource,$RecoverySourceSha256),@($taskBackup,$TaskBackupSha256))){
         Require-H454 ((Get-FileHash -LiteralPath $pair[0] -Algorithm SHA256).Hash -ceq $pair[1]) 'H454_GUARD_OPERATOR_SOURCE_DRIFT'
     }
-    if($PrepareRecoveryBroker){
+    if($RestoreOriginal){
+        'H454_ORIGINAL_RESTORE_OPERATOR='+$result.Status
+    }elseif($PrepareRecoveryBroker){
         'H454_RECOVERY_BROKER_OPERATOR='+$result.Status
     }elseif($PrepareRecoveryRoute){
         'H454_RECOVERY_ROUTE_OPERATOR='+$result.Status

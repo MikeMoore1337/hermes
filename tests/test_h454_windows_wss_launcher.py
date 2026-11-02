@@ -106,6 +106,8 @@ class WssLauncherTests(unittest.TestCase):
         self.assertNotIn(b"\n", result.replace(b"\r\n", b""))
 
     def test_composed_launcher_uses_tls_and_in_memory_credentials(self):
+        verifier = Path(__file__).resolve().parents[1] / 'scripts/h454_verify_staged.cjs'
+        self.assertEqual(verifier.read_text(encoding='utf-8').strip(), wss.VERIFY_STAGED_JS)
         source = fixture()
         output = wss.prepare(source, source_sha256=hashlib.sha256(source).hexdigest(), ca_sha256="a" * 64,
                              identity_sha256="c" * 64).decode()

@@ -20,10 +20,11 @@ bytes are backed up and a pending transition marker is present. The guard
 refuses the launcher's run path while the marker remains. The backup is a
 control snapshot, not a verified secure rollback procedure.
 
-The isolated recovery network and the previously tested TLS proxy are now
-prepared on the Windows Docker host. Only that proxy is attached; the original
-container is still stopped on its old bridge and no real credential was staged.
-These resources alone do not restore the device.
+The isolated recovery network and credential broker are now prepared on the
+Windows Docker host. Only the broker is attached; the earlier proxy is stopped
+and disconnected from that network. The original container is still stopped
+on its old bridge and no real credential was staged. These resources alone do
+not restore the device.
 
 ## Connection boundary
 
@@ -43,8 +44,11 @@ authorization boundary. A disposable test using the original image, synthetic
 credentials and a synthetic relay confirmed terminal access only to the
 surrogate, refusal of the broker's staging port from both networks, and
 restaging plus reconnection after broker restart. The test removed its own
-resources. The broker is not installed, monitored or wired into the production
-recovery operator; its use by the WSS candidate is not implemented.
+resources. The real broker is running without a staged credential. The restore
+operator has passed a disposable original-image staging and repeat-run test,
+and a read-only preflight against the real stopped container, but has not yet
+restored it. Its restage-only mode is not yet scheduled or verified against a
+real broker restart. Use by the direct-WSS candidate is not implemented.
 
 The existing Windows agent sends its bearer to a plaintext local SSH forward.
 Checking the SSH PID before connecting does not authenticate the process that
