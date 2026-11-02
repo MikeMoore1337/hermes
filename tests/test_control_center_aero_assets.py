@@ -45,6 +45,7 @@ class TestAeroAssets(unittest.TestCase):
                 data = (PUBLIC / name).read_bytes()
                 self.assertTrue(data.startswith(b"\x89PNG\r\n\x1a\n"))
                 self.assertEqual(struct.unpack(">II", data[16:24]), size)
+                self.assertIn(data[25], (2, 6), 'PWA assets must use RGB/RGBA, not a palette')
         brand = (PUBLIC / "brand.webp").read_bytes()
         self.assertEqual(brand[:4], b"RIFF")
         self.assertEqual(brand[8:12], b"WEBP")
