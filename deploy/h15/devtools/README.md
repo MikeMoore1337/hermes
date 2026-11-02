@@ -38,19 +38,44 @@ Do not print image or container environment variables, tokens or other secrets.
 
 ## Optional manual candidate build - never run by CI or deployment
 
-With separate operator approval, from the repository root:
+With operator approval, from the repository root, use a unique local tag for
+BuildKit: a bare `sha256:<image-id>` in `FROM` can be mistaken for a registry
+name. Verify the tag before and after the build, then check the resulting
+layers and runtime configuration against the exact original image:
 
 ```powershell
+$baseTag = 'hermes-h454-build-base:' + [Guid]::NewGuid().ToString('N')
+$iidPath = Join-Path $env:TEMP ('hermes-h454-image-' + [Guid]::NewGuid().ToString('N') + '.txt')
+if (Test-Path -LiteralPath $iidPath) { throw 'IID_FILE_EXISTS' }
+docker image tag $baseId $baseTag
+if ($LASTEXITCODE -ne 0 -or (docker image inspect --format '{{.Id}}' $baseTag) -cne $baseId) { throw 'BASE_TAG_MISMATCH' }
 docker build --pull=false --network=default `
-  --build-arg "BRC_BASE_IMAGE=$baseId" `
+  --build-arg "BRC_BASE_IMAGE=$baseTag" --iidfile $iidPath `
   -f deploy/h15/devtools/Dockerfile `
-  -t h15-brc-devtools:candidate deploy/h15/devtools
+  deploy/h15/devtools
 if ($LASTEXITCODE -ne 0) { throw 'CANDIDATE_BUILD_FAILED' }
+$candidateId = [IO.File]::ReadAllText($iidPath).Trim()
+if ($candidateId -cnotmatch '^sha256:[a-f0-9]{64}$' -or
+    (docker image inspect --format '{{.Id}}' $baseTag) -cne $baseId) { throw 'IMAGE_IDENTITY' }
+$base = @(docker image inspect $baseId | ConvertFrom-Json)
+$candidate = @(docker image inspect $candidateId | ConvertFrom-Json)
+if ($base.Count -ne 1 -or $candidate.Count -ne 1 -or
+    $base[0].Id -cne $baseId -or $candidate[0].Id -cne $candidateId) { throw 'IMAGE_IDENTITY' }
+$before = @($base[0].RootFS.Layers); $after = @($candidate[0].RootFS.Layers)
+if ($before.Count -eq 0 -or $after.Count -ne $before.Count + 1) { throw 'IMAGE_LAYERS' }
+for ($i = 0; $i -lt $before.Count; $i++) {
+  if ($before[$i] -cne $after[$i]) { throw 'IMAGE_LAYERS' }
+}
+$fields = @('User','Entrypoint','Cmd','WorkingDir','Env','Labels','ExposedPorts','Volumes','Healthcheck','StopSignal')
+$oldConfig = $base[0].Config | Select-Object $fields | ConvertTo-Json -Compress -Depth 30
+$newConfig = $candidate[0].Config | Select-Object $fields | ConvertTo-Json -Compress -Depth 30
+if ($oldConfig -cne $newConfig) { throw 'IMAGE_CONFIG_DRIFT' }
 ```
 
 The Docker build context is deliberately limited to `deploy/h15/devtools`,
 not the project root. The source recipe does not independently enforce
-the approval of the local base image. Snapshot download requires external
+the approval of the local base image. Keep the unique base tag and image ID
+until the original and rollback have been verified. Snapshot download requires external
 network during the **image build only**, not during agent execution.
 
 ## Existing Windows clone: non-destructive Git interoperability
