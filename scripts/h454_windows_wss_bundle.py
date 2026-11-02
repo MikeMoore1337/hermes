@@ -1,10 +1,16 @@
 """Prepare the pinned supervisor files in memory; never install them."""
 import hashlib
+import os
+from pathlib import Path
 import re
+import stat
 
 from scripts.h15_remote_commander_candidate_audit import AuditError
 from scripts.h454_windows_wss_config import build as build_config
 from scripts.h454_windows_wss_tunnel import build as build_supervisor
+
+FILES = {'h454-wss-identity.ps1': 65536, 'h454_windows_wss_identity.mjs': 16000,
+         'wss-relay-ca.pem': 65536, 'h454-wss-tunnel.ps1': 65536, 'h454-wss-tunnel-config.json': 8192}
 
 
 def _pinned(value: bytes, digest: str, limit: int) -> bool:
@@ -32,3 +38,64 @@ def build(original: bytes, guarded: bytes, identity: bytes, module: bytes, publi
     return {'h454-wss-identity.ps1': identity, 'h454_windows_wss_identity.mjs': module,
             'wss-relay-ca.pem': ca, 'h454-wss-tunnel.ps1': supervisor,
             'h454-wss-tunnel-config.json': config}
+
+
+def publish(bundle: dict[str, bytes], state_dir: Path) -> dict[str, str]:
+    """Create or verify files; caller must hold the lock and enforce the directory ACL."""
+    if (not isinstance(bundle, dict) or set(bundle) != set(FILES) or
+            any(not isinstance(bundle[name], bytes) or not 0 < len(bundle[name]) <= limit for name, limit in FILES.items())):
+        raise AuditError('unreviewed_wss_bundle_input')
+    state = Path(os.path.abspath(state_dir))
+    for item in (state, *state.parents):
+        try:
+            entry = item.lstat()
+        except OSError as exc:
+            raise AuditError('unsafe_wss_bundle_directory') from exc
+        if (not stat.S_ISDIR(entry.st_mode) or stat.S_ISLNK(entry.st_mode) or
+                getattr(entry, 'st_file_attributes', 0) & getattr(stat, 'FILE_ATTRIBUTE_REPARSE_POINT', 0x400)):
+            raise AuditError('unsafe_wss_bundle_directory')
+
+    def matches(path: Path, content: bytes) -> bool:
+        try:
+            before = path.lstat()
+        except FileNotFoundError:
+            return False
+        except OSError as exc:
+            raise AuditError('unsafe_wss_bundle_file') from exc
+        if (not stat.S_ISREG(before.st_mode) or stat.S_ISLNK(before.st_mode) or
+                getattr(before, 'st_file_attributes', 0) & getattr(stat, 'FILE_ATTRIBUTE_REPARSE_POINT', 0x400) or
+                before.st_size != len(content)):
+            raise AuditError('unsafe_wss_bundle_file')
+        try:
+            flags = os.O_RDWR | getattr(os, 'O_BINARY', 0) | getattr(os, 'O_NOINHERIT', 0) | getattr(os, 'O_NOFOLLOW', 0)
+            fd = os.open(path, flags)
+            with os.fdopen(fd, 'r+b') as source:
+                opened = os.fstat(source.fileno())
+                actual = source.read(len(content) + 1)
+                if actual != content:
+                    raise AuditError('unsafe_wss_bundle_file')
+                os.fsync(source.fileno())
+                after = os.fstat(source.fileno())
+            if ((before.st_dev, before.st_ino) != (opened.st_dev, opened.st_ino) or
+                    (opened.st_size, opened.st_mtime_ns) != (after.st_size, after.st_mtime_ns)):
+                raise AuditError('unsafe_wss_bundle_file')
+        except OSError as exc:
+            raise AuditError('unsafe_wss_bundle_file') from exc
+        return True
+
+    present = {name: matches(state / name, value) for name, value in bundle.items()}
+    for name, value in bundle.items():
+        if present[name]:
+            continue
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, 'O_BINARY', 0) | getattr(os, 'O_NOINHERIT', 0)
+        try:
+            fd = os.open(state / name, flags, 0o600)
+            with os.fdopen(fd, 'wb') as target:
+                target.write(value)
+                target.flush()
+                os.fsync(target.fileno())
+        except OSError as exc:
+            raise AuditError('unsafe_wss_bundle_create') from exc
+        if not matches(state / name, value):
+            raise AuditError('unsafe_wss_bundle_file')
+    return {name: hashlib.sha256(value).hexdigest().upper() for name, value in bundle.items()}

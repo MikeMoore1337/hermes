@@ -347,10 +347,12 @@ only after verifying that the guarded launcher is the exact transformation of
 the pinned original and that its relay address is RFC 1918. Synthetic settings
 were accepted by the PowerShell validator; settings were also built in memory
 from the real launcher and public files without printing addresses or secrets.
-`h454_windows_wss_bundle.py` assembles the five supervisor files in memory,
-checks their input hashes and the identity module pin, and does not write or
-install them. It was also exercised with the real public inputs; no BRC token
-was read for that check.
+`h454_windows_wss_bundle.py` assembles the five supervisor files in memory and
+checks their input hashes and the identity module pin. Its separate publisher
+creates only the fixed files or accepts identical existing files; it refuses
+conflicts and reparse paths. The caller must hold the recovery lock and verify
+the state directory ACL. Assembly was exercised with the real public inputs;
+publishing has only synthetic evidence and no BRC token was read.
 
 `h454_windows_guard_operator.ps1` is a bounded preparation operator for the
 already-stopped original. It verifies supplied source and task-backup pins,

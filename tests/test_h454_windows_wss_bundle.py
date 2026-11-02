@@ -1,11 +1,15 @@
 """Prepare only the pinned public inputs and generated supervisor files."""
 import hashlib
 import json
+import os
+from pathlib import Path
+import tempfile
 import unittest
+from unittest import mock
 
 from scripts.h15_remote_commander_candidate_audit import AuditError
 from scripts.h454_windows_launcher_guard import ANCHOR, patch_launcher_bytes
-from scripts.h454_windows_wss_bundle import build
+from scripts.h454_windows_wss_bundle import build, publish
 
 
 def digest(value):
@@ -52,6 +56,57 @@ class WssBundleTests(unittest.TestCase):
             options = dict(kwargs, **{key: digest(altered[index])})
             with self.subTest(index=index), self.assertRaises(AuditError):
                 build(*altered, **options)
+
+    def test_publish_is_idempotent_and_never_overwrites_a_conflict(self):
+        values, kwargs = inputs()
+        bundle = build(*values, **kwargs)
+        with tempfile.TemporaryDirectory(prefix='h454-bundle-') as temporary:
+            state = Path(temporary)
+            result = publish(bundle, state)
+            self.assertEqual(result, publish(bundle, state))
+            self.assertEqual(result['h454-wss-tunnel.ps1'], digest(bundle['h454-wss-tunnel.ps1']).upper())
+            conflict = state / 'wss-relay-ca.pem'
+            conflict.write_bytes(b'existing')
+            with self.assertRaisesRegex(AuditError, 'unsafe_wss_bundle_file'):
+                publish(bundle, state)
+            self.assertEqual(conflict.read_bytes(), b'existing')
+
+    def test_conflict_is_found_before_any_new_file_is_written(self):
+        values, kwargs = inputs()
+        bundle = build(*values, **kwargs)
+        with tempfile.TemporaryDirectory(prefix='h454-bundle-') as temporary:
+            state = Path(temporary)
+            (state / 'h454-wss-tunnel-config.json').write_bytes(b'occupied')
+            with self.assertRaisesRegex(AuditError, 'unsafe_wss_bundle_file'):
+                publish(bundle, state)
+            self.assertEqual(sorted(path.name for path in state.iterdir()), ['h454-wss-tunnel-config.json'])
+
+    def test_interrupted_flush_is_rechecked_and_committed_on_retry(self):
+        values, kwargs = inputs()
+        bundle = build(*values, **kwargs)
+        with tempfile.TemporaryDirectory(prefix='h454-bundle-') as temporary:
+            state = Path(temporary)
+            with mock.patch('scripts.h454_windows_wss_bundle.os.fsync', side_effect=OSError('fixture')):
+                with self.assertRaisesRegex(AuditError, 'unsafe_wss_bundle_create'):
+                    publish(bundle, state)
+            self.assertEqual(len(list(state.iterdir())), 1)
+            result = publish(bundle, state)
+            self.assertEqual(set(result), set(bundle))
+
+    if os.name != 'nt':
+        def test_symlinked_state_or_file_is_refused(self):
+            values, kwargs = inputs()
+            bundle = build(*values, **kwargs)
+            with tempfile.TemporaryDirectory(prefix='h454-bundle-') as temporary:
+                root = Path(temporary)
+                state = root / 'state'
+                state.mkdir()
+                (root / 'link').symlink_to(state, target_is_directory=True)
+                with self.assertRaisesRegex(AuditError, 'unsafe_wss_bundle_directory'):
+                    publish(bundle, root / 'link')
+                (state / 'h454-wss-identity.ps1').symlink_to(root / 'missing')
+                with self.assertRaisesRegex(AuditError, 'unsafe_wss_bundle_file'):
+                    publish(bundle, state)
 
 
 if __name__ == '__main__':
