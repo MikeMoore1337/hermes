@@ -45,6 +45,7 @@ on:
       - scripts/h454_windows_network_guard.ps1
       - scripts/h454_windows_cutover_engine.ps1
       - deploy/h15/Dockerfile.brc-agent-pinned-wss
+      - deploy/h15/Dockerfile.brc-agent-broker
       - deploy/h15/Dockerfile.brc-rollback-proxy
       - deploy/h15/Dockerfile.brc-credential-broker
       - tests/test_h454_agent_pinned_wss.py
@@ -112,6 +113,7 @@ on:
       - scripts/h454_windows_network_guard.ps1
       - scripts/h454_windows_cutover_engine.ps1
       - deploy/h15/Dockerfile.brc-agent-pinned-wss
+      - deploy/h15/Dockerfile.brc-agent-broker
       - deploy/h15/Dockerfile.brc-rollback-proxy
       - deploy/h15/Dockerfile.brc-credential-broker
       - tests/test_h454_agent_pinned_wss.py
@@ -604,7 +606,8 @@ jobs:
           fixture_bad="h454-wss-fixture-bad:${GITHUB_RUN_ID}"
           proxy_image="h454-rollback-proxy-fixture:${GITHUB_RUN_ID}"
           broker_image="h454-credential-broker-fixture:${GITHUB_RUN_ID}"
-          trap 'docker image rm "$broker_image" "$proxy_image" "$fixture_bad" "$fixture_mutant" "$fixture_image" "$fixture_base" >/dev/null 2>&1 || true; rm -rf "$fixture" "$image_context"' EXIT
+          broker_agent_image="h454-broker-agent-fixture:${GITHUB_RUN_ID}"
+          trap 'docker image rm "$broker_agent_image" "$broker_image" "$proxy_image" "$fixture_bad" "$fixture_mutant" "$fixture_image" "$fixture_base" >/dev/null 2>&1 || true; rm -rf "$fixture" "$image_context"' EXIT
           bash scripts/h454_wss_fixture_certificates.sh "$fixture"
           chmod 755 "$fixture"
           image="hermes-brc-relay-eval:${GITHUB_SHA:0:12}"
@@ -657,6 +660,21 @@ jobs:
               --entrypoint node "$1" /src/scripts/h454_agent_combined_image_e2e.mjs /fixtures
           }
           run_combined "$fixture_image"
+          docker build --quiet --pull=false --network none --build-arg "H454_BASE_IMAGE=$fixture_base" \
+            --file deploy/h15/Dockerfile.brc-agent-broker --tag "$broker_agent_image" "$image_context"
+          docker run --rm --network none --read-only --init --cap-drop ALL --security-opt no-new-privileges \
+            --user 65534:65534 --memory 256m --pids-limit 64 --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777 \
+            --mount "type=bind,src=$GITHUB_WORKSPACE,dst=/src,readonly" --entrypoint node "$broker_agent_image" \
+            /src/scripts/h454_agent_no_auto_pair_e2e.mjs /app
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+            --user 65534:65534 --entrypoint node "$broker_agent_image" -e '
+              const fs=require("node:fs"), assert=require("node:assert/strict");
+              for(const p of ["/app/dist/cli.js","/app/dist/cli.js.map"]) {
+                const s=fs.lstatSync(p);
+                assert(s.isFile() && !s.isSymbolicLink() && s.uid===0 && s.gid===0 && (s.mode&0o777)===0o444);
+                assert.throws(()=>fs.writeFileSync(p,"fixture"),e=>["EROFS","EACCES"].includes(e.code));
+              }
+            '
           printf '\n// synthetic drift\n' >> "$image_context/cli.js"
           if docker build --progress plain --pull=false --network none --build-arg "H454_BASE_IMAGE=$fixture_base" \
             --file deploy/h15/Dockerfile.brc-agent-pinned-wss --tag "$fixture_bad" "$image_context" >"$RUNNER_TEMP/h454-cli-pin-bad.log" 2>&1; then
@@ -664,6 +682,12 @@ jobs:
           fi
           grep -Fq 'sha256sum --check --status' "$RUNNER_TEMP/h454-cli-pin-bad.log"
           grep -Fq 'exit code: 1' "$RUNNER_TEMP/h454-cli-pin-bad.log"
+          if docker build --progress plain --pull=false --network none --build-arg "H454_BASE_IMAGE=$fixture_base" \
+            --file deploy/h15/Dockerfile.brc-agent-broker --tag "$fixture_bad" "$image_context" >"$RUNNER_TEMP/h454-broker-cli-pin-bad.log" 2>&1; then
+            echo 'H454_BROKER_CHANGED_CLI_NOT_REJECTED' >&2; exit 1
+          fi
+          grep -Fq 'sha256sum --check --status' "$RUNNER_TEMP/h454-broker-cli-pin-bad.log"
+          grep -Fq 'exit code: 1' "$RUNNER_TEMP/h454-broker-cli-pin-bad.log"
           cp "$RUNNER_TEMP/h454-no-auto-pair/cli.js" "$image_context/cli.js"
           test "$(sha256sum "$RUNNER_TEMP/brc-upstream/packages/agent/dist/cli.js" | cut -d' ' -f1)" = 1e38c5947075db3b3401a861ba8239b18ca511b958da5563470bf3b8f3acd416
           docker build --quiet --pull=false --network none --build-arg "H454_BASE_IMAGE=$fixture_base" \

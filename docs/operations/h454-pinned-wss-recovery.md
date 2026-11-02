@@ -45,10 +45,21 @@ credentials and a synthetic relay confirmed terminal access only to the
 surrogate, refusal of the broker's staging port from both networks, and
 restaging plus reconnection after broker restart. The test removed its own
 resources. The real original container was restored and passed a real MCP
-smoke. A scheduled restage-only installer passed synthetic interruption,
-collision and task-definition checks; it is not yet installed or verified
-against a real broker restart. A broker restart currently requires manual
-restaging. Use by the direct-WSS candidate is not implemented.
+smoke. A restage-only Windows task is installed with a one-minute trigger;
+its first real run completed successfully and MCP remained responsive.
+Synthetic tests also restored a connection after broker restart, but a restart
+of the real broker has not been tested while BRC is online. The task does not
+start a stopped original. Use by the direct-WSS candidate is not implemented.
+
+`deploy/h15/Dockerfile.brc-agent-broker` prepares the no-auto-pair CLI on the
+original base for the isolated broker route. Its file hashes are pinned; the
+runtime operator must still verify the base, network, broker and credentials.
+A disposable instance with synthetic credentials and relay rejected pairing
+without credentials, exposed only the surrogate to the agent terminal, and
+reconnected after a broker restart and restaging. It is not deployed.
+Docker Desktop reported different source strings for a test bind mount and a
+`--volumes-from` copy, although both read the same synthetic sentinel and a
+candidate write appeared on the host. This does not verify the real workspace.
 
 The legacy Windows route sent its bearer to a plaintext local SSH forward.
 Checking the SSH PID before connecting does not authenticate the process that
@@ -325,10 +336,9 @@ These checks consume observations supplied by the caller; they do not prove
 the proxy's upstream interface is closed or prevent a Docker administrator
 changing the network later.
 
-The former image still uses plaintext transport. Automatically restarting it
-after a failed TLS migration would reintroduce the bearer exposure. Until a
-separately verified route restores the exact original container securely,
-recovery leaves the agent offline with its marker and guard in place. A
+The former image still uses plaintext transport. Restarting it on the former
+host route would reintroduce bearer exposure. The isolated broker route restored
+the exact original with a surrogate; it does not make a plaintext rollback safe. A
 production-ready operator must reconcile the original container, launcher,
 SSH forward, isolated proxy and future starts, then repeat a real MCP smoke
 before clearing the marker. Removing the marker or using the previous
@@ -336,8 +346,8 @@ plaintext rollback is not an automatic recovery step.
 
 A transport-secured baseline would be a different image and container; it does
 not fulfil the owner's requirement to restage credentials and restore the
-original container. The secure route has been exercised with a disposable
-container, but restoring and restaging the actual original remains unverified.
+original container. The actual original has now been restored and restaged;
+returning it after a candidate cutover remains unverified.
 
 `h454_isolated_rollback_proxy.mjs` is a source-only experiment for that gap.
 It selects one private IPv4 interface using the operator-pinned isolated
