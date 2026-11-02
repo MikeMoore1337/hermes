@@ -12,6 +12,15 @@ ROOT=Path(__file__).resolve().parents[1]
 
 
 class MainCIScheduleTests(unittest.TestCase):
+    def setUp(self):
+        # Synthetic public source snapshots, no network or real state in CI.
+        public_poll = patch.object(watch_once.project_feed, "poll", return_value={})
+        public_save = patch.object(watch_once.project_feed, "save", return_value="STORED")
+        public_poll.start()
+        public_save.start()
+        self.addCleanup(public_save.stop)
+        self.addCleanup(public_poll.stop)
+
     def test_execute_is_explicit_and_no_implicit_network(self):
         with patch.object(watch_once,"inspect_once") as net:
             with patch("sys.stdout",new_callable=io.StringIO) as out:
