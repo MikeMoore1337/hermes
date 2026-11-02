@@ -246,8 +246,42 @@ class ProbeTests(unittest.TestCase):
         self.assertEqual(seen["env"]["GIT_ALLOW_PROTOCOL"], "https")
         self.assertEqual(seen["env"]["GIT_TERMINAL_PROMPT"], "0")
         self.assertEqual(seen["env"]["GIT_CONFIG_GLOBAL"], "/dev/null")
+        self.assertEqual(seen["env"]["GIT_CEILING_DIRECTORIES"], "/dev")
+        self.assertEqual(seen["cwd"], "/dev")
         self.assertNotIn("GITHUB_TOKEN", seen["env"])
         self.assertTrue(seen["start_new_session"])
+
+    def test_git_runner_ignores_repository_url_rewrites(self):
+        url = "https://github.com/example/project.git"
+        env = {"PATH": "/usr/bin:/bin", "HOME": "/nonexistent",
+               "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null"}
+        subprocess.run(["/usr/bin/git", "init", "-q", str(self.root)], check=True, env=env)
+        subprocess.run(["/usr/bin/git", "-C", str(self.root), "config", "--local",
+                        "url.https://redirected.invalid/.insteadOf", "https://github.com/"],
+                       check=True, env=env)
+        redirected = subprocess.check_output(
+            ["/usr/bin/git", "ls-remote", "--get-url", "--", url], cwd=self.root, env=env)
+        self.assertEqual(redirected, b"https://redirected.invalid/example/project.git\n")
+        actual_popen = subprocess.Popen
+
+        def get_url(args, **kwargs):
+            return actual_popen(args[:args.index("ls-remote")] +
+                                ["ls-remote", "--get-url", "--", url], **kwargs)
+
+        previous = os.getcwd()
+        try:
+            os.chdir(self.root)
+            with patch.object(probe.subprocess, "Popen", side_effect=get_url):
+                self.assertEqual(probe.git_remote(url), (url + "\n").encode())
+        finally:
+            os.chdir(previous)
+
+    def test_git_runner_refuses_an_unprotected_working_directory(self):
+        with patch.object(probe.os, "access", return_value=True), \
+             patch.object(probe.subprocess, "Popen") as popen:
+            with self.assertRaisesRegex(probe.ProbeRejected, "remote_unavailable"):
+                probe.git_remote("https://github.com/example/project.git")
+        popen.assert_not_called()
 
     def test_timed_out_git_process_is_reaped(self):
         actual_popen = subprocess.Popen

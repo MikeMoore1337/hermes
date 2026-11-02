@@ -89,9 +89,24 @@ def _limit_git() -> None:
 
 def git_remote(repository: str) -> bytes:
     """Fetch only HEAD metadata, with no inherited config, prompts or disk writes."""
+    # Git otherwise discovers project-local url.*.insteadOf settings from cwd.
+    try:
+        directory = os.lstat("/dev")
+        if (not stat.S_ISDIR(directory.st_mode) or directory.st_uid != 0
+            or directory.st_mode & 0o022 or os.access("/dev", os.W_OK)):
+            _reject("remote_unavailable")
+        try:
+            os.lstat("/dev/.git")
+        except FileNotFoundError:
+            pass
+        else:
+            _reject("remote_unavailable")
+    except OSError:
+        _reject("remote_unavailable")
     env = {
         "PATH": "/usr/bin:/bin", "HOME": "/nonexistent", "LC_ALL": "C",
         "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_CEILING_DIRECTORIES": "/dev",
         "GIT_TERMINAL_PROMPT": "0", "GIT_ASKPASS": "/bin/false",
         "GIT_ALLOW_PROTOCOL": "https", "GIT_OPTIONAL_LOCKS": "0",
     }
@@ -101,7 +116,7 @@ def git_remote(repository: str) -> bytes:
     try:
         process = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                    stderr=subprocess.DEVNULL, env=env, start_new_session=True,
-                                   preexec_fn=_limit_git)
+                                   preexec_fn=_limit_git, cwd="/dev")
     except (OSError, subprocess.SubprocessError):
         _reject("remote_unavailable")
     assert process.stdout is not None
