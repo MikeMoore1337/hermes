@@ -134,11 +134,15 @@ $TUNNEL_TARGET = "fixture@$HOST_ADDR"
         throw
     }
     Require-H454 ($result.Count -eq 1 -and $result[0] -ceq 'H454_WSS_TASK=REGISTERED_DISABLED' -and $script:registrations -eq 1) 'FIXTURE_SUCCESS'
+    $again=@(Register-H454WssTaskDisabled $oldHash $guardHash $markerHash $supervisorHash $configHash $backupName $lock -OwnerApproved)
+    Require-H454 ($again.Count -eq 1 -and $again[0] -ceq 'H454_WSS_TASK=ALREADY_REGISTERED_DISABLED' -and
+        $script:registrations -eq 1) 'FIXTURE_IDEMPOTENT'
+    if(-not $RealScheduler){
+    $script:createdTask.Actions=@([pscustomobject]@{Execute=$script:registeredAction.Execute;Arguments='unknown'})
     $refused=$false
     try{$null=Register-H454WssTaskDisabled $oldHash $guardHash $markerHash $supervisorHash $configHash $backupName $lock -OwnerApproved}
     catch{$refused=$_.Exception.Message -ceq 'H454_WSS_TASK_EXISTS'}
     Require-H454 ($refused -and $script:registrations -eq 1) 'FIXTURE_COLLISION'
-    if(-not $RealScheduler){
     $script:createdTask=$null
     [IO.File]::WriteAllText($marker,'wrong-marker',$utf8);$wrongMarker=(Get-FileHash $marker).Hash
     $refused=$false

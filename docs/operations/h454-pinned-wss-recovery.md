@@ -336,9 +336,10 @@ in memory with one-minute repetition, no execution time limit, no overlapping
 instances and registration disabled by default. `Register-H454WssTaskDisabled`
 also checks the held recovery lock, disabled legacy task, protected snapshots,
 canonical marker, exact guard insertion and supervisor preflight before
-registering that task disabled. It does not create the marker, install files,
-enable the task or operate the container; those remain the operator's
-responsibility. Synthetic registration tests exercise refusals with a mocked
+registering that task disabled. It can adopt an exactly matching disabled task
+after interruption, but refuses an unknown or enabled task. It does not create
+the marker, install files, enable the task or operate the container; those
+remain the operator's responsibility. Synthetic registration tests exercise refusals with a mocked
 scheduler. A separate local test registered and removed a uniquely named,
 disabled task using the real scheduler; it did not install the BRC task.
 

@@ -228,6 +228,23 @@ function Install-H454WssGuard(
     return [pscustomobject]@{Status='INSTALLED_PENDING';BackupName=$BackupName;MarkerSha256=$markerHash}
 }
 
+function Test-H454WssTaskMatch([object]$Task,[object]$Definition,[string]$ExpectedSid) {
+    if($null -eq $Task){return $false}
+    $actions=@($Task.Actions | Where-Object {$null -ne $_})
+    $triggers=@($Task.Triggers | Where-Object {$null -ne $_})
+    try{$sid=Get-H454WssTaskSid ([string]$Task.Principal.UserId)}catch{return $false}
+    if([string]$Task.State -cne 'Disabled' -or $Task.Settings.Enabled -ne $false -or $sid -cne $ExpectedSid -or
+        [string]$Task.Principal.LogonType -cne 'Interactive' -or [string]$Task.Principal.RunLevel -cne 'Limited' -or
+        $actions.Count -ne 1 -or [string]$actions[0].Execute -cne [string]$Definition.Action.Execute -or
+        [string]$actions[0].Arguments -cne [string]$Definition.Action.Arguments -or
+        [string]$Task.Settings.ExecutionTimeLimit -cne 'PT0S' -or [string]$Task.Settings.MultipleInstances -cne 'IgnoreNew' -or
+        $triggers.Count -ne 1 -or $triggers[0].Enabled -ne $true -or $triggers[0].Repetition.Interval -cne 'PT1M' -or
+        -not [string]::IsNullOrEmpty([string]$triggers[0].Repetition.Duration) -or
+        -not [string]::IsNullOrEmpty([string]$triggers[0].EndBoundary)){return $false}
+    try{$start=[datetime]::Parse([string]$triggers[0].StartBoundary,[Globalization.CultureInfo]::InvariantCulture)}catch{return $false}
+    return ($start -le (Get-Date).AddMinutes(10))
+}
+
 function Register-H454WssTaskDisabled(
     [string]$OriginalLauncherSha256,[string]$GuardedLauncherSha256,[string]$MarkerSha256,
     [string]$SupervisorSha256,[string]$ConfigSha256,[string]$BackupName,[IO.FileStream]$Lock,[switch]$OwnerApproved
@@ -267,23 +284,20 @@ function Register-H454WssTaskDisabled(
     Assert-H454WssLegacyUnchanged $legacy $legacySid
     $name='HermesH454WssTunnel'
     $existing=@(Get-ScheduledTask -TaskPath '\' -ErrorAction Stop | Where-Object {$_.TaskName -ieq $name})
-    if($existing.Count -ne 0){throw 'H454_WSS_TASK_EXISTS'}
     $definition=New-H454WssTaskDefinition $supervisor $ConfigSha256 ([string]$legacy.Principal.UserId) ((Get-Date).AddMinutes(5))
+    if($existing.Count -gt 0){
+        if($existing.Count -ne 1 -or -not (Test-H454WssTaskMatch $existing[0] $definition $legacySid)){throw 'H454_WSS_TASK_EXISTS'}
+        Assert-H454RecoveryLock $state $Lock
+        Assert-H454WssLegacyUnchanged $legacy $legacySid
+        return 'H454_WSS_TASK=ALREADY_REGISTERED_DISABLED'
+    }
     Register-ScheduledTask -TaskName $name -TaskPath '\' -Action $definition.Action -Principal $definition.Principal `
         -Settings $definition.Settings -Trigger $definition.Trigger -ErrorAction Stop | Out-Null
     $created=Get-ScheduledTask -TaskName $name -TaskPath '\' -ErrorAction Stop
-    $triggers=@($created.Triggers | Where-Object {$null -ne $_})
     $actions=@($created.Actions | Where-Object {$null -ne $_})
     $owned=($actions.Count -eq 1 -and [string]$actions[0].Execute -ceq [string]$definition.Action.Execute -and
         [string]$actions[0].Arguments -ceq [string]$definition.Action.Arguments)
-    try{$createdSid=Get-H454WssTaskSid ([string]$created.Principal.UserId)}catch{$createdSid=''}
-    if(-not $owned -or [string]$created.State -cne 'Disabled' -or $created.Settings.Enabled -ne $false -or $createdSid -cne $legacySid -or
-        [string]$created.Principal.LogonType -cne 'Interactive' -or [string]$created.Principal.RunLevel -cne 'Limited' -or
-        [string]$created.Settings.ExecutionTimeLimit -cne 'PT0S' -or
-        [string]$created.Settings.MultipleInstances -cne 'IgnoreNew' -or $triggers.Count -ne 1 -or
-        $triggers[0].Enabled -ne $true -or $triggers[0].Repetition.Interval -cne 'PT1M' -or
-        -not [string]::IsNullOrEmpty([string]$triggers[0].Repetition.Duration) -or
-        -not [string]::IsNullOrEmpty([string]$triggers[0].EndBoundary)){
+    if(-not (Test-H454WssTaskMatch $created $definition $legacySid)){
         if($owned -and [string]$created.State -cne 'Disabled'){Disable-ScheduledTask -TaskName $name -TaskPath '\' -ErrorAction Stop | Out-Null}
         throw 'H454_WSS_TASK_REGISTER_DRIFT'
     }
