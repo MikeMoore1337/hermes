@@ -15,6 +15,7 @@ from qa_advisor.ci_snapshot import SnapshotRefused, inspect_once
 from qa_advisor.github_public import GithubPublicError
 from qa_advisor.signal_store import SignalError, from_ci, store
 from qa_advisor import github_observe_feed as observe_feed
+from qa_advisor import public_project_observe as project_feed
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -43,11 +44,23 @@ def main(argv: list[str] | None = None) -> int:
         except (observe_feed.FeedRefused, GithubPublicError, SignalError,
                 OSError, TimeoutError, ValueError):
             feed_status = "UNAVAILABLE"
+    # Public project metadata uses the existing QA timer, no extra service.
+    # Never let a failure suppress the original CI or Hermes Observe signal.
+    public_status = "DISABLED"
+    if args.execute:
+        try:
+            public_record = project_feed.poll(now=datetime.now(UTC))
+            project_feed.save(public_record)
+            public_status = "STORED"
+        except (project_feed.PublicObserveError, GithubPublicError, SignalError,
+                OSError, TimeoutError, ValueError):
+            public_status = "UNAVAILABLE"
     # No token, SHA, raw text, full URL or HTTP body.
     print(json.dumps({
         "status": "STORED" if receipt == "STORED_SAFE_CI_SIGNAL" else "PRESERVED",
         "signal": current["status"], "outbound_notifications": 0,
         "github_observe_feed": feed_status,
+        "github_projects_feed": public_status,
     }, sort_keys=True))
     return 0
 
