@@ -43,7 +43,7 @@ class TestAeroAssets(unittest.TestCase):
         for name, size in PNG_SIZES.items():
             with self.subTest(name=name):
                 data = (PUBLIC / name).read_bytes()
-                self.assertTrue(data.startswith(b"\\x89PNG\\r\\n\\x1a\\n"))
+                self.assertTrue(data.startswith(b"\x89PNG\r\n\x1a\n"))
                 self.assertEqual(struct.unpack(">II", data[16:24]), size)
         brand = (PUBLIC / "brand.webp").read_bytes()
         self.assertEqual(brand[:4], b"RIFF")

@@ -1,6 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
- <rect width="64" height="64" rx="13" fill="#081B2C"/><g fill="#DFF7FF">
- <path d="M5 13L20 19V27L9 23Z M7 27L20 32V39L11 36Z"/>
- <path d="M59 13L44 19V27L55 23Z M57 27L44 32V39L53 36Z"/>
- <path d="M20 19L27 22V31H37V22L44 19V49L37 52V38H27V52L20 49Z"/></g>
- <path d="M27 31H37V38H27Z" fill="#5DBCF7"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Hermes Aero"><defs><linearGradient id="metal" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#FFFFFF"/><stop offset="1" stop-color="#79C9F8"/></linearGradient><linearGradient id="wing" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#E5F7FF"/><stop offset="1" stop-color="#489FDC"/></linearGradient></defs><rect width="64" height="64" rx="12" fill="#081B2C"/><g transform="translate(4.5 4.5) scale(.10742)"><g><path d="M60 167L186 203V244L99 210Z M85 253L186 274V303L116 289Z" fill="url(#wing)"/><g transform="translate(512 0) scale(-1 1)"><path d="M60 167L186 203V244L99 210Z M85 253L186 274V303L116 289Z" fill="url(#wing)"/></g><path d="M188 175L226 187V239H286V187L324 175V351L286 340V277H226V340L188 351Z" fill="url(#metal)"/><path d="M226 239H286V277H226Z" fill="#DDF7FF"/></g></g></svg>
