@@ -25,7 +25,9 @@ on:
       - scripts/h454_windows_recovery_docker.ps1
       - scripts/h454_windows_recovery_route.ps1
       - scripts/h454_windows_broker_route.ps1
+      - scripts/h454_windows_broker_monitor.ps1
       - tests/h454_windows_broker_route_fixture.ps1
+      - tests/h454_windows_broker_monitor_fixture.ps1
       - scripts/h454_windows_guard_operator.ps1
       - scripts/h454_windows_wss_identity.ps1
       - scripts/h454_windows_wss_identity.mjs
@@ -90,7 +92,9 @@ on:
       - scripts/h454_windows_recovery_docker.ps1
       - scripts/h454_windows_recovery_route.ps1
       - scripts/h454_windows_broker_route.ps1
+      - scripts/h454_windows_broker_monitor.ps1
       - tests/h454_windows_broker_route_fixture.ps1
+      - tests/h454_windows_broker_monitor_fixture.ps1
       - scripts/h454_windows_guard_operator.ps1
       - scripts/h454_windows_wss_identity.ps1
       - scripts/h454_windows_wss_identity.mjs
@@ -168,7 +172,7 @@ jobs:
       - name: WSS tunnel configuration validation
         run: python -B -m unittest discover -s tests -p "test_h454_windows_wss_config.py" -v
       - name: Fingerprint recovery broker operators
-        run: python -B -c "import hashlib; from pathlib import Path; paths=['h454_windows_guard_operator.ps1','h454_windows_broker_route.ps1','h454_windows_broker_credential.ps1','h454_windows_original_restore.ps1','h454_windows_secure_credential.ps1','h454_verify_staged.cjs']; [print('H454_SOURCE_SHA256='+p+':'+hashlib.sha256(Path('scripts',p).read_bytes()).hexdigest().upper()) for p in paths]"
+        run: python -B -c "import hashlib; from pathlib import Path; paths=['h454_windows_guard_operator.ps1','h454_windows_broker_route.ps1','h454_windows_broker_monitor.ps1','h454_windows_broker_credential.ps1','h454_windows_original_restore.ps1','h454_windows_secure_credential.ps1','h454_verify_staged.cjs']; [print('H454_SOURCE_SHA256='+p+':'+hashlib.sha256(Path('scripts',p).read_bytes()).hexdigest().upper()) for p in paths]"
       - name: Immutable edit layer safety contracts (no owner Docker or credentials)
         run: python -B -m unittest discover -s tests -p "test_h454_agent_edit_image.py" -v
       - name: Parse disposable image smoke
@@ -209,6 +213,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'H454_NETWORK_GUARD_TEST_FAILED' }
           & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests/h454_windows_broker_route_fixture.ps1 -Source (Resolve-Path scripts/h454_windows_network_guard.ps1).Path
           if ($LASTEXITCODE -ne 0) { throw 'H454_BROKER_ROUTE_TEST_FAILED' }
+          & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests/h454_windows_broker_monitor_fixture.ps1 -TaskSource (Resolve-Path scripts/h454_windows_wss_task.ps1).Path -MonitorSource (Resolve-Path scripts/h454_windows_broker_monitor.ps1).Path
+          if ($LASTEXITCODE -ne 0) { throw 'H454_BROKER_MONITOR_TEST_FAILED' }
           & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests/h454_windows_original_restore_fixture.ps1 -Verifier (Resolve-Path scripts/h454_verify_staged.cjs).Path
           if ($LASTEXITCODE -ne 0) { throw 'H454_ORIGINAL_RESTORE_TEST_FAILED' }
           & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/h454_windows_cutover_engine_e2e.ps1 -Source (Resolve-Path scripts/h454_windows_cutover_engine.ps1).Path -FixtureParent $env:RUNNER_TEMP

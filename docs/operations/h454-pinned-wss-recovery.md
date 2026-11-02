@@ -6,11 +6,12 @@ permanent Windows supervisor connected with pinned TLS and recovered its SSH
 child after a controlled termination while the original container was stopped.
 After the supervisor itself was terminated, its owned SSH child exited and
 the periodic task started a new supervisor with pinned TLS.
-The original container is still stopped. Its raw profile differs from the old
-launcher pin only in the representation of an unspecified DNS list; the
-normalized comparison matches. Secure restaging, the production update
-operator and live MCP remain unverified. A concrete maintenance window is
-required before stopping BRC for a later cutover.
+The exact original container was restored through the isolated broker, and
+its Windows device is online. A real device-specific MCP `list_sessions`
+call succeeded; a workspace metadata call succeeded and an outside-path
+metadata request was refused. The production update operator and a rollback
+after cutover remain unverified. A concrete maintenance window is required
+before stopping BRC for a later cutover.
 
 While the original was already stopped, its legacy scheduled task was disabled
 after checking the exclusive runtime lock, original container identity and
@@ -20,11 +21,10 @@ bytes are backed up and a pending transition marker is present. The guard
 refuses the launcher's run path while the marker remains. The backup is a
 control snapshot, not a verified secure rollback procedure.
 
-The isolated recovery network and credential broker are now prepared on the
-Windows Docker host. Only the broker is attached; the earlier proxy is stopped
-and disconnected from that network. The original container is still stopped
-on its old bridge and no real credential was staged. These resources alone do
-not restore the device.
+The original container and credential broker are attached to the isolated
+recovery network. The earlier proxy is stopped and disconnected from that
+network. The original received only a surrogate credential; the real bearer
+was staged into the broker. The legacy host plaintext listener remains absent.
 
 ## Connection boundary
 
@@ -44,13 +44,13 @@ authorization boundary. A disposable test using the original image, synthetic
 credentials and a synthetic relay confirmed terminal access only to the
 surrogate, refusal of the broker's staging port from both networks, and
 restaging plus reconnection after broker restart. The test removed its own
-resources. The real broker is running without a staged credential. The restore
-operator has passed a disposable original-image staging and repeat-run test,
-and a read-only preflight against the real stopped container, but has not yet
-restored it. Its restage-only mode is not yet scheduled or verified against a
-real broker restart. Use by the direct-WSS candidate is not implemented.
+resources. The real original container was restored and passed a real MCP
+smoke. A scheduled restage-only installer passed synthetic interruption,
+collision and task-definition checks; it is not yet installed or verified
+against a real broker restart. A broker restart currently requires manual
+restaging. Use by the direct-WSS candidate is not implemented.
 
-The existing Windows agent sends its bearer to a plaintext local SSH forward.
+The legacy Windows route sent its bearer to a plaintext local SSH forward.
 Checking the SSH PID before connecting does not authenticate the process that
 accepts that particular connection. The pinned-agent source patch requires
 only `wss://host.docker.internal:38184/ws`, explicitly supplies the CA from

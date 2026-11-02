@@ -9,13 +9,14 @@ param(
     [Parameter(Mandatory=$true)][ValidatePattern('^[A-F0-9]{64}$')][string]$TaskSourceSha256,
     [Parameter(Mandatory=$true)][ValidatePattern('^[A-F0-9]{64}$')][string]$RecoverySourceSha256,
     [switch]$PrepareWss,[switch]$StartWss,[switch]$CheckOriginal,[switch]$PrepareRecoveryRoute,[switch]$PrepareRecoveryBroker,
-    [switch]$RestoreOriginal,[switch]$RestageOnly,
+    [switch]$RestoreOriginal,[switch]$RestageOnly,[switch]$InstallBrokerMonitor,
     [string]$FilesSourceSha256,[string]$SupervisorSha256,[string]$IdentitySha256,
     [string]$ModuleSha256,[string]$CaSha256,[string]$NodeSha256,[string]$PublicKeySha256,
     [string]$PublicCaPath,[string]$OriginalProfileSourceSha256,[string]$RecoveryDockerSourceSha256,[string]$DockerSha256,
     [string]$RecoveryRouteSourceSha256,[string]$NetworkGuardSourceSha256,[string]$ProxyImageId,[string]$WssConfigSha256,[string]$CurlSha256,
     [string]$BrokerRouteSourceSha256,[string]$BrokerImageId,[string]$RestoreSourceSha256,
     [string]$SecureCredentialSourceSha256,[string]$BrokerCredentialSourceSha256,[string]$VerifierSourceSha256,
+    [string]$GuardOperatorSourceSha256,[string]$MonitorSourceSha256,
     [switch]$Apply,[switch]$OwnerApproved
 )
 $ErrorActionPreference='Stop'
@@ -123,6 +124,12 @@ try{
     Require-H454 (-not $Apply -or $OwnerApproved) 'H454_GUARD_OPERATOR_APPROVAL'
     Require-H454 (-not $StartWss -or ($PrepareWss -and $Apply -and $OwnerApproved)) 'H454_GUARD_OPERATOR_WSS_MODE'
     Require-H454 (-not $RestageOnly -or ($RestoreOriginal -and $Apply -and $OwnerApproved)) 'H454_GUARD_OPERATOR_MONITOR_MODE'
+    Require-H454 (-not $InstallBrokerMonitor -or ($RestoreOriginal -and -not $RestageOnly)) 'H454_GUARD_OPERATOR_MONITOR_MODE'
+    if($RestageOnly -or $InstallBrokerMonitor){
+        Require-H454 ($GuardOperatorSourceSha256 -cmatch '^[A-F0-9]{64}$') 'H454_GUARD_OPERATOR_MONITOR_PINS'
+        $null=Read-H454PinnedBytes $PSCommandPath $GuardOperatorSourceSha256
+    }
+    if($InstallBrokerMonitor){Require-H454 ($MonitorSourceSha256 -cmatch '^[A-F0-9]{64}$') 'H454_GUARD_OPERATOR_MONITOR_PINS'}
     if($CheckOriginal -or $PrepareRecoveryRoute -or $PrepareRecoveryBroker -or $RestoreOriginal){
         Require-H454 (@(@($CheckOriginal,$PrepareRecoveryRoute,$PrepareRecoveryBroker,$RestoreOriginal)|Where-Object {$_}).Count -eq 1 -and
             (-not $CheckOriginal -or -not $Apply) -and
@@ -153,6 +160,7 @@ try{
     }
     Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Utility\Microsoft.PowerShell.Utility.psd1') -ErrorAction Stop
     Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Security\Microsoft.PowerShell.Security.psd1') -ErrorAction Stop
+    if($RestageOnly){Assert-H454PrivateAcl $PSCommandPath}
     $taskSource=Join-Path $PSScriptRoot 'h454_windows_wss_task.ps1'
     $recoverySource=Join-Path $PSScriptRoot 'h454_windows_offline_recovery.ps1'
     $taskText=Read-H454PinnedSource $taskSource $TaskSourceSha256
@@ -262,7 +270,30 @@ try{
                     OldImage=$ProxyImageId;BrokerImage=$BrokerImageId;CaSha256=$CaSha256;DockerSha256=$DockerSha256;
                     VerifierPath=$verifierSource;VerifierSha256=$VerifierSourceSha256}
                 $result=Restore-H454Original @restoreArgs
-                if($Apply -and (-not $RestageOnly -or $result.Running)){
+                if($InstallBrokerMonitor){
+                    $monitorSource=Join-Path $PSScriptRoot 'h454_windows_broker_monitor.ps1'
+                    . ([scriptblock]::Create((Read-H454PinnedSource $monitorSource $MonitorSourceSha256)))
+                    $pins=@{OriginalLauncherSha256=$OriginalLauncherSha256;GuardedLauncherSha256=$GuardedLauncherSha256;
+                        BackupName=$BackupName;TaskBackupName=$TaskBackupName;TaskBackupSha256=$TaskBackupSha256;
+                        TaskSourceSha256=$TaskSourceSha256;RecoverySourceSha256=$RecoverySourceSha256;
+                        OriginalProfileSourceSha256=$OriginalProfileSourceSha256;RecoveryDockerSourceSha256=$RecoveryDockerSourceSha256;
+                        DockerSha256=$DockerSha256;RecoveryRouteSourceSha256=$RecoveryRouteSourceSha256;NetworkGuardSourceSha256=$NetworkGuardSourceSha256;
+                        ProxyImageId=$ProxyImageId;BrokerImageId=$BrokerImageId;WssConfigSha256=$WssConfigSha256;
+                        SupervisorSha256=$SupervisorSha256;CaSha256=$CaSha256;CurlSha256=$CurlSha256;
+                        RestoreSourceSha256=$RestoreSourceSha256;SecureCredentialSourceSha256=$SecureCredentialSourceSha256;
+                        BrokerCredentialSourceSha256=$BrokerCredentialSourceSha256;VerifierSourceSha256=$VerifierSourceSha256;
+                        GuardOperatorSourceSha256=$GuardOperatorSourceSha256}
+                    $sourceSpec=[ordered]@{'h454_windows_guard_operator.ps1'=$GuardOperatorSourceSha256;
+                        'h454_windows_wss_task.ps1'=$TaskSourceSha256;'h454_windows_offline_recovery.ps1'=$RecoverySourceSha256;
+                        'h454_windows_original_profile.ps1'=$OriginalProfileSourceSha256;'h454_windows_recovery_docker.ps1'=$RecoveryDockerSourceSha256;
+                        'h454_windows_recovery_route.ps1'=$RecoveryRouteSourceSha256;'h454_windows_network_guard.ps1'=$NetworkGuardSourceSha256;
+                        'h454_windows_original_restore.ps1'=$RestoreSourceSha256;'h454_windows_secure_credential.ps1'=$SecureCredentialSourceSha256;
+                        'h454_windows_broker_credential.ps1'=$BrokerCredentialSourceSha256;'h454_verify_staged.cjs'=$VerifierSourceSha256}
+                    $sourceFiles=@(foreach($name in $sourceSpec.Keys){$path=Join-Path $PSScriptRoot $name
+                        [pscustomobject]@{Name=$name;Hash=$sourceSpec[$name];Bytes=(Read-H454PinnedBytes $path $sourceSpec[$name])}})
+                    $result=Install-H454BrokerMonitor $state $lock $markerHash $safetyCheck $pins $sourceFiles -Apply:$Apply -OwnerApproved:$OwnerApproved
+                    Require-H454 ((Get-FileHash -LiteralPath $monitorSource -Algorithm SHA256).Hash -ceq $MonitorSourceSha256) 'H454_GUARD_OPERATOR_SOURCE_DRIFT'
+                }elseif($Apply -and (-not $RestageOnly -or $result.Running)){
                     $launcherText=Read-H454PinnedSource $backup $OriginalLauncherSha256
                     $credentialPath=Join-Path $state (Get-H454LauncherLeaf $launcherText 'CRED_PATH')
                     $statePath=Join-Path $state (Get-H454LauncherLeaf $launcherText 'STATE_PATH')
@@ -329,7 +360,9 @@ try{
     foreach($pair in @(@($taskSource,$TaskSourceSha256),@($recoverySource,$RecoverySourceSha256),@($taskBackup,$TaskBackupSha256))){
         Require-H454 ((Get-FileHash -LiteralPath $pair[0] -Algorithm SHA256).Hash -ceq $pair[1]) 'H454_GUARD_OPERATOR_SOURCE_DRIFT'
     }
-    if($RestoreOriginal){
+    if($InstallBrokerMonitor){
+        'H454_BROKER_MONITOR_OPERATOR='+$result.Status
+    }elseif($RestoreOriginal){
         'H454_ORIGINAL_RESTORE_OPERATOR='+$result.Status
     }elseif($PrepareRecoveryBroker){
         'H454_RECOVERY_BROKER_OPERATOR='+$result.Status
