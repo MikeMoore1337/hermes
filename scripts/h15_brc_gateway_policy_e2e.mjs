@@ -26,6 +26,7 @@ let audited = 0;
 const device = {
   ownerId: 'test-owner',
   deviceId: 'd-test',
+  socket: {hermesAuthTokenHash: 'ci-token-hash'},
   info: { name: 'untrusted-device' },
   tools: [
     'get_config', 'get_recent_tool_calls', 'set_config_value',
@@ -44,8 +45,9 @@ const hub = {
     return { isError: false, content: [{ type: 'text', text: 'fake-' + name }] };
   },
 };
+let grant = {user_id: 'test-owner', token_hash: 'ci-token-hash', paused: false};
 const store = {
-  getDevice: () => ({ paused: false }),
+  getDevice: () => grant,
   audit: () => { audited++; },
   touchDevice: () => {},
 };
@@ -82,5 +84,26 @@ for (const name of ['read_file', 'write_file', 'start_process']) {
 if (forwarded !== 3 || audited !== 3) {
   throw Error('INCORRECT_ALLOWLIST_ROUTING_OR_AUDIT');
 }
+
+// A removed, transferred, re-keyed or paused device must not be able to run a
+// queued tool even when its old socket remains present in DeviceHub.
+const deniedGrants = [
+  ['deleted', undefined, 403],
+  ['wrong_owner', {user_id:'other-owner',token_hash:'ci-token-hash',paused:false}, 403],
+  ['rotated_token', {user_id:'test-owner',token_hash:'another-hash',paused:false}, 403],
+  ['paused', {user_id:'test-owner',token_hash:'ci-token-hash',paused:true}, 423],
+];
+for (const [scenario, candidate, expectedStatus] of deniedGrants) {
+  grant = candidate;
+  const before = forwarded;
+  const result = await invokeTool(hub, store, ctx, 'read_file',
+    {deviceId:'d-test',path:'/workspace/denied'});
+  if (result.ok || result.status !== expectedStatus || forwarded !== before) {
+    throw Error('DEVICE_GRANT_BOUNDARY_BYPASS:' + scenario);
+  }
+}
+grant = {user_id:'test-owner',token_hash:'ci-token-hash',paused:false};
+console.log('HERMES_BRC_DELETED_REKEYED_CROSS_OWNER_AND_PAUSED_GRANTS=DENIED');
+
 console.log('HERMES_BRC_LEGITIMATE_TOOLS_AND_AUDIT=PASS');
 console.log('HERMES_BRC_GATEWAY_IMMUTABLE_POLICY_E2E=PASS');
