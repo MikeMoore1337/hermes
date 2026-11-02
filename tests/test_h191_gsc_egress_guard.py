@@ -54,6 +54,119 @@ def valid_nft():
 
 
 class H191GoogleEgressGuardTests(TestCase):
+    def test_pin_refresh_requires_explicit_owner_flag(self):
+        with mock.patch.object(guard, "_identity", return_value=(UID, GID)), \
+             mock.patch.object(guard, "_lock") as lock, \
+             mock.patch.object(guard, "refresh_pins") as refresh:
+            self.assertEqual(guard.main(["--refresh-pins"]), 2)
+            lock.assert_not_called()
+            refresh.assert_not_called()
+
+    def test_pin_refresh_rejects_policy_drift_before_google_dns(self):
+        with mock.patch.object(guard, "_unit_state"), \
+             mock.patch.object(guard, "_key_metadata"), \
+             mock.patch.object(guard, "_read_record", return_value=PINS), \
+             mock.patch.object(guard, "_verify_files"), \
+             mock.patch.object(guard, "_installed_unit_trusted"), \
+             mock.patch.object(guard, "_nft_state", return_value="MISSING"), \
+             mock.patch.object(guard, "_current_pins") as dns, \
+             mock.patch.object(guard, "_run") as command:
+            with self.assertRaisesRegex(guard.GuardError, "refresh_existing_guard_not_exact"):
+                guard.refresh_pins(UID, GID)
+            dns.assert_not_called()
+            command.assert_not_called()
+
+    def test_pin_refresh_unchanged_leaves_nft_and_files_intact(self):
+        with mock.patch.object(guard, "_unit_state"), \
+             mock.patch.object(guard, "_key_metadata"), \
+             mock.patch.object(guard, "_read_record", return_value=PINS), \
+             mock.patch.object(guard, "_verify_files"), \
+             mock.patch.object(guard, "_installed_unit_trusted"), \
+             mock.patch.object(guard, "_nft_state", return_value="EXACT"), \
+             mock.patch.object(guard, "_read_root_file", return_value="old_record"), \
+             mock.patch.object(guard, "_current_pins", return_value=PINS), \
+             mock.patch.object(guard, "_sha", return_value="a" * 40), \
+             mock.patch.object(guard, "_run") as command, \
+             mock.patch.object(guard, "_replace_pinned_file") as writer:
+            self.assertEqual(guard.refresh_pins(UID, GID), "UNCHANGED")
+            command.assert_not_called()
+            writer.assert_not_called()
+
+    def test_atomic_pin_refresh_applies_nft_before_any_systemd_write(self):
+        new = ("142.250.2.9/32", "2607:f8b0::42/128")
+        events = []
+        def run(parts, **kwargs):
+            events.append("nft_check" if parts[:3] == ["nft", "-c", "-f"]
+                          else "nft_apply" if parts[:2] == ["nft", "-f"]
+                          else "systemd_reload" if parts[:2] == ["systemctl", "daemon-reload"]
+                          else "unexpected")
+            return ""
+        def writer(path, _data, _mode):
+            events.append("policy_write" if path == guard.POLICY else "dropin_write")
+        with mock.patch.object(guard, "_unit_state"), \
+             mock.patch.object(guard, "_key_metadata"), \
+             mock.patch.object(guard, "_read_record", return_value=PINS), \
+             mock.patch.object(guard, "_verify_files"), \
+             mock.patch.object(guard, "_installed_unit_trusted"), \
+             mock.patch.object(guard, "_nft_state", return_value="EXACT"), \
+             mock.patch.object(guard, "_read_root_file", return_value="old_record"), \
+             mock.patch.object(guard, "_current_pins", return_value=new), \
+             mock.patch.object(guard, "_pins_record", return_value="new_record"), \
+             mock.patch.object(guard, "_sha", return_value="a" * 40), \
+             mock.patch.object(guard, "_run", side_effect=run), \
+             mock.patch.object(guard, "_replace_pinned_file", side_effect=writer):
+            self.assertEqual(guard.refresh_pins(UID, GID), "UPDATED")
+        self.assertEqual(events, [
+            "nft_check", "nft_apply", "policy_write", "dropin_write", "systemd_reload",
+        ])
+        batch = "delete table inet " + guard.TABLE + "\n" + guard.nft_program(new, UID)
+        self.assertNotIn("flush ruleset", batch)
+        self.assertIn("meta skuid 975 drop", batch)
+
+    def test_refresh_after_partial_failure_restores_owned_files_and_nft(self):
+        changed = ("142.250.2.9/32", "2607:f8b0::42/128")
+        old_record = "old_record"
+        new_record = "new_record"
+        old_dropin = guard.dropin_text(PINS)
+        in_memory = {guard.POLICY: old_record, guard.DROPIN: old_dropin}
+        calls = []
+        def read(path, *_args):
+            return in_memory[path]
+        def writer(path, contents, mode):
+            self.assertEqual(mode, 0o600 if path == guard.POLICY else 0o644)
+            in_memory[path] = contents
+            calls.append("write")
+        def command(parts, **kwargs):
+            if parts[0] == "nft" and parts[1] == "-f":
+                calls.append("nft_apply")
+            return ""
+        def installed(pins):
+            if pins == changed:
+                raise guard.GuardError("simulated_failed_postinstall")
+        with mock.patch.object(guard, "_unit_state"), \
+             mock.patch.object(guard, "_key_metadata"), \
+             mock.patch.object(guard, "_read_record", return_value=PINS), \
+             mock.patch.object(guard, "_verify_files"), \
+             mock.patch.object(guard, "_installed_unit_trusted", side_effect=installed), \
+             mock.patch.object(guard, "_nft_state", return_value="EXACT"), \
+             mock.patch.object(guard, "_read_root_file", side_effect=read), \
+             mock.patch.object(guard, "_current_pins", return_value=changed), \
+             mock.patch.object(guard, "_pins_record", return_value=new_record), \
+             mock.patch.object(guard, "_sha", return_value="a" * 40), \
+             mock.patch.object(guard, "_run", side_effect=command), \
+             mock.patch.object(guard, "_replace_pinned_file", side_effect=writer):
+            with self.assertRaisesRegex(guard.GuardError, "refresh_failed_rolled_back"):
+                guard.refresh_pins(UID, GID)
+        self.assertEqual(in_memory[guard.POLICY], old_record)
+        self.assertEqual(in_memory[guard.DROPIN], old_dropin)
+        self.assertEqual(calls.count("nft_apply"), 2)
+
+    def test_pin_refresh_replacement_only_accepts_two_private_owned_files(self):
+        with self.assertRaisesRegex(guard.GuardError, "refresh_path_not_allowlisted"):
+            guard._replace_pinned_file(guard.GUARD_FILE, "invalid", 0o644)
+        with self.assertRaisesRegex(guard.GuardError, "refresh_path_not_allowlisted"):
+            guard._replace_pinned_file(guard.POLICY, "invalid", 0o644)
+
     def test_systemd_release_credential_reads_private_sha_copy_only(self):
         with tempfile.TemporaryDirectory() as base:
             folder = Path(base) / guard.GUARD
