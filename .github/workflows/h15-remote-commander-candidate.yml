@@ -21,6 +21,9 @@ on:
       - tests/fixtures/h454_legacy_launcher_e37f.ps1.txt
       - scripts/h454_wss_relay_proxy.mjs
       - scripts/h454_wss_relay_watchdog_e2e.mjs
+      - scripts/h454_wss_relay_reconcile.py
+      - scripts/h454_wss_relay_reconcile_e2e.py
+      - tests/test_h454_wss_relay_reconcile.py
       - scripts/h454_relay_authorized_keys.py
       - scripts/h454_relay_second_authorized_key.py
       - scripts/h454_relay_authorization_operator.py
@@ -78,6 +81,9 @@ on:
       - tests/fixtures/h454_legacy_launcher_e37f.ps1.txt
       - scripts/h454_wss_relay_proxy.mjs
       - scripts/h454_wss_relay_watchdog_e2e.mjs
+      - scripts/h454_wss_relay_reconcile.py
+      - scripts/h454_wss_relay_reconcile_e2e.py
+      - tests/test_h454_wss_relay_reconcile.py
       - scripts/h454_relay_authorized_keys.py
       - scripts/h454_relay_second_authorized_key.py
       - scripts/h454_relay_authorization_operator.py
@@ -199,6 +205,9 @@ jobs:
 
       - name: WSS relay watchdog failure and recovery contract
         run: node scripts/h454_wss_relay_watchdog_e2e.mjs
+
+      - name: WSS relay reconciler safety contracts
+        run: sudo -n python3 -B -m unittest -v tests.test_h454_wss_relay_reconcile
 
       - name: Second SSH key no-overwrite and revocation contract
         run: sudo -n python3 -B -m unittest -v tests.test_h454_relay_second_authorized_key
@@ -695,6 +704,9 @@ jobs:
         run: |
           set -euo pipefail
           bash scripts/h454_offline_restore_order_e2e.sh "hermes-brc-relay-eval:${GITHUB_SHA:0:12}"
+
+      - name: Reconcile WSS sidecar after a prolonged relay outage
+        run: sudo -n python3 -B scripts/h454_wss_relay_reconcile_e2e.py "hermes-brc-relay-eval:${GITHUB_SHA:0:12}"
 
       - name: Verify dedicated owner UID/GID image runtime (CI-only, no host mounts)
         shell: bash

@@ -1,11 +1,11 @@
 # H454: authenticated BRC transport and interrupted-update recovery
 
-**Transport and cutover remain source-only.** A separate Windows SSH identity
-and a private relay request have been prepared; the server has not authorized
-the key. No new listener, certificate, Windows launcher, container or service
-is installed by this change. The live cutover remains HOLD until its exact
-artifacts, certificate custody, network and recovery procedure are verified
-and the owner approves a concrete window.
+**Transport and cutover remain inactive.** A separate Windows SSH identity,
+a private relay authorization request and a relay TLS identity have been
+prepared; the server has not authorized the SSH key. No new listener, Windows
+launcher, container or service is active. The live cutover remains HOLD until
+its exact artifacts, certificate custody, network and recovery procedure are
+verified and the owner approves a concrete window.
 
 ## Connection boundary
 
@@ -76,6 +76,13 @@ before and after the build, prohibit pulls, compare inherited layers/config,
 and verify as UID 65534 that the root-owned 0755 trust directory and 0444 CA
 and all four compiled files are readable but immutable under the actual
 read-only runtime.
+An image was built locally from the running original image and the verified
+compiled artifacts at Hermes revision `e06253609002e37c79dcd4c08bd4c1b60950bd0b`,
+with the real public CA and no device credentials. Its inherited image layers
+and runtime configuration matched the original; a disposable, network-isolated
+container verified the installed file hashes and refused to pair when credentials
+were missing. The original container remained running. This is an image check,
+not a deployed candidate or an MCP smoke.
 
 The private `h454_wss_relay_proxy.mjs` accepts only an agent WebSocket upgrade
 at `/ws` with a well-formed bearer, limits handshakes and connections, and
@@ -99,10 +106,20 @@ This design assumes the relay namespace and its host are trusted; it does not
 protect an already compromised agent process or Docker administrator.
 When run as a namespace-sharing sidecar, the proxy checks the relay's loopback
 health every five seconds and exits after three consecutive failures. The
-operator must configure and verify Docker's `unless-stopped` restart policy;
-the agent can then reconnect after the proxy rejoins the restarted relay.
-Replacing the relay with a different container ID requires explicit sidecar
-reconciliation and remains outside this restart check.
+operator must configure and verify Docker's `unless-stopped` restart policy.
+That policy is insufficient after a prolonged relay outage: a disposable
+fixture on the relay host showed the proxy left stopped even after the relay
+returned. `h454_wss_relay_reconcile.py` can restart a pinned stopped sidecar
+after checking the relay and network identities, static private address,
+sidecar profile, read-only mounts, file hashes and process limits. It verifies
+the shared namespace and a pinned TLS probe before clearing a flushed pending
+marker; an uncertain start retains that marker and prevents another attempt.
+Docker may return the same mounts in a different order, so the profile sorts
+them by unique destination before hashing while still checking every mount.
+The root-only pin file and a scheduler are not installed by this code. The
+operator must disable the scheduler before an intentional sidecar stop, and
+must investigate a pending marker before resuming. Replacing the relay with a
+different container ID requires explicit sidecar reconciliation.
 
 `h454_relay_authorized_keys.py` prepares bytes for the one pinned Ed25519 key
 only when the entire input hash, private relay address and exact existing
@@ -163,7 +180,10 @@ with less than 30 days remaining. The CA and leaf are issued for 730 and 180
 days respectively; renewal and deployment are not automated. Disposable Linux
 fixtures exercised the operator, and a synthetic RSA-3072 certificate passed
 Windows Schannel with the correct CA and name while a wrong name was rejected.
-No real TLS identity or listener has been created by these tests.
+The real relay identity was prepared separately and its file permissions,
+certificate chain, key match and wrong-name refusal were verified there.
+Only its public CA certificate was copied to Windows; the private keys remain
+on the relay. No TLS listener has been started.
 [OpenSSH supports selecting an agent identity using its public key](https://man.openbsd.org/ssh_config#IdentityFile),
 and [Windows can store a key in its SSH agent](https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_keymanagement),
 and a synthetic Windows-to-loopback-sshd test authenticated using a temporary
@@ -313,7 +333,7 @@ and must not be deployed as a standalone recovery procedure.
   retained the original auto-pair CLI, and a changed CLI failed the recipe's
   digest check. The real container was not restarted and no real credentials
   were staged.
-- The current original container has no Docker `ExtraHosts` entries and no
+- At the 2026-10-31 inspection, the original container had no Docker `ExtraHosts` entries and no
   `host.docker.internal` entry in its hosts file. A read-only check decrypted
   the existing Windows credential in memory, validated its device identity,
   and matched it against the credential already staged in that same running
@@ -323,6 +343,10 @@ and must not be deployed as a standalone recovery procedure.
   `host.docker.internal` to a temporary Windows loopback listener on port
   38184 and exchanged only a synthetic marker. This verifies local TCP
   reachability, not SSH authentication, TLS or the real relay.
+- On 2026-11-02, the actual original Windows container was found stopped with
+  `H15_CREDENTIAL_STAGE_TIMEOUT` from its last start; both legacy and WSS
+  local ports were unlistened. Its Windows MCP device remained offline. This
+  observation is not a rollback or a successful credential restaging.
 - Windows PowerShell 5.1 fixtures exercised exclusive locking, known and
   unknown states, idempotent offline recovery, and termination of an owned
   test process between two real `File.Replace` operations.
@@ -359,7 +383,14 @@ and must not be deployed as a standalone recovery procedure.
   Docker restarted it into the relay's new namespace, and a pinned TLS probe
   passed. The fixture used synthetic certificates, did not call real MCP,
   and removed its containers, network and image. Equivalent CI coverage uses
-  isolated disposable containers.
+  isolated disposable containers. A later fixture on the actual relay host
+  kept its disposable relay stopped until the watchdog exited; its proxy did
+  not automatically recover within 25 seconds after the relay returned. An
+  explicit restart then restored synthetic TLS. A separate fixture exercised
+  the reconciler through the prolonged outage and refused a pending marker.
+  Its CI version stops the disposable sidecar after the watchdog fires, so it
+  exercises the stopped case even on Docker versions that keep retrying. The
+  live relay remained running and the fixture resources were removed.
 - A Windows PowerShell 5.1 and Schannel fixture verified the generated
   launcher's TLS probe against a synthetic trusted certificate; untrusted,
   wrong-name, missing-CA and changed-CA cases failed closed.
