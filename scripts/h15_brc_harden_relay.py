@@ -34,7 +34,12 @@ PATCHED = """    // Reject URI device tokens even when a valid Authorization hea
 # while the old WebSocket remains open.
 ROTATE_MARKER = "    const token = store.issueDeviceToken(deviceId, row.user_id, name || row.client_name, platform ?? null);"
 ROTATE_PATCH = (
-    ROTATE_MARKER + "\n"
+    "    const previousGrant = store.getDevice(deviceId);\n"
+    "    // Pairing may rotate a device for its owner, never steal another owner\'s ID.\n"
+    "    if (previousGrant && previousGrant.user_id !== row.user_id) {\n"
+    "      return res.status(409).json({ error: \'device_id_conflict\' });\n"
+    "    }\n"
+    + ROTATE_MARKER + "\n"
     "    // Retire the previous connection after rotating its credential.\n"
     "    hub.get(deviceId)?.socket.close(4401, 'device credential rotated');"
 )
