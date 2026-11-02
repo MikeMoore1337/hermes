@@ -754,7 +754,12 @@ def refresh_pins(uid: int, gid: int, *, automatic: bool = False) -> str:
         _run(["systemctl", "daemon-reload"], timeout=18)
         _verify_files(current)
         _installed_unit_trusted(current)
-        _unit_state(install=True)
+        # The daily timer is legitimately active/enabled during automatic
+        # DNS rotation. Re-check the GSC process, not disabled-unit metadata.
+        if automatic:
+            _automatic_refresh_gate()
+        else:
+            _unit_state(install=True)
         if _nft_state(current, uid) != "EXACT" or _sha() != release_before:
             raise GuardError("refresh_postinstall_state_invalid")
         return "UPDATED"

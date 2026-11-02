@@ -526,6 +526,48 @@ class H191GoogleEgressGuardTests(TestCase):
             gate.assert_called_once_with()
             forbidden.assert_not_called()
 
+    def test_automatic_rotation_with_enabled_timer_rechecks_gsc_not_timer(self):
+        rotated = ("142.250.2.9/32", "2607:f8b0::42/128")
+        calls = []
+
+        def run(parts, **_kwargs):
+            if parts == ["systemctl", "show", "-P", "ActiveState", guard.UNIT]:
+                calls.append("gsc_state")
+                return "activating"
+            if parts == ["systemctl", "show", "-P", "MainPID", guard.UNIT]:
+                calls.append("gsc_pid")
+                return "0"
+            if parts[:3] == ["nft", "-c", "-f"]:
+                calls.append("nft_check")
+                return ""
+            if parts[:2] == ["nft", "-f"]:
+                calls.append("nft_apply")
+                return ""
+            if parts[:2] == ["systemctl", "daemon-reload"]:
+                calls.append("reload")
+                return ""
+            raise AssertionError("unexpected systemd/nft command: " + str(parts))
+
+        with mock.patch.object(guard, "_unit_state",
+                               side_effect=AssertionError("active timer must not be disabled")), \
+             mock.patch.object(guard, "_key_metadata"), \
+             mock.patch.object(guard, "_read_record", return_value=PINS), \
+             mock.patch.object(guard, "_verify_files"), \
+             mock.patch.object(guard, "_installed_unit_trusted"), \
+             mock.patch.object(guard, "_nft_state", return_value="EXACT"), \
+             mock.patch.object(guard, "_read_root_file", return_value="old_record"), \
+             mock.patch.object(guard, "_current_pins", return_value=rotated), \
+             mock.patch.object(guard, "_pins_record", return_value="new_record"), \
+             mock.patch.object(guard, "_sha", return_value="a" * 40), \
+             mock.patch.object(guard, "_run", side_effect=run), \
+             mock.patch.object(guard, "_replace_pinned_file") as write:
+            self.assertEqual(guard.refresh_pins(UID, GID, automatic=True), "UPDATED")
+            self.assertEqual(write.call_count, 2)
+        self.assertEqual(calls.count("gsc_state"), 2)
+        self.assertEqual(calls.count("gsc_pid"), 2)
+        self.assertLess(calls.index("nft_apply"), calls.index("reload"))
+
+
     def test_check_offline_does_not_fetch_dns_or_modify_nft(self):
         with mock.patch.object(guard, "_key_metadata"), \
              mock.patch.object(guard, "_read_record", return_value=PINS), \
