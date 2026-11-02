@@ -19,6 +19,8 @@ from scripts.h15_remote_commander_candidate_audit import (
 RELATIVE = Path("packages/agent/src/dispatcher.ts")
 EDIT_RELATIVE = Path("packages/agent/src/core/tools/edit.ts")
 FILESYSTEM_RELATIVE = Path("packages/agent/src/core/tools/filesystem.ts")
+FILESYSTEM_HANDLERS_RELATIVE = Path("packages/agent/src/core/handlers/filesystem-handlers.ts")
+BINARY_RELATIVE = Path("packages/agent/src/core/utils/files/binary.ts")
 TERMINAL_RELATIVE = Path("packages/agent/src/core/terminal-manager.ts")
 TYPES_RELATIVE = Path("packages/agent/src/core/types.ts")
 PROCESS_TOOLS_RELATIVE = Path("packages/agent/src/core/tools/improved-process-tools.ts")
@@ -91,6 +93,36 @@ def edit_conflict_errors(raw: str) -> str:
         raise AuditError("unreviewed_edit_conflict_branch")
     changed = branch.replace("        return {\n", "        return {\n            isError: true,\n", 1)
     return raw[:start] + changed + raw[end:]
+
+
+def binary_read_errors(raw: str) -> str:
+    """Unsupported binary reads must reach the MCP error path."""
+    before = ("        const instructions = this.getBinaryInstructions(filePath);\n\n"
+              "        return {\n"
+              "            content: instructions,\n"
+              "            mimeType: 'text/plain',\n"
+              "            metadata: {\n"
+              "                isBinary: true\n"
+              "            }\n"
+              "        };")
+    if raw.count(before) != 1:
+        raise AuditError("unreviewed_binary_read_handler")
+    return raw.replace(before, "        throw new Error(this.getBinaryInstructions(filePath));", 1)
+
+
+def multiple_read_errors(raw: str) -> str:
+    """Keep successful batch contents while reporting any failed file."""
+    start = "export async function handleReadMultipleFiles("
+    end = "export async function handleWriteFile("
+    if raw.count(start) != 1 or raw.count(end) != 1 or raw.index(start) >= raw.index(end):
+        raise AuditError("unreviewed_multiple_read_handler")
+    first, last = raw.index(start), raw.index(end)
+    branch = raw[first:last]
+    old = "    return { content: contentItems };"
+    if branch.count(old) != 1 or "isError:" in branch:
+        raise AuditError("unreviewed_multiple_read_handler")
+    branch = branch.replace(old, "    return { content: contentItems, isError: fileResults.some(result => Boolean(result.error)) };", 1)
+    return raw[:first] + branch + raw[last:]
 
 
 def search_timeout_errors(manager: str, handlers: str) -> tuple[str, str]:
@@ -266,6 +298,8 @@ def apply(root: Path, *, sha: str = UPSTREAM_SHA) -> dict[str, object]:
     path = root / RELATIVE
     edit_path = root / EDIT_RELATIVE
     filesystem_path = root / FILESYSTEM_RELATIVE
+    filesystem_handlers_path = root / FILESYSTEM_HANDLERS_RELATIVE
+    binary_path = root / BINARY_RELATIVE
     terminal_path = root / TERMINAL_RELATIVE
     types_path = root / TYPES_RELATIVE
     process_tools_path = root / PROCESS_TOOLS_RELATIVE
@@ -277,6 +311,15 @@ def apply(root: Path, *, sha: str = UPSTREAM_SHA) -> dict[str, object]:
         raise AuditError("unsafe_edit_handler")
     if filesystem_path.is_symlink() or not filesystem_path.is_file():
         raise AuditError("unsafe_filesystem_handler")
+    for relative, reason in ((FILESYSTEM_HANDLERS_RELATIVE, "unsafe_filesystem_handler"),
+                             (BINARY_RELATIVE, "unsafe_binary_handler")):
+        current = root
+        for part in relative.parts:
+            current = current / part
+            if current.is_symlink() or (hasattr(current, "is_junction") and current.is_junction()):
+                raise AuditError(reason)
+        if not current.is_file():
+            raise AuditError(reason)
     if any(p.is_symlink() or not p.is_file() for p in (terminal_path, process_tools_path, types_path)):
         raise AuditError("unsafe_terminal_handler")
     if any(p.is_symlink() or not p.is_file() for p in (search_path, search_handlers_path)):
@@ -316,6 +359,8 @@ def apply(root: Path, *, sha: str = UPSTREAM_SHA) -> dict[str, object]:
     updated = guard_file_mutations(updated)
     updated_edit = edit_conflict_errors(edit_path.read_text(encoding="utf-8"))
     updated_filesystem = unknown_birthtime(filesystem_path.read_text(encoding="utf-8"))
+    updated_filesystem_handlers = multiple_read_errors(filesystem_handlers_path.read_text(encoding="utf-8"))
+    updated_binary = binary_read_errors(binary_path.read_text(encoding="utf-8"))
     updated_terminal, updated_process_tools = safe_termination(
         terminal_path.read_text(encoding="utf-8"), process_tools_path.read_text(encoding="utf-8"))
     updated_terminal, updated_process_tools, updated_types = bounded_timing(
@@ -325,6 +370,8 @@ def apply(root: Path, *, sha: str = UPSTREAM_SHA) -> dict[str, object]:
     path.write_text(updated, encoding="utf-8")
     edit_path.write_text(updated_edit, encoding="utf-8")
     filesystem_path.write_text(updated_filesystem, encoding="utf-8")
+    filesystem_handlers_path.write_text(updated_filesystem_handlers, encoding="utf-8")
+    binary_path.write_text(updated_binary, encoding="utf-8")
     terminal_path.write_text(updated_terminal, encoding="utf-8")
     types_path.write_text(updated_types, encoding="utf-8")
     process_tools_path.write_text(updated_process_tools, encoding="utf-8")
