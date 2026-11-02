@@ -112,6 +112,24 @@ try {
   }
   console.log('WSS_AUTH_SOCKET_TOKEN_HASH=IMMUTABLY_BOUND');
 
+  // A second approved owner must not claim an existing device ID by polling
+  // an unrelated pairing grant. No credential or ownership may change.
+  const foreign = relay.store.upsertUser('foreign-ci-owner', secret());
+  const foreignCode = relay.store.createDeviceCode('foreign-ci-agent', 60000);
+  relay.store.approveDeviceCode(foreignCode.device_code,foreign.id,'sandbox-agent');
+  const foreignAttempt = await fetch('http://127.0.0.1:' + addr.port + '/device/poll', {
+    method:'POST',headers:{'content-type':'application/json'},
+    body:JSON.stringify({device_code:foreignCode.device_code,
+      device_id:'sandbox-agent',name:'untrusted-claim',platform:'linux'}),
+  });
+  const foreignBody = await foreignAttempt.json();
+  if (foreignAttempt.status !== 409 || foreignBody.error !== 'device_id_conflict' ||
+      relay.store.getDevice('sandbox-agent')?.user_id !== user.id ||
+      relay.store.getDevice('sandbox-agent')?.token_hash !== expectedHash) {
+    throw Error('CROSS_OWNER_DEVICE_ID_TAKEOVER');
+  }
+  console.log('WSS_FOREIGN_DEVICE_ID_PAIRING=DENIED');
+
   const ctx = {userId:user.id,clientId:'synthetic-only'};
   const args = {deviceId:'sandbox-agent',path:'/workspace/synthetic.txt'};
   relay.store.issueDeviceToken('sandbox-agent',user.id,'sandbox-agent','linux');
