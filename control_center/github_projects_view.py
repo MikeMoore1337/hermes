@@ -22,7 +22,7 @@ MAX_AGE = timedelta(minutes=45)
 WINDOW = timedelta(hours=24)
 SKEW = timedelta(minutes=2)
 PROJECTS = {
-    "toolkit": ("MikeMoore1337/ai-development-toolkit", 0),
+    "toolkit": ("MikeMoore1337/ai-development-toolkit", 404394421),
     "yfc": ("MikeMoore1337/your-fitness-coach", 0),
     "second_brain": ("MikeMoore1337/second-brain", 0),
 }
