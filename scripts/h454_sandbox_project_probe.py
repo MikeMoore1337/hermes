@@ -29,6 +29,8 @@ URL = re.compile(
 )
 REF = re.compile(r"ref: refs/heads/([A-Za-z0-9_][A-Za-z0-9._/-]{0,127})\tHEAD\Z", re.ASCII)
 HEAD = re.compile(r"([a-f0-9]{40})\tHEAD\Z", re.ASCII)
+LOCAL_HEAD = re.compile(rb"ref: refs/heads/([A-Za-z0-9_][A-Za-z0-9._/-]{0,127})\n?\Z", re.ASCII)
+COMMIT = re.compile(rb"[a-f0-9]{40}\n?\Z", re.ASCII)
 
 
 class ProbeRejected(ValueError):
@@ -67,10 +69,14 @@ def parse_remote(raw: bytes) -> tuple[str, str]:
     if not ref or not head:
         _reject("remote_unavailable")
     branch = ref.group(1)
-    if (".." in branch or "//" in branch or branch.endswith(("/", ".")) or
-        any(part.startswith(".") or part.endswith(".lock") for part in branch.split("/"))):
+    if not _safe_branch(branch):
         _reject("remote_unavailable")
     return branch, head.group(1)
+
+
+def _safe_branch(branch: str) -> bool:
+    return not (".." in branch or "//" in branch or branch.endswith(("/", ".")) or
+                any(part.startswith(".") or part.endswith((".", ".lock")) for part in branch.split("/")))
 
 
 def _limit_git() -> None:
@@ -167,6 +173,151 @@ def _conflict(root_fd: int, name: str) -> bool:
     return False
 
 
+def _open_regular(parent_fd: int, name: str, limit: int) -> tuple[int, os.stat_result]:
+    fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK, dir_fd=parent_fd)
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_size > limit:
+            _reject("repository_unavailable")
+        return fd, info
+    except Exception:
+        os.close(fd)
+        raise
+
+
+def _read_bounded(fd: int, limit: int) -> bytes:
+    chunks = bytearray()
+    while len(chunks) <= limit:
+        part = os.read(fd, min(4096, limit + 1 - len(chunks)))
+        if not part:
+            return bytes(chunks)
+        chunks.extend(part)
+    _reject("repository_unavailable")
+
+
+def _unchanged_file(parent_fd: int, name: str, fd: int, before: os.stat_result) -> None:
+    current = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+    live = os.fstat(fd)
+    key = lambda s: (s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns, s.st_ctime_ns, s.st_nlink)
+    if not stat.S_ISREG(current.st_mode) or key(current) != key(before) or key(live) != key(before):
+        _reject("repository_changed")
+
+
+def _configured_origin(config_fd: int) -> str:
+    config = _read_bounded(config_fd, MAX_OUTPUT)
+    env = {"PATH": "/usr/bin:/bin", "HOME": "/nonexistent", "LC_ALL": "C",
+           "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null",
+           "GIT_TERMINAL_PROMPT": "0", "GIT_ASKPASS": "/bin/false"}
+    try:
+        result = subprocess.run(
+            ["/usr/bin/git", "config", "--no-includes", "--null", "--file",
+             "-", "--get-all", "remote.origin.url"],
+            input=config, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            env=env, start_new_session=True, preexec_fn=_limit_git,
+            timeout=5, check=False,
+        )
+        if result.returncode != 0 or len(result.stdout) > MAX_OUTPUT:
+            _reject("repository_origin_unavailable")
+        fields = result.stdout.split(b"\0")
+        if len(fields) != 2 or fields[1] != b"":
+            _reject("repository_origin_unavailable")
+        return fields[0].decode("ascii")
+    except (OSError, UnicodeError, subprocess.SubprocessError):
+        _reject("repository_origin_unavailable")
+
+
+def inspect_existing(repository_url: object, *, root: Path = ROOT,
+                     remote: Callable[[str], bytes] = git_remote) -> dict:
+    """Inspect one existing sandbox repository without modifying it."""
+    name, repository = parse_url(repository_url)
+    if name in RESERVED or name.partition(".")[0] in WINDOWS_DEVICES:
+        _reject("name_reserved")
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+    opened: list[int] = []
+    files: list[tuple[int, str, int, os.stat_result]] = []
+    directories: list[tuple[int, str, int, os.stat_result]] = []
+    try:
+        parent_fd = os.open(root.parent, flags); opened.append(parent_fd)
+        root_fd = os.open(root.name, flags, dir_fd=parent_fd); opened.append(root_fd)
+        _root_unchanged(root, parent_fd, root_fd)
+        project_fd = os.open(name, flags, dir_fd=root_fd); opened.append(project_fd)
+        project = os.fstat(project_fd)
+        git_fd = os.open(".git", flags, dir_fd=project_fd); opened.append(git_fd)
+        git_dir = os.fstat(git_fd)
+        config_fd, config_info = _open_regular(git_fd, "config", MAX_OUTPUT)
+        opened.append(config_fd); files.append((git_fd, "config", config_fd, config_info))
+        origin = _configured_origin(config_fd)
+        try:
+            _, canonical_origin = parse_url(origin)
+        except ProbeRejected:
+            _reject("repository_origin_mismatch")
+        if canonical_origin.casefold() != repository.casefold():
+            _reject("repository_origin_mismatch")
+        head_fd, head_info = _open_regular(git_fd, "HEAD", 256)
+        opened.append(head_fd); files.append((git_fd, "HEAD", head_fd, head_info))
+        raw_head = _read_bounded(head_fd, 256)
+        ref = LOCAL_HEAD.fullmatch(raw_head)
+        if ref is None:
+            _reject("repository_branch_unavailable")
+        branch = ref.group(1).decode("ascii")
+        if not _safe_branch(branch):
+            _reject("repository_branch_unavailable")
+        missing_ref = None
+        try:
+            ref_parent = git_fd
+            for component in ("refs", "heads", *branch.split("/")[:-1]):
+                missing_ref = (ref_parent, component)
+                child = os.open(component, flags, dir_fd=ref_parent); opened.append(child)
+                directories.append((ref_parent, component, child, os.fstat(child)))
+                ref_parent = child
+            ref_name = branch.split("/")[-1]
+            missing_ref = (ref_parent, ref_name)
+            ref_fd, ref_info = _open_regular(ref_parent, ref_name, 128)
+            opened.append(ref_fd); files.append((ref_parent, ref_name, ref_fd, ref_info))
+            local_head = _read_bounded(ref_fd, 128)
+            if not COMMIT.fullmatch(local_head):
+                _reject("repository_head_unavailable")
+            missing_ref = None
+        except FileNotFoundError:
+            packed_fd, packed_info = _open_regular(git_fd, "packed-refs", 1_048_576)
+            opened.append(packed_fd); files.append((git_fd, "packed-refs", packed_fd, packed_info))
+            raw_packed = _read_bounded(packed_fd, 1_048_576)
+            needle = b" refs/heads/" + branch.encode("ascii")
+            matches = [line[:-len(needle)] for line in raw_packed.splitlines() if line.endswith(needle)]
+            if len(matches) != 1 or not COMMIT.fullmatch(matches[0]):
+                _reject("repository_head_unavailable")
+            local_head = matches[0]
+        remote_branch, remote_head = parse_remote(remote(repository))
+        _root_unchanged(root, parent_fd, root_fd)
+        if not _same_inode(os.stat(name, dir_fd=root_fd, follow_symlinks=False), project) or not _same_inode(
+            os.stat(".git", dir_fd=project_fd, follow_symlinks=False), git_dir
+        ):
+            _reject("repository_changed")
+        for parent, leaf, fd, info in files:
+            _unchanged_file(parent, leaf, fd, info)
+        for parent, leaf, fd, info in directories:
+            if not _same_inode(os.stat(leaf, dir_fd=parent, follow_symlinks=False), info) or not _same_inode(
+                os.fstat(fd), info
+            ):
+                _reject("repository_changed")
+        if missing_ref is not None:
+            try:
+                os.stat(missing_ref[1], dir_fd=missing_ref[0], follow_symlinks=False)
+            except FileNotFoundError:
+                pass
+            else:
+                _reject("repository_changed")
+    except OSError:
+        _reject("repository_unavailable")
+    finally:
+        for fd in reversed(opened):
+            os.close(fd)
+    return {"schema": 1, "status": "existing_metadata_checked", "repository": repository,
+            "root": "/workspace/projects/" + name, "branch": branch,
+            "head": local_head.decode("ascii").strip(), "remote_branch": remote_branch,
+            "remote_head": remote_head, "filesystem": "existing_not_modified", "can_connect": False}
+
+
 def probe(repository_url: object, *, root: Path = ROOT,
           remote: Callable[[str], bytes] = git_remote) -> dict:
     name, repository = parse_url(repository_url)
@@ -216,9 +367,18 @@ def main() -> int:
             _reject("invalid_request")
         request = json.loads(raw, object_pairs_hook=_unique_pairs,
                              parse_constant=lambda _: _reject("invalid_request"))
-        if not isinstance(request, dict) or set(request) != {"repository_url"}:
+        if not isinstance(request, dict) or set(request) not in (
+            {"repository_url"}, {"repository_url", "operation"}
+        ):
             _reject("invalid_request")
-        print(json.dumps(probe(request["repository_url"]), sort_keys=True))
+        operation = request.get("operation", "probe")
+        if operation == "probe":
+            result = probe(request["repository_url"])
+        elif operation == "inspect_existing":
+            result = inspect_existing(request["repository_url"])
+        else:
+            _reject("invalid_request")
+        print(json.dumps(result, sort_keys=True))
         return 0
     except (ProbeRejected, ValueError, UnicodeError, RecursionError):
         reason = sys.exc_info()[1]

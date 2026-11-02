@@ -105,7 +105,11 @@ live PASS, partial coverage and untested scenarios by device and tool.
   read-only helper for the existing Windows sandbox. With a verified script
   supplied to that sandbox and a public GitHub URL on stdin, it checks the
   public HEAD and an instant of root/name availability, without cloning or
-  creating a reservation. Its UID and container checks prevent accidents;
+  creating a reservation. The explicit `inspect_existing` operation also
+  reads an existing sandbox repository's origin and branch metadata without
+  modifying its files; it does not authenticate the objects or register the
+  repository, and refuses linked or concurrently replaced metadata.
+  Its UID and container checks prevent accidents;
   they do not establish an OS security boundary. It does not feed the UI,
   enable connection or add a workspace. Recheck immediately before any
   separately approved operation because the directory can change afterward.

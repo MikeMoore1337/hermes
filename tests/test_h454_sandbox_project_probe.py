@@ -33,6 +33,120 @@ class ProbeTests(unittest.TestCase):
         self.calls.append(repository)
         return REMOTE
 
+    def existing(self, *, origin="https://github.com/Example/Project.git", branch="main"):
+        project = self.root / "project"
+        git = project / ".git"
+        ref = git / "refs" / "heads" / branch
+        ref.parent.mkdir(parents=True)
+        ref.write_text("b" * 40 + "\n", encoding="ascii")
+        (git / "HEAD").write_text("ref: refs/heads/" + branch + "\n", encoding="ascii")
+        (git / "config").write_text('[remote "origin"]\n\turl = ' + origin + '\n', encoding="ascii")
+        (project / "existing.txt").write_text("owner data", encoding="ascii")
+        return project, git, ref
+
+    def inspect(self, remote=None):
+        return probe.inspect_existing("https://github.com/Example/Project", root=self.root,
+                                      remote=remote or self.remote)
+
+    def test_existing_repository_is_read_without_changing_its_files(self):
+        project, _, _ = self.existing(origin="https://github.com/example/project", branch="feature/change")
+        before = {p.relative_to(project): p.read_bytes() for p in project.rglob("*") if p.is_file()}
+        result = self.inspect()
+        after = {p.relative_to(project): p.read_bytes() for p in project.rglob("*") if p.is_file()}
+        self.assertEqual(before, after)
+        self.assertEqual((result["branch"], result["head"]), ("feature/change", "b" * 40))
+        self.assertEqual((result["remote_branch"], result["remote_head"]), ("main", "a" * 40))
+        self.assertEqual((result["filesystem"], result["can_connect"]), ("existing_not_modified", False))
+        self.assertEqual(self.calls, ["https://github.com/Example/project.git"])
+
+    def test_existing_repository_refuses_wrong_multiple_or_indirect_origins(self):
+        _, git, _ = self.existing()
+        config = git / "config"
+        for text in (
+            '[remote "origin"]\nurl=https://github.com/other/project\n',
+            '[remote "origin"]\nurl=https://github.com/example/project\nurl=https://github.com/other/project\n',
+            '[include]\npath=/nonexistent/private\n',
+            '[remote "origin"]\nurl=https://user:secret@github.com/example/project\n',
+        ):
+            config.write_text(text, encoding="ascii")
+            with self.subTest(text=text.splitlines()[0]), self.assertRaises(probe.ProbeRejected) as error:
+                self.inspect()
+            self.assertNotIn("secret", str(error.exception))
+        self.assertEqual(self.calls, [])
+
+    def test_existing_repository_refuses_symlink_and_hardlink_metadata(self):
+        _, git, ref = self.existing()
+        config = git / "config"
+        data = config.read_bytes()
+        config.unlink()
+        config.symlink_to(Path(self.temp.name) / "outside")
+        with self.assertRaises(probe.ProbeRejected):
+            self.inspect()
+        config.unlink()
+        outside = Path(self.temp.name) / "outside"
+        outside.write_bytes(data)
+        os.link(outside, config)
+        with self.assertRaises(probe.ProbeRejected):
+            self.inspect()
+        config.unlink()
+        config.write_bytes(data)
+        ref.unlink()
+        ref.symlink_to(outside)
+        with self.assertRaises(probe.ProbeRejected):
+            self.inspect()
+        self.assertEqual(self.calls, [])
+
+    def test_existing_repository_refuses_fifo_metadata_without_waiting_for_writer(self):
+        _, git, _ = self.existing()
+        config = git / "config"
+        config.unlink()
+        os.mkfifo(config)
+        with self.assertRaises(probe.ProbeRejected):
+            self.inspect()
+        self.assertEqual(self.calls, [])
+
+    def test_existing_repository_detects_metadata_and_ref_directory_swaps(self):
+        _, git, ref = self.existing(branch="feature/topic")
+        def change_config(_):
+            (git / "config").write_text('[remote "origin"]\nurl=https://github.com/other/project\n')
+            return REMOTE
+        with self.assertRaisesRegex(probe.ProbeRejected, "repository_changed"):
+            self.inspect(change_config)
+        (git / "config").write_text('[remote "origin"]\nurl=https://github.com/Example/Project.git\n')
+        def swap_ref_directory(_):
+            folder = ref.parent
+            folder.rename(folder.with_name("old-feature"))
+            folder.mkdir()
+            (folder / ref.name).write_text("b" * 40 + "\n")
+            return REMOTE
+        with self.assertRaises(probe.ProbeRejected):
+            self.inspect(swap_ref_directory)
+
+    def test_packed_reference_must_be_unique_and_not_shadowed(self):
+        _, git, ref = self.existing()
+        ref.unlink()
+        packed = git / "packed-refs"
+        packed.write_text("# pack-refs\n" + "b" * 40 + " refs/heads/main\n", encoding="ascii")
+        self.assertEqual(self.inspect()["head"], "b" * 40)
+        packed.write_text(("b" * 40 + " refs/heads/main\n") * 2, encoding="ascii")
+        with self.assertRaisesRegex(probe.ProbeRejected, "repository_head_unavailable"):
+            self.inspect()
+        packed.write_text("b" * 40 + " refs/heads/main\n", encoding="ascii")
+        def shadow_packed(_):
+            ref.write_text("c" * 40 + "\n", encoding="ascii")
+            return REMOTE
+        with self.assertRaisesRegex(probe.ProbeRejected, "repository_changed"):
+            self.inspect(shadow_packed)
+
+    def test_existing_repository_rejects_unsafe_local_branch(self):
+        _, git, _ = self.existing()
+        for ref in ("ref: refs/heads/feature./unsafe\n", "ref: refs/heads/main.lock\n",
+                    "ref: refs/heads/../private\n", "a" * 40 + "\n"):
+            (git / "HEAD").write_text(ref, encoding="ascii")
+            with self.subTest(ref=ref), self.assertRaises(probe.ProbeRejected):
+                self.inspect()
+        self.assertEqual(self.calls, [])
+
     def test_read_only_preflight_reports_unreserved_snapshot(self):
         result = probe.probe("https://github.com/Example/Project.git", root=self.root, remote=self.remote)
         self.assertEqual(result, {
@@ -177,6 +291,21 @@ class ProbeTests(unittest.TestCase):
                 call.assert_not_called()
                 self.assertEqual(json.loads(stdout.getvalue()),
                                  {"status": "refused", "reason": "invalid_request", "can_connect": False})
+
+    def test_cli_requires_explicit_existing_inspection_operation(self):
+        stdin = io.TextIOWrapper(io.BytesIO(b'{"repository_url":"https://github.com/example/project",'
+                                             b'"operation":"inspect_existing"}'), encoding="utf-8")
+        stdout = io.StringIO()
+        with patch.object(sys, "argv", ["preflight"]), patch.object(sys, "stdin", stdin), \
+             patch.object(sys, "stdout", stdout), patch.object(probe.os, "getuid", return_value=65534), \
+             patch.object(probe.Path, "is_file", return_value=True), \
+             patch.object(probe.os.path, "lexists", return_value=False), \
+             patch.object(probe, "inspect_existing", return_value={"can_connect": False}) as inspect, \
+             patch.object(probe, "probe") as original:
+            self.assertEqual(probe.main(), 0)
+        inspect.assert_called_once_with("https://github.com/example/project")
+        original.assert_not_called()
+        self.assertEqual(json.loads(stdout.getvalue()), {"can_connect": False})
 
 
 if __name__ == "__main__":
