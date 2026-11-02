@@ -40,6 +40,10 @@ function Assert-H454File([string]$Path,[string]$Digest,[int]$Limit){
 $h454JobInitialized=$false
 while($true){
 try {
+    Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Utility\Microsoft.PowerShell.Utility.psd1') -ErrorAction Stop
+    Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Security\Microsoft.PowerShell.Security.psd1') -ErrorAction Stop
+    $netModule=Join-Path ([Environment]::GetFolderPath('System')) 'WindowsPowerShell\v1.0\Modules\NetTCPIP\NetTCPIP.psd1'
+    Import-Module $netModule -ErrorAction Stop
     foreach($name in @('SSH_AUTH_SOCK','NODE_OPTIONS','NODE_PATH')){
         Require ([string]::IsNullOrEmpty([Environment]::GetEnvironmentVariable($name,'Process'))) 'H454_TUNNEL_ENVIRONMENT'
     }

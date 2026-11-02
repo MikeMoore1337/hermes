@@ -79,9 +79,9 @@ function Get-H454WssTaskGuardParts {
     return [pscustomobject]@{Anchor=$anchor;Guard=$guard}
 }
 
-function Assert-H454WssTaskGuardBytes([byte[]]$Original,[byte[]]$Guarded) {
+function New-H454WssGuardBytes([byte[]]$Original) {
     $encoding=[Text.UTF8Encoding]::new($false,$true)
-    try{$before=$encoding.GetString($Original);$after=$encoding.GetString($Guarded)}
+    try{$before=$encoding.GetString($Original)}
     catch{throw 'H454_WSS_TASK_GUARD'}
     if($before.Contains([char]0) -or $before.IndexOf('h454-wss-transition.pending',[StringComparison]::OrdinalIgnoreCase) -ge 0){
         throw 'H454_WSS_TASK_GUARD'
@@ -94,10 +94,24 @@ function Assert-H454WssTaskGuardBytes([byte[]]$Original,[byte[]]$Guarded) {
             if($before.LastIndexOf($anchor,[StringComparison]::Ordinal) -ne $first){throw 'H454_WSS_TASK_GUARD'}
             $matches++
             $expected=$before.Substring(0,$first)+$anchor+$guard+$before.Substring($first+$anchor.Length)
-            if($after -cne $expected){throw 'H454_WSS_TASK_GUARD'}
         }
     }
     if($matches -ne 1){throw 'H454_WSS_TASK_GUARD'}
+    return ,$encoding.GetBytes($expected)
+}
+
+function Assert-H454WssTaskGuardBytes([byte[]]$Original,[byte[]]$Guarded) {
+    $expected=New-H454WssGuardBytes $Original
+    try{$actual64=[Convert]::ToBase64String($Guarded)}catch{throw 'H454_WSS_TASK_GUARD'}
+    if([Convert]::ToBase64String($expected) -cne $actual64){throw 'H454_WSS_TASK_GUARD'}
+}
+
+function Get-H454WssMarkerText([string]$OldHash,[string]$GuardHash,[string]$BackupName) {
+    if($OldHash -cnotmatch '^[A-F0-9]{64}$' -or $GuardHash -cnotmatch '^[A-F0-9]{64}$' -or
+        $OldHash -ceq $GuardHash -or $BackupName -cnotmatch '^h454-original-launcher-[a-f0-9]{32}\.txt$'){
+        throw 'H454_WSS_TASK_PINS'
+    }
+    return "H454_WSS_TRANSITION_V1`noriginal=1fbf00d9b711be215ab35eaea1f6ef549cc4a0930495e3d0776a965f8c75abb6`nold=$OldHash`nguard=$GuardHash`nbackup=$BackupName`n"
 }
 
 function Assert-H454WssLegacyUnchanged([object]$Expected,[string]$ExpectedSid) {
@@ -107,6 +121,111 @@ function Assert-H454WssLegacyUnchanged([object]$Expected,[string]$ExpectedSid) {
         (Get-H454WssTaskSid ([string]$current.Principal.UserId)) -cne $ExpectedSid -or $actions.Count -ne 1 -or
         [string]$actions[0].Execute -cne [string]$Expected.Actions[0].Execute -or
         [string]$actions[0].Arguments -cne [string]$Expected.Actions[0].Arguments){throw 'H454_WSS_TASK_LEGACY'}
+}
+
+function Get-H454WssDisabledLegacy {
+    $legacy=Get-ScheduledTask -TaskName 'HermesH15BRCWindows' -TaskPath '\' -ErrorAction Stop
+    if([string]$legacy.State -cne 'Disabled' -or [string]$legacy.Principal.LogonType -cne 'Interactive' -or
+        @($legacy.Actions).Count -ne 1){throw 'H454_WSS_TASK_LEGACY'}
+    $sid=Get-H454WssTaskSid ([string]$legacy.Principal.UserId)
+    if($sid -cne [Security.Principal.WindowsIdentity]::GetCurrent().User.Value){throw 'H454_WSS_TASK_PRINCIPAL'}
+    $powershell=Join-Path ([Environment]::GetFolderPath('System')) 'WindowsPowerShell\v1.0\powershell.exe'
+    $action=$legacy.Actions[0]
+    if([IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables([string]$action.Execute)) -ine
+        [IO.Path]::GetFullPath($powershell)){throw 'H454_WSS_TASK_LEGACY'}
+    $match=[regex]::Match([string]$action.Arguments,'(?i)^\s*-NoProfile\s+-ExecutionPolicy\s+\S+\s+-File\s+(?:"([^"]+)"|(\S+))\s+-Mode\s+Run\s*$')
+    if(-not $match.Success){throw 'H454_WSS_TASK_LEGACY'}
+    $launcher=if($match.Groups[1].Success){$match.Groups[1].Value}else{$match.Groups[2].Value}
+    $launcher=[IO.Path]::GetFullPath($launcher);$state=[IO.Path]::GetDirectoryName($launcher)
+    if([IO.Path]::GetDirectoryName($state) -ine [Environment]::GetFolderPath('LocalApplicationData')){throw 'H454_WSS_TASK_STATE'}
+    return [pscustomobject]@{Task=$legacy;Sid=$sid;PowerShell=$powershell;Launcher=$launcher;StateDir=$state}
+}
+
+function Assert-H454WssOriginalStopped {
+    $id='1fbf00d9b711be215ab35eaea1f6ef549cc4a0930495e3d0776a965f8c75abb6'
+    $image='sha256:0c95960c02e0dbe00a6a11ee6253d4055e4a7abf7671404b3f876dfdb95bd5d8'
+    $container=Get-H454Container $id
+    if($container.Id -cne $id -or $container.Image -cne $image -or $container.Name -cne '/hermes-h15-windows-permanent' -or
+        $container.State.Running -isnot [bool] -or $container.State.Running -or $container.State.Status -cne 'exited' -or
+        $container.State.Paused -isnot [bool] -or $container.State.Paused -or
+        $container.State.Restarting -isnot [bool] -or $container.State.Restarting -or
+        $container.State.Dead -isnot [bool] -or $container.State.Dead -or
+        $container.HostConfig.RestartPolicy.Name -cne 'no'){throw 'H454_WSS_GUARD_ORIGINAL'}
+    foreach($port in @(38180,38184)){
+        if(@(Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue).Count -ne 0){throw 'H454_WSS_GUARD_LISTENER'}
+    }
+}
+
+function Test-H454WssStateEntry([string]$State,[string]$Name) {
+    $entries=0;$found=$false
+    foreach($entry in [IO.Directory]::EnumerateFileSystemEntries($State)){
+        $entries++;if($entries -gt 512){throw 'H454_WSS_GUARD_STATE_SIZE'}
+        if([IO.Path]::GetFileName($entry).Equals($Name,[StringComparison]::OrdinalIgnoreCase)){$found=$true}
+    }
+    return $found
+}
+
+function Install-H454WssGuard(
+    [string]$OriginalLauncherSha256,[string]$GuardedLauncherSha256,[string]$BackupName,
+    [IO.FileStream]$Lock,[switch]$Apply,[switch]$OwnerApproved
+) {
+    if($Apply -and -not $OwnerApproved){throw 'H454_WSS_TASK_APPROVAL'}
+    $markerText=Get-H454WssMarkerText $OriginalLauncherSha256 $GuardedLauncherSha256 $BackupName
+    $utf8=[Text.UTF8Encoding]::new($false)
+    $markerBytes=$utf8.GetBytes($markerText);$markerHash=Hash-H454Bytes $markerBytes
+    $context=Get-H454WssDisabledLegacy
+    $state=$context.StateDir;$launcher=$context.Launcher;$backup=Join-Path $state $BackupName
+    $marker=Join-Path $state 'h454-wss-transition.pending'
+    Assert-H454RecoveryLock $state $Lock
+    Assert-H454WssOriginalStopped
+    $markerFound=Test-H454WssStateEntry $state 'h454-wss-transition.pending'
+    $backupFound=Test-H454WssStateEntry $state $BackupName
+    if($markerFound){
+        Assert-H454WssTaskFile $marker $markerHash 4096
+        if([IO.File]::ReadAllText($marker) -cne $markerText){throw 'H454_WSS_TASK_MARKER'}
+    }
+    $current=(Get-FileHash -LiteralPath $launcher -Algorithm SHA256 -ErrorAction Stop).Hash
+    if($current -ceq $GuardedLauncherSha256){
+        if(-not $markerFound){throw 'H454_WSS_GUARD_MARKER'}
+        Assert-H454WssTaskFile $launcher $GuardedLauncherSha256 200000
+        Assert-H454WssTaskFile $backup $OriginalLauncherSha256 200000
+        Assert-H454WssTaskGuardBytes ([IO.File]::ReadAllBytes($backup)) ([IO.File]::ReadAllBytes($launcher))
+        return [pscustomobject]@{Status='ALREADY_INSTALLED';BackupName=$BackupName;MarkerSha256=$markerHash}
+    }
+    if($current -cne $OriginalLauncherSha256 -or ($backupFound -and -not $markerFound)){throw 'H454_WSS_GUARD_DRIFT'}
+    Assert-H454WssTaskFile $launcher $OriginalLauncherSha256 200000
+    $original=[IO.File]::ReadAllBytes($launcher)
+    $guarded=New-H454WssGuardBytes $original
+    if((Hash-H454Bytes $guarded) -cne $GuardedLauncherSha256){throw 'H454_WSS_GUARD_DRIFT'}
+    if($backupFound){Assert-H454WssTaskFile $backup $OriginalLauncherSha256 200000}
+    if(-not $Apply){return [pscustomobject]@{Status='PREFLIGHT';BackupName=$BackupName;MarkerSha256=$markerHash}}
+    Assert-H454RecoveryLock $state $Lock
+    Assert-H454WssLegacyUnchanged $context.Task $context.Sid
+    Assert-H454WssOriginalStopped
+    $pending=Join-Path $state ('h454-guard-'+[Guid]::NewGuid().ToString('N')+'.new')
+    $stream=[IO.File]::Open($pending,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+    try{$stream.Write($guarded,0,$guarded.Length);$stream.Flush($true)}finally{$stream.Dispose()}
+    Assert-H454WssTaskFile $pending $GuardedLauncherSha256 200000
+    if(-not $markerFound){$null=New-H454TransitionMarker $state $markerBytes $Lock}
+    if(-not $backupFound){
+        $stream=[IO.File]::Open($backup,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+        try{$stream.Write($original,0,$original.Length);$stream.Flush($true)}finally{$stream.Dispose()}
+    }
+    Assert-H454RecoveryLock $state $Lock
+    Assert-H454WssLegacyUnchanged $context.Task $context.Sid
+    Assert-H454WssOriginalStopped
+    Assert-H454WssTaskFile $marker $markerHash 4096
+    Assert-H454WssTaskFile $launcher $OriginalLauncherSha256 200000
+    Assert-H454WssTaskFile $backup $OriginalLauncherSha256 200000
+    [IO.File]::Replace($pending,$launcher,[System.Management.Automation.Language.NullString]::Value)
+    Assert-H454RecoveryLock $state $Lock
+    Assert-H454WssLegacyUnchanged $context.Task $context.Sid
+    Assert-H454WssOriginalStopped
+    Assert-H454WssTaskFile $launcher $GuardedLauncherSha256 200000
+    Assert-H454WssTaskFile $backup $OriginalLauncherSha256 200000
+    Assert-H454WssTaskFile $marker $markerHash 4096
+    Assert-H454WssTaskGuardBytes ([IO.File]::ReadAllBytes($backup)) ([IO.File]::ReadAllBytes($launcher))
+    return [pscustomobject]@{Status='INSTALLED_PENDING';BackupName=$BackupName;MarkerSha256=$markerHash}
 }
 
 function Register-H454WssTaskDisabled(
@@ -119,20 +238,8 @@ function Register-H454WssTaskDisabled(
     }
     if($OriginalLauncherSha256 -ceq $GuardedLauncherSha256 -or
         $BackupName -cnotmatch '^h454-original-launcher-[a-f0-9]{32}\.txt$'){throw 'H454_WSS_TASK_PINS'}
-    $legacy=Get-ScheduledTask -TaskName 'HermesH15BRCWindows' -TaskPath '\' -ErrorAction Stop
-    if([string]$legacy.State -cne 'Disabled' -or [string]$legacy.Principal.LogonType -cne 'Interactive' -or
-        @($legacy.Actions).Count -ne 1){throw 'H454_WSS_TASK_LEGACY'}
-    $legacySid=Get-H454WssTaskSid ([string]$legacy.Principal.UserId)
-    if($legacySid -cne [Security.Principal.WindowsIdentity]::GetCurrent().User.Value){throw 'H454_WSS_TASK_PRINCIPAL'}
-    $powershell=Join-Path ([Environment]::GetFolderPath('System')) 'WindowsPowerShell\v1.0\powershell.exe'
-    $legacyAction=$legacy.Actions[0]
-    if([IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables([string]$legacyAction.Execute)) -ine
-        [IO.Path]::GetFullPath($powershell)){throw 'H454_WSS_TASK_LEGACY'}
-    $match=[regex]::Match([string]$legacyAction.Arguments,'(?i)^\s*-NoProfile\s+-ExecutionPolicy\s+\S+\s+-File\s+(?:"([^"]+)"|(\S+))\s+-Mode\s+Run\s*$')
-    if(-not $match.Success){throw 'H454_WSS_TASK_LEGACY'}
-    $launcher=if($match.Groups[1].Success){$match.Groups[1].Value}else{$match.Groups[2].Value}
-    $launcher=[IO.Path]::GetFullPath($launcher);$state=[IO.Path]::GetDirectoryName($launcher)
-    if([IO.Path]::GetDirectoryName($state) -ine [Environment]::GetFolderPath('LocalApplicationData')){throw 'H454_WSS_TASK_STATE'}
+    $context=Get-H454WssDisabledLegacy
+    $legacy=$context.Task;$legacySid=$context.Sid;$powershell=$context.PowerShell;$launcher=$context.Launcher;$state=$context.StateDir
     Assert-H454RecoveryLock $state $Lock
     $backup=Join-Path $state $BackupName
     $marker=Join-Path $state 'h454-wss-transition.pending'
@@ -143,7 +250,7 @@ function Register-H454WssTaskDisabled(
     Assert-H454WssTaskFile $marker $MarkerSha256 4096
     Assert-H454WssTaskFile $supervisor $SupervisorSha256 65536
     Assert-H454WssTaskFile $config $ConfigSha256 8192
-    $expectedMarker="H454_WSS_TRANSITION_V1`noriginal=1fbf00d9b711be215ab35eaea1f6ef549cc4a0930495e3d0776a965f8c75abb6`nold=$OriginalLauncherSha256`nguard=$GuardedLauncherSha256`nbackup=$BackupName`n"
+    $expectedMarker=Get-H454WssMarkerText $OriginalLauncherSha256 $GuardedLauncherSha256 $BackupName
     if([IO.File]::ReadAllText($marker) -cne $expectedMarker){throw 'H454_WSS_TASK_MARKER'}
     Assert-H454WssTaskGuardBytes ([IO.File]::ReadAllBytes($backup)) ([IO.File]::ReadAllBytes($launcher))
     $settings=[Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes($config)) | ConvertFrom-Json -ErrorAction Stop

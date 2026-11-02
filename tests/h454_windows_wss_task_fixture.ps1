@@ -11,6 +11,8 @@ foreach($newline in @("`n","`r`n")){
     $anchor=$parts.Anchor.Replace("`n",$newline);$guard=$parts.Guard.Replace("`n",$newline)
     $before=[Text.Encoding]::UTF8.GetBytes(([string][char]0xfeff)+'before'+$newline+$anchor+'after'+$newline)
     $after=[Text.Encoding]::UTF8.GetBytes(([string][char]0xfeff)+'before'+$newline+$anchor+$guard+'after'+$newline)
+    $prepared=New-H454WssGuardBytes $before
+    Require ([Convert]::ToBase64String($prepared) -ceq [Convert]::ToBase64String($after)) 'FIXTURE_GUARD_PREPARE'
     Assert-H454WssTaskGuardBytes $before $after
     $refused=$false
     try{Assert-H454WssTaskGuardBytes $before ([Text.Encoding]::UTF8.GetBytes('invalid'))}catch{$refused=$_.Exception.Message -ceq 'H454_WSS_TASK_GUARD'}

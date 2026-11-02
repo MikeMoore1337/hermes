@@ -342,6 +342,19 @@ responsibility. Synthetic registration tests exercise refusals with a mocked
 scheduler. A separate local test registered and removed a uniquely named,
 disabled task using the real scheduler; it did not install the BRC task.
 
+`h454_windows_guard_operator.ps1` is a bounded preparation operator for the
+already-stopped original. It verifies supplied source and task-backup pins,
+the disabled legacy task, the exclusive lock, container identity and closed
+listeners before preparing the guarded launcher, its backup and the pending
+marker. Its default is a read-only preflight; applying it requires the owner
+switch. Supplied hashes must be established independently. It does not install
+the supervisor, start or stop a container, stage credentials or perform MCP.
+A preflight against the real stopped container passed without changing the
+launcher or creating a marker. Synthetic checks retained the marker and
+original-byte backup when a failure was injected before or after atomic
+replacement, then resumed under a reacquired lock. The apply path has not
+been exercised on the real launcher.
+
 ## Evidence and limits
 
 - A real pinned BRC agent transport and relay were exercised together in an
