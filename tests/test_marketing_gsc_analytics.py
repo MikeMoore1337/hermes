@@ -244,10 +244,37 @@ class GscAnalyticsTests(unittest.TestCase):
             with self.subTest(change=change), self.assertRaises(GscEvidenceError):
                 normalize_analytics(s)
 
+    def test_domain_property_http_and_subdomain_urls(self):
+        # sc-domain:your-fitness-coach.ru covers both protocols and subdomains.
+        pages = (
+            "http://your-fitness-coach.ru/nutrition",
+            "https://www.your-fitness-coach.ru/nutrition",
+            "http://m.your-fitness-coach.ru:80/training",
+            "https://a.b.your-fitness-coach.ru:443/exercises/bench-press",
+        )
+        for page in pages:
+            with self.subTest(page=page):
+                report = normalize_analytics(snapshot(["page"], [page_row(page)]))
+                self.assertEqual(report["rows"][0]["page"], page)
+
+        sitemap = "http://www.your-fitness-coach.ru/sitemap.xml"
+        report = normalize_sitemaps(snapshot(["sitemap"], [
+            {"path": sitemap, "submitted": 1},
+        ]))
+        self.assertEqual(report["rows"][0]["sitemap_url"], sitemap)
+
     def test_bad_pages_and_dimensions(self):
-        for page in ("http://your-fitness-coach.ru/nutrition",
-                     "https://evil.example/", "https://your-fitness-coach.ru@evil.example/",
-                     "https://your-fitness-coach.ru/#fragment"):
+        for page in (
+            "https://evil.example/",
+            "https://your-fitness-coach.ru.evil.example/",
+            "https://evilyour-fitness-coach.ru/nutrition",
+            "https://your-fitness-coach.ru@evil.example/",
+            "https://user:pass@www.your-fitness-coach.ru/",
+            "https://your-fitness-coach.ru/#fragment",
+            "https://www.your-fitness-coach.ru:8443/",
+            "http://your-fitness-coach.ru:443/",
+            "javascript:alert(1)",
+        ):
             with self.subTest(page=page), self.assertRaises(GscEvidenceError):
                 normalize_analytics(snapshot(["page"], [page_row(page)]))
         with self.assertRaisesRegex(GscEvidenceError, "dimension_missing"):

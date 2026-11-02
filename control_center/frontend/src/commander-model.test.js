@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {commanderProjects,commanderDevices,parseBrcObservation,
- projectExpectedOrigin,projectSandboxRoot} from "./commander-model.js";
+ projectExpectedOrigin,projectSandboxRoot,parseBrcSourceCheck} from "./commander-model.js";
 
 const clean=()=>({
  schema:1,source:"hermes_brc_mcp",status:"online",
@@ -54,10 +54,42 @@ test("forged permissions, device list and malformed data are denied",()=>{
 test("offline and stale presence still never grant shell or host access",()=>{
  const v=clean();
  v.status="partial";
- v.devices[1].status="offline";
+ v.devices[0].status="offline";
  v.devices[2].status="stale";
- v.workspaces[0].state="not_ready";
+ v.workspaces.forEach(w=>{w.state="not_ready";});
  assert.deepEqual(parseBrcObservation(v),v);
  assert.equal(v.execution_verified,false);
  assert.equal(v.native_host_access,false);
+});
+
+const goodSourceCheck=()=>({
+ schema:1,source:"hermes_brc_validated_snapshot",check:"snapshot_validity_only",
+ checked_at:new Date().toISOString(),snapshot_age_seconds:5,status:"online",
+ devices:commanderDevices.map(name=>({name,status:"online",
+  last_seen_age_seconds:12,command_execution:"not_verified"})),
+ verification:{snapshot:"valid",relay:"not_probed",oauth:"not_probed",
+  tools:"not_probed",git:"not_probed",onboarding:"disabled",native_host:"disabled"}
+});
+test("source check validates only a bounded snapshot, never MCP execution",()=>{
+ const valid=goodSourceCheck();
+ assert.deepEqual(parseBrcSourceCheck(valid),valid);
+ for(const mutate of [
+  v=>v.source="owner_shell",v=>v.extra="token",
+  v=>v.verification.tools="verified",v=>v.verification.native_host="enabled",
+  v=>v.devices[0].command_execution="verified",v=>v.devices[1].deviceId="secret",
+  v=>v.snapshot_age_seconds=999,v=>v.checked_at="2000-01-01T00:00:00Z"
+ ]){
+  const forged=clone(valid);mutate(forged);
+  assert.equal(parseBrcSourceCheck(forged),null);
+ }
+});
+test("snapshot refuses extra fields, inconsistent presence and state promotion",()=>{
+ for(const mutate of [
+  v=>v.secret="bad",v=>v.devices[0].last_seen_age_seconds=99999,
+  v=>v.status="partial",v=>v.workspaces[0].state="not_ready",
+  v=>v.observed_at=new Date(Date.now()-310000).toISOString()
+ ]){
+  const forged=clone(clean());mutate(forged);
+  assert.equal(parseBrcObservation(forged),null);
+ }
 });

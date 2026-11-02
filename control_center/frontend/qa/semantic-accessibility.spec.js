@@ -28,19 +28,29 @@ for(const width of [320,393,768,1440]){
  });
 }
 
-test("both navigation sets expose same current view and remain keyboard-operable",async({page})=>{
+test("single desktop navigation retains keyboard-operable current view",async({page})=>{
+ await page.setViewportSize({width:1440,height:900});
  await mock(page);await page.goto("/");
- const header=page.getByRole("navigation",{name:"Основные разделы"});
- const secondary=page.getByRole("navigation",{name:"Разделы управления"});
- await expect(header.getByRole("button",{name:"Обзор"})).toHaveAttribute("aria-current","page");
- await expect(secondary.getByRole("button",{name:"Обзор"})).toHaveAttribute("aria-current","page");
- const qa=header.getByRole("button",{name:"QA и CI"});
+ const navigation=page.getByRole("navigation",{name:"Разделы управления"});
+ await expect(page.getByRole("navigation",{name:"Основные разделы"})).toHaveCount(0);
+ await expect(navigation.getByRole("button",{name:"Обзор"})).toHaveAttribute("aria-current","page");
+ const qa=navigation.getByRole("button",{name:"QA и CI"});
  await qa.focus();await qa.press("Enter");
  await expect(qa).toHaveAttribute("aria-current","page");
- await expect(secondary.getByRole("button",{name:"QA и CI"})).toHaveAttribute("aria-current","page");
- await expect(header.getByRole("button",{name:"Обзор"})).not.toHaveAttribute("aria-current",/./);
+ await expect(navigation.getByRole("button",{name:"Обзор"})).not.toHaveAttribute("aria-current",/./);
  await expect(page.getByRole("table",{name:"Реестр системных служб и компонентов"})).toHaveCount(1);
  await expect(page.getByRole("row",{name:/Ops Watch/})).toHaveCount(0);
+});
+test("mobile More menu keeps remaining destinations accessible",async({page})=>{
+ await page.setViewportSize({width:393,height:844});
+ await mock(page);await page.goto("/");
+ const more=page.getByRole("button",{name:"Ещё"});
+ await more.click();
+ const navigation=page.getByRole("navigation",{name:"Разделы управления"});
+ await expect(navigation.getByRole("button",{name:"Лимиты AI"})).toBeVisible();
+ await navigation.getByRole("button",{name:"Лимиты AI"}).click();
+ await expect(page.getByRole("heading",{name:"Лимиты Codex"})).toBeVisible();
+ await expect(more).toHaveAttribute("aria-expanded","false");
 });
 
 test("stale and empty snapshots keep table caption without invented data",async({page})=>{

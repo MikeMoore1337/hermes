@@ -37,6 +37,10 @@ Google Cloud service account, не даёт согласия на расходы
   device (6 отчётов) и `GET sitemaps` (1 отчёт). Никаких
   `PUT/DELETE`, inspection, indexing, запросов к другим хостам,
   массовой пагинации, retries или внешних AI.
+- URL-строки нормализуются в рамках доменного ресурса
+  `sc-domain:your-fitness-coach.ru`: HTTP(S), основной домен и его
+  поддомены. Чужие и похожие домены, логин/пароль в URL и нестандартные
+  порты отвергаются. Нормализация не выполняет сетевых запросов.
 - Дата отчётности: `America/Los_Angeles`. Окно 28 дней до вчера
   по этой зоне, `dataState=final`. Данные последних суток могут
   отсутствовать; это не ноль. Реальный последний наблюдаемый день
@@ -121,6 +125,399 @@ Google Cloud service account, не даёт согласия на расходы
 если не завершены owner credentials, budget, egress и live smoke.**
 Владелец уже подтвердил Wordstat/YFC/GSC исторические данные;
 повторно эти evidence не запрашивать.
+
+## Preactivation - подготовка без OAuth и таймера
+
+После независимого dry-run используем reviewed
+[операторский установщик](../../deploy/h191-gsc-runtime-prepare.sh),
+который запускается **только из доставленного release** на
+Hermes VPS vps1777112993 через ранее разрешённый прямой SSH.
+Не использовать BRC, Commander или GitHub deploy-ключ как shell.
+
+Команды от root в разрешённом SSH-терминале (никаких секретов в аргументах):
+
+    set -euo pipefail
+    sha="$(cat /var/lib/hermes-main-deploy/last-success.sha)"
+    script="/opt/hermes-agent-owner/releases/main-$sha/deploy/h191-gsc-runtime-prepare.sh"
+    bash "$script" --plan
+    bash "$script" --prepare
+
+Установщик сначала проверяет совпадение release SHA/receipt, root ownership,
+отсутствие изменённых исходников и активных GSC units. Затем:
+
+- Создаёт только системного пользователя hermes-gsc, без интерактивного входа
+  и дополнительных групп, и каталоги /etc/hermes-gsc (root:hermes-gsc 0750),
+  /var/lib/hermes-gsc (hermes-gsc:hermes-gsc 0700),
+  /opt/hermes-gsc (root:root 0755).
+- Создаёт отдельный root-owned Python venv; устанавливает только binary
+  wheels из официального PyPI для google-auth==2.62.0 и requests==2.32.5
+  вместе с зависимостями; проверяет версии и pip check. Не запускает apt
+  и не изменяет Python других сервисов. Нужен установленный Python 3.10+
+  с venv; при отсутствии fail-closed.
+- Выполняет CLI dry-run от hermes-gsc без credentials, сети и записи snapshot.
+- Только после этого размещает выключенные systemd service/timer,
+  проверяет шаблоны и выполняет daemon-reload без start/enable/restart.
+  Существующие чужие конфигурации, symlink, небезопасные права и
+  непроверенные credentials отклоняются.
+
+Важная граница: **network policy пока DENY_ALL**, а не Google allowlist.
+Новый шаблон включает PrivateNetwork=yes, IPAddressDeny=any и
+RestrictAddressFamilies=AF_UNIX; никакой OAuth не работает и не должен
+работать до отдельного approved egress cutover. systemd IPAddressAllow
+не умеет ограничивать исходящие подключения по DNS-именам. Для допуска
+только oauth2.googleapis.com:443 и www.googleapis.com:443 необходима
+отдельная reviewed OS/transport policy и проверка её реального применения.
+Нельзя просто отключать сетевые ограничения для успешного live smoke.
+
+Credentials не создаются и не копируются установщиком. Для последующего
+ключа нужен отдельный защищённый канал и разрешение. Файл должен быть
+обычным (не symlink), принадлежать hermes-gsc, иметь права 0400/0600
+и соответствовать требованиям клиента; его содержимое не помещать в
+GitHub, shell history, CI, логи или ChatGPT.
+
+Прямые версии зависимостей закреплены. Транзитивный lock и wheel
+SHA256 пока не зафиксированы независимо: перед первым live-запуском
+следует провести проверку поставленных зависимостей.
+
+Результат H191_PREPARE=PASS подтверждает только OS identity, каталоги,
+venv, отключённые units и dry-run. Это не LIVE_GSC_SNAPSHOT_SAVED и
+не AUTONOMOUS_ACTIVE: фактический OAuth, 7 API-вызовов и автоматический tick
+требуют отдельных подтверждений и owner gates.
+
+## Закрытая передача существующего Google service-account JSON
+
+**Отдельный owner gate. Не выполнять без разрешения на provisioning secret.**
+Учётная запись Google существует по прежним свидетельствам владельца,
+но key-файл по штатному пути VPS отсутствует. Не создавать новую Google
+учётную запись, секрет или DNS без доказанной необходимости и согласования.
+Workload Identity Federation обычно безопаснее постоянного JSON-ключа,
+но текущий H-24 клиент рассчитан именно на service-account JSON.
+
+Подготовлены два отдельно запускаемых средства:
+- scripts/h191_gsc_key_send.py - локальный Python-отправитель, совместимый
+  с Windows и прямым SSH, без PowerShell text pipeline;
+- scripts/h191_gsc_credential_provision.py - принимающий скрипт на VPS
+  из точно доставленного root-owned Hermes release, в изолированном venv.
+
+До передачи отправитель запрашивает metadata-only статус без секрета.
+Разрешены только проверенный SSH host key (StrictHostKeyChecking=yes),
+авторизация SSH-ключом (BatchMode=yes), строго заданный root@host и SHA;
+ProxyJump/ProxyCommand и пересылка SSH agent отключены. Если ключ уже
+существует или preflight не пройден, secret-файл не отправляется.
+
+Пример PowerShell на Windows из доверенного checkout проекта, только
+после разрешения владельца на secret transfer и проверки known_hosts:
+
+    py -3 scripts/h191_gsc_key_send.py --key-file "C:\SECURE\existing-service-account.json" --ssh-target "root@YOUR-APPROVED-SSH-HOST" --release-sha "EXACT_40_CHARACTER_DEPLOYED_SHA" --confirm-owner-key-transfer
+
+Пути и SSH-host выбирает и проверяет сам владелец. Не использовать
+GitHub Actions deploy-ключ как shell, BRC, Commander, email, чат,
+GitHub Issues, общественные файлообменники, env или shell arguments для
+содержимого ключа. Скрипт передаёт исходные байты исключительно как stdin
+зашифрованного SSH-канала. Флаг подтверждения обязателен.
+
+Приёмник на правильном VPS сверяет hostname, SHA, release receipt, UID/GID,
+права /etc/hermes-gsc и уже существующие files. Он проверяет размер,
+формат JSON, запрещает повторяющиеся имена полей и чужие token_uri,
+валидирует offline private key форматом google-auth из отдельного venv.
+Никаких Google network requests. Создаёт
+/etc/hermes-gsc/service-account.json строго однократно, mode 0400,
+владельцем hermes-gsc, атомарно и без перезаписи существующего файла
+или symlink. Секреты не выводятся. Ротация - отдельно согласуемое действие.
+
+Ожидаемое сообщение локального отправителя:
+
+    H191_KEY_TRANSFER=PASS
+    H191_GOOGLE_OAUTH=NOT_RUN
+    H191_TIMER=NOT_ENABLED
+
+Этот статус означает только credential file metadata READY, не
+подтверждение OAuth или доступности GSC property. После получения
+реального ключа сохраняется NO_GO на OAuth и systemd timer до review
+реально действующего сетевого ограничения.
+
+**Google-only egress ещё не реализован.** В активируемом шаблоне
+PrivateNetwork=yes, RestrictAddressFamilies=AF_UNIX и IPAddressDeny=any.
+systemd IPAddressAllow принимает IP/CIDR, но не hostname или порт 443.
+Для перехода нужен самостоятельный проверенный механизм DNS/IP,
+ограничения 443, TLS hostname, negative network tests и отдельный owner GO;
+не снимать deny-all ради успешного smoke. Также остаётся независимая
+проверка фактически установленных транзитивных wheel dependencies.
+
+## Egress H191 - Google IP + nftables candidate (preview only)
+
+**Состояние: REVIEW ONLY / НЕ АКТИВИРОВАНО.** По прямому SSH владелец
+подтвердил наличие приватного JSON service account и права 0400.
+Сервис и таймер остаются отключёнными, Google OAuth/7 API запросов не
+проводились. Эта подготовка **не изменяет** текущий DENY_ALL.
+
+См. scripts/h191_google_egress_candidate.py. Утилита из стандартной
+библиотеки Python работает в одном режиме --preview, без --apply:
+- Выполняет **два публичных HTTPS GET без credentials**, только на
+  https://www.gstatic.com/ipranges/goog.json и
+  https://www.gstatic.com/ipranges/cloud.json, с проверкой TLS, без
+  прокси, редиректов и непредусмотренных адресов;
+- Снимает DNS A/AAAA **только** для oauth2.googleapis.com и
+  www.googleapis.com, обнаруживает имена DNS resolvers в /etc/resolv.conf;
+- Для эскиза требует именно systemd-resolved DNS stub 127.0.0.53.
+  При другой схеме резолвинга не расширяет разрешения автоматически;
+- Проверяет, что наблюдаемые public IP входят в опубликованные Google
+  prefixes и не попадают в customer Google Cloud ranges. Результат -
+  только актуальные /32 и /128 адреса, не широкие диапазоны Google;
+- Проверяет дату/возраст снимка (не более 15 минут), VPS hostname и
+  числовой UID конкретного пользователя. Все повреждённые, неподтверждённые
+  или неочевидные ответы обрабатываются как HOLD, а не как разрешение;
+- Строит **только печатный** черновик systemd drop-in и отдельной
+  nftables OUTPUT-chain, ограниченной по socket UID hermes-gsc (meta
+  skuid) и портам (локальный DNS 53, фиксированные Google IP:443).
+  Остальным пользователям этой кандидатной цепочкой правила не назначаются.
+
+Владелец может выполнить **только проверку кандидата**, без секрета и
+без применения firewall, после доставки этого кода в release:
+
+    set -euo pipefail
+    [[ "$(hostname -s)" == "vps1777112993" ]]
+    sha="$(cat /var/lib/hermes-main-deploy/last-success.sha)"
+    uid="$(id -u hermes-gsc)"
+    python3 -B "/opt/hermes-agent-owner/releases/main-$sha/scripts/h191_google_egress_candidate.py" --preview --uid "$uid"
+
+Пример успешного статуса (остальные выводимые IP и правила - лишь
+черновик для независимого аудита):
+
+    H191_EGRESS_PLAN=CANDIDATE_ONLY
+    H191_NETWORK_CHANGED=NO
+    H191_SECRET_ACCESSED=NO
+    H191_OAUTH_RUN=NO
+    H191_TIMER_ENABLED=NO
+
+Нельзя применять этот вывод напрямую. Google официально предупреждает,
+что адреса для default API domains часто меняются и точный диапазон
+отдельной службы нельзя зафиксировать навсегда:
+https://docs.cloud.google.com/vpc/docs/configure-private-google-access
+
+**Обязательные оставшиеся live-gates, не выполняемые утилитой:**
+1. Независимый review доверия DNS/Google HTTPS источников, реальных
+   IP/IPv6, работающего локального DNS и возможности соединения с ними.
+2. Отдельный root-owned nft guard на каждом запуске + восстановление
+   точного ограниченного policy при reboot/DNS change (без window
+   permissive); в шаблоне-кандидате специально есть Requires к
+   НЕУСТАНОВЛЕННОМУ hermes-gsc-egress-guard.service. Его отсутствие
+   должно блокировать активацию, а не сниматься ради успеха.
+3. Подтверждение реальной работы systemd cgroup IPAddressDeny/Allow и
+   nft meta skuid на Ubuntu systemd 255/cgroup2. Тесты reject любого
+   постороннего IP/порта, прямого доступа к YFC/SSH/локальным сервисам,
+   проверки TLS hostname и неутечки credentials.
+4. Проверка сохранения работоспособности остальных Hermes/YFC/Caddy/
+   Docker сервисов и обратимый rollback. Никаких широких IPAllow=any,
+   общесистемных flush ruleset, host-wide DNS/iptables правил.
+5. Только после отдельного разрешения владельца - ограниченное
+   внедрение network policy, один разрешённый OAuth+7-GSC smoke,
+   приватный snapshot и **отдельное разрешение** на включение таймера.
+   До этого реализация #191 не считается автономной.
+
+## H191 Google-only nft guard - staged owner install (no OAuth)
+
+**Scope:** С этого этапа можно установить *только* отдельную сетевую
+политику UID \`hermes-gsc\`, без запуска чтения GSC и без таймера.
+Текущие исходные units \`hermes-gsc-readonly.service\` и \`.timer\`
+должны оставаться выключенными до отдельного owner GO.
+
+- \`scripts/h191_gsc_egress_guard.py --plan\` проверяет pinned release,
+  root-владение исходников, metadata ключа без чтения его содержимого,
+  отсутствие конфликтов и актуальные публичные Google ranges/DNS.
+  Выполняет \`nft -c\` только для новой уникальной таблицы; изменений нет.
+- \`--install --confirm-owner-network-change\` требует root, точного
+  релиза на \`vps1777112993\`, отсутствия других drop-in, выключенных
+  service/timer и ранее не установленной таблицы. Сначала ставит
+  независимую \`nft\` OUTPUT-цепь только для UID \`hermes-gsc\`:
+  локальный DNS stub \`127.0.0.53:53\` TCP/UDP, точные Google /32-/128
+  по TCP/443, остальное **drop**. Затем сохраняет root-only pin record
+  \`/etc/hermes-gsc/google-egress-policy.json\` (0600), собственный
+  \`hermes-gsc-egress-guard.service\` (oneshot, без автозапуска) и
+  \`90-google-only.conf\` (0644) для GSC service, делает
+  \`systemctl daemon-reload\`. Ни GSC service, ни timer НЕ запускаются.
+- \`--check\` сверяет pin record, метаданные файлов и **полную**
+  структуру собственной \`nft -j\` таблицы, включая порядок правил и
+  завершающий UID drop. Не делает сетевых запросов и не мутирует сеть.
+- \`--ensure\` запускается только обязательной guard-службой **перед**
+  GSC-запуском. Проверяет текущие DNS для двух фиксированных Google-hostname,
+  точный опубликованный Google диапазон без Google Cloud customer prefixes,
+  UID firewall и effective systemd DENY_ALL.
+  При изменении подтверждённых DNS-адресов автоматически, под root-only
+  блокировкой, заменяет **одной атомарной nft транзакцией только свою
+  таблицу**; затем атомарно обновляет только закрытый pin record и
+  GSC drop-in, выполняет daemon-reload и повторно проверяет оба слоя.
+  Изменения запрещены при запущенном GSC процессе. При непроверенном
+  DNS, новой системе, изменённой политике или ошибке отката - HOLD
+  без широкого IPAllow или альтернативного proxy.
+  После перезапуска VPS guard восстанавливает отсутствующую точную
+  nft таблицу перед возможным GSC-запуском.
+- Операторский \`--refresh-pins --confirm-owner-network-change\`
+  остаётся для ручной диагностики при остановленных и отключённых
+  GSC service/timer; он использует тот же проверяемый атомарный механизм.
+- Таблица имеет уникальное имя \`inet hermes_gsc_egress\` и
+  \`meta skuid\` для фиксированного UID; никакие другие таблицы или
+  службы не меняются. Создание производится одним nft transaction.
+  Прямое \`--install\` никогда не выполняется из GitHub Actions.
+- Установщик НЕ содержит команды для включения таймера,
+  тестовых Google OAuth запросов, изменения credentials, Caddy,
+  YFC/Docker/Cloudflare или переключения иных услуг.
+
+Owner SSH-команда при **отдельном разрешении на изменение сетевой
+политики** из текущего production SHA (путь не должен указывать на
+устаревший release):
+
+    sha="$(cat /var/lib/hermes-main-deploy/last-success.sha)"
+    script="/opt/hermes-agent-owner/releases/main-$sha/scripts/h191_gsc_egress_guard.py"
+    python3 -B "$script" --plan
+    python3 -B "$script" --install --confirm-owner-network-change
+    python3 -B "$script" --check
+
+**Owner rollback после завершённой установки** (только при выключенных
+GSC service/timer и точной проверке root файлов и собственных nft
+правил):
+
+    python3 -B "$script" --rollback --confirm-owner-network-change
+
+Rollback сначала убирает drop-in и guard unit, делает
+\`systemctl daemon-reload\`, подтверждает возврат исходных
+\`PrivateNetwork=yes\`, \`RestrictAddressFamilies=AF_UNIX\` и только
+после этого удаляет **собственную** nft таблицу. Другие nft таблицы
+не затрагиваются. Если состояние не совпадает с ожидаемым - HOLD.
+
+### Автоматическая безопасная ротация Google IP - отдельный guard
+
+После доставки и независимого review кода нужно обновить уже установленный
+root unit **только** через проверенный \`--upgrade-unit --confirm-owner-network-change\`.
+Новый guard сохраняет \`ProtectSystem=strict\` и \`CAP_NET_ADMIN\`,
+а запись разрешает исключительно в \`/run/lock\`, \`/etc/hermes-gsc\`
+и \`/etc/systemd/system/hermes-gsc-readonly.service.d\`.
+Google service-account JSON дополнительно защищён read-only bind mount
+\`BindReadOnlyPaths=/etc/hermes-gsc/service-account.json\`;
+весь остальной \`/etc\` остаётся read-only.
+
+До разрешения реальных GSC вызовов проверить на VPS:
+- \`--check\` после миграции unit; изменения доступных файлов/прав
+  и эффективного cgroup IPAddressDeny должны быть видны как HOLD;
+- \`systemctl start hermes-gsc-egress-guard.service\` при выключенных
+  GSC service/timer; фиксировать его exit 0 и точный набор адресов;
+- принудительную *синтетическую* ротацию в изолированном namespace/
+  unit test и негативные тесты firewall; на production не подменять DNS
+  и не снижать систему до IPAllow=any;
+- сохранение активности SSH/Caddy/Docker/Control Center, отсутствие
+  OAuth и изменения GSC timer. Повторить после смены релиза.
+
+Для будущего автономного запуска guard выполняет синхронизацию до
+старта GSC service как обязательная зависимость. Если Google DNS
+или nft не подтверждены, запуск **не происходит**. Это допустимая
+остановка ради безопасности, но не подтверждение свежего снимка.
+
+**Отдельный owner gate:** установка/включение GSC timer и
+первый реальный OAuth + 6 POST + 1 GET не разрешаются автоматически
+ни настройкой guard, ни положительными firewall тестами.
+
+### Защищённая передача SHA релиза в guard (без OAuth)
+
+На VPS каталог `/var/lib/hermes-main-deploy` принадлежит
+`hermes-deploy` и закрыт режимом 0750, а `last-success.sha` имеет
+root-only 0600. Отдельный guard systemd работает под UID 0 с ограничением
+`CapabilityBoundingSet=CAP_NET_ADMIN` и `NoNewPrivileges=yes`:
+он не должен получать `CAP_DAC_OVERRIDE` для обхода прав каталога.
+
+`LoadCredential=h191-deploy-sha:/var/lib/hermes-main-deploy/last-success.sha`
+передаёт **только публичный SHA исходного кода**, не JSON-ключ Google.
+Приватный marker читает PID1 до ограничения capabilities, а guard
+читает проверяемую копию из точного
+`/run/credentials/hermes-gsc-egress-guard.service/h191-deploy-sha`.
+Прямые root-команды по-прежнему читают исходный marker.
+Права каталогов, SSH, Google credentials и разрешённые сети не меняются.
+
+Для ранее установленного *точно совпадающего* legacy guard unit есть
+отдельный идемпотентно защищённый owner-gated переход. Выполнять от
+root только после успешной доставки новой версии в текущий release,
+при остановленных/отключённых GSC service и timer:
+
+    sha="$(cat /var/lib/hermes-main-deploy/last-success.sha)"
+    script="/opt/hermes-agent-owner/releases/main-$sha/scripts/h191_gsc_egress_guard.py"
+    /usr/bin/python3 -I -B "$script" --upgrade-unit --confirm-owner-network-change
+    systemctl reset-failed hermes-gsc-egress-guard.service
+    systemctl start hermes-gsc-egress-guard.service
+    /usr/bin/python3 -I -B "$script" --check
+
+`--upgrade-unit` отказывается от неожиданных изменённых файлов и
+дополнительных systemd drop-in, сверяет существующую nft таблицу,
+текущий UID и ограниченный cgroup GSC. Переписывает атомарно **только**
+`hermes-gsc-egress-guard.service`, оставляя IP/nft правила неизменными.
+При ошибке проверки новой конфигурации выполняется восстановление
+предыдущего unit-файла. Нет запуска OAuth или GSC service/timer.
+Если `--ensure` остановится из-за смены Google DNS, разрешено только
+исправление в рамках ранее одобренной UID-scoped политики, а не
+расширение доступа к Интернету.
+
+При частичной ошибке первой установки до записи всех файлов
+автоматический rollback намеренно **не выполняется**: если nft UID-drop
+уже создан, он остаётся в force-deny до ручной диагностики. Не удалять
+такую таблицу ради запуска GSC.
+
+**Незавершённые gates:** проверить доставку кода и 15 offline тестов,
+прямой root \`--plan\`, успешный \`--install\`, фактические
+systemd+UID nft IPv4/IPv6 TCP 443 allow/deny на production,
+наличие DNS и TLS-проверки обоих Google endpoints, отказ чужому IP
+и порту, системные службы и rollback. До этого статус
+\`H191_GOOGLE_ONLY_EGRESS=HOLD\`. Даже после PASS
+\`OAUTH_LIVE=NOT_RUN\`, \`GSC_7_API=NOT_RUN\`,
+\`SYSTEMD_TIMER=DISABLED\` до отдельного разрешения.
+
+### H191 - точечное обновление Google IP после ротации (без OAuth)
+
+При фактической проверке на VPS (02.11.2026) один из двух хостов,
+`oauth2.googleapis.com`, сменил A/AAAA адреса: из-под root HTTPS
+к актуальному IPv4 проходил, а `hermes-gsc` останавливался системой
+UID-scoped nft. `www.googleapis.com` по закреплённым адресам
+оставался доступен. **Это штатный отказ при устаревших /32-/128 pins,
+не основание отключать DENY_ALL.**
+
+Подготовлена отдельная однократная owner-gated операция,
+`--refresh-pins --confirm-owner-network-change`:
+
+- Только при `hermes-gsc-readonly.service` и `.timer` в
+  `inactive/disabled`; existing nft JSON, policy 0600, drop-in 0644,
+  effective cgroup IPAddressDeny=any, UID, release SHA и ключевые
+  метаданные должны точно совпадать с ранее разрешённым состоянием.
+- Новые IP берутся исключительно из DNS двух фиксированных Google
+  hostname и проверяются по свежим публичным `goog.json` минус
+  Google Cloud customer ranges. Только индивидуальные /32-/128,
+  никакого `0.0.0.0/0`, SOCKS/HTTP прокси или дополнительных портов.
+- В одном `nft -f` transaction заменяется только таблица
+  `inet hermes_gsc_egress`: новая UID allowlist плюс обязательный
+  `meta skuid ... drop` в конце. Сначала переключается nft, затем
+  атомарно обновляются **только** root-owned policy/drop-in и
+  `systemctl daemon-reload`. Между этапами действуют пересекающиеся
+  ограничения nft и systemd, разрешённая сеть не расширяется.
+- Постпроверка требует exact nft JSON, effective systemd allowlist,
+  запрещённые service/timer и соответствие pinned release.
+  При частичной ошибке выполняется попытка восстановления прежних
+  exact state; если она не подтверждена, `HOLD` без ослабления firewall.
+- `--refresh-pins` не запускает OAuth, GSC API, service/timer и не
+  обновляет расписание. Повторные ручные операции без изменений
+  должны завершаться `PASS_UNCHANGED`.
+
+Пример отдельной операции владельца после доставки, с прямого
+доверенного root-терминала (после owner network-change approval):
+
+```bash
+sha="$(cat /var/lib/hermes-main-deploy/last-success.sha)"
+script="/opt/hermes-agent-owner/releases/main-$sha/scripts/h191_gsc_egress_guard.py"
+python3 -I -B "$script" --check
+python3 -I -B "$script" --refresh-pins --confirm-owner-network-change
+python3 -I -B "$script" --check
+```
+
+**Автоматизация DNS rotation не включена этой командой.** Для
+полностью автономной работы нужен отдельно проверенный краткоживущий
+root guard refresh перед дневным запуском, который не отключает
+cgroup DENY_ALL и не пытается исполнить live GSC при непроверенных
+адресах. До подтверждённого интеграционного E2E таймер остаётся OFF.
 
 ## Статусы исполнения и измерений
 

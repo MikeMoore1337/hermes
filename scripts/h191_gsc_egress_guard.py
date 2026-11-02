@@ -1,0 +1,870 @@
+"""H-24/#191: owner-gated, UID-scoped Google-only network guard.
+
+No OAuth, Google Search Console calls or GSC service/timer activation.
+The root-only installer only affects its dedicated nft table and two
+namespaced systemd files; unexpected existing state is refused.
+"""
+from __future__ import annotations
+
+import argparse
+import importlib.util
+import fcntl
+import ipaddress
+import json
+import os
+from pathlib import Path
+import pwd
+import re
+import socket
+import stat
+import subprocess
+import sys
+import tempfile
+
+if __package__:
+    from .h191_google_egress_candidate import (
+        CandidateError, evaluate, public_preview_evidence,
+    )
+else:
+    # Python -I intentionally excludes the script directory from sys.path.
+    # Load ONLY the adjacent, non-symlink source in the pinned release/active
+    # root-owned scripts folder; never add cwd or arbitrary PYTHONPATH entries.
+    sibling = Path(__file__).with_name("h191_google_egress_candidate.py")
+    try:
+        meta = sibling.lstat()
+        folder = sibling.parent.stat()
+        trusted_uids = (0, os.geteuid())
+        if (
+            not stat.S_ISREG(meta.st_mode)
+            or meta.st_uid not in trusted_uids
+            or stat.S_IMODE(meta.st_mode) & 0o022
+            or meta.st_nlink != 1
+            or not stat.S_ISDIR(folder.st_mode)
+            or folder.st_uid not in trusted_uids
+            or stat.S_IMODE(folder.st_mode) & 0o022
+        ):
+            raise OSError("untrusted_sibling")
+        spec = importlib.util.spec_from_file_location(
+            "_h191_pinned_public_candidate", sibling
+        )
+        if spec is None or spec.loader is None:
+            raise OSError("no_loader")
+        candidate = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(candidate)
+    except (OSError, ImportError, SyntaxError):
+        raise SystemExit("H191_GUARD=HOLD REASON=public_candidate_source_untrusted") from None
+    CandidateError = candidate.CandidateError
+    evaluate = candidate.evaluate
+    public_preview_evidence = candidate.public_preview_evidence
+
+HOST = "vps1777112993"
+USER = "hermes-gsc"
+TABLE = "hermes_gsc_egress"
+SCHEMA = "hermes-h191-google-egress-installed-v1"
+UNIT = "hermes-gsc-readonly.service"
+TIMER = "hermes-gsc-readonly.timer"
+GUARD = "hermes-gsc-egress-guard.service"
+DEPLOY_SHA = Path("/var/lib/hermes-main-deploy/last-success.sha")
+RELEASE_CREDENTIAL = "h191-deploy-sha"
+RELEASE_CREDENTIALS_ROOT = Path("/run/credentials")
+POLICY = Path("/etc/hermes-gsc/google-egress-policy.json")
+DROPIN = Path("/etc/systemd/system/hermes-gsc-readonly.service.d/90-google-only.conf")
+GUARD_FILE = Path("/etc/systemd/system/hermes-gsc-egress-guard.service")
+LOCK = Path("/run/lock/hermes-h191-google-egress.lock")
+SOURCE = Path("/opt/hermes-agent-owner/scripts/h191_gsc_egress_guard.py")
+MAX_POLICY_BYTES = 16_384
+SYSTEMD_TIMEOUT = 8
+
+
+class GuardError(Exception):
+    """Safe, secret-free failure code."""
+
+
+def _command(parts: list[str], *, stdin: str | None = None, timeout: int = 12):
+    try:
+        return subprocess.run(
+            parts, input=stdin, text=True, capture_output=True,
+            check=False, timeout=timeout,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        raise GuardError("host_tool_unavailable") from None
+
+
+def _run(parts: list[str], *, stdin: str | None = None, timeout: int = 12) -> str:
+    result = _command(parts, stdin=stdin, timeout=timeout)
+    if result.returncode:
+        raise GuardError("host_command_failed")
+    return result.stdout.strip()
+
+
+def _sha() -> str:
+    # PID1 reads the root-owned private release marker and hands an isolated,
+    # read-only copy to this CAP_NET_ADMIN-only service via LoadCredential.
+    # Direct root CLI invocations continue to read the original marker.
+    path = DEPLOY_SHA
+    credentials_directory = os.environ.get("CREDENTIALS_DIRECTORY")
+    if credentials_directory is not None:
+        directory = Path(credentials_directory)
+        if (not directory.is_absolute()
+                or directory.parent != RELEASE_CREDENTIALS_ROOT
+                or directory.name != GUARD):
+            raise GuardError("release_credential_directory_invalid")
+        path = directory / RELEASE_CREDENTIAL
+    try:
+        value = path.read_text(encoding="ascii").strip()
+    except (OSError, UnicodeError):
+        raise GuardError("deployed_release_unavailable") from None
+    if not re.fullmatch(r"[a-f0-9]{40}", value):
+        raise GuardError("deployed_release_invalid")
+    return value
+
+
+def _identity() -> tuple[int, int]:
+    if os.geteuid() != 0:
+        raise GuardError("root_required")
+    if socket.gethostname().split(".")[0] != HOST:
+        raise GuardError("wrong_host")
+    try:
+        user = pwd.getpwnam(USER)
+    except KeyError:
+        raise GuardError("service_identity_missing") from None
+    if user.pw_uid <= 0 or user.pw_gid <= 0:
+        raise GuardError("service_identity_invalid")
+    source = Path(__file__).resolve()
+    current = Path("/opt/hermes-agent-owner/releases") / (
+        "main-" + _sha()
+    ) / "scripts/h191_gsc_egress_guard.py"
+    if not current.is_file() or source not in (current, SOURCE.resolve()):
+        raise GuardError("source_not_current_release")
+    try:
+        if SOURCE.is_symlink() or SOURCE.read_bytes() != current.read_bytes():
+            raise GuardError("active_source_not_current_release")
+        for p in (current, SOURCE):
+            if p.stat().st_uid != 0 or p.is_symlink():
+                raise GuardError("source_not_root_owned")
+    except OSError:
+        raise GuardError("source_verification_unavailable") from None
+    return user.pw_uid, user.pw_gid
+
+
+def _key_metadata(uid: int, gid: int) -> None:
+    # Never open or parse credential bytes, even in diagnostics.
+    path = Path("/etc/hermes-gsc/service-account.json")
+    try:
+        m = path.lstat()
+    except OSError:
+        raise GuardError("credential_metadata_missing") from None
+    if (not stat.S_ISREG(m.st_mode) or m.st_uid != uid
+            or m.st_gid != gid or stat.S_IMODE(m.st_mode) != 0o400
+            or m.st_nlink != 1 or not 64 <= m.st_size <= 32_768):
+        raise GuardError("credential_metadata_unsafe")
+
+
+def _unit_state(install: bool) -> None:
+    for name in (UNIT, TIMER):
+        if _run(["systemctl", "show", "-P", "ActiveState", name],
+                timeout=SYSTEMD_TIMEOUT) != "inactive":
+            raise GuardError("gsc_unit_not_inactive")
+        # systemctl is-enabled returns exit 1 for a correctly disabled unit;
+        # _run rejects nonzero exits. UnitFileState is exit-0 metadata.
+        if install and _run(["systemctl", "show", "-P", "UnitFileState", name],
+                            timeout=SYSTEMD_TIMEOUT) != "disabled":
+            raise GuardError("gsc_unit_not_disabled")
+
+
+def _pin_addresses(pins: tuple[str, ...]) -> tuple[list[str], list[str]]:
+    if not isinstance(pins, tuple) or not 1 <= len(pins) <= 32:
+        raise GuardError("pins_invalid")
+    v4: set[str] = set()
+    v6: set[str] = set()
+    for pin in pins:
+        try:
+            value = ipaddress.ip_interface(pin)
+        except (ValueError, TypeError):
+            raise GuardError("pin_invalid") from None
+        if (not value.ip.is_global or value.network.prefixlen !=
+                (32 if value.version == 4 else 128)):
+            raise GuardError("pin_not_exact_public_host")
+        (v4 if value.version == 4 else v6).add(str(value.ip))
+    if len(v4) + len(v6) != len(pins):
+        raise GuardError("duplicate_pin")
+    return sorted(v4), sorted(v6)
+
+
+def nft_program(pins: tuple[str, ...], uid: int) -> str:
+    """Create a new isolated table, then allow exact targets, otherwise drop UID."""
+    v4, v6 = _pin_addresses(pins)
+    if not isinstance(uid, int) or isinstance(uid, bool) or uid < 1:
+        raise GuardError("uid_invalid")
+    lines = [f"create table inet {TABLE}"]
+    if v4:
+        lines.append(
+            f"add set inet {TABLE} google_v4 {{ type ipv4_addr; "
+            f"elements = {{ {', '.join(v4)} }}; }}"
+        )
+    if v6:
+        lines.append(
+            f"add set inet {TABLE} google_v6 {{ type ipv6_addr; "
+            f"elements = {{ {', '.join(v6)} }}; }}"
+        )
+    lines.extend([
+        f"add chain inet {TABLE} outbound {{ type filter hook output "
+        "priority -110; policy accept; }",
+        f"add rule inet {TABLE} outbound meta skuid {uid} "
+        "ip daddr 127.0.0.53 udp dport 53 accept",
+        f"add rule inet {TABLE} outbound meta skuid {uid} "
+        "ip daddr 127.0.0.53 tcp dport 53 accept",
+    ])
+    if v4:
+        lines.append(f"add rule inet {TABLE} outbound meta skuid {uid} "
+                     "ip daddr @google_v4 tcp dport 443 accept")
+    if v6:
+        lines.append(f"add rule inet {TABLE} outbound meta skuid {uid} "
+                     "ip6 daddr @google_v6 tcp dport 443 accept")
+    lines.append(f"add rule inet {TABLE} outbound meta skuid {uid} drop")
+    return "\n".join(lines) + "\n"
+
+
+def _match(proto: str, key: str, value: str | int) -> dict:
+    left = ({"meta": {"key": key}} if proto == "meta"
+            else {"payload": {"protocol": proto, "field": key}})
+    return {"match": {"op": "==", "left": left, "right": value}}
+
+
+def nft_is_exact(payload: object, pins: tuple[str, ...], uid: int) -> bool:
+    """Reject unknown tables, chains, rules, destinations or privileges."""
+    if type(payload) is not dict or type(payload.get("nftables")) is not list:
+        return False
+    v4, v6 = _pin_addresses(pins)
+    nodes = []
+    for item in payload["nftables"]:
+        if type(item) is not dict or len(item) != 1:
+            return False
+        kind, value = next(iter(item.items()))
+        if kind == "metainfo":
+            continue
+        if kind not in ("table", "set", "chain", "rule") or type(value) is not dict:
+            return False
+        nodes.append((kind, value))
+    tables = [x for k, x in nodes if k == "table"]
+    sets = [x for k, x in nodes if k == "set"]
+    chains = [x for k, x in nodes if k == "chain"]
+    rules = [x for k, x in nodes if k == "rule"]
+    if (len(tables) != 1 or len(chains) != 1
+            or len(sets) != bool(v4) + bool(v6)
+            or len(rules) != 3 + bool(v4) + bool(v6)):
+        return False
+    if tables[0].get("family") != "inet" or tables[0].get("name") != TABLE:
+        return False
+    chain = chains[0]
+    if (chain.get("family"), chain.get("table"), chain.get("name"),
+            chain.get("hook"), chain.get("prio"), chain.get("policy"),
+            chain.get("type")) != (
+            "inet", TABLE, "outbound", "output", -110, "accept", "filter"):
+        return False
+    expected_sets = {}
+    if v4:
+        expected_sets["google_v4"] = ("ipv4_addr", v4)
+    if v6:
+        expected_sets["google_v6"] = ("ipv6_addr", v6)
+    for item in sets:
+        name = item.get("name")
+        if name not in expected_sets or item.get("family") != "inet" or item.get("table") != TABLE:
+            return False
+        kind, expected_ips = expected_sets.pop(name)
+        elems = item.get("elem")
+        if (item.get("type") != kind or type(elems) is not list
+                or not all(type(x) is str for x in elems)
+                or len(elems) != len(expected_ips)
+                or set(elems) != set(expected_ips)):
+            return False
+        if item.get("flags") or item.get("timeout") or item.get("policy"):
+            return False
+    if expected_sets:
+        return False
+    uid_match = _match("meta", "skuid", uid)
+    expected_rules = [
+        [uid_match, _match("ip", "daddr", "127.0.0.53"),
+         _match("udp", "dport", 53), {"accept": None}],
+        [uid_match, _match("ip", "daddr", "127.0.0.53"),
+         _match("tcp", "dport", 53), {"accept": None}],
+    ]
+    if v4:
+        expected_rules.append([uid_match, _match("ip", "daddr", "@google_v4"),
+                               _match("tcp", "dport", 443), {"accept": None}])
+    if v6:
+        expected_rules.append([uid_match, _match("ip6", "daddr", "@google_v6"),
+                               _match("tcp", "dport", 443), {"accept": None}])
+    expected_rules.append([uid_match, {"drop": None}])
+    if any(r.get("family") != "inet" or r.get("table") != TABLE
+           or r.get("chain") != "outbound" for r in rules):
+        return False
+    return [r.get("expr") for r in rules] == expected_rules
+
+
+def _nft_state(pins: tuple[str, ...], uid: int) -> str:
+    result = _command(["nft", "-j", "list", "table", "inet", TABLE])
+    if result.returncode:
+        tables = _run(["nft", "list", "tables"])
+        if f"table inet {TABLE}" in tables.splitlines():
+            raise GuardError("nft_inspection_failed")
+        return "MISSING"
+    try:
+        value = json.loads(result.stdout)
+    except ValueError:
+        raise GuardError("nft_json_unreadable") from None
+    if not nft_is_exact(value, pins, uid):
+        raise GuardError("nft_existing_table_drift")
+    return "EXACT"
+
+
+def _nft_create(pins: tuple[str, ...], uid: int) -> None:
+    if _nft_state(pins, uid) != "MISSING":
+        raise GuardError("nft_table_already_present")
+    program = nft_program(pins, uid)
+    _run(["nft", "-c", "-f", "-"], stdin=program)
+    _run(["nft", "-f", "-"], stdin=program)
+    if _nft_state(pins, uid) != "EXACT":
+        raise GuardError("nft_postinstall_mismatch")
+
+
+def dropin_text(pins: tuple[str, ...]) -> str:
+    _pin_addresses(pins)
+    return (
+        "# H191 guarded Google-only egress. Requires root nft guard before GSC.\n"
+        "[Unit]\n"
+        f"Requires={GUARD}\n"
+        f"After={GUARD}\n\n"
+        "[Service]\n"
+        "PrivateNetwork=no\n"
+        "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6\n"
+        "IPAddressAllow=localhost\n"
+        + "".join(f"IPAddressAllow={pin}\n" for pin in pins)
+    )
+
+
+def guard_unit_text() -> str:
+    return (
+        "[Unit]\n"
+        "Description=Hermes H191 UID-only nftables Google egress guard\n"
+        f"Before={UNIT}\n"
+        "Wants=network-online.target\n"
+        "After=network-online.target\n\n"
+        "[Service]\n"
+        "Type=oneshot\n"
+        "ExecStart=/usr/bin/python3 -I -B "
+        "/opt/hermes-agent-owner/scripts/h191_gsc_egress_guard.py --ensure\n"
+        f"LoadCredential={RELEASE_CREDENTIAL}:{DEPLOY_SHA}\n"
+        "RemainAfterExit=no\n"
+        "NoNewPrivileges=yes\n"
+        "PrivateNetwork=no\n"
+        "ProtectSystem=strict\n"
+        # Only our record, drop-in and advisory lock are writable.
+        # The Google key remains an individual read-only bind mount;
+        # the guard NEVER opens the credential contents.
+        "ReadWritePaths=/run/lock /etc/hermes-gsc "
+        "/etc/systemd/system/hermes-gsc-readonly.service.d\n"
+        "BindReadOnlyPaths=/etc/hermes-gsc/service-account.json\n"
+        "ProtectHome=yes\n"
+        "PrivateTmp=yes\n"
+        "PrivateDevices=yes\n"
+        "ProtectKernelTunables=yes\n"
+        "ProtectKernelModules=yes\n"
+        "ProtectControlGroups=yes\n"
+        "CapabilityBoundingSet=CAP_NET_ADMIN\n"
+        "AmbientCapabilities=\n"
+        "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK\n"
+        "MemoryMax=96M\n"
+        "TasksMax=20\n"
+        "RuntimeMaxSec=35\n"
+        "TimeoutStartSec=40s\n"
+    )
+
+
+def previous_guard_unit_text() -> str:
+    """Exact current deployed H191 unit, before auto-refresh permissions."""
+    new_paths = (
+        "ReadWritePaths=/run/lock /etc/hermes-gsc "
+        "/etc/systemd/system/hermes-gsc-readonly.service.d\n"
+        "BindReadOnlyPaths=/etc/hermes-gsc/service-account.json\n"
+    )
+    return guard_unit_text().replace(new_paths, "ReadWritePaths=/run/lock\n", 1)
+
+
+def legacy_guard_unit_text() -> str:
+    """Oldest exact H191 unit, before LoadCredential and auto-refresh."""
+    marker = f"LoadCredential={RELEASE_CREDENTIAL}:{DEPLOY_SHA}\n"
+    return previous_guard_unit_text().replace(marker, "", 1)
+
+
+def _replace_guard_unit(data: str) -> None:
+    """Atomically replace ONLY our root-owned systemd unit (no wide writes)."""
+    parent = GUARD_FILE.parent
+    try:
+        meta = parent.lstat()
+        if (not stat.S_ISDIR(meta.st_mode) or meta.st_uid != 0
+                or stat.S_IMODE(meta.st_mode) & 0o022):
+            raise GuardError("guard_unit_parent_unsafe")
+        fd, temporary = tempfile.mkstemp(prefix=".h191-unit-", dir=str(parent))
+    except OSError:
+        raise GuardError("guard_unit_stage_failed") from None
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            os.fchmod(stream.fileno(), 0o644)
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, GUARD_FILE)
+        directory_fd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    except OSError:
+        raise GuardError("guard_unit_replace_failed") from None
+    finally:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+
+
+def _replace_pinned_file(path: Path, data: str, mode: int) -> None:
+    """Atomically replace ONLY an existing root-owned H191 policy/drop-in."""
+    limits = {POLICY: (0o600, MAX_POLICY_BYTES),
+              DROPIN: (0o644, 8192)}
+    if path not in limits or limits[path][0] != mode:
+        raise GuardError("refresh_path_not_allowlisted")
+    _read_root_file(path, mode, limits[path][1])
+    parent = path.parent
+    try:
+        folder = parent.lstat()
+        if (not stat.S_ISDIR(folder.st_mode) or folder.st_uid != 0
+                or stat.S_IMODE(folder.st_mode) & 0o022):
+            raise GuardError("refresh_parent_untrusted")
+        if not 1 <= len(data.encode("utf-8")) <= limits[path][1]:
+            raise GuardError("refresh_data_invalid")
+        fd, temporary = tempfile.mkstemp(prefix=".h191-refresh-", dir=str(parent))
+    except OSError:
+        raise GuardError("refresh_file_stage_denied") from None
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            os.fchmod(stream.fileno(), mode)
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+        directory_fd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    except OSError:
+        raise GuardError("refresh_file_replace_failed") from None
+    finally:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+
+
+def _store_text(path: Path, data: str, mode: int) -> None:
+    # No overwrite (including symlinks). Root-only directories checked separately.
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+    try:
+        fd = os.open(path, flags, mode)
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            os.fchmod(stream.fileno(), mode)
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+    except OSError:
+        raise GuardError("policy_file_install_denied") from None
+
+
+def _read_root_file(path: Path, mode: int, maxbytes: int) -> str:
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        with os.fdopen(fd, "rb") as stream:
+            info = os.fstat(stream.fileno())
+            if (not stat.S_ISREG(info.st_mode) or info.st_uid != 0
+                    or stat.S_IMODE(info.st_mode) != mode
+                    or not 1 <= info.st_size <= maxbytes or info.st_nlink != 1):
+                raise GuardError("guard_file_unsafe")
+            raw = stream.read(maxbytes + 1)
+        return raw.decode("utf-8", "strict")
+    except GuardError:
+        raise
+    except (OSError, UnicodeError):
+        raise GuardError("guard_file_unavailable") from None
+
+
+def _pins_record(pins: tuple[str, ...], uid: int, gid: int) -> str:
+    return json.dumps({
+        "schema": SCHEMA, "host": HOST, "installer_release": _sha(),
+        "uid": uid, "gid": gid, "pins": list(pins),
+    }, sort_keys=True, separators=(",", ":")) + "\n"
+
+
+def _read_record(uid: int, gid: int) -> tuple[str, ...]:
+    raw = _read_root_file(POLICY, 0o600, MAX_POLICY_BYTES)
+    try:
+        obj = json.loads(raw)
+    except ValueError:
+        raise GuardError("guard_record_invalid") from None
+    if type(obj) is not dict or set(obj) != {
+        "schema", "host", "installer_release", "uid", "gid", "pins",
+    } or obj["schema"] != SCHEMA or obj["host"] != HOST or (
+        type(obj["uid"]) is not int or obj["uid"] != uid
+    ) or (type(obj["gid"]) is not int or obj["gid"] != gid):
+        raise GuardError("guard_record_identity_mismatch")
+    if not re.fullmatch(r"[a-f0-9]{40}", str(obj["installer_release"])):
+        raise GuardError("guard_record_release_invalid")
+    if type(obj["pins"]) is not list or not all(type(x) is str for x in obj["pins"]):
+        raise GuardError("guard_record_pins_invalid")
+    pins = tuple(obj["pins"])
+    _pin_addresses(pins)
+    return pins
+
+
+def _verify_files(pins: tuple[str, ...]) -> None:
+    if _read_root_file(DROPIN, 0o644, 8192) != dropin_text(pins):
+        raise GuardError("systemd_dropin_drift")
+    if _read_root_file(GUARD_FILE, 0o644, 8192) != guard_unit_text():
+        raise GuardError("guard_unit_drift")
+
+
+def _current_pins(uid: int) -> tuple[str, ...]:
+    try:
+        evidence = public_preview_evidence()
+        return evaluate(evidence, uid=uid)
+    except CandidateError:
+        raise GuardError("provider_dns_evidence_unverified") from None
+
+
+def _lock():
+    try:
+        descriptor = os.open(
+            LOCK, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600,
+        )
+        meta = os.fstat(descriptor)
+        if meta.st_uid != 0 or not stat.S_ISREG(meta.st_mode) or stat.S_IMODE(meta.st_mode) != 0o600:
+            raise GuardError("lock_unsafe")
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return descriptor
+    except (OSError, BlockingIOError):
+        raise GuardError("lock_unavailable") from None
+
+
+
+def _base_unit_trusted() -> None:
+    """Prove original inactive GSC unit is DENY_ALL before nft mutation."""
+    expected = {
+        "PrivateNetwork": "yes",
+        "IPAddressDeny": "0.0.0.0/0 ::/0",
+        "IPAddressAllow": "",
+        "RestrictAddressFamilies": "AF_UNIX",
+        "User": USER,
+        "Group": USER,
+        "DropInPaths": "",
+    }
+    for key, value in expected.items():
+        if _run(["systemctl", "show", "-P", key, UNIT],
+                timeout=SYSTEMD_TIMEOUT) != value:
+            raise GuardError("original_service_boundary_drift")
+
+
+
+def _installed_unit_trusted(pins: tuple[str, ...]) -> None:
+    """Verify actual systemd runtime policy, not just a text drop-in."""
+    expected = {
+        "PrivateNetwork": "no",
+        "IPAddressDeny": "0.0.0.0/0 ::/0",
+        "User": USER,
+        "Group": USER,
+        "DropInPaths": str(DROPIN),
+    }
+    for key, value in expected.items():
+        if _run(["systemctl", "show", "-P", key, UNIT],
+                timeout=SYSTEMD_TIMEOUT) != value:
+            raise GuardError("effective_service_boundary_drift")
+    address_families = set(_run([
+        "systemctl", "show", "-P", "RestrictAddressFamilies", UNIT,
+    ]).split())
+    if address_families != {"AF_UNIX", "AF_INET", "AF_INET6"}:
+        raise GuardError("effective_address_family_drift")
+    address_allow = set(_run([
+        "systemctl", "show", "-P", "IPAddressAllow", UNIT,
+    ]).split())
+    if address_allow != {"127.0.0.0/8", "::1/128", *pins}:
+        raise GuardError("effective_ip_allowlist_drift")
+    if _run(["systemctl", "show", "-P", "LoadState", GUARD]) != "loaded":
+        raise GuardError("guard_service_not_loaded")
+
+
+def install(uid: int, gid: int) -> None:
+    _unit_state(install=True)
+    _base_unit_trusted()
+    _key_metadata(uid, gid)
+    if (POLICY.exists() or POLICY.is_symlink() or
+            DROPIN.exists() or DROPIN.is_symlink() or
+            GUARD_FILE.exists() or GUARD_FILE.is_symlink()):
+        raise GuardError("preexisting_policy_files")
+    if _run(["systemctl", "show", "-P", "DropInPaths", UNIT]):
+        raise GuardError("unreviewed_existing_service_dropins")
+    private_dir = POLICY.parent
+    try:
+        meta = private_dir.lstat()
+    except OSError:
+        raise GuardError("private_policy_directory_missing") from None
+    if (not stat.S_ISDIR(meta.st_mode) or meta.st_uid != 0
+            or meta.st_gid != gid or stat.S_IMODE(meta.st_mode) != 0o750):
+        raise GuardError("private_policy_directory_unsafe")
+    folder = DROPIN.parent
+    if folder.is_symlink():
+        raise GuardError("dropin_directory_symlink")
+    created_folder = not folder.exists()
+    if not created_folder:
+        meta = folder.stat()
+        if meta.st_uid != 0 or stat.S_IMODE(meta.st_mode) != 0o755:
+            raise GuardError("dropin_directory_unsafe")
+    pins = _current_pins(uid)
+    _nft_create(pins, uid)  # Drop UID traffic BEFORE widening the unit.
+    folder.mkdir(mode=0o755, exist_ok=True)
+    if created_folder:
+        os.chmod(folder, 0o755)  # Only our new directory; honor restrictive umask.
+    if folder.stat().st_uid != 0 or stat.S_IMODE(folder.stat().st_mode) != 0o755:
+        raise GuardError("dropin_directory_unsafe")
+    _store_text(POLICY, _pins_record(pins, uid, gid), 0o600)
+    _store_text(GUARD_FILE, guard_unit_text(), 0o644)
+    _store_text(DROPIN, dropin_text(pins), 0o644)
+    _run(["systemctl", "daemon-reload"], timeout=18)
+    _verify_files(pins)
+    if _nft_state(pins, uid) != "EXACT":
+        raise GuardError("guard_postinstall_invalid")
+    _unit_state(install=True)
+    _installed_unit_trusted(pins)
+
+
+def check(uid: int, gid: int, *, ensure: bool) -> None:
+    _key_metadata(uid, gid)
+    pins = _read_record(uid, gid)
+    _verify_files(pins)
+    _installed_unit_trusted(pins)
+    if ensure:
+        # After reboot nft tables can be absent AND DNS can have rotated.
+        # Restore the old, exact, UID-restrictive guard before any refreshed
+        # cgroup allowlist or potential GSC launch. This also makes the
+        # rotation path verify the expected EXISTING table, fail closed on
+        # spoofed/drifted state, and never leave UID traffic unfiltered.
+        if _nft_state(pins, uid) == "MISSING":
+            _nft_create(pins, uid)
+        # The guard is a required dependency BEFORE GSC can start. Rotated
+        # Google IPs are reconciled here; no broad fallback or secret access.
+        current = tuple(_current_pins(uid))
+        if set(current) != set(pins):
+            refresh_pins(uid, gid, automatic=True)
+            return
+    if _nft_state(pins, uid) != "EXACT":
+        raise GuardError("network_guard_not_enforced")
+
+
+
+def upgrade_unit(uid: int, gid: int) -> None:
+    """Owner-gated migration of the exact previous unit, no nft or OAuth."""
+    _unit_state(install=True)
+    _key_metadata(uid, gid)
+    pins = _read_record(uid, gid)
+    if _nft_state(pins, uid) != "EXACT":
+        raise GuardError("guard_table_not_exact_for_upgrade")
+    if _run(["systemctl", "show", "-P", "DropInPaths", GUARD]):
+        raise GuardError("unexpected_guard_unit_dropins")
+    if _read_root_file(DROPIN, 0o644, 8192) != dropin_text(pins):
+        raise GuardError("systemd_dropin_drift")
+    legacy = _read_root_file(GUARD_FILE, 0o644, 8192)
+    if legacy not in (legacy_guard_unit_text(), previous_guard_unit_text()):
+        raise GuardError("guard_unit_legacy_drift")
+    _installed_unit_trusted(pins)
+    _replace_guard_unit(guard_unit_text())
+    try:
+        _run(["systemctl", "daemon-reload"], timeout=18)
+        _verify_files(pins)
+        _installed_unit_trusted(pins)
+        _unit_state(install=True)
+    except GuardError:
+        # No active GSC process, and nft still drops all non-Google UID traffic.
+        # Restore the reviewed previous root unit if the new effective unit
+        # cannot be proven. Never relax the GSC DENY_ALL cgroup policy.
+        _replace_guard_unit(legacy)
+        _run(["systemctl", "daemon-reload"], timeout=18)
+        raise GuardError("guard_unit_upgrade_unverified") from None
+
+
+def _automatic_refresh_gate() -> None:
+    """An on-demand guard may update pins while the daily timer is enabled.
+
+    The GSC process itself must not be running. During a systemd dependency
+    transaction GSC may be 'activating' with MainPID=0 while waiting for us.
+    """
+    state = _run(["systemctl", "show", "-P", "ActiveState", UNIT],
+                 timeout=SYSTEMD_TIMEOUT)
+    mainpid = _run(["systemctl", "show", "-P", "MainPID", UNIT],
+                   timeout=SYSTEMD_TIMEOUT)
+    if state not in ("inactive", "activating") or mainpid != "0":
+        raise GuardError("automatic_refresh_gsc_not_quiescent")
+
+
+def refresh_pins(uid: int, gid: int, *, automatic: bool = False) -> str:
+    """Refresh only freshly verified Google host pins; never enable GSC.
+
+    nft rules change atomically before any expansion of the cgroup allowlist.
+    A mismatch, DNS anomaly or incomplete rollback fails closed.
+    """
+    if automatic:
+        _automatic_refresh_gate()
+    else:
+        _unit_state(install=True)  # Explicit owner refresh requires disabled units.
+    _key_metadata(uid, gid)
+    previous = _read_record(uid, gid)
+    _verify_files(previous)
+    _installed_unit_trusted(previous)
+    if _nft_state(previous, uid) != "EXACT":
+        raise GuardError("refresh_existing_guard_not_exact")
+    old_record = _read_root_file(POLICY, 0o600, MAX_POLICY_BYTES)
+    old_dropin = dropin_text(previous)
+    release_before = _sha()
+    current = _current_pins(uid)
+    if _sha() != release_before:
+        raise GuardError("release_changed_during_refresh")
+    if set(current) == set(previous):
+        return "UNCHANGED"
+    # The new pins were checked against public Google goog.json - cloud.json,
+    # the two hardcoded DNS hostnames and a fresh timestamp by evaluate().
+    program = f"delete table inet {TABLE}\n" + nft_program(current, uid)
+    _run(["nft", "-c", "-f", "-"], stdin=program)
+    updated_record = _pins_record(current, uid, gid)
+    if _sha() != release_before:
+        raise GuardError("release_changed_during_refresh")
+    _run(["nft", "-f", "-"], stdin=program)
+    try:
+        if _nft_state(current, uid) != "EXACT":
+            raise GuardError("refresh_nft_postcommit_invalid")
+        _replace_pinned_file(POLICY, updated_record, 0o600)
+        _replace_pinned_file(DROPIN, dropin_text(current), 0o644)
+        _run(["systemctl", "daemon-reload"], timeout=18)
+        _verify_files(current)
+        _installed_unit_trusted(current)
+        # The daily timer is legitimately active/enabled during automatic
+        # DNS rotation. Re-check the GSC process, not disabled-unit metadata.
+        if automatic:
+            _automatic_refresh_gate()
+        else:
+            _unit_state(install=True)
+        if _nft_state(current, uid) != "EXACT" or _sha() != release_before:
+            raise GuardError("refresh_postinstall_state_invalid")
+        return "UPDATED"
+    except GuardError:
+        # Revert only our own files and nft table. Leave the service disabled.
+        # If rollback cannot be verified, stop and leave guard in HOLD.
+        try:
+            if _read_root_file(POLICY, 0o600, MAX_POLICY_BYTES) != old_record:
+                _replace_pinned_file(POLICY, old_record, 0o600)
+            if _read_root_file(DROPIN, 0o644, 8192) != old_dropin:
+                _replace_pinned_file(DROPIN, old_dropin, 0o644)
+            _run(["systemctl", "daemon-reload"], timeout=18)
+            if _nft_state(current, uid) != "EXACT":
+                raise GuardError("rollback_new_table_not_exact")
+            rollback_batch = f"delete table inet {TABLE}\n" + nft_program(previous, uid)
+            _run(["nft", "-c", "-f", "-"], stdin=rollback_batch)
+            _run(["nft", "-f", "-"], stdin=rollback_batch)
+            _verify_files(previous)
+            _installed_unit_trusted(previous)
+            if _nft_state(previous, uid) != "EXACT":
+                raise GuardError("rollback_guard_not_restored")
+        except GuardError:
+            raise GuardError("refresh_rollback_incomplete") from None
+        raise GuardError("refresh_failed_rolled_back") from None
+
+
+def rollback(uid: int, gid: int) -> None:
+    """Owner-only exact-state rollback. Restore DENY_ALL before deleting nft."""
+    _unit_state(install=True)
+    pins = _read_record(uid, gid)
+    _verify_files(pins)
+    state = _nft_state(pins, uid)
+    if state not in ("EXACT", "MISSING"):
+        raise GuardError("nft_rollback_state_untrusted")
+    # A symlink or unexpected file cannot be removed as if owned by this tool.
+    for path in (DROPIN, GUARD_FILE, POLICY):
+        if not path.is_file() or path.is_symlink():
+            raise GuardError("rollback_file_untrusted")
+    # Keep restrictive nft OUTPUT chain while restoring GSC systemd DENY_ALL.
+    DROPIN.unlink()
+    GUARD_FILE.unlink()
+    POLICY.unlink()
+    _run(["systemctl", "daemon-reload"], timeout=18)
+    _base_unit_trusted()
+    _unit_state(install=True)
+    if state == "EXACT":
+        _run(["nft", "delete", "table", "inet", TABLE])
+        if _nft_state(pins, uid) != "MISSING":
+            raise GuardError("rollback_nft_table_still_present")
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    a = parser.add_mutually_exclusive_group(required=True)
+    a.add_argument("--plan", action="store_true")
+    a.add_argument("--install", action="store_true")
+    a.add_argument("--check", action="store_true")
+    a.add_argument("--ensure", action="store_true")
+    a.add_argument("--rollback", action="store_true")
+    a.add_argument("--upgrade-unit", action="store_true")
+    a.add_argument("--refresh-pins", action="store_true")
+    parser.add_argument("--confirm-owner-network-change", action="store_true")
+    args = parser.parse_args(argv)
+    try:
+        uid, gid = _identity()
+        if args.plan:
+            if args.confirm_owner_network_change:
+                raise GuardError("unexpected_owner_confirmation_for_plan")
+            _unit_state(install=True)
+            _key_metadata(uid, gid)
+            pins = _current_pins(uid)
+            if _nft_state(pins, uid) != "MISSING":
+                raise GuardError("preexisting_guard_table")
+            _run(["nft", "-c", "-f", "-"], stdin=nft_program(pins, uid))
+            print("H191_GUARD_PLAN=PASS_NO_MUTATION")
+            return 0
+        if args.confirm_owner_network_change != (args.install or args.rollback or args.upgrade_unit or args.refresh_pins):
+            raise GuardError("owner_approval_required_or_unexpected")
+        fd = _lock()
+        try:
+            if args.install:
+                install(uid, gid)
+                print("H191_GUARD_INSTALLED=PASS")
+                print("H191_GSC_SERVICE=INACTIVE_DISABLED")
+                print("H191_GSC_TIMER=INACTIVE_DISABLED")
+            elif args.rollback:
+                rollback(uid, gid)
+                print("H191_GUARD_ROLLBACK=PASS")
+            elif args.upgrade_unit:
+                upgrade_unit(uid, gid)
+                print("H191_GUARD_UNIT_UPGRADE=PASS")
+            elif args.refresh_pins:
+                state = refresh_pins(uid, gid)
+                print("H191_GUARD_PIN_REFRESH=PASS_" + state)
+            else:
+                check(uid, gid, ensure=args.ensure)
+                print("H191_GUARD_" + ("ENSURE" if args.ensure else "CHECK") + "=PASS")
+            print("H191_GOOGLE_OAUTH=NOT_RUN")
+            return 0
+        finally:
+            os.close(fd)
+    except GuardError as exc:
+        print("H191_GUARD=HOLD REASON=" + str(exc), file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

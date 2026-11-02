@@ -1,0 +1,263 @@
+/*
+ * Hermes Orbit 3.0 - shared visual contract for all existing Control Center
+ * modules, including legacy read-only widgets injected by the H-15 server.
+ * Approved design: graphite/navy surfaces, ice-blue focus, winged-H branding,
+ * Inter UI stack, mono only for technical data, Lucide 1.7px strokes.
+ * Visual-only: never infer service health or enable actions from a color token.
+ */
+.theme-orbit{
+ --orbit-font-ui:Inter,"Segoe UI",Arial,sans-serif;
+ --orbit-font-mono:Consolas,"SFMono-Regular","Liberation Mono",monospace;
+ --orbit-bg:#050d17;
+ --orbit-rail:#07121f;
+ --orbit-panel:#0b1d2c;
+ --orbit-panel-alt:#0e2639;
+ --orbit-panel-inset:#091b2b;
+ --orbit-border:#2b4b64;
+ --orbit-border-strong:#426a86;
+ --orbit-text:#eaf4ff;
+ --orbit-subtext:#abc7dd;
+ --orbit-muted:#91b2cb;
+ --orbit-accent:#8cccf4;
+ --orbit-accent-strong:#b5e5ff;
+ --orbit-focus:#b7e5ff;
+ --orbit-good:#84d9be;
+ --orbit-warning:#f0be82;
+ --orbit-danger:#f3a3ad;
+ --orbit-radius:4px;
+ --orbit-touch:40px;
+ /* Legacy widget CSS reads these names. Keep them scoped to Orbit only. */
+ --surface:var(--orbit-panel);
+ --panel:var(--orbit-panel);
+ --raised:var(--orbit-panel-alt);
+ --line:var(--orbit-border);
+ --line-dim:var(--orbit-border);
+ --soft:var(--orbit-subtext);
+ --muted:var(--orbit-muted);
+ --blue:var(--orbit-accent);
+ --white:var(--orbit-text);
+ --good:var(--orbit-good);
+ --warn:var(--orbit-warning);
+ font-family:var(--orbit-font-ui);
+ color:var(--orbit-text);
+}
+.theme-orbit :is(button,input,textarea,select,option){
+ font-family:var(--orbit-font-ui);
+}
+.theme-orbit :is(code,pre,kbd,samp,.orbit-section-code,.orbit-graph-label,.orbit-node-category,.orbit-overline,.oc-path code){
+ font-family:var(--orbit-font-mono);
+}
+.theme-orbit :is(.oi-root,.ye-root,.codex-panel,.oc-page,.ai272-panel,.infra294-panel,.quota295-panel){
+ color:var(--orbit-text);
+ font-family:var(--orbit-font-ui);
+}
+.theme-orbit :is(.oi-header h1,.oi-metric strong,.oi-queue-head h2,.oi-sources h2,.oi-detail h3,.ye-header h1){
+ font-family:var(--orbit-font-ui);
+ font-weight:720;
+ letter-spacing:-.025em;
+}
+.theme-orbit .oi-header h1{
+ font-size:clamp(27px,3vw,36px);
+ line-height:1.17;
+}
+.theme-orbit .oi-metric strong{
+ font-size:clamp(23px,2.4vw,31px);
+ line-height:1.1;
+ font-variant-numeric:tabular-nums;
+}
+.theme-orbit :is(.oi-queue-head h2,.oi-sources h2,.oi-detail h3){
+ font-size:19px;
+ font-weight:700;
+}
+.theme-orbit .oi-root{
+ padding-top:0;
+}
+.theme-orbit .oi-overline{
+ color:var(--orbit-accent);
+ font-family:var(--orbit-font-mono);
+ letter-spacing:.08em;
+}
+.theme-orbit :is(.oi-queue,.oi-sources,.oi-detail,.oi-placeholder,.oi-metric,.ye-login,.ye-queue,.ye-paper,.ye-modal,.ye-receipt,.codex-panel,.oc-panel,.registry-panel,.right-panel,.context-panel){
+ background:var(--orbit-panel);
+ border:1px solid var(--orbit-border);
+ border-radius:var(--orbit-radius);
+ box-shadow:none;
+}
+.theme-orbit :is(.oi-row-mark,.oi-queue-count,.oi-filters button,.oi-state,.oi-search,.ye-claim,.ye-queue-status,.ye-login-controls button,.ye-paper-tools button,.ye-paper-actions button,.ye-modal-actions button,.codex-chip,.codex-chart-wrap,.codex-periods button){
+ border-radius:var(--orbit-radius);
+}
+.theme-orbit :is(.oi-refresh,.oi-placeholder button,.ye-login-controls button,.ye-paper-tools button,.ye-paper-actions button,.ye-modal-actions button,.codex-periods button){
+ border-color:var(--orbit-border-strong);
+ color:var(--orbit-text);
+}
+.theme-orbit :is(.oi-search,.ye-login-controls input,.codex-chart-wrap,.codex-message){
+ background:var(--orbit-panel-inset);
+ border-color:var(--orbit-border);
+}
+.theme-orbit :is(.oi-row,.ye-queue-item){
+ border-bottom-color:var(--orbit-border);
+}
+.theme-orbit :is(.oi-row:hover,.oi-row.is-selected,.ye-queue-item:hover,.ye-queue-item.ye-selected){
+ background:var(--orbit-panel-alt);
+}
+.theme-orbit :is(.oi-row.is-selected,.ye-queue-item.ye-selected){
+ box-shadow:inset 2px 0 var(--orbit-accent);
+}
+.theme-orbit :is(.oi-row-copy small,.oi-detail p,.ye-header p,.ye-description,.codex-message){
+ color:var(--orbit-subtext);
+}
+.theme-orbit :is(.oi-metric-label,.oi-queue-count,.ye-overline,.codex-chip){
+ color:var(--orbit-accent);
+}
+.theme-orbit .oi-notice{
+ border-radius:var(--orbit-radius);
+}
+.theme-orbit :is(.ye-root,.codex-panel){
+ min-width:0;
+}
+.theme-orbit .ye-header h1{
+ font-size:clamp(27px,3vw,36px);
+}
+.theme-orbit .ye-queue-status{
+ color:var(--orbit-accent);
+ border-color:var(--orbit-border-strong);
+}
+.theme-orbit .ye-paper{
+ background:var(--orbit-panel);
+}
+.theme-orbit .ye-claim{
+ background:var(--orbit-panel-inset);
+ border-color:var(--orbit-border);
+}
+.theme-orbit .ye-section h3{
+ font-family:var(--orbit-font-ui);
+ font-weight:700;
+}
+.theme-orbit .ye-modal{
+ border-color:var(--orbit-border-strong);
+}
+.theme-orbit .codex-panel{
+ gap:16px;
+}
+.theme-orbit .codex-chart-wrap{
+ border-color:var(--orbit-border);
+}
+.theme-orbit :is(.codex-track-fill,.ai272-fill,.infra294-fill:not(.infra294-high):not(.infra294-critical),.quota295-fill:not(.quota295-warning):not(.quota295-critical)){
+ background:var(--orbit-accent);
+}
+.theme-orbit :is(.codex-panel,.oi-root,.ye-root,.oc-page) svg.lucide{
+ stroke-width:1.7px;
+}
+.theme-orbit .orbit-module-shell>:not(.oc-page){
+ min-width:0;
+}
+.theme-orbit .orbit-module-intro{
+ display:flex;
+ align-items:center;
+ gap:15px;
+ padding:4px 0 10px;
+ border-bottom:1px solid var(--orbit-border);
+ min-width:0;
+}
+.theme-orbit .orbit-module-intro-icon{
+ display:grid;place-items:center;
+ width:42px;height:42px;flex:0 0 42px;
+ background:var(--orbit-panel-alt);
+ border:1px solid var(--orbit-border-strong);
+ color:var(--orbit-accent);
+}
+.theme-orbit .orbit-module-intro h1{
+ margin:0;
+ font-family:var(--orbit-font-ui);
+ font-size:clamp(25px,2.8vw,33px);
+ letter-spacing:-.025em;
+ line-height:1.15;
+}
+.theme-orbit .orbit-module-intro p{
+ margin:7px 0 0;
+ font-size:12px;
+ color:var(--orbit-subtext);
+ line-height:1.6;
+ max-width:70ch;
+}
+.theme-orbit :is(.ai272-panel,.infra294-panel,.quota295-panel){
+ background:var(--orbit-panel);
+ border:1px solid var(--orbit-border);
+ border-radius:var(--orbit-radius);
+ box-shadow:none;
+ font-family:var(--orbit-font-ui);
+ padding:clamp(14px,1.6vw,22px);
+}
+.theme-orbit :is(.ai272-head h2,.infra294-head h2,.quota295-head h2){
+ font-family:var(--orbit-font-ui);
+ font-weight:700;
+ letter-spacing:-.025em;
+ font-size:clamp(21px,2.2vw,26px);
+ line-height:1.2;
+ display:flex;
+ align-items:center;
+ gap:12px;
+ margin:7px 0 9px;
+}
+.theme-orbit :is(.ai272-metric,.infra294-card,.quota295-card,.quota295-window){
+ background:var(--orbit-panel-inset);
+ border:1px solid var(--orbit-border);
+ border-radius:var(--orbit-radius);
+ box-shadow:none;
+}
+.theme-orbit :is(.ai272-controls select,.ai272-controls button,.infra294-refresh,.infra294-toolbar select,.quota295-reload,.quota295-history select){
+ border:1px solid var(--orbit-border-strong);
+ background:var(--orbit-panel-alt);
+ color:var(--orbit-text);
+ border-radius:var(--orbit-radius);
+ min-height:var(--orbit-touch);
+ font-family:var(--orbit-font-ui);
+}
+.theme-orbit :is(.ai272-status,.infra294-state,.quota295-status){
+ border-radius:var(--orbit-radius);
+ border-color:var(--orbit-border-strong);
+ color:var(--orbit-subtext);
+}
+.theme-orbit :is(.ai272-head p,.infra294-hint,.quota295-note,.quota295-timestamp){
+ color:var(--orbit-subtext);
+}
+.theme-orbit :is(.ai272-summary strong,.infra294-label strong,.quota295-values,.codex-task-count strong){
+ font-variant-numeric:tabular-nums;
+}
+.theme-orbit :is(.ai272-source,.infra294-history,.quota295-history){
+ border-color:var(--orbit-border);
+}
+.theme-orbit :is(.ai272-panel,.infra294-panel,.quota295-panel,.codex-panel) :is(button,select,summary):focus-visible{
+ outline:2px solid var(--orbit-focus);
+ outline-offset:3px;
+}
+.theme-orbit .orbit-nav-icon svg{
+ width:18px;
+ height:18px;
+ stroke-width:1.7px;
+ flex:none;
+}
+.theme-orbit .orbit-panel-icon{
+ display:inline-grid;
+ place-items:center;
+ width:32px;height:32px;flex:none;
+ background:var(--orbit-panel-alt);
+ border:1px solid var(--orbit-border-strong);
+ color:var(--orbit-accent);
+}
+.theme-orbit .orbit-panel-icon svg{width:18px;height:18px;stroke-width:1.7px}
+.theme-orbit ::selection{background:#31628c;color:#fff}
+.theme-orbit :is(.oi-root,.ye-root,.codex-panel,.oc-page,.ai272-panel,.infra294-panel,.quota295-panel) :is(button,a,input,select,summary):focus-visible{
+ outline-color:var(--orbit-focus);
+}
+@media(max-width:650px){
+ .theme-orbit .orbit-module-intro{gap:10px}
+ .theme-orbit .orbit-module-intro-icon{width:36px;height:36px;flex-basis:36px}
+ .theme-orbit :is(.oi-queue,.oi-sources,.oi-detail,.ye-login,.ye-queue,.ye-paper,.codex-panel,.oc-panel){
+  border-radius:var(--orbit-radius);
+ }
+ .theme-orbit :is(.ai272-panel,.infra294-panel,.quota295-panel){padding:14px}
+}
+@media(prefers-reduced-motion:reduce){
+ .theme-orbit .orbit-panel-icon,.theme-orbit .orbit-module-intro-icon{transition:none}
+}

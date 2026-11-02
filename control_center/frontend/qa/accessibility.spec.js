@@ -47,6 +47,8 @@ test("public GitHub login is accessible by Tab without protected data",async({pa
  const login=page.getByRole("link",{name:"Войти через GitHub"});
  await expect(login).toHaveAttribute("href","/auth/github/start");
  await page.keyboard.press("Tab");
+ await expect(page.getByRole("link",{name:"Перейти к форме входа"})).toBeFocused();
+ await login.focus();
  await expect(login).toBeFocused();
  const outline=await login.evaluate(el=>getComputedStyle(el).outlineStyle);
  expect(outline,"Keyboard focus has a visible outline").not.toBe("none");
@@ -109,7 +111,7 @@ for(const width of [320,393,1440]){
  test(`accessible controls remain usable at ${width}px`,async({page})=>{
   await page.setViewportSize({width,height:844});
   await fixture(page);await page.goto("/");
-  const overview=page.locator(".atlas-section-nav").getByRole("button",{name:"Обзор"});
+  const overview=width<=980?page.locator(".orbit-app-mobilebar").getByRole("button",{name:"Обзор"}):page.locator(".atlas-section-nav").getByRole("button",{name:"Обзор"});
   await expect(overview).toBeVisible();
   const search=page.getByRole("textbox",{name:"Поиск по службам"});
   await search.focus();await search.fill("Ops");

@@ -248,11 +248,22 @@ def build_packet(payload: object) -> dict[str, Any]:
             science = from_daily_item(payload["research_item"], theme=theme)
         except ContentBriefError:
             raise SeoResearchDenied("research_source_invalid") from None
-    gap = _gap_row(payload["site_gap"], query)
+    # A real source can provide observations before any Statejnik gap exists.
+    # In that case, preserve "NOT_ASSESSED" rather than fabricating coverage.
+    # The historical H-12 gap contract is unchanged for non-null inputs.
+    if payload["site_gap"] is None:
+        if theme != "market_research":
+            raise SeoResearchDenied("site_gap_required_for_science")
+        gap = None
+    else:
+        gap = _gap_row(payload["site_gap"], query)
     observations = normalize_observations(payload["observations"], as_of=as_of)
-    matching = [v for v in observations if v["query"].casefold() ==
-                query.casefold() and query.casefold() in
-                {p.casefold() for p in gap["phrases"]}]
+    matching = [
+        v for v in observations
+        if v["query"].casefold() == query.casefold()
+        and (gap is None or query.casefold() in
+             {p.casefold() for p in gap["phrases"]})
+    ]
     fresh = [v for v in matching if not v["stale"] and
              v["data_quality"] in {"SYNTHETIC_TEST_ONLY",
                                    "OWNER_ATTESTED_NOT_PROVIDER_VERIFIED"}]
@@ -261,7 +272,9 @@ def build_packet(payload: object) -> dict[str, Any]:
     reasons: list[str] = []
     if science is not None and science["status"] == "HOLD":
         reasons.append("SCIENTIFIC_HOLD")
-    if gap["covered_by"] or gap["maybe_covered"]:
+    if gap is None:
+        reasons.append("SITE_GAP_NOT_ASSESSED")
+    elif gap["covered_by"] or gap["maybe_covered"]:
         reasons.append("EXISTING_PAGE_REQUIRES_EDITORIAL_COMPARISON")
     if not positive:
         reasons.append("NO_FRESH_ATTESTED_SEARCH_DEMAND")
@@ -269,7 +282,8 @@ def build_packet(payload: object) -> dict[str, Any]:
         reasons.append("CONFLICTING_SEARCH_INTENT")
     status = ("HOLD" if "SCIENTIFIC_HOLD" in reasons or
               "EXISTING_PAGE_REQUIRES_EDITORIAL_COMPARISON" in reasons or
-              "CONFLICTING_SEARCH_INTENT" in reasons else
+              "CONFLICTING_SEARCH_INTENT" in reasons or
+              (gap is None and positive) else
               "NO_DATA" if not positive else "READY_FOR_REVIEW")
     packet: dict[str, Any] = {
         "schema": OUTPUT_SCHEMA,
@@ -294,7 +308,7 @@ def build_packet(payload: object) -> dict[str, Any]:
                    "Ограничения исследования", "Вопросы читателей"],
             "questions": [science["proposed_question"]] if science else [],
             "suggested_internal_links": ([gap["nearest_url"]]
-                                         if gap["nearest_url"] else []),
+                                         if gap is not None and gap["nearest_url"] else []),
             "proposed_scientific_claims": [],
             # #317 external expert certification was cancelled by the owner.
             # Source and claim checks remain separate from expert signoff.
@@ -325,9 +339,15 @@ def render_markdown(packet: dict[str, Any]) -> str:
         "Статус: " + packet["status"],
         "Тип данных: " + packet["evidence_kind"],
         "Поисковое намерение: " + packet["search_intent"],
-        "Существующая страница: " + (gap["covered_by"] or "NO_DATA"),
-        "Ближайшая страница: " + (gap["nearest_url"] or "NO_DATA"),
-        "Метод проверки покрытия: " + gap["method"],
+        "Существующая страница: " + (
+            "NOT_ASSESSED" if gap is None else (gap["covered_by"] or "NO_DATA")
+        ),
+        "Ближайшая страница: " + (
+            "NOT_ASSESSED" if gap is None else (gap["nearest_url"] or "NO_DATA")
+        ),
+        "Метод проверки покрытия: " + (
+            "NOT_ASSESSED" if gap is None else gap["method"]
+        ),
         "",
         "## Источники поискового спроса",
     ]

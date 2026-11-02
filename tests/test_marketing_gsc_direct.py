@@ -91,6 +91,29 @@ class GscRuntimeTests(unittest.TestCase):
         self.assertFalse(result["yfc_write_allowed"])
         self.assertEqual(result, collect(fixture_fetch()[0], as_of=date(2026, 10, 19)))
 
+    def test_domain_property_variants_survive_full_offline_collection(self):
+        base_fetch, _ = fixture_fetch()
+
+        def domain_fetch(method, url, body):
+            payload = copy.deepcopy(base_fetch(method, url, body))
+            if method == "GET":
+                payload["sitemap"][0]["path"] = (
+                    "http://www.your-fitness-coach.ru/sitemap.xml")
+            elif body["dimensions"] == ["page"]:
+                payload["rows"][0]["keys"][0] = (
+                    "https://app.your-fitness-coach.ru/calculators/1rm")
+            return payload
+
+        report = collect(domain_fetch, as_of=date(2026, 10, 19))
+        self.assertEqual(report["request_count"], 7)
+        self.assertEqual(
+            report["reports"]["page"]["rows"][0]["page"],
+            "https://app.your-fitness-coach.ru/calculators/1rm")
+        self.assertEqual(
+            report["reports"]["sitemaps"]["rows"][0]["sitemap_url"],
+            "http://www.your-fitness-coach.ru/sitemap.xml")
+        self.assertFalse(report["provider_verified"])
+
     def test_empty_rows_do_not_fake_zero_traffic_or_complete_date(self):
         def empty(method, url, body):
             return {} if method == "POST" else {"sitemap": []}

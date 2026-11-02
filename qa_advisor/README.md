@@ -56,3 +56,98 @@ workflow даёт \`UNKNOWN\`, а не ложное OK.
 После [PR #88](https://github.com/MikeMoore1337/hermes/pull/88) и успешного CI установлены `hermes-qa-watch.service` и `hermes-qa-watch.timer` с частотой 15 минут и без повторов/догоняющих запусков. Первый реальный запрос вернул `SUCCESS`, записал только минимальный сигнал в `/var/lib/hermes-qa-watch/ci-signal.json` (`0600 root:root`). Ops Watch collector вручную проверен после установки: `active_codes=[]`, queue 0, новостной конвейер и Telegram sender активны. [Доказательства и rollback](../docs/audits/H-04-private-ci-watch-vps-2026-10-15.md).
 
 Появление нового CI failure ведёт к событию `ci_failed` в **том же уже разрешённом** Telegram-канале Ops Watch. Пока настоящий красный `main` workflow не возник, такая автоматическая доставка не доказана. При UNKNOWN/RUNNING и устаревшем ответе API ранее открытый инцидент не закрывается. Read-only API, без доступа к сырым логам или изменению GitHub.
+
+## GitHub Events: наблюдение за задачами и PR (Issue #707)
+
+В дополнение к прежнему 15-минутному CI-наблюдателю добавлен **событийный**, а не периодический режим: [`.github/workflows/github-event-observe.yml`](../.github/workflows/github-event-observe.yml) обрабатывает события GitHub от репозитория Hermes. Он запускается в бесплатном GitHub Actions на `issues.opened/reopened`, `issue_comment.created`, `pull_request_target.opened/reopened/synchronize/ready_for_review` и `workflow_run.completed` **только для существующего Hermes repository checks на main**. Внешние REST/MCP запросы и новые PAT не требуются. Сам CI-наблюдатель `watch_once`, его защищённый токен и действующий таймер **не изменены**.
+
+Запуск события выполняет `python3 -m qa_advisor.github_event_observe --observe --event "$GITHUB_EVENT_NAME"` над единственным переданным GitHub JSON-файлом. Используется строго основной исходный код (`main`) с закреплённым для события SHA; `pull_request_target` никогда не исполняет код участника PR. GITHUB_TOKEN не передаётся скрипту; разрешение Actions ограничено `contents: read` и ничего не записывает в GitHub. Результат находится **только в журнале и Summary соответствующего GitHub Actions запуска**, а не в Hermes Control Center.
+
+**Уточнение #712:** GitHub Actions закрепляет `actions/checkout` на `${{ github.sha }}`, а не на движущемся `main`. Для разрешённых событий (`issues`, `issue_comment`, `pull_request_target`, `workflow_run`) это Git-коммит канонической базовой ветки, а не PR HEAD. Контроль `git rev-parse HEAD == GITHUB_SHA` сохранён. Этим устранена гонка [GitHub Actions #41343189948](https://github.com/MikeMoore1337/hermes/actions/runs/41343189948), где после события `main` успела измениться и проверка ошибочно завершилась отказом.
+
+Режим `--summary` формирует **читаемую рекомендацию на русском языке** с ссылкой на конкретный Issue, PR или CI run. Ссылка составляется только из заранее фиксированного GitHub-репозитория и строго проверенного числового ID, а не из текста или URL события. Без `--summary` CLI, как и раньше, возвращает один JSON-объект. Отчёт не отправляется во внешний канал и не предоставляет полномочий на выполнение.
+
+| Событие | Безопасное предложение | Состояние |
+| --- | --- | --- |
+| Создана/переоткрыта задача | `REVIEW_ISSUE` | `WOULD_REVIEW` |
+| Новый комментарий в Issue или PR | `REVIEW_FOLLOWUP` | `WOULD_REVIEW` |
+| Создан/обновлён PR в main | `REVIEW_PR` | `WOULD_REVIEW` |
+| Сбой обязательного CI на main | `REVIEW_CI_FAILURE` | `WOULD_REVIEW` |
+| Успех обязательного CI на main | `NONE` | `NO_REVIEW` |
+| Отменённый/неподтверждённый CI | `REVIEW_CI_UNCERTAIN` | `WOULD_REVIEW` |
+
+Вывод содержит только фиксированные коды, числовой ID/номер и хеш `observation_key`. Исходные тексты Issue/PR/комментариев, произвольные ссылки, журналы CI и секреты **не передаются**. Все записи возвращают `mode=OBSERVE_ONLY`, `owner_approval=NOT_GRANTED`, `action_authorized=false`, `execution_authorized=false`, `model_calls=0`, `state_writes=0`. `observation_key` стабилен для повтора одного GitHub Actions run ID; **глобального дедупа между разными событиями нет**, поскольку новой БД не создаётся. Даже `WOULD_REVIEW` не означает вызов агента. Никакие новые действия в Hermes, YFC и Second Brain не выполняются.
+
+Для локального воспроизводимого теста без GitHub и моделей:
+
+```bash
+python3 -m unittest tests.test_github_event_observe -v
+python3 -m qa_advisor.github_event_observe
+```
+
+Вторая команда без `--observe` возвращает `NOT_EXECUTED` и ничего не читает. Чтобы проверить фикстуру явным образом, использовать `--observe --event issues --event-file /absolute/path/event.json --run-id 1` с вымышленным JSON; он должен содержать корректные `repository.full_name`, `action` и типизированный объект события.
+
+**Приёмка:** обязательны exact-head GitHub CI, main CI и хотя бы один настоящий запуск GitHub Actions observer после слияния. Эти проверки не доказывают наличие работающего автономного Hermes Agent или передачу разрешения от владельца. Будущий автоматический исполнитель - отдельная работа с подтверждёнными OS/инструментальными полномочиями, владельческими разрешениями и квотами. Источник архитектурной идеи - [DeepSeek research prototype](https://github.com/deepseek-ai/dsh-superagent-prototype/tree/6337fc823ce20251c8de8085948165c81aaa701e), без подключения его runtime.
+
+
+## GitHub Observe → Operator Inbox (#717)
+
+В штатном \`hermes-qa-watch.timer\` раз в 15 минут выполняется **один
+дополнительный ограниченный GET** метаданных 12 последних запусков известного
+workflow GitHub Observe (Actions ID 403765637). Используется **существующий**
+root-owned PAT только с \`Actions: read\`, без расширения scopes. Не читаются
+Issues/PR contents, комментарии, артефакты и логи GitHub. Дополнительных
+таймеров/агентов/LLM/баз данных нет; legacy проверка main CI сохраняет свой
+первоначальный однократный GET.
+
+Новый \`run-name\` в GitHub Actions содержит только перечисляемые типы
+событий и действий, числовой ID, фиксированный код исхода CI и
+назначенный GitHub идентификатор этого workflow run (github.run_id).
+Читатель сверяет указанное значение с run.id из REST и требует
+равенства полей name/display_title (GitHub custom run-name меняет оба).
+Старые workflow имели постоянное name и пользовательский display_title,
+поэтому их результаты не становятся доверенными событиями. Он никогда
+не включает заголовок, описание, текст комментария или URL из GitHub.
+Старые workflow run titles не соответствуют строгому формату и
+пропускаются. Только \`status=completed\`, \`conclusion=success\` и
+проверенный workflow ID/repository принимаются как успешные запуски
+**наблюдателя**, а не подтверждение качества GitHub-события.
+
+Файл \`/var/lib/hermes-qa-watch/github-observe-inbox.json\` записывается
+атомарно под прежней root-owned директорией \`0700\`, режим файла \`0600\`.
+Это **очищенный снимок**, не самостоятельное хранилище событий и не
+exactly-once. Если дополнительный GitHub GET недоступен, основная
+проверка CI не ухудшается; последний снимок сохраняется, а через 45
+минут отмечается как \`STALE\`. Охват ограничен 12 последними запусками
+и последними 24 часами, не полным архивом.
+
+Уже существующая \`hermes-control-center-snapshot.service\` каждую минуту
+читает этот файл как root и копирует лишь нормализованные значения в
+существующий \`overview.json\`, доступный группе \`hermes-control\`.
+Web-процесс Control Center сохраняет \`IPAddressDeny=any\`, Caddy/OAuth,
+не получает PAT, сеть или права записи. \`Operator Inbox\` уже умеет
+отображать дополнительный источник и строки без нового компонента/стилей.
+\`github_observe\` имеет статус \`PARTIAL\`, \`STALE\` либо \`NOT_AVAILABLE\`,
+никогда \`SUPPORTED\` по ограниченному окну. Ссылки на отдельные GitHub
+Issues пока не открываются из строк: показываются проверенные номера и
+подсказка открыть их в каноническом репозитории вручную.
+
+Поведение остаётся строго \`OBSERVE_ONLY\`. В Inbox нет кнопок исполнения,
+автоматического назначения Codex или доступа к YFC/Second Brain. Ни
+\`REVIEW_ISSUE\`, ни \`REVIEW_PR\` не являются \`owner_approval\`.
+
+## Единый GitHub Observe для проектов (#732)
+
+Исходный Hermes Observe (#717) продолжает работать без изменений. Второй, *обезличенный* источник в том же существующем `hermes-qa-watch.timer` опрашивает **только публичные метаданные** отдельных GitHub Actions workflows программных репозиториев:
+
+- `ai-development-toolkit` - `Validate toolkit` на `main`;
+- `your-fitness-coach` - `CI` на `master`, c сохранением `dev` как обязательного этапа;
+- `second-brain` - `CI` на `main`, **только код**, без `second-brain-vault`.
+
+Каждый репозиторий должен иметь собственный источник `.github/workflows/github-observe-export.yml`, использующий `permissions: {}`, без checkout, команд из PR, доступа к секретам, комментариям/телам задач и внешних модельных вызовов. Стандартное имя запуска содержит только GitHub-generated event/action/числа/conclusion/run ID. Контракт проверяется и по GitHub repository, и по **точному числовому workflow ID**, после реального запуска. До подтверждения workflow ID источник имеет `NOT_AVAILABLE` и **не делает HTTP-запрос**.
+
+Hermes использует те же функции GitHub API, только фиксированные публичные пути `actions/workflows/github-observe-export.yml/runs?per_page=6`. Запросы выполняются анонимно, `token=None`; существующий приватный PAT Hermes категорически не пересылается в другие репозитории. Для трёх разрешённых источников запросы (не больше одного на источник за тик) выполняются в коротких временных потоках, максимум 2 секунды каждый. Постоянного worker/таймера, очереди, базы данных и новых GitHub-прав нет. Режим целиком `OBSERVE_ONLY`.
+
+Отдельный защищённый файл `/var/lib/hermes-qa-watch/github-projects-inbox.json` остаётся root-only (директория 0700, файл 0600), имеет строгую схему, не более 6 последних запусков на источник, 5 событий, TTL 45 минут; это не журнал и не гарантия exactly-once. Существующий root-owned Control Center snapshot-collector читает его и переносит только проверенные значения в штатный `overview.json`. В `Operator Inbox` появились три дополнительных источника с фиксированными названиями. Они отображаются как `PARTIAL`, `STALE` либо `NOT_AVAILABLE`, но никогда как подтверждение успешного выполнения агента. Приложения проектов, UI, Vault и publisher не изменяются.
+
+При сбое GitHub или отсутствии подтверждённого workflow ID исходный `Hermes` CI наблюдатель и собственные Hermes события продолжают работать. Не трактовать отсутствие событий как отсутствие незавершённых задач. Live evidence требует соответствующего merged workflow, подтверждённого workflow ID, запуска QA timer и read-only проверки owner-only Inbox на VPS.

@@ -41,24 +41,20 @@ async function assertNoOverflow(page){
  expect(out.body,"Horizontal body overflow").toBeLessThanOrEqual(out.width+1);
 }
 async function assertDesktopCaption(page){
- const r=await page.evaluate(()=>{
-  const logo=document.querySelector(".login-hero-mark").getBoundingClientRect();
-  const caption=document.querySelector(".login-overline").getBoundingClientRect();
-  return {logoCenter:(logo.left+logo.right)/2, captionCenter:(caption.left+caption.right)/2,
-   gap:caption.top-logo.bottom, align:getComputedStyle(document.querySelector(".login-overline")).textAlign};
- });
- expect(Math.abs(r.logoCenter-r.captionCenter),"Desktop wordmark centered relative to winged H").toBeLessThanOrEqual(1);
- expect(r.gap,"Desktop caption below winged H image").toBeGreaterThanOrEqual(16);
- expect(r.align).toBe("center");
+ await expect(page.locator(".orbit-access-form")).toBeVisible();
+ await expect(page.getByRole("heading",{name:"Все системы. Один центр решений."})).toBeVisible();
+ const rect=await page.locator(".orbit-access-form").boundingBox();
+ expect(rect.width).toBeGreaterThan(250);
 }
+
 test("approved C+B Atlas with C+A fonts, working asset and navigation",async({page})=>{
  await page.setViewportSize({width:1440,height:900});await mock(page);
  await page.goto("/");
- await expect(page.getByRole("heading",{name:"Система. Под наблюдением."})).toBeVisible();
+ await expect(page.getByRole("heading",{name:/Вся система/})).toBeVisible();
  await expect(page.getByRole("row",{name:/Ops Watch/})).toBeVisible();
- await expect(page.getByText("H-01 Ops AI / полный агент",{exact:true})).toBeVisible();
- await expect(page.locator('img[src="/brand.webp"]').first()).toHaveJSProperty("complete",true);
- const imageLoaded=await page.locator('img[src="/brand.webp"]').first().evaluate(x=>x.naturalWidth>0);
+ await expect(page.getByRole("button",{name:/Полный AI Agent/})).toBeVisible();
+ await expect(page.locator('img[src="/orbit-brand.svg"]').first()).toHaveJSProperty("complete",true);
+ const imageLoaded=await page.locator('img[src="/orbit-brand.svg"]').first().evaluate(x=>x.naturalWidth>0);
  expect(imageLoaded).toBe(true);
  expect((await page.request.get("/favicon.png")).status()).toBe(200);
  await page.screenshot({path:resolve(folder,"atlas-1440.png"),fullPage:true});
@@ -73,9 +69,9 @@ test("approved C+B Atlas with C+A fonts, working asset and navigation",async({pa
 });
 test("approved typography is sans-serif throughout Atlas",async({page})=>{
  await page.setViewportSize({width:1440,height:900});await mock(page);await page.goto("/");
- const families=await page.locator(".atlas-hero h1, .atlas-nav button, .atlas-section-nav .nav-link, .stat-tile strong, .registry-panel h2").evaluateAll(els=>els.map(el=>getComputedStyle(el).fontFamily));
+ const families=await page.locator(".orbit-intro-copy h1, .atlas-section-nav .nav-link, .orbit-stats strong, .registry-panel h2").evaluateAll(els=>els.map(el=>getComputedStyle(el).fontFamily));
  for(const family of families){expect(family).not.toContain("Georgia");expect(family.toLowerCase()).toContain("sans-serif");}
- await expect(page.getByRole("heading",{name:"Система. Под наблюдением."})).toBeVisible();
+ await expect(page.getByRole("heading",{name:/Вся система/})).toBeVisible();
  await expect(page.getByRole("table")).toBeVisible();
  await expect(page.getByText("История инцидентов и доставки уведомлений пока не подключена.")).toBeVisible();
  await page.screenshot({path:resolve(folder,"atlas-fonts-1440.png"),fullPage:true});
@@ -87,11 +83,11 @@ test("login design is a preview only, OAuth button disabled",async({page})=>{
  await expect(page.getByRole("heading",{name:"Вход в систему"})).toBeVisible();
  await expect(page.getByRole("button",{name:/Войти через GitHub/})).toBeDisabled();
  await expect(page.getByText(/OAuth не включён/)).toBeVisible();
- const logo=page.locator(".login-hero-mark");
- await expect(logo).toHaveJSProperty("naturalWidth",1096);
- expect(await logo.evaluate(el=>getComputedStyle(el).mixBlendMode)).toBe("normal");
- expect(await logo.evaluate(el=>{const c=document.createElement("canvas");c.width=c.height=1;const ctx=c.getContext("2d");ctx.drawImage(el,0,0);return ctx.getImageData(0,0,1,1).data[3];})).toBe(0);
-  await assertDesktopCaption(page);
+ const logo=page.locator(".orbit-auth-brand img");
+ expect(await logo.evaluate(el=>el.naturalWidth)).toBeGreaterThan(0);
+ await assertDesktopCaption(page);
+ await page.getByRole("button",{name:"Этап 02: Проверка доступа"}).click();
+ await expect(page.getByText(/Сервер проверяет разрешения/)).toBeVisible();
  await page.screenshot({path:resolve(folder,"login-1440.png"),fullPage:true});
  await assertNoOverflow(page);
 });
@@ -101,27 +97,18 @@ for(const width of [320,360,393,430,750,768,1920]){
   await expect(page.getByRole("table")).toBeVisible();
   await assertNoOverflow(page);
   if(width===393)await page.screenshot({path:resolve(folder,"atlas-393.png"),fullPage:true});
-  await expect(page.getByRole("heading",{name:"Система. Под наблюдением."})).toBeVisible();
+  await expect(page.getByRole("heading",{name:/Вся система/})).toBeVisible();
   await assertNoOverflow(page);
   await page.goto("/?preview=login");
   await expect(page.getByRole("button",{name:/Войти через GitHub/})).toBeDisabled();
   if(width<=750){
-   const positions=await page.evaluate(()=>{
-    const story=document.querySelector(".login-story").getBoundingClientRect();
-    const logo=document.querySelector(".login-hero-mark").getBoundingClientRect();
-    const caption=document.querySelector(".login-overline").getBoundingClientRect();
-    return {sectionCenter:(story.left+story.right)/2,
-      logoCenter:(logo.left+logo.right)/2,
-      captionCenter:(caption.left+caption.right)/2,
-      logoBottom:logo.bottom,captionTop:caption.top,
-      captionAlign:getComputedStyle(document.querySelector(".login-overline")).textAlign};
-   });
-   expect(Math.abs(positions.logoCenter-positions.sectionCenter),"Logo must be centered").toBeLessThanOrEqual(1);
-   expect(Math.abs(positions.captionCenter-positions.sectionCenter),"Caption block must be centered").toBeLessThanOrEqual(1);
-   expect(positions.captionAlign).toBe("center");
-   expect(positions.captionTop-positions.logoBottom,"Caption must sit clear below the wings").toBeGreaterThanOrEqual(16);
+   const login=page.locator(".orbit-access-form");
+   await expect(login).toBeVisible();
+   const x=await login.boundingBox();
+   expect(x.x).toBeGreaterThanOrEqual(-1);
+   expect(x.x+x.width).toBeLessThanOrEqual(width+1);
   }
-   if(width>=768)await assertDesktopCaption(page);
+  if(width>=768)await assertDesktopCaption(page);
   await assertNoOverflow(page);
   if(width===393)await page.screenshot({path:resolve(folder,"login-393.png"),fullPage:true});
  });
@@ -130,7 +117,7 @@ test("keyboard-only Atlas navigation retains labels and read-only boundaries",as
  await page.setViewportSize({width:360,height:780});await mock(page);
  await page.goto("/");
  await expect(page.locator("html")).toHaveAttribute("lang","ru");
- const qa=page.locator(".atlas-section-nav").getByRole("button",{name:"QA и CI"});
+ const qa=page.locator(".orbit-app-mobilebar").getByRole("button",{name:"QA / CI"});
  await qa.focus();
  await expect(qa).toBeFocused();
  await qa.press("Enter");
@@ -198,7 +185,7 @@ test("owner GitHub session can log out and loses snapshot view",async({page})=>{
   return route.fulfill({status:204,body:""});
  });
  await page.goto("/");
- await expect(page.getByRole("heading",{name:"Система. Под наблюдением."})).toBeVisible();
+ await expect(page.getByRole("heading",{name:/Вся система/})).toBeVisible();
  await expect(page.getByRole("table")).toBeVisible();
  await page.getByRole("button",{name:"Выйти"}).click();
  await expect(page.getByRole("heading",{name:"Вход в систему"})).toBeVisible();
