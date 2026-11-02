@@ -11,7 +11,7 @@ import time
 def main() -> int:
     try:
         parent = int(sys.argv[1])
-        if parent <= 1 or len(sys.argv) < 3:
+        if parent < 1 or len(sys.argv) < 3:
             raise ValueError("invalid parent or command")
         stopping = False
 

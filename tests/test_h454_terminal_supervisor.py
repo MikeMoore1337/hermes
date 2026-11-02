@@ -7,6 +7,9 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import Mock, patch
+
+from scripts import h454_terminal_supervisor as supervisor
 
 
 SUPERVISOR = Path(__file__).resolve().parents[1] / "scripts/h454_terminal_supervisor.py"
@@ -88,6 +91,27 @@ class TerminalSupervisorTests(unittest.TestCase):
         self.assertEqual(result.returncode, 7)
         self.assertEqual(result.stdout, "fixture output\n")
 
+    @unittest.skipUnless(os.getpid() == 1, "requires test process as container PID 1")
+    def test_container_pid1_can_own_a_session(self):
+        result = subprocess.run(
+            [sys.executable, "-I", "-B", str(SUPERVISOR), "1", sys.executable,
+             "-c", "raise SystemExit(7)"], capture_output=True, text=True, timeout=5,
+        )
+        self.assertEqual(result.returncode, 7, result.stderr)
+
+    def test_pid1_parent_is_accepted_without_running_as_pid1(self):
+        libc = Mock()
+        libc.prctl.return_value = 0
+        child = Mock(pid=42)
+        with patch.object(supervisor.sys, "argv", ["supervisor", "1", "fixture"]), \
+             patch.object(supervisor.signal, "signal"), \
+             patch.object(supervisor.ctypes, "CDLL", return_value=libc), \
+             patch.object(supervisor.Path, "read_text", return_value=""), \
+             patch.object(supervisor.os, "getppid", return_value=1), \
+             patch.object(supervisor.subprocess, "Popen", return_value=child), \
+             patch.object(supervisor.os, "waitpid", side_effect=[(42, 7 << 8), ChildProcessError]):
+            self.assertEqual(supervisor.main(), 7)
+
     def test_inherited_ignored_sigchld_does_not_hide_child_exit(self):
         result = subprocess.run(
             [sys.executable, "-I", "-B", str(SUPERVISOR), str(os.getpid()),
@@ -107,6 +131,14 @@ class TerminalSupervisorTests(unittest.TestCase):
         self.assertEqual(result.returncode, 125)
         self.assertIn("HERMES_TERMINAL_SUPERVISOR_UNAVAILABLE", result.stderr)
         self.assertFalse(marker.exists())
+
+    def test_zero_parent_cannot_start_command(self):
+        result = subprocess.run(
+            [sys.executable, "-I", "-B", str(SUPERVISOR), "0", sys.executable,
+             "-c", "raise SystemExit(7)"], capture_output=True, text=True, timeout=5,
+        )
+        self.assertEqual(result.returncode, 125)
+        self.assertIn("HERMES_TERMINAL_SUPERVISOR_UNAVAILABLE", result.stderr)
 
     def test_parent_death_terminates_supervisor_and_descendant(self):
         supervisor_marker = self.root / "supervisor.pid"

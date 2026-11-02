@@ -37,6 +37,29 @@ assert(allowed.isError !== true &&
        fs.readFileSync('/workspace/allowed.txt', 'utf8').includes('approved-workspace-data'),
        'MCP_WORKSPACE_WRITE');
 
+const binaryPath = '/workspace/unsupported-binary.bin';
+fs.writeFileSync(binaryPath, Buffer.from([0, 255, 0, 17, 0, 128, 4, 0]));
+const binary = await callTool('read_file', {path: binaryPath});
+const binaryText = binary.content.map(item => item.text || '').join('\n');
+assert(binary.isError === true && binaryText.includes('Cannot read binary file as text:'),
+       'MCP_BINARY_READ_IS_ERROR');
+const textRead = await callTool('read_file', {path: '/workspace/allowed.txt'});
+assert(textRead.isError !== true && textRead.content.some(item => item.text?.includes('approved-workspace-data')),
+       'MCP_TEXT_READ_UNCHANGED');
+const mixedRead = await callTool('read_multiple_files', {paths: ['/workspace/allowed.txt', binaryPath]});
+const mixedText = mixedRead.content.map(item => item.text || '').join('\n');
+assert(mixedRead.isError === true && mixedText.includes('approved-workspace-data') &&
+       mixedText.includes(`${binaryPath}: Error - Cannot read binary file as text:`),
+       'MCP_MIXED_READ_REPORTS_BINARY_ERROR');
+const cleanRead = await callTool('read_multiple_files', {paths: ['/workspace/allowed.txt']});
+assert(cleanRead.isError !== true && cleanRead.content.some(item => item.text?.includes('approved-workspace-data')),
+       'MCP_MULTIPLE_TEXT_READ_UNCHANGED');
+const imagePath = '/workspace/supported-image.png';
+fs.writeFileSync(imagePath, Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9oQ0WQAAAABJRU5ErkJggg==', 'base64'));
+const image = await callTool('read_file', {path: imagePath});
+assert(image.isError !== true && image.content.some(item => item.type === 'image' && item.mimeType === 'image/png'),
+       'MCP_IMAGE_READ_UNCHANGED');
+
 // The filesystem may use epoch zero when birthtime is unavailable. Exercise
 // the real dispatcher/formatter with controlled stats, not host metadata.
 const metadataPath = '/workspace/birthtime-fixture.txt';

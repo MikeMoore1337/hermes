@@ -59,6 +59,30 @@ FILESYSTEM = """    const info: Record<string, any> = {
     return info;
 """
 
+FILESYSTEM_HANDLERS = """export async function handleReadMultipleFiles(args) {
+    const fileResults = await readMultipleFiles(args.paths);
+    const contentItems = [];
+    return { content: contentItems };
+}
+export async function handleWriteFile(args) { return args; }
+"""
+
+BINARY = """class BinaryFileHandler {
+    async read(filePath: string, options?: ReadOptions): Promise<FileResult> {
+        const instructions = this.getBinaryInstructions(filePath);
+
+        return {
+            content: instructions,
+            mimeType: 'text/plain',
+            metadata: {
+                isBinary: true
+            }
+        };
+    }
+    async write() { throw new Error('unchanged'); }
+}
+"""
+
 TERMINAL = """import { spawn } from 'child_process';
 const MAX_WAIT_OUTPUT_CHARS = 2 * 1024 * 1024;
 class TerminalManager {
@@ -206,8 +230,10 @@ class BrcHardeningTests(unittest.TestCase):
                     ".github/workflows/h15-remote-commander-candidate.yml").read_text(encoding="utf-8")
         paths = workflow.split('cat > "$bundle/EXPECTED_PATHS.txt" <<\'PATHS\'\n', 1)[1].split('\n          PATHS', 1)[0]
         for path in ("packages/agent/src/core/tools/edit.ts", "packages/agent/src/core/tools/filesystem.ts",
+                     "packages/agent/src/core/handlers/filesystem-handlers.ts",
                      "packages/agent/src/core/tools/improved-process-tools.ts", "packages/agent/src/core/terminal-manager.ts",
                      "packages/agent/src/core/types.ts",
+                     "packages/agent/src/core/utils/files/binary.ts",
                      "packages/agent/src/core/search-manager.ts",
                      "packages/agent/src/core/handlers/search-handlers.ts"):
             self.assertIn(path, [line.strip() for line in paths.splitlines()])
@@ -224,6 +250,12 @@ class BrcHardeningTests(unittest.TestCase):
         self.edit.write_text(EDIT, encoding="utf-8")
         self.filesystem = self.root / "packages/agent/src/core/tools/filesystem.ts"
         self.filesystem.write_text(FILESYSTEM, encoding="utf-8")
+        self.filesystem_handlers = self.root / "packages/agent/src/core/handlers/filesystem-handlers.ts"
+        self.filesystem_handlers.parent.mkdir(parents=True)
+        self.filesystem_handlers.write_text(FILESYSTEM_HANDLERS, encoding="utf-8")
+        self.binary = self.root / "packages/agent/src/core/utils/files/binary.ts"
+        self.binary.parent.mkdir(parents=True)
+        self.binary.write_text(BINARY, encoding="utf-8")
         self.terminal = self.root / "packages/agent/src/core/terminal-manager.ts"
         self.terminal.write_text(TERMINAL, encoding="utf-8")
         self.types = self.root / "packages/agent/src/core/types.ts"
@@ -233,7 +265,7 @@ class BrcHardeningTests(unittest.TestCase):
         self.search = self.root / "packages/agent/src/core/search-manager.ts"
         self.search.write_text(SEARCH_MANAGER, encoding="utf-8")
         self.search_handlers = self.root / "packages/agent/src/core/handlers/search-handlers.ts"
-        self.search_handlers.parent.mkdir(parents=True)
+        self.search_handlers.parent.mkdir(parents=True, exist_ok=True)
         self.search_handlers.write_text(SEARCH_HANDLERS, encoding="utf-8")
         guard = patch("scripts.h15_brc_apply_policy_patch.evaluate", return_value={
             "status": "SOURCE_PIN_VERIFIED"
@@ -340,6 +372,44 @@ class BrcHardeningTests(unittest.TestCase):
         self.assertIn("info.created = null;", actual)
         self.assertIn("info.createdStatus = 'unavailable_or_epoch';", actual)
         self.assertIn("return info;", actual)
+
+    def test_binary_read_is_an_error_and_other_methods_are_unchanged(self):
+        apply(self.root)
+        actual = self.binary.read_text(encoding="utf-8")
+        self.assertIn("throw new Error(this.getBinaryInstructions(filePath));", actual)
+        self.assertNotIn("content: instructions", actual)
+        self.assertIn("async write() { throw new Error('unchanged'); }", actual)
+        handlers = self.filesystem_handlers.read_text(encoding="utf-8")
+        self.assertIn("isError: fileResults.some(result => Boolean(result.error))", handlers)
+        self.assertIn("content: contentItems", handlers)
+
+    def test_changed_binary_reader_refuses_before_any_source_write(self):
+        self.binary.write_text(BINARY.replace("isBinary: true", "isBinary: false"), encoding="utf-8")
+        paths = (self.dispatcher, self.edit, self.filesystem, self.binary, self.terminal, self.types,
+                 self.process_tools, self.search, self.search_handlers)
+        before = {p: p.read_bytes() for p in paths}
+        with self.assertRaisesRegex(AuditError, "unreviewed_binary_read_handler"):
+            apply(self.root)
+        self.assertEqual({p: p.read_bytes() for p in paths}, before)
+
+    def test_changed_multiple_read_handler_refuses_before_any_source_write(self):
+        self.filesystem_handlers.write_text(FILESYSTEM_HANDLERS.replace("contentItems };", "other };"), encoding="utf-8")
+        paths = (self.dispatcher, self.edit, self.filesystem, self.filesystem_handlers, self.binary,
+                 self.terminal, self.types, self.process_tools, self.search, self.search_handlers)
+        before = {p: p.read_bytes() for p in paths}
+        with self.assertRaisesRegex(AuditError, "unreviewed_multiple_read_handler"):
+            apply(self.root)
+        self.assertEqual({p: p.read_bytes() for p in paths}, before)
+
+    def test_symlinked_binary_handler_is_refused_without_writing_target(self):
+        self.binary.unlink()
+        target = self.root / "binary-original.ts"
+        target.write_text(BINARY, encoding="utf-8")
+        self.binary.symlink_to(target)
+        with self.assertRaisesRegex(AuditError, "unsafe_binary_handler"):
+            apply(self.root)
+        self.assertEqual(target.read_text(encoding="utf-8"), BINARY)
+        self.assertEqual(self.dispatcher.read_text(encoding="utf-8"), ORIGINAL)
 
     def test_unreviewed_mutation_dispatcher_refuses_without_writing(self):
         self.dispatcher.write_text(ORIGINAL.replace("  move_file:", "  unexpected_move:"), encoding="utf-8")
