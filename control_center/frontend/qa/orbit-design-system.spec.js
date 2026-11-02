@@ -93,7 +93,7 @@ test("injected widgets have matching line icons, headings and active breadcrumb"
  expect(errors).toEqual([]);
  expect(unexpected).toEqual([]);
 });
-for(const width of [320,393,768,1440]){
+for(const width of [320,393,768,1440,1920]){
  test("Orbit responsive modules "+width,async({page})=>{
   const unexpected=await isolate(page),errors=[];
   page.on("pageerror",e=>errors.push(e.message));
