@@ -18,7 +18,7 @@ param(
     [string]$BrokerRouteSourceSha256,[string]$BrokerImageId,[string]$RestoreSourceSha256,
     [string]$SecureCredentialSourceSha256,[string]$BrokerCredentialSourceSha256,[string]$VerifierSourceSha256,
     [string]$GuardOperatorSourceSha256,[string]$MonitorSourceSha256,[string]$CandidateSourceSha256,[string]$CandidateImageId,
-    [string]$TrialSourceSha256,[string]$CandidateId,[datetime]$WindowStartUtc,[datetime]$WindowEndUtc,
+    [string]$TrialSourceSha256,[string]$CandidateId,[string]$WindowStartUtc,[string]$WindowEndUtc,
     [switch]$Apply,[switch]$OwnerApproved
 )
 $ErrorActionPreference='Stop'
@@ -138,6 +138,16 @@ try{
             $CandidateImageId -cmatch '^sha256:[a-f0-9]{64}$') 'H454_GUARD_OPERATOR_CANDIDATE_PINS'
     }
     if($trial){Require-H454 ($TrialSourceSha256 -cmatch '^[A-F0-9]{64}$' -and $CandidateId -cmatch '^[a-f0-9]{64}$') 'H454_GUARD_OPERATOR_TRIAL_PINS'}
+    $trialWindowStart=[DateTime]::MinValue;$trialWindowEnd=[DateTime]::MinValue
+    if($BeginBrokerTrial -and $Apply){
+        $utcFormat="yyyy-MM-dd'T'HH:mm:ss'Z'"
+        $utcStyles=[Globalization.DateTimeStyles]::AssumeUniversal -bor [Globalization.DateTimeStyles]::AdjustToUniversal
+        Require-H454 ($WindowStartUtc -cmatch '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$' -and
+            $WindowEndUtc -cmatch '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$' -and
+            [DateTime]::TryParseExact($WindowStartUtc,$utcFormat,[Globalization.CultureInfo]::InvariantCulture,$utcStyles,[ref]$trialWindowStart) -and
+            [DateTime]::TryParseExact($WindowEndUtc,$utcFormat,[Globalization.CultureInfo]::InvariantCulture,$utcStyles,[ref]$trialWindowEnd) -and
+            $trialWindowStart.Kind -eq [DateTimeKind]::Utc -and $trialWindowEnd.Kind -eq [DateTimeKind]::Utc) 'H454_TRIAL_WINDOW'
+    }
     if($RestageOnly -or $InstallBrokerMonitor -or $PrepareBrokerCandidate -or $trial){
         Require-H454 ($GuardOperatorSourceSha256 -cmatch '^[A-F0-9]{64}$') 'H454_GUARD_OPERATOR_MONITOR_PINS'
         $null=Read-H454PinnedBytes $PSCommandPath $GuardOperatorSourceSha256
@@ -337,7 +347,7 @@ try{
                     try {
                         if($BeginBrokerTrial){
                             $result=Start-H454BrokerTrial $restoreArgs $CandidateId $CandidateImageId $credential.TokenBytes $credential.AgentBytes `
-                                $WindowStartUtc $WindowEndUtc -Apply -OwnerApproved:$OwnerApproved
+                                $trialWindowStart $trialWindowEnd -Apply -OwnerApproved:$OwnerApproved
                         }elseif($RecoverBrokerTrial){
                             $result=Restore-H454BrokerTrial $restoreArgs $CandidateId $CandidateImageId $credential.TokenBytes $credential.AgentBytes `
                                 -Apply -OwnerApproved:$OwnerApproved

@@ -336,7 +336,8 @@ The engine accepts only local trusted callbacks;
 it neither validates Docker or credentials itself nor is a standalone operator.
 The adapter for permanently promoting a candidate is still missing.
 `h454_windows_broker_trial.ps1`, invoked by the guarded operator, instead
-implements a bounded trial: require an agreed UTC window, move the stopped
+implements a bounded trial: require an agreed UTC window in
+`YYYY-MM-DDTHH:MM:SSZ` form, move the stopped
 original away from the broker network, start and stage the pinned candidate on
 that network, and restore the same original with fresh staging. Its separate
 pending marker remains until the operator has observed original MCP and
