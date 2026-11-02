@@ -50,6 +50,19 @@ class TestAeroAssets(unittest.TestCase):
         self.assertNotIn("<image", mark)
         self.assertNotIn("<foreignObject", mark)
 
+    def test_maskable_wings_fit_inside_android_safe_circle(self):
+        import math
+        import re
+        svg = (ROOT / "assets/branding/hermes-aero-maskable.svg").read_text(encoding="utf-8")
+        transform = re.search(r'transform="translate\\((\\d+(?:\\.\\d+)?) (\\d+(?:\\.\\d+)?)\\) scale\\((\\d+(?:\\.\\d+)?)\\)"', svg)
+        self.assertIsNotNone(transform, "maskable emblem transform missing")
+        tx, ty, scale = map(float, transform.groups())
+        # Outer wing tips and the two bottom H facets are the bounding extremes.
+        extremities = ((10, 15), (310, 15), (111, 175), (209, 175))
+        max_radius = max(math.hypot(x * scale + tx - 256, y * scale + ty - 256)
+                         for x, y in extremities)
+        self.assertLessEqual(max_radius, 512 * .4, "mark may be cropped by maskable icon")
+
     def test_raster_sizes_and_signatures(self):
         for name, size in PNG_SIZES.items():
             with self.subTest(name=name):
