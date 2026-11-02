@@ -28,13 +28,13 @@ class H15WorkspaceMcpTests(unittest.TestCase):
         control.start()
         self.addCleanup(control.stop)
 
-    def test_patch_serverside_and_no_fixed_id(self):
+    def test_patch_serverside_with_pinned_device_id(self):
         result = apply(self.root, REGISTRY)
         self.assertFalse(result["live_deployment"])
         content = self.server.read_text()
         self.assertIn("listUserDevices(hub, store, ctx.userId)", content)
         self.assertLess(content.index("name === 'resolve_workspace'"), content.index("const out = await invokeTool"))
-        self.assertNotIn("h15-win-05be75515428", self.module.read_text())
+        self.assertIn('"h15-win-05be75515428"', self.module.read_text())
 
     def test_duplicate_refused_without_changes(self):
         apply(self.root, REGISTRY)
@@ -90,9 +90,12 @@ assert.equal(api.resolveApprovedWorkspace({project:'hermes'},[win]).git_verified
 assert.equal(api.resolveApprovedWorkspace({project:'hermes'},[win]).process_execution_verified,false);
 for (const args of [{project:'../../private'}, {project:'random'}, {project:'yfc',deviceId:'forced'}, {}])
  assert.equal(api.resolveApprovedWorkspace(args,[win]).status,'refused');
-for (const devices of [[],[other],[{...win,online:false}],[{...win,paused:true}],[win,win]])
+for (const devices of [[],[other],[{...win,online:false}],[{...win,paused:true}],[win,win],
+                       [{...win,deviceId:'h15-win-foreign12345'}],[{...win,name:'Different device'}],
+                       [win,{...win,name:'Different device'}]])
  assert.equal(api.resolveApprovedWorkspace({project:'yfc'},devices).status,'refused');
 assert.equal(api.listApprovedWorkspaces([other]).workspaces.length,0);
+assert.equal(api.listApprovedWorkspaces([{...win,deviceId:'h15-win-foreign12345'}]).status,'not_connected');
 console.log('H15_454_TS_RUNTIME=PASS');
 """
         proc = subprocess.run(["node", "-e", js, str(dest / "hermes-workspaces.js")],

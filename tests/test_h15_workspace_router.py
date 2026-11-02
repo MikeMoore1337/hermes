@@ -105,6 +105,26 @@ class WorkspaceRouterTests(unittest.TestCase):
         with self.assertRaisesRegex(RouteDenied, "invalid_device_discovery"):
             self.route(devices={"devices": "not a list"})
 
+    def test_same_name_with_different_device_id_is_denied(self):
+        data = json.loads(json.dumps(self.devices))
+        data["devices"][0]["deviceId"] = "h15-win-foreign12345"
+        with self.assertRaisesRegex(RouteDenied, "device_identity_mismatch"):
+            self.route(devices=data)
+
+        data = json.loads(json.dumps(self.devices))
+        data["devices"].append({**data["devices"][0], "name": "Different device"})
+        with self.assertRaisesRegex(RouteDenied, "missing_or_ambiguous_device"):
+            self.route(devices=data)
+
+    def test_registry_requires_valid_device_id(self):
+        for device_id in (None, "", "bad;id", 123):
+            data = json.loads(json.dumps(self.registry))
+            data["device_id"] = device_id
+            file = Path(self.tmp.name) / "bad-device.json"
+            file.write_text(json.dumps(data), encoding="utf-8")
+            with self.subTest(device_id=device_id), self.assertRaisesRegex(RouteDenied, "invalid_registry_device"):
+                load_registry(file)
+
     def test_duplicate_alias_registry_denied(self):
         data = json.loads(json.dumps(self.registry))
         data["workspaces"][1]["aliases"].append("hermes")

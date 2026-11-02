@@ -55,7 +55,8 @@ def apply(root: Path, registry: Path, sha: str = UPSTREAM_SHA) -> dict:
     if template_file.is_symlink() or not template_file.is_file() or template_file.stat().st_size > 20000:
         raise AuditError("unsafe_workspace_template")
     template = template_file.read_text(encoding="utf-8")
-    if template.count("__HERMES_CATALOG__") != 1 or template.count("__HERMES_DEVICE_NAME__") != 1:
+    if (template.count("__HERMES_CATALOG__") != 1 or template.count("__HERMES_DEVICE_NAME__") != 1
+        or template.count("__HERMES_DEVICE_ID__") != 1):
         raise AuditError("workspace_template_drift")
     rows = [{"name": x["name"], "aliases": x["aliases"], "branch": x["branch"],
              "root": cfg["workspace_root"] + "/" + x["name"],
@@ -63,6 +64,7 @@ def apply(root: Path, registry: Path, sha: str = UPSTREAM_SHA) -> dict:
             for x in cfg["workspaces"]]
     code = template.replace("__HERMES_CATALOG__", json.dumps(rows, ensure_ascii=True))
     code = code.replace("__HERMES_DEVICE_NAME__", json.dumps(cfg["device_name"], ensure_ascii=True))
+    code = code.replace("__HERMES_DEVICE_ID__", json.dumps(cfg["device_id"], ensure_ascii=True))
     patched = (original.replace(IMP, IMP + "\n" + NEWIMP)
                .replace(LIST, NEWLIST).replace(CALL, NEWCALL + CALL))
     if patched == original or patched.count("name === 'resolve_workspace'") != 1:

@@ -45,11 +45,13 @@ def load_registry(path: Path = REGISTRY) -> dict[str, Any]:
     except (OSError, UnicodeError, ValueError) as exc:
         raise RouteDenied("invalid_registry_file") from exc
     if not isinstance(data, dict) or set(data) != {
-        "schema", "workspace_root", "device_name", "workspaces"
+        "schema", "workspace_root", "device_name", "device_id", "workspaces"
     } or type(data["schema"]) is not int or data["schema"] != 1:
         _deny("invalid_registry_schema")
     if data["workspace_root"] != "/workspace/projects" or data["device_name"] != "H15 Windows permanent sandbox":
         _deny("invalid_registry_scope")
+    if not isinstance(data["device_id"], str) or not SAFE_DEVICE_ID.fullmatch(data["device_id"]):
+        _deny("invalid_registry_device")
     entries = data["workspaces"]
     if not isinstance(entries, list) or not 1 <= len(entries) <= 16:
         _deny("invalid_registry_entries")
@@ -82,7 +84,7 @@ def _select(alias: str, registry: dict[str, Any]) -> dict[str, Any]:
     _deny("unknown_workspace")
 
 
-def _device(devices: Any, name: str) -> dict[str, Any]:
+def _device(devices: Any, name: str, expected_id: str) -> dict[str, Any]:
     if not isinstance(devices, dict) or set(devices) != {"devices"} or not isinstance(devices["devices"], list) or len(devices["devices"]) > 25:
         _deny("invalid_device_discovery")
     matching = [x for x in devices["devices"] if isinstance(x, dict) and x.get("name") == name]
@@ -94,6 +96,10 @@ def _device(devices: Any, name: str) -> dict[str, Any]:
     device_id = item.get("deviceId")
     if not isinstance(device_id, str) or not SAFE_DEVICE_ID.fullmatch(device_id):
         _deny("invalid_device_id")
+    if device_id != expected_id:
+        _deny("device_identity_mismatch")
+    if sum(isinstance(x, dict) and x.get("deviceId") == expected_id for x in devices["devices"]) != 1:
+        _deny("missing_or_ambiguous_device")
     return {"device_id": device_id, "device_status": "online"}
 
 
@@ -142,7 +148,7 @@ def resolve(alias: str, *, registry: dict[str, Any] | None = None,
         "process_execution_verified": False,
     }
     if devices is not None:
-        response.update(_device(devices, cfg["device_name"]))
+        response.update(_device(devices, cfg["device_name"], cfg["device_id"]))
     return response
 
 

@@ -333,7 +333,8 @@ jobs:
           assert(resolveApprovedWorkspace({ project: 'toolkit' }, [dev]).workspace === 'ai-development-toolkit', 'toolkit');
           for (const input of [{ project: '../../private' }, { project: 'YFC', deviceId: 'forced' }, {}])
             assert(resolveApprovedWorkspace(input, [dev]).status === 'refused', 'invalid_arguments');
-          for (const devices of [[], [{ ...dev, online: false }], [{ ...dev, paused: true }], [dev, dev]])
+          for (const devices of [[], [{ ...dev, online: false }], [{ ...dev, paused: true }], [dev, dev],
+                                 [{ ...dev, deviceId: 'h15-win-foreign12345' }], [dev, { ...dev, name: 'Different device' }]])
             assert(resolveApprovedWorkspace({ project: 'YFC' }, devices).status === 'refused', 'invalid_device');
           assert(listApprovedWorkspaces([]).workspaces.length === 0, 'tenant_isolation');
           console.log('H15_WORKSPACE_MCP_PINNED_RELAY_TS_RUNTIME=PASS');

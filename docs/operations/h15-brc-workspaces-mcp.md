@@ -32,6 +32,11 @@ folders or reach either production VPS host. The returned
 `git_verified=false` and `verification_required_before_write=true`
 are deliberate: a catalog entry does not attest the current Git tree.
 
+The onboarding draft additionally pins the approved device ID in the registry
+and rejects an otherwise matching name with a different ID. This source change
+is not deployed; the live relay above still selects by name. A legitimate
+device replacement will require an owner-reviewed registry update.
+
 ## Safe use in ChatGPT or Codex
 
 1. In a fresh client session, call `list_workspaces`, then

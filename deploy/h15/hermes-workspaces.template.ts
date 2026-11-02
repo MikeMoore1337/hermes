@@ -2,6 +2,7 @@
 type Workspace = { name: string; aliases: string[]; root: string; origin: string; branch: string };
 type Device = { name?: unknown; deviceId?: unknown; online?: unknown; paused?: unknown };
 const DEVICE_NAME = __HERMES_DEVICE_NAME__;
+const DEVICE_ID = __HERMES_DEVICE_ID__;
 const WORKSPACES: Workspace[] = __HERMES_CATALOG__;
 const ID = /^[A-Za-z0-9_-]{8,128}$/;
 export const LIST_WORKSPACES_TOOL = {
@@ -22,8 +23,9 @@ function ownerDevice(devices: unknown): Device | null {
   if (!Array.isArray(devices) || devices.length > 25) return null;
   const matches = devices.filter(d => d && typeof d === 'object' && d.name === DEVICE_NAME);
   if (matches.length !== 1) return null;
+  if (devices.filter(d => d && typeof d === 'object' && d.deviceId === DEVICE_ID).length !== 1) return null;
   const d: Device = matches[0];
-  return typeof d.deviceId === 'string' && ID.test(d.deviceId) ? d : null;
+  return typeof d.deviceId === 'string' && ID.test(d.deviceId) && d.deviceId === DEVICE_ID ? d : null;
 }
 function isReady(d: Device | null): boolean {
   return !!d && d.online === true && d.paused === false;

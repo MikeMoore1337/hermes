@@ -2,6 +2,7 @@
   "schema": 1,
   "workspace_root": "/workspace/projects",
   "device_name": "H15 Windows permanent sandbox",
+  "device_id": "h15-win-05be75515428",
   "workspaces": [
     {"name":"hermes","aliases":["hermes","hermes agent","hermes-agent"],"repository":"hermes","branch":"main","access":"sandbox"},
     {"name":"your-fitness-coach","aliases":["yfc","your fitness coach","your-fitness-coach"],"repository":"your-fitness-coach","branch":"master","access":"sandbox"},
