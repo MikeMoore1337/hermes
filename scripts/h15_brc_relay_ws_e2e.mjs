@@ -13,6 +13,7 @@ const root = process.cwd();
 const requireRelay = createRequire(path.join(root, 'packages/relay/package.json'));
 const WebSocket = requireRelay('ws');
 const { buildRelay } = await import(pathToFileURL(path.join(root, 'packages/relay/dist/app.js')).href);
+const { invokeTool } = await import(pathToFileURL(path.join(root, 'packages/relay/dist/mcp/invoke.js')).href);
 const temp = mkdtempSync(path.join(tmpdir(), 'hermes-brc-wss-auth-'));
 const secret = () => randomBytes(32).toString('hex');
 const relay = buildRelay({
@@ -86,6 +87,44 @@ try {
   if (!good.accepted) throw Error('VALID_BEARER_REJECTED');
   goodSocket = good.socket;
   console.log('WSS_VALID_BEARER=ACCEPTED');
+
+  // Only the authenticated WSS connection receives an immutable credential hash.
+  // A direct SQLite re-key simulates the interval before the old socket closes.
+  goodSocket.send(JSON.stringify({
+    type: 'hello', protocol: 1,
+    device: {deviceId:'sandbox-agent',name:'sandbox-agent',platform:'linux',
+      hostname:'ci',arch:'x64',agentVersion:'ci',coreVersion:'ci'},
+    tools: [{name:'read_file',description:'synthetic',inputSchema:{type:'object'}}],
+  }));
+  let connected;
+  for (let attempt = 0; attempt < 50; attempt++) {
+    connected = relay.hub.get('sandbox-agent');
+    if (connected) break;
+    await new Promise(resolve => setTimeout(resolve, 20));
+  }
+  if (!connected || connected.ownerId !== user.id) throw Error('AUTHENTICATED_HELLO_NOT_BOUND');
+  const expectedHash = relay.store.getDevice('sandbox-agent')?.token_hash;
+  const property = Object.getOwnPropertyDescriptor(connected.socket,'hermesAuthTokenHash');
+  if (!expectedHash || property?.value !== expectedHash ||
+      property?.writable !== false || property?.enumerable !== false ||
+      property?.configurable !== false || property.value === validToken) {
+    throw Error('SOCKET_AUTH_CREDENTIAL_BINDING_INVALID');
+  }
+  console.log('WSS_AUTH_SOCKET_TOKEN_HASH=IMMUTABLY_BOUND');
+
+  const ctx = {userId:user.id,clientId:'synthetic-only'};
+  const args = {deviceId:'sandbox-agent',path:'/workspace/synthetic.txt'};
+  relay.store.issueDeviceToken('sandbox-agent',user.id,'sandbox-agent','linux');
+  const rotated = await invokeTool(relay.hub,relay.store,ctx,'read_file',args);
+  if (rotated.ok || rotated.status !== 403) throw Error('OLD_SOCKET_AUTH_AFTER_REKEY');
+  console.log('WSS_ROTATED_OLD_SOCKET_MCP=DENIED');
+
+  relay.store.deleteDevice('sandbox-agent');
+  const deleted = await invokeTool(relay.hub,relay.store,ctx,'read_file',args);
+  if (deleted.ok || deleted.status !== 403) throw Error('DELETED_DEVICE_CALL_FORWARDED');
+  console.log('WSS_DELETED_DEVICE_MCP=DENIED');
+
+
   console.log('HERMES_BRC_WSS_AUTH_E2E=PASS');
 } finally {
   if (goodSocket) goodSocket.terminate();
