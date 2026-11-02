@@ -611,7 +611,9 @@ jobs:
           proxy_image="h454-rollback-proxy-fixture:${GITHUB_RUN_ID}"
           broker_image="h454-credential-broker-fixture:${GITHUB_RUN_ID}"
           broker_agent_image="h454-broker-agent-fixture:${GITHUB_RUN_ID}"
-          trap 'docker image rm "$broker_agent_image" "$broker_image" "$proxy_image" "$fixture_bad" "$fixture_mutant" "$fixture_image" "$fixture_base" >/dev/null 2>&1 || true; rm -rf "$fixture" "$image_context"' EXIT
+          network_fixture="h454-candidate-net-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          network_agent="h454-candidate-agent-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          trap 'docker rm -f "$network_agent" >/dev/null 2>&1 || true; docker network rm "$network_fixture" >/dev/null 2>&1 || true; docker image rm "$broker_agent_image" "$broker_image" "$proxy_image" "$fixture_bad" "$fixture_mutant" "$fixture_image" "$fixture_base" >/dev/null 2>&1 || true; rm -rf "$fixture" "$image_context"' EXIT
           bash scripts/h454_wss_fixture_certificates.sh "$fixture"
           chmod 755 "$fixture"
           image="hermes-brc-relay-eval:${GITHUB_SHA:0:12}"
@@ -666,6 +668,15 @@ jobs:
           run_combined "$fixture_image"
           docker build --quiet --pull=false --network none --build-arg "H454_BASE_IMAGE=$fixture_base" \
             --file deploy/h15/Dockerfile.brc-agent-broker --tag "$broker_agent_image" "$image_context"
+          docker network create --internal "$network_fixture" >/dev/null
+          docker create --name "$network_agent" --network bridge --read-only --user 65534:65534 \
+            --cap-drop ALL --security-opt no-new-privileges --entrypoint node "$broker_agent_image" --version >/dev/null
+          docker network connect "$network_fixture" "$network_agent"
+          docker network disconnect bridge "$network_agent"
+          test "$(docker inspect --format '{{.State.Running}}' "$network_agent")" = false
+          test "$(docker inspect --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{end}}' "$network_agent")" = "$network_fixture"
+          docker rm "$network_agent" >/dev/null
+          docker network rm "$network_fixture" >/dev/null
           docker run --rm --network none --read-only --init --cap-drop ALL --security-opt no-new-privileges \
             --user 65534:65534 --memory 256m --pids-limit 64 --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777 \
             --mount "type=bind,src=$GITHUB_WORKSPACE,dst=/src,readonly" --entrypoint node "$broker_agent_image" \

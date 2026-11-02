@@ -5,6 +5,7 @@ Set-StrictMode -Version Latest
 function Require-H454([bool]$Condition,[string]$Reason){if(-not $Condition){throw $Reason}}
 $script:agentId='a'*64;$script:baseId='sha256:'+('b'*64);$script:imageId='sha256:'+('c'*64)
 $script:candidateId='d'*64;$script:marker='E'*64;$script:label='e'*32
+$script:bridgeId='9'*64
 $config=[pscustomobject]@{Entrypoint=@('/bin/sh','/entry');Cmd=@();Env=@('HOME=/run/brc');WorkingDir='/workspace';User='65534:65534'}
 $script:base=[pscustomobject]@{Id=$script:baseId;Config=$config;RootFS=[pscustomobject]@{Layers=@('layer1','layer2')}}
 $script:image=[pscustomobject]@{Id=$script:imageId;Config=$config;RootFS=[pscustomobject]@{Layers=@('layer1','layer2','layer3')}}
@@ -19,7 +20,7 @@ function Get-H454OriginalRestoreState {
         $OldImage,$BrokerImage,$CaSha256,$DockerSha256)
     $script:checks++;if($script:checks -eq $script:failAt){throw 'H454_ROUTE_SAFETY'}
     Require-H454 ($AgentId -ceq $script:agentId -and $script:original.State.Running) 'FIXTURE_ORIGINAL'
-    return [pscustomobject]@{Agent=$script:original}
+    return [pscustomobject]@{Agent=$script:original;Bridge=[pscustomobject]@{Id=$script:bridgeId}}
 }
 function Assert-H454OriginalLiveRoute($Snapshot,$AgentId,$DockerSha256){
     Require-H454 ($Snapshot.Agent.Id -ceq $script:agentId -and $Snapshot.Agent.State.Running) 'FIXTURE_ROUTE'
@@ -36,19 +37,19 @@ function Find-H454RecoveryObject($Kind,$Name,$DockerSha256){
 function Invoke-H454RecoveryDocker {
     param([string[]]$Arguments,[string]$DockerSha256)
     Require-H454 ($Arguments[0] -ceq 'create' -and $Arguments -ccontains '--network' -and
-        $Arguments -ccontains 'none' -and $Arguments -ccontains '--volumes-from' -and
+        $Arguments -ccontains 'bridge' -and $Arguments -ccontains '--volumes-from' -and
         $Arguments -ccontains $script:agentId -and $Arguments -ccontains $script:imageId) 'FIXTURE_CREATE_ARGUMENTS'
     $script:creates++
     $script:candidate=[pscustomobject]@{Id=$script:candidateId;Name='/hermes-h454-broker-candidate';Image=$script:imageId;
         State=[pscustomobject]@{Running=$false;Status='created';Paused=$false;Restarting=$false;Dead=$false};
         Config=[pscustomobject]@{User='65534:65534';WorkingDir='/workspace';Entrypoint=$config.Entrypoint;Cmd=$config.Cmd;Env=$config.Env;
             Labels=[pscustomobject]@{'com.hermes.scope'='fixture';'com.hermes.h454.candidate'=$script:label}};
-        HostConfig=[pscustomobject]@{NetworkMode='none';ReadonlyRootfs=$true;Privileged=$false;Init=$true;PidsLimit=128;
+        HostConfig=[pscustomobject]@{NetworkMode='bridge';ReadonlyRootfs=$true;Privileged=$false;Init=$true;PidsLimit=128;
             Memory=536870912;NanoCpus=1000000000;RestartPolicy=[pscustomobject]@{Name='no'};CapDrop=@('ALL');CapAdd=@();
             SecurityOpt=@('no-new-privileges');PublishAllPorts=$false;PortBindings=$null;ExtraHosts=@();Binds=@();
-            Devices=@();DeviceRequests=@();PidMode='';IpcMode='private';VolumesFrom=@($script:agentId);
+            Dns=@();DnsOptions=@();DnsSearch=@();Links=@();Devices=@();DeviceRequests=@();PidMode='';IpcMode='private';VolumesFrom=@($script:agentId);
             Tmpfs=(ConvertFrom-Json -InputObject (ConvertTo-Json -Compress -InputObject $tmpfs))};
-        NetworkSettings=[pscustomobject]@{Networks=[pscustomobject]@{none=[pscustomobject]@{}}};
+        NetworkSettings=[pscustomobject]@{Networks=[pscustomobject]@{bridge=[pscustomobject]@{NetworkID=$script:bridgeId;Aliases=@()}}};
         Mounts=@([pscustomobject]@{Type='bind';Destination='/workspace';RW=$true})}
     if($script:ambiguous){$script:ambiguous=$false;throw 'H454_DOCKER_AMBIGUOUS'}
     return [pscustomobject]@{Code=0;Output=$script:candidateId}
@@ -69,11 +70,14 @@ Require-H454 ($refused -and $script:creates -eq 1 -and $null -ne $script:candida
 $result=Prepare-H454BrokerCandidate $params $script:imageId -Apply -OwnerApproved
 Require-H454 ($result.Status -ceq 'CANDIDATE_CREATED_STOPPED' -and $result.CandidateId -ceq $script:candidateId -and
     $script:creates -eq 1) 'FIXTURE_RESUME'
-foreach($change in @('running','network','mount','volume','caps','label','tmpfs')){
+foreach($change in @('running','network','bridge_id','dns','alias','mount','volume','caps','label','tmpfs')){
     $saved=ConvertTo-Json -Depth 30 -Compress -InputObject $script:candidate
     switch($change){
         'running'{$script:candidate.State.Running=$true}
-        'network'{$script:candidate.HostConfig.NetworkMode='bridge'}
+        'network'{$script:candidate.HostConfig.NetworkMode='host'}
+        'bridge_id'{$script:candidate.NetworkSettings.Networks.bridge.NetworkID='f'*64}
+        'dns'{$script:candidate.HostConfig.Dns=@('192.0.2.1')}
+        'alias'{$script:candidate.NetworkSettings.Networks.bridge.Aliases=@('host.docker.internal.')}
         'mount'{$script:candidate.Mounts[0].Destination='/other'}
         'volume'{$script:candidate.HostConfig.VolumesFrom=@('f'*64)}
         'caps'{$script:candidate.HostConfig.CapAdd=@('SYS_ADMIN')}

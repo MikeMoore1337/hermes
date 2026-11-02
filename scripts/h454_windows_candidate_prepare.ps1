@@ -1,5 +1,5 @@
 #requires -Version 5.1
-# The caller owns the recovery lock; this only creates a stopped, disconnected candidate.
+# The caller owns the recovery lock; this only creates a stopped candidate.
 function Get-H454CandidateImage([string]$Image,[string]$DockerSha256) {
     $result=Invoke-H454RecoveryDocker -Arguments @('image','inspect',$Image) -DockerSha256 $DockerSha256
     Require-H454 ($result.Code -eq 0 -and $result.Output.Length -gt 0) 'H454_CANDIDATE_IMAGE'
@@ -25,7 +25,7 @@ function Assert-H454CandidateImage([object]$Base,[object]$Candidate,[string]$Bas
 }
 
 function Assert-H454PreparedCandidate([object]$Candidate,[object]$Original,[object]$Image,
-    [string]$Name,[string]$ImageId,[string]$AgentId,[string]$Label) {
+    [string]$Name,[string]$ImageId,[string]$AgentId,[string]$Label,[string]$BridgeId) {
     Require-H454 ($null -ne $Candidate -and $Candidate.Id -cmatch '^[a-f0-9]{64}$' -and
         $Candidate.Name -ceq ('/'+$Name) -and $Candidate.Image -ceq $ImageId -and
         $Candidate.State.Running -is [bool] -and -not $Candidate.State.Running -and
@@ -45,7 +45,7 @@ function Assert-H454PreparedCandidate([object]$Candidate,[object]$Original,[obje
         $other=$cfg.Labels.PSObject.Properties[$entry.Name]
         Require-H454 ($null -ne $other -and $other.Value -ceq $entry.Value) 'H454_CANDIDATE_LABELS'
     }
-    Require-H454 ($hostConfig.NetworkMode -ceq 'none' -and $hostConfig.ReadonlyRootfs -is [bool] -and $hostConfig.ReadonlyRootfs -and
+    Require-H454 ($hostConfig.NetworkMode -ceq 'bridge' -and $hostConfig.ReadonlyRootfs -is [bool] -and $hostConfig.ReadonlyRootfs -and
         $hostConfig.Privileged -is [bool] -and -not $hostConfig.Privileged -and $hostConfig.Init -is [bool] -and $hostConfig.Init -and
         $hostConfig.PidsLimit -eq 128 -and $hostConfig.Memory -eq 536870912 -and $hostConfig.NanoCpus -eq 1000000000 -and
         $hostConfig.RestartPolicy.Name -ceq 'no' -and @($hostConfig.CapDrop).Count -eq 1 -and
@@ -54,15 +54,26 @@ function Assert-H454PreparedCandidate([object]$Candidate,[object]$Original,[obje
         $hostConfig.PublishAllPorts -is [bool] -and -not $hostConfig.PublishAllPorts -and
         ($null -eq $hostConfig.PortBindings -or @($hostConfig.PortBindings.PSObject.Properties).Count -eq 0) -and
         ($null -eq $hostConfig.ExtraHosts -or @($hostConfig.ExtraHosts).Count -eq 0) -and
+        ($null -eq $hostConfig.Dns -or @($hostConfig.Dns).Count -eq 0) -and
+        ($null -eq $hostConfig.DnsOptions -or @($hostConfig.DnsOptions).Count -eq 0) -and
+        ($null -eq $hostConfig.DnsSearch -or @($hostConfig.DnsSearch).Count -eq 0) -and
+        ($null -eq $hostConfig.Links -or @($hostConfig.Links).Count -eq 0) -and
         ($null -eq $hostConfig.Binds -or @($hostConfig.Binds).Count -eq 0) -and
         ($null -eq $hostConfig.Devices -or @($hostConfig.Devices).Count -eq 0) -and
         ($null -eq $hostConfig.DeviceRequests -or @($hostConfig.DeviceRequests).Count -eq 0) -and
         [string]$hostConfig.PidMode -cnotmatch '^(?:host|container:)' -and
         [string]$hostConfig.IpcMode -cnotmatch '^(?:host|container:)') 'H454_CANDIDATE_PROFILE'
     $networks=@($Candidate.NetworkSettings.Networks.PSObject.Properties.Name)
-    Require-H454 ($networks.Count -eq 1 -and $networks[0] -ceq 'none' -and
+    $bridge=$Candidate.NetworkSettings.Networks.PSObject.Properties['bridge']
+    Require-H454 ($BridgeId -cmatch '^[a-f0-9]{64}$' -and $networks.Count -eq 1 -and $networks[0] -ceq 'bridge' -and
+        $null -ne $bridge -and ($bridge.Value.NetworkID -ceq $BridgeId -or
+            [string]::IsNullOrEmpty([string]$bridge.Value.NetworkID)) -and
         @($hostConfig.VolumesFrom).Count -eq 1 -and [string]$hostConfig.VolumesFrom[0] -ceq $AgentId -and
         @($Original.Mounts).Count -eq 1 -and @($Candidate.Mounts).Count -eq 1) 'H454_CANDIDATE_MOUNT'
+    foreach($alias in @($bridge.Value.Aliases)){
+        Require-H454 ($null -eq $alias -or ($alias -is [string] -and
+            -not $alias.TrimEnd('.').Equals('host.docker.internal',[StringComparison]::OrdinalIgnoreCase))) 'H454_CANDIDATE_NETWORK'
+    }
     foreach($mount in @($Original.Mounts[0],$Candidate.Mounts[0])){
         Require-H454 ($mount.Type -ceq 'bind' -and $mount.Destination -ceq '/workspace' -and
             $mount.RW -is [bool] -and $mount.RW) 'H454_CANDIDATE_MOUNT'
@@ -96,13 +107,13 @@ function Prepare-H454BrokerCandidate([hashtable]$RestoreArgs,[string]$CandidateI
     Require-H454 ($scope -cmatch '^[A-Za-z0-9_.-]{1,100}$' -and
         $null -eq $snapshot.Agent.Config.Labels.PSObject.Properties['com.hermes.h454.candidate']) 'H454_CANDIDATE_LABELS'
     $candidate=Find-H454RecoveryObject 'container' $name $s.DockerSha256
-    if($null -ne $candidate){Assert-H454PreparedCandidate $candidate $snapshot.Agent $image $name $CandidateImage $s.AgentId $label}
+    if($null -ne $candidate){Assert-H454PreparedCandidate $candidate $snapshot.Agent $image $name $CandidateImage $s.AgentId $label $snapshot.Bridge.Id}
     if(-not $Apply){return [pscustomobject]@{Status='PREFLIGHT';Present=($null -ne $candidate)}}
     if($null -eq $candidate){
         $snapshot=Get-H454OriginalRestoreState @s
         Assert-H454OriginalLiveRoute $snapshot $s.AgentId $s.DockerSha256
         Require-H454 ($null -eq (Find-H454RecoveryObject 'container' $name $s.DockerSha256)) 'H454_CANDIDATE_COLLISION'
-        $created=Invoke-H454RecoveryDocker -Arguments @('create','--pull=never','--name',$name,'--network','none',
+        $created=Invoke-H454RecoveryDocker -Arguments @('create','--pull=never','--name',$name,'--network','bridge',
             '--volumes-from',$s.AgentId,'--label',('com.hermes.scope='+$scope),'--label',('com.hermes.h454.candidate='+$label),
             '--read-only','--init','--user','65534:65534','--cap-drop','ALL','--security-opt','no-new-privileges',
             '--pids-limit','128','--memory','512m','--cpus','1','--workdir','/workspace',
@@ -112,7 +123,7 @@ function Prepare-H454BrokerCandidate([hashtable]$RestoreArgs,[string]$CandidateI
         $candidate=Find-H454RecoveryObject 'container' $name $s.DockerSha256
         Require-H454 ($null -ne $candidate -and $candidate.Id -ceq $created.Output.Trim()) 'H454_CANDIDATE_CREATE'
     }
-    Assert-H454PreparedCandidate $candidate $snapshot.Agent $image $name $CandidateImage $s.AgentId $label
+    Assert-H454PreparedCandidate $candidate $snapshot.Agent $image $name $CandidateImage $s.AgentId $label $snapshot.Bridge.Id
     $snapshot=Get-H454OriginalRestoreState @s
     Assert-H454OriginalLiveRoute $snapshot $s.AgentId $s.DockerSha256
     return [pscustomobject]@{Status='CANDIDATE_CREATED_STOPPED';CandidateId=$candidate.Id}
