@@ -25,7 +25,7 @@ class H15DevtoolsContract(unittest.TestCase):
         self.assertIn("64", self.runbook)
 
     def test_static_snapshot_only(self):
-        self.assertEqual(self.source.count("20261020T000000Z"), 4)
+        self.assertEqual(self.source.count("20261102T000000Z"), 4)
         self.assertIn("snapshot.debian.org/archive/debian/", self.source)
         self.assertIn("snapshot.debian.org/archive/debian-security/", self.source)
         self.assertIn('test "$ID" = debian', self.source)

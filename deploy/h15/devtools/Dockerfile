@@ -14,15 +14,15 @@ RUN set -eu; \
     test -s /usr/share/keyrings/debian-archive-keyring.gpg; \
     rm -f /etc/apt/sources.list.d/*.sources /etc/apt/sources.list.d/*.list; \
     printf '%s\n' \
-      'deb [signed-by=/usr/share/keyrings/debian-archive-keyring.gpg check-valid-until=no] http://snapshot.debian.org/archive/debian/20261020T000000Z bookworm main' \
-      'deb [signed-by=/usr/share/keyrings/debian-archive-keyring.gpg check-valid-until=no] http://snapshot.debian.org/archive/debian-security/20261020T000000Z bookworm-security main' \
+      'deb [signed-by=/usr/share/keyrings/debian-archive-keyring.gpg check-valid-until=no] http://snapshot.debian.org/archive/debian/20261102T000000Z bookworm main' \
+      'deb [signed-by=/usr/share/keyrings/debian-archive-keyring.gpg check-valid-until=no] http://snapshot.debian.org/archive/debian-security/20261102T000000Z bookworm-security main' \
       > /etc/apt/sources.list; \
     apt-get -o Acquire::Check-Valid-Until=false -o APT::Update::Error-Mode=any update; \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates; \
     test -s /etc/ssl/certs/ca-certificates.crt; \
     printf '%s\n' \
-      'deb [signed-by=/usr/share/keyrings/debian-archive-keyring.gpg check-valid-until=no] https://snapshot.debian.org/archive/debian/20261020T000000Z bookworm main' \
-      'deb [signed-by=/usr/share/keyrings/debian-archive-keyring.gpg check-valid-until=no] https://snapshot.debian.org/archive/debian-security/20261020T000000Z bookworm-security main' \
+      'deb [signed-by=/usr/share/keyrings/debian-archive-keyring.gpg check-valid-until=no] https://snapshot.debian.org/archive/debian/20261102T000000Z bookworm main' \
+      'deb [signed-by=/usr/share/keyrings/debian-archive-keyring.gpg check-valid-until=no] https://snapshot.debian.org/archive/debian-security/20261102T000000Z bookworm-security main' \
       > /etc/apt/sources.list; \
     apt-get -o Acquire::Check-Valid-Until=false -o APT::Update::Error-Mode=any update; \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
