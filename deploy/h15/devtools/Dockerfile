@@ -1,4 +1,4 @@
-# Build with --build-arg BRC_BASE_IMAGE=sha256:<64 hex characters>.
+# Build with a verified local BRC_BASE_IMAGE tag as described in README.md.
 # The existing H-15 agent image is not changed by this source-only recipe.
 ARG BRC_BASE_IMAGE
 FROM ${BRC_BASE_IMAGE}
