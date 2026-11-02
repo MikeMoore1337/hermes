@@ -7,6 +7,7 @@ namespaced systemd files; unexpected existing state is refused.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import fcntl
 import ipaddress
 import json
@@ -24,9 +25,36 @@ if __package__:
         CandidateError, evaluate, public_preview_evidence,
     )
 else:
-    from h191_google_egress_candidate import (
-        CandidateError, evaluate, public_preview_evidence,
-    )
+    # Python -I intentionally excludes the script directory from sys.path.
+    # Load ONLY the adjacent, non-symlink source in the pinned release/active
+    # root-owned scripts folder; never add cwd or arbitrary PYTHONPATH entries.
+    sibling = Path(__file__).with_name("h191_google_egress_candidate.py")
+    try:
+        meta = sibling.lstat()
+        folder = sibling.parent.stat()
+        trusted_uids = (0, os.geteuid())
+        if (
+            not stat.S_ISREG(meta.st_mode)
+            or meta.st_uid not in trusted_uids
+            or stat.S_IMODE(meta.st_mode) & 0o022
+            or meta.st_nlink != 1
+            or not stat.S_ISDIR(folder.st_mode)
+            or folder.st_uid not in trusted_uids
+            or stat.S_IMODE(folder.st_mode) & 0o022
+        ):
+            raise OSError("untrusted_sibling")
+        spec = importlib.util.spec_from_file_location(
+            "_h191_pinned_public_candidate", sibling
+        )
+        if spec is None or spec.loader is None:
+            raise OSError("no_loader")
+        candidate = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(candidate)
+    except (OSError, ImportError, SyntaxError):
+        raise SystemExit("H191_GUARD=HOLD REASON=public_candidate_source_untrusted") from None
+    CandidateError = candidate.CandidateError
+    evaluate = candidate.evaluate
+    public_preview_evidence = candidate.public_preview_evidence
 
 HOST = "vps1777112993"
 USER = "hermes-gsc"

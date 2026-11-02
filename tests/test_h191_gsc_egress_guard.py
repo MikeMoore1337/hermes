@@ -4,6 +4,10 @@ from __future__ import annotations
 from copy import deepcopy
 import json
 from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
 from unittest import TestCase, mock
 
 from scripts import h191_gsc_egress_guard as guard
@@ -50,6 +54,37 @@ def valid_nft():
 
 
 class H191GoogleEgressGuardTests(TestCase):
+    def test_isolated_python_cli_loads_adjacent_source_not_cwd(self):
+        # ExecStart is /usr/bin/python3 -I -B /absolute/path.py --ensure.
+        # --help exercises top-level imports without privileges/network.
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, "h191_google_egress_candidate.py").write_text(
+                "raise RuntimeError(\"untrusted cwd import\")",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, "-I", "-B", str(Path(guard.__file__).resolve()), "--help"],
+                cwd=tmp, text=True, capture_output=True, timeout=12, check=False,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr[:400])
+        self.assertIn("--plan", result.stdout)
+        self.assertNotIn("untrusted cwd", result.stderr)
+
+    def test_isolated_python_cli_rejects_world_writable_sibling(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            script = root / "h191_gsc_egress_guard.py"
+            sibling = root / "h191_google_egress_candidate.py"
+            shutil.copy2(Path(guard.__file__), script)
+            shutil.copy2(Path(guard.__file__).with_name(sibling.name), sibling)
+            sibling.chmod(0o666)
+            result = subprocess.run(
+                [sys.executable, "-I", "-B", str(script), "--help"],
+                cwd=tmp, text=True, capture_output=True, timeout=12, check=False,
+            )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("public_candidate_source_untrusted", result.stderr)
+
     def test_nft_program_is_uid_scoped_port_limited_and_default_drops(self):
         text = guard.nft_program(PINS, UID)
         self.assertTrue(text.startswith("create table inet " + guard.TABLE))
