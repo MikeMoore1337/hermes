@@ -86,7 +86,16 @@ def get_json(path: str, *, opener: Any = None, token: str | None = None, timeout
         "/repos/MikeMoore1337/your-fitness-coach/actions/workflows/github-observe-export.yml/runs?per_page=6",
         "/repos/MikeMoore1337/second-brain/actions/workflows/github-observe-export.yml/runs?per_page=6",
     }
-    if not (allowed_ci or allowed_observe or path in public_observers):
+    # Fixed, unauthenticated YFC native GitHub metadata. This is independent
+    # of the unmerged optional YFC export workflow in protected dev.
+    yfc_public_events = (
+        path == "/repos/MikeMoore1337/your-fitness-coach/events?per_page=20"
+    )
+    yfc_public_ci = (
+        path == "/repos/MikeMoore1337/your-fitness-coach/actions/workflows/ci.yml/runs?per_page=6"
+    )
+    if not (allowed_ci or allowed_observe or path in public_observers
+            or yfc_public_events or yfc_public_ci):
         raise GithubPublicError("endpoint_not_allowlisted")
     if type(timeout) is not int or not 1 <= timeout <= 12:
         raise GithubPublicError("http_timeout_invalid")
@@ -136,6 +145,14 @@ def get_json(path: str, *, opener: Any = None, token: str | None = None, timeout
         data = json.loads(body)
     except (ValueError, UnicodeError):
         raise GithubPublicError("invalid_public_json") from None
+    # The public Events REST resource returns a list, unlike Actions runs.
+    # Its raw issue/PR titles and bodies never leave the private HTTP reader.
+    # Wrap only this exact allowlisted endpoint in a dictionary for the
+    # existing strongly checked client contract.
+    if yfc_public_events:
+        if not isinstance(data, list) or len(data) > 20:
+            raise GithubPublicError("invalid_public_events_shape")
+        return {"events": data}
     if not isinstance(data, dict):
         raise GithubPublicError("invalid_public_shape")
     return data
