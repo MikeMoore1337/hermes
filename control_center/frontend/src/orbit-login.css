@@ -11,8 +11,8 @@
 .orbit-auth-header{height:83px;display:flex;align-items:center;justify-content:space-between;gap:24px;padding:0 clamp(22px,3.6vw,65px);border-bottom:1px solid #1c3144;position:relative;z-index:3;background:#060e19df}
 .orbit-auth-brand{display:flex;align-items:center;gap:14px;min-width:0}
 .orbit-auth-brand img{width:48px;height:48px;object-fit:contain;filter:drop-shadow(0 2px 13px #3c90d455)}
-.orbit-auth-brand strong{display:block;font-size:19px;font-weight:800;letter-spacing:.19em;line-height:1}
-.orbit-auth-brand span{display:block;color:#7faaca;font-size:9px;letter-spacing:.18em;font-weight:700;margin-top:7px}
+.orbit-auth-brand strong{display:block;font-size:19px;font-weight:800;letter-spacing:.275em;line-height:1;white-space:nowrap}
+.orbit-auth-brand span{display:block;color:#7faaca;font-size:9px;letter-spacing:.18em;font-weight:700;margin-top:7px;white-space:nowrap}
 .orbit-auth-header-meta{display:flex;align-items:center;gap:20px;white-space:nowrap;color:#91acc7;font:11px Consolas,monospace;letter-spacing:1px}
 .orbit-auth-header-meta>i{width:1px;height:26px;background:#2b4865}
 .orbit-auth-header-meta span:last-child{display:flex;align-items:center;gap:9px;font:700 11px Inter,"Segoe UI",sans-serif;letter-spacing:1.2px}
@@ -129,7 +129,7 @@
 @media(max-width:520px){
  .orbit-auth-header{height:69px;padding:0 16px;gap:12px}
  .orbit-auth-brand{gap:8px}.orbit-auth-brand img{width:37px;height:37px}
- .orbit-auth-brand strong{font-size:14px}.orbit-auth-brand span{font-size:6.7px}
+ .orbit-auth-brand strong{font-size:14px;letter-spacing:.283em}.orbit-auth-brand span{font-size:6.7px}
  .orbit-auth-header-meta{gap:10px}.orbit-auth-header-meta>span:first-child,.orbit-auth-header-meta>i{display:none}
  .orbit-auth-header-meta span:last-child{font-size:9px;letter-spacing:0}
  .orbit-auth-intro{padding:27px 19px 15px}
