@@ -36,6 +36,13 @@ def run(args, timeout=20, expected=0):
             for line in result.stdout.splitlines():
                 if re.fullmatch(r'H454_WSS_RECONCILE(?:_REASON)?=[A-Z_]+', line):
                     print(line)
+        else:
+            error = result.stderr.lower()
+            reason = ('STATIC_IPAM' if 'user specified ip address' in error else
+                      'NETWORK_OVERLAP' if 'overlaps with other one' in error else
+                      'ADDRESS_IN_USE' if 'address already in use' in error else
+                      'NO_IP_POOL' if 'could not find an available' in error else 'OTHER')
+            print('H454_FIXTURE_COMMAND_REASON=' + reason)
         raise ValueError('COMMAND')
     return result.stdout.strip()
 
@@ -78,6 +85,7 @@ def profile_changes(before, after, prefix_name):
 try:
     if os.geteuid() != 0:
         raise ValueError('ROOT')
+    phase = 'INSPECT_IMAGE'
     if len(sys.argv) != 2:
         raise ValueError('IMAGE')
     image = inspect('image', sys.argv[1])['Id']
@@ -92,6 +100,7 @@ try:
     os.mkdir(tls, 0o700)
     make_file(operator + '/proxy.mjs', proxy, 0o444)
     make_file(operator + '/reconcile.py', reconciler, 0o444)
+    phase = 'CERTIFICATE'
     run(['/usr/bin/openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1',
          '-subj', '/CN=brc-agent.internal', '-addext', 'subjectAltName=DNS:brc-agent.internal',
          '-keyout', tls + '/relay.key', '-out', tls + '/relay.crt'], timeout=30)
@@ -100,7 +109,9 @@ try:
     os.chown(tls + '/relay.key', 0, 65534)
     os.chmod(tls + '/relay.key', 0o440)
     os.chmod(tls + '/relay.crt', 0o444)
+    phase = 'CREATE_NETWORK'
     network = run(docker + ['network', 'create', '--internal', '--label', label, prefix])
+    phase = 'INSPECT_NETWORK'
     network_data = inspect('network', network)
     if network_data['Labels'].get('com.hermes.h454.fixture') != nonce or not network_data['Internal']:
         raise ValueError('NETWORK')
@@ -111,7 +122,9 @@ try:
     gateway = ipaddress.IPv4Address(ipam[0]['Gateway'])
     relay_ip = str(next(ip for ip in subnet.hosts() if ip != gateway))
     relay_code = "require('node:http').createServer((q,s)=>{s.writeHead(q.url==='/health'?200:404);s.end()}).listen(3000,'127.0.0.1')"
+    phase = 'CREATE_RELAY'
     relay = new_container('relay', ['--network', network, '--ip', relay_ip, '--entrypoint', 'node', image, '-e', relay_code])
+    phase = 'CREATE_SIDECAR'
     sidecar = new_container('sidecar', ['--network', 'container:' + relay, '--restart', 'unless-stopped',
                             '-e', 'H454_SSH_SOURCE_IPV4=' + str(gateway),
                             '--mount', 'type=bind,src=' + operator + '/proxy.mjs,dst=/run/h454-wss/proxy.mjs,readonly',
@@ -131,6 +144,7 @@ try:
             'tls_directory': tls}
     make_file(operator + '/pins.json', json.dumps(pins).encode('ascii'), 0o600)
     command = ['/usr/bin/python3', operator + '/reconcile.py', '--config', operator + '/pins.json']
+    phase = 'INITIAL_READY'
     deadline = time.monotonic() + 15
     while time.monotonic() < deadline:
         result = subprocess.run(command, capture_output=True, text=True, timeout=15)
