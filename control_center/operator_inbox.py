@@ -172,6 +172,8 @@ def _add_public_projects(overview, now, coverage, events):
             continue
         coverage[source]["status"] = "PARTIAL"
         coverage[source]["details"] = (
+            "До 20 публичных событий GitHub и 6 запусков CI; история неполная"
+            if key == "yfc" else
             "Последние 6 запусков GitHub Actions; неполная история"
         )
         for item in part["events"]:
@@ -189,8 +191,12 @@ def _add_public_projects(overview, now, coverage, events):
                               "Операции и разрешения проверяются отдельно.",
                          evidence=None),
                 "title": f"{label}: {fixed_title} №{number}",
-                "detail": (f"GitHub Actions: проверенный запуск №{run_id}. "
-                           "Текст задач/комментариев не загружался. Запуск агента запрещён."),
+                "detail": (
+                    (f"Публичный идентификатор GitHub №{run_id}. " if key == "yfc"
+                     else f"GitHub Actions: проверенный запуск №{run_id}. ")
+                    + "Текст задач и комментариев не отображается. "
+                    + "Запуск агента запрещён."
+                ),
             })
 
 
