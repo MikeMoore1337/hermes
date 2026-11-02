@@ -90,6 +90,43 @@ foreach($change in @('running','network','bridge_id','dns','alias','mount','volu
     $valid=Prepare-H454BrokerCandidate $params $script:imageId -Apply -OwnerApproved
     Require-H454 ($valid.CandidateId -ceq $script:candidateId -and $script:creates -eq 1) 'FIXTURE_DRIFT_RESET'
 }
+$privateName='h454-recovery-'+$script:label;$privateId='8'*64
+$originalNetworks=ConvertTo-Json -Depth 10 -Compress -InputObject $script:candidate.NetworkSettings.Networks
+function Assert-TransitionCandidate {
+    Assert-H454PreparedCandidate $script:candidate $script:original $script:image 'hermes-h454-broker-candidate' `
+        $script:imageId $script:agentId $script:label $script:bridgeId $privateName $privateId
+}
+$script:candidate.NetworkSettings.Networks|Add-Member -NotePropertyName $privateName `
+    -NotePropertyValue ([pscustomobject]@{NetworkID=$privateId;Aliases=@()})
+Assert-TransitionCandidate
+$script:candidate.NetworkSettings.Networks.PSObject.Properties.Remove('bridge')
+$script:candidate.State.Running=$true;$script:candidate.State.Status='running'
+Assert-TransitionCandidate
+foreach($change in @('running_bridge','private_id','private_alias','extra_network')){
+    $saved=ConvertTo-Json -Depth 30 -Compress -InputObject $script:candidate
+    switch($change){
+        'running_bridge'{$script:candidate.NetworkSettings.Networks|Add-Member -NotePropertyName 'bridge' -NotePropertyValue ([pscustomobject]@{NetworkID=$script:bridgeId;Aliases=@()})}
+        'private_id'{$script:candidate.NetworkSettings.Networks.$privateName.NetworkID='7'*64}
+        'private_alias'{$script:candidate.NetworkSettings.Networks.$privateName.Aliases=@('host.docker.internal.')}
+        'extra_network'{$script:candidate.NetworkSettings.Networks|Add-Member -NotePropertyName 'foreign' -NotePropertyValue ([pscustomobject]@{NetworkID=('6'*64);Aliases=@()})}
+    }
+    $refused=$false;try{Assert-TransitionCandidate}catch{$refused=$true}
+    Require-H454 $refused 'FIXTURE_TRANSITION_DRIFT'
+    $script:candidate=ConvertFrom-Json -InputObject $saved
+}
+$script:candidate.State.Running=$false;$script:candidate.State.Status='exited'
+Assert-TransitionCandidate
+$script:candidate.NetworkSettings.Networks=ConvertFrom-Json -InputObject $originalNetworks
+Assert-TransitionCandidate
+$script:candidate.State.Status='created'
+$script:image.Config.PSObject.Properties.Remove('Cmd')
+$script:candidate.Config.PSObject.Properties.Remove('Cmd')
+Assert-H454CandidateImage $script:base $script:image $script:baseId $script:imageId
+Assert-TransitionCandidate
+$script:candidate.Config|Add-Member -NotePropertyName 'Cmd' -NotePropertyValue @('unexpected')
+$refused=$false;try{Assert-TransitionCandidate}catch{$refused=$true}
+Require-H454 $refused 'FIXTURE_CMD_DRIFT'
+$script:candidate.Config.PSObject.Properties.Remove('Cmd')
 $script:image.RootFS.Layers=@('foreign','layer2','layer3');$refused=$false
 try{$null=Prepare-H454BrokerCandidate $params $script:imageId -Apply -OwnerApproved}catch{$refused=$true}
 Require-H454 ($refused -and $script:creates -eq 1) 'FIXTURE_IMAGE_DRIFT'

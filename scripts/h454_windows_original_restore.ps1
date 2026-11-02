@@ -3,7 +3,8 @@
 function Get-H454OriginalRestoreState(
     [string]$StateDir,[IO.FileStream]$Lock,[string]$MarkerSha256,[scriptblock]$SafetyCheck,
     [string]$Launcher,[string]$LauncherSha256,[string]$AgentId,[string]$AgentImage,[string]$AgentName,
-    [string]$OldImage,[string]$BrokerImage,[string]$CaSha256,[string]$DockerSha256
+    [string]$OldImage,[string]$BrokerImage,[string]$CaSha256,[string]$DockerSha256,
+    [string]$AlternateAgentId=''
 ) {
     Assert-H454RecoveryRouteSafety $StateDir $Lock $MarkerSha256 $SafetyCheck
     $label=$MarkerSha256.Substring(0,32).ToLowerInvariant();$networkName='h454-recovery-'+$label
@@ -48,7 +49,13 @@ function Get-H454OriginalRestoreState(
             }
         }
     }
-    Assert-H454RecoveryRouteMembers $network $broker $DockerSha256 $AgentId
+    $permittedAgent=$AgentId
+    if($AlternateAgentId -cne ''){
+        Require-H454 ($AlternateAgentId -cmatch '^[a-f0-9]{64}$' -and $AlternateAgentId -cne $AgentId -and
+            -not $agent.State.Running -and $onBridge -and -not $onPrivate) 'H454_RESTORE_ALTERNATE'
+        $permittedAgent=$AlternateAgentId
+    }
+    Assert-H454RecoveryRouteMembers $network $broker $DockerSha256 $permittedAgent
     $members=@($network.Containers.PSObject.Properties|ForEach-Object {$_.Name})
     Require-H454 ($members -ccontains $broker.Id -and
         (-not $agent.State.Running -or ($members.Count -eq 2 -and $members -ccontains $AgentId))) 'H454_RESTORE_MEMBERS'

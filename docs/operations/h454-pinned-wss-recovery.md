@@ -334,8 +334,22 @@ an interruption, with fresh inspected state and the lock reacquired; repeated
 recovery skips staging if the adapter verifies the original is already ready.
 The engine accepts only local trusted callbacks;
 it neither validates Docker or credentials itself nor is a standalone operator.
-The production adapter, its exact artifacts and an approved cutover are still
-missing. `h454_windows_network_guard.ps1` verifies a fresh Docker network
+The adapter for permanently promoting a candidate is still missing.
+`h454_windows_broker_trial.ps1`, invoked by the guarded operator, instead
+implements a bounded trial: require an agreed UTC window, move the stopped
+original away from the broker network, start and stage the pinned candidate on
+that network, and restore the same original with fresh staging. Its separate
+pending marker remains until the operator has observed original MCP and
+acknowledges it; that acknowledgment is an operator assertion, not an MCP
+check performed by the script. Each Docker mutation also has a flushed
+in-flight marker. If an operation times out or the process is interrupted,
+recovery refuses to proceed while that marker exists: inspecting the current
+container state alone cannot prove the daemon has finished the earlier action.
+There is no automated settlement proof or marker-clearing procedure for such
+an ambiguous operation. The trial has not been run against the live container,
+and its source and tests do not establish a production cutover or rollback.
+
+`h454_windows_network_guard.ps1` verifies a fresh Docker network
 snapshot's immutable identity, internal bridge mode, label and exact two-member
 set. Its rollback route check also requires the exact private IPv4 CIDR and
 gateway from Docker IPAM, matching member addresses, an upstream outside that

@@ -36,7 +36,7 @@ function Invoke-H454RecoveryDocker(
             if($null -ne $InputBytes -and $InputBytes.Length -gt 0){
                 $write=$process.StandardInput.BaseStream.WriteAsync($InputBytes,0,$InputBytes.Length)
                 if(-not $write.Wait(5000)){throw 'H454_DOCKER_AMBIGUOUS'}
-                $write.GetAwaiter().GetResult()
+                $null=$write.GetAwaiter().GetResult()
             }
             $process.StandardInput.Close()
         }catch{try{$process.Kill()}catch{};throw 'H454_DOCKER_AMBIGUOUS'}

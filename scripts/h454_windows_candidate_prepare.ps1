@@ -13,8 +13,12 @@ function Assert-H454CandidateImage([object]$Base,[object]$Candidate,[string]$Bas
         $Candidate.Id -ceq $CandidateId -and $BaseId -cne $CandidateId -and
         $null -ne $Base.Config -and $null -ne $Candidate.Config) 'H454_CANDIDATE_IMAGE'
     foreach($name in @('Entrypoint','Cmd','Env','WorkingDir','User')){
-        $a=ConvertTo-Json -Compress -Depth 10 -InputObject $Base.Config.$name
-        $b=ConvertTo-Json -Compress -Depth 10 -InputObject $Candidate.Config.$name
+        $beforeProperty=$Base.Config.PSObject.Properties[$name];$afterProperty=$Candidate.Config.PSObject.Properties[$name]
+        Require-H454 ($name -ceq 'Cmd' -or ($null -ne $beforeProperty -and $null -ne $afterProperty)) 'H454_CANDIDATE_IMAGE_PROFILE'
+        $beforeValue=if($null -eq $beforeProperty){$null}else{$beforeProperty.Value}
+        $afterValue=if($null -eq $afterProperty){$null}else{$afterProperty.Value}
+        $a=ConvertTo-Json -Compress -Depth 10 -InputObject $beforeValue
+        $b=ConvertTo-Json -Compress -Depth 10 -InputObject $afterValue
         Require-H454 ($a -ceq $b) 'H454_CANDIDATE_IMAGE_PROFILE'
     }
     $before=@($Base.RootFS.Layers);$after=@($Candidate.RootFS.Layers)
@@ -25,19 +29,32 @@ function Assert-H454CandidateImage([object]$Base,[object]$Candidate,[string]$Bas
 }
 
 function Assert-H454PreparedCandidate([object]$Candidate,[object]$Original,[object]$Image,
-    [string]$Name,[string]$ImageId,[string]$AgentId,[string]$Label,[string]$BridgeId) {
+    [string]$Name,[string]$ImageId,[string]$AgentId,[string]$Label,[string]$BridgeId,
+    [string]$PrivateNetworkName='', [string]$PrivateNetworkId='') {
+    $transition=($PrivateNetworkName -cne '' -or $PrivateNetworkId -cne '')
+    if($transition){
+        Require-H454 ($PrivateNetworkName -cmatch '^h454-recovery-[a-f0-9]{32}$' -and
+            $PrivateNetworkId -cmatch '^[a-f0-9]{64}$' -and $PrivateNetworkId -cne $BridgeId) 'H454_CANDIDATE_NETWORK'
+    }
     Require-H454 ($null -ne $Candidate -and $Candidate.Id -cmatch '^[a-f0-9]{64}$' -and
         $Candidate.Name -ceq ('/'+$Name) -and $Candidate.Image -ceq $ImageId -and
-        $Candidate.State.Running -is [bool] -and -not $Candidate.State.Running -and
-        $Candidate.State.Status -ceq 'created' -and $Candidate.State.Paused -is [bool] -and -not $Candidate.State.Paused -and
+        $Candidate.State.Running -is [bool] -and
+        (($Candidate.State.Running -and $transition -and $Candidate.State.Status -ceq 'running') -or
+         (-not $Candidate.State.Running -and $Candidate.State.Status -ceq 'created') -or
+         (-not $Candidate.State.Running -and $transition -and $Candidate.State.Status -ceq 'exited')) -and
+        $Candidate.State.Paused -is [bool] -and -not $Candidate.State.Paused -and
         $Candidate.State.Restarting -is [bool] -and -not $Candidate.State.Restarting -and
         $Candidate.State.Dead -is [bool] -and -not $Candidate.State.Dead) 'H454_CANDIDATE_STATE'
     $cfg=$Candidate.Config;$hostConfig=$Candidate.HostConfig
     Require-H454 ($null -ne $cfg -and $null -ne $hostConfig -and $cfg.User -ceq '65534:65534' -and
         $cfg.WorkingDir -ceq '/workspace' -and $cfg.Labels.'com.hermes.h454.candidate' -ceq $Label) 'H454_CANDIDATE_PROFILE'
     foreach($name in @('Entrypoint','Cmd','Env')){
-        Require-H454 ((ConvertTo-Json -Compress -Depth 10 -InputObject $cfg.$name) -ceq
-            (ConvertTo-Json -Compress -Depth 10 -InputObject $Image.Config.$name)) 'H454_CANDIDATE_PROFILE'
+        $actualProperty=$cfg.PSObject.Properties[$name];$imageProperty=$Image.Config.PSObject.Properties[$name]
+        Require-H454 ($name -ceq 'Cmd' -or ($null -ne $actualProperty -and $null -ne $imageProperty)) 'H454_CANDIDATE_PROFILE'
+        $actualValue=if($null -eq $actualProperty){$null}else{$actualProperty.Value}
+        $imageValue=if($null -eq $imageProperty){$null}else{$imageProperty.Value}
+        Require-H454 ((ConvertTo-Json -Compress -Depth 10 -InputObject $actualValue) -ceq
+            (ConvertTo-Json -Compress -Depth 10 -InputObject $imageValue)) 'H454_CANDIDATE_PROFILE'
     }
     $oldLabels=@($Original.Config.Labels.PSObject.Properties);$newLabels=@($cfg.Labels.PSObject.Properties)
     Require-H454 ($newLabels.Count -eq $oldLabels.Count+1) 'H454_CANDIDATE_LABELS'
@@ -65,14 +82,24 @@ function Assert-H454PreparedCandidate([object]$Candidate,[object]$Original,[obje
         [string]$hostConfig.IpcMode -cnotmatch '^(?:host|container:)') 'H454_CANDIDATE_PROFILE'
     $networks=@($Candidate.NetworkSettings.Networks.PSObject.Properties.Name)
     $bridge=$Candidate.NetworkSettings.Networks.PSObject.Properties['bridge']
-    Require-H454 ($BridgeId -cmatch '^[a-f0-9]{64}$' -and $networks.Count -eq 1 -and $networks[0] -ceq 'bridge' -and
-        $null -ne $bridge -and ($bridge.Value.NetworkID -ceq $BridgeId -or
-            [string]::IsNullOrEmpty([string]$bridge.Value.NetworkID)) -and
+    $private=if($transition){$Candidate.NetworkSettings.Networks.PSObject.Properties[$PrivateNetworkName]}else{$null}
+    $onBridge=($null -ne $bridge);$onPrivate=($null -ne $private)
+    Require-H454 ($BridgeId -cmatch '^[a-f0-9]{64}$' -and
+        (($networks.Count -eq 1 -and ($onBridge -or $onPrivate)) -or
+         ($transition -and -not $Candidate.State.Running -and $networks.Count -eq 2 -and $onBridge -and $onPrivate)) -and
+        (-not $Candidate.State.Running -or ($onPrivate -and -not $onBridge)) -and
         @($hostConfig.VolumesFrom).Count -eq 1 -and [string]$hostConfig.VolumesFrom[0] -ceq $AgentId -and
         @($Original.Mounts).Count -eq 1 -and @($Candidate.Mounts).Count -eq 1) 'H454_CANDIDATE_MOUNT'
-    foreach($alias in @($bridge.Value.Aliases)){
-        Require-H454 ($null -eq $alias -or ($alias -is [string] -and
-            -not $alias.TrimEnd('.').Equals('host.docker.internal',[StringComparison]::OrdinalIgnoreCase))) 'H454_CANDIDATE_NETWORK'
+    foreach($pair in @(@($bridge,$BridgeId),@($private,$PrivateNetworkId))){
+        $endpoint=$pair[0]
+        if($null -ne $endpoint){
+            Require-H454 ($endpoint.Value.NetworkID -ceq $pair[1] -or
+                (-not $Candidate.State.Running -and [string]::IsNullOrEmpty([string]$endpoint.Value.NetworkID))) 'H454_CANDIDATE_NETWORK'
+            foreach($alias in @($endpoint.Value.Aliases)){
+                Require-H454 ($null -eq $alias -or ($alias -is [string] -and
+                    -not $alias.TrimEnd('.').Equals('host.docker.internal',[StringComparison]::OrdinalIgnoreCase))) 'H454_CANDIDATE_NETWORK'
+            }
+        }
     }
     foreach($mount in @($Original.Mounts[0],$Candidate.Mounts[0])){
         Require-H454 ($mount.Type -ceq 'bind' -and $mount.Destination -ceq '/workspace' -and
