@@ -19,6 +19,7 @@ if os.name == 'nt':
             for extra, reason in (([], 'H454_GUARD_OPERATOR_APPROVAL'),
                                   (['-OwnerApproved'], 'H454_GUARD_OPERATOR_SOURCE'),
                                   (['-OwnerApproved', '-StartWss'], 'H454_GUARD_OPERATOR_WSS_MODE'),
+                                  (['-OwnerApproved', '-CheckOriginal'], 'H454_GUARD_OPERATOR_ORIGINAL_MODE'),
                                   (['-OwnerApproved', '-PrepareWss'], 'H454_GUARD_OPERATOR_WSS_PINS')):
                 with self.subTest(reason=reason):
                     result = subprocess.run(arguments + extra, capture_output=True, text=True, timeout=10,

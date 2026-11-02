@@ -4,6 +4,8 @@
 TLS proxy and a separately restricted SSH key are installed on the relay. The
 permanent Windows supervisor connected with pinned TLS and recovered its SSH
 child after a controlled termination while the original container was stopped.
+After the supervisor itself was terminated, its owned SSH child exited and
+the periodic task started a new supervisor with pinned TLS.
 The original container is still stopped. Its raw profile differs from the old
 launcher pin only in the representation of an unspecified DNS list; the
 normalized comparison matches. Secure restaging, the production update
@@ -389,6 +391,13 @@ The normalizer is prepared in generated launchers, not installed in the old
 launcher. The eventual recovery operator must still verify actual DNS and the
 isolated route before sending credentials.
 
+`h454_windows_original_profile.ps1` checks the original identity and reuses
+the hasher and profile pin from its separately pinned launcher. It normalizes
+only an absent DNS override and, for a separately verified recovery network,
+the network name before comparing the remaining profile. The guard operator's
+read-only `CheckOriginal` mode passed against the actual stopped original; it
+does not create a route, start the container or stage credentials.
+
 ## Evidence and limits
 
 - A real pinned BRC agent transport and relay were exercised together in an
@@ -442,8 +451,9 @@ isolated route before sending credentials.
 - A temporary Windows SSH forward and the actual relay TLS sidecar carried a
   deliberately invalid synthetic bearer through a disposable isolated proxy;
   the relay refused it. The proxy's upstream interface refused plaintext and
-  the disposable agent had no direct upstream route. This verifies that test
-  route, not real credential restaging or a successful MCP call.
+  the disposable agent had no direct upstream route. The same test later passed
+  through the permanent WSS supervisor. This verifies the test route, not real
+  credential restaging or a successful MCP call.
 - Windows PowerShell 5.1 fixtures exercised exclusive locking, known and
   unknown states, idempotent offline recovery, and termination of an owned
   test process between two real `File.Replace` operations.

@@ -8,10 +8,10 @@ param(
     [Parameter(Mandatory=$true)][ValidatePattern('^[A-F0-9]{64}$')][string]$TaskBackupSha256,
     [Parameter(Mandatory=$true)][ValidatePattern('^[A-F0-9]{64}$')][string]$TaskSourceSha256,
     [Parameter(Mandatory=$true)][ValidatePattern('^[A-F0-9]{64}$')][string]$RecoverySourceSha256,
-    [switch]$PrepareWss,[switch]$StartWss,
+    [switch]$PrepareWss,[switch]$StartWss,[switch]$CheckOriginal,
     [string]$FilesSourceSha256,[string]$SupervisorSha256,[string]$IdentitySha256,
     [string]$ModuleSha256,[string]$CaSha256,[string]$NodeSha256,[string]$PublicKeySha256,
-    [string]$PublicCaPath,
+    [string]$PublicCaPath,[string]$OriginalProfileSourceSha256,
     [switch]$Apply,[switch]$OwnerApproved
 )
 $ErrorActionPreference='Stop'
@@ -92,6 +92,10 @@ $lock=$null
 try{
     Require-H454 (-not $Apply -or $OwnerApproved) 'H454_GUARD_OPERATOR_APPROVAL'
     Require-H454 (-not $StartWss -or ($PrepareWss -and $Apply -and $OwnerApproved)) 'H454_GUARD_OPERATOR_WSS_MODE'
+    if($CheckOriginal){
+        Require-H454 (-not $Apply -and -not $PrepareWss -and -not $StartWss -and
+            $OriginalProfileSourceSha256 -cmatch '^[A-F0-9]{64}$') 'H454_GUARD_OPERATOR_ORIGINAL_MODE'
+    }
     if($PrepareWss){
         foreach($pin in @($FilesSourceSha256,$SupervisorSha256,$IdentitySha256,$ModuleSha256,$CaSha256,$NodeSha256,$PublicKeySha256)){
             Require-H454 ($pin -cmatch '^[A-F0-9]{64}$') 'H454_GUARD_OPERATOR_WSS_PINS'
@@ -120,7 +124,28 @@ try{
     $lockPath=Join-Path $state 'runtime.lock'
     Require-H454 (Test-Path -LiteralPath $lockPath -PathType Leaf) 'H454_GUARD_OPERATOR_LOCK'
     $lock=Open-H454RecoveryLock $state
-    if($PrepareWss){
+    if($CheckOriginal){
+        $profileSource=Join-Path $PSScriptRoot 'h454_windows_original_profile.ps1'
+        $profileText=Read-H454PinnedSource $profileSource $OriginalProfileSourceSha256
+        . ([scriptblock]::Create($profileText))
+        $backup=Join-Path $state $BackupName;$marker=Join-Path $state 'h454-wss-transition.pending'
+        $markerText=Get-H454WssMarkerText $OriginalLauncherSha256 $GuardedLauncherSha256 $BackupName
+        $markerHash=Hash-H454Bytes ([Text.UTF8Encoding]::new($false).GetBytes($markerText))
+        Assert-H454WssTaskFile $backup $OriginalLauncherSha256 200000
+        Assert-H454WssTaskFile $context.Launcher $GuardedLauncherSha256 200000
+        Assert-H454WssTaskFile $marker $markerHash 4096
+        Require-H454 ([IO.File]::ReadAllText($marker) -ceq $markerText) 'H454_WSS_TASK_MARKER'
+        Assert-H454WssTaskGuardBytes ([IO.File]::ReadAllBytes($backup)) ([IO.File]::ReadAllBytes($context.Launcher))
+        $original=Get-H454Container '1fbf00d9b711be215ab35eaea1f6ef549cc4a0930495e3d0776a965f8c75abb6'
+        Require-H454 ($original.State.Running -is [bool] -and -not $original.State.Running -and
+            [string]$original.State.Status -ceq 'exited' -and [string]$original.HostConfig.RestartPolicy.Name -ceq 'no') 'H454_ORIGINAL_PROFILE_STATE'
+        Assert-H454OriginalProfile $original $backup $OriginalLauncherSha256 `
+            '1fbf00d9b711be215ab35eaea1f6ef549cc4a0930495e3d0776a965f8c75abb6' `
+            'sha256:0c95960c02e0dbe00a6a11ee6253d4055e4a7abf7671404b3f876dfdb95bd5d8' 'hermes-h15-windows-permanent' 'bridge'
+        Assert-H454RecoveryLock $state $lock
+        Assert-H454WssLegacyUnchanged $context.Task $context.Sid
+        Require-H454 ((Get-FileHash -LiteralPath $profileSource -Algorithm SHA256).Hash -ceq $OriginalProfileSourceSha256) 'H454_GUARD_OPERATOR_SOURCE_DRIFT'
+    }elseif($PrepareWss){
         $filesSource=Join-Path $PSScriptRoot 'h454_windows_wss_files.ps1'
         $supervisorSource=Join-Path $PSScriptRoot 'h454_windows_wss_tunnel.ps1'
         $identitySource=Join-Path $PSScriptRoot 'h454_windows_wss_identity.ps1'
@@ -150,7 +175,9 @@ try{
     foreach($pair in @(@($taskSource,$TaskSourceSha256),@($recoverySource,$RecoverySourceSha256),@($taskBackup,$TaskBackupSha256))){
         Require-H454 ((Get-FileHash -LiteralPath $pair[0] -Algorithm SHA256).Hash -ceq $pair[1]) 'H454_GUARD_OPERATOR_SOURCE_DRIFT'
     }
-    if($PrepareWss){
+    if($CheckOriginal){
+        'H454_ORIGINAL_PROFILE_PREFLIGHT=PASS'
+    }elseif($PrepareWss){
         'H454_WSS_FILES_OPERATOR='+$result.Status
         'H454_WSS_CONFIG_SHA256='+$result.ConfigSha256
         if($Apply){$taskStatus}

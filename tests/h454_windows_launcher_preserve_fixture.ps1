@@ -485,6 +485,50 @@ Require ((Get-H454ContainerProfileHash $script:h454Item) -cne $h454DnsProfile) '
 $script:h454Item.HostConfig.Dns=@();$script:h454Item.HostConfig.Privileged=$true
 Require ((Get-H454ContainerProfileHash $script:h454Item) -cne $h454DnsProfile) 'PRIVILEGE_DRIFT_ACCEPTED'
 
+# The recovery preflight uses the independently pinned original hasher.
+Reset-H454Fixture
+$script:h454Item.HostConfig | Add-Member -NotePropertyName Dns -NotePropertyValue $null
+$script:h454Item.HostConfig | Add-Member -NotePropertyName ExtraHosts -NotePropertyValue $null
+$h454Profile=Get-H454ContainerProfileHash $script:h454Item
+$h454Source=[IO.File]::ReadAllText($FixtureLauncher)
+$h454Needle='$script:h454ExpectedProfile = '''+('A'*64)+''''
+Require ($h454Source.IndexOf($h454Needle,[StringComparison]::Ordinal) -ge 0 -and
+    $h454Source.IndexOf($h454Needle,[StringComparison]::Ordinal) -eq $h454Source.LastIndexOf($h454Needle,[StringComparison]::Ordinal)) 'PROFILE_FIXTURE_SOURCE'
+$h454Source=$h454Source.Replace($h454Needle,('$script:h454ExpectedProfile = '''+$h454Profile+''''))
+$h454ProfileLauncher=Join-Path $h454FixtureParent ('profile-'+[Guid]::NewGuid().ToString('N')+'.ps1')
+$h454Stream=[IO.File]::Open($h454ProfileLauncher,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+try{$h454Bytes=[Text.UTF8Encoding]::new($false).GetBytes($h454Source);$h454Stream.Write($h454Bytes,0,$h454Bytes.Length);$h454Stream.Flush($true)}finally{$h454Stream.Dispose()}
+$h454LauncherHash=(Get-FileHash -LiteralPath $h454ProfileLauncher -Algorithm SHA256).Hash
+function Require-H454([bool]$Condition,[string]$Reason){if(-not $Condition){throw $Reason}}
+function Hash-H454Bytes([byte[]]$Bytes){$sha=[Security.Cryptography.SHA256]::Create();try{return [BitConverter]::ToString($sha.ComputeHash($Bytes)).Replace('-','')}finally{$sha.Dispose()}}
+function Assert-H454WssTaskFile([string]$Path,[string]$Sha256,[int]$MaxBytes){
+    Require ($Path -ceq $h454ProfileLauncher -and [IO.File]::Exists($Path) -and
+        [IO.File]::ReadAllBytes($Path).Length -le $MaxBytes -and (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash -ceq $Sha256) 'PROFILE_FIXTURE_FILE'
+}
+try {
+    . (Join-Path (Split-Path $PSScriptRoot -Parent) 'scripts/h454_windows_original_profile.ps1')
+    function Check-H454Profile([string]$Network='bridge'){
+        Assert-H454OriginalProfile $script:h454Item $h454ProfileLauncher $h454LauncherHash ('1'*64) ('sha256:'+('a'*64)) 'synthetic-agent' $Network
+    }
+    Check-H454Profile
+    $script:h454Item.HostConfig.Dns=@();Check-H454Profile
+    Require ($script:h454Item.HostConfig.Dns -is [array] -and $script:h454Item.HostConfig.Dns.Count -eq 0) 'PROFILE_DNS_RESTORED'
+    $script:h454Item.NetworkSettings.Networks=[pscustomobject]@{'h454-test-route'=[pscustomobject]@{}}
+    Check-H454Profile 'h454-test-route'
+    Require ($null -ne $script:h454Item.NetworkSettings.Networks.PSObject.Properties['h454-test-route']) 'PROFILE_NETWORK_RESTORED'
+    $script:h454Item.HostConfig.Dns=@('192.0.2.53');Expect-H454Refusal {Check-H454Profile 'h454-test-route'}
+    $script:h454Item.HostConfig.Dns=@();$script:h454Item.HostConfig.Privileged=$true;Expect-H454Refusal {Check-H454Profile 'h454-test-route'}
+    Require ($null -ne $script:h454Item.NetworkSettings.Networks.PSObject.Properties['h454-test-route'] -and
+        $script:h454Item.HostConfig.Dns -is [array]) 'PROFILE_REFUSAL_RESTORED'
+    $script:h454Item.HostConfig.Privileged=$false;Expect-H454Refusal {Check-H454Profile 'foreign-network'}
+    Expect-H454Refusal {Assert-H454OriginalProfile $script:h454Item $h454ProfileLauncher ('F'*64) ('1'*64) ('sha256:'+('a'*64)) 'synthetic-agent' 'h454-test-route'}
+} finally {
+    if([IO.File]::Exists($h454ProfileLauncher)){
+        Require ((Get-FileHash -LiteralPath $h454ProfileLauncher -Algorithm SHA256).Hash -ceq $h454LauncherHash) 'PROFILE_FIXTURE_CLEANUP'
+        [IO.File]::Delete($h454ProfileLauncher)
+    }
+}
+
 # Docker labels are a map: order must not change the pinned profile.
 Reset-H454Fixture
 $script:h454Item.Config.Labels=[pscustomobject][ordered]@{'z.example'='z';'com.hermes.scope'='synthetic';'A.example'='a'}
