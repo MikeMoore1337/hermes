@@ -92,7 +92,7 @@ docker run -d --name "$agent" --network "$net" \
   --tmpfs /tmp:rw,nosuid,nodev,uid=65534,gid=65534,size=16m \
   -v "$workspace:/workspace:rw" -e HOME=/workspace -e BRC_HOME=/workspace/.brc \
   -e BRC_RELAY=http://172.29.251.2:3000 \
-  -e BRC_DEVICE_ID=ci-native-one -e BRC_NAME="H15 Windows permanent sandbox" \
+  -e BRC_DEVICE_ID=h15-win-05be75515428 -e BRC_NAME="H15 Windows permanent sandbox" \
   -e BRC_TOKEN="$token" "$new" \
   node packages/agent/dist/cli.js --allow-dir /workspace >/dev/null
 unset token tokens
