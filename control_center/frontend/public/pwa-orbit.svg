@@ -1,1 +1,17 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#EAF9FF"/><stop offset=".5" stop-color="#8FD8FF"/><stop offset="1" stop-color="#3C89C6"/></linearGradient></defs><rect width="512" height="512" rx="90" fill="#081B2C"/><g transform="translate(101 104) scale(2.42)" fill="url(#g)"><path d="M9 20L40 31V46L17 38Z M10 42L40 53V67L20 60Z M18 67L40 74V88L27 84Z M119 20L88 31V46L111 38Z M118 42L88 53V67L108 60Z M110 67L88 74V88L101 84Z M40 30L54 35V61H74V35L88 30V99L74 104V75H54V104L40 99Z"/></g></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" ><defs>
+<linearGradient id="metal" x1="0" y1="0" x2=".85" y2="1"><stop stop-color="#FAFDFF"/><stop offset=".32" stop-color="#C5E9FF"/><stop offset=".70" stop-color="#6DB9EE"/><stop offset="1" stop-color="#3283C6"/></linearGradient>
+<linearGradient id="wing" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#DDF3FF"/><stop offset=".55" stop-color="#82CBF7"/><stop offset="1" stop-color="#357FB9"/></linearGradient>
+<linearGradient id="surface" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#0A243B"/><stop offset="1" stop-color="#05101C"/></linearGradient>
+<radialGradient id="aura"><stop stop-color="#267DB1" stop-opacity=".26"/><stop offset="1" stop-color="#267DB1" stop-opacity="0"/></radialGradient>
+</defs><rect x="0" y="0" width="512" height="512" rx="96" fill="url(#surface)"/><circle cx="256" cy="255" r="235" fill="url(#aura)"/><g transform="translate(33.28 33.28) scale(0.87)"><g>
+<path d="M57 135L186 197V231L96 194Z" fill="url(#wing)"/>
+<path d="M77 214L186 247V277L107 254Z" fill="url(#metal)"/>
+<path d="M105 289L186 303V329L138 314Z" fill="url(#wing)"/>
+<g transform="translate(512 0) scale(-1 1)">
+<path d="M57 135L186 197V231L96 194Z" fill="url(#wing)"/>
+<path d="M77 214L186 247V277L107 254Z" fill="url(#metal)"/>
+<path d="M105 289L186 303V329L138 314Z" fill="url(#wing)"/>
+</g>
+<path d="M188 175L226 187V239H286V187L324 175V351L286 340V277H226V340L188 351Z" fill="url(#metal)"/>
+<path d="M226 239H286V277H226Z" fill="#DDF7FF"/>
+</g></g></svg>
