@@ -24,9 +24,27 @@ if __package__:
         CandidateError, evaluate, public_preview_evidence,
     )
 else:
-    from h191_google_egress_candidate import (
-        CandidateError, evaluate, public_preview_evidence,
+    # Production invokes this file with python -I: neither cwd nor script
+    # directory is on sys.path. Load ONLY the reviewed sibling source by
+    # explicit path, without relaxing Python isolated mode or sys.path.
+    import importlib.util
+
+    _candidate_path = Path(__file__).with_name("h191_google_egress_candidate.py")
+    _candidate_meta = _candidate_path.lstat()
+    if (not stat.S_ISREG(_candidate_meta.st_mode)
+            or stat.S_IMODE(_candidate_meta.st_mode) & 0o022
+            or (os.geteuid() == 0 and _candidate_meta.st_uid != 0)):
+        raise RuntimeError("h191_candidate_source_untrusted")
+    _candidate_spec = importlib.util.spec_from_file_location(
+        "_h191_gsc_pinned_candidate", _candidate_path,
     )
+    if _candidate_spec is None or _candidate_spec.loader is None:
+        raise ImportError("h191_candidate_loader_unavailable")
+    _candidate = importlib.util.module_from_spec(_candidate_spec)
+    _candidate_spec.loader.exec_module(_candidate)
+    CandidateError = _candidate.CandidateError
+    evaluate = _candidate.evaluate
+    public_preview_evidence = _candidate.public_preview_evidence
 
 HOST = "vps1777112993"
 USER = "hermes-gsc"
@@ -96,8 +114,15 @@ def _identity() -> tuple[int, int]:
     try:
         if SOURCE.is_symlink() or SOURCE.read_bytes() != current.read_bytes():
             raise GuardError("active_source_not_current_release")
-        for p in (current, SOURCE):
-            if p.stat().st_uid != 0 or p.is_symlink():
+        # The isolated direct-import path must match the exact deployed release.
+        sibling = Path(__file__).with_name("h191_google_egress_candidate.py")
+        reviewed = current.with_name("h191_google_egress_candidate.py")
+        if (sibling.is_symlink() or reviewed.is_symlink()
+                or sibling.read_bytes() != reviewed.read_bytes()):
+            raise GuardError("candidate_source_not_current_release")
+        for p in (current, SOURCE, sibling, reviewed):
+            if (p.stat().st_uid != 0 or p.is_symlink()
+                    or stat.S_IMODE(p.stat().st_mode) & 0o022):
                 raise GuardError("source_not_root_owned")
     except OSError:
         raise GuardError("source_verification_unavailable") from None
