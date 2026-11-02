@@ -343,7 +343,7 @@ that network, and restore the same original with fresh staging. Its separate
 pending marker remains until the operator has observed original MCP and
 acknowledges it; that acknowledgment is an operator assertion, not an MCP
 check performed by the script. Each Docker mutation also has a flushed
-in-flight marker. If an operation times out or the process is interrupted,
+in-flight marker with a bounded, non-secret operation name. If an operation times out or the process is interrupted,
 recovery refuses to proceed while that marker exists: inspecting the current
 container state alone cannot prove the daemon has finished the earlier action.
 There is no automated settlement proof or marker-clearing procedure for such

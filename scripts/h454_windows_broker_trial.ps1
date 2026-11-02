@@ -50,22 +50,36 @@ function Get-H454BrokerTrialState([hashtable]$RestoreArgs,[string]$CandidateId,[
 
 function Assert-H454BrokerTrialSettled([hashtable]$RestoreArgs) {
     Assert-H454RecoveryLock $RestoreArgs.StateDir $RestoreArgs.Lock
-    Require-H454 (-not (Test-Path -LiteralPath (Join-Path $RestoreArgs.StateDir 'h454-broker-trial.inflight'))) 'H454_TRIAL_OPERATION_UNKNOWN'
+    $path=Join-Path $RestoreArgs.StateDir 'h454-broker-trial.inflight'
+    if(Test-Path -LiteralPath $path){
+        $phase='OPERATION'
+        try{
+            Assert-H454PrivateAcl $path
+            if((Get-Item -LiteralPath $path).Length -le 128){
+                $value=[IO.File]::ReadAllText($path)
+                if($value -cmatch '^H454-BROKER-TRIAL-INFLIGHT-1\n([A-Z_]{1,40})\n$'){$phase=$Matches[1]}
+            }
+        }catch{}
+        throw ('H454_TRIAL_UNKNOWN_'+$phase)
+    }
 }
 
-function Start-H454BrokerTrialOperation([hashtable]$RestoreArgs) {
+function Start-H454BrokerTrialOperation([hashtable]$RestoreArgs,[string]$Phase) {
     Assert-H454BrokerTrialSettled $RestoreArgs
+    Require-H454 ($Phase -cin @('STOP_ORIGINAL','STOP_CANDIDATE','START_CANDIDATE','CONNECT_ORIGINAL','DISCONNECT_ORIGINAL',
+        'CONNECT_CANDIDATE','DISCONNECT_CANDIDATE','CHECK_CANDIDATE','STAGE_CANDIDATE','VERIFY_CANDIDATE',
+        'STAGE_BROKER','RESTORE_ORIGINAL','ACKNOWLEDGE_ORIGINAL')) 'H454_TRIAL_PHASE'
     $path=Join-Path $RestoreArgs.StateDir 'h454-broker-trial.inflight'
-    $bytes=[Text.Encoding]::UTF8.GetBytes('H454-BROKER-TRIAL-INFLIGHT-1')
+    $bytes=[Text.Encoding]::UTF8.GetBytes("H454-BROKER-TRIAL-INFLIGHT-1`n$Phase`n")
     $stream=[IO.FileStream]::new($path,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None,4096,[IO.FileOptions]::WriteThrough)
     try{$stream.Write($bytes,0,$bytes.Length);$stream.Flush($true)}finally{$stream.Dispose()}
     Assert-H454WssTaskFile $path (Hash-H454Bytes $bytes) 4096
 }
 
-function Complete-H454BrokerTrialOperation([hashtable]$RestoreArgs) {
+function Complete-H454BrokerTrialOperation([hashtable]$RestoreArgs,[string]$Phase) {
     Assert-H454RecoveryLock $RestoreArgs.StateDir $RestoreArgs.Lock
     $path=Join-Path $RestoreArgs.StateDir 'h454-broker-trial.inflight'
-    $bytes=[Text.Encoding]::UTF8.GetBytes('H454-BROKER-TRIAL-INFLIGHT-1')
+    $bytes=[Text.Encoding]::UTF8.GetBytes("H454-BROKER-TRIAL-INFLIGHT-1`n$Phase`n")
     Assert-H454WssTaskFile $path (Hash-H454Bytes $bytes) 4096
     [IO.File]::Delete($path)
     Require-H454 (-not (Test-Path -LiteralPath $path)) 'H454_TRIAL_OPERATION_UNKNOWN'
@@ -73,18 +87,32 @@ function Complete-H454BrokerTrialOperation([hashtable]$RestoreArgs) {
 
 function Invoke-H454BrokerTrialDocker([hashtable]$RestoreArgs,[string[]]$Arguments,[byte[]]$InputBytes=$null,
     [datetime]$WindowStartUtc,[datetime]$WindowEndUtc) {
-    Start-H454BrokerTrialOperation $RestoreArgs
+    $phase=switch($Arguments[0]){
+        'stop'{if($Arguments[-1] -ceq $RestoreArgs.AgentId){'STOP_ORIGINAL'}else{'STOP_CANDIDATE'}}
+        'start'{'START_CANDIDATE'}
+        'network'{
+            $target=if($Arguments[-1] -ceq $RestoreArgs.AgentId){'ORIGINAL'}else{'CANDIDATE'}
+            if($Arguments[1] -ceq 'connect'){'CONNECT_'+$target}elseif($Arguments[1] -ceq 'disconnect'){'DISCONNECT_'+$target}else{'INVALID'}
+        }
+        'exec'{
+            if($Arguments -ccontains '/usr/local/bin/h15-stage.sh'){'STAGE_CANDIDATE'}
+            elseif($Arguments -ccontains '/opt/hermes-rollback/stage.cjs'){'STAGE_BROKER'}
+            elseif($Arguments -ccontains '--interactive'){'VERIFY_CANDIDATE'}else{'CHECK_CANDIDATE'}
+        }
+        default{'INVALID'}
+    }
+    Start-H454BrokerTrialOperation $RestoreArgs $phase
     if($Arguments[0] -ceq 'stop' -and $Arguments[-1] -ceq $RestoreArgs.AgentId){
         $now=[DateTime]::UtcNow
         if($WindowStartUtc.Kind -ne [DateTimeKind]::Utc -or $WindowEndUtc.Kind -ne [DateTimeKind]::Utc -or
             $now -lt $WindowStartUtc -or $now -ge $WindowEndUtc){
-            Complete-H454BrokerTrialOperation $RestoreArgs
+            Complete-H454BrokerTrialOperation $RestoreArgs $phase
             throw 'H454_TRIAL_WINDOW'
         }
     }
     $result=Invoke-H454RecoveryDocker -Arguments $Arguments -DockerSha256 $RestoreArgs.DockerSha256 -InputBytes $InputBytes
     Require-H454 ($result.Code -eq 0) 'H454_TRIAL_DOCKER_HOLD'
-    Complete-H454BrokerTrialOperation $RestoreArgs
+    Complete-H454BrokerTrialOperation $RestoreArgs $phase
     return $result.Output
 }
 
@@ -185,10 +213,10 @@ function Restore-H454BrokerTrial([hashtable]$RestoreArgs,[string]$CandidateId,[s
         $state=Get-H454BrokerTrialState $RestoreArgs $CandidateId $CandidateImage -Pending
     }
     Require-H454 ($state.OnBridge -and -not $state.OnPrivate -and -not $state.Candidate.State.Running) 'H454_TRIAL_RECOVERY_STATE'
-    Start-H454BrokerTrialOperation $RestoreArgs
+    Start-H454BrokerTrialOperation $RestoreArgs 'RESTORE_ORIGINAL'
     $restored=Restore-H454Original @RestoreArgs -TokenBytes $TokenBytes -AgentBytes $AgentBytes -Apply -OwnerApproved
     Require-H454 ($restored.Status -ceq 'ORIGINAL_STAGED' -and $restored.AgentId -ceq $RestoreArgs.AgentId) 'H454_TRIAL_RESTORE'
-    Complete-H454BrokerTrialOperation $RestoreArgs
+    Complete-H454BrokerTrialOperation $RestoreArgs 'RESTORE_ORIGINAL'
     Assert-H454BrokerTrialMarker $RestoreArgs $CandidateId $CandidateImage
     return [pscustomobject]@{Status='ORIGINAL_STAGED_MCP_REQUIRED';AgentId=$restored.AgentId}
 }
@@ -203,10 +231,10 @@ function Complete-H454BrokerTrial([hashtable]$RestoreArgs,[string]$CandidateId,[
         -not $state.Candidate.State.Running -and $state.OnBridge -and -not $state.OnPrivate) 'H454_TRIAL_RECOVERY_STATE'
     if(-not $Apply){return [pscustomobject]@{Status='ACKNOWLEDGMENT_PREFLIGHT'}}
     Assert-H454BrokerTrialCredential $RestoreArgs $TokenBytes $AgentBytes
-    Start-H454BrokerTrialOperation $RestoreArgs
+    Start-H454BrokerTrialOperation $RestoreArgs 'ACKNOWLEDGE_ORIGINAL'
     $restored=Restore-H454Original @RestoreArgs -TokenBytes $TokenBytes -AgentBytes $AgentBytes -Apply -OwnerApproved -RestageOnly
     Require-H454 ($restored.Status -ceq 'ORIGINAL_STAGED' -and $restored.AgentId -ceq $RestoreArgs.AgentId) 'H454_TRIAL_RESTORE'
-    Complete-H454BrokerTrialOperation $RestoreArgs
+    Complete-H454BrokerTrialOperation $RestoreArgs 'ACKNOWLEDGE_ORIGINAL'
     $state=Get-H454BrokerTrialState $RestoreArgs $CandidateId $CandidateImage -Pending
     Require-H454 ($state.Original.Agent.State.Running -and -not $state.Candidate.State.Running -and
         $state.Original.OnPrivate -and -not $state.Original.OnBridge -and $state.OnBridge -and -not $state.OnPrivate) 'H454_TRIAL_RECOVERY_STATE'

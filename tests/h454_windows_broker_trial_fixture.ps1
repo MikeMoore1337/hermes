@@ -10,6 +10,7 @@ function Hash-H454Bytes([byte[]]$Bytes){
     try{return ([BitConverter]::ToString($sha.ComputeHash($Bytes))).Replace('-','')}finally{$sha.Dispose()}
 }
 function Assert-H454RecoveryLock([string]$StateDir,[IO.FileStream]$Lock){Require-H454 ($Lock.CanWrite -and $Lock.Name -ceq (Join-Path $StateDir 'runtime.lock')) 'FIXTURE_LOCK'}
+function Assert-H454PrivateAcl([string]$Path){Require-H454 ([IO.Path]::GetDirectoryName($Path) -ceq $dir -and -not ((Get-Item -LiteralPath $Path).Attributes -band [IO.FileAttributes]::ReparsePoint)) 'FIXTURE_PATH'}
 function Assert-H454WssTaskFile([string]$Path,[string]$Hash,[int]$Max){
     Require-H454 ((Test-Path -LiteralPath $Path -PathType Leaf) -and (Get-Item -LiteralPath $Path).Length -le $Max -and
         (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash -ceq $Hash) 'FIXTURE_MARKER'
@@ -111,9 +112,16 @@ try{
         Require-H454 (Test-Path -LiteralPath (Join-Path $dir 'h454-broker-trial.pending')) 'FIXTURE_MARKER_MISSING'
         if($interrupted){
             Require-H454 (Test-Path -LiteralPath (Join-Path $dir 'h454-broker-trial.inflight')) 'FIXTURE_OPERATION_MARKER'
+            $phase=switch($case){
+                'stop-original'{'STOP_ORIGINAL'} 'original-connect-bridge'{'CONNECT_ORIGINAL'}
+                'original-disconnect-private'{'DISCONNECT_ORIGINAL'} 'candidate-connect-private'{'CONNECT_CANDIDATE'}
+                'candidate-disconnect-bridge'{'DISCONNECT_CANDIDATE'} 'start-candidate'{'START_CANDIDATE'}
+                'verify-empty'{'CHECK_CANDIDATE'} 'stage-candidate'{'STAGE_CANDIDATE'}
+                'verify-candidate'{'VERIFY_CANDIDATE'} 'stage-broker'{'STAGE_BROKER'}
+            }
             $before=$script:events.Count;$refused=$false
             try{$null=Restore-H454BrokerTrial $args $script:candidateId $script:candidateImage $credential.TokenBytes $credential.AgentBytes -Apply -OwnerApproved}
-            catch{$refused=$_.Exception.Message -ceq 'H454_TRIAL_OPERATION_UNKNOWN'}
+            catch{$refused=$_.Exception.Message -ceq ('H454_TRIAL_UNKNOWN_'+$phase)}
             Require-H454 ($refused -and $script:events.Count -eq $before) 'FIXTURE_UNKNOWN_OPERATION_RETRIED'
             # The mock has already settled; a real Docker timeout has no such proof.
             [IO.File]::Delete((Join-Path $dir 'h454-broker-trial.inflight'))
@@ -145,8 +153,10 @@ try{
         catch{$refused=$_.Exception.Message -ceq 'H454_DOCKER_AMBIGUOUS'}
         Require-H454 ($refused -and (Test-Path -LiteralPath (Join-Path $dir 'h454-broker-trial.inflight'))) 'FIXTURE_RECOVERY_INTERRUPTED'
         $before=$script:events.Count;$refused=$false
+        $phase=switch($case){'stop-candidate'{'STOP_CANDIDATE'} 'candidate-connect-bridge'{'CONNECT_CANDIDATE'}
+            'candidate-disconnect-private'{'DISCONNECT_CANDIDATE'} 'restore-original'{'RESTORE_ORIGINAL'}}
         try{$null=Restore-H454BrokerTrial $args $script:candidateId $script:candidateImage $credential.TokenBytes $credential.AgentBytes -Apply -OwnerApproved}
-        catch{$refused=$_.Exception.Message -ceq 'H454_TRIAL_OPERATION_UNKNOWN'}
+        catch{$refused=$_.Exception.Message -ceq ('H454_TRIAL_UNKNOWN_'+$phase)}
         Require-H454 ($refused -and $before -eq $script:events.Count) 'FIXTURE_RECOVERY_UNKNOWN_RETRIED'
         [IO.File]::Delete((Join-Path $dir 'h454-broker-trial.inflight'))
         $script:failure=''
