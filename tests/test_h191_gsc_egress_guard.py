@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from copy import deepcopy
 import json
+import subprocess
+import sys
 from pathlib import Path
 from unittest import TestCase, mock
 
@@ -50,6 +52,26 @@ def valid_nft():
 
 
 class H191GoogleEgressGuardTests(TestCase):
+    def test_direct_isolated_cli_can_import_exact_sibling(self):
+        """Regression: `python -I` excludes script dir from sys.path."""
+        script = Path(guard.__file__).resolve()
+        result = subprocess.run(
+            [sys.executable, "-I", "-B", str(script), "--help"],
+            capture_output=True, text=True, timeout=12, check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr[:240])
+        self.assertIn("--plan", result.stdout)
+        self.assertIn("--install", result.stdout)
+        self.assertNotIn("ModuleNotFoundError", result.stderr)
+
+    def test_direct_isolated_loader_does_not_modify_sys_path(self):
+        source = Path(guard.__file__).read_text(encoding="utf-8")
+        self.assertIn("importlib.util.spec_from_file_location", source)
+        self.assertIn("h191_candidate_source_untrusted", source)
+        self.assertIn("candidate_source_not_current_release", source)
+        self.assertNotIn("sys.path.insert(", source)
+        self.assertNotIn("sys.path.append(", source)
+
     def test_nft_program_is_uid_scoped_port_limited_and_default_drops(self):
         text = guard.nft_program(PINS, UID)
         self.assertTrue(text.startswith("create table inet " + guard.TABLE))
