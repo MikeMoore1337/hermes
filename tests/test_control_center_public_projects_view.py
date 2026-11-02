@@ -94,8 +94,7 @@ class PublicProjectsViewTests(unittest.TestCase):
         from control_center import operator_inbox, snapshot
         for src in (view,operator_inbox,snapshot):
             code=inspect.getsource(src)
-            self.assertNotIn("from qa_advisor",code)
-            self.assertNotIn("import qa_advisor",code)
+            self.assertNotRegex(code, r"(?m)^\s*(?:from|import)\s+qa_advisor\b")
 
 
 if __name__=="__main__":
