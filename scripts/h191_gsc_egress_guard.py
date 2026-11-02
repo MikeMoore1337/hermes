@@ -414,6 +414,45 @@ def _replace_guard_unit(data: str) -> None:
             pass
 
 
+def _replace_pinned_file(path: Path, data: str, mode: int) -> None:
+    """Atomically replace ONLY an existing root-owned H191 policy/drop-in."""
+    limits = {POLICY: (0o600, MAX_POLICY_BYTES),
+              DROPIN: (0o644, 8192)}
+    if path not in limits or limits[path][0] != mode:
+        raise GuardError("refresh_path_not_allowlisted")
+    _read_root_file(path, mode, limits[path][1])
+    parent = path.parent
+    try:
+        folder = parent.lstat()
+        if (not stat.S_ISDIR(folder.st_mode) or folder.st_uid != 0
+                or stat.S_IMODE(folder.st_mode) & 0o022):
+            raise GuardError("refresh_parent_untrusted")
+        if not 1 <= len(data.encode("utf-8")) <= limits[path][1]:
+            raise GuardError("refresh_data_invalid")
+        fd, temporary = tempfile.mkstemp(prefix=".h191-refresh-", dir=str(parent))
+    except OSError:
+        raise GuardError("refresh_file_stage_denied") from None
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            os.fchmod(stream.fileno(), mode)
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+        directory_fd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    except OSError:
+        raise GuardError("refresh_file_replace_failed") from None
+    finally:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+
+
 def _store_text(path: Path, data: str, mode: int) -> None:
     # No overwrite (including symlinks). Root-only directories checked separately.
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
@@ -639,6 +678,72 @@ def upgrade_unit(uid: int, gid: int) -> None:
         raise GuardError("guard_unit_upgrade_unverified") from None
 
 
+def refresh_pins(uid: int, gid: int) -> str:
+    """Owner-gated public-Google-DNS refresh; no GSC/OAuth or timer changes.
+
+    The nft table replacement is a single atomic transaction. Changing nft
+    first can only reduce permissions until the revised systemd cgroup
+    allowlist is reloaded. Any failure attempts exact-state rollback and
+    NEVER deletes or broadens the host's existing firewall rules.
+    """
+    _unit_state(install=True)  # No in-flight GSC, timer must still be disabled.
+    _key_metadata(uid, gid)
+    previous = _read_record(uid, gid)
+    _verify_files(previous)
+    _installed_unit_trusted(previous)
+    if _nft_state(previous, uid) != "EXACT":
+        raise GuardError("refresh_existing_guard_not_exact")
+    old_record = _read_root_file(POLICY, 0o600, MAX_POLICY_BYTES)
+    old_dropin = dropin_text(previous)
+    release_before = _sha()
+    current = _current_pins(uid)
+    if _sha() != release_before:
+        raise GuardError("release_changed_during_refresh")
+    if set(current) == set(previous):
+        return "UNCHANGED"
+    # The new pins were checked against public Google goog.json - cloud.json,
+    # the two hardcoded DNS hostnames and a fresh timestamp by evaluate().
+    program = f"delete table inet {TABLE}\n" + nft_program(current, uid)
+    _run(["nft", "-c", "-f", "-"], stdin=program)
+    updated_record = _pins_record(current, uid, gid)
+    if _sha() != release_before:
+        raise GuardError("release_changed_during_refresh")
+    _run(["nft", "-f", "-"], stdin=program)
+    try:
+        if _nft_state(current, uid) != "EXACT":
+            raise GuardError("refresh_nft_postcommit_invalid")
+        _replace_pinned_file(POLICY, updated_record, 0o600)
+        _replace_pinned_file(DROPIN, dropin_text(current), 0o644)
+        _run(["systemctl", "daemon-reload"], timeout=18)
+        _verify_files(current)
+        _installed_unit_trusted(current)
+        _unit_state(install=True)
+        if _nft_state(current, uid) != "EXACT" or _sha() != release_before:
+            raise GuardError("refresh_postinstall_state_invalid")
+        return "UPDATED"
+    except GuardError:
+        # Revert only our own files and nft table. Leave the service disabled.
+        # If rollback cannot be verified, stop and leave guard in HOLD.
+        try:
+            if _read_root_file(POLICY, 0o600, MAX_POLICY_BYTES) != old_record:
+                _replace_pinned_file(POLICY, old_record, 0o600)
+            if _read_root_file(DROPIN, 0o644, 8192) != old_dropin:
+                _replace_pinned_file(DROPIN, old_dropin, 0o644)
+            _run(["systemctl", "daemon-reload"], timeout=18)
+            if _nft_state(current, uid) != "EXACT":
+                raise GuardError("rollback_new_table_not_exact")
+            rollback_batch = f"delete table inet {TABLE}\n" + nft_program(previous, uid)
+            _run(["nft", "-c", "-f", "-"], stdin=rollback_batch)
+            _run(["nft", "-f", "-"], stdin=rollback_batch)
+            _verify_files(previous)
+            _installed_unit_trusted(previous)
+            if _nft_state(previous, uid) != "EXACT":
+                raise GuardError("rollback_guard_not_restored")
+        except GuardError:
+            raise GuardError("refresh_rollback_incomplete") from None
+        raise GuardError("refresh_failed_rolled_back") from None
+
+
 def rollback(uid: int, gid: int) -> None:
     """Owner-only exact-state rollback. Restore DENY_ALL before deleting nft."""
     _unit_state(install=True)
@@ -673,6 +778,7 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument("--ensure", action="store_true")
     a.add_argument("--rollback", action="store_true")
     a.add_argument("--upgrade-unit", action="store_true")
+    a.add_argument("--refresh-pins", action="store_true")
     parser.add_argument("--confirm-owner-network-change", action="store_true")
     args = parser.parse_args(argv)
     try:
@@ -688,7 +794,7 @@ def main(argv: list[str] | None = None) -> int:
             _run(["nft", "-c", "-f", "-"], stdin=nft_program(pins, uid))
             print("H191_GUARD_PLAN=PASS_NO_MUTATION")
             return 0
-        if args.confirm_owner_network_change != (args.install or args.rollback or args.upgrade_unit):
+        if args.confirm_owner_network_change != (args.install or args.rollback or args.upgrade_unit or args.refresh_pins):
             raise GuardError("owner_approval_required_or_unexpected")
         fd = _lock()
         try:
@@ -703,6 +809,9 @@ def main(argv: list[str] | None = None) -> int:
             elif args.upgrade_unit:
                 upgrade_unit(uid, gid)
                 print("H191_GUARD_UNIT_UPGRADE=PASS")
+            elif args.refresh_pins:
+                state = refresh_pins(uid, gid)
+                print("H191_GUARD_PIN_REFRESH=PASS_" + state)
             else:
                 check(uid, gid, ensure=args.ensure)
                 print("H191_GUARD_" + ("ENSURE" if args.ensure else "CHECK") + "=PASS")
