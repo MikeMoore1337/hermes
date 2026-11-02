@@ -402,6 +402,21 @@ Docker executable and local engine socket, rejects host overrides and treats a
 timeout as ambiguous. A disposable, network-isolated container confirmed exact
 stdin bytes using synthetic data; the fixture was removed.
 
+`PrepareRecoveryRoute` can separately prepare the isolated network and pinned
+proxy while the original remains stopped. Before each mutation it rechecks
+the lock, guarded launcher, original profile and running pinned WSS tunnel. It
+checks all Docker container network associations, including stopped containers,
+and refuses foreign members. It probes the proxy with a synthetic rejected
+bearer and checks that its upstream interface refuses plaintext. A real
+disposable fixture prepared and resumed this route, refused both stopped and
+running foreign containers, resumed after injected interruptions and an owned
+leftover probe, and preserved a foreign probe until the fixture removed it.
+The fixture removed its own resources. This mode does not attach or start the
+original or stage credentials.
+An initial foreign-probe fixture had a variable-name collision and left its
+own stopped test container; it was identified by ID, image, command and label
+and removed. The corrected fixture completed and cleaned up.
+
 ## Evidence and limits
 
 - A real pinned BRC agent transport and relay were exercised together in an

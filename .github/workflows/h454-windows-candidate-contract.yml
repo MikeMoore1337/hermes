@@ -20,6 +20,7 @@ on:
       - scripts/h454_windows_wss_files.ps1
       - scripts/h454_windows_original_profile.ps1
       - scripts/h454_windows_recovery_docker.ps1
+      - scripts/h454_windows_recovery_route.ps1
       - scripts/h454_windows_guard_operator.ps1
       - scripts/h454_windows_wss_identity.ps1
       - scripts/h454_windows_wss_identity.mjs
@@ -77,6 +78,7 @@ on:
       - scripts/h454_windows_wss_files.ps1
       - scripts/h454_windows_original_profile.ps1
       - scripts/h454_windows_recovery_docker.ps1
+      - scripts/h454_windows_recovery_route.ps1
       - scripts/h454_windows_guard_operator.ps1
       - scripts/h454_windows_wss_identity.ps1
       - scripts/h454_windows_wss_identity.mjs
@@ -148,7 +150,7 @@ jobs:
       - name: WSS tunnel supervisor validation
         run: python -B -m unittest discover -s tests -p "test_h454_windows_wss_tunnel.py" -v
       - name: Fingerprint canonical WSS supervisor and installers
-        run: python -B -c "import hashlib; from pathlib import Path; from scripts.h454_windows_wss_tunnel import build; print('H454_SUPERVISOR_SHA256=' + hashlib.sha256(build()).hexdigest().upper()); print('H454_WSS_FILES_SHA256=' + hashlib.sha256(Path('scripts/h454_windows_wss_files.ps1').read_bytes()).hexdigest().upper()); print('H454_ORIGINAL_PROFILE_SHA256=' + hashlib.sha256(Path('scripts/h454_windows_original_profile.ps1').read_bytes()).hexdigest().upper()); print('H454_RECOVERY_DOCKER_SHA256=' + hashlib.sha256(Path('scripts/h454_windows_recovery_docker.ps1').read_bytes()).hexdigest().upper())"
+        run: python -B -c "import hashlib; from pathlib import Path; from scripts.h454_windows_wss_tunnel import build; print('H454_SUPERVISOR_SHA256=' + hashlib.sha256(build()).hexdigest().upper()); print('H454_WSS_FILES_SHA256=' + hashlib.sha256(Path('scripts/h454_windows_wss_files.ps1').read_bytes()).hexdigest().upper()); print('H454_ORIGINAL_PROFILE_SHA256=' + hashlib.sha256(Path('scripts/h454_windows_original_profile.ps1').read_bytes()).hexdigest().upper()); print('H454_RECOVERY_DOCKER_SHA256=' + hashlib.sha256(Path('scripts/h454_windows_recovery_docker.ps1').read_bytes()).hexdigest().upper()); print('H454_RECOVERY_ROUTE_SHA256=' + hashlib.sha256(Path('scripts/h454_windows_recovery_route.ps1').read_bytes()).hexdigest().upper())"
       - name: WSS tunnel configuration validation
         run: python -B -m unittest discover -s tests -p "test_h454_windows_wss_config.py" -v
       - name: Immutable edit layer safety contracts (no owner Docker or credentials)

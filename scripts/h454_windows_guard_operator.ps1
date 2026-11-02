@@ -8,10 +8,11 @@ param(
     [Parameter(Mandatory=$true)][ValidatePattern('^[A-F0-9]{64}$')][string]$TaskBackupSha256,
     [Parameter(Mandatory=$true)][ValidatePattern('^[A-F0-9]{64}$')][string]$TaskSourceSha256,
     [Parameter(Mandatory=$true)][ValidatePattern('^[A-F0-9]{64}$')][string]$RecoverySourceSha256,
-    [switch]$PrepareWss,[switch]$StartWss,[switch]$CheckOriginal,
+    [switch]$PrepareWss,[switch]$StartWss,[switch]$CheckOriginal,[switch]$PrepareRecoveryRoute,
     [string]$FilesSourceSha256,[string]$SupervisorSha256,[string]$IdentitySha256,
     [string]$ModuleSha256,[string]$CaSha256,[string]$NodeSha256,[string]$PublicKeySha256,
     [string]$PublicCaPath,[string]$OriginalProfileSourceSha256,[string]$RecoveryDockerSourceSha256,[string]$DockerSha256,
+    [string]$RecoveryRouteSourceSha256,[string]$NetworkGuardSourceSha256,[string]$ProxyImageId,[string]$WssConfigSha256,[string]$CurlSha256,
     [switch]$Apply,[switch]$OwnerApproved
 )
 $ErrorActionPreference='Stop'
@@ -92,10 +93,17 @@ $lock=$null
 try{
     Require-H454 (-not $Apply -or $OwnerApproved) 'H454_GUARD_OPERATOR_APPROVAL'
     Require-H454 (-not $StartWss -or ($PrepareWss -and $Apply -and $OwnerApproved)) 'H454_GUARD_OPERATOR_WSS_MODE'
-    if($CheckOriginal){
-        Require-H454 (-not $Apply -and -not $PrepareWss -and -not $StartWss -and
+    if($CheckOriginal -or $PrepareRecoveryRoute){
+        Require-H454 (-not ($CheckOriginal -and $PrepareRecoveryRoute) -and (-not $CheckOriginal -or -not $Apply) -and
+            -not $PrepareWss -and -not $StartWss -and
             $OriginalProfileSourceSha256 -cmatch '^[A-F0-9]{64}$' -and
             $RecoveryDockerSourceSha256 -cmatch '^[A-F0-9]{64}$' -and $DockerSha256 -cmatch '^[A-F0-9]{64}$') 'H454_GUARD_OPERATOR_ORIGINAL_MODE'
+    }
+    if($PrepareRecoveryRoute){
+        foreach($pin in @($RecoveryRouteSourceSha256,$NetworkGuardSourceSha256,$WssConfigSha256,$SupervisorSha256,$CaSha256,$CurlSha256)){
+            Require-H454 ($pin -cmatch '^[A-F0-9]{64}$') 'H454_GUARD_OPERATOR_ROUTE_PINS'
+        }
+        Require-H454 ($ProxyImageId -cmatch '^sha256:[a-f0-9]{64}$') 'H454_GUARD_OPERATOR_ROUTE_PINS'
     }
     if($PrepareWss){
         foreach($pin in @($FilesSourceSha256,$SupervisorSha256,$IdentitySha256,$ModuleSha256,$CaSha256,$NodeSha256,$PublicKeySha256)){
@@ -125,7 +133,7 @@ try{
     $lockPath=Join-Path $state 'runtime.lock'
     Require-H454 (Test-Path -LiteralPath $lockPath -PathType Leaf) 'H454_GUARD_OPERATOR_LOCK'
     $lock=Open-H454RecoveryLock $state
-    if($CheckOriginal){
+    if($CheckOriginal -or $PrepareRecoveryRoute){
         $profileSource=Join-Path $PSScriptRoot 'h454_windows_original_profile.ps1'
         $dockerSource=Join-Path $PSScriptRoot 'h454_windows_recovery_docker.ps1'
         $profileText=Read-H454PinnedSource $profileSource $OriginalProfileSourceSha256
@@ -154,6 +162,49 @@ try{
         Assert-H454WssLegacyUnchanged $context.Task $context.Sid
         foreach($pair in @(@($profileSource,$OriginalProfileSourceSha256),@($dockerSource,$RecoveryDockerSourceSha256))){
             Require-H454 ((Get-FileHash -LiteralPath $pair[0] -Algorithm SHA256).Hash -ceq $pair[1]) 'H454_GUARD_OPERATOR_SOURCE_DRIFT'
+        }
+        if($PrepareRecoveryRoute){
+            $routeSource=Join-Path $PSScriptRoot 'h454_windows_recovery_route.ps1'
+            $networkSource=Join-Path $PSScriptRoot 'h454_windows_network_guard.ps1'
+            $routeText=Read-H454PinnedSource $routeSource $RecoveryRouteSourceSha256
+            $networkText=Read-H454PinnedSource $networkSource $NetworkGuardSourceSha256
+            . ([scriptblock]::Create($networkText))
+            . ([scriptblock]::Create($routeText))
+            $supervisor=Join-Path $state 'h454-wss-tunnel.ps1';$config=Join-Path $state 'h454-wss-tunnel-config.json'
+            $ca=Join-Path $state 'wss-relay-ca.pem';$curl=Join-Path ([Environment]::GetFolderPath('System')) 'curl.exe'
+            $safetyCheck={
+                Assert-H454RecoveryLock $state $lock
+                Assert-H454WssLegacyUnchanged $context.Task $context.Sid
+                Assert-H454WssTaskFile $backup $OriginalLauncherSha256 200000
+                Assert-H454WssTaskFile $context.Launcher $GuardedLauncherSha256 200000
+                Assert-H454WssTaskFile $supervisor $SupervisorSha256 65536
+                Assert-H454WssTaskFile $config $WssConfigSha256 8192
+                Assert-H454WssTaskFile $ca $CaSha256 65536
+                $task=Get-ScheduledTask -TaskName 'HermesH454WssTunnel' -TaskPath '\' -ErrorAction Stop
+                $definition=New-H454WssTaskDefinition $supervisor $WssConfigSha256 ([string]$context.Task.Principal.UserId) ((Get-Date).AddMinutes(5))
+                Require-H454 ([string]$task.State -ceq 'Running' -and (Test-H454WssTaskMatch $task $definition $context.Sid -Enabled)) 'H454_ROUTE_WSS_TASK'
+                $listenerErrors=@()
+                $plaintext=@(Get-NetTCPConnection -LocalPort 38180 -State Listen -ErrorAction SilentlyContinue -ErrorVariable +listenerErrors)
+                foreach($listenerError in $listenerErrors){Require-H454 ($listenerError.CategoryInfo.Category -eq [Management.Automation.ErrorCategory]::ObjectNotFound) 'H454_ROUTE_LISTENER'}
+                Require-H454 ($plaintext.Count -eq 0 -and (Get-FileHash -LiteralPath $curl -Algorithm SHA256).Hash -ceq $CurlSha256 -and
+                    (Get-AuthenticodeSignature -LiteralPath $curl).Status -eq 'Valid') 'H454_ROUTE_LISTENER'
+                $health=@(& $curl -q --proto '=https' --noproxy '*' --ssl-revoke-best-effort --silent --connect-timeout 2 --max-time 4 `
+                    --cacert $ca --resolve 'brc-agent.internal:38184:127.0.0.1' --output NUL --write-out '%{http_code}' 'https://brc-agent.internal:38184/' 2>$null)
+                Require-H454 ($LASTEXITCODE -eq 0 -and $health.Count -eq 1 -and $health[0] -ceq '404') 'H454_ROUTE_WSS_TLS'
+                $fresh=Invoke-H454RecoveryDocker -Arguments @('container','inspect','1fbf00d9b711be215ab35eaea1f6ef549cc4a0930495e3d0776a965f8c75abb6') -DockerSha256 $DockerSha256
+                Require-H454 ($fresh.Code -eq 0 -and $fresh.Output.Length -gt 0) 'H454_ORIGINAL_PROFILE_INSPECT'
+                $items=@($fresh.Output | ConvertFrom-Json -ErrorAction Stop)
+                Require-H454 ($items.Count -eq 1 -and $items[0].State.Running -is [bool] -and -not $items[0].State.Running -and
+                    [string]$items[0].State.Status -ceq 'exited' -and [string]$items[0].HostConfig.RestartPolicy.Name -ceq 'no') 'H454_ORIGINAL_PROFILE_STATE'
+                Assert-H454OriginalProfile $items[0] $backup $OriginalLauncherSha256 `
+                    '1fbf00d9b711be215ab35eaea1f6ef549cc4a0930495e3d0776a965f8c75abb6' `
+                    'sha256:0c95960c02e0dbe00a6a11ee6253d4055e4a7abf7671404b3f876dfdb95bd5d8' 'hermes-h15-windows-permanent' 'bridge'
+                return $true
+            }
+            $result=Prepare-H454RecoveryRoute $state $lock $markerHash $ProxyImageId $CaSha256 $DockerSha256 $safetyCheck -Apply:$Apply -OwnerApproved:$OwnerApproved
+            foreach($pair in @(@($routeSource,$RecoveryRouteSourceSha256),@($networkSource,$NetworkGuardSourceSha256))){
+                Require-H454 ((Get-FileHash -LiteralPath $pair[0] -Algorithm SHA256).Hash -ceq $pair[1]) 'H454_GUARD_OPERATOR_SOURCE_DRIFT'
+            }
         }
     }elseif($PrepareWss){
         $filesSource=Join-Path $PSScriptRoot 'h454_windows_wss_files.ps1'
@@ -185,7 +236,9 @@ try{
     foreach($pair in @(@($taskSource,$TaskSourceSha256),@($recoverySource,$RecoverySourceSha256),@($taskBackup,$TaskBackupSha256))){
         Require-H454 ((Get-FileHash -LiteralPath $pair[0] -Algorithm SHA256).Hash -ceq $pair[1]) 'H454_GUARD_OPERATOR_SOURCE_DRIFT'
     }
-    if($CheckOriginal){
+    if($PrepareRecoveryRoute){
+        'H454_RECOVERY_ROUTE_OPERATOR='+$result.Status
+    }elseif($CheckOriginal){
         'H454_ORIGINAL_PROFILE_PREFLIGHT=PASS'
     }elseif($PrepareWss){
         'H454_WSS_FILES_OPERATOR='+$result.Status

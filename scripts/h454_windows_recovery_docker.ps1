@@ -7,7 +7,8 @@ function Invoke-H454RecoveryDocker(
         $Arguments.Count -gt 0 -and $Arguments.Count -le 48 -and $TimeoutSeconds -ge 1 -and $TimeoutSeconds -le 60 -and
         ($null -eq $InputBytes -or $InputBytes.Length -le 16384)) 'H454_DOCKER_INPUT'
     foreach($argument in $Arguments){
-        Require-H454 ($null -ne $argument -and $argument -cmatch '^[A-Za-z0-9_./:=+,()''\[\]-]{1,8192}$' -and
+        Require-H454 ($null -ne $argument -and ($argument -ceq '{{.ID}}|{{.Networks}}' -or
+            $argument -cmatch '^[A-Za-z0-9_./:=+,()''\[\]-]{1,8192}$') -and
             $argument -cnotmatch '^--(?:host|context|config|tlsverify|tlscacert|tlscert|tlskey)(?:=|$)' -and
             $argument -cnotmatch '^-(?:H|c)') 'H454_DOCKER_ARGUMENT'
     }

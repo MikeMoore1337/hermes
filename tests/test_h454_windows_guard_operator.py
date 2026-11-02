@@ -20,6 +20,9 @@ if os.name == 'nt':
                                   (['-OwnerApproved'], 'H454_GUARD_OPERATOR_SOURCE'),
                                   (['-OwnerApproved', '-StartWss'], 'H454_GUARD_OPERATOR_WSS_MODE'),
                                   (['-OwnerApproved', '-CheckOriginal'], 'H454_GUARD_OPERATOR_ORIGINAL_MODE'),
+                                  (['-OwnerApproved', '-PrepareRecoveryRoute'], 'H454_GUARD_OPERATOR_ORIGINAL_MODE'),
+                                  (['-OwnerApproved', '-PrepareRecoveryRoute', '-OriginalProfileSourceSha256', 'F' * 64,
+                                    '-RecoveryDockerSourceSha256', 'F' * 64, '-DockerSha256', 'F' * 64], 'H454_GUARD_OPERATOR_ROUTE_PINS'),
                                   (['-OwnerApproved', '-PrepareWss'], 'H454_GUARD_OPERATOR_WSS_PINS')):
                 with self.subTest(reason=reason):
                     result = subprocess.run(arguments + extra, capture_output=True, text=True, timeout=10,

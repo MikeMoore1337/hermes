@@ -113,5 +113,131 @@ foreach($case in @('agent-extra','proxy-extra','wrong-upstream','missing-alias',
     $refused=$false;try {CheckRoute $route} catch {$refused=$true}
     Require-H454 $refused ('ROUTE_FIXTURE_ACCEPTED_'+$case)
 }
+. (Join-Path $PSScriptRoot 'h454_windows_recovery_route.ps1')
+$recoveryValue='e'*32;$recoveryName='h454-test-network';$proxyName='h454-test-proxy';$proxyImage='sha256:'+('a'*64);$caHash='B'*64
+function TestRecoveryRoute {
+    $route=TestRoute
+    $route.Network.Labels | Add-Member -NotePropertyName 'com.hermes.h454.recovery' -NotePropertyValue $recoveryValue
+    $bridge=$route.Proxy.NetworkSettings.Networks.'h454-upstream'
+    $route.Proxy.NetworkSettings.Networks.PSObject.Properties.Remove('h454-upstream')
+    $route.Proxy.NetworkSettings.Networks | Add-Member -NotePropertyName 'bridge' -NotePropertyValue $bridge
+    $route.Proxy | Add-Member -NotePropertyName Name -NotePropertyValue ('/'+$proxyName)
+    $route.Proxy | Add-Member -NotePropertyName Image -NotePropertyValue $proxyImage
+    $route.Proxy.State=[pscustomobject]@{Running=$true;Status='running';Paused=$false;Restarting=$false;Dead=$false}
+    $route.Proxy | Add-Member -NotePropertyName Mounts -NotePropertyValue @()
+    $route.Proxy | Add-Member -NotePropertyName Config -NotePropertyValue ([pscustomobject]@{
+        Labels=[pscustomobject]@{'com.hermes.h454.recovery'=$recoveryValue};User='65534:65534';
+        Entrypoint=@('node','/opt/hermes-rollback/proxy.mjs');Cmd=@('172.21.0.1',$caHash.ToLowerInvariant(),$route.Cidr);Env=@('NODE_VERSION=synthetic')})
+    $route.Proxy | Add-Member -NotePropertyName HostConfig -NotePropertyValue ([pscustomobject]@{
+        NetworkMode='bridge';ReadonlyRootfs=$true;Privileged=$false;CapDrop=@('ALL');CapAdd=$null;SecurityOpt=@('no-new-privileges');
+        PidsLimit=32;Memory=134217728;RestartPolicy=[pscustomobject]@{Name='unless-stopped'};PublishAllPorts=$false;
+        PortBindings=$null;Binds=$null;Devices=$null;DeviceRequests=$null;PidMode='';IpcMode='private'})
+    return $route
+}
+function CheckRecoveryRoute([object]$Route){
+    $plan=Assert-H454RecoveryNetwork $Route.Network $recoveryName $recoveryValue
+    Assert-H454RecoveryProxy $Route.Proxy $proxyName $recoveryValue $proxyImage '172.21.0.1' $caHash $plan ('f'*64) -Connected
+}
+CheckRecoveryRoute (TestRecoveryRoute)
+function Invoke-H454RecoveryDocker {[CmdletBinding()]param([string[]]$Arguments,[string]$DockerSha256);$script:routeDockerCalls++;return [pscustomobject]@{Code=0;Output=$script:routeContainerListing}}
+$script:routeDockerCalls=0;$script:routeContainerListing=$proxyId+'|'+$recoveryName
+$stopped=TestRecoveryRoute
+$stopped.Proxy.State=[pscustomobject]@{Running=$false;Status='created';Paused=$false;Restarting=$false;Dead=$false}
+$stopped.Proxy.NetworkSettings.Networks.bridge.NetworkID=''
+$stopped.Proxy.NetworkSettings.Networks.PSObject.Properties[$recoveryName].Value.NetworkID=''
+CheckRecoveryRoute $stopped
+$stopped.Proxy.State=[pscustomobject]@{Running=$true;Status='running';Paused=$false;Restarting=$false;Dead=$false}
+$refused=$false;try{CheckRecoveryRoute $stopped}catch{$refused=$true}
+Require-H454 $refused 'RECOVERY_ROUTE_RUNNING_WITHOUT_NETWORK_ID'
+$stopped.Proxy.State=[pscustomobject]@{Running=$false;Status='created';Paused=$false;Restarting=$false;Dead=$false}
+$stopped.Proxy.NetworkSettings.Networks.bridge.NetworkID='d'*64
+$refused=$false;try{CheckRecoveryRoute $stopped}catch{$refused=$true}
+Require-H454 $refused 'RECOVERY_ROUTE_STOPPED_WRONG_NETWORK_ID'
+$membership=TestRecoveryRoute
+$refused=$false;try{Assert-H454RecoveryRouteMembers $membership.Network $membership.Proxy ('C'*64)}catch{$refused=$true}
+Require-H454 $refused 'RECOVERY_ROUTE_FOREIGN_MEMBER'
+$membership.Network.Containers.PSObject.Properties.Remove($agentId)
+$script:routeContainerListing=$proxyId+'|'+$recoveryName+"`n"+$agentId+'|'+$recoveryName
+$refused=$false;try{Assert-H454RecoveryRouteMembers $membership.Network $membership.Proxy ('C'*64)}catch{$refused=$true}
+Require-H454 $refused 'RECOVERY_ROUTE_STOPPED_FOREIGN_MEMBER'
+$script:routeContainerListing=$proxyId+'|'+$recoveryName
+Assert-H454RecoveryRouteMembers $membership.Network $membership.Proxy ('C'*64)
+$script:routeContainerListing=$proxyId+'|'+$recoveryName+"`n"+$proxyId+'|'+$recoveryName
+$refused=$false;try{Assert-H454RecoveryRouteMembers $membership.Network $membership.Proxy ('C'*64)}catch{$refused=$true}
+Require-H454 $refused 'RECOVERY_ROUTE_DUPLICATE_MEMBER'
+$membership.Network.Containers.PSObject.Properties.Remove($proxyId)
+$script:routeContainerListing=''
+Assert-H454RecoveryRouteMembers $membership.Network $null ('C'*64)
+foreach($case in @('label','public-network','proxy-image','proxy-label','proxy-user','proxy-command','privileged','writable-root',
+                   'cap-add','security-opt','restart','mount','env','bridge-id','missing-alias','third-network')){
+    $route=TestRecoveryRoute
+    switch($case){
+        'label' {$route.Network.Labels.'com.hermes.h454.recovery'='f'*32}
+        'public-network' {$route.Network.Internal=$false}
+        'proxy-image' {$route.Proxy.Image='sha256:'+('b'*64)}
+        'proxy-label' {$route.Proxy.Config.Labels.'com.hermes.h454.recovery'='f'*32}
+        'proxy-user' {$route.Proxy.Config.User='0:0'}
+        'proxy-command' {$route.Proxy.Config.Cmd[0]='172.21.0.9'}
+        'privileged' {$route.Proxy.HostConfig.Privileged=$true}
+        'writable-root' {$route.Proxy.HostConfig.ReadonlyRootfs=$false}
+        'cap-add' {$route.Proxy.HostConfig.CapAdd=@('SYS_ADMIN')}
+        'security-opt' {$route.Proxy.HostConfig.SecurityOpt=@()}
+        'restart' {$route.Proxy.HostConfig.RestartPolicy.Name='always'}
+        'mount' {$route.Proxy.Mounts=@([pscustomobject]@{Destination='/opt/hermes-rollback'})}
+        'env' {$route.Proxy.Config.Env=@('NODE_OPTIONS=fixture')}
+        'bridge-id' {$route.Proxy.NetworkSettings.Networks.bridge.NetworkID='d'*64}
+        'missing-alias' {$route.Proxy.NetworkSettings.Networks.PSObject.Properties[$recoveryName].Value.Aliases=@()}
+        'third-network' {$route.Proxy.NetworkSettings.Networks|Add-Member -NotePropertyName 'foreign' -NotePropertyValue ([pscustomobject]@{})}
+    }
+    $refused=$false;try{CheckRecoveryRoute $route}catch{$refused=$true}
+    Require-H454 $refused ('RECOVERY_ROUTE_FIXTURE_ACCEPTED_'+$case)
+}
+function TestRecoveryProbe {
+    $route=TestRecoveryRoute;$probe=$route.Proxy
+    $probe.Name='/h454-test-probe';$probe.Config.Labels=[pscustomobject]@{'com.hermes.h454.recovery-probe'=$recoveryValue}
+    $probe.Config.Entrypoint=@('node');$probe.Config.Cmd=@('-e','synthetic-bootstrap','c3ludGhldGlj')
+    $probe.HostConfig | Add-Member -NotePropertyName AutoRemove -NotePropertyValue $true
+    $probe.HostConfig.RestartPolicy.Name='no'
+    $probe.NetworkSettings.Networks.PSObject.Properties.Remove($recoveryName)
+    return $probe
+}
+function CheckRecoveryProbe([object]$Probe){
+    Assert-H454RecoveryProbe $Probe 'h454-test-probe' $recoveryValue $proxyImage ('f'*64) 'synthetic-bootstrap' 'c3ludGhldGlj'
+}
+CheckRecoveryProbe (TestRecoveryProbe)
+foreach($case in @('label','image','command','user','restart','mount','env','network')){
+    $probe=TestRecoveryProbe
+    switch($case){
+        'label' {$probe.Config.Labels.'com.hermes.h454.recovery-probe'='f'*32}
+        'image' {$probe.Image='sha256:'+('b'*64)}
+        'command' {$probe.Config.Cmd[2]='foreign'}
+        'user' {$probe.Config.User='0:0'}
+        'restart' {$probe.HostConfig.RestartPolicy.Name='always'}
+        'mount' {$probe.Mounts=@([pscustomobject]@{Destination='/workspace'})}
+        'env' {$probe.Config.Env=@('NODE_OPTIONS=fixture')}
+        'network' {$probe.NetworkSettings.Networks|Add-Member -NotePropertyName 'foreign' -NotePropertyValue ([pscustomobject]@{})}
+    }
+    $refused=$false;try{CheckRecoveryProbe $probe}catch{$refused=$true}
+    Require-H454 $refused ('RECOVERY_PROBE_FIXTURE_ACCEPTED_'+$case)
+}
+function Assert-H454RecoveryLock([string]$StateDir,[IO.FileStream]$Lock){}
+function Assert-H454WssTaskFile([string]$Path,[string]$Sha256,[int]$Max){if($script:badMarker){throw 'FIXTURE_MARKER'}}
+$script:routeDockerCalls=0;$script:badMarker=$false
+$markerHash='A'*64;$image='sha256:'+('a'*64);$ca='B'*64;$dockerHash='C'*64
+$refused=$false
+try{$null=Prepare-H454RecoveryRoute $env:TEMP $null $markerHash $image $ca $dockerHash {$true} -Apply}catch{$refused=$_.Exception.Message -ceq 'H454_ROUTE_APPROVAL'}
+Require-H454 ($refused -and $script:routeDockerCalls -eq 0) 'RECOVERY_ROUTE_APPROVAL'
+$refused=$false
+try{$null=Prepare-H454RecoveryRoute $env:TEMP $null 'bad' $image $ca $dockerHash {$true} -Apply -OwnerApproved}catch{$refused=$_.Exception.Message -ceq 'H454_ROUTE_PINS'}
+Require-H454 ($refused -and $script:routeDockerCalls -eq 0) 'RECOVERY_ROUTE_PINS'
+foreach($check in @({$false},{$true;$true})){
+    $refused=$false
+    try{$null=Prepare-H454RecoveryRoute $env:TEMP $null $markerHash $image $ca $dockerHash $check -Apply -OwnerApproved}catch{$refused=$_.Exception.Message -ceq 'H454_ROUTE_SAFETY'}
+    Require-H454 ($refused -and $script:routeDockerCalls -eq 0) 'RECOVERY_ROUTE_SAFETY'
+}
+$script:badMarker=$true;$refused=$false
+try{$null=Prepare-H454RecoveryRoute $env:TEMP $null $markerHash $image $ca $dockerHash {$true} -Apply -OwnerApproved}catch{$refused=$_.Exception.Message -ceq 'FIXTURE_MARKER'}
+Require-H454 ($refused -and $script:routeDockerCalls -eq 0) 'RECOVERY_ROUTE_MARKER'
+'PS51_RECOVERY_ROUTE_PROFILE=PASS'
 'PS51_ISOLATED_NETWORK_MEMBERSHIP=PASS'
 'PS51_ISOLATED_AGENT_ROUTE=PASS'
