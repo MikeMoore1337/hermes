@@ -17,7 +17,8 @@ if os.name == 'nt':
                          '-TaskBackupSha256', 'C' * 64, '-TaskSourceSha256', 'D' * 64,
                          '-RecoverySourceSha256', 'E' * 64, '-Apply']
             for extra, reason in (([], 'H454_GUARD_OPERATOR_APPROVAL'),
-                                  (['-OwnerApproved'], 'H454_GUARD_OPERATOR_SOURCE')):
+                                  (['-OwnerApproved'], 'H454_GUARD_OPERATOR_SOURCE'),
+                                  (['-OwnerApproved', '-PrepareWss'], 'H454_GUARD_OPERATOR_WSS_PINS')):
                 with self.subTest(reason=reason):
                     result = subprocess.run(arguments + extra, capture_output=True, text=True, timeout=10,
                                             creationflags=subprocess.CREATE_NO_WINDOW)

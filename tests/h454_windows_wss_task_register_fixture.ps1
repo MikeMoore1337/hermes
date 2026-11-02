@@ -1,10 +1,13 @@
 #requires -Version 5.1
 param([Parameter(Mandatory=$true)][string]$Source,[Parameter(Mandatory=$true)][string]$RecoverySource,
-      [string]$PythonExe='python',[string]$FixtureTaskName='HermesH454WssTunnel',[switch]$RealScheduler)
+      [Parameter(Mandatory=$true)][string]$FilesSource,[Parameter(Mandatory=$true)][string]$SupervisorSource,
+      [string]$FixtureTaskName='HermesH454WssTunnel',[switch]$RealScheduler)
 $ErrorActionPreference='Stop'
 . $Source
 . $RecoverySource
+. $FilesSource
 Import-Module ScheduledTasks -ErrorAction Stop
+Import-Module NetTCPIP -ErrorAction Stop
 function Require-H454([bool]$Condition,[string]$Reason){if(-not $Condition){throw $Reason}}
 Require-H454 (@(ScheduledTasks\Get-ScheduledTask -TaskName 'HermesH454WssTunnel' -TaskPath '\' -ErrorAction SilentlyContinue).Count -eq 0) 'FIXTURE_REAL_TASK_EXISTS'
 Require-H454 ((-not $RealScheduler -and $FixtureTaskName -ceq 'HermesH454WssTunnel') -or
@@ -40,6 +43,13 @@ $utf8=[Text.UTF8Encoding]::new($false)
 $user=[Security.Principal.WindowsIdentity]::GetCurrent().Name
 $powershell=Join-Path ([Environment]::GetFolderPath('System')) 'WindowsPowerShell\v1.0\powershell.exe'
 $script:createdTask=$null;$script:registrations=0;$script:drift=$false;$script:disables=0;$script:legacyDrift=$false;$script:legacyReads=0
+function Get-NetTCPConnection {[CmdletBinding()]param([int]$LocalPort,[string]$State)}
+function Get-H454Container([string]$Id){
+    return [pscustomobject]@{Id=$Id;Image='sha256:0c95960c02e0dbe00a6a11ee6253d4055e4a7abf7671404b3f876dfdb95bd5d8';
+        Name='/hermes-h15-windows-permanent';State=[pscustomobject]@{Running=$false;Status='exited';Paused=$false;Restarting=$false;Dead=$false};
+        HostConfig=[pscustomobject]@{RestartPolicy=[pscustomobject]@{Name='no'}}}
+}
+function Assert-H454WssNode([string]$ExpectedSha256){Require-H454 ($ExpectedSha256 -ceq ('D'*64)) 'FIXTURE_NODE'}
 function Get-ScheduledTask {
     [CmdletBinding()]param([string]$TaskName,[string]$TaskPath)
     if($TaskName -ceq 'HermesH15BRCWindows'){
@@ -96,27 +106,85 @@ $TUNNEL_TARGET = "fixture@$HOST_ADDR"
     $launcher=New-FixtureFile 'Hermes-H15-Windows-Permanent.ps1' ($utf8.GetBytes($guardedText))
     $oldHash=(Get-FileHash -LiteralPath $backup -Algorithm SHA256).Hash
     $guardHash=(Get-FileHash -LiteralPath $launcher -Algorithm SHA256).Hash
-    $identity=New-FixtureFile 'h454-wss-identity.ps1' ($utf8.GetBytes('fixture-identity'))
-    $public=New-FixtureFile 'wss-ssh-identity.pub' ($utf8.GetBytes('fixture-public'))
-    $ca=New-FixtureFile 'wss-relay-ca.pem' ($utf8.GetBytes('fixture-ca'))
+    $moduleBytes=$utf8.GetBytes('fixture-module');$moduleHash=Hash-H454Bytes $moduleBytes
+    $identityBytes=$utf8.GetBytes(('$script:h454ModuleHash = '''+$moduleHash+"'`n"));$identityHash=Hash-H454Bytes $identityBytes
+    $caBytes=$utf8.GetBytes("-----BEGIN CERTIFICATE-----`nZmFrZQ==`n-----END CERTIFICATE-----`n");$caHash=Hash-H454Bytes $caBytes
+    $publicBytes=$utf8.GetBytes(('ssh-ed25519 '+('A'*68)+" hermes-h454-wss`n"))
+    $public=New-FixtureFile 'wss-ssh-identity.pub' $publicBytes;$publicHash=Hash-H454Bytes $publicBytes
+    $supervisorBytes=[IO.File]::ReadAllBytes($SupervisorSource);$supervisorHash=Hash-H454Bytes $supervisorBytes
     $supervisor=Join-Path $state 'h454-wss-tunnel.ps1'
-    $env:H454_SUPERVISOR_FIXTURE=$supervisor
-    & $PythonExe -B -c "import os; from pathlib import Path; from scripts.h454_windows_wss_tunnel import build; Path(os.environ['H454_SUPERVISOR_FIXTURE']).write_bytes(build())"
-    Require-H454 ($LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $supervisor)) 'FIXTURE_SUPERVISOR'
-    $files.Add($supervisor)
-    $config=@{version=1;sshHost='relay.example.test';sshUser='fixture';sshPort=2222;relayAddress='172.29.1.2';
-        caSha256=(Get-FileHash $ca).Hash;identitySha256=(Get-FileHash $identity).Hash;launcherSha256=$guardHash;
-        nodeSha256=('D'*64);publicKeySha256=(Get-FileHash $public).Hash} | ConvertTo-Json -Compress
-    $configPath=New-FixtureFile 'h454-wss-tunnel-config.json' ($utf8.GetBytes($config))
-    $markerText="H454_WSS_TRANSITION_V1`noriginal=1fbf00d9b711be215ab35eaea1f6ef549cc4a0930495e3d0776a965f8c75abb6`nold=$oldHash`nguard=$guardHash`nbackup=$backupName`n"
+    $configPath=Join-Path $state 'h454-wss-tunnel-config.json'
+    foreach($name in @('h454-wss-identity.ps1','h454_windows_wss_identity.mjs','wss-relay-ca.pem','h454-wss-tunnel.ps1','h454-wss-tunnel-config.json')){
+        $files.Add((Join-Path $state $name))
+    }
+    $markerText=Get-H454WssMarkerText $oldHash $guardHash $backupName
     $marker=New-FixtureFile 'h454-wss-transition.pending' ($utf8.GetBytes($markerText))
-    $markerHash=(Get-FileHash $marker).Hash;$supervisorHash=(Get-FileHash $supervisor).Hash;$configHash=(Get-FileHash $configPath).Hash
+    $markerHash=(Get-FileHash $marker).Hash
     $action=[pscustomobject]@{Execute=$powershell;Arguments=('-NoProfile -ExecutionPolicy Bypass -File "'+$launcher+'" -Mode Run')}
     $script:legacy=[pscustomobject]@{TaskName='HermesH15BRCWindows';State='Disabled';Actions=@($action);
         Principal=[pscustomobject]@{UserId=$user;LogonType='Interactive'}}
     $lock=Open-H454RecoveryLock $state;$files.Add((Join-Path $state 'runtime.lock'))
     Require-H454 ((Get-Command Register-ScheduledTask).ScriptBlock.ToString().Contains('FIXTURE_REGISTER') -and
-        (Get-Command Get-ScheduledTask).ScriptBlock.ToString().Contains('FIXTURE_UNEXPECTED_TASK')) 'FIXTURE_MOCK_SCOPE'
+        (Get-Command Get-ScheduledTask).ScriptBlock.ToString().Contains('FIXTURE_UNEXPECTED_TASK') -and
+        (Get-Command Assert-H454WssNode).ScriptBlock.ToString().Contains('FIXTURE_NODE')) 'FIXTURE_MOCK_SCOPE'
+    $nodeHash='D'*64
+    foreach($bom in @($false,$true)){
+        $sourceBytes=$utf8.GetBytes($oldText)
+        if($bom){$sourceBytes=[byte[]](@(0xef,0xbb,0xbf)+@($sourceBytes))}
+        $sourceGuard=New-H454WssGuardBytes $sourceBytes
+        $generated=New-H454WssConfigBytes $sourceBytes $sourceGuard $caHash $identityHash $nodeHash $publicHash
+        $parsed=[Text.Encoding]::UTF8.GetString($generated) | ConvertFrom-Json
+        Require-H454 ($parsed.sshHost -ceq 'relay.example.test' -and $parsed.sshUser -ceq 'fixture' -and
+            $parsed.sshPort -eq 2222 -and $parsed.relayAddress -ceq '172.29.1.2') 'FIXTURE_CONFIG'
+    }
+    $badSource=$utf8.GetBytes($oldText.Replace('172.29.1.2:3000','8.8.8.8:3000'))
+    $badSourceGuard=New-H454WssGuardBytes $badSource;$refused=$false
+    try{$null=New-H454WssConfigBytes $badSource $badSourceGuard $caHash $identityHash $nodeHash $publicHash}catch{$refused=$_.Exception.Message -ceq 'H454_WSS_FILES_SOURCE'}
+    Require-H454 $refused 'FIXTURE_CONFIG_ADDRESS'
+    $script:legacyReads=0;$refused=$false
+    try{$null=Install-H454WssFiles $supervisorBytes $identityBytes $moduleBytes $caBytes $supervisorHash $identityHash $moduleHash $caHash `
+        $nodeHash $publicHash $oldHash $guardHash $markerHash '..\outside.txt' $lock -Apply -OwnerApproved}catch{$refused=$_.Exception.Message -ceq 'H454_WSS_TASK_PINS'}
+    Require-H454 ($refused -and $script:legacyReads -eq 0 -and -not (Test-Path -LiteralPath $supervisor)) 'FIXTURE_BACKUP_PATH'
+    $plan=Install-H454WssFiles $supervisorBytes $identityBytes $moduleBytes $caBytes $supervisorHash $identityHash $moduleHash $caHash `
+        $nodeHash $publicHash $oldHash $guardHash $markerHash $backupName $lock
+    Require-H454 ($plan.Status -ceq 'PREFLIGHT' -and -not (Test-Path -LiteralPath $supervisor)) 'FIXTURE_FILES_PREFLIGHT'
+    $refused=$false
+    try{$null=Install-H454WssFiles $supervisorBytes $identityBytes $moduleBytes $caBytes $supervisorHash $identityHash $moduleHash $caHash `
+        $nodeHash $publicHash $oldHash $guardHash $markerHash $backupName $lock -Apply}catch{$refused=$_.Exception.Message -ceq 'H454_WSS_TASK_APPROVAL'}
+    Require-H454 ($refused -and -not (Test-Path -LiteralPath $supervisor)) 'FIXTURE_FILES_APPROVAL'
+    $collision=Join-Path $state 'wss-relay-ca.pem';[IO.File]::WriteAllText($collision,'occupied',$utf8)
+    $refused=$false
+    try{$null=Install-H454WssFiles $supervisorBytes $identityBytes $moduleBytes $caBytes $supervisorHash $identityHash $moduleHash $caHash `
+        $nodeHash $publicHash $oldHash $guardHash $markerHash $backupName $lock -Apply -OwnerApproved}catch{$refused=$_.Exception.Message -ceq 'H454_WSS_TASK_FILE'}
+    Require-H454 ($refused -and [IO.File]::ReadAllText($collision) -ceq 'occupied' -and -not (Test-Path -LiteralPath $supervisor)) 'FIXTURE_FILES_COLLISION'
+    [IO.File]::Delete($collision)
+    $junctionTarget=Join-Path $state 'junction-target'
+    [IO.Directory]::CreateDirectory($junctionTarget)|Out-Null
+    try{
+        $null=New-Item -ItemType Junction -Path $collision -Target $junctionTarget
+        $refused=$false
+        try{$null=Install-H454WssFiles $supervisorBytes $identityBytes $moduleBytes $caBytes $supervisorHash $identityHash $moduleHash $caHash `
+            $nodeHash $publicHash $oldHash $guardHash $markerHash $backupName $lock -Apply -OwnerApproved}catch{$refused=$_.Exception.Message -ceq 'H454_WSS_TASK_FILE'}
+        Require-H454 ($refused -and -not (Test-Path -LiteralPath $supervisor)) 'FIXTURE_FILES_JUNCTION'
+    }finally{
+        if(Test-Path -LiteralPath $collision){
+            $junction=Get-Item -LiteralPath $collision -Force
+            Require-H454 ($junction.Attributes -band [IO.FileAttributes]::ReparsePoint) 'FIXTURE_JUNCTION_CLEANUP'
+            [IO.Directory]::Delete($collision,$false)
+        }
+        if(Test-Path -LiteralPath $junctionTarget){[IO.Directory]::Delete($junctionTarget,$false)}
+    }
+    $ready=Install-H454WssFiles $supervisorBytes $identityBytes $moduleBytes $caBytes $supervisorHash $identityHash $moduleHash $caHash `
+        $nodeHash $publicHash $oldHash $guardHash $markerHash $backupName $lock -Apply -OwnerApproved
+    Require-H454 ($ready.Status -ceq 'FILES_READY' -and $ready.ConfigSha256 -ceq $plan.ConfigSha256) 'FIXTURE_FILES_INSTALL'
+    $againFiles=Install-H454WssFiles $supervisorBytes $identityBytes $moduleBytes $caBytes $supervisorHash $identityHash $moduleHash $caHash `
+        $nodeHash $publicHash $oldHash $guardHash $markerHash $backupName $lock -Apply -OwnerApproved
+    Require-H454 ($againFiles.Status -ceq 'FILES_READY' -and $againFiles.ConfigSha256 -ceq $ready.ConfigSha256) 'FIXTURE_FILES_REPEAT'
+    [IO.File]::Delete((Join-Path $state 'h454_windows_wss_identity.mjs'))
+    $resumedFiles=Install-H454WssFiles $supervisorBytes $identityBytes $moduleBytes $caBytes $supervisorHash $identityHash $moduleHash $caHash `
+        $nodeHash $publicHash $oldHash $guardHash $markerHash $backupName $lock -Apply -OwnerApproved
+    Require-H454 ($resumedFiles.Status -ceq 'FILES_READY' -and $resumedFiles.ConfigSha256 -ceq $ready.ConfigSha256) 'FIXTURE_FILES_RESUME'
+    $configHash=$ready.ConfigSha256
     try{$result=@(Register-H454WssTaskDisabled $oldHash $guardHash $markerHash $supervisorHash $configHash $backupName $lock -OwnerApproved)}
     catch{
         if($null -ne $script:createdTask){

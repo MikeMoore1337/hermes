@@ -8,6 +8,10 @@ param(
     [Parameter(Mandatory=$true)][ValidatePattern('^[A-F0-9]{64}$')][string]$TaskBackupSha256,
     [Parameter(Mandatory=$true)][ValidatePattern('^[A-F0-9]{64}$')][string]$TaskSourceSha256,
     [Parameter(Mandatory=$true)][ValidatePattern('^[A-F0-9]{64}$')][string]$RecoverySourceSha256,
+    [switch]$PrepareWss,
+    [string]$FilesSourceSha256,[string]$SupervisorSha256,[string]$IdentitySha256,
+    [string]$ModuleSha256,[string]$CaSha256,[string]$NodeSha256,[string]$PublicKeySha256,
+    [string]$PublicCaPath,
     [switch]$Apply,[switch]$OwnerApproved
 )
 $ErrorActionPreference='Stop'
@@ -16,12 +20,21 @@ function Hash-H454Bytes([byte[]]$Bytes){
     $hash=[Security.Cryptography.SHA256]::Create()
     try{return [BitConverter]::ToString($hash.ComputeHash($Bytes)).Replace('-','')}finally{$hash.Dispose()}
 }
-function Read-H454PinnedSource([string]$Path,[string]$Sha256){
+function Read-H454PinnedBytes([string]$Path,[string]$Sha256){
     $item=Get-Item -LiteralPath $Path -Force -ErrorAction Stop
     Require-H454 (-not $item.PSIsContainer -and -not ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -and
         $item.Length -gt 0 -and $item.Length -le 500000) 'H454_GUARD_OPERATOR_SOURCE'
+    $parent=$item.Directory
+    while($null -ne $parent){
+        Require-H454 (-not ($parent.Attributes -band [IO.FileAttributes]::ReparsePoint)) 'H454_GUARD_OPERATOR_SOURCE'
+        $parent=$parent.Parent
+    }
     $bytes=[IO.File]::ReadAllBytes($Path)
     Require-H454 ($bytes.Length -gt 0 -and $bytes.Length -le 500000 -and (Hash-H454Bytes $bytes) -ceq $Sha256) 'H454_GUARD_OPERATOR_SOURCE'
+    return ,$bytes
+}
+function Read-H454PinnedSource([string]$Path,[string]$Sha256){
+    $bytes=Read-H454PinnedBytes $Path $Sha256
     $stream=[IO.MemoryStream]::new($bytes)
     $reader=[IO.StreamReader]::new($stream,[Text.UTF8Encoding]::new($false,$true),$true)
     try{return $reader.ReadToEnd()}finally{$reader.Dispose();$stream.Dispose()}
@@ -78,6 +91,12 @@ function Get-H454Container([string]$Id){
 $lock=$null
 try{
     Require-H454 (-not $Apply -or $OwnerApproved) 'H454_GUARD_OPERATOR_APPROVAL'
+    if($PrepareWss){
+        foreach($pin in @($FilesSourceSha256,$SupervisorSha256,$IdentitySha256,$ModuleSha256,$CaSha256,$NodeSha256,$PublicKeySha256)){
+            Require-H454 ($pin -cmatch '^[A-F0-9]{64}$') 'H454_GUARD_OPERATOR_WSS_PINS'
+        }
+        Require-H454 (-not [string]::IsNullOrWhiteSpace($PublicCaPath) -and [IO.Path]::IsPathRooted($PublicCaPath)) 'H454_GUARD_OPERATOR_WSS_PINS'
+    }
     Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Utility\Microsoft.PowerShell.Utility.psd1') -ErrorAction Stop
     Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Security\Microsoft.PowerShell.Security.psd1') -ErrorAction Stop
     $taskSource=Join-Path $PSScriptRoot 'h454_windows_wss_task.ps1'
@@ -100,13 +119,40 @@ try{
     $lockPath=Join-Path $state 'runtime.lock'
     Require-H454 (Test-Path -LiteralPath $lockPath -PathType Leaf) 'H454_GUARD_OPERATOR_LOCK'
     $lock=Open-H454RecoveryLock $state
-    $result=Install-H454WssGuard $OriginalLauncherSha256 $GuardedLauncherSha256 $BackupName $lock -Apply:$Apply -OwnerApproved:$OwnerApproved
+    if($PrepareWss){
+        $filesSource=Join-Path $PSScriptRoot 'h454_windows_wss_files.ps1'
+        $supervisorSource=Join-Path $PSScriptRoot 'h454_windows_wss_tunnel.ps1'
+        $identitySource=Join-Path $PSScriptRoot 'h454_windows_wss_identity.ps1'
+        $moduleSource=Join-Path $PSScriptRoot 'h454_windows_wss_identity.mjs'
+        $filesText=Read-H454PinnedSource $filesSource $FilesSourceSha256
+        $supervisor=Read-H454PinnedBytes $supervisorSource $SupervisorSha256
+        $identity=Read-H454PinnedBytes $identitySource $IdentitySha256
+        $module=Read-H454PinnedBytes $moduleSource $ModuleSha256
+        $ca=Read-H454PinnedBytes $PublicCaPath $CaSha256
+        . ([scriptblock]::Create($filesText))
+        $markerText=Get-H454WssMarkerText $OriginalLauncherSha256 $GuardedLauncherSha256 $BackupName
+        $markerHash=Hash-H454Bytes ([Text.UTF8Encoding]::new($false).GetBytes($markerText))
+        $result=Install-H454WssFiles $supervisor $identity $module $ca $SupervisorSha256 $IdentitySha256 $ModuleSha256 $CaSha256 `
+            $NodeSha256 $PublicKeySha256 $OriginalLauncherSha256 $GuardedLauncherSha256 $markerHash $BackupName $lock -Apply:$Apply -OwnerApproved:$OwnerApproved
+        if($Apply){
+            $taskStatus=Register-H454WssTaskDisabled $OriginalLauncherSha256 $GuardedLauncherSha256 $markerHash `
+                $SupervisorSha256 $result.ConfigSha256 $BackupName $lock -OwnerApproved
+        }
+    }else{
+        $result=Install-H454WssGuard $OriginalLauncherSha256 $GuardedLauncherSha256 $BackupName $lock -Apply:$Apply -OwnerApproved:$OwnerApproved
+    }
     foreach($pair in @(@($taskSource,$TaskSourceSha256),@($recoverySource,$RecoverySourceSha256),@($taskBackup,$TaskBackupSha256))){
         Require-H454 ((Get-FileHash -LiteralPath $pair[0] -Algorithm SHA256).Hash -ceq $pair[1]) 'H454_GUARD_OPERATOR_SOURCE_DRIFT'
     }
-    'H454_GUARD_OPERATOR='+$result.Status
-    'H454_GUARD_BACKUP_NAME='+$result.BackupName
-    'H454_GUARD_MARKER_SHA256='+$result.MarkerSha256
+    if($PrepareWss){
+        'H454_WSS_FILES_OPERATOR='+$result.Status
+        'H454_WSS_CONFIG_SHA256='+$result.ConfigSha256
+        if($Apply){$taskStatus}
+    }else{
+        'H454_GUARD_OPERATOR='+$result.Status
+        'H454_GUARD_BACKUP_NAME='+$result.BackupName
+        'H454_GUARD_MARKER_SHA256='+$result.MarkerSha256
+    }
 }catch{
     $reason=$_.Exception.Message
     if($reason -cnotmatch '^H454_[A-Z0-9_]{1,80}$' -and $reason -cnotmatch '^RECOVERY_[A-Z0-9_]{1,80}$'){$reason='H454_GUARD_OPERATOR_INTERNAL'}

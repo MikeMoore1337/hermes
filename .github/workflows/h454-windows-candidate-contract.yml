@@ -16,8 +16,8 @@ on:
       - scripts/h454_windows_wss_tunnel.py
       - scripts/h454_windows_wss_tunnel.ps1
       - scripts/h454_windows_wss_config.py
-      - scripts/h454_windows_wss_bundle.py
       - scripts/h454_windows_wss_task.ps1
+      - scripts/h454_windows_wss_files.ps1
       - scripts/h454_windows_guard_operator.ps1
       - scripts/h454_windows_wss_identity.ps1
       - scripts/h454_windows_wss_identity.mjs
@@ -37,7 +37,6 @@ on:
       - tests/test_h454_windows_wss_launcher.py
       - tests/test_h454_windows_wss_tunnel.py
       - tests/test_h454_windows_wss_config.py
-      - tests/test_h454_windows_wss_bundle.py
       - tests/h454_windows_wss_tunnel_fixture.ps1
       - tests/h454_windows_wss_task_fixture.ps1
       - tests/h454_windows_wss_task_register_fixture.ps1
@@ -72,8 +71,8 @@ on:
       - scripts/h454_windows_wss_tunnel.py
       - scripts/h454_windows_wss_tunnel.ps1
       - scripts/h454_windows_wss_config.py
-      - scripts/h454_windows_wss_bundle.py
       - scripts/h454_windows_wss_task.ps1
+      - scripts/h454_windows_wss_files.ps1
       - scripts/h454_windows_guard_operator.ps1
       - scripts/h454_windows_wss_identity.ps1
       - scripts/h454_windows_wss_identity.mjs
@@ -93,7 +92,6 @@ on:
       - tests/test_h454_windows_wss_launcher.py
       - tests/test_h454_windows_wss_tunnel.py
       - tests/test_h454_windows_wss_config.py
-      - tests/test_h454_windows_wss_bundle.py
       - tests/h454_windows_wss_tunnel_fixture.ps1
       - tests/h454_windows_wss_task_fixture.ps1
       - tests/h454_windows_wss_task_register_fixture.ps1
@@ -145,12 +143,10 @@ jobs:
         run: python -B -m unittest discover -s tests -p "test_h454_windows_wss_launcher.py" -v
       - name: WSS tunnel supervisor validation
         run: python -B -m unittest discover -s tests -p "test_h454_windows_wss_tunnel.py" -v
-      - name: Fingerprint canonical WSS supervisor
-        run: python -B -c "import hashlib; from scripts.h454_windows_wss_tunnel import build; print('H454_SUPERVISOR_SHA256=' + hashlib.sha256(build()).hexdigest().upper())"
+      - name: Fingerprint canonical WSS supervisor and installer
+        run: python -B -c "import hashlib; from pathlib import Path; from scripts.h454_windows_wss_tunnel import build; print('H454_SUPERVISOR_SHA256=' + hashlib.sha256(build()).hexdigest().upper()); print('H454_WSS_FILES_SHA256=' + hashlib.sha256(Path('scripts/h454_windows_wss_files.ps1').read_bytes()).hexdigest().upper())"
       - name: WSS tunnel configuration validation
         run: python -B -m unittest discover -s tests -p "test_h454_windows_wss_config.py" -v
-      - name: WSS supervisor bundle validation
-        run: python -B -m unittest discover -s tests -p "test_h454_windows_wss_bundle.py" -v
       - name: Immutable edit layer safety contracts (no owner Docker or credentials)
         run: python -B -m unittest discover -s tests -p "test_h454_agent_edit_image.py" -v
       - name: Parse disposable image smoke
@@ -175,7 +171,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'H454_GUARD_GENERATION_FAILED' }
           & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests/h454_windows_wss_task_fixture.ps1 -Source (Resolve-Path scripts/h454_windows_wss_task.ps1).Path -GuardPath $env:H454_GUARD_FIXTURE -AnchorPath $env:H454_ANCHOR_FIXTURE
           if ($LASTEXITCODE -ne 0) { throw 'H454_WSS_TASK_DEFINITION_FAILED' }
-          & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests/h454_windows_wss_task_register_fixture.ps1 -Source (Resolve-Path scripts/h454_windows_wss_task.ps1).Path -RecoverySource (Resolve-Path scripts/h454_windows_offline_recovery.ps1).Path
+          & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests/h454_windows_wss_task_register_fixture.ps1 -Source (Resolve-Path scripts/h454_windows_wss_task.ps1).Path -RecoverySource (Resolve-Path scripts/h454_windows_offline_recovery.ps1).Path -FilesSource (Resolve-Path scripts/h454_windows_wss_files.ps1).Path -SupervisorSource (Resolve-Path scripts/h454_windows_wss_tunnel.ps1).Path
           if ($LASTEXITCODE -ne 0) { throw 'H454_WSS_TASK_REGISTRATION_FAILED' }
           & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests/h454_windows_wss_guard_install_fixture.ps1 -Source (Resolve-Path scripts/h454_windows_wss_task.ps1).Path -RecoverySource (Resolve-Path scripts/h454_windows_offline_recovery.ps1).Path
           if ($LASTEXITCODE -ne 0) { throw 'H454_WSS_GUARD_INSTALL_FAILED' }

@@ -347,25 +347,31 @@ only after verifying that the guarded launcher is the exact transformation of
 the pinned original and that its relay address is RFC 1918. Synthetic settings
 were accepted by the PowerShell validator; settings were also built in memory
 from the real launcher and public files without printing addresses or secrets.
-`h454_windows_wss_bundle.py` assembles the five supervisor files in memory and
-checks their input hashes and the identity module pin. Its separate publisher
-creates only the fixed files or accepts identical existing files; it refuses
-conflicts and reparse paths. The caller must hold the recovery lock and verify
-the state directory ACL. Assembly was exercised with the real public inputs;
-publishing has only synthetic evidence and no BRC token was read.
+`h454_windows_wss_files.ps1` prepares the five fixed supervisor files using
+Windows PowerShell. It checks the original-to-guarded launcher relation, the
+marker, pinned inputs, node signature, state ACL and stopped container under
+the recovery lock. It refuses existing conflicts and reparse points; an
+identical partial installation can be resumed. Windows fixtures exercise
+preflight, collision, junction, installation and resume without BRC secrets.
 
 `h454_windows_guard_operator.ps1` is a bounded preparation operator for the
 already-stopped original. It verifies supplied source and task-backup pins,
 the disabled legacy task, the exclusive lock, container identity and closed
 listeners before preparing the guarded launcher, its backup and the pending
 marker. Its default is a read-only preflight; applying it requires the owner
-switch. Supplied hashes must be established independently. It does not install
-the supervisor, start or stop a container, stage credentials or perform MCP.
-A preflight against the real stopped container passed without changing the
-launcher or creating a marker. Synthetic checks retained the marker and
+switch. Its separate WSS preparation mode checks pinned source bytes and can
+install the supervisor files and register its task disabled. Neither mode
+enables the task, starts or stops a container, stages credentials or performs
+MCP. Supplied hashes must be established independently.
+On the real stopped container, the operator installed the guarded launcher,
+an original-byte backup and a pending marker. Independent checks confirmed the
+three hashes, the disabled old task and closed listeners; the container
+remained stopped. Synthetic checks retained the marker and
 original-byte backup when a failure was injected before or after atomic
-replacement, then resumed under a reacquired lock. The apply path has not
-been exercised on the real launcher.
+replacement, then resumed under a reacquired lock. WSS installation has not
+been applied to the real state directory. Its preflight passed against that
+guarded state and the real public CA and SSH public key; no supervisor files
+or WSS task were created by the preflight.
 
 ## Evidence and limits
 
