@@ -322,6 +322,32 @@ assert(forbidden.isError === true, 'MCP_READONLY_SOURCE_WRITE_DENIED');
 const outside = await callTool('read_file', { path: '/host-private/owner-secret.txt' });
 assert(outside.isError === true, 'MCP_UNMOUNTED_SECRET_READ_DENIED');
 
+// Symlinks and lexical traversal must never grant access beyond the OS
+// sandbox: source is a separate read-only mount, host-private is unmounted.
+const hostLink = '/workspace/host-only-symlink';
+fs.symlinkSync('/host-private/owner-secret.txt', hostLink);
+const hostLinkRead = await callTool('read_file', {path: hostLink});
+assert(hostLinkRead.isError === true, 'MCP_UNMOUNTED_SYMLINK_SECRET_READ_DENIED');
+
+const readonlySource = '/opt/brc/package.json';
+const beforeSource = fs.readFileSync(readonlySource);
+const sourceLink = '/workspace/read-only-source-link';
+fs.symlinkSync(readonlySource, sourceLink);
+await callTool('write_file', {
+  path: sourceLink, content: 'attempted-symlink-source-tampering', mode: 'rewrite',
+});
+assert(fs.readFileSync(readonlySource).equals(beforeSource),
+  'OS_SYMLINK_SOURCE_CANNOT_BE_MODIFIED');
+
+const traversalWrite = await callTool('write_file', {
+  path: '/workspace/../opt/brc/package.json',
+  content: 'attempted-traversal-tampering', mode: 'rewrite',
+});
+assert(traversalWrite.isError === true &&
+       fs.readFileSync(readonlySource).equals(beforeSource),
+       'OS_TRAVERSAL_SOURCE_WRITE_DENIED');
+
+
 // Run the SAME general-purpose shell tool that would be dangerous if its OS
 // identity had production privileges. Even a Node subprocess must be isolated.
 const childProgram = String.raw`
