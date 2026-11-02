@@ -12,7 +12,7 @@
 <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#0B2841"/><stop offset=".45" stop-color="#081C2F"/><stop offset="1" stop-color="#03101D"/></linearGradient>
 <linearGradient id="type" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#FFFFFF"/><stop offset=".28" stop-color="#DDF5FF"/><stop offset=".57" stop-color="#7BBFEE"/><stop offset="1" stop-color="#498EC2"/></linearGradient>
 <radialGradient id="glow"><stop stop-color="#2C8CBF" stop-opacity=".22"/><stop offset="1" stop-color="#2C8CBF" stop-opacity="0"/></radialGradient>
-</defs><rect width="512" height="512" fill="url(#bg)"/><ellipse cx="256" cy="256" rx="240" ry="240" fill="url(#glow)"/><g transform="translate(60 145) scale(1.225)"><g><g stroke-linejoin="round">
+</defs><rect width="512" height="512" fill="url(#bg)"/><ellipse cx="256" cy="256" rx="240" ry="240" fill="url(#glow)"/><g transform="translate(67.2 144) scale(1.18)"><g><g stroke-linejoin="round">
 <!-- Four separated feathers preserve the owner-approved Aero silhouette. -->
 <path d="M10 15 L116 55 L116 79 L35 49 Z" fill="#04233F" opacity=".85" transform="translate(1 3)"/>
 <path d="M10 15 L116 55 L116 76 L36 47 Z" fill="url(#wingMetal)" stroke="#B5E9FF" stroke-width=".7"/>
