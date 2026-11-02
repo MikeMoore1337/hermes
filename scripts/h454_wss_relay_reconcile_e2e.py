@@ -113,13 +113,30 @@ try:
     network = run(docker + ['network', 'create', '--internal', '--label', label, prefix])
     phase = 'INSPECT_NETWORK'
     network_data = inspect('network', network)
-    if network_data['Labels'].get('com.hermes.h454.fixture') != nonce or not network_data['Internal']:
+    if (network_data['Id'] != network or network_data['Name'] != prefix or
+            network_data['Labels'].get('com.hermes.h454.fixture') != nonce or not network_data['Internal']):
         raise ValueError('NETWORK')
     ipam = network_data['IPAM']['Config']
     if len(ipam) != 1:
         raise ValueError('NETWORK')
     subnet = ipaddress.IPv4Network(ipam[0]['Subnet'])
     gateway = ipaddress.IPv4Address(ipam[0]['Gateway'])
+    if network_data.get('Containers'):
+        raise ValueError('NETWORK')
+    # Reserve Docker's chosen range again with explicit IPAM for static addresses.
+    phase = 'EXPLICIT_NETWORK'
+    run(docker + ['network', 'rm', network], timeout=15)
+    network = None
+    network = run(docker + ['network', 'create', '--internal', '--subnet', str(subnet),
+                            '--gateway', str(gateway), '--label', label, prefix])
+    network_data = inspect('network', network)
+    if (network_data['Id'] != network or network_data['Name'] != prefix or
+            network_data['Labels'].get('com.hermes.h454.fixture') != nonce or
+            network_data['Internal'] is not True or network_data.get('Containers') or
+            len(network_data['IPAM']['Config']) != 1 or
+            network_data['IPAM']['Config'][0]['Subnet'] != str(subnet) or
+            network_data['IPAM']['Config'][0]['Gateway'] != str(gateway)):
+        raise ValueError('NETWORK')
     relay_ip = str(next(ip for ip in subnet.hosts() if ip != gateway))
     relay_code = "require('node:http').createServer((q,s)=>{s.writeHead(q.url==='/health'?200:404);s.end()}).listen(3000,'127.0.0.1')"
     phase = 'CREATE_RELAY'
