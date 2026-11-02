@@ -652,17 +652,19 @@ def check(uid: int, gid: int, *, ensure: bool) -> None:
     _verify_files(pins)
     _installed_unit_trusted(pins)
     if ensure:
-        # The guard is a required dependency BEFORE GSC can start. A DNS
-        # rotation must be reconciled here, not silently skip the daily tick.
-        # The installed systemd unit grants writes ONLY to our policy and
-        # drop-in directories, while bind-mounting the Google key read-only.
-        # Source/current SHA and the old exact policy are checked first.
+        # After reboot nft tables can be absent AND DNS can have rotated.
+        # Restore the old, exact, UID-restrictive guard before any refreshed
+        # cgroup allowlist or potential GSC launch. This also makes the
+        # rotation path verify the expected EXISTING table, fail closed on
+        # spoofed/drifted state, and never leave UID traffic unfiltered.
+        if _nft_state(pins, uid) == "MISSING":
+            _nft_create(pins, uid)
+        # The guard is a required dependency BEFORE GSC can start. Rotated
+        # Google IPs are reconciled here; no broad fallback or secret access.
         current = tuple(_current_pins(uid))
         if set(current) != set(pins):
             refresh_pins(uid, gid, automatic=True)
             return
-        if _nft_state(pins, uid) == "MISSING":
-            _nft_create(pins, uid)  # Reboot: recreate guard before starting GSC.
     if _nft_state(pins, uid) != "EXACT":
         raise GuardError("network_guard_not_enforced")
 
