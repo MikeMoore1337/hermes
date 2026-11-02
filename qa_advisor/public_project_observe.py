@@ -33,7 +33,7 @@ WORKFLOW_FILE = "github-observe-export.yml"
 # Numeric IDs must be checked against actual GitHub public workflow REST
 # results after merge. 0 means disabled / unverified, never 'available'.
 PROJECTS = {
-    "toolkit": ("MikeMoore1337/ai-development-toolkit", 0),
+    "toolkit": ("MikeMoore1337/ai-development-toolkit", 404394421),
     "yfc": ("MikeMoore1337/your-fitness-coach", 0),
     "second_brain": ("MikeMoore1337/second-brain", 0),
 }
