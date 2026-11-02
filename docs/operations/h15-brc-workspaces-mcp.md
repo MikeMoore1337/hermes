@@ -94,8 +94,9 @@ live PASS, partial coverage and untested scenarios by device and tool.
   name to GitHub, uses a four-second socket timeout and returns unavailable
   after six seconds. At most two checks run per Control Center process; a
   stalled DNS lookup may continue in its bounded background slot.
-  Runtime use requires the separately approved `api.github.com` egress; it
-  does not require new credentials. This does not verify Git HEAD or the
+  Runtime use requires HTTPS reachability to `api.github.com`; verify the
+  effective service configuration because deployed drop-ins may differ from
+  the unit template. It does not require new credentials or verify Git HEAD or the
   device filesystem, and connecting is disabled. The device label uses only an
   existing fresh, validated observation and says when it is unavailable; it
   does not prove current command execution. It makes no MCP call and adds
