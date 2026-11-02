@@ -4,10 +4,14 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from scripts.h15_brc_harden_relay import apply, VULNERABLE, PATCHED, RELAY
+from scripts.h15_brc_harden_relay import (
+    apply, VULNERABLE, PATCHED, RELAY, ROTATE_MARKER, ROTATE_PATCH,
+    ATTACH_MARKER, ATTACH_PATCH,
+)
 from scripts.h15_remote_commander_candidate_audit import AuditError
 
-SOURCE = "import { WebSocketServer } from 'ws';\nhttp.on('upgrade', (req, socket, head) => {\n" + VULNERABLE + "\n});\n"
+SOURCE = ("import { WebSocketServer } from 'ws';\nhttp.on('upgrade', (req, socket, head) => {\n"
+          + VULNERABLE + "\n" + ROTATE_MARKER + "\n" + ATTACH_MARKER + "\n});\n")
 
 
 class RelayAuthTests(unittest.TestCase):
@@ -33,6 +37,10 @@ class RelayAuthTests(unittest.TestCase):
         self.assertIn("url.searchParams.has('token')", source)
         self.assertNotIn("url.searchParams.get('token')", source)
         self.assertIn("h?.startsWith('Bearer ')", source)
+        self.assertIn(ROTATE_PATCH, source)
+        self.assertIn(ATTACH_PATCH, source)
+        self.assertIn("writable: false, configurable: false, enumerable: false", source)
+        self.assertNotIn("value: token", source)
         self.assertFalse(result["production_ready"])
 
     def test_source_changed_fail_closed_without_touching_file(self):
@@ -58,6 +66,19 @@ class RelayAuthTests(unittest.TestCase):
             apply(self.root)
         self.assertEqual(tgt.read_text(encoding="utf-8"), SOURCE)
 
+    def test_missing_credential_binding_marker_fails_atomically(self):
+        altered = SOURCE.replace(ATTACH_MARKER, 'unreviewedAttach(ws)')
+        self.target.write_text(altered, encoding='utf-8')
+        with self.assertRaisesRegex(AuditError, 'unreviewed_ws_auth_source'):
+            apply(self.root)
+        self.assertEqual(self.target.read_text(encoding='utf-8'), altered)
+
+    def test_missing_rotation_marker_fails_atomically(self):
+        altered = SOURCE.replace(ROTATE_MARKER, 'unreviewedPairing()')
+        self.target.write_text(altered, encoding='utf-8')
+        with self.assertRaisesRegex(AuditError, 'unreviewed_ws_auth_source'):
+            apply(self.root)
+        self.assertEqual(self.target.read_text(encoding='utf-8'), altered)
     def test_unapproved_sha_refused(self):
         with self.assertRaisesRegex(AuditError, "unreviewed_upstream_sha"):
             apply(self.root, sha="f" * 40)
