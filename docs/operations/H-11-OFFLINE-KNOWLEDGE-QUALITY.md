@@ -152,28 +152,28 @@ Status: `STAGE_1_SYNTHETIC_ONLY`. `STAGE_2_BLOCKED`. No production GO.
 
 ### Evidence and ownership
 
-- Hermes main source inspected before this change: \`b105588db804fda6f2bf49142aebb211d05d8d15\`.
-- Public Second Brain v4 main inspected: \`53fad04839a500a597546038a2a3763d980d6928\`. Its [vault contract](https://github.com/MikeMoore1337/second-brain/blob/main/docs/architecture/vault-contract-v1.md) defines canonical note created/updated timestamps and optional research provenance; those fields alone do **not** define universal source expiry or validity periods for facts.
-- The upstream [start-second-brain](https://github.com/artemiimillier/start-second-brain) at \`d5dad206b0326a3e123e8d55f39a563cdd5cf6f1\` is MIT licensed. Its read-only \`scripts/brain_check.py\` checks structured headers, index membership and wikilinks. This revision is inspiration only: no upstream code, second vault or private-content scanner is imported.
+- Hermes main source inspected before this change: `b105588db804fda6f2bf49142aebb211d05d8d15`.
+- Public Second Brain v4 main inspected: `53fad04839a500a597546038a2a3763d980d6928`. Its [vault contract](https://github.com/MikeMoore1337/second-brain/blob/main/docs/architecture/vault-contract-v1.md) defines canonical note created/updated timestamps and optional research provenance; those fields alone do **not** define universal source expiry or validity periods for facts.
+- The upstream [start-second-brain](https://github.com/artemiimillier/start-second-brain) at `d5dad206b0326a3e123e8d55f39a563cdd5cf6f1` is MIT licensed. Its read-only `scripts/brain_check.py` checks structured headers, index membership and wikilinks. This revision is inspiration only: no upstream code, second vault or private-content scanner is imported.
 - Second Brain #400 owns any external status API contract. Hermes #6 owns future credential-scoped read-only transport. H-11 here is strictly synthetic-only, no new reader/provider/agent/service.
 
 ### New optional fixture fields
 
-No changes to \`SCHEMA\`, \`RESULT_SCHEMA\`, \`READY/HOLD/UNKNOWN\` or existing required keys:
+No changes to `SCHEMA`, `RESULT_SCHEMA`, `READY/HOLD/UNKNOWN` or existing required keys:
 
 | Object | Optional field | Meaning (synthetic only) | Failure reason |
 |---|---|---|---|
-| source | \`expires_on\` | Last calendar day source is valid, inclusive | \`EXPIRED_SOURCE\` => HOLD |
-| fact | \`valid_from\` | First calendar day fact becomes applicable, inclusive | \`NOT_YET_EFFECTIVE\` => HOLD |
-| fact | \`expires_on\` | Last calendar day fact remains applicable, inclusive | \`EXPIRED_FACT\` => HOLD |
+| source | `expires_on` | Last calendar day source is valid, inclusive | `EXPIRED_SOURCE` => HOLD |
+| fact | `valid_from` | First calendar day fact becomes applicable, inclusive | `NOT_YET_EFFECTIVE` => HOLD |
+| fact | `expires_on` | Last calendar day fact remains applicable, inclusive | `EXPIRED_FACT` => HOLD |
 
-All optional dates are strict ISO \`YYYY-MM-DD\` strings. The supplied \`--as-of\` date is the only evaluation clock; nothing calls wall-clock/network/AI. On the expiry date itself, the source or fact is still valid. A fact with \`valid_from > expires_on\`, invalid dates, null or unexpected fields fails closed as \`KnowledgeAuditError\` (CLI: generic \`REJECTED\`, exit code 2); \`checked_on\` remains mandatory. This is not a claim about server-side expiry or revoked API credentials.
+All optional dates are strict ISO `YYYY-MM-DD` strings. The supplied `--as-of` date is the only evaluation clock; nothing calls wall-clock/network/AI. On the expiry date itself, the source or fact is still valid. A fact with `valid_from > expires_on`, invalid dates, null or unexpected fields fails closed as `KnowledgeAuditError` (CLI: generic `REJECTED`, exit code 2); `checked_on` remains mandatory. This is not a claim about server-side expiry or revoked API credentials.
 
-For two synthetic YES/NO values with equal topic and predicate, \`CONTRADICTION\` is now emitted only when their stated inclusive validity windows overlap. Missing bounds are treated as unbounded (conservative), **not** inferred from \`checked_on\` or an AI model. Disjoint historical and current versions are not in conflict; the historical version is still HOLD after expiry. Present dependencies on HOLD/UNKNOWN facts continue to downgrade the referring facts.
+For two synthetic YES/NO values with equal topic and predicate, `CONTRADICTION` is now emitted only when their stated inclusive validity windows overlap. Missing bounds are treated as unbounded (conservative), **not** inferred from `checked_on` or an AI model. Disjoint historical and current versions are not in conflict; the historical version is still HOLD after expiry. Present dependencies on HOLD/UNKNOWN facts continue to downgrade the referring facts.
 
 Reproducible synthetic fixture:
 
-\`\`\`json
+```json
 {
   "schema": "hermes-h11-synthetic-fixture-v1",
   "sources": [
@@ -209,23 +209,23 @@ Reproducible synthetic fixture:
     }
   ]
 }
-\`\`\`
+```
 
-\`--as-of 2026-10-16\` yields \`F-old=HOLD(EXPIRED_FACT)\`,
-\`F-current=READY\`, and no \`CONTRADICTION\` for these disjoint intervals.
+`--as-of 2026-10-16` yields `F-old=HOLD(EXPIRED_FACT)`,
+`F-current=READY`, and no `CONTRADICTION` for these disjoint intervals.
 READY means only **no blocking finding in an invented fixture**; no statement
 about real-life truth, Second Brain vault contents or credential validity is made.
 
 ### Test commands and remaining blocked gates
 
-\`\`\`bash
+```bash
 python3 -m unittest discover -s tests -p test_h11_offline_knowledge_quality.py -v
 python3 -m unittest discover -s tests -p test_h11_temporal_validity.py -v
 python3 -m unittest discover -s tests -v
 python3 scripts/validate_repo.py
 python3 scripts/check_policy_index.py
 python3 scripts/check_markdown_links.py
-\`\`\`
+```
 
 Additional synthetic regression covers exact-date boundary, source/fact expiry,
 future applicability, reversed or malformed dates, missing checked_on, source
