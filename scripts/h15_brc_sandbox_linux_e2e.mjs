@@ -228,8 +228,10 @@ const refusedSession = {process:{kill:() => {throw Error('synthetic refusal');}}
 const rejectedSession = {process:{kill:signal => {rejectedSignals.push(signal); return false;}}};
 const rejectedEscalationSession = {process:{kill:signal => signal !== 'SIGKILL'}};
 const originalConsoleError = console.error;
+const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
 let escalationLogs = 0;
 try {
+  Object.defineProperty(process, 'platform', {value:'win32'});
   console.error = (...args) => {
     if (args[0] === 'HERMES_TERMINATION_ESCALATION_FAILED') escalationLogs++;
     else originalConsoleError(...args);
@@ -261,7 +263,130 @@ try {
     'MCP_TERMINATE_FALSE_SIGNAL_IS_ERROR');
 } finally {
   console.error = originalConsoleError;
+  Object.defineProperty(process, 'platform', originalPlatform);
   for (const pid of fakePids) terminalManager.sessions.delete(pid);
+}
+terminalManager.sessions.set(fakePids[0], {process:{pid:fakePids[0]}});
+try {
+  const forged = await callTool('force_terminate', {pid:fakePids[0]});
+  assert(forged.isError === true, 'MCP_TERMINATE_UNTRACKED_GROUP_REFUSED');
+} finally { terminalManager.sessions.delete(fakePids[0]); }
+
+const failedProcess = await callTool('start_process', {command:'exit 7',shell:'/bin/sh',timeout_ms:3000});
+const failedText = failedProcess.content.map(item => item.text || '').join('\n');
+const failedPid = Number(failedText.match(/Process started with PID (\d+)/)?.[1]);
+assert(failedProcess.isError === true && failedText.includes('Process exited with code 7.'),
+  'MCP_TERMINAL_START_EXIT_FAILURE');
+if (!Number.isSafeInteger(failedPid) || failedPid <= 1) throw Error('FAILED_PROCESS_PID');
+const failedOutput = await callTool('read_process_output', {pid:failedPid,timeout_ms:100});
+assert(failedOutput.isError === true && failedOutput.content.some(item =>
+  item.text?.includes('Process failed or was terminated (exit code 7)')),
+  'MCP_TERMINAL_OUTPUT_EXIT_FAILURE');
+const successfulProcess = await callTool('start_process', {command:'exit 0',shell:'/bin/sh',timeout_ms:3000});
+assert(successfulProcess.isError !== true && successfulProcess.content.some(item =>
+  item.text?.includes('Process exited with code 0.')), 'MCP_TERMINAL_START_EXIT_SUCCESS');
+const missingCommand = await callTool('start_process', {
+  command:'/hermes-fixture-command-does-not-exist',shell:'/bin/sh',timeout_ms:3000,
+});
+assert(missingCommand.isError === true && missingCommand.content.some(item =>
+  item.text?.includes('Process exited with code 127.')), 'MCP_TERMINAL_MISSING_COMMAND_IS_ERROR');
+
+// Two real isolated sessions: killing one group must not affect the other.
+const treeWorker = '/workspace/h454-session-worker.mjs';
+const childPidFile = '/workspace/h454-session-child.pid';
+fs.writeFileSync(treeWorker, `import {spawn} from 'node:child_process';
+import {writeFileSync} from 'node:fs';
+const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});
+writeFileSync('${childPidFile}',String(child.pid),{flag:'wx'});
+setInterval(()=>{},1000);`);
+const pidFrom = result => Number(result.content.map(item => item.text || '').join('\n').match(/Process started with PID (\d+)/)?.[1]);
+const running = pid => {
+  try { return !/^\d+ \(.*\) Z /.test(fs.readFileSync(`/proc/${pid}/stat`, 'utf8')); }
+  catch (error) { if (error.code === 'ENOENT') return false; throw error; }
+};
+let firstPid, secondPid, descendantPid;
+try {
+  const first = await callTool('start_process', {command:`node ${treeWorker}`,shell:'/bin/sh',timeout_ms:500});
+  const second = await callTool('start_process', {command:'sleep 30',shell:'/bin/sh',timeout_ms:500});
+  firstPid = pidFrom(first); secondPid = pidFrom(second);
+  if (first.isError || second.isError || !Number.isSafeInteger(firstPid) || !Number.isSafeInteger(secondPid) ||
+      firstPid <= 1 || secondPid <= 1 || firstPid === secondPid) throw Error('SESSION_START_FAILED');
+  for (let i=0; i<50 && !fs.existsSync(childPidFile); i++) await pause(50);
+  descendantPid = Number(fs.readFileSync(childPidFile, 'utf8'));
+  if (!Number.isSafeInteger(descendantPid) || descendantPid <= 1 || !running(descendantPid))
+    throw Error('DESCENDANT_NOT_RUNNING');
+
+  const usesSupervisor = fs.existsSync('/usr/bin/python3');
+  if (!usesSupervisor) assert(first.content.some(item =>
+    item.text?.includes('Termination is limited to the process group; detached descendants may remain.')),
+    'MCP_TERMINAL_GROUP_ONLY_WARNING');
+  const target = terminalManager.sessions.get(firstPid).process;
+  const originalKill = process.kill, originalChildKill = target.kill;
+  try {
+    if (usesSupervisor) target.kill = () => { throw Error('synthetic denied signal'); };
+    else process.kill = (pid, signal) => {
+        if (pid === -firstPid && signal === 'SIGKILL') throw Error('synthetic denied signal');
+        return originalKill(pid, signal);
+      };
+    const refused = await callTool('force_terminate', {pid:firstPid});
+    assert(refused.isError === true && running(descendantPid), 'MCP_GROUP_SIGNAL_FAILURE_IS_ERROR');
+  } finally { process.kill = originalKill; target.kill = originalChildKill; }
+
+  const terminated = await callTool('force_terminate', {pid:firstPid});
+  for (let i=0; i<60 && running(descendantPid); i++) await pause(50);
+  assert(terminated.isError !== true && !running(descendantPid), 'MCP_TERMINATE_REAL_CHILD_GROUP');
+  assert(running(secondPid), 'MCP_TERMINATE_OTHER_SESSION_UNTOUCHED');
+} finally {
+  for (const pid of [firstPid, secondPid]) {
+    if (Number.isSafeInteger(pid) && pid > 1 && terminalManager.sessions.has(pid))
+      await callTool('force_terminate', {pid});
+  }
+}
+
+let interactivePid;
+try {
+  const started = await callTool('start_process', {
+    command:'read answer; printf "H454_INTERACTIVE_%s\\n" "$answer"; sleep 2',
+    shell:'/bin/sh', timeout_ms:500,
+  });
+  interactivePid = pidFrom(started);
+  if (!Number.isSafeInteger(interactivePid) || interactivePid <= 1) throw Error('INTERACTIVE_START');
+  const response = await callTool('interact_with_process', {pid:interactivePid,input:'fixture',timeout_ms:1500});
+  assert(response.isError !== true && response.content.some(item => item.text?.includes('H454_INTERACTIVE_fixture')),
+    'MCP_TERMINAL_INTERACTIVE_INPUT');
+} finally {
+  if (Number.isSafeInteger(interactivePid) && interactivePid > 1 && terminalManager.sessions.has(interactivePid))
+    await callTool('force_terminate', {pid:interactivePid});
+}
+
+if (fs.existsSync('/usr/bin/setsid')) {
+  const escapedFile = '/workspace/h454-session-escaped.pid', worker = '/workspace/h454-escaped-worker.mjs';
+  const code = `require('node:fs').writeFileSync('${escapedFile}',String(process.pid),{flag:'wx'});setInterval(()=>{},1000)`;
+  fs.writeFileSync(worker, `import {spawn} from 'node:child_process';
+spawn('/usr/bin/setsid',[process.execPath,'-e',${JSON.stringify(code)}],{stdio:'ignore'});
+setInterval(()=>{},1000);`);
+  let session, escaped;
+  try {
+    const started = await callTool('start_process', {command:`node ${worker}`,shell:'/bin/sh',timeout_ms:500});
+    session = pidFrom(started);
+    if (!Number.isSafeInteger(session) || session <= 1) throw Error('ESCAPED_SESSION_START');
+    for (let i=0; i<60 && !fs.existsSync(escapedFile); i++) await pause(50);
+    escaped = Number(fs.readFileSync(escapedFile, 'utf8'));
+    if (!Number.isSafeInteger(escaped) || escaped <= 1 || !running(escaped)) throw Error('ESCAPED_CHILD_START');
+    const result = await callTool('force_terminate', {pid:session});
+    if (fs.existsSync('/usr/bin/python3')) {
+      for (let i=0; i<60 && running(escaped); i++) await pause(50);
+      assert(result.isError !== true && !running(escaped), 'MCP_TERMINATE_DETACHED_CHILD_WITH_SUPERVISOR');
+    } else {
+      await pause(200);
+      assert(result.content.some(item => item.text?.includes('descendants may remain')),
+        'MCP_TERMINATE_NO_SUPERVISOR_LIMIT_DISCLOSED');
+    }
+  } finally {
+    if (Number.isSafeInteger(session) && session > 1 && terminalManager.sessions.has(session))
+      await callTool('force_terminate', {pid:session});
+    if (Number.isSafeInteger(escaped) && escaped > 1 && running(escaped)) process.kill(escaped, 'SIGKILL');
+  }
 }
 
 // Drive the real compiled search manager with a controlled, real child process.

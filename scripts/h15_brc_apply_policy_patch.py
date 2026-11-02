@@ -155,7 +155,47 @@ def unknown_birthtime(raw: str) -> str:
 
 
 def safe_termination(manager: str, tools: str) -> tuple[str, str]:
-    """Keep escalation bound to its session and expose unsuccessful requests."""
+    """Isolate Linux sessions; keep other-platform escalation session-bound."""
+    declaration = "const MAX_WAIT_OUTPUT_CHARS = 2 * 1024 * 1024;"
+    spawn = "    const childProcess = spawn(spawnConfig.executable, spawnConfig.args, spawnOptions);"
+    first_import = "import { spawn } from 'child_process';"
+    if (manager.count(declaration) != 1 or manager.count(spawn) != 1 or
+            manager.count(first_import) != 1 or "h454LinuxSessions" in manager or
+            "spawnOptions.detached" in manager):
+        raise AuditError("unreviewed_terminal_termination")
+    supervisor = Path(__file__).with_name("h454_terminal_supervisor.py")
+    if supervisor.is_symlink() or not supervisor.is_file() or supervisor.stat().st_size > 10000:
+        raise AuditError("unreviewed_terminal_supervisor")
+    source = supervisor.read_text(encoding="utf-8")
+    if "def main()" not in source or "HERMES_TERMINAL_SUPERVISOR_UNAVAILABLE" not in source:
+        raise AuditError("unreviewed_terminal_supervisor")
+    manager = manager.replace(first_import, first_import + "\nimport { existsSync } from 'node:fs';", 1)
+    manager = manager.replace(declaration,
+        "const h454LinuxSessions = new WeakMap<object, 'supervisor' | 'group'>();\n"
+        + "const h454Supervisor = " + json.dumps(source) + ";\n" + declaration, 1)
+    manager = manager.replace(spawn,
+        "    let h454Mode: 'supervisor' | 'group' | null = null;\n"
+        "    if (process.platform === 'linux') {\n"
+        "      spawnOptions.detached = true;\n"
+        "      if (existsSync('/usr/bin/python3')) {\n"
+        "        let executable = spawnConfig.executable;\n"
+        "        let args = spawnConfig.args;\n"
+        "        if (spawnOptions.shell) {\n"
+        "          args = ['-c', [executable, ...args].join(' ')];\n"
+        "          executable = typeof spawnOptions.shell === 'string' ? spawnOptions.shell : '/bin/sh';\n"
+        "        }\n"
+        "        delete spawnOptions.shell;\n"
+        "        spawnConfig = { executable: '/usr/bin/python3', useShellOption: false,\n"
+        "          args: ['-I', '-B', '-c', h454Supervisor, String(process.pid), executable, ...args] };\n"
+        "        h454Mode = 'supervisor';\n"
+        "      } else h454Mode = 'group';\n"
+        "    }\n" + spawn + "\n"
+        "    if (h454Mode) h454LinuxSessions.set(childProcess, h454Mode);", 1)
+    resolved = "        if (resolved) return;\n        resolved = true;"
+    if manager.count(resolved) != 1:
+        raise AuditError("unreviewed_terminal_termination")
+    manager = manager.replace(resolved,
+        resolved + "\n        if (h454Mode === 'group') result.terminationScope = 'process_group';", 1)
     start, end = "forceTerminate(pid", "listActiveSessions()"
     if manager.count(start) != 1 or manager.count(end) != 1:
         raise AuditError("unreviewed_terminal_termination")
@@ -172,6 +212,13 @@ def safe_termination(manager: str, tools: str) -> tuple[str, str]:
     replacement = (indent + "if (!session.process.kill('SIGINT')) {\n"
                    + indent + "  return false;\n" + indent + "}")
     branch = branch[:match.start()] + replacement + branch[match.end():]
+    branch = branch.replace(replacement,
+        indent + "if (process.platform === 'linux') {\n"
+        + indent + "  const mode = h454LinuxSessions.get(session.process);\n"
+        + indent + "  if (!mode || session.process.pid !== pid ||\n"
+        + indent + "      !Number.isSafeInteger(pid) || pid <= 1) return false;\n"
+        + indent + "  return mode === 'supervisor' ? session.process.kill('SIGTERM') : process.kill(-pid, 'SIGKILL');\n"
+        + indent + "}\n" + replacement, 1)
     pattern = r"(?m)^([ ]*)if \(this\.sessions\.has\(pid\)\) \{\n([ ]*)session\.process\.kill\('SIGKILL'\);\n\1\}"
     matches = list(re.finditer(pattern, branch))
     if len(matches) != 1:
@@ -203,7 +250,9 @@ def safe_termination(manager: str, tools: str) -> tuple[str, str]:
     indent = match.group(1)
     branch = (branch[:match.end()] + indent + indent + "isError: !success,\n" + branch[match.end():])
     branch = branch.replace(old, "No active session or unable to initiate termination for PID ${pid}", 1)
-    branch = branch.replace(success, success + ". Only the tracked process is signaled; descendants may remain.", 1)
+    branch = branch.replace(success, success + ". Linux sessions use a supervisor when available; "
+                            "otherwise their process group is signaled. On other platforms only the "
+                            "tracked process is signaled; descendants may remain.", 1)
     return manager, tools[:first] + branch + tools[last:]
 
 
@@ -258,6 +307,52 @@ def bounded_timing(manager: str, tools: str, types: str) -> tuple[str, str, str]
     tools = tools.replace(title, "Output Events (${timing.outputEvents.length} recorded):", 1)
     types = types.replace(type_field, type_field + "\n  outputEventsTruncated?: boolean;", 1)
     return manager, tools, types
+
+
+def terminal_exit_errors(manager: str, tools: str, types: str) -> tuple[str, str, str]:
+    """Report a known failed process, without treating an active process as failed."""
+    event = "      childProcess.on('exit', (code: any) => {"
+    result = ("        exitReason = 'process_exit';\n        resolveOnce({\n"
+              "          pid: childProcess.pid!,\n          output,\n          isBlocked: false\n        });")
+    type_marker = "export interface CommandExecutionResult {\n  pid: number;\n  output: string;\n  isBlocked: boolean;"
+    if (manager.count(event) != 1 or manager.count(result) != 1 or types.count(type_marker) != 1):
+        raise AuditError("unreviewed_terminal_exit_status")
+    manager = manager.replace(event, "      childProcess.on('exit', (code: number | null, signal: string | null) => {", 1)
+    manager = manager.replace(result, result.replace("          isBlocked: false\n", "          isBlocked: false,\n          exitCode: code, exitSignal: signal\n"), 1)
+    types = types.replace(type_marker, type_marker + "\n  exitCode?: number | null;\n  exitSignal?: string | null;"
+                          "\n  terminationScope?: 'process_group';", 1)
+
+    starts = ("export async function startProcess(", "function formatTimingInfo(",
+              "export async function readProcessOutput(", "export async function interactWithProcess(")
+    if any(tools.count(marker) != 1 for marker in starts):
+        raise AuditError("unreviewed_terminal_exit_status")
+    positions = [tools.index(marker) for marker in starts]
+    if positions != sorted(positions):
+        raise AuditError("unreviewed_terminal_exit_status")
+    before, start, between, read, after = (tools[:positions[0]], tools[positions[0]:positions[1]],
+        tools[positions[1]:positions[2]], tools[positions[2]:positions[3]], tools[positions[3]:])
+    text = "${result.output}${statusMessage}${timingMessage}"
+    marker = "  return {\n    content: [{\n      type: \"text\",\n      text: `Process started with PID"
+    if start.count(text) != 1 or start.count(marker) != 1:
+        raise AuditError("unreviewed_terminal_exit_status")
+    status = ("  const exitFailure = result.exitCode !== undefined && result.exitCode !== 0;\n"
+              "  const exitStatus = result.exitCode === undefined ? '' : result.exitCode === null\n"
+              "    ? `\\nProcess terminated by signal ${result.exitSignal || 'unknown'}.`\n"
+              "    : `\\nProcess exited with code ${result.exitCode}.`;\n"
+              "  const groupWarning = result.terminationScope === 'process_group'\n"
+              "    ? '\\nTermination is limited to the process group; detached descendants may remain.' : '';\n")
+    start = start.replace(marker, status + marker.replace("  return {\n", "  return {\n    isError: exitFailure,\n", 1), 1)
+    start = start.replace(text, text + "${exitStatus}${groupWarning}", 1)
+    completed = "    processStateMessage = `\\n✅ Process completed with exit code ${result.exitCode}${runtimeStr}`;"
+    response = "  return {\n    content: [{\n      type: \"text\",\n      text: `${statusMessage}"
+    if read.count(completed) != 1 or read.count(response) != 1:
+        raise AuditError("unreviewed_terminal_exit_status")
+    read = read.replace(completed,
+        "    processStateMessage = result.exitCode === 0\n"
+        "      ? `\\n✅ Process completed with exit code 0${runtimeStr}`\n"
+        "      : `\\n❌ Process failed or was terminated (exit code ${result.exitCode})${runtimeStr}`;", 1)
+    read = read.replace(response, response.replace("  return {\n", "  return {\n    isError: result.isComplete && result.exitCode !== 0,\n", 1), 1)
+    return manager, before + start + between + read + after, types
 
 
 def apply(root: Path, *, sha: str = UPSTREAM_SHA) -> dict[str, object]:
@@ -320,6 +415,8 @@ def apply(root: Path, *, sha: str = UPSTREAM_SHA) -> dict[str, object]:
         terminal_path.read_text(encoding="utf-8"), process_tools_path.read_text(encoding="utf-8"))
     updated_terminal, updated_process_tools, updated_types = bounded_timing(
         updated_terminal, updated_process_tools, types_path.read_text(encoding="utf-8"))
+    updated_terminal, updated_process_tools, updated_types = terminal_exit_errors(
+        updated_terminal, updated_process_tools, updated_types)
     updated_search, updated_search_handlers = search_timeout_errors(
         search_path.read_text(encoding="utf-8"), search_handlers_path.read_text(encoding="utf-8"))
     path.write_text(updated, encoding="utf-8")

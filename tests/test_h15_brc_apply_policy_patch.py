@@ -59,11 +59,17 @@ FILESYSTEM = """    const info: Record<string, any> = {
     return info;
 """
 
-TERMINAL = """const MAX_WAIT_OUTPUT_CHARS = 2 * 1024 * 1024;
+TERMINAL = """import { spawn } from 'child_process';
+const MAX_WAIT_OUTPUT_CHARS = 2 * 1024 * 1024;
 class TerminalManager {
   async executeCommand() {
+    const childProcess = spawn(spawnConfig.executable, spawnConfig.args, spawnOptions);
     const outputEvents: OutputEvent[] = [];
     let exitReason = 'timeout';
+    const resolveOnce = (result: CommandExecutionResult) => {
+        if (resolved) return;
+        resolved = true;
+    };
     result.timingInfo = {
       outputEvents: outputEvents.length > 0 ? outputEvents : undefined
     };
@@ -84,6 +90,14 @@ class TerminalManager {
           });
         }
     });
+      childProcess.on('exit', (code: any) => {
+        exitReason = 'process_exit';
+        resolveOnce({
+          pid: childProcess.pid!,
+          output,
+          isBlocked: false
+        });
+      });
   }
   forceTerminate(pid: number): boolean {
     const session = this.sessions.get(pid);
@@ -100,12 +114,29 @@ class TerminalManager {
 """
 
 PROCESS_TOOLS = """import { terminalManager, MAX_BUFFERED_OUTPUT_CHARS } from '../terminal-manager.js';
+export async function startProcess() {
+  return {
+    content: [{
+      type: "text",
+      text: `Process started with PID ${result.pid} (shell: ${shellUsed})\\nInitial output:\\n${result.output}${statusMessage}${timingMessage}`
+    }],
+  };
+}
 function formatTimingInfo(timing: any): string {
   let msg = '';
   if (timing.outputEvents && timing.outputEvents.length > 0) {
     msg += `\\n  Output Events (${timing.outputEvents.length} total):\\n`;
   }
   return msg;
+}
+export async function readProcessOutput() {
+    processStateMessage = `\\n✅ Process completed with exit code ${result.exitCode}${runtimeStr}`;
+  return {
+    content: [{
+      type: "text",
+      text: `${statusMessage}\\n\\n${responseText}${processStateMessage}${timingMessage}`
+    }],
+  };
 }
 export async function interactWithProcess() {
   const outputEvents: any[] = [];
@@ -131,7 +162,12 @@ export async function forceTerminate(args: unknown): Promise<ServerResult> {
 export async function listSessions() { return []; }
 """
 
-TYPES = """export interface TimingInfo {
+TYPES = """export interface CommandExecutionResult {
+  pid: number;
+  output: string;
+  isBlocked: boolean;
+}
+export interface TimingInfo {
   outputEvents?: OutputEvent[];
 }
 """
@@ -341,7 +377,39 @@ class BrcHardeningTests(unittest.TestCase):
         tools = self.process_tools.read_text(encoding="utf-8")
         self.assertIn("if (!session.process.kill('SIGINT'))", terminal)
         self.assertIn("if (!session.process.kill('SIGKILL'))", terminal)
-        self.assertIn("Only the tracked process is signaled; descendants may remain.", tools)
+        self.assertIn("spawnOptions.detached = true", terminal)
+        self.assertIn("h454LinuxSessions.get(session.process)", terminal)
+        self.assertIn("session.process.pid !== pid", terminal)
+        self.assertIn("session.process.kill('SIGTERM') : process.kill(-pid, 'SIGKILL')", terminal)
+        self.assertIn("descendants may remain.", tools)
+
+    def test_unreviewed_spawn_is_refused_before_any_write(self):
+        self.terminal.write_text(TERMINAL.replace("spawnConfig.args, spawnOptions", "spawnConfig.args, unknown"), encoding="utf-8")
+        paths = (self.dispatcher, self.edit, self.filesystem, self.terminal, self.process_tools,
+                 self.search, self.search_handlers)
+        before = {p: p.read_bytes() for p in paths}
+        with self.assertRaisesRegex(AuditError, "unreviewed_terminal_termination"):
+            apply(self.root)
+        self.assertEqual({p: p.read_bytes() for p in paths}, before)
+
+    def test_process_exit_failure_is_distinct_from_an_active_session(self):
+        apply(self.root)
+        manager = self.terminal.read_text(encoding="utf-8")
+        tools = self.process_tools.read_text(encoding="utf-8")
+        self.assertIn("exitCode: code, exitSignal: signal", manager)
+        self.assertIn("result.exitCode !== undefined && result.exitCode !== 0", tools)
+        self.assertIn("isError: result.isComplete && result.exitCode !== 0", tools)
+        self.assertIn("Process failed or was terminated", tools)
+        self.assertIn("detached descendants may remain", tools)
+
+    def test_unreviewed_process_exit_is_refused_before_any_write(self):
+        self.terminal.write_text(TERMINAL.replace("childProcess.on('exit'", "childProcess.on('close'"), encoding="utf-8")
+        paths = (self.dispatcher, self.edit, self.filesystem, self.terminal, self.process_tools,
+                 self.search, self.search_handlers)
+        before = {p: p.read_bytes() for p in paths}
+        with self.assertRaisesRegex(AuditError, "unreviewed_terminal_exit_status"):
+            apply(self.root)
+        self.assertEqual({p: p.read_bytes() for p in paths}, before)
 
     def test_verbose_timing_is_bounded_and_discloses_truncation(self):
         apply(self.root)
