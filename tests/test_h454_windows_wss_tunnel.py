@@ -22,6 +22,13 @@ class WssTunnelTests(unittest.TestCase):
         self.assertIn('Start-Sleep -Seconds 10\n}', result)
         self.assertNotIn('deviceToken', result)
 
+    def test_preflight_exits_only_after_pins_and_before_starting_a_child(self):
+        result = subject.build().decode('utf8')
+        preflight = result.index("if($Preflight){'H454_WSS_TUNNEL_PREFLIGHT=PASS';exit 0}")
+        self.assertLess(result.index("'H454_TUNNEL_LAUNCHER_DRIFT'"), preflight)
+        self.assertLess(result.index('Assert-H454File $ca $settings.caSha256'), preflight)
+        self.assertLess(preflight, result.index('Initialize-H454TunnelJob $PSCommandPath'))
+
     def test_changed_template_anchor_is_refused(self):
         with mock.patch.object(subject, 'TEMPLATE', 'no guard anchor'):
             with self.assertRaisesRegex(ValueError, 'template drift'):
@@ -39,6 +46,15 @@ class WssTunnelTests(unittest.TestCase):
                                         capture_output=True, text=True, timeout=20, creationflags=subprocess.CREATE_NO_WINDOW)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertIn('H454_WSS_TUNNEL_FIXTURE=PASS', result.stdout)
+                child_env = os.environ.copy()
+                for name in ('SSH_AUTH_SOCK', 'NODE_OPTIONS', 'NODE_PATH'):
+                    child_env.pop(name, None)
+                refused = subprocess.run([str(powershell), '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+                                          '-File', str(source), '-ConfigSha256', 'A' * 64, '-Preflight'],
+                                         capture_output=True, text=True, timeout=10, env=child_env,
+                                         creationflags=subprocess.CREATE_NO_WINDOW)
+                self.assertEqual(refused.returncode, 1, refused.stdout + refused.stderr)
+                self.assertIn('H454_TUNNEL_REASON=H454_TUNNEL_STATE', refused.stdout)
 
 
 if __name__ == '__main__':

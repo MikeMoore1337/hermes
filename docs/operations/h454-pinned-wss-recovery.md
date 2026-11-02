@@ -327,9 +327,20 @@ and must not be deployed as a standalone recovery procedure.
 
 `h454_windows_wss_tunnel.py` builds an SSH-only supervisor that revalidates its
 protected configuration and identity on each attempt, retries after failures,
-and places its child processes in an owned Windows job. The task and installer
-are not yet implemented or installed; this source alone does not restore the
-device or guarantee recovery if the supervisor process exits.
+and places its child processes in an owned Windows job. The task is not
+registered; this source does not by itself restore the device or guarantee
+recovery if the supervisor process exits.
+
+`New-H454WssTaskDefinition` constructs the tested periodic task definition
+in memory with one-minute repetition, no execution time limit, no overlapping
+instances and registration disabled by default. `Register-H454WssTaskDisabled`
+also checks the held recovery lock, disabled legacy task, protected snapshots,
+canonical marker, exact guard insertion and supervisor preflight before
+registering that task disabled. It does not create the marker, install files,
+enable the task or operate the container; those remain the operator's
+responsibility. Synthetic registration tests exercise refusals with a mocked
+scheduler. A separate local test registered and removed a uniquely named,
+disabled task using the real scheduler; it did not install the BRC task.
 
 ## Evidence and limits
 
@@ -430,6 +441,10 @@ device or guarantee recovery if the supervisor process exits.
   its own process was terminated. A wrong TLS name was refused. The temporary
   task and files were removed; no BRC credential was sent. Login and reboot
   recovery and a permanent installation remain unverified.
+- An early registration fixture accidentally created a disabled task when
+  Windows auto-import replaced its mock. Its fixture-only action was verified
+  and the task was removed. The fixture now preloads the module, verifies its
+  mocks and checks for accidental real registration; any leak is a test failure.
 - The rollback route guard passed PowerShell 5.1 negative fixtures for extra
   network members, changed identities, host overrides, alias and DNS drift,
   CIDR and gateway mismatch, overlapping upstream addresses and bad prefixes.

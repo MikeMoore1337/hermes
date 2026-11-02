@@ -4,7 +4,7 @@ from scripts.h454_windows_wss_launcher import JOB_GUARD
 
 TEMPLATE = r'''#requires -Version 5.1
 [CmdletBinding()]
-param([Parameter(Mandatory=$true)][ValidatePattern('^[A-Fa-f0-9]{64}$')][string]$ConfigSha256)
+param([Parameter(Mandatory=$true)][ValidatePattern('^[A-Fa-f0-9]{64}$')][string]$ConfigSha256,[switch]$Preflight)
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 function Require([bool]$Condition,[string]$Reason){if(-not $Condition){throw $Reason}}
@@ -89,6 +89,7 @@ try {
     $powershell=Join-Path $system 'WindowsPowerShell\v1.0\powershell.exe'
     $ssh=Join-Path $system 'OpenSSH\ssh.exe'
     Require ((Get-AuthenticodeSignature -LiteralPath $ssh).Status -eq 'Valid') 'H454_TUNNEL_SSH'
+    if($Preflight){'H454_WSS_TUNNEL_PREFLIGHT=PASS';exit 0}
     if(-not $h454JobInitialized){
         Initialize-H454TunnelJob $PSCommandPath
         $h454JobInitialized=$true
@@ -111,6 +112,7 @@ try {
     $reason=$_.Exception.Message
     if($reason -cnotmatch '^H454_[A-Z0-9_]{1,60}$'){$reason='H454_TUNNEL_INTERNAL'}
     'H454_WSS_TUNNEL=HOLD';'H454_TUNNEL_REASON='+$reason
+    if($Preflight){exit 1}
 }
 Start-Sleep -Seconds 10
 }

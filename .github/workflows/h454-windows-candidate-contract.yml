@@ -14,6 +14,7 @@ on:
       - scripts/h454_windows_launcher_guard.py
       - scripts/h454_windows_wss_launcher.py
       - scripts/h454_windows_wss_tunnel.py
+      - scripts/h454_windows_wss_task.ps1
       - scripts/h454_windows_wss_identity.ps1
       - scripts/h454_windows_wss_identity.mjs
       - tests/h454_windows_wss_identity.test.mjs
@@ -32,6 +33,8 @@ on:
       - tests/test_h454_windows_wss_launcher.py
       - tests/test_h454_windows_wss_tunnel.py
       - tests/h454_windows_wss_tunnel_fixture.ps1
+      - tests/h454_windows_wss_task_fixture.ps1
+      - tests/h454_windows_wss_task_register_fixture.ps1
       - tests/fixtures/h454_legacy_launcher_e37f.ps1.txt
       - tests/h454_windows_wss_reconnect_fixture.ps1
       - tests/test_h454_windows_launcher_preserve.py
@@ -59,6 +62,7 @@ on:
       - scripts/h454_windows_launcher_guard.py
       - scripts/h454_windows_wss_launcher.py
       - scripts/h454_windows_wss_tunnel.py
+      - scripts/h454_windows_wss_task.ps1
       - scripts/h454_windows_wss_identity.ps1
       - scripts/h454_windows_wss_identity.mjs
       - tests/h454_windows_wss_identity.test.mjs
@@ -77,6 +81,8 @@ on:
       - tests/test_h454_windows_wss_launcher.py
       - tests/test_h454_windows_wss_tunnel.py
       - tests/h454_windows_wss_tunnel_fixture.ps1
+      - tests/h454_windows_wss_task_fixture.ps1
+      - tests/h454_windows_wss_task_register_fixture.ps1
       - tests/fixtures/h454_legacy_launcher_e37f.ps1.txt
       - tests/h454_windows_wss_reconnect_fixture.ps1
       - tests/test_h454_windows_launcher_preserve.py
@@ -140,8 +146,13 @@ jobs:
         shell: pwsh
         run: |
           $env:H454_GUARD_FIXTURE = Join-Path $env:RUNNER_TEMP 'h454-guard-block.ps1'
-          python -B -c "import os; from pathlib import Path; from scripts.h454_windows_launcher_guard import GUARD; Path(os.environ['H454_GUARD_FIXTURE']).write_text(GUARD, encoding='utf-8')"
+          $env:H454_ANCHOR_FIXTURE = Join-Path $env:RUNNER_TEMP 'h454-guard-anchor.txt'
+          python -B -c "import os; from pathlib import Path; from scripts.h454_windows_launcher_guard import GUARD, ANCHOR; Path(os.environ['H454_GUARD_FIXTURE']).write_text(GUARD, encoding='utf-8'); Path(os.environ['H454_ANCHOR_FIXTURE']).write_text(ANCHOR, encoding='utf-8')"
           if ($LASTEXITCODE -ne 0) { throw 'H454_GUARD_GENERATION_FAILED' }
+          & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests/h454_windows_wss_task_fixture.ps1 -Source (Resolve-Path scripts/h454_windows_wss_task.ps1).Path -GuardPath $env:H454_GUARD_FIXTURE -AnchorPath $env:H454_ANCHOR_FIXTURE
+          if ($LASTEXITCODE -ne 0) { throw 'H454_WSS_TASK_DEFINITION_FAILED' }
+          & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests/h454_windows_wss_task_register_fixture.ps1 -Source (Resolve-Path scripts/h454_windows_wss_task.ps1).Path -RecoverySource (Resolve-Path scripts/h454_windows_offline_recovery.ps1).Path
+          if ($LASTEXITCODE -ne 0) { throw 'H454_WSS_TASK_REGISTRATION_FAILED' }
           & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/h454_windows_launcher_guard_e2e.ps1 -GuardPath $env:H454_GUARD_FIXTURE -FixtureParent $env:RUNNER_TEMP
           if ($LASTEXITCODE -ne 0) { throw 'H454_GUARD_TEST_FAILED' }
           & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/h454_windows_secure_credential_e2e.ps1 -Source (Resolve-Path scripts/h454_windows_secure_credential.ps1).Path
