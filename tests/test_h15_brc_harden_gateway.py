@@ -6,14 +6,14 @@ from unittest.mock import patch
 
 from scripts.h15_brc_harden_gateway import (
     apply, SERVER, INVOKE, POLICY, CATALOG, SERVER_IMPORT, SERVER_LIST, INVOKE_MARKER,
-    STATIC_LIST_MARKER,
+    STATIC_LIST_MARKER, GRANT_MARKER, GRANT_PATCH,
 )
 from scripts.h15_remote_commander_candidate_audit import AuditError
 
 SERVER_SOURCE = SERVER_IMPORT + "\n" + SERVER_LIST + "\n" + STATIC_LIST_MARKER + "\n"
 INVOKE_SOURCE = (
     "import { createHash } from 'node:crypto';\n"
-    "export function invokeTool() {\n" + INVOKE_MARKER + "\n}\n"
+    "export function invokeTool() {\n" + INVOKE_MARKER + "\n" + GRANT_MARKER + "\n}\n"
 )
 
 
@@ -47,6 +47,11 @@ class GatewayPolicyTests(unittest.TestCase):
         self.assertIn("HERMES_PINNED_TOOL_CATALOG_MISSING_OR_DUPLICATE", catalog)
         self.assertIn("isPermittedRemoteTool(tool, args)", invoke)
         self.assertIn("HERMES_REMOTE_TOOL_DENIED", invoke)
+        self.assertIn(GRANT_PATCH, invoke)
+        self.assertNotIn(GRANT_MARKER, invoke)
+        self.assertIn("HERMES_DEVICE_GRANT_REVOKED", invoke)
+        self.assertIn("grant.user_id !== ctx.userId", invoke)
+        self.assertIn("hermesAuthTokenHash", invoke)
         self.assertIn("args.isUrl === true", policy)
         self.assertIn("'start_process'", policy)
         self.assertNotIn("'set_config_value'", policy)
@@ -65,6 +70,16 @@ class GatewayPolicyTests(unittest.TestCase):
         with self.assertRaisesRegex(AuditError, "relay_policy_source_changed"):
             apply(self.root)
         self.assertEqual(f.read_text(encoding="utf-8"), altered)
+        self.assertFalse((self.root / POLICY).exists())
+        self.assertFalse((self.root / CATALOG).exists())
+
+    def test_missing_device_grant_contract_fails_closed_without_writes(self):
+        f = self.root / INVOKE
+        altered = INVOKE_SOURCE.replace(GRANT_MARKER, 'unreviewedAuthorization()')
+        f.write_text(altered, encoding='utf-8')
+        with self.assertRaisesRegex(AuditError, 'relay_policy_source_changed'):
+            apply(self.root)
+        self.assertEqual(f.read_text(encoding='utf-8'), altered)
         self.assertFalse((self.root / POLICY).exists())
         self.assertFalse((self.root / CATALOG).exists())
 
