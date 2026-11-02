@@ -359,7 +359,12 @@ def guard_unit_text() -> str:
         "NoNewPrivileges=yes\n"
         "PrivateNetwork=no\n"
         "ProtectSystem=strict\n"
-        "ReadWritePaths=/run/lock\n"
+        # Only our record, drop-in and advisory lock are writable.
+        # The Google key remains an individual read-only bind mount;
+        # the guard NEVER opens the credential contents.
+        "ReadWritePaths=/run/lock /etc/hermes-gsc "
+        "/etc/systemd/system/hermes-gsc-readonly.service.d\n"
+        "BindReadOnlyPaths=/etc/hermes-gsc/service-account.json\n"
         "ProtectHome=yes\n"
         "PrivateTmp=yes\n"
         "PrivateDevices=yes\n"
@@ -376,10 +381,20 @@ def guard_unit_text() -> str:
     )
 
 
+def previous_guard_unit_text() -> str:
+    """Exact current deployed H191 unit, before auto-refresh permissions."""
+    new_paths = (
+        "ReadWritePaths=/run/lock /etc/hermes-gsc "
+        "/etc/systemd/system/hermes-gsc-readonly.service.d\n"
+        "BindReadOnlyPaths=/etc/hermes-gsc/service-account.json\n"
+    )
+    return guard_unit_text().replace(new_paths, "ReadWritePaths=/run/lock\n", 1)
+
+
 def legacy_guard_unit_text() -> str:
-    """Only the exact prior reviewed unit may be migrated."""
+    """Oldest exact H191 unit, before LoadCredential and auto-refresh."""
     marker = f"LoadCredential={RELEASE_CREDENTIAL}:{DEPLOY_SHA}\n"
-    return guard_unit_text().replace(marker, "", 1)
+    return previous_guard_unit_text().replace(marker, "", 1)
 
 
 def _replace_guard_unit(data: str) -> None:
@@ -637,10 +652,15 @@ def check(uid: int, gid: int, *, ensure: bool) -> None:
     _verify_files(pins)
     _installed_unit_trusted(pins)
     if ensure:
-        # Old pins are safe only when currently observed DNS is a subset.
-        current = set(_current_pins(uid))
-        if not current.issubset(pins):
-            raise GuardError("google_ip_rotation_requires_review")
+        # The guard is a required dependency BEFORE GSC can start. A DNS
+        # rotation must be reconciled here, not silently skip the daily tick.
+        # The installed systemd unit grants writes ONLY to our policy and
+        # drop-in directories, while bind-mounting the Google key read-only.
+        # Source/current SHA and the old exact policy are checked first.
+        current = tuple(_current_pins(uid))
+        if set(current) != set(pins):
+            refresh_pins(uid, gid, automatic=True)
+            return
         if _nft_state(pins, uid) == "MISSING":
             _nft_create(pins, uid)  # Reboot: recreate guard before starting GSC.
     if _nft_state(pins, uid) != "EXACT":
@@ -660,7 +680,7 @@ def upgrade_unit(uid: int, gid: int) -> None:
     if _read_root_file(DROPIN, 0o644, 8192) != dropin_text(pins):
         raise GuardError("systemd_dropin_drift")
     legacy = _read_root_file(GUARD_FILE, 0o644, 8192)
-    if legacy != legacy_guard_unit_text():
+    if legacy not in (legacy_guard_unit_text(), previous_guard_unit_text()):
         raise GuardError("guard_unit_legacy_drift")
     _installed_unit_trusted(pins)
     _replace_guard_unit(guard_unit_text())
@@ -678,15 +698,30 @@ def upgrade_unit(uid: int, gid: int) -> None:
         raise GuardError("guard_unit_upgrade_unverified") from None
 
 
-def refresh_pins(uid: int, gid: int) -> str:
-    """Owner-gated public-Google-DNS refresh; no GSC/OAuth or timer changes.
+def _automatic_refresh_gate() -> None:
+    """An on-demand guard may update pins while the daily timer is enabled.
 
-    The nft table replacement is a single atomic transaction. Changing nft
-    first can only reduce permissions until the revised systemd cgroup
-    allowlist is reloaded. Any failure attempts exact-state rollback and
-    NEVER deletes or broadens the host's existing firewall rules.
+    The GSC process itself must not be running. During a systemd dependency
+    transaction GSC may be 'activating' with MainPID=0 while waiting for us.
     """
-    _unit_state(install=True)  # No in-flight GSC, timer must still be disabled.
+    state = _run(["systemctl", "show", "-P", "ActiveState", UNIT],
+                 timeout=SYSTEMD_TIMEOUT)
+    mainpid = _run(["systemctl", "show", "-P", "MainPID", UNIT],
+                   timeout=SYSTEMD_TIMEOUT)
+    if state not in ("inactive", "activating") or mainpid != "0":
+        raise GuardError("automatic_refresh_gsc_not_quiescent")
+
+
+def refresh_pins(uid: int, gid: int, *, automatic: bool = False) -> str:
+    """Refresh only freshly verified Google host pins; never enable GSC.
+
+    nft rules change atomically before any expansion of the cgroup allowlist.
+    A mismatch, DNS anomaly or incomplete rollback fails closed.
+    """
+    if automatic:
+        _automatic_refresh_gate()
+    else:
+        _unit_state(install=True)  # Explicit owner refresh requires disabled units.
     _key_metadata(uid, gid)
     previous = _read_record(uid, gid)
     _verify_files(previous)

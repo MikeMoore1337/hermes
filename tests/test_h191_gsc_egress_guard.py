@@ -198,16 +198,26 @@ class H191GoogleEgressGuardTests(TestCase):
             self.assertEqual(guard._sha(), "b" * 40)
             marker.read_text.assert_called_once_with(encoding="ascii")
 
-    def test_guard_loadcredential_template_keeps_caps_and_one_writable_lock(self):
+    def test_guard_loadcredential_keeps_caps_and_exact_write_paths(self):
         text = guard.guard_unit_text()
         directive = f"LoadCredential={guard.RELEASE_CREDENTIAL}:{guard.DEPLOY_SHA}\n"
         self.assertIn(directive, text)
         self.assertEqual(text.count("LoadCredential="), 1)
-        self.assertEqual(guard.legacy_guard_unit_text(), text.replace(directive, ""))
+        old = guard.previous_guard_unit_text()
+        self.assertIn("ReadWritePaths=/run/lock\n", old)
+        self.assertNotIn("BindReadOnlyPaths=", old)
+        self.assertEqual(guard.legacy_guard_unit_text(), old.replace(directive, "", 1))
         self.assertIn("NoNewPrivileges=yes", text)
         self.assertIn("CapabilityBoundingSet=CAP_NET_ADMIN", text)
         self.assertIn("ProtectSystem=strict", text)
-        self.assertIn("ReadWritePaths=/run/lock", text)
+        self.assertIn(
+            "ReadWritePaths=/run/lock /etc/hermes-gsc "
+            "/etc/systemd/system/hermes-gsc-readonly.service.d\n", text
+        )
+        self.assertIn(
+            "BindReadOnlyPaths=/etc/hermes-gsc/service-account.json\n", text
+        )
+        self.assertNotIn("CAP_DAC_OVERRIDE", text)
         self.assertNotIn("CAP_DAC_READ_SEARCH", text)
         self.assertNotIn("ReadWritePaths=/var", text)
         self.assertNotIn("WantedBy=", text)
@@ -250,6 +260,30 @@ class H191GoogleEgressGuardTests(TestCase):
                                 for args in run.call_args_list))
             self.assertFalse(any(args[0][0][0] == "nft"
                                  for args in run.call_args_list if args[0]))
+
+    def test_owner_upgrade_migrates_exact_current_guard_unit(self):
+        new_unit = guard.guard_unit_text()
+        previous_unit = guard.previous_guard_unit_text()
+        self.assertNotEqual(new_unit, previous_unit)
+        captured = []
+        def existing(path, *_args):
+            if path == guard.GUARD_FILE:
+                return previous_unit
+            if path == guard.DROPIN:
+                return guard.dropin_text(PINS)
+            raise AssertionError("unexpected_file_read")
+        with mock.patch.object(guard, "_unit_state"), \
+             mock.patch.object(guard, "_key_metadata"), \
+             mock.patch.object(guard, "_read_record", return_value=PINS), \
+             mock.patch.object(guard, "_nft_state", return_value="EXACT"), \
+             mock.patch.object(guard, "_run", return_value=""), \
+             mock.patch.object(guard, "_read_root_file", side_effect=existing), \
+             mock.patch.object(guard, "_installed_unit_trusted"), \
+             mock.patch.object(guard, "_verify_files"), \
+             mock.patch.object(guard, "_replace_guard_unit",
+                               side_effect=lambda value: captured.append(value)):
+            guard.upgrade_unit(UID, GID)
+        self.assertEqual(captured, [new_unit])
 
     def test_owner_upgrade_must_have_explicit_confirmation(self):
         with mock.patch.object(guard, "_identity", return_value=(UID, GID)), \
@@ -394,18 +428,67 @@ class H191GoogleEgressGuardTests(TestCase):
             with self.assertRaisesRegex(guard.GuardError, "effective_ip_allowlist_drift"):
                 guard._installed_unit_trusted(PINS)
 
-    def test_current_dns_change_fails_closed_before_nft_mutation(self):
+    def test_ensure_refreshes_rotated_google_dns_before_gsc(self):
+        changed = (V4, "142.251.1.10/32")
         with mock.patch.object(guard, "_key_metadata"), \
              mock.patch.object(guard, "_read_record", return_value=PINS), \
              mock.patch.object(guard, "_verify_files"), \
              mock.patch.object(guard, "_installed_unit_trusted"), \
-             mock.patch.object(guard, "_current_pins", return_value=(V4, "142.251.1.10/32")), \
-             mock.patch.object(guard, "_nft_state") as state, \
-             mock.patch.object(guard, "_nft_create") as create:
-            with self.assertRaisesRegex(guard.GuardError, "google_ip_rotation_requires_review"):
-                guard.check(UID, GID, ensure=True)
+             mock.patch.object(guard, "_current_pins", return_value=changed), \
+             mock.patch.object(guard, "refresh_pins", return_value="UPDATED") as refresh, \
+             mock.patch.object(guard, "_nft_state") as state:
+            guard.check(UID, GID, ensure=True)
+            refresh.assert_called_once_with(UID, GID, automatic=True)
             state.assert_not_called()
+
+    def test_ensure_refresh_failure_is_fail_closed(self):
+        with mock.patch.object(guard, "_key_metadata"), \
+             mock.patch.object(guard, "_read_record", return_value=PINS), \
+             mock.patch.object(guard, "_verify_files"), \
+             mock.patch.object(guard, "_installed_unit_trusted"), \
+             mock.patch.object(guard, "_current_pins", return_value=(V4,)), \
+             mock.patch.object(guard, "refresh_pins",
+                               side_effect=guard.GuardError("provider_dns_evidence_unverified")), \
+             mock.patch.object(guard, "_nft_create") as create:
+            with self.assertRaisesRegex(guard.GuardError, "provider_dns_evidence_unverified"):
+                guard.check(UID, GID, ensure=True)
             create.assert_not_called()
+
+    def test_automatic_refresh_allows_timer_active_only_without_gsc_pid(self):
+        expected = [
+            ["systemctl", "show", "-P", "ActiveState", guard.UNIT],
+            ["systemctl", "show", "-P", "MainPID", guard.UNIT],
+        ]
+        for state in ("inactive", "activating"):
+            with self.subTest(state=state), mock.patch.object(
+                guard, "_run", side_effect=[state, "0"]
+            ) as runner:
+                guard._automatic_refresh_gate()
+                self.assertEqual([args.args[0] for args in runner.call_args_list], expected)
+        for state, pid in (("active", "0"), ("failed", "0"),
+                           ("activating", "1234"), ("inactive", "42")):
+            with self.subTest(state=state, pid=pid), mock.patch.object(
+                guard, "_run", side_effect=[state, pid]
+            ):
+                with self.assertRaisesRegex(
+                    guard.GuardError, "automatic_refresh_gsc_not_quiescent"
+                ):
+                    guard._automatic_refresh_gate()
+
+    def test_automatic_refresh_uses_quiescence_gate_not_disabled_timer(self):
+        with mock.patch.object(guard, "_automatic_refresh_gate") as gate, \
+             mock.patch.object(guard, "_unit_state") as forbidden, \
+             mock.patch.object(guard, "_key_metadata"), \
+             mock.patch.object(guard, "_read_record", return_value=PINS), \
+             mock.patch.object(guard, "_verify_files"), \
+             mock.patch.object(guard, "_installed_unit_trusted"), \
+             mock.patch.object(guard, "_nft_state", return_value="EXACT"), \
+             mock.patch.object(guard, "_read_root_file", return_value="old_record"), \
+             mock.patch.object(guard, "_current_pins", return_value=PINS), \
+             mock.patch.object(guard, "_sha", return_value="a"*40):
+            self.assertEqual(guard.refresh_pins(UID, GID, automatic=True), "UNCHANGED")
+            gate.assert_called_once_with()
+            forbidden.assert_not_called()
 
     def test_check_offline_does_not_fetch_dns_or_modify_nft(self):
         with mock.patch.object(guard, "_key_metadata"), \
@@ -425,7 +508,7 @@ class H191GoogleEgressGuardTests(TestCase):
              mock.patch.object(guard, "_read_record", return_value=PINS), \
              mock.patch.object(guard, "_verify_files"), \
              mock.patch.object(guard, "_installed_unit_trusted"), \
-             mock.patch.object(guard, "_current_pins", return_value=(V4,)), \
+             mock.patch.object(guard, "_current_pins", return_value=PINS), \
              mock.patch.object(guard, "_nft_state", side_effect=["MISSING", "EXACT"]), \
              mock.patch.object(guard, "_nft_create") as create:
             guard.check(UID, GID, ensure=True)
