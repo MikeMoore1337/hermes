@@ -54,6 +54,98 @@ def valid_nft():
 
 
 class H191GoogleEgressGuardTests(TestCase):
+    def test_systemd_release_credential_reads_private_sha_copy_only(self):
+        with tempfile.TemporaryDirectory() as base:
+            folder = Path(base) / guard.GUARD
+            folder.mkdir()
+            (folder / guard.RELEASE_CREDENTIAL).write_text("a" * 40 + "\n", encoding="ascii")
+            with mock.patch.object(guard, "RELEASE_CREDENTIALS_ROOT", Path(base)), \
+                 mock.patch.dict(guard.os.environ, {"CREDENTIALS_DIRECTORY": str(folder)}), \
+                 mock.patch.object(guard, "DEPLOY_SHA") as original:
+                self.assertEqual(guard._sha(), "a" * 40)
+                original.read_text.assert_not_called()
+
+    def test_release_credential_directory_spoof_and_bad_sha_denied(self):
+        with mock.patch.dict(guard.os.environ, {"CREDENTIALS_DIRECTORY": "/tmp/fake"}):
+            with self.assertRaisesRegex(guard.GuardError, "release_credential_directory_invalid"):
+                guard._sha()
+        with tempfile.TemporaryDirectory() as base:
+            folder = Path(base) / guard.GUARD
+            folder.mkdir()
+            (folder / guard.RELEASE_CREDENTIAL).write_text("not-a-sha", encoding="ascii")
+            with mock.patch.object(guard, "RELEASE_CREDENTIALS_ROOT", Path(base)), \
+                 mock.patch.dict(guard.os.environ, {"CREDENTIALS_DIRECTORY": str(folder)}):
+                with self.assertRaisesRegex(guard.GuardError, "deployed_release_invalid"):
+                    guard._sha()
+
+    def test_root_cli_reads_original_marker_without_credentials_env(self):
+        with mock.patch.dict(guard.os.environ, {}, clear=True), \
+             mock.patch.object(guard, "DEPLOY_SHA") as marker:
+            marker.read_text.return_value = "b" * 40 + "\n"
+            self.assertEqual(guard._sha(), "b" * 40)
+            marker.read_text.assert_called_once_with(encoding="ascii")
+
+    def test_guard_loadcredential_template_keeps_caps_and_one_writable_lock(self):
+        text = guard.guard_unit_text()
+        directive = f"LoadCredential={guard.RELEASE_CREDENTIAL}:{guard.DEPLOY_SHA}\n"
+        self.assertIn(directive, text)
+        self.assertEqual(text.count("LoadCredential="), 1)
+        self.assertEqual(guard.legacy_guard_unit_text(), text.replace(directive, ""))
+        self.assertIn("NoNewPrivileges=yes", text)
+        self.assertIn("CapabilityBoundingSet=CAP_NET_ADMIN", text)
+        self.assertIn("ProtectSystem=strict", text)
+        self.assertIn("ReadWritePaths=/run/lock", text)
+        self.assertNotIn("CAP_DAC_READ_SEARCH", text)
+        self.assertNotIn("ReadWritePaths=/var", text)
+        self.assertNotIn("WantedBy=", text)
+
+    def test_owner_upgrade_rejects_unreviewed_guard_unit_before_writing(self):
+        with mock.patch.object(guard, "_unit_state"), \
+             mock.patch.object(guard, "_key_metadata"), \
+             mock.patch.object(guard, "_read_record", return_value=PINS), \
+             mock.patch.object(guard, "_nft_state", return_value="EXACT"), \
+             mock.patch.object(guard, "_run", return_value=""), \
+             mock.patch.object(guard, "_read_root_file",
+                               side_effect=lambda path, *_: ("tampered" if path == guard.GUARD_FILE
+                                                            else guard.dropin_text(PINS))), \
+             mock.patch.object(guard, "_replace_guard_unit") as replace:
+            with self.assertRaisesRegex(guard.GuardError, "guard_unit_legacy_drift"):
+                guard.upgrade_unit(UID, GID)
+            replace.assert_not_called()
+
+    def test_owner_upgrade_only_replaces_exact_guard_unit_once(self):
+        replaced = []
+        def approved(path, *_args):
+            if path == guard.GUARD_FILE:
+                return guard.legacy_guard_unit_text()
+            if path == guard.DROPIN:
+                return guard.dropin_text(PINS)
+            raise AssertionError("unapproved_file_read")
+        with mock.patch.object(guard, "_unit_state"), \
+             mock.patch.object(guard, "_key_metadata"), \
+             mock.patch.object(guard, "_read_record", return_value=PINS), \
+             mock.patch.object(guard, "_nft_state", return_value="EXACT"), \
+             mock.patch.object(guard, "_run", return_value="") as run, \
+             mock.patch.object(guard, "_read_root_file", side_effect=approved), \
+             mock.patch.object(guard, "_installed_unit_trusted"), \
+             mock.patch.object(guard, "_verify_files"), \
+             mock.patch.object(guard, "_replace_guard_unit",
+                               side_effect=lambda body: replaced.append(body)):
+            guard.upgrade_unit(UID, GID)
+            self.assertEqual(replaced, [guard.guard_unit_text()])
+            self.assertTrue(any(args[0][0] == ["systemctl", "daemon-reload"]
+                                for args in run.call_args_list))
+            self.assertFalse(any(args[0][0][0] == "nft"
+                                 for args in run.call_args_list if args[0]))
+
+    def test_owner_upgrade_must_have_explicit_confirmation(self):
+        with mock.patch.object(guard, "_identity", return_value=(UID, GID)), \
+             mock.patch.object(guard, "_lock") as lock, \
+             mock.patch.object(guard, "upgrade_unit") as action:
+            self.assertEqual(guard.main(["--upgrade-unit"]), 2)
+            lock.assert_not_called()
+            action.assert_not_called()
+
     def test_isolated_python_cli_loads_adjacent_source_not_cwd(self):
         # ExecStart is /usr/bin/python3 -I -B /absolute/path.py --ensure.
         # --help exercises top-level imports without privileges/network.

@@ -19,6 +19,7 @@ import socket
 import stat
 import subprocess
 import sys
+import tempfile
 
 if __package__:
     from .h191_google_egress_candidate import (
@@ -64,6 +65,8 @@ UNIT = "hermes-gsc-readonly.service"
 TIMER = "hermes-gsc-readonly.timer"
 GUARD = "hermes-gsc-egress-guard.service"
 DEPLOY_SHA = Path("/var/lib/hermes-main-deploy/last-success.sha")
+RELEASE_CREDENTIAL = "h191-deploy-sha"
+RELEASE_CREDENTIALS_ROOT = Path("/run/credentials")
 POLICY = Path("/etc/hermes-gsc/google-egress-policy.json")
 DROPIN = Path("/etc/systemd/system/hermes-gsc-readonly.service.d/90-google-only.conf")
 GUARD_FILE = Path("/etc/systemd/system/hermes-gsc-egress-guard.service")
@@ -95,9 +98,21 @@ def _run(parts: list[str], *, stdin: str | None = None, timeout: int = 12) -> st
 
 
 def _sha() -> str:
+    # PID1 reads the root-owned private release marker and hands an isolated,
+    # read-only copy to this CAP_NET_ADMIN-only service via LoadCredential.
+    # Direct root CLI invocations continue to read the original marker.
+    path = DEPLOY_SHA
+    credentials_directory = os.environ.get("CREDENTIALS_DIRECTORY")
+    if credentials_directory is not None:
+        directory = Path(credentials_directory)
+        if (not directory.is_absolute()
+                or directory.parent != RELEASE_CREDENTIALS_ROOT
+                or directory.name != GUARD):
+            raise GuardError("release_credential_directory_invalid")
+        path = directory / RELEASE_CREDENTIAL
     try:
-        value = DEPLOY_SHA.read_text(encoding="ascii").strip()
-    except OSError:
+        value = path.read_text(encoding="ascii").strip()
+    except (OSError, UnicodeError):
         raise GuardError("deployed_release_unavailable") from None
     if not re.fullmatch(r"[a-f0-9]{40}", value):
         raise GuardError("deployed_release_invalid")
@@ -339,6 +354,7 @@ def guard_unit_text() -> str:
         "Type=oneshot\n"
         "ExecStart=/usr/bin/python3 -I -B "
         "/opt/hermes-agent-owner/scripts/h191_gsc_egress_guard.py --ensure\n"
+        f"LoadCredential={RELEASE_CREDENTIAL}:{DEPLOY_SHA}\n"
         "RemainAfterExit=no\n"
         "NoNewPrivileges=yes\n"
         "PrivateNetwork=no\n"
@@ -358,6 +374,44 @@ def guard_unit_text() -> str:
         "RuntimeMaxSec=35\n"
         "TimeoutStartSec=40s\n"
     )
+
+
+def legacy_guard_unit_text() -> str:
+    """Only the exact prior reviewed unit may be migrated."""
+    marker = f"LoadCredential={RELEASE_CREDENTIAL}:{DEPLOY_SHA}\n"
+    return guard_unit_text().replace(marker, "", 1)
+
+
+def _replace_guard_unit(data: str) -> None:
+    """Atomically replace ONLY our root-owned systemd unit (no wide writes)."""
+    parent = GUARD_FILE.parent
+    try:
+        meta = parent.lstat()
+        if (not stat.S_ISDIR(meta.st_mode) or meta.st_uid != 0
+                or stat.S_IMODE(meta.st_mode) & 0o022):
+            raise GuardError("guard_unit_parent_unsafe")
+        fd, temporary = tempfile.mkstemp(prefix=".h191-unit-", dir=str(parent))
+    except OSError:
+        raise GuardError("guard_unit_stage_failed") from None
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            os.fchmod(stream.fileno(), 0o644)
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, GUARD_FILE)
+        directory_fd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    except OSError:
+        raise GuardError("guard_unit_replace_failed") from None
+    finally:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
 
 
 def _store_text(path: Path, data: str, mode: int) -> None:
@@ -555,6 +609,36 @@ def check(uid: int, gid: int, *, ensure: bool) -> None:
 
 
 
+def upgrade_unit(uid: int, gid: int) -> None:
+    """Owner-gated migration of the exact previous unit, no nft or OAuth."""
+    _unit_state(install=True)
+    _key_metadata(uid, gid)
+    pins = _read_record(uid, gid)
+    if _nft_state(pins, uid) != "EXACT":
+        raise GuardError("guard_table_not_exact_for_upgrade")
+    if _run(["systemctl", "show", "-P", "DropInPaths", GUARD]):
+        raise GuardError("unexpected_guard_unit_dropins")
+    if _read_root_file(DROPIN, 0o644, 8192) != dropin_text(pins):
+        raise GuardError("systemd_dropin_drift")
+    legacy = _read_root_file(GUARD_FILE, 0o644, 8192)
+    if legacy != legacy_guard_unit_text():
+        raise GuardError("guard_unit_legacy_drift")
+    _installed_unit_trusted(pins)
+    _replace_guard_unit(guard_unit_text())
+    try:
+        _run(["systemctl", "daemon-reload"], timeout=18)
+        _verify_files(pins)
+        _installed_unit_trusted(pins)
+        _unit_state(install=True)
+    except GuardError:
+        # No active GSC process, and nft still drops all non-Google UID traffic.
+        # Restore the reviewed previous root unit if the new effective unit
+        # cannot be proven. Never relax the GSC DENY_ALL cgroup policy.
+        _replace_guard_unit(legacy)
+        _run(["systemctl", "daemon-reload"], timeout=18)
+        raise GuardError("guard_unit_upgrade_unverified") from None
+
+
 def rollback(uid: int, gid: int) -> None:
     """Owner-only exact-state rollback. Restore DENY_ALL before deleting nft."""
     _unit_state(install=True)
@@ -588,6 +672,7 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument("--check", action="store_true")
     a.add_argument("--ensure", action="store_true")
     a.add_argument("--rollback", action="store_true")
+    a.add_argument("--upgrade-unit", action="store_true")
     parser.add_argument("--confirm-owner-network-change", action="store_true")
     args = parser.parse_args(argv)
     try:
@@ -603,7 +688,7 @@ def main(argv: list[str] | None = None) -> int:
             _run(["nft", "-c", "-f", "-"], stdin=nft_program(pins, uid))
             print("H191_GUARD_PLAN=PASS_NO_MUTATION")
             return 0
-        if args.confirm_owner_network_change != (args.install or args.rollback):
+        if args.confirm_owner_network_change != (args.install or args.rollback or args.upgrade_unit):
             raise GuardError("owner_approval_required_or_unexpected")
         fd = _lock()
         try:
@@ -615,6 +700,9 @@ def main(argv: list[str] | None = None) -> int:
             elif args.rollback:
                 rollback(uid, gid)
                 print("H191_GUARD_ROLLBACK=PASS")
+            elif args.upgrade_unit:
+                upgrade_unit(uid, gid)
+                print("H191_GUARD_UNIT_UPGRADE=PASS")
             else:
                 check(uid, gid, ensure=args.ensure)
                 print("H191_GUARD_" + ("ENSURE" if args.ensure else "CHECK") + "=PASS")

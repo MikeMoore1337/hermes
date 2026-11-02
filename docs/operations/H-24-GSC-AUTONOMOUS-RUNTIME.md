@@ -376,6 +376,44 @@ Rollback сначала убирает drop-in и guard unit, делает
 после этого удаляет **собственную** nft таблицу. Другие nft таблицы
 не затрагиваются. Если состояние не совпадает с ожидаемым - HOLD.
 
+### Защищённая передача SHA релиза в guard (без OAuth)
+
+На VPS каталог `/var/lib/hermes-main-deploy` принадлежит
+`hermes-deploy` и закрыт режимом 0750, а `last-success.sha` имеет
+root-only 0600. Отдельный guard systemd работает под UID 0 с ограничением
+`CapabilityBoundingSet=CAP_NET_ADMIN` и `NoNewPrivileges=yes`:
+он не должен получать `CAP_DAC_OVERRIDE` для обхода прав каталога.
+
+`LoadCredential=h191-deploy-sha:/var/lib/hermes-main-deploy/last-success.sha`
+передаёт **только публичный SHA исходного кода**, не JSON-ключ Google.
+Приватный marker читает PID1 до ограничения capabilities, а guard
+читает проверяемую копию из точного
+`/run/credentials/hermes-gsc-egress-guard.service/h191-deploy-sha`.
+Прямые root-команды по-прежнему читают исходный marker.
+Права каталогов, SSH, Google credentials и разрешённые сети не меняются.
+
+Для ранее установленного *точно совпадающего* legacy guard unit есть
+отдельный идемпотентно защищённый owner-gated переход. Выполнять от
+root только после успешной доставки новой версии в текущий release,
+при остановленных/отключённых GSC service и timer:
+
+    sha="$(cat /var/lib/hermes-main-deploy/last-success.sha)"
+    script="/opt/hermes-agent-owner/releases/main-$sha/scripts/h191_gsc_egress_guard.py"
+    /usr/bin/python3 -I -B "$script" --upgrade-unit --confirm-owner-network-change
+    systemctl reset-failed hermes-gsc-egress-guard.service
+    systemctl start hermes-gsc-egress-guard.service
+    /usr/bin/python3 -I -B "$script" --check
+
+`--upgrade-unit` отказывается от неожиданных изменённых файлов и
+дополнительных systemd drop-in, сверяет существующую nft таблицу,
+текущий UID и ограниченный cgroup GSC. Переписывает атомарно **только**
+`hermes-gsc-egress-guard.service`, оставляя IP/nft правила неизменными.
+При ошибке проверки новой конфигурации выполняется восстановление
+предыдущего unit-файла. Нет запуска OAuth или GSC service/timer.
+Если `--ensure` остановится из-за смены Google DNS, разрешено только
+исправление в рамках ранее одобренной UID-scoped политики, а не
+расширение доступа к Интернету.
+
 При частичной ошибке первой установки до записи всех файлов
 автоматический rollback намеренно **не выполняется**: если nft UID-drop
 уже создан, он остаётся в force-deny до ручной диагностики. Не удалять
