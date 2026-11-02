@@ -4,6 +4,7 @@ import {Activity,ArrowUpRight,Check,Clipboard,ExternalLink,FolderGit2,
   ShieldAlert,Workflow} from "lucide-react";
 import {commanderDevices,commanderProjects,parseBrcObservation,
   parseBrcSourceCheck,projectSandboxRoot} from "./commander-model.js";
+import BrcOnboarding from "./BrcOnboarding.jsx";
 import "./commander.css";
 
 // This is an Orbit 3.0 module, not a second standalone application.
@@ -228,6 +229,7 @@ export default function HermesCommander(){
     </div>
     <div className="oc-panel-foot"><GitBranch size={16} aria-hidden="true"/>
      Известный путь не подтверждает Git HEAD, чистоту репозитория или право записи.</div>
+    <BrcOnboarding deviceStatus={live?.devices[0]?.status}/>
    </section>
    <section className="oc-panel oc-context-panel" aria-labelledby="brc-selected-name">
     <div className="oc-context-head"><div><span className="orbit-section-code">02 / ВЫБРАННЫЙ КОНТЕКСТ</span>

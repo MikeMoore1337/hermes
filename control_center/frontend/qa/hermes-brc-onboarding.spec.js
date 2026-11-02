@@ -141,6 +141,17 @@ test("keyboard navigation stays in the dialog",async({page})=>{
  }
 });
 
+test("going back keeps the address and restores focus",async({page})=>{
+ await setup(page);
+ const input=page.getByLabel("Ссылка на репозиторий");
+ await input.fill("https://github.com/example/project");
+ await page.getByRole("button",{name:"Проверить",exact:true}).click();
+ await expect(page.getByRole("heading",{name:"Проверьте подключение"})).toBeFocused();
+ await page.getByRole("button",{name:"Назад"}).click();
+ await expect(input).toHaveValue("https://github.com/example/project");
+ await expect(input).toBeFocused();
+});
+
 test("forced colors retain an operable focused input",async({page})=>{
  await page.emulateMedia({forcedColors:"active"});
  await setup(page);
