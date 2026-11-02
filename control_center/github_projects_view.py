@@ -16,6 +16,8 @@ FILE = Path("/var/lib/hermes-qa-watch/github-projects-inbox.json")
 SCHEMA = "hermes-public-project-observe-v1"
 MAX_BYTES = 16384
 MAX_RUNS = 6
+YFC_NATIVE_CI_ID = 259698256
+YFC_MAX_INSPECTED = 26  # 20 native public events + 6 existing CI runs
 MAX_EVENTS = 5
 MAX_ID = 10**18
 MAX_AGE = timedelta(minutes=45)
@@ -23,7 +25,7 @@ WINDOW = timedelta(hours=24)
 SKEW = timedelta(minutes=2)
 PROJECTS = {
     "toolkit": ("MikeMoore1337/ai-development-toolkit", 404394421),
-    "yfc": ("MikeMoore1337/your-fitness-coach", 0),
+    "yfc": ("MikeMoore1337/your-fitness-coach", 259698256),
     "second_brain": ("MikeMoore1337/second-brain", 0),
 }
 CANDIDATES = {
@@ -79,7 +81,9 @@ def validate(value):
                 or record["workflow_id"] != expected_id
                 or record["status"] not in ("PARTIAL", "NOT_AVAILABLE")
                 or type(record["inspected_count"]) is not int
-                or not 0 <= record["inspected_count"] <= MAX_RUNS
+                or not 0 <= record["inspected_count"] <= (
+                    YFC_MAX_INSPECTED if key == "yfc" and expected_id == YFC_NATIVE_CI_ID
+                    else MAX_RUNS)
                 or type(record["events"]) is not list
                 or len(record["events"]) > MAX_EVENTS
                 or len(record["events"]) > record["inspected_count"]):
