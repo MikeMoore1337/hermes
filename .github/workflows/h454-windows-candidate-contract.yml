@@ -15,6 +15,7 @@ on:
       - scripts/h454_windows_wss_launcher.py
       - scripts/h454_windows_wss_tunnel.py
       - scripts/h454_windows_wss_config.py
+      - scripts/h454_windows_wss_bundle.py
       - scripts/h454_windows_wss_task.ps1
       - scripts/h454_windows_guard_operator.ps1
       - scripts/h454_windows_wss_identity.ps1
@@ -35,6 +36,7 @@ on:
       - tests/test_h454_windows_wss_launcher.py
       - tests/test_h454_windows_wss_tunnel.py
       - tests/test_h454_windows_wss_config.py
+      - tests/test_h454_windows_wss_bundle.py
       - tests/h454_windows_wss_tunnel_fixture.ps1
       - tests/h454_windows_wss_task_fixture.ps1
       - tests/h454_windows_wss_task_register_fixture.ps1
@@ -68,6 +70,7 @@ on:
       - scripts/h454_windows_wss_launcher.py
       - scripts/h454_windows_wss_tunnel.py
       - scripts/h454_windows_wss_config.py
+      - scripts/h454_windows_wss_bundle.py
       - scripts/h454_windows_wss_task.ps1
       - scripts/h454_windows_guard_operator.ps1
       - scripts/h454_windows_wss_identity.ps1
@@ -88,6 +91,7 @@ on:
       - tests/test_h454_windows_wss_launcher.py
       - tests/test_h454_windows_wss_tunnel.py
       - tests/test_h454_windows_wss_config.py
+      - tests/test_h454_windows_wss_bundle.py
       - tests/h454_windows_wss_tunnel_fixture.ps1
       - tests/h454_windows_wss_task_fixture.ps1
       - tests/h454_windows_wss_task_register_fixture.ps1
@@ -141,6 +145,8 @@ jobs:
         run: python -B -m unittest discover -s tests -p "test_h454_windows_wss_tunnel.py" -v
       - name: WSS tunnel configuration validation
         run: python -B -m unittest discover -s tests -p "test_h454_windows_wss_config.py" -v
+      - name: WSS supervisor bundle validation
+        run: python -B -m unittest discover -s tests -p "test_h454_windows_wss_bundle.py" -v
       - name: Immutable edit layer safety contracts (no owner Docker or credentials)
         run: python -B -m unittest discover -s tests -p "test_h454_agent_edit_image.py" -v
       - name: Parse disposable image smoke
