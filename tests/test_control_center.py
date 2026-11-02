@@ -72,6 +72,18 @@ class SnapshotTests(unittest.TestCase):
             missing = collect()
         self.assertIsNone(missing["github_observe_feed"])
 
+    def test_collector_public_project_file_is_optional_and_read_only(self):
+        synthetic = {"schema": "hermes-public-project-observe-v1", "sources": {}}
+        with patch("control_center.snapshot.read_public_projects_feed",
+                   return_value=synthetic) as reader:
+            result = collect()
+        reader.assert_called_once_with()
+        self.assertIs(result["github_project_feed"], synthetic)
+        with patch("control_center.snapshot.read_public_projects_feed",
+                   side_effect=OSError("file unreadable")):
+            missing = collect()
+        self.assertIsNone(missing["github_project_feed"])
+
     def test_missing_unit_unknown(self):
         def run(argv, **kwargs):
             return type("P", (), {"returncode": 0, "stdout": "LoadState=not-found\nActiveState=inactive\n"})()

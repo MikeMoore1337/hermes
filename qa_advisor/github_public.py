@@ -80,7 +80,13 @@ def get_json(path: str, *, opener: Any = None, token: str | None = None, timeout
     allowed_observe = (
         path == "/repos/MikeMoore1337/hermes/actions/workflows/403765637/runs?per_page=12"
     )
-    if not (allowed_ci or allowed_observe):
+    # Public metadata sources. No Hermes credential may be attached.
+    public_observers = {
+        "/repos/MikeMoore1337/ai-development-toolkit/actions/workflows/github-observe-export.yml/runs?per_page=6",
+        "/repos/MikeMoore1337/your-fitness-coach/actions/workflows/github-observe-export.yml/runs?per_page=6",
+        "/repos/MikeMoore1337/second-brain/actions/workflows/github-observe-export.yml/runs?per_page=6",
+    }
+    if not (allowed_ci or allowed_observe or path in public_observers):
         raise GithubPublicError("endpoint_not_allowlisted")
     if type(timeout) is not int or not 1 <= timeout <= 12:
         raise GithubPublicError("http_timeout_invalid")
