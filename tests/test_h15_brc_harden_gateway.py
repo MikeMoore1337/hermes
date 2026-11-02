@@ -6,14 +6,17 @@ from unittest.mock import patch
 
 from scripts.h15_brc_harden_gateway import (
     apply, SERVER, INVOKE, POLICY, CATALOG, SERVER_IMPORT, SERVER_LIST, INVOKE_MARKER,
-    STATIC_LIST_MARKER, GRANT_MARKER, GRANT_PATCH,
+    STATIC_LIST_MARKER, GRANT_MARKER, GRANT_PATCH, ERROR_MARKER, ERROR_PATCH,
 )
 from scripts.h15_remote_commander_candidate_audit import AuditError
 
 SERVER_SOURCE = SERVER_IMPORT + "\n" + SERVER_LIST + "\n" + STATIC_LIST_MARKER + "\n"
 INVOKE_SOURCE = (
     "import { createHash } from 'node:crypto';\n"
-    "export function invokeTool() {\n" + INVOKE_MARKER + "\n" + GRANT_MARKER + "\n}\n"
+    "export function invokeTool() {\n" + INVOKE_MARKER + "\n" + GRANT_MARKER
+    + "\n  try {} catch (err) {\n" + ERROR_MARKER
+    + "\n    store.audit({ error: message });\n"
+    + "    return { ok: false, message: `Relay error: ${message}` };\n  }\n}\n"
 )
 
 
@@ -52,6 +55,11 @@ class GatewayPolicyTests(unittest.TestCase):
         self.assertIn("HERMES_DEVICE_GRANT_REVOKED", invoke)
         self.assertIn("grant.user_id !== ctx.userId", invoke)
         self.assertIn("hermesAuthTokenHash", invoke)
+        self.assertIn(ERROR_PATCH, invoke)
+        self.assertIn("error: safeCode", invoke)
+        self.assertIn("Relay error: ${safeCode}", invoke)
+        self.assertNotIn("error: message", invoke)
+        self.assertNotIn("Relay error: ${message}", invoke)
         self.assertIn("args.isUrl === true", policy)
         self.assertIn("'start_process'", policy)
         self.assertNotIn("'set_config_value'", policy)
@@ -82,6 +90,15 @@ class GatewayPolicyTests(unittest.TestCase):
         self.assertEqual(f.read_text(encoding='utf-8'), altered)
         self.assertFalse((self.root / POLICY).exists())
         self.assertFalse((self.root / CATALOG).exists())
+
+    def test_unreviewed_error_reporting_fails_closed(self):
+        f = self.root / INVOKE
+        altered = INVOKE_SOURCE.replace(ERROR_MARKER, 'unsafeErrorReporting()')
+        f.write_text(altered, encoding='utf-8')
+        with self.assertRaisesRegex(AuditError, 'relay_policy_source_changed'):
+            apply(self.root)
+        self.assertEqual(f.read_text(encoding='utf-8'), altered)
+        self.assertFalse((self.root / POLICY).exists())
 
     def test_bad_sha_refused(self):
         with self.assertRaisesRegex(AuditError, "unreviewed_upstream_sha"):
