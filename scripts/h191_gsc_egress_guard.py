@@ -122,7 +122,9 @@ def _unit_state(install: bool) -> None:
         if _run(["systemctl", "show", "-P", "ActiveState", name],
                 timeout=SYSTEMD_TIMEOUT) != "inactive":
             raise GuardError("gsc_unit_not_inactive")
-        if install and _run(["systemctl", "is-enabled", name],
+        # systemctl is-enabled returns exit 1 for a correctly disabled unit;
+        # _run rejects nonzero exits. UnitFileState is exit-0 metadata.
+        if install and _run(["systemctl", "show", "-P", "UnitFileState", name],
                             timeout=SYSTEMD_TIMEOUT) != "disabled":
             raise GuardError("gsc_unit_not_disabled")
 
