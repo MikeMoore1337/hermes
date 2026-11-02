@@ -13,6 +13,7 @@ on:
       - scripts/h454_windows_launcher_preserve.py
       - scripts/h454_windows_launcher_guard.py
       - scripts/h454_windows_wss_launcher.py
+      - scripts/h454_windows_wss_tunnel.py
       - scripts/h454_windows_wss_identity.ps1
       - scripts/h454_windows_wss_identity.mjs
       - tests/h454_windows_wss_identity.test.mjs
@@ -29,6 +30,8 @@ on:
       - scripts/h454_windows_cutover_engine_e2e.ps1
       - tests/test_h454_windows_launcher_guard.py
       - tests/test_h454_windows_wss_launcher.py
+      - tests/test_h454_windows_wss_tunnel.py
+      - tests/h454_windows_wss_tunnel_fixture.ps1
       - tests/fixtures/h454_legacy_launcher_e37f.ps1.txt
       - tests/h454_windows_wss_reconnect_fixture.ps1
       - tests/test_h454_windows_launcher_preserve.py
@@ -55,6 +58,7 @@ on:
       - scripts/h454_windows_launcher_preserve.py
       - scripts/h454_windows_launcher_guard.py
       - scripts/h454_windows_wss_launcher.py
+      - scripts/h454_windows_wss_tunnel.py
       - scripts/h454_windows_wss_identity.ps1
       - scripts/h454_windows_wss_identity.mjs
       - tests/h454_windows_wss_identity.test.mjs
@@ -71,6 +75,8 @@ on:
       - scripts/h454_windows_cutover_engine_e2e.ps1
       - tests/test_h454_windows_launcher_guard.py
       - tests/test_h454_windows_wss_launcher.py
+      - tests/test_h454_windows_wss_tunnel.py
+      - tests/h454_windows_wss_tunnel_fixture.ps1
       - tests/fixtures/h454_legacy_launcher_e37f.ps1.txt
       - tests/h454_windows_wss_reconnect_fixture.ps1
       - tests/test_h454_windows_launcher_preserve.py
@@ -115,6 +121,8 @@ jobs:
         env:
           H454_WINDOWS_WSS_HEALTH: '1'
         run: python -B -m unittest discover -s tests -p "test_h454_windows_wss_launcher.py" -v
+      - name: WSS tunnel supervisor validation
+        run: python -B -m unittest discover -s tests -p "test_h454_windows_wss_tunnel.py" -v
       - name: Immutable edit layer safety contracts (no owner Docker or credentials)
         run: python -B -m unittest discover -s tests -p "test_h454_agent_edit_image.py" -v
       - name: Parse disposable image smoke

@@ -1,11 +1,11 @@
 # H454: authenticated BRC transport and interrupted-update recovery
 
-**Transport and cutover remain inactive.** A separate Windows SSH identity,
-a private relay authorization request and a relay TLS identity have been
-prepared; the server has not authorized the SSH key. No new listener, Windows
-launcher, container or service is active. The live cutover remains HOLD until
-its exact artifacts, certificate custody, network and recovery procedure are
-verified and the owner approves a concrete window.
+**Relay transport is partially active; the Windows cutover remains HOLD.** A
+private TLS proxy and a separately restricted SSH key are installed on the
+relay. A temporary Windows tunnel passed pinned TLS without credentials and was
+closed. The original Windows container is stopped; its secure restaging,
+production operator and live MCP remain unverified. A concrete maintenance
+window is required before stopping BRC for a later cutover.
 
 ## Connection boundary
 
@@ -174,10 +174,11 @@ functions with synthetic keys and the service UID; old and new authentication,
 refusal of the old port for the new key, and new-key revocation passed. Temporary
 fixtures were removed and the real second filename remained absent. Neither
 fixture installed a real key or tested the production adapter.
-The server-side operator's snapshot also passed a read-only check against the
-current relay and the newly prepared public key. A root-only request was then
-prepared and checked again against that snapshot; no real server authorization
-was installed.
+The server-side operator's snapshot passed a read-only check against the relay
+and the newly prepared public key. A root-only request was prepared and checked
+against that snapshot. The restricted key was subsequently installed through
+the operator; a separate inode and receipt check confirmed the original key
+file remained unchanged. Revocation has not been exercised on this real key.
 
 `h454_relay_tls_identity.py` prepares a separate root-only CA and an RSA-3072
 server certificate with a fixed name, no-overwrite atomic publication and
@@ -193,7 +194,9 @@ Windows Schannel with the correct CA and name while a wrong name was rejected.
 The real relay identity was prepared separately and its file permissions,
 certificate chain, key match and wrong-name refusal were verified there.
 Only its public CA certificate was copied to Windows; the private keys remain
-on the relay. No TLS listener has been started.
+on the relay. The private proxy now serves TLS, and a temporary Windows SSH
+tunnel passed the pinned-CA probe while a wrong name was refused. The probe
+sent no bearer and the temporary tunnel was closed.
 [OpenSSH supports selecting an agent identity using its public key](https://man.openbsd.org/ssh_config#IdentityFile),
 and [Windows can store a key in its SSH agent](https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_keymanagement),
 and a synthetic Windows-to-loopback-sshd test authenticated using a temporary
@@ -213,8 +216,9 @@ repeat restore, mismatch refusal and corrupt-backup refusal with a random key,
 then removed only that key. A read-only preflight accepted the current task and
 protected state directory. A separate real identity was then created there;
 its agent entry was removed and restored from the DPAPI backup while other
-agent entries were preserved. The real server has not authorized the key.
-Automatic identity recovery, agent-service restart and reboot remain unverified.
+agent entries were preserved. The real server now authorizes that key only for
+the private WSS port. Automatic identity recovery, agent-service restart and
+reboot remain unverified.
 
 ## Interruption and rollback boundary
 
@@ -291,8 +295,8 @@ plaintext rollback is not an automatic recovery step.
 
 A transport-secured baseline would be a different image and container; it does
 not fulfil the owner's requirement to restage credentials and restore the
-original container. A safe and tested way to do that without exposing the
-original plaintext bearer remains open.
+original container. The secure route has been exercised with a disposable
+container, but restoring and restaging the actual original remains unverified.
 
 `h454_isolated_rollback_proxy.mjs` is a source-only experiment for that gap.
 It selects one private IPv4 interface using the operator-pinned isolated
@@ -310,6 +314,12 @@ and network identities, the old container's existing host overrides, and the
 complete process and rollback sequence before staging real credentials. The
 isolation may remove normal project egress. The experiment is not an operator
 and must not be deployed as a standalone recovery procedure.
+
+`h454_windows_wss_tunnel.py` builds an SSH-only supervisor that revalidates its
+protected configuration and identity on each attempt, retries after failures,
+and places its child processes in an owned Windows job. The task and installer
+are not yet implemented or installed; this source alone does not restore the
+device or guarantee recovery if the supervisor process exits.
 
 ## Evidence and limits
 
@@ -357,6 +367,15 @@ and must not be deployed as a standalone recovery procedure.
   `H15_CREDENTIAL_STAGE_TIMEOUT` from its last start; both legacy and WSS
   local ports were unlistened. Its Windows MCP device remained offline. This
   observation is not a rollback or a successful credential restaging.
+- A disposable original-image container was attached to an isolated internal
+  network and disconnected from the default bridge while stopped. It started
+  and restarted with only the isolated network; the fixture removed its own
+  container and network. The actual original was not changed by this test.
+- A temporary Windows SSH forward and the actual relay TLS sidecar carried a
+  deliberately invalid synthetic bearer through a disposable isolated proxy;
+  the relay refused it. The proxy's upstream interface refused plaintext and
+  the disposable agent had no direct upstream route. This verifies that test
+  route, not real credential restaging or a successful MCP call.
 - Windows PowerShell 5.1 fixtures exercised exclusive locking, known and
   unknown states, idempotent offline recovery, and termination of an owned
   test process between two real `File.Replace` operations.
@@ -382,6 +401,17 @@ and must not be deployed as a standalone recovery procedure.
   process and its listener exited with the synthetic launcher. No BRC bearer,
   scheduled task or actual container was changed. This does not prove that the
   real scheduled task restarts the launcher or that reboot recovery works.
+- On the owner Windows host, a manually started temporary task with a
+  restart-on-failure setting did not restart within 125 seconds after its test
+  action returned exit code 1. A separate temporary task using a one-minute
+  periodic trigger did start the test action again and its owned child exited
+  when the task was stopped. Both tasks were removed; neither used the real
+  supervisor or tested logon or reboot recovery.
+- A temporary copy of the generated supervisor established pinned TLS to the
+  real relay using the restricted Windows key. After its owned SSH process was
+  terminated, a new owned SSH process restored the pinned connection and a
+  wrong TLS name was refused. No BRC credential was sent; the temporary process
+  and protected files were removed. This does not test a scheduled installation.
 - The rollback route guard passed PowerShell 5.1 negative fixtures for extra
   network members, changed identities, host overrides, alias and DNS drift,
   CIDR and gateway mismatch, overlapping upstream addresses and bad prefixes.
@@ -432,6 +462,6 @@ and must not be deployed as a standalone recovery procedure.
   original-container rollback. A PowerShell 5.1 run also injected an ambiguous
   error, reacquired the fixture lock and recovered through the same synthetic
   route. This models an interruption; it did not terminate the operator process.
-- These tests do not establish certificate deployment, host ACLs, actual SSH
-  forwarding, complete process-tree cleanup, login/reboot recovery, a real
-  power-loss guarantee, live MCP recovery or production activation.
+- Taken together, the fixtures do not establish a production update operator,
+  original-container recovery, complete process-tree cleanup, login/reboot
+  recovery, a real power-loss guarantee or live MCP recovery.
