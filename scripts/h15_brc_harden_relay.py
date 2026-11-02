@@ -29,6 +29,30 @@ PATCHED = """    // Reject URI device tokens even when a valid Authorization hea
     const dev = token ? store.getDeviceByToken(token) : undefined;"""
 
 
+# Explicitly bind every accepted device socket to the token hash authenticated
+# during upgrade. A rotated/deleted SQLite device credential must fail even
+# while the old WebSocket remains open.
+ROTATE_MARKER = "    const token = store.issueDeviceToken(deviceId, row.user_id, name || row.client_name, platform ?? null);"
+ROTATE_PATCH = (
+    "    const previousGrant = store.getDevice(deviceId);\n"
+    "    // Pairing may rotate a device for its owner, never steal another owner\'s ID.\n"
+    "    if (previousGrant && previousGrant.user_id !== row.user_id) {\n"
+    "      return res.status(409).json({ error: \'device_id_conflict\' });\n"
+    "    }\n"
+    + ROTATE_MARKER + "\n"
+    "    // Retire the previous connection after rotating its credential.\n"
+    "    hub.get(deviceId)?.socket.close(4401, 'device credential rotated');"
+)
+ATTACH_MARKER = "      hub.attach(ws, dev.user_id, dev.device_id);"
+ATTACH_PATCH = (
+    "      // A private, immutable hash binding, never the bearer itself.\n"
+    "      Object.defineProperty(ws, 'hermesAuthTokenHash', {\n"
+    "        value: dev.token_hash, writable: false, configurable: false, enumerable: false,\n"
+    "      });\n"
+    + ATTACH_MARKER
+)
+
+
 def apply(root: Path, *, sha: str = UPSTREAM_SHA) -> dict[str, object]:
     if sha != UPSTREAM_SHA:
         raise AuditError("unreviewed_upstream_sha")
@@ -37,9 +61,13 @@ def apply(root: Path, *, sha: str = UPSTREAM_SHA) -> dict[str, object]:
     if path.is_symlink() or not path.is_file() or path.stat().st_size > 250_000:
         raise AuditError("relay_source_unsafe")
     original = path.read_text(encoding="utf-8")
-    if original.count(VULNERABLE) != 1 or PATCHED in original:
+    if (original.count(VULNERABLE) != 1 or PATCHED in original
+            or original.count(ROTATE_MARKER) != 1 or original.count(ATTACH_MARKER) != 1
+            or 'hermesAuthTokenHash' in original):
         raise AuditError("unreviewed_ws_auth_source")
     replacement = original.replace(VULNERABLE, PATCHED)
+    replacement = replacement.replace(ROTATE_MARKER, ROTATE_PATCH, 1)
+    replacement = replacement.replace(ATTACH_MARKER, ATTACH_PATCH, 1)
     if "url.searchParams.get('token')" in replacement:
         raise AuditError("url_token_fallback_remaining")
     if "const dev = token ? store.getDeviceByToken(token)" not in replacement:
@@ -50,6 +78,8 @@ def apply(root: Path, *, sha: str = UPSTREAM_SHA) -> dict[str, object]:
         "sha": sha,
         "ws_uri_token": "DENIED",
         "ws_bearer_header": "REQUIRED",
+        "device_credential_rotation": "RETIRES_OLD_SOCKET",
+        "socket_credential_binding": "IMMUTABLE_AUTHENTICATED_HASH",
         "production_ready": False,
         "owner_agents_modified": False,
     }

@@ -62,12 +62,14 @@ ASSETS = {
     "/style.css": ("style.css", "text/css; charset=utf-8"),
     "/desktop-commander.js": ("desktop-commander.js", "text/javascript; charset=utf-8"),
     "/desktop-commander.css": ("desktop-commander.css", "text/css; charset=utf-8"),
-    "/hermes-brc": ("hermes-brc.html", "text/html; charset=utf-8"),
+    # Deep link to the same protected React shell, not a second static app.
+    "/hermes-brc": ("index.html", "text/html; charset=utf-8"),
     "/desktop-commander-archive": ("desktop-commander-archive.html", "text/html; charset=utf-8"),
     "/desktop-commander-archive.js": ("desktop-commander-archive.js", "text/javascript; charset=utf-8"),
     "/desktop-commander-archive.css": ("desktop-commander-archive.css", "text/css; charset=utf-8"),
     "/hermes-brc.js": ("hermes-brc.js", "text/javascript; charset=utf-8"),
     "/hermes-brc.css": ("hermes-brc.css", "text/css; charset=utf-8"),
+    "/orbit-ui-icons.js": ("orbit-ui-icons.js", "text/javascript; charset=utf-8"),
     "/ai-analytics.js": ("ai-analytics.js", "text/javascript; charset=utf-8"),
     "/ai-analytics.css": ("ai-analytics.css", "text/css; charset=utf-8"),
     "/infrastructure.js": ("infrastructure.js", "text/javascript; charset=utf-8"),
@@ -75,6 +77,12 @@ ASSETS = {
     "/provider-quota.js": ("provider-quota.js", "text/javascript; charset=utf-8"),
     "/provider-quota.css": ("provider-quota.css", "text/css; charset=utf-8"),
     "/brand.webp": ("brand.webp", "image/webp"),
+    "/orbit-brand.svg": ("orbit-brand.svg", "image/svg+xml"),
+    "/favicon.svg": ("favicon.svg", "image/svg+xml"),
+    "/pwa-orbit.svg": ("pwa-orbit.svg", "image/svg+xml"),
+    "/orbit-policy.svg": ("orbit-policy.svg", "image/svg+xml"),
+    "/orbit-workspace.svg": ("orbit-workspace.svg", "image/svg+xml"),
+    "/orbit-lock.svg": ("orbit-lock.svg", "image/svg+xml"),
     "/favicon.png": ("favicon.png", "image/png"),
     "/apple-touch-icon.png": ("apple-touch-icon.png", "image/png"),
     "/pwa-192.png": ("pwa-192.png", "image/png"),
@@ -516,7 +524,7 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
                 return self.respond(200, "application/json; charset=utf-8", raw)
             if path in ASSETS:
                 name, mime = ASSETS[path]
-                if name in ("hermes-brc.html", "desktop-commander-archive.html") and config.mode == "github" and not oauth.authenticated(
+                if path in ("/hermes-brc", "/desktop-commander-archive") and config.mode == "github" and not oauth.authenticated(
                         self._cookie(SESSION_COOKIE)):
                     return self.respond(401, "text/plain", b"Authentication required")
                 try:
@@ -534,6 +542,7 @@ def make_handler(snapshot_path: Path = DEFAULT_OUTPUT, *,
                         if authenticated and parsed.query != "preview=login":
                             # Load operator-only widgets on authorized pages only.
                             raw = raw.replace(b"</head>", (
+                                b'<script src="/orbit-ui-icons.js" defer></script>'
                                 b'<link rel="stylesheet" href="/ai-analytics.css">'
                                 b'<script src="/ai-analytics.js" defer></script>'
                                 b'<link rel="stylesheet" href="/infrastructure.css">'

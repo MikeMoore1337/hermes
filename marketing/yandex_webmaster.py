@@ -39,6 +39,36 @@ class WebmasterDenied(ValueError):
     """Public fixed error codes; do not echo tokens or source text."""
 
 
+class WebmasterContractDiagnosticDenied(WebmasterDenied):
+    """Safe section and fixed error code, never a source value or query text."""
+
+    def __init__(self, section: str, reason: str) -> None:
+        super().__init__(reason)
+        self.section = section
+
+
+# Only repository-owned literal error codes are eligible for a diagnostic
+# receipt. Provider/user-controlled strings must never pass through.
+CONTRACT_DIAGNOSTIC_CODES = frozenset({
+    "date_invalid", "counter_invalid", "position_invalid",
+    "series_schema_invalid", "series_size_invalid",
+    "series_point_invalid", "series_date_invalid",
+    "popular_schema_invalid", "popular_period_invalid",
+    "popular_rows_invalid", "popular_row_invalid",
+    "metric_inconsistent", "sitemaps_invalid", "sitemap_row_invalid",
+    "sitemap_url_invalid", "sitemap_date_invalid",
+    "export_schema_invalid", "export_context_invalid",
+    "export_period_invalid", "export_hash_invalid",
+    "export_size_limit", "seo_packet_denied",
+})
+
+
+def _diagnostic_reason(exc: WebmasterDenied) -> str:
+    code = exc.args[0] if len(exc.args) == 1 else None
+    return (code if type(code) is str and code in CONTRACT_DIAGNOSTIC_CODES
+            else "YANDEX_RESPONSE_CONTRACT_CHANGED")
+
+
 def _day(value: Any) -> date:
     if type(value) is not str or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
         raise WebmasterDenied("date_invalid")
@@ -46,6 +76,35 @@ def _day(value: Any) -> date:
         return date.fromisoformat(value)
     except ValueError:
         raise WebmasterDenied("date_invalid") from None
+
+
+# The API documents popular date_from/date_to as datetime, although
+# some official examples show YYYY-MM-DD. Keep owner input dates strict.
+_PROVIDER_DATETIME = re.compile(
+    r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}"
+    r"(?:[.,]\d{1,6})?(?:Z|[+-]\d{2}:\d{2}|[+-]\d{4})"
+)
+
+
+def _provider_day(value: Any) -> date:
+    if type(value) is not str or len(value) > 40:
+        raise WebmasterDenied("popular_period_invalid")
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+        try:
+            return date.fromisoformat(value)
+        except ValueError:
+            raise WebmasterDenied("popular_period_invalid") from None
+    if not _PROVIDER_DATETIME.fullmatch(value):
+        raise WebmasterDenied("popular_period_invalid")
+    try:
+        instant = datetime.fromisoformat(
+            value.replace(",", ".").replace("Z", "+00:00"),
+        )
+    except ValueError:
+        raise WebmasterDenied("popular_period_invalid") from None
+    if instant.tzinfo is None or instant.utcoffset() is None:
+        raise WebmasterDenied("popular_period_invalid")
+    return instant.date()
 
 
 def _count(value: Any) -> int:
@@ -58,9 +117,58 @@ def _count(value: Any) -> int:
 
 
 def _positive(value: Any) -> float:
-    if type(value) not in (float, int) or not math.isfinite(value) or not 0 < value <= 1000:
+    # Compare bounds before float conversion: a valid JSON integer can be
+    # enormous, and math.isfinite(huge_int) raises OverflowError.
+    if type(value) not in (float, int) or not 0 < value <= 1000:
         raise WebmasterDenied("position_invalid")
     return float(value)
+
+
+def _position_value_class(value: Any) -> str:
+    """Fixed, non-reversible category; never return a provider value."""
+    if value is None:
+        return "NULL"
+    if type(value) is bool:
+        return "BOOLEAN"
+    if type(value) is float and not math.isfinite(value):
+        return "NONFINITE"
+    if type(value) in (int, float):
+        if value == 0:
+            return "ZERO"
+        if value < 0:
+            return "NEGATIVE"
+        if value > 1000:
+            return "ABOVE_LIMIT"
+        return "VALID"
+    if type(value) is str:
+        return ("NUMERIC_STRING" if re.fullmatch(
+            r"[+-]?(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)", value,
+        ) else "STRING")
+    return "OTHER_TYPE"
+
+
+def classify_popular_position_problem(
+    source: Any, *, start: date, end: date,
+) -> dict[str, str]:
+    """Classify one invalid position without returning queries or raw values.
+
+    The existing full parser must first reject specifically a position,
+    otherwise we do not infer that its other fields are correct.
+    """
+    try:
+        _popular(source, start=start, end=end)
+    except WebmasterDenied as exc:
+        if exc.args != ("position_invalid",):
+            raise
+        for item in source["queries"]:
+            indicators = item["indicators"]
+            for name in ("AVG_SHOW_POSITION", "AVG_CLICK_POSITION"):
+                if name in indicators:
+                    category = _position_value_class(indicators[name])
+                    if category != "VALID":
+                        return {"indicator": name, "value_class": category}
+        raise WebmasterDenied("position_invalid") from None
+    return {"indicator": "NONE", "value_class": "NO_INVALID_POSITION"}
 
 
 def _series(container: Any, *, allowed: frozenset[str], as_of: date) -> dict[str, list[dict[str, Any]]]:
@@ -145,7 +253,7 @@ def classify_http_status(code: Any) -> dict[str, Any]:
 def _popular(source: Any, *, start: date, end: date) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     if type(source) is not dict or set(source) != {"queries", "date_from", "date_to", "count"}:
         raise WebmasterDenied("popular_schema_invalid")
-    a, b = _day(source["date_from"]), _day(source["date_to"])
+    a, b = _provider_day(source["date_from"]), _provider_day(source["date_to"])
     if not start <= a <= b <= end:
         raise WebmasterDenied("popular_period_invalid")
     count = _count(source["count"])
@@ -167,7 +275,9 @@ def _popular(source: Any, *, start: date, end: date) -> tuple[list[dict[str, Any
         for key, value in metrics.items():
             if key in {"TOTAL_SHOWS", "TOTAL_CLICKS"}:
                 parsed[INDICATORS[key]] = _count(value)
-            else:
+            elif value is not None:
+                # Provider-confirmed undefined average position: omit the
+                # metric, never coerce null into rank 0 or another number.
                 parsed[INDICATORS[key]] = _positive(value)
         if "impressions" in parsed and "clicks" in parsed:
             if parsed["clicks"] > parsed["impressions"]:
@@ -185,9 +295,13 @@ def _sitemaps(source: Any, *, as_of: date) -> list[dict[str, Any]]:
         raise WebmasterDenied("sitemaps_invalid")
     result, seen = [], set()
     for row in source["sitemaps"]:
-        required = {"sitemap_id", "sitemap_url", "last_access_date", "errors_count",
+        required = {"sitemap_id", "sitemap_url", "errors_count",
                     "urls_count", "children_count", "sources", "sitemap_type"}
-        if type(row) is not dict or set(row) != required:
+        # Official Webmaster v4 schema marks last_access_date optional.
+        # Missing or explicit null remains unknown, never an invented date.
+        allowed = required | {"last_access_date"}
+        if (type(row) is not dict or not required.issubset(row)
+                or not set(row).issubset(allowed)):
             raise WebmasterDenied("sitemap_row_invalid")
         uri = row["sitemap_url"]
         if type(uri) is not str or len(uri) > 300:
@@ -200,7 +314,7 @@ def _sitemaps(source: Any, *, as_of: date) -> list[dict[str, Any]]:
                 raise WebmasterDenied("sitemap_url_invalid")
         except ValueError:
             raise WebmasterDenied("sitemap_url_invalid") from None
-        accessed = row["last_access_date"]
+        accessed = row.get("last_access_date")
         if accessed is not None:
             if type(accessed) is not str or len(accessed) > 40:
                 raise WebmasterDenied("sitemap_date_invalid")
@@ -227,8 +341,23 @@ def _sitemaps(source: Any, *, as_of: date) -> list[dict[str, Any]]:
     return result
 
 
-def normalize_export(payload: Any, *, as_of: date) -> dict[str, Any]:
-    """Convert supplied official-shape JSON to separate SEO + technical evidence."""
+def normalize_export(
+    payload: Any, *, as_of: date, diagnostic: bool = False,
+) -> dict[str, Any]:
+    """Convert supplied official-shape JSON to separate SEO + technical evidence.
+
+    Diagnostics are opt-in and identify only a fixed section/error code.
+    """
+    def checked(section: str, action: Any) -> Any:
+        try:
+            return action()
+        except WebmasterDenied as exc:
+            if diagnostic:
+                raise WebmasterContractDiagnosticDenied(
+                    section, _diagnostic_reason(exc),
+                ) from None
+            raise
+
     if type(payload) is not dict or set(payload) != {
         "schema", "source_type", "owner_attested", "host_id", "observed_at",
         "period_start", "period_end", "device", "search_intent",
@@ -248,7 +377,9 @@ def normalize_export(payload: Any, *, as_of: date) -> dict[str, Any]:
     if not start <= end <= observed <= as_of or (end - start).days >= MAX_DAYS:
         raise WebmasterDenied("export_period_invalid")
     source = payload["popular"]
-    parsed, coverage = _popular(source, start=start, end=end) if source is not None else ([], None)
+    parsed, coverage = checked(
+        "POPULAR_DATA", lambda: _popular(source, start=start, end=end),
+    ) if source is not None else ([], None)
     observations = []
     for item in parsed:
         metrics = {key: val for key, val in item["metrics"].items()
@@ -265,11 +396,20 @@ def normalize_export(payload: Any, *, as_of: date) -> dict[str, Any]:
         if kind == "owner_export":
             row["owner_attested"] = attested
         observations.append(row)
-    general = (_series(payload["all_history"], allowed=frozenset(INDICATORS), as_of=as_of)
-               if payload["all_history"] is not None else None)
-    indexing = (_series(payload["index_history"], allowed=HTTP_CODES, as_of=as_of)
-                if payload["index_history"] is not None else None)
-    sitemaps = _sitemaps(payload["sitemaps"], as_of=as_of) if payload["sitemaps"] is not None else None
+    general = (checked(
+        "ALL_HISTORY_DATA",
+        lambda: _series(
+            payload["all_history"], allowed=frozenset(INDICATORS), as_of=as_of,
+        ),
+    ) if payload["all_history"] is not None else None)
+    indexing = (checked(
+        "INDEXING_DATA",
+        lambda: _series(payload["index_history"], allowed=HTTP_CODES, as_of=as_of),
+    ) if payload["index_history"] is not None else None)
+    sitemaps = (checked(
+        "SITEMAPS_DATA",
+        lambda: _sitemaps(payload["sitemaps"], as_of=as_of),
+    ) if payload["sitemaps"] is not None else None)
     try:
         encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"),
                              ensure_ascii=False, allow_nan=False).encode("utf-8")
@@ -284,6 +424,10 @@ def normalize_export(payload: Any, *, as_of: date) -> dict[str, Any]:
     try:
         normalized = normalize_observations(observations, as_of=as_of)
     except SeoResearchDenied:
+        if diagnostic:
+            raise WebmasterContractDiagnosticDenied(
+                "SEO_PACKET", "seo_packet_denied",
+            ) from None
         raise WebmasterDenied("seo_packet_denied") from None
     return {
         "schema": OUTPUT_SCHEMA, "status": "OFFLINE_SOURCE_NOT_PROVIDER_VERIFIED",

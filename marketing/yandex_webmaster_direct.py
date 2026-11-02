@@ -20,7 +20,9 @@ from urllib.request import (
 )
 
 from marketing.yandex_webmaster import (
-    BASE, HOST, INPUT_SCHEMA, WebmasterDenied, normalize_export, read_plan,
+    BASE, HOST, INPUT_SCHEMA, CONTRACT_DIAGNOSTIC_CODES,
+    WebmasterContractDiagnosticDenied, WebmasterDenied,
+    classify_popular_position_problem, normalize_export, read_plan,
 )
 
 RESPONSE_LIMIT = 64 * 1024
@@ -33,6 +35,23 @@ TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9._~+-]{20,4096}$")
 
 class YandexLiveDenied(ValueError):
     """Stable public refusal codes only; never include URLs, token or raw API text."""
+
+
+class YandexReadDiagnosticDenied(YandexLiveDenied):
+    """Fixed report stage and bounded number of attempted GETs."""
+
+    def __init__(self, stage: str, reason: str, requests_attempted: int) -> None:
+        super().__init__(reason)
+        self.stage = stage
+        self.requests_attempted = requests_attempted
+
+
+class YandexHostProbeDenied(YandexLiveDenied):
+    """Sanitized stage for a bounded two-GET host probe."""
+
+    def __init__(self, stage: str, reason: str) -> None:
+        super().__init__(reason)
+        self.stage = stage
 
 
 class _NoRedirect(HTTPRedirectHandler):
@@ -166,9 +185,10 @@ def _verify_host(response: dict[str, Any]) -> None:
 
 def collect(
     *, as_of: date, token: str, transport: Callable[[str, str], bytes] | None = None,
-    device: str = "ALL",
+    device: str = "ALL", diagnostic: bool = False,
+    popular_position_probe: bool = False,
 ) -> dict[str, Any]:
-    """Only six GETs in fixed order, gate user and verified primary host first.
+    """Bounded GETs; gate user and verified primary host first.
 
     An injected transport is for synthetic tests; this API cannot attest such
     a transport's real-network identity. Returned evidence stays unverified.
@@ -176,13 +196,48 @@ def collect(
     if (type(as_of) is not date or type(token) is not str or
             not TOKEN_PATTERN.fullmatch(token)):
         raise YandexLiveDenied("INPUT_INVALID")
+    if popular_position_probe and not diagnostic:
+        raise YandexLiveDenied("EXPLICIT_EXECUTION_REQUIRED")
     endpoint = transport if transport is not None else _transport
     total_bytes, request_count = 0, 0
+    request_limit = 3 if popular_position_probe else MAX_REQUESTS
+
+    def stage(name: str, action: Callable[[], Any]) -> Any:
+        """Guard diagnostic output; never expose provider exception messages."""
+        try:
+            return action()
+        except YandexLiveDenied as exc:
+            if diagnostic:
+                raise YandexReadDiagnosticDenied(
+                    name, _safe_read_diagnostic_reason(exc), request_count,
+                ) from None
+            raise
+        except WebmasterDenied as exc:
+            if diagnostic:
+                section = (exc.section if isinstance(
+                    exc, WebmasterContractDiagnosticDenied,
+                ) else name)
+                reason = exc.args[0] if len(exc.args) == 1 else None
+                safe_reason = (
+                    reason if type(reason) is str
+                    and reason in CONTRACT_DIAGNOSTIC_CODES
+                    else "YANDEX_RESPONSE_CONTRACT_CHANGED"
+                )
+                raise YandexReadDiagnosticDenied(
+                    section, safe_reason, request_count,
+                ) from None
+            raise YandexLiveDenied("Yandex_RESPONSE_CONTRACT_CHANGED") from None
+        except Exception:
+            if diagnostic:
+                raise YandexReadDiagnosticDenied(
+                    name, "REQUEST_FAILED", request_count,
+                ) from None
+            raise
 
     def read(url: str) -> dict[str, Any]:
         nonlocal total_bytes, request_count
         _safe_url(url)
-        if request_count >= MAX_REQUESTS:
+        if request_count >= request_limit:
             raise YandexLiveDenied("REQUEST_BUDGET_EXCEEDED")
         request_count += 1
         try:
@@ -199,17 +254,46 @@ def collect(
             raise YandexLiveDenied("RESPONSE_BUDGET_EXCEEDED")
         return _parse_response(raw)
 
-    account = read(BASE + "/user")
-    uid = _uid(account)
-    hosts = read(BASE + f"/user/{uid}/hosts")
-    _verify_host(hosts)
+    account = stage("USER", lambda: read(BASE + "/user"))
+    uid = stage("USER", lambda: _uid(account))
+    hosts = stage("HOSTS", lambda: read(BASE + f"/user/{uid}/hosts"))
+    stage("HOSTS", lambda: _verify_host(hosts))
     end = as_of - timedelta(days=2)
     start = end - timedelta(days=27)
-    plan = read_plan(user_id=uid, host_id=HOST, start=str(start),
-                     end=str(end), device=device)
-    if plan["max_requests"] != MAX_REQUESTS or len(plan["requests"]) != MAX_REQUESTS:
-        raise YandexLiveDenied("PLAN_INVALID")
-    payloads = [read(row["url"]) for row in plan["requests"][2:]]
+
+    def create_plan() -> dict[str, Any]:
+        plan = read_plan(user_id=uid, host_id=HOST, start=str(start),
+                         end=str(end), device=device)
+        if plan["max_requests"] != MAX_REQUESTS or len(plan["requests"]) != MAX_REQUESTS:
+            raise YandexLiveDenied("PLAN_INVALID")
+        return plan
+
+    plan = stage("PLAN", create_plan)
+    if popular_position_probe:
+        popular = stage("POPULAR", lambda: read(plan["requests"][2]["url"]))
+        finding = stage("POPULAR_DATA", lambda: classify_popular_position_problem(
+            popular, start=start, end=end,
+        ))
+        return {
+            "status": ("SYNTHETIC_POPULAR_POSITION_CLASS_ONLY"
+                       if transport is not None else "LIVE_POPULAR_POSITION_CLASS_ONLY"),
+            "request_count": request_count,
+            "request_limit": request_limit,
+            "host_verified": True,
+            "position_indicator": finding["indicator"],
+            "position_value_class": finding["value_class"],
+            "search_metrics_verified": False,
+            "indexing_verified": False,
+            "sitemap_verified": False,
+            "publication_allowed": False,
+        }
+    payloads = [
+        stage(name, lambda url=row["url"]: read(url))
+        for name, row in zip(
+            ("POPULAR", "ALL_HISTORY", "INDEXING", "SITEMAPS"),
+            plan["requests"][2:],
+        )
+    ]
     envelope = {
         "schema": INPUT_SCHEMA, "source_type": "owner_export",
         "owner_attested": False, "host_id": HOST,
@@ -219,10 +303,9 @@ def collect(
         "popular": payloads[0], "all_history": payloads[1],
         "index_history": payloads[2], "sitemaps": payloads[3],
     }
-    try:
-        report = normalize_export(envelope, as_of=as_of)
-    except WebmasterDenied:
-        raise YandexLiveDenied("Yandex_RESPONSE_CONTRACT_CHANGED") from None
+    report = stage("NORMALIZE", lambda: normalize_export(
+        envelope, as_of=as_of, diagnostic=diagnostic,
+    ))
     # The nested report explicitly remains owner-export / NOT provider-attested.
     # A synthetic or caller-injected transport cannot manufacture VERIFIED.
     return {
@@ -289,6 +372,83 @@ def _safe_probe_reason(exc: YandexLiveDenied) -> str:
             else "AUTH_OR_RESPONSE_NOT_VERIFIED")
 
 
+
+# Host-specific fixed codes stay separate from the pre-existing user-only
+# probe allowlist. Never surface provider text, tokens or account IDs.
+HOST_PROBE_REFUSALS = USER_PROBE_REFUSALS | frozenset({
+    "HOST_LIST_INVALID", "TARGET_HOST_NOT_VERIFIED",
+    "TARGET_HOST_URL_MISMATCH", "PRIMARY_MIRROR_MISMATCH",
+    "TARGET_SITE_DATA_UNAVAILABLE",
+})
+
+
+def _safe_host_probe_reason(exc: YandexLiveDenied) -> str:
+    reason = exc.args[0] if len(exc.args) == 1 else None
+    return (reason if type(reason) is str and reason in HOST_PROBE_REFUSALS
+            else "AUTH_OR_RESPONSE_NOT_VERIFIED")
+
+
+# Read-diagnostic failures may expose only these fixed codes and stages.
+# No endpoint URLs, exception text, query strings or UID reach the CLI.
+READ_DIAGNOSTIC_REFUSALS = HOST_PROBE_REFUSALS | frozenset({
+    "REQUEST_BUDGET_EXCEEDED", "PLAN_INVALID",
+    "YANDEX_RESPONSE_CONTRACT_CHANGED",
+}) | CONTRACT_DIAGNOSTIC_CODES
+
+
+def _safe_read_diagnostic_reason(exc: YandexLiveDenied) -> str:
+    reason = exc.args[0] if len(exc.args) == 1 else None
+    return (reason if type(reason) is str and reason in READ_DIAGNOSTIC_REFUSALS
+            else "AUTH_OR_RESPONSE_NOT_VERIFIED")
+
+
+def probe_host(*, token: str,
+               transport: Callable[[str, str], bytes] | None = None) -> dict[str, Any]:
+    """Check user then one exact YFC verified host; never read SEO reports.
+
+    Two GETs max (8s each in real transport), no retries. Both success and
+    refusal receipts omit account ID, private host lists and provider bodies.
+    """
+    if type(token) is not str or not TOKEN_PATTERN.fullmatch(token):
+        raise YandexLiveDenied("INPUT_INVALID")
+    endpoint = _transport if transport is None else transport
+
+    def read(url: str, stage: str) -> dict[str, Any]:
+        try:
+            _safe_url(url)
+            return _parse_response(endpoint(url, token))
+        except YandexLiveDenied as exc:
+            raise YandexHostProbeDenied(
+                stage, _safe_host_probe_reason(exc)) from None
+        except Exception:
+            raise YandexHostProbeDenied(stage, "REQUEST_FAILED") from None
+
+    user = read(BASE + "/user", "USER")
+    try:
+        uid = _uid(user)
+    except YandexLiveDenied as exc:
+        raise YandexHostProbeDenied("USER", _safe_host_probe_reason(exc)) from None
+
+    hosts = read(BASE + f"/user/{uid}/hosts", "HOSTS")
+    try:
+        _verify_host(hosts)
+    except YandexLiveDenied as exc:
+        raise YandexHostProbeDenied(
+            "HOSTS", _safe_host_probe_reason(exc)) from None
+
+    return {
+        "status": ("LIVE_VERIFIED_YFC_HOST_ONLY" if transport is None
+                   else "SYNTHETIC_VERIFIED_YFC_HOST_ONLY"),
+        "request_count": 2,
+        "request_limit": 2,
+        "host_verified": True,
+        "search_metrics_verified": False,
+        "indexing_verified": False,
+        "sitemap_verified": False,
+        "publication_allowed": False,
+    }
+
+
 def summarized_receipt(report: dict[str, Any]) -> dict[str, Any]:
     """Safe operator output, deliberately omits query strings and credentials."""
     data = report["data"]
@@ -310,14 +470,27 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--date", required=True)
     parser.add_argument("--token-file")
     parser.add_argument("--execute-read", action="store_true")
-    parser.add_argument(
+    probes = parser.add_mutually_exclusive_group()
+    probes.add_argument(
         "--probe-user", action="store_true",
         help="One authorized GET /v4/user only; outputs fixed diagnostic codes",
+    )
+    probes.add_argument(
+        "--probe-host", action="store_true",
+        help="Two GETs: /v4/user and verified YFC host identity only",
+    )
+    probes.add_argument(
+        "--diagnose-full", action="store_true",
+        help="Explicit bounded six-GET read with fixed stage and reason on refusal",
+    )
+    probes.add_argument(
+        "--diagnose-position", action="store_true",
+        help="Three GETs maximum; classify only a popular-query position value",
     )
     args = parser.parse_args(argv)
     try:
         as_of = date.fromisoformat(args.date)
-        if args.probe_user and not args.execute_read:
+        if (args.probe_user or args.probe_host or args.diagnose_full or args.diagnose_position) and not args.execute_read:
             raise YandexLiveDenied("EXPLICIT_EXECUTION_REQUIRED")
         if not args.execute_read:
             result = {"status": "NOT_EXECUTED", "scope": SCOPE, "max_gets": 6}
@@ -327,20 +500,53 @@ def main(argv: list[str] | None = None) -> int:
             token = read_private_token(args.token_file)
             if args.probe_user:
                 result = probe_user(token=token)
+            elif args.probe_host:
+                result = probe_host(token=token)
+            elif args.diagnose_position:
+                result = collect(
+                    as_of=as_of, token=token, diagnostic=True,
+                    popular_position_probe=True,
+                )
             else:
-                result = summarized_receipt(collect(as_of=as_of, token=token))
+                result = summarized_receipt(collect(
+                    as_of=as_of, token=token, diagnostic=args.diagnose_full,
+                ))
         code = 0
     except YandexLiveDenied as exc:
         result = {
             "status": "REFUSED",
             "reason": (_safe_probe_reason(exc) if args.probe_user
+                       else _safe_host_probe_reason(exc) if args.probe_host
+                       else _safe_read_diagnostic_reason(exc)
+                       if args.diagnose_full or args.diagnose_position
                        else "AUTH_OR_RESPONSE_NOT_VERIFIED"),
         }
         if args.probe_user:
             result.update(request_limit=1, publication_allowed=False)
+        elif args.probe_host:
+            result.update(
+                stage=exc.stage if isinstance(exc, YandexHostProbeDenied)
+                else "PREFLIGHT",
+                request_limit=2, publication_allowed=False,
+            )
+        elif args.diagnose_full or args.diagnose_position:
+            result.update(
+                stage=exc.stage if isinstance(exc, YandexReadDiagnosticDenied)
+                else "PREFLIGHT",
+                requests_attempted=exc.requests_attempted
+                if isinstance(exc, YandexReadDiagnosticDenied) else 0,
+                request_limit=3 if args.diagnose_position else 6,
+                publication_allowed=False,
+            )
         code = 2
     except ValueError:
         result = {"status": "REFUSED", "reason": "DATE_INVALID"}
+        if args.diagnose_full or args.diagnose_position:
+            result.update(
+                stage="PREFLIGHT", requests_attempted=0,
+                request_limit=3 if args.diagnose_position else 6,
+                publication_allowed=False,
+            )
         code = 2
     print(json.dumps(result, sort_keys=True))
     return code

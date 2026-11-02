@@ -6,6 +6,7 @@ from pathlib import Path
 import tempfile
 from threading import Thread
 import unittest
+from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -57,6 +58,31 @@ class SnapshotTests(unittest.TestCase):
         result = collect(run)
         self.assertEqual(result["agent_runtime"]["scheduler_state"], "unknown")
         self.assertIn("не подтверждено", result["agent_policy"])
+
+    def test_existing_root_collector_embeds_bounded_github_feed(self):
+        record = {"schema": "hermes-gh-observe-inbox-v1", "events": [],
+                  "scope": "GITHUB_ACTIONS_METADATA_ONLY"}
+        with patch("control_center.snapshot.read_github_observe_feed",
+                   return_value=record) as reader:
+            snapshot = collect()
+        reader.assert_called_once_with()
+        self.assertIs(snapshot["github_observe_feed"], record)
+        with patch("control_center.snapshot.read_github_observe_feed",
+                   side_effect=OSError("inaccessible")):
+            missing = collect()
+        self.assertIsNone(missing["github_observe_feed"])
+
+    def test_collector_public_project_file_is_optional_and_read_only(self):
+        synthetic = {"schema": "hermes-public-project-observe-v1", "sources": {}}
+        with patch("control_center.snapshot.read_public_projects_feed",
+                   return_value=synthetic) as reader:
+            result = collect()
+        reader.assert_called_once_with()
+        self.assertIs(result["github_project_feed"], synthetic)
+        with patch("control_center.snapshot.read_public_projects_feed",
+                   side_effect=OSError("file unreadable")):
+            missing = collect()
+        self.assertIsNone(missing["github_project_feed"])
 
     def test_missing_unit_unknown(self):
         def run(argv, **kwargs):

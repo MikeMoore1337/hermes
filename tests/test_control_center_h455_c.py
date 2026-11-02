@@ -53,8 +53,10 @@ class CPanelHttpTests(unittest.TestCase):
         code, headers, body = self.request("/hermes-brc", owner=True)
         self.assertEqual(code, 200)
         self.assertEqual(headers["Cache-Control"], "no-store")
-        self.assertIn(b"brc-workgrid", body)
-        self.assertIn(b"/hermes-brc.js", body)
+        self.assertIn(b'data-auth-mode="github" data-authenticated="true"', body)
+        self.assertIn(b"/app.js", body)
+        self.assertNotIn(b"/hermes-brc.js", body)
+        self.assertNotIn(b"brc-workgrid", body)
         self.assertIn("style-src 'self'", headers["Content-Security-Policy"])
         self.assertNotIn(b"demo-token", body)
 

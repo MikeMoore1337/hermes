@@ -29,6 +29,80 @@ runuser -u hermes-seo -- env -i HOME=/var/lib/hermes-seo PATH=/usr/bin:/bin PYTH
 
 Новый `--probe-user` запускает только **один HTTPS GET** `https://api.webmaster.yandex.net/v4/user` (8 секунд, без proxy/redirect/retry) и никогда не обращается к `hosts`, поисковым запросам, индексации или sitemap. Положительный результат `LIVE_USER_ENDPOINT_ONLY` подтверждает только валидный `/user` ответ при локально переданном OAuth-токене, **не** наличие YFC в аккаунте или пригодность данных. Отказ выдаёт только заранее разрешённый код: `TOKEN_INVALID`, `AUTH_REQUIRED`, `ACCESS_DENIED`, `NETWORK_UNAVAILABLE`, `USER_ID_INVALID`, `RESPONSE_JSON_INVALID` и прочие фиксированные состояния; неизвестное исключение никогда не выводится наружу. Никакие token/UID/provider response не печатаются. Обычный полный `--execute-read` сохраняет прежний обобщённый отказ. Все проверочные тесты синтетические; необходимость живого smoke сохраняется.
 
+## Отдельная проверка привязки YFC после полного REFUSED (не более 2 GET)
+
+Если `--probe-user` ранее выдал `LIVE_USER_ENDPOINT_ONLY`, но полный `--execute-read` завершился `AUTH_OR_RESPONSE_NOT_VERIFIED`, **не повторять полный сбор**: прежняя квитанция не показывает этап отказа и не подтверждает шесть фактических GET. `--probe-host` запускается только после отдельного owner approval и проверки текущего release SHA/blob/receipt, UID и приватного token mode. Он выполняет **не более 2 последовательных GET**: `/v4/user` и `/v4/user/{id}/hosts`, каждый с таймаутом 8 секунд, без повторов/proxy/redirect. Не запрашивает метрики, индексацию и sitemap.
+
+```sh
+cd "/opt/hermes-agent-owner/releases/main-$(cat /var/lib/hermes-main-deploy/last-success.sha)"
+runuser -u hermes-seo -- env -i HOME=/var/lib/hermes-seo PATH=/usr/bin:/bin PYTHONDONTWRITEBYTECODE=1 \
+  /usr/bin/python3 -B -m marketing.yandex_webmaster_direct \
+  --date "$(date -u +%F)" --execute-read --probe-host \
+  --token-file /var/lib/hermes-seo/private/yandex-oauth-token
+```
+
+Успех `LIVE_VERIFIED_YFC_HOST_ONLY` подтверждает **только** доступ к точному проверенному HTTPS-host, ASCII URL и требуемому главному зеркалу (если указан), **не** реальное получение SEO-статистики и не право публикации. При отказе выводятся только `stage=USER|HOSTS|PREFLIGHT` и allowlisted `reason` (`TARGET_HOST_NOT_VERIFIED`, `TARGET_HOST_URL_MISMATCH`, `PRIMARY_MIRROR_MISMATCH`, `ACCESS_DENIED`, `NETWORK_UNAVAILABLE` и прочие фиксированные коды). Ни ответ Яндекса, ни URL списка сайтов, ни user ID, ни OAuth-token не печатаются. Результаты синтетического транспорта `SYNTHETIC_VERIFIED_YFC_HOST_ONLY` **не** считаются live evidence. Повторный live запуск требует отдельного разрешения, даже если предыдущий отказ не был диагностирован.
+
+## Строго отдельная диагностика полного read-only сбора
+
+После успешного owner-run `--probe-host` со статусом `LIVE_VERIFIED_YFC_HOST_ONLY` остаётся независимая проверка четырёх источников SEO-данных. Обычный `--execute-read` по умолчанию **по-прежнему** маскирует причину отказа. Новая опция `--diagnose-full` использует тот же существующий `collect` и 6-GET budget (не второй движок), но при отказе сообщает только `stage=USER|HOSTS|PLAN|POPULAR|ALL_HISTORY|INDEXING|SITEMAPS|NORMALIZE|PREFLIGHT`, фиксированный код `reason`, `requests_attempted` (число попыток GET, **не** успешно завершённых ответов), `request_limit=6`. Никакие сырые ответы, идентификатор аккаунта, токен, строки поисковых запросов, URL других сайтов и исключения провайдера не выводятся.
+
+Запуск возможен **только после отдельного точечного разрешения** и проверки установленного SHA, Git blob, квитанции production, UID, прав локального token-file. Один запуск - максимум 6 GET без повторов, 8 секунд каждый, TLS/no proxy/no redirect, никаких записей:
+
+```sh
+cd "/opt/hermes-agent-owner/releases/main-$(cat /var/lib/hermes-main-deploy/last-success.sha)"
+runuser -u hermes-seo -- env -i HOME=/var/lib/hermes-seo PATH=/usr/bin:/bin PYTHONDONTWRITEBYTECODE=1 \
+  /usr/bin/python3 -B -m marketing.yandex_webmaster_direct \
+  --date "$(date -u +%F)" --execute-read --diagnose-full \
+  --token-file /var/lib/hermes-seo/private/yandex-oauth-token
+```
+
+`NORMALIZE / YANDEX_RESPONSE_CONTRACT_CHANGED` означает, что все шесть GET были предприняты, но API-формат не соответствует валидатору; это **не доказательство**, что данные действительно отсутствуют. Нормализатор теперь допускает документированное отсутствие необязательного `sitemaps[].last_access_date` как `None`, сохраняя требование остальных полей и HTTPS URL. Официальные `popular.date_from/date_to` принимают `YYYY-MM-DD` либо datetime с явным часовым поясом, не меняя строгий формат операторской `--date`. В случае отказа нормализации стадия уточняется до `POPULAR_DATA|ALL_HISTORY_DATA|INDEXING_DATA|SITEMAPS_DATA|SEO_PACKET` с фиксированным безопасным кодом `reason` (`counter_invalid`, `popular_period_invalid`, `sitemap_row_invalid` и др.). Эти коды показывают только семейство нарушения схемы, не provider payload и не конкретные значения. Синтетические тесты не доказывают, что именно такая ошибка возникла в реальном ответе. Отсутствующие метрики не становятся нулями, собственная ручная публикация владельца остаётся обязательной.
+
+## Узкая диагностика одной некорректной позиции (не более 3 GET)
+
+Если owner-run `--diagnose-full` вернул `stage=POPULAR_DATA` и `reason=position_invalid`, **не разрешается** угадывать значение или автоматически превращать `0`/`null`/строку в позицию. По официальной документации Яндекса показатель может отсутствовать; из одного `position_invalid` нельзя установить конкретное представление. Полный six-GET smoke повторять не нужно.
+
+Только после отдельного точечного owner grant и проверки правильного Hermes VPS, exact release SHA/receipt, пяти исходных blobs и приватных прав токена можно однократно выполнить:
+
+```sh
+cd "/opt/hermes-agent-owner/releases/main-$(cat /var/lib/hermes-main-deploy/last-success.sha)"
+runuser -u hermes-seo -- env -i HOME=/var/lib/hermes-seo PATH=/usr/bin:/bin PYTHONDONTWRITEBYTECODE=1 \
+  /usr/bin/python3 -B -m marketing.yandex_webmaster_direct \
+  --date "$(date -u +%F)" --execute-read --diagnose-position \
+  --token-file /var/lib/hermes-seo/private/yandex-oauth-token
+```
+
+Новый `--diagnose-position` использует тот же `collect` и тот же проверенный HTTPS transport, но **жёстко ограничен тремя последовательными GET**: `/user` -> verified YFC `/hosts` -> `/search-queries/popular`. Таймаут 8 секунд на запрос, TLS CA обязателен, 0 retries, 0 proxies/redirects. Результат `LIVE_POPULAR_POSITION_CLASS_ONLY` сообщает только fixed `position_indicator=AVG_SHOW_POSITION|AVG_CLICK_POSITION|NONE` и `position_value_class=ZERO|NEGATIVE|NULL|NUMERIC_STRING|STRING|BOOLEAN|ABOVE_LIMIT|NONFINITE|OTHER_TYPE|NO_INVALID_POSITION`. Никаких actual value, поискового текста, UID, raw API response или токена; `search_metrics_verified=false`, `publication_allowed=false`. При отказе сообщает только fixed `stage`, allowlisted `reason` и `requests_attempted<=3`. Запросы к indexing, sitemap и all-history **не выполняются**.
+
+Этот одноразовый диагностический этап не превращает результат в SEO Research packet и не подтверждает положительный спрос. Синтетическая проверка явно маркируется отдельно, отсутствие ошибки в следующем ответе не доказывает исправление исторической ошибки. Любое дальнейшее full read требует нового разрешения владельца.
+
+## Проверенный случай `AVG_CLICK_POSITION: null` при live-чтении
+
+Owner-run на Hermes VPS `vps1777112993` с установленным `main@cdae8bb288882604d1531f1e09fda8f8709c487b` вернул `LIVE_POPULAR_POSITION_CLASS_ONLY` (3 GET, exit 0), `position_indicator=AVG_CLICK_POSITION`, `position_value_class=NULL`, `host_verified=true`. Это подтверждённое представление **отсутствующей** средней позиции клика, а не нулевое место или отсутствие всех показов и кликов. [API popular](https://yandex.ru/dev/webmaster/doc/ru/reference/host-search-queries-popular) также указывает, что неопределённый индикатор может отсутствовать.
+
+Нормализатор теперь трактует `null` **только** в `AVG_CLICK_POSITION` и `AVG_SHOW_POSITION` как отсутствие соответствующей необязательной метрики. Он не добавляет `average_position: 0`, не меняет известные `TOTAL_SHOWS`, `TOTAL_CLICKS` и вычисляемый CTR, не приписывает поисковый спрос строке без показов/кликов. `null` в счётчиках по-прежнему приводит к отказу, как и `0`, отрицательные, строковые, логические, выходящие за диапазон и нечисловые **значения позиции**. Диагностический режим `--diagnose-position` после исправления может возвращать `NO_INVALID_POSITION` для такого `null`; это не подтверждение реальных SEO-метрик или их передачи в #64.
+
+Прогон синтетического полного шести-GET `collect()` тестирует только совместимость и отсутствие регрессий. **Новый реальный полный GET и передача SEO Research не проводились**; для них по-прежнему требуется отдельный точечный owner gate, правильный VPS/release SHA/source/ACL preflight и безусловная остановка после одной попытки. Публикация материалов остаётся ручной.
+
+## Временная передача результатов в Hermes SEO Research #64 без записи
+
+После проверенного 6-GET `collect()` можно **в том же процессе, до уничтожения полученных данных в памяти**, вызвать `marketing.yandex_webmaster_h12.build_h12_handoff(read_result, as_of=date(...), selected_query=..., site_gap=...)`. Вход `selected_query` и реальный **готовый Statejnik site-gap** для `https://your-fitness-coach.ru` предоставляются уполномоченным оператором, **не** извлекаются и не выдумываются адаптером. Если текущий CLI уже завершён, его редактированная квитанция **не содержит** самих поисковых наблюдений и не позволяет восстановить пакет без повторного, отдельно разрешённого API-чтения.
+
+Функция вызывает **уже существующий** `marketing.seo_research.build_packet` (#64), тему `market_research` и `research_item=None`; возвращает `hermes-h12-seo-research-packet-v1` внутри `hermes-h24-yandex-h12-in-memory-handoff-v1`, **без файловых записей, сети и публикации**. `summarized_h12_handoff()` формирует безопасную квитанцию **без поисковых фраз, чисел, URL и токенов**. Полный `handoff["packet"]` содержит пользовательские поисковые строки и не должен попадать в stdout, CI, GitHub, публичные логи или чат.
+
+**Provenance gate:** исходный bounded live OAuth GET помечен `LIVE_GET_RESPONSE_UNATTESTED`, вложенные наблюдения сохраняют `owner_attested=False`, `source_type=owner_export` (совместимость старой схемы), `data_quality=OWNER_EXPORT_UNVERIFIED`; `source_provenance=OFFLINE_SOURCE_NOT_PROVIDER_VERIFIED`. Никакая из этих меток не превращается в `PROVIDER_VERIFIED`, `READY_FOR_REVIEW` или положительный **подтверждённый** спрос автоматически. Пакет #64 ожидаемо может содержать 4 наблюдения и одновременно `status=NO_DATA` / `NO_CONFIRMED_DEMAND`: это **отсутствие аттестованного спроса**, не отсутствие фактических возвращённых поисковых наблюдений. `site_gap` обязательно проверяет точный HTTPS YFC site/cluster; чужие сайты, повторная аттестация или несогласованная дата отклоняются.
+
+**Доказательство границ:** синтетические тесты `tests/test_marketing_yandex_webmaster_h12.py` подтверждают формат #64, сохранение непроверенного provenance, NO_DATA != 0, no-network/no-write на этапе handoff, отсутствие утечек в summary и отказы на поддельных статусах/доступе. Это **не реальная эксплуатационная передача**: owner-run ранее вернул только краткую квитанцию 6-GET; 4 реальные поисковые строки не сохранялись, поэтому `LIVE_H12_HANDOFF=NOT_VERIFIED`. Для нового live-цикла или долговременного защищённого хранения требуется отдельное точечное owner-разрешение и пересмотр разрешённых файлов/времени хранения; сам source snapshot не запускает сбор.
+
+## Отсутствие реального site-gap: пакет H-12 без выдуманного пробела
+
+На 01.11.2026 в GitHub Hermes и YFC отсутствует опубликованный настоящий `gap.json` для YFC; историческая приёмка Statejnik `site-gap` была синтетической. Поэтому для разрешённого **только операторского** чтения Яндекс Вебмастера добавлен совместимый H-12 режим `site_gap=None`, **только** для `theme=market_research`. Это явное состояние `SITE_GAP_NOT_ASSESSED`, а не созданный искусственно кластер, оценка конкуренции или свидетельство отсутствия статьи.
+
+Пакет `hermes-h12-seo-research-packet-v1` сохраняет реальные наблюдения выбранного запроса, `source_type=owner_export`, `owner_attested=False` и `OWNER_EXPORT_UNVERIFIED`, но **не** выставляет `READY_FOR_REVIEW` или разрешение публикации. По каждому реально наблюдавшемуся запросу исходного ответа (не из текста оператора или фиктивного Statejnik) `marketing.yandex_webmaster_h12.build_h12_observed_batch()` создаёт отдельный H12 packet **в памяти**. `summarized_h12_batch()` содержит только число пакетов и наблюдений, их статусы и `site_gap_assessed=false`; поисковые фразы, показы/клики, пользовательский ID, OAuth-token, site URLs и полный Markdown в публичную квитанцию не выводятся. Синтетические запросы и provider-unattested входы не приравниваются к живой проверке.
+
+Отдельная операторская CLI `python3 -B -m scripts.hermes_yandex_h12_once --date YYYY-MM-DD` **без** `--execute-read` не читает токен и не обращается к сети. Вариант с `--execute-read --token-file <существующий локальный приватный путь>` выполняет **ровно один** полный уже существующий `collect()` (максимум 6 GET, 8с, без proxy/retry/redirect), сразу формирует приватный in-memory H12 batch и выводит только санитизированный receipt. Новый live запуск требует отдельного явного owner gate и обычных hostname/SHA/receipt/blobs/0600 token preflight; выполнение вне доверенного VPS или повторный запуск не разрешаются. Это не новая служба/таймер, не отправка сведений в YFC, не замена реальной оценки Statejnik. Отсутствие Statejnik отмечается `NOT_ASSESSED`, а не `NO_GAP`.
+
 ## Реальный запуск на авторизованном Linux VPS после установки OAuth
 
 1. У владельца **уже был** подтверждён сайт YFC в UI Webmaster. Не создавать снова verification-файлы или другой сайт. Официальный [OAuth guide](https://yandex.ru/dev/webmaster/doc/ru/tasks/how-to-get-oauth): отдельное приложение, redirect `https://oauth.yandex.ru/verification_code`, scope `webmaster:hostinfo` для только чтения. Если для **явно согласованного управления** позднее потребуется `webmaster:verify`, предоставить её отдельному специально ограниченному клиенту и проверить операции/квоты, не переводить read-collector на все permissions по умолчанию.

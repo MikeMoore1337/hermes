@@ -21,7 +21,7 @@ are already enforced on actual v4 live retrievals. No private vault was read.
 | Metadata, source provenance | Vault metadata and validation documented | Source references checked; missing source => HOLD; no provenance => UNKNOWN | Actual integration NOT VERIFIED |
 | Freshness | No real stale guarantee established by this assessment | Checked date and source update older than 30 days => HOLD | Need separately specified API semantics |
 | Revoked permissions | Safe Write/retrieval capabilities have separate boundaries | Source access=revoked => HOLD | API auth/revocation is owned by #6, NOT IMPLEMENTED |
-| Contradictory facts | Cannot infer a semantic truth checker from v4 README | Synthetic YES/NO for same demo topic/predicate => HOLD on both | Does not provide semantic NLP checking |
+| Contradictory facts | Cannot infer a semantic truth checker from v4 README | Overlapping synthetic YES/NO for same demo topic/predicate => HOLD on both | Does not provide semantic NLP checking |
 | Orphaned/low-trust links | Obsidian wikilinks validation documented | Unknown fact links => HOLD; an existing linked HOLD/UNKNOWN fact also downgrades the referring fact transitively | Real vault link integrity and semantic dependency NOT VERIFIED |
 | Inaccessible/expired API | Separate owner gate under #6 | No API or filesystem access implemented | BLOCKED |
 | Unknown or missing scientific meaning | No self-generated facts allowed | UNKNOWN without provenance, never invent evidence | Offline check only |
@@ -73,15 +73,16 @@ Labels refer to the named capability, not the entire product.
 | Provenance | Optional research sources, source validation | Strict synthetic source IDs | Approved quality-status projection | DOCUMENTED, IMPLEMENTED, TESTED_OFFLINE; live NOT_VERIFIED |
 | Freshness | Canonical dates and retrieved_at; no global fact TTL | 30-day synthetic checked_on and updated_on | Approved evidence validity policy | TESTED_OFFLINE; live NOT_VERIFIED |
 | Revoked permissions | Separate Safe Write and read boundaries | Revoked source => HOLD | External revocation semantics (#6) | TESTED_OFFLINE; integration BLOCKED |
-| Contradictions | No general semantic conflict checker established | Conflicting demo YES/NO => HOLD | Canonical conflict status | TESTED_OFFLINE; live NOT_VERIFIED |
+| Contradictions | No general semantic conflict checker established | Conflicting demo YES/NO with overlapping validity windows => HOLD | Canonical conflict status | TESTED_OFFLINE; live NOT_VERIFIED |
 | Orphan links | Wikilink target validation (not heading/block validation) | Missing synthetic ID => HOLD | Evidence dependency vs ordinary link distinction | IMPLEMENTED, TESTED_OFFLINE; mapping NOT_VERIFIED |
 | Transitive dependencies | Specialized Stage 2/12/14 relations, not a generic trust graph | Bounded multi-hop HOLD/UNKNOWN | Approved graph semantics | TESTED_OFFLINE; live NOT_VERIFIED |
 | Missing source | Optional source list for research-derived notes | Missing source ID => HOLD | Canonical source lookup status | TESTED_OFFLINE; live NOT_VERIFIED |
 | Insufficient evidence | Marker-gated Personal Memory evidence metadata | Empty sources or UNKNOWN => UNKNOWN | Evidence quality threshold | TESTED_OFFLINE; live NOT_VERIFIED |
-| Source expiry | Retrieved time does not establish expiry | Synthetic staleness only | Canonical source expires_at | Future external contract MISSING |
+| Source expiry | Retrieved time does not establish expiry | Optional synthetic source expires_on => HOLD after last valid day | Canonical source expires_at | TESTED_OFFLINE; external contract MISSING |
 | Safe retrieval | Current UUID reread, index is never truth | No retrieval or network | Approved metadata-only reader (#6) | DOCUMENTED, IMPLEMENTED; external access BLOCKED |
 | Trust propagation | No universal trust graph promise | HOLD > UNKNOWN > READY over required links | Link dependency authority | TESTED_OFFLINE; live NOT_VERIFIED |
 | Access revocation | Vault belongs to Second Brain | Synthetic revoked => HOLD | Read credential/scope revocation (#6) | TESTED_OFFLINE; external enforcement BLOCKED |
+| Temporal applicability | v4 note created/updated timestamps do not establish a universal fact validity window | Optional valid_from/expires_on: future or expired => HOLD; YES/NO conflicts only if windows overlap | Canonical external fact temporal semantics | TESTED_OFFLINE; live NOT_VERIFIED |
 
 Public evidence:
 [Vault contract](https://github.com/MikeMoore1337/second-brain/blob/main/docs/architecture/vault-contract-v1.md),
@@ -145,3 +146,97 @@ Then #63 may assess **approved, sanitized statuses**, never direct vault
 files, Git, SQL, private note content or automatic exports to a public LLM.
 
 Status: `STAGE_1_SYNTHETIC_ONLY`. `STAGE_2_BLOCKED`. No production GO.
+
+
+## 2026-11-02 additive synthetic temporal validation (H-11 Stage 1)
+
+### Evidence and ownership
+
+- Hermes main source inspected before this change: `b105588db804fda6f2bf49142aebb211d05d8d15`.
+- Public Second Brain v4 main inspected: `53fad04839a500a597546038a2a3763d980d6928`. Its [vault contract](https://github.com/MikeMoore1337/second-brain/blob/main/docs/architecture/vault-contract-v1.md) defines canonical note created/updated timestamps and optional research provenance; those fields alone do **not** define universal source expiry or validity periods for facts.
+- The upstream [start-second-brain](https://github.com/artemiimillier/start-second-brain) at `d5dad206b0326a3e123e8d55f39a563cdd5cf6f1` is MIT licensed. Its read-only `scripts/brain_check.py` checks structured headers, index membership and wikilinks. This revision is inspiration only: no upstream code, second vault or private-content scanner is imported.
+- Second Brain #400 owns any external status API contract. Hermes #6 owns future credential-scoped read-only transport. H-11 here is strictly synthetic-only, no new reader/provider/agent/service.
+
+### New optional fixture fields
+
+No changes to `SCHEMA`, `RESULT_SCHEMA`, `READY/HOLD/UNKNOWN` or existing required keys:
+
+| Object | Optional field | Meaning (synthetic only) | Failure reason |
+|---|---|---|---|
+| source | `expires_on` | Last calendar day source is valid, inclusive | `EXPIRED_SOURCE` => HOLD |
+| fact | `valid_from` | First calendar day fact becomes applicable, inclusive | `NOT_YET_EFFECTIVE` => HOLD |
+| fact | `expires_on` | Last calendar day fact remains applicable, inclusive | `EXPIRED_FACT` => HOLD |
+
+All optional dates are strict ISO `YYYY-MM-DD` strings. The supplied `--as-of` date is the only evaluation clock; nothing calls wall-clock/network/AI. On the expiry date itself, the source or fact is still valid. A fact with `valid_from > expires_on`, invalid dates, null or unexpected fields fails closed as `KnowledgeAuditError` (CLI: generic `REJECTED`, exit code 2); `checked_on` remains mandatory. This is not a claim about server-side expiry or revoked API credentials.
+
+For two synthetic YES/NO values with equal topic and predicate, `CONTRADICTION` is now emitted only when their stated inclusive validity windows overlap. Missing bounds are treated as unbounded (conservative), **not** inferred from `checked_on` or an AI model. Disjoint historical and current versions are not in conflict; the historical version is still HOLD after expiry. Present dependencies on HOLD/UNKNOWN facts continue to downgrade the referring facts.
+
+Reproducible synthetic fixture:
+
+```json
+{
+  "schema": "hermes-h11-synthetic-fixture-v1",
+  "sources": [
+    {
+      "id": "SRC-sample",
+      "updated_on": "2026-10-14",
+      "expires_on": "2026-10-31",
+      "access": "allowed",
+      "origin": "synthetic_only"
+    }
+  ],
+  "facts": [
+    {
+      "id": "F-old",
+      "topic": "demo-feature",
+      "predicate": "demo-enabled",
+      "value": "NO",
+      "checked_on": "2026-10-14",
+      "valid_from": "2026-10-01",
+      "expires_on": "2026-10-15",
+      "source_ids": ["SRC-sample"],
+      "links": []
+    },
+    {
+      "id": "F-current",
+      "topic": "demo-feature",
+      "predicate": "demo-enabled",
+      "value": "YES",
+      "checked_on": "2026-10-14",
+      "valid_from": "2026-10-16",
+      "source_ids": ["SRC-sample"],
+      "links": []
+    }
+  ]
+}
+```
+
+`--as-of 2026-10-16` yields `F-old=HOLD(EXPIRED_FACT)`,
+`F-current=READY`, and no `CONTRADICTION` for these disjoint intervals.
+READY means only **no blocking finding in an invented fixture**; no statement
+about real-life truth, Second Brain vault contents or credential validity is made.
+
+### Test commands and remaining blocked gates
+
+```bash
+python3 -m unittest discover -s tests -p test_h11_offline_knowledge_quality.py -v
+python3 -m unittest discover -s tests -p test_h11_temporal_validity.py -v
+python3 -m unittest discover -s tests -v
+python3 scripts/validate_repo.py
+python3 scripts/check_policy_index.py
+python3 scripts/check_markdown_links.py
+```
+
+Additional synthetic regression covers exact-date boundary, source/fact expiry,
+future applicability, reversed or malformed dates, missing checked_on, source
+ID mismatch, disjoint/overlapping contradictions, transitive HOLD, order
+invariance and generic CLI failure without data echo. GitHub exact-HEAD CI
+must be independently verified before merging; these instructions are not
+test results.
+
+The external metadata-only contract remains **UNAPPROVED**, with no live
+server status semantics. Second Brain #386 real owner-reviewed burn-in,
+Hermes #33/#2 operations, #6 external authorization and a **separate owner
+GO for any actual data flow** remain blocked. No direct vault/filesystem/SQL/git
+access, personal notes, new external API/LLM, resident runtime, provider or
+production service is authorized by this offline addition.

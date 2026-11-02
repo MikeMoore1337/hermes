@@ -14,22 +14,33 @@ UMask=0077
 NoNewPrivileges=yes
 PrivateTmp=yes
 PrivateDevices=yes
+PrivateNetwork=yes
 ProtectSystem=strict
 ProtectHome=yes
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectClock=yes
 ProtectControlGroups=yes
 RestrictSUIDSGID=yes
+RestrictNamespaces=yes
 LockPersonality=yes
 MemoryMax=192M
 TasksMax=20
 RuntimeMaxSec=100
 ReadOnlyPaths=/etc/hermes-gsc
 ReadWritePaths=/var/lib/hermes-gsc
-RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictAddressFamilies=AF_UNIX
+CapabilityBoundingSet=
+AmbientCapabilities=
 SystemCallArchitectures=native
-# IMPORTANT: not installed or activated by main deploy. Egress restriction,
-# credentials, service identity and authorized network activation are operator gates.
+# Pre-activation: absolutely no outbound network. PrivateNetwork and the AF_UNIX
+# restriction are independent fail-closed layers; IPAddressDeny is complementary.
+# Before a separately approved Google OAuth smoke, implement and verify a
+# *different* narrowly scoped Google-only OS egress policy (no DNS-only claim).
+IPAddressDeny=any
+# IMPORTANT: installing this dormant unit is NOT runtime activation, OAuth
+# permission, or authorization to enable its timer.
 
 [Install]
 WantedBy=multi-user.target

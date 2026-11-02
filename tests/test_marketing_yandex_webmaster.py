@@ -108,6 +108,182 @@ class YandexWebmasterOfflineTests(unittest.TestCase):
         self.assertFalse(r["search_metrics_combined"])
         self.assertFalse(r["publication_allowed"])
 
+    def test_provider_popular_period_accepts_offset_aware_datetimes(self):
+        for start, end in (
+            ("2026-10-01T00:00:00.000+03:00", "2026-10-19T00:00:00,000+0300"),
+            ("2026-10-01T00:00:00Z", "2026-10-19T00:00:00+00:00"),
+        ):
+            with self.subTest(start=start, end=end):
+                sample = fixture()
+                sample["popular"]["date_from"] = start
+                sample["popular"]["date_to"] = end
+                report = normalize_export(sample, as_of=DAY)
+                self.assertEqual("2026-10-01", report["popular_coverage"]["period_start"])
+                self.assertEqual("2026-10-19", report["popular_coverage"]["period_end"])
+                self.assertEqual("OFFLINE_SOURCE_NOT_PROVIDER_VERIFIED", report["status"])
+
+    def test_provider_popular_period_rejects_ambiguous_dates(self):
+        for value in (
+            "2026-10-01T00:00:00", "2026-10-01T25:00:00+03:00",
+            "2026-10-01T00:00:00+99:00", "2026-10-01T00:00:00+03:00junk",
+            "2026-13-01", "2026-10-01 00:00:00+03:00",
+        ):
+            with self.subTest(value=value):
+                sample = fixture()
+                sample["popular"]["date_from"] = value
+                with self.assertRaises(WebmasterDenied):
+                    normalize_export(sample, as_of=DAY)
+
+    def test_section_diagnostic_safe_fixed_reason_and_default_unchanged(self):
+        from marketing.yandex_webmaster import (
+            WebmasterContractDiagnosticDenied,
+        )
+        for section, corrupt in (
+            ("POPULAR_DATA", lambda p: p["popular"].update(count="invalid")),
+            ("ALL_HISTORY_DATA", lambda p: p["all_history"].update(indicators=[])),
+            ("INDEXING_DATA", lambda p: p["index_history"].update(indicators=[])),
+            ("SITEMAPS_DATA", lambda p: p["sitemaps"].update(sitemaps="invalid")),
+        ):
+            with self.subTest(section=section):
+                sample = fixture()
+                corrupt(sample)
+                with self.assertRaises(WebmasterDenied) as original:
+                    normalize_export(sample, as_of=DAY)
+                self.assertNotIsInstance(
+                    original.exception, WebmasterContractDiagnosticDenied,
+                )
+                with self.assertRaises(WebmasterContractDiagnosticDenied) as diag:
+                    normalize_export(sample, as_of=DAY, diagnostic=True)
+                self.assertEqual(section, diag.exception.section)
+                self.assertNotIn("secret", str(diag.exception))
+                self.assertNotIn("восстановление", str(diag.exception))
+
+    def test_popular_position_problem_categories_are_fixed_and_non_reversible(self):
+        from marketing.yandex_webmaster import classify_popular_position_problem
+        start, end = date(2026, 10, 1), date(2026, 10, 19)
+        for value, category in (
+            (0, "ZERO"), (0.0, "ZERO"),
+            (-2.0, "NEGATIVE"), (1001.0, "ABOVE_LIMIT"),
+            (10 ** 1000, "ABOVE_LIMIT"),
+            (True, "BOOLEAN"), ("2.25", "NUMERIC_STRING"),
+            ("secret=do-not-echo", "STRING"), ([], "OTHER_TYPE"),
+            (float("nan"), "NONFINITE"), (float("inf"), "NONFINITE"),
+        ):
+            with self.subTest(category=category):
+                payload = fixture()["popular"]
+                indicators = payload["queries"][0]["indicators"]
+                indicators["AVG_SHOW_POSITION"] = value
+                result = classify_popular_position_problem(
+                    payload, start=start, end=end,
+                )
+                self.assertEqual({
+                    "indicator": "AVG_SHOW_POSITION", "value_class": category,
+                }, result)
+                self.assertNotIn("secret", repr(result))
+                self.assertNotIn("восстановление", repr(result))
+
+    def test_popular_giant_integer_is_a_fixed_denial_not_an_overflow(self):
+        sample = fixture()
+        sample["popular"]["queries"][0]["indicators"]["AVG_SHOW_POSITION"] = 10 ** 1000
+        with self.assertRaisesRegex(WebmasterDenied, "^position_invalid$"):
+            normalize_export(sample, as_of=DAY)
+
+    def test_null_average_click_position_does_not_corrupt_other_metrics(self):
+        sample = fixture()
+        sample["source_type"] = "owner_export"
+        sample["popular"]["queries"][0]["indicators"]["AVG_CLICK_POSITION"] = None
+        report = normalize_export(sample, as_of=DAY)
+        self.assertEqual(1, len(report["seo_research_observations"]))
+        metrics = report["seo_research_observations"][0]["metrics"]
+        self.assertEqual(100, metrics["impressions"])
+        self.assertEqual(5, metrics["clicks"])
+        self.assertEqual(0.05, metrics["ctr"])
+        self.assertEqual(14.5, metrics["average_position"])
+        self.assertNotIn("average_click_position",
+                         report["seo_research_input_observations"][0])
+        self.assertFalse(report["publication_allowed"])
+        self.assertFalse(report["authorization_verified"])
+        self.assertEqual("OWNER_EXPORT_UNVERIFIED",
+                         report["seo_research_observations"][0]["data_quality"])
+
+    def test_null_average_show_position_omitted_without_invented_rank(self):
+        sample = fixture()
+        sample["popular"]["queries"][0]["indicators"]["AVG_SHOW_POSITION"] = None
+        report = normalize_export(sample, as_of=DAY)
+        metrics = report["seo_research_observations"][0]["metrics"]
+        self.assertEqual({"clicks": 5, "impressions": 100, "ctr": 0.05}, metrics)
+        self.assertNotIn("average_position", metrics)
+        self.assertFalse(report["publication_allowed"])
+
+    def test_null_positions_and_zero_clicks_keep_real_zero_but_not_rank_zero(self):
+        sample = fixture()
+        item = sample["popular"]["queries"][0]["indicators"]
+        item.update(TOTAL_SHOWS=25, TOTAL_CLICKS=0,
+                    AVG_SHOW_POSITION=None, AVG_CLICK_POSITION=None)
+        report = normalize_export(sample, as_of=DAY)
+        metrics = report["seo_research_observations"][0]["metrics"]
+        self.assertEqual({"clicks": 0, "impressions": 25, "ctr": 0.0}, metrics)
+        self.assertNotIn("average_position", metrics)
+
+    def test_only_null_positions_do_not_invent_search_demand(self):
+        sample = fixture()
+        sample["popular"]["queries"][0]["indicators"] = {
+            "AVG_SHOW_POSITION": None, "AVG_CLICK_POSITION": None,
+        }
+        report = normalize_export(sample, as_of=DAY)
+        self.assertEqual([], report["seo_research_input_observations"])
+        self.assertEqual([], report["seo_research_observations"])
+        self.assertEqual(1, report["popular_coverage"]["returned_rows"])
+        self.assertFalse(report["publication_allowed"])
+
+    def test_null_counts_and_other_invalid_positions_still_refuse(self):
+        for key, value, expected in (
+            ("TOTAL_SHOWS", None, "counter_invalid"),
+            ("TOTAL_CLICKS", None, "counter_invalid"),
+            ("AVG_CLICK_POSITION", 0, "position_invalid"),
+            ("AVG_SHOW_POSITION", -1, "position_invalid"),
+            ("AVG_SHOW_POSITION", "4.5", "position_invalid"),
+            ("AVG_CLICK_POSITION", True, "position_invalid"),
+            ("AVG_CLICK_POSITION", [], "position_invalid"),
+            ("AVG_CLICK_POSITION", 1001, "position_invalid"),
+        ):
+            with self.subTest(key=key, expected=expected):
+                sample = fixture()
+                sample["popular"]["queries"][0]["indicators"][key] = value
+                with self.assertRaisesRegex(WebmasterDenied, "^" + expected + "$"):
+                    normalize_export(sample, as_of=DAY)
+
+    def test_null_position_is_not_reported_as_invalid_after_fix(self):
+        from marketing.yandex_webmaster import classify_popular_position_problem
+        source = fixture()["popular"]
+        source["queries"][0]["indicators"]["AVG_CLICK_POSITION"] = None
+        result = classify_popular_position_problem(
+            source, start=date(2026, 10, 1), end=date(2026, 10, 19),
+        )
+        self.assertEqual({
+            "indicator": "NONE", "value_class": "NO_INVALID_POSITION",
+        }, result)
+
+    def test_popular_position_classifier_only_handles_position_errors(self):
+        from marketing.yandex_webmaster import classify_popular_position_problem
+        start, end = date(2026, 10, 1), date(2026, 10, 19)
+        valid = fixture()["popular"]
+        self.assertEqual(
+            {"indicator": "NONE", "value_class": "NO_INVALID_POSITION"},
+            classify_popular_position_problem(valid, start=start, end=end),
+        )
+        other = fixture()["popular"]
+        other["count"] = "not-a-count"
+        with self.assertRaisesRegex(WebmasterDenied, "counter_invalid"):
+            classify_popular_position_problem(other, start=start, end=end)
+        click = fixture()["popular"]
+        click["queries"][0]["indicators"].pop("AVG_SHOW_POSITION")
+        click["queries"][0]["indicators"]["AVG_CLICK_POSITION"] = 0
+        self.assertEqual(
+            {"indicator": "AVG_CLICK_POSITION", "value_class": "ZERO"},
+            classify_popular_position_problem(click, start=start, end=end),
+        )
+
     def test_site_history_indexing_and_sitemaps_stay_separate(self):
         r = normalize_export(fixture(), as_of=DAY)
         self.assertEqual(21, r["site_history"]["TOTAL_SHOWS"][0]["value"])
@@ -322,6 +498,31 @@ class YandexWebmasterOfflineTests(unittest.TestCase):
         sample["all_history"]["indicators"]["TOTAL_SHOWS"][0]["value"] = -1
         with self.assertRaises(WebmasterDenied):
             normalize_export(sample, as_of=DAY)
+
+    def test_optional_sitemap_last_access_date_remains_unknown(self):
+        for present in (False, True):
+            with self.subTest(present=present):
+                sample = fixture()
+                item = sample["sitemaps"]["sitemaps"][0]
+                if present:
+                    item["last_access_date"] = None
+                else:
+                    del item["last_access_date"]
+                report = normalize_export(sample, as_of=DAY)
+                self.assertIsNone(report["sitemaps"][0]["last_access_date"])
+                self.assertEqual(0, report["sitemaps"][0]["errors"])
+                self.assertFalse(report["publication_allowed"])
+
+    def test_optional_sitemap_date_rejects_bad_values_and_extra_fields(self):
+        for change in (
+            lambda row: row.update(last_access_date="bad-date"),
+            lambda row: row.update(last_access_date="2026-11-01T00:00:00+03:00"),
+            lambda row: row.update(raw_response="secrets"),
+        ):
+            sample = fixture()
+            change(sample["sitemaps"]["sitemaps"][0])
+            with self.assertRaises(WebmasterDenied):
+                normalize_export(sample, as_of=DAY)
 
     def test_untrusted_sitemap_redirects_or_credentials_refused(self):
         for url in (

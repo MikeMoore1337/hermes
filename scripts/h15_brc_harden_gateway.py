@@ -26,6 +26,36 @@ SERVER_LIST = (
     "inputSchema: withDeviceId(t.inputSchema) });"
 )
 INVOKE_MARKER = "  const args = { ...(rawArgs ?? {}) };"
+# Fail closed when a device is deleted, transferred, or re-keyed while its
+# authenticated WebSocket has not yet closed. The hash is bound on upgrade.
+GRANT_MARKER = (
+    "  if (store.getDevice(deviceId)?.paused) return { ok: false, status: 423, "
+    "message: `Device ${dev.info.name} is paused by its owner.` };"
+)
+GRANT_PATCH = (
+    "  const grant = store.getDevice(deviceId);\n"
+    "  if (!grant || grant.user_id !== ctx.userId ||\n"
+    "      (dev.socket as typeof dev.socket & { hermesAuthTokenHash?: string }).hermesAuthTokenHash !== grant.token_hash) {\n"
+    "    return { ok: false, status: 403, message: 'HERMES_DEVICE_GRANT_REVOKED' };\n"
+    "  }\n"
+    "  if (grant.paused) return { ok: false, status: 423, "
+    "message: `Device ${dev.info.name} is paused by its owner.` };"
+)
+
+# Errors from an agent are untrusted. Persist/return only stable codes, not
+# arbitrary remote exception text that might contain a credential.
+ERROR_MARKER = "    const message = err instanceof Error ? err.message : String(err);"
+ERROR_PATCH = (
+    ERROR_MARKER + "\n"
+    "    const safeCode = message.startsWith('UNKNOWN_TOOL') ? 'UNKNOWN_TOOL' :\n"
+    "      message.startsWith('CALL_TIMEOUT') ? 'CALL_TIMEOUT' :\n"
+    "      message.startsWith('DEVICE_REPLACED') ? 'DEVICE_REPLACED' :\n"
+    "      message.startsWith('DEVICE_DISCONNECTED') ? 'DEVICE_DISCONNECTED' :\n"
+    "      message.startsWith('DEVICE_HEARTBEAT_EXPIRED') ? 'DEVICE_HEARTBEAT_EXPIRED' :\n"
+    "      message.startsWith('RELAY_SHUTDOWN') ? 'RELAY_SHUTDOWN' :\n"
+    "      'REMOTE_TOOL_FAILED';"
+)
+
 CATALOG = Path("packages/relay/src/mcp/hermes-tool-catalog.ts")
 STATIC_LIST_MARKER = (
     "    const { online, tools } = liveTools(hub, store, ctx.userId);\n"
@@ -77,7 +107,10 @@ def apply(root: Path, *, sha: str = UPSTREAM_SHA) -> dict[str, object]:
     server = sp.read_text(encoding="utf-8")
     invoke = ip.read_text(encoding="utf-8")
     if (server.count(SERVER_IMPORT) != 1 or server.count(SERVER_LIST) != 1
-        or server.count(STATIC_LIST_MARKER) != 1 or invoke.count(INVOKE_MARKER) != 1):
+        or server.count(STATIC_LIST_MARKER) != 1 or invoke.count(INVOKE_MARKER) != 1
+        or invoke.count(GRANT_MARKER) != 1 or invoke.count(ERROR_MARKER) != 1
+        or invoke.count('error: message });') != 1
+        or invoke.count('message: `Relay error: ${message}`') != 1):
         raise AuditError("relay_policy_source_changed")
     if "import { isPermittedRemoteTool }" in server + invoke:
         raise AuditError("relay_policy_already_patched")
@@ -101,6 +134,10 @@ def apply(root: Path, *, sha: str = UPSTREAM_SHA) -> dict[str, object]:
         INVOKE_MARKER + "\n  if (!isPermittedRemoteTool(tool, args)) {\n"
         "    return { ok: false, status: 403, message: 'HERMES_REMOTE_TOOL_DENIED' };\n  }",
     )
+    invoke = invoke.replace(GRANT_MARKER, GRANT_PATCH, 1)
+    invoke = invoke.replace(ERROR_MARKER, ERROR_PATCH, 1)
+    invoke = invoke.replace('error: message });', 'error: safeCode });', 1)
+    invoke = invoke.replace('message: `Relay error: ${message}`', 'message: `Relay error: ${safeCode}`', 1)
     if server == sp.read_text(encoding="utf-8") or invoke == ip.read_text(encoding="utf-8"):
         raise AuditError("relay_policy_no_effect")
     # Never accept a source change requiring an unreviewed write.
@@ -113,6 +150,8 @@ def apply(root: Path, *, sha: str = UPSTREAM_SHA) -> dict[str, object]:
         "advertisement_policy": "STABLE_PINNED_AGENT_SCHEMAS",
         "tool_discovery_before_device_pairing": "SUPPORTED",
         "invocation_policy": "ALLOWLIST",
+        "device_grant_checks": "OWNER_AND_LIVE_SOCKET_TOKEN_HASH",
+        "remote_error_diagnostics": "REDACTED_STABLE_CODES",
         "external_url_reads": "DENIED",
         "production_ready": False,
     }

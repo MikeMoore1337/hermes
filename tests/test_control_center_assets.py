@@ -38,6 +38,9 @@ class StaticContracts(unittest.TestCase):
     def test_raster_branded_assets_are_locally_served(self):
         for route, mime, signature in (
             ("/brand.webp", "image/webp", b"RIFF"),
+            ("/orbit-brand.svg", "image/svg+xml", b"<svg"),
+            ("/favicon.svg", "image/svg+xml", b"<svg"),
+            ("/pwa-orbit.svg", "image/svg+xml", b"<svg"),
             ("/pwa-maskable-192.png", "image/png", b"\x89PNG"),
             ("/pwa-maskable-512.png", "image/png", b"\x89PNG"),
             ("/favicon.png", "image/png", b"\x89PNG"),
@@ -72,6 +75,36 @@ class StaticContracts(unittest.TestCase):
         self.assertNotIn(b'/desktop-commander.js', a[2])
         self.assertNotIn(b'/desktop-commander.js', b[2])
         self.assertNotIn(b'/provider-quota.js', b[2])
+
+    def test_brc_deep_link_reuses_authenticated_react_shell(self):
+        home_status, home_headers, home = self.get("/")
+        brc_status, brc_headers, brc = self.get("/hermes-brc")
+        self.assertEqual((home_status, brc_status), (200, 200))
+        self.assertEqual(brc, home)
+        self.assertEqual(brc_headers["Content-Type"], "text/html; charset=utf-8")
+        self.assertEqual(brc_headers["Cache-Control"], "no-store")
+        self.assertIn(b'data-auth-mode="proxy" data-authenticated="true"', brc)
+        self.assertIn(b'/app.js', brc)
+        self.assertNotIn(b'/hermes-brc.js', brc)
+        self.assertNotIn(b'brc-shell', brc)
+        self.assertIn("default-src 'none'", brc_headers["Content-Security-Policy"])
+
+    def test_unified_orbit_icons_are_local_and_owner_only_on_the_document(self):
+        status, headers, body = self.get("/orbit-ui-icons.js")
+        self.assertEqual(status, 200)
+        self.assertEqual(headers["Content-Type"], "text/javascript; charset=utf-8")
+        self.assertEqual(headers["Cache-Control"], "private, no-cache")
+        self.assertIn(b"HermesOrbitIcons", body)
+        self.assertNotIn(b"fetch(", body)
+        self.assertNotIn(b"eval(", body)
+        self.assertIn("script-src 'self'", headers["Content-Security-Policy"])
+        status, headers, root = self.get("/")
+        self.assertEqual(status, 200)
+        self.assertIn(b'src="/orbit-ui-icons.js" defer', root)
+        self.assertLess(root.index(b'/orbit-ui-icons.js'), root.index(b'/ai-analytics.js'))
+        preview = self.get("/?preview=login")[2]
+        self.assertNotIn(b'/orbit-ui-icons.js', preview)
+        self.assertEqual(self.get("/orbit-ui-icons.js?debug=1")[0], 404)
 
     def test_static_assets_revalidate_without_caching_html_or_sw(self):
         status, headers, body = self.get("/app.js")

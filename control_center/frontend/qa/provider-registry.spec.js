@@ -1,4 +1,23 @@
 import {test,expect} from "@playwright/test";
+
+async function openOrbitWidget(page,label){
+ if((page.viewportSize()?.width||1280)<=980){
+  const more=page.locator(".orbit-app-mobilebar").getByRole("button",{name:"Ещё"});
+  if(await more.getAttribute("aria-expanded")!=="true")await more.click();
+ }
+ await page.getByRole("button",{name:label,exact:true}).click();
+}
+async function chooseOrbitView(page,label){
+ const width=page.viewportSize()?.width||1280;
+ if(width<=980){
+  const quickName=label==="QA и CI"?"QA / CI":label==="Operator Inbox"?"Входящие":label;
+  const bottom=page.locator(".orbit-app-mobilebar").getByRole("button",{name:quickName,exact:true});
+  if(await bottom.count()){await bottom.click();return;}
+  await page.locator(".orbit-app-mobilebar").getByRole("button",{name:"Ещё"}).click();
+ }
+ await page.locator(".atlas-section-nav").getByRole("button",{name:label,exact:true}).click();
+}
+
 import {mkdirSync} from "node:fs";
 import {resolve} from "node:path";
 const evidence=resolve("../../docs/ux/evidence/h15-provider-registry");
@@ -46,7 +65,7 @@ for(const width of [320,393,1440]){
  test("Separate provider cards without invented use, responsive "+width,async({page})=>{
    await page.setViewportSize({width,height:900});
    await setup(page);await page.goto("/");
-   await page.getByRole("button",{name:"Квоты и инструменты"}).click();
+   await openOrbitWidget(page,"Квоты и инструменты");
    const region=page.getByRole("region",{name:"Квоты и инструменты Hermes"});
    await expect(region).toBeVisible();
    const cards=region.locator(".quota295-card");
@@ -78,7 +97,7 @@ for(const width of [320,393,1440]){
    expect(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1)).toBe(false);
    mkdirSync(evidence,{recursive:true});
    await page.screenshot({path:resolve(evidence,"provider-cards-"+width+".png"),fullPage:true});
-   await page.locator(".atlas-section-nav").getByRole("button",{name:"Обзор"}).click();
+   await chooseOrbitView(page,"Обзор");
    await expect(region).toBeHidden();
  });
 }
@@ -115,7 +134,7 @@ test("GitHub configured token has two separately measured history windows",async
     })});
   });
   await page.goto("/");
-  await page.getByRole("button",{name:"Квоты и инструменты"}).click();
+  await openOrbitWidget(page,"Квоты и инструменты");
   const github=page.locator('.quota295-card[data-provider="github_api"]');
   await expect(github.getByText(/Фактически использовано: 29/)).toBeVisible();
   await expect(github.locator("[role=progressbar]")).toHaveCount(2);
@@ -141,7 +160,7 @@ for(const width of [320,393,1440]){
      status:200,contentType:"application/json",body:JSON.stringify(previous)
    }));
    await page.goto("/");
-   await page.getByRole("button",{name:"Квоты и инструменты"}).click();
+   await openOrbitWidget(page,"Квоты и инструменты");
    const card=page.locator('.quota295-card[data-provider="cloudflare_workers_ai"]');
    await expect(card.getByText(/^Cloudflare Analytics за/)).toBeVisible();
    await expect(card.getByText(/очень маленькая выборка/).first()).toBeVisible();

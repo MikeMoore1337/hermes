@@ -99,7 +99,12 @@ test("independent YFC Root window displays entire article and performs two owner
  const {unexpected}=await prepare(page);
  await page.setViewportSize({width:393,height:844});
  await page.goto("/");
- await page.getByRole("button",{name:"Статьи YFC"}).first().click();
+ if((page.viewportSize()?.width||1280)<=980){
+  await page.locator(".orbit-app-mobilebar").getByRole("button",{name:"Ещё"}).click();
+  await page.locator(".atlas-section-nav").getByRole("button",{name:"Статьи YFC"}).click();
+ }else{
+  await page.locator(".atlas-section-nav").getByRole("button",{name:"Статьи YFC"}).click();
+ }
  await expect(page.getByLabel("Временный токен YFC Root")).toHaveCount(0);
  await expect(page.getByRole("button",{name:/Проверил статью/})).toHaveCount(0);
  const popup=await connect(page);
@@ -130,7 +135,12 @@ test("independent YFC Root window displays entire article and performs two owner
 test("invalid full-text never offers publication",async({page})=>{
  const {unexpected}=await prepare(page,{incomplete:true});
  await page.goto("/");
- await page.getByRole("button",{name:"Статьи YFC"}).first().click();
+ if((page.viewportSize()?.width||1280)<=980){
+  await page.locator(".orbit-app-mobilebar").getByRole("button",{name:"Ещё"}).click();
+  await page.locator(".atlas-section-nav").getByRole("button",{name:"Статьи YFC"}).click();
+ }else{
+  await page.locator(".atlas-section-nav").getByRole("button",{name:"Статьи YFC"}).click();
+ }
  await connect(page);
  await page.getByRole("button",{name:/Тестовая статья YFC/}).click();
  await expect(page.getByText(/Черновик не подтверждён/)).toBeVisible();
@@ -141,7 +151,12 @@ test("invalid full-text never offers publication",async({page})=>{
 test("missing foreign source_ids fail closed without owner publish controls",async({page})=>{
  const {unexpected}=await prepare(page,{invalidMatrix:true});
  await page.goto("/");
- await page.getByRole("button",{name:"Статьи YFC"}).first().click();
+ if((page.viewportSize()?.width||1280)<=980){
+  await page.locator(".orbit-app-mobilebar").getByRole("button",{name:"Ещё"}).click();
+  await page.locator(".atlas-section-nav").getByRole("button",{name:"Статьи YFC"}).click();
+ }else{
+  await page.locator(".atlas-section-nav").getByRole("button",{name:"Статьи YFC"}).click();
+ }
  await connect(page);
  await page.getByRole("button",{name:/Тестовая статья YFC/}).click();
  await expect(page.getByText(/Черновик не подтверждён/)).toBeVisible();
