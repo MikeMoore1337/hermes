@@ -23,6 +23,7 @@ console.log('H15_CHATGPT_PRE_PAIR_STABLE_MCP_TOOLS=PASS');
 
 let forwarded = 0;
 let audited = 0;
+const auditRows = [];
 const device = {
   ownerId: 'test-owner',
   deviceId: 'd-test',
@@ -48,7 +49,7 @@ const hub = {
 let grant = {user_id: 'test-owner', token_hash: 'ci-token-hash', paused: false};
 const store = {
   getDevice: () => grant,
-  audit: () => { audited++; },
+  audit: row => { audited++; auditRows.push(row); },
   touchDevice: () => {},
 };
 const ctx = { userId: 'test-owner', clientId: 'test-client' };
@@ -104,6 +105,31 @@ for (const [scenario, candidate, expectedStatus] of deniedGrants) {
 }
 grant = {user_id:'test-owner',token_hash:'ci-token-hash',paused:false};
 console.log('HERMES_BRC_DELETED_REKEYED_CROSS_OWNER_AND_PAUSED_GRANTS=DENIED');
+
+
+// A malicious device may put arbitrary secret-looking strings in its remote
+// exception text. Neither the persistent audit receipt nor MCP result may
+// contain the untrusted raw message.
+const originalHubCall = hub.call;
+const syntheticSecret = 'CI_SYNTHETIC_REMOTE_SECRET_DO_NOT_EXPOSE';
+for (const [remoteError, safeCode, status] of [
+  ['UNKNOWN_TOOL: ' + syntheticSecret, 'UNKNOWN_TOOL', 404],
+  ['CALL_TIMEOUT: ' + syntheticSecret, 'CALL_TIMEOUT', 504],
+  ['untrusted exception: ' + syntheticSecret, 'REMOTE_TOOL_FAILED', 502],
+]) {
+  hub.call = async () => { throw Error(remoteError); };
+  const result = await invokeTool(hub, store, ctx, 'read_file',
+    {deviceId:'d-test',path:'/workspace/synthetic-only'});
+  const recorded = auditRows.at(-1);
+  if (result.ok || result.status !== status ||
+      result.message !== 'Relay error: ' + safeCode ||
+      recorded?.error !== safeCode ||
+      JSON.stringify({result,recorded}).includes(syntheticSecret)) {
+    throw Error('MCP_REMOTE_ERROR_SECRET_LEAK:' + safeCode);
+  }
+}
+hub.call = originalHubCall;
+console.log('HERMES_BRC_UNTRUSTED_REMOTE_ERROR_AUDIT_AND_MCP=REDACTED');
 
 console.log('HERMES_BRC_LEGITIMATE_TOOLS_AND_AUDIT=PASS');
 console.log('HERMES_BRC_GATEWAY_IMMUTABLE_POLICY_E2E=PASS');
