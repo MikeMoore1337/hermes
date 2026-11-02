@@ -10,8 +10,14 @@
 }
 .theme-orbit *{box-sizing:border-box}
 .theme-orbit .brand{display:flex;gap:8px;align-items:center;min-width:0}
-.theme-orbit .brand img{width:45px;height:49px;object-fit:contain}
+.theme-orbit .brand img{width:58px;height:49px;object-fit:contain}
 .theme-orbit .brand-text strong{display:block;color:#eff8ff;font-size:17px;font-weight:780;letter-spacing:.13em}
+@supports (-webkit-background-clip:text) {
+ .theme-orbit .brand-text strong{background:linear-gradient(180deg,#f8fdff 14%,#d5f0ff 45%,#8bc5ea 100%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+}
+@media (forced-colors:active) {
+ .theme-orbit .brand-text strong{-webkit-text-fill-color:CanvasText;background:none;color:CanvasText}
+}
 .theme-orbit .brand-text small{display:block;font-size:8px;letter-spacing:.12em;color:#85b7d7}
 .theme-orbit .body-layout,.theme-orbit .dashboard-main{display:contents}
 .orbit-app-layout{display:grid;grid-template-columns:240px minmax(0,1fr);min-height:100dvh}
