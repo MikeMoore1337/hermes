@@ -52,7 +52,7 @@ JSON
 python3 -B -m unittest tests.test_h25_otel_offline -v
 ```
 
-Проверяются schema, trace/metric, UNKNOWN!=0, privacy, sampling, limits, invalid JSON/duplicate keys, max batch и детерминированность. Дополнительный модуль `tests/test_h25_otel_regression.py` добавляет 11 проверок ошибок статуса, sampling, incomplete metadata, timeout, CLI, no-I/O и OTLP protobuf mapping (последняя проверка SKIP, если пакет `opentelemetry-proto` не установлен; runtime dependency не добавляется). Локально 03.11.2026: 27/27 PASS. GitHub CI на exact PR SHA обязателен; source-only merge не включает exporter. #192 остаётся OPEN до разрешённой эксплуатационной приёмки.
+Проверяются schema, trace/metric, UNKNOWN!=0, privacy, sampling, limits, invalid JSON/duplicate keys, max batch и детерминированность. Дополнительный модуль `tests/test_h25_otel_regression.py` добавляет 11 проверок ошибок статуса, sampling, incomplete metadata, timeout, CLI, no-I/O и OTLP protobuf mapping (если необязательный `opentelemetry-proto` отсутствует, применяется структурная проверка стандартной библиотекой без SKIP; новая runtime-зависимость не добавляется). Локально 03.11.2026: 27/27 PASS. GitHub CI на exact PR SHA обязателен; source-only merge не включает exporter. #192 остаётся OPEN до разрешённой эксплуатационной приёмки.
 
 Related: [#192](https://github.com/MikeMoore1337/hermes/issues/192), [#33](https://github.com/MikeMoore1337/hermes/issues/33), [#470](https://github.com/MikeMoore1337/hermes/issues/470). Никакие BRC/Windows workstreams не затрагиваются.
 
