@@ -142,7 +142,17 @@ export async function guardedUpdate({
         (before !== null && (!latest || latest.digest !== before.digest)))
       refuse('target_changed_during_update');
     await noSymlinkComponents(root, parent);
-    await fs.rename(temp, target);
+    if (before === null) {
+      try { await fs.link(temp, target); }
+      catch (err) {
+        if (err.code === 'EEXIST') refuse('target_changed_during_update');
+        refuse('atomic_create_denied');
+      }
+      try { await fs.unlink(temp); }
+      catch { refuse('created_temporary_cleanup_failed'); }
+    } else {
+      await fs.rename(temp, target);
+    }
     temp = null;
     return {
       schema: 1, status: before ? 'updated' : 'created',

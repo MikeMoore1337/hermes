@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { syncBuiltinESMExports } from 'node:module';
 import test from 'node:test';
 import {
   guardedUpdate, GuardedRefusal, MAX_BYTES
@@ -72,6 +73,72 @@ test('absent precondition rejects overwrite and preserves file', () =>
     await rejected(guardedUpdate({ root, source, target, expected: 'absent' }),
       'stale_target');
     assert.equal(await fs.readFile(target, 'utf8'), 'valuable');
+  })
+);
+test('a file created by another writer at commit is preserved', () =>
+  tempFixture(async root => {
+    const source = path.join(root, 'stage');
+    const target = path.join(root, 'target');
+    await fs.writeFile(source, 'future');
+    const rename = fs.rename, link = fs.link;
+    const intervene = operation => async (from, to) => {
+      await fs.writeFile(to, 'other writer', { flag: 'wx' });
+      return operation(from, to);
+    };
+    fs.rename = intervene(rename);
+    fs.link = intervene(link);
+    syncBuiltinESMExports();
+    try {
+      await rejected(guardedUpdate({ root, source, target, expected: 'absent' }),
+        'target_changed_during_update');
+      assert.equal(await fs.readFile(target, 'utf8'), 'other writer');
+    } finally {
+      fs.rename = rename;
+      fs.link = link;
+      syncBuiltinESMExports();
+    }
+  })
+);
+test('unsupported atomic creation refuses without creating a target', () =>
+  tempFixture(async root => {
+    const source = path.join(root, 'stage'), target = path.join(root, 'target');
+    await fs.writeFile(source, 'future');
+    const link = fs.link;
+    fs.link = async () => { throw Object.assign(new Error('unsupported'), { code: 'EPERM' }); };
+    syncBuiltinESMExports();
+    try {
+      await rejected(guardedUpdate({ root, source, target, expected: 'absent' }),
+        'atomic_create_denied');
+      await assert.rejects(fs.stat(target), { code: 'ENOENT' });
+      assert.deepEqual(await fs.readdir(root), ['stage']);
+    } finally {
+      fs.link = link;
+      syncBuiltinESMExports();
+    }
+  })
+);
+test('cleanup error reports that the target was already created', () =>
+  tempFixture(async root => {
+    const source = path.join(root, 'stage'), target = path.join(root, 'target');
+    await fs.writeFile(source, 'future');
+    const unlink = fs.unlink;
+    let failed = false;
+    fs.unlink = async file => {
+      if (!failed && file.includes('.hermes-')) {
+        failed = true;
+        throw Object.assign(new Error('denied'), { code: 'EACCES' });
+      }
+      return unlink(file);
+    };
+    syncBuiltinESMExports();
+    try {
+      await rejected(guardedUpdate({ root, source, target, expected: 'absent' }),
+        'created_temporary_cleanup_failed');
+      assert.equal(await fs.readFile(target, 'utf8'), 'future');
+    } finally {
+      fs.unlink = unlink;
+      syncBuiltinESMExports();
+    }
   })
 );
 test('payload digest mismatch does not change target', () =>
