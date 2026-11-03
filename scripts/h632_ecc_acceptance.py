@@ -43,28 +43,38 @@ def cleanup_ephemeral_ecc_cache(home: Path, baseline: dict[str, str],
     No directories are deleted. A pre-existing file, symlink or hard link fails
     closed. The original uninstaller verdict remains separate in the report.
     """
-    assert home.is_absolute() and home.name == "home"
-    assert home.parent.name.startswith("h632-"), "Not an H-632 disposable HOME"
+    if not home.is_absolute() or home.name != "home":
+        raise ValueError("Expected an absolute H-632 home path")
+    if not home.parent.name.startswith("h632-"):
+        raise ValueError("Not an H-632 disposable HOME")
     key = ".claude/ecc/state.db"
-    assert key not in baseline and key in observed, "Cache is not exclusively test-created"
+    if key in baseline or key not in observed:
+        raise ValueError("Cache is not exclusively test-created")
     for parent in (home, home / ".claude", home / ".claude" / "ecc"):
         metadata = parent.lstat()
-        assert stat.S_ISDIR(metadata.st_mode), "Unsafe cache parent path"
+        if not stat.S_ISDIR(metadata.st_mode):
+            raise ValueError("Unsafe cache parent path")
     cache = home / key
     metadata = cache.lstat()
-    assert stat.S_ISREG(metadata.st_mode) and metadata.st_nlink == 1, "Unsafe cache file"
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
+        raise ValueError("Unsafe cache file")
+    if not hasattr(os, "O_NOFOLLOW"):
+        raise RuntimeError("File cleanup requires OS-level O_NOFOLLOW")
+    flags = os.O_RDONLY | os.O_NOFOLLOW
     descriptor = os.open(cache, flags)
     try:
         opened = os.fstat(descriptor)
-        assert (opened.st_dev, opened.st_ino) == (metadata.st_dev, metadata.st_ino)
+        if (opened.st_dev, opened.st_ino) != (metadata.st_dev, metadata.st_ino):
+            raise ValueError("Cache identity changed during open")
         checksum = hashlib.sha256()
         with os.fdopen(descriptor, "rb", closefd=False) as stream:
             for chunk in iter(lambda: stream.read(65536), b""):
                 checksum.update(chunk)
-        assert checksum.hexdigest() == observed[key], "Cache bytes changed after snapshot"
+        if checksum.hexdigest() != observed[key]:
+            raise ValueError("Cache bytes changed after snapshot")
         latest = cache.lstat()
-        assert (latest.st_dev, latest.st_ino) == (opened.st_dev, opened.st_ino)
+        if (latest.st_dev, latest.st_ino) != (opened.st_dev, opened.st_ino):
+            raise ValueError("Cache identity changed before unlink")
     finally:
         os.close(descriptor)
     cache.unlink()
