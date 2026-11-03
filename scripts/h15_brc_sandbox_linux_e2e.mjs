@@ -325,8 +325,13 @@ setInterval(()=>{},1000);`);
 const pidFrom = result => Number(result.content.map(item => item.text || '').join('\n').match(/Process started with PID (\d+)/)?.[1]);
 const running = pid => {
   try { return !/^\d+ \(.*\) Z /.test(fs.readFileSync(`/proc/${pid}/stat`, 'utf8')); }
-  catch (error) { if (error.code === 'ENOENT') return false; throw error; }
+  catch (error) { if (error.code === 'ENOENT' || error.code === 'ESRCH') return false; throw error; }
 };
+const readFileSync = fs.readFileSync;
+try {
+  fs.readFileSync = () => { throw Object.assign(new Error('process vanished'), {code:'ESRCH'}); };
+  assert(!running(2147483600), 'MCP_PROCESS_VANISHED_DURING_STAT');
+} finally { fs.readFileSync = readFileSync; }
 const usesSupervisor = fs.existsSync('/usr/bin/python3') ||
   (process.arch === 'x64' && fs.existsSync('/usr/bin/perl'));
 if (process.env.H454_EXPECT_PERL_SUPERVISOR === '1') {
