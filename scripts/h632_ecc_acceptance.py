@@ -86,7 +86,7 @@ def preflight(ecc: Path) -> dict:
 def container_cmd(image: str, entry: str, argv: list[str], ecc: Path, home: Path, *, hermes: bool = False) -> list[str]:
     home_name = "/test-home/.hermes" if hermes else "/test-home"
     cmd = ["docker", "run", "--rm", "--init", "--pull=never", "--network", "none", "--cap-drop", "ALL",
-           "--security-opt", "no-new-privileges:true", "--read-only", "--user", "10000:10000",
+           "--security-opt", "no-new-privileges:true", "--read-only", "--user", f"{os.getuid()}:{os.getgid()}",
            "--pids-limit", "64", "--memory", "1024m", "--cpus", "1",
            "--tmpfs", "/tmp:rw,nosuid,nodev,noexec,size=64m",
            "--mount", f"type=bind,src={ecc.resolve()},dst=/ecc,readonly",
