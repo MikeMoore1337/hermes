@@ -78,3 +78,18 @@ do not use this module as an OS-level security boundary.
 
 Test offline: `python3 -m unittest -v tests.test_brc_snapshot`.
 This PR does not make the Control Center's BRC widget live.
+
+## Fork schema-2 candidate
+
+The fork's [opt-in observer PR](https://github.com/MikeMoore1337/hermes-remote-commander/pull/10)
+emits owner-scoped device presence and configured sandbox workspaces. Each
+workspace is associated with its own current device grant and socket; no raw
+device IDs or credentials are included. The Control Center reader also accepts
+this schema while retaining the existing schema-1 contract. Expired presence,
+unknown devices, extra fields and claimed Git verification fail closed.
+
+The fork reports native host access as `not_verified`, not disabled. This
+read-only snapshot does not verify Git, authorize commands, create workspaces,
+change permissions or establish OS isolation. Onboarding and device management
+are not provided by this integration. The observer is disabled by default;
+activating it or changing an actual relay still requires separate approval.

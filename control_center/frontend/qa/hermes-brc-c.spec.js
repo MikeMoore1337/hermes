@@ -21,6 +21,41 @@ async function setup(page,packet=snapshot()){
  }));
  await page.goto("/hermes-brc");
 }
+for(const width of [320,1440]){
+ test("fork observation routes each project to its own device "+width,async({page},testInfo)=>{
+  await page.setViewportSize({width,height:900});
+  await page.route("**/api/auth/session",route=>route.fulfill({status:200,contentType:"application/json",body:'{"mode":"proxy","authenticated":true}'}));
+  const packet={schema:2,source:"hermes_brc_fork",status:"partial",observed_at:new Date().toISOString(),
+   execution_verified:false,native_host_access:"not_verified",onboarding_enabled:false,
+   devices:[{name:"Laptop",status:"online",last_seen_age_seconds:1,command_execution:"not_verified"},
+    {name:"Sandbox",status:"paused",last_seen_age_seconds:2,command_execution:"not_verified"}],
+   workspaces:[{name:"alpha",root:"/workspace/projects/alpha",branch:"main",device_name:"Laptop",git_verified:false,state:"reachable_not_git_verified"},
+    {name:"beta",root:"/workspace/projects/beta",branch:"dev",device_name:"Sandbox",git_verified:false,state:"not_ready"}]};
+  await setup(page,packet);
+  await expect(page.locator("#brc-device-count")).toHaveText("1/2");
+  await expect(page.locator("#brc-project-count")).toHaveText("1/2");
+  await expect(page.locator("#brc-projects button")).toHaveCount(2);
+  await expect(page.locator("#brc-selected-state")).toHaveText("ОНЛАЙН");
+  await page.locator('button[data-project="beta"]').click();
+  await expect(page.locator("#brc-selected-state")).toHaveText("ПРИОСТАНОВЛЕНО");
+  await expect(page.locator("#brc-path")).toHaveText("/workspace/projects/beta");
+  await expect(page.locator(".brc-facts")).toContainText("Sandbox");
+  await expect(page.locator(".oc-access-list > div").filter({hasText:"Доступ к хосту"}).locator("strong")).toHaveText("Не проверено");
+  await expect(page.locator("body")).not.toContainText("deviceId");
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(width+1);
+  const screenshot=testInfo.outputPath("fork-observation-"+width+".png");
+  await page.screenshot({path:screenshot,fullPage:true,animations:"disabled"});
+  await testInfo.attach("fork-observation-"+width+".png",{path:screenshot,contentType:"image/png"});
+  if(width===320){
+   await page.unroute("**/api/providers/hermes-brc");
+   await page.route("**/api/providers/hermes-brc",route=>route.fulfill({status:503,contentType:"application/json",body:'{}'}));
+   await page.getByRole("button",{name:"Обновить снимок"}).click();
+   await expect(page.locator("#brc-error")).toBeVisible();
+   await expect(page.locator("#brc-projects button")).toHaveCount(0);
+   await expect(page.getByRole("button",{name:"Скопировать запрос проверки"})).toBeDisabled();
+  }
+ });
+}
 test("concept C reads only sanitized source and switches four projects",async({page})=>{
  await page.setViewportSize({width:1440,height:900});await setup(page);
  await expect(page.getByRole("heading",{name:"Рабочие пространства"})).toBeVisible();
