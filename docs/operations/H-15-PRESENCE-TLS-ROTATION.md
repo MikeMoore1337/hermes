@@ -179,6 +179,65 @@ For rollback of this *monitoring opt-in only*, move the marker into a
 root-private backup directory under a documented maintenance action; the
 monitor itself never changes the TLS listener or trust materials.
 
+## Client trust-overlap preflight (source-only, no config writes)
+
+Before migrating either Windows or YFC, use the existing client configuration,
+the owner-approved public CA, and **both** CA-signed leaf certificates for an
+isolated, read-only preflight. This is distinct from staging a new server leaf,
+from an actual client trust update, and from verifying real WSS connectivity.
+
+Run the reviewed helper from an exact-SHA source snapshot on the **authorized
+client host** with the original device's private configuration available
+locally. Public CA/cert files may be copied securely, but never send a device
+token, private SSH key or server leaf key through ChatGPT or GitHub.
+
+~~~bash
+python3 -B -m scripts.h346_client_trust_preflight \
+  --config "$PRIVATE_DEVICE_CONFIG" \
+  --ca-public "$PUBLIC_CA_CERT" \
+  --primary-leaf "$SIGNED_PRIMARY_LEAF" \
+  --fallback-leaf "$SIGNED_FALLBACK_LEAF" \
+  --device "$APPROVED_DEVICE_ID" \
+  --expected-ca-sha256 "$OFFLINE_CA_DER_SHA256"
+~~~
+
+Use exactly linux-vps for the existing YFC host and windows-pc for the
+approved Windows client. The **expected** CA DER SHA-256 fingerprint must be
+attested independently at the offline signer; do not calculate it from the
+same untrusted transfer and treat that as owner verification. The operator
+should independently confirm both signed certificates correspond to the
+pre-existing CSR public keys and the server's separately protected keys.
+
+The helper checks existing client bundle schema/ID/local SSH-forward URL,
+private POSIX file mode and single-link/regular-file integrity, public CA
+signature/CA key-usage, chain verification of both distinct leaves, explicit
+DNS:localhost SAN, serverAuth EKU, validity, the 6144-byte trust ceiling,
+and SSLContext strict hostname/certificate validation. No token/config
+contents or private key bytes appear in normal stdout. It **never modifies**
+the original config or trust bundle.
+
+A H346_CLIENT_TRUST_PREFLIGHT=PASS means that a dual-trust bundle is
+*cryptographically compatible*. It does **not** mean that the bundle has
+been installed, that Windows NTFS permissions have been verified, that any
+running process reloaded its configuration, or that Windows/YFC have
+connected to the real WSS relay. A native Windows ACL review, owner-approved
+atomic write with backup, and actual TLS/heartbeat proof are still mandatory.
+
+Keep the existing pilot trust certificate during the overlap interval;
+do not replace the old trust with the CA alone. The old certificate being
+expired means the *old relay* cannot pass current-time TLS verification,
+even when it remains in the trust store. Back up the old private JSON with
+root/administrator-only permissions before a separate client mutation.
+The Linux --watch agent reads its JSON on process start, so approved
+trust updates require a controlled agent restart; do not assume hot reload.
+
+On the server, use the existing h15_presence_tls_preflight and staged
+generation/rollback mechanism to verify that each new signed leaf matches
+its protected local private key. A standalone public-only client preflight
+cannot prove server key possession or recoverability from the expired
+pilot. Do not change live relay/systemd units until both real clients
+can prove the new CA after a separately authorized cutover window.
+
 ## Custody, revocation and emergency boundaries
 
 The private CA key remains OFFLINE. Only owner-signed, pre-staged service
