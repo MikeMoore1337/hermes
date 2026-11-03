@@ -160,9 +160,18 @@ const started={content:[{type:'text',text:'Started file search session: search_1
 assert.equal(api.finishWorkspaceSearch(started,start,hub).status,'ok');
 const token=started.content[0].text.match(/^Started file search session: (hermes_search_[a-f0-9]{32}_search_1_1793680000000)/)?.[1];
 assert.ok(token);
+const start2=api.prepareWorkspaceSearch('start_search',{path:good},startRoute,hub,[win,other]);
+const started2={content:[{type:'text',text:'Started content search session: search_2_1793680000001\\n'}]};
+assert.equal(api.finishWorkspaceSearch(started2,start2,hub).status,'ok');
+const token2=started2.content[0].text.match(/hermes_search_[a-f0-9]{32}_search_2_1793680000001/)?.[0];
+assert.ok(token2);assert.notEqual(token,token2);
 const followArgs={sessionId:token};
 const follow=api.prepareWorkspaceSearch('get_more_search_results',followArgs,{status:'unchanged'},hub,[win,other]);
 assert.equal(follow.status,'follow');assert.equal(follow.nativeId,'search_1_1793680000000');
+assert.equal(api.prepareWorkspaceSearch('stop_search',{sessionId:token2,deviceId:win.deviceId},
+ {status:'unchanged'},hub,[win,other]).nativeId,'search_2_1793680000001');
+assert.equal(api.prepareWorkspaceSearch('stop_search',{sessionId:'search_9_1793680000000'},
+ {status:'unchanged'},hub,[win,other]).status,'unchanged');
 const output={content:[{type:'text',text:'Search session: search_1_1793680000000\\nfile search_1_1793680000000\\n'}]};
 assert.equal(api.finishWorkspaceSearch(output,follow,hub).status,'ok');
 assert.equal(output.content[0].text,'Search session: '+token+'\\nfile search_1_1793680000000\\n');

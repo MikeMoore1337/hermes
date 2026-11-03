@@ -195,6 +195,15 @@ const searchStart = await call('start_search', {
 const searchText = searchStart.content?.[0]?.text ?? '';
 const searchId = searchText.match(/^Started file search session: (hermes_search_[a-f0-9]{32}_search_[1-9][0-9]*_[0-9]+)\n/)?.[1];
 must(searchStart.isError !== true && !!searchId, 'H15_WORKSPACE_SEARCH_SESSION_BOUND');
+const secondStart = await call('start_search', {
+  path:'/workspace/projects/hermes', pattern:'project-on-owner-device', searchType:'content', timeout_ms:5000,
+});
+const secondId = (secondStart.content?.[0]?.text ?? '').match(/^Started content search session: (hermes_search_[a-f0-9]{32}_search_[1-9][0-9]*_[0-9]+)\n/)?.[1];
+must(secondStart.isError !== true && !!secondId && secondId !== searchId,
+     'H15_WORKSPACE_TWO_SEARCH_SESSIONS_BOUND');
+const secondResults = await call('get_more_search_results', { sessionId:secondId, length:20 });
+must(secondResults.isError !== true && JSON.stringify(secondResults).includes(secondId),
+     'H15_WORKSPACE_SECOND_SEARCH_RESULTS_ROUTED');
 let searchResults;
 for (let i=0;i<20;i++) {
   searchResults = await call('get_more_search_results', { sessionId:searchId, length:20 });
@@ -209,6 +218,9 @@ must(wrongSearchDevice.isError === true && JSON.stringify(wrongSearchDevice).inc
 const stoppedSearch = await call('stop_search', { sessionId:searchId });
 must(stoppedSearch.isError !== true && JSON.stringify(stoppedSearch).includes(searchId),
      'H15_WORKSPACE_SEARCH_STOP_ROUTED');
+const stoppedSecond = await call('stop_search', { sessionId:secondId });
+must(stoppedSecond.isError !== true && JSON.stringify(stoppedSecond).includes(secondId),
+     'H15_WORKSPACE_SECOND_SEARCH_STOP_ROUTED');
 
 for (const [id, expected] of [
   [pinnedDeviceId, 'real-ci-agent-one'],
