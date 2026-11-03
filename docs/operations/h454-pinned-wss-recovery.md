@@ -342,13 +342,21 @@ original away from the broker network, start and stage the pinned candidate on
 that network, and restore the same original with fresh staging. Its separate
 pending marker remains until the operator has observed original MCP and
 acknowledges it; that acknowledgment is an operator assertion, not an MCP
-check performed by the script. Each Docker mutation also has a flushed
-in-flight marker with a bounded, non-secret operation name. If an operation times out or the process is interrupted,
-recovery refuses to proceed while that marker exists: inspecting the current
-container state alone cannot prove the daemon has finished the earlier action.
-There is no automated settlement proof or marker-clearing procedure for such
-an ambiguous operation. The trial has not been run against the live container,
-and its source and tests do not establish a production cutover or rollback.
+check performed by the script. Before each trial stop, start, network change or
+credential staging operation, the operator flushes a nonce-bound in-flight
+record. A hidden worker writes a matching receipt only after the Docker
+operation succeeds or the staging process returns its expected confirmation.
+Recovery and acknowledgment can settle that record from a validated matching
+receipt before rechecking the actual container and network state. A recorded
+expired window or incomplete staging input also settles without dispatching
+the corresponding operation.
+
+If a receipt is missing or invalid, or a legacy/read-only operation has an
+unresolved marker, recovery remains HOLD. Inspecting current container state
+alone does not prove that an earlier operation can no longer complete; do not
+remove the marker or retry the mutation on that basis. The trial has not been
+run against the live container, and its source and tests do not establish a
+production cutover or rollback.
 
 `h454_windows_network_guard.ps1` verifies a fresh Docker network
 snapshot's immutable identity, internal bridge mode, label and exact two-member
