@@ -51,6 +51,7 @@ FILE_ATTRIBUTE_REPARSE_POINT = 0x400
 FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000
 FILE_FLAG_BACKUP_SEMANTICS = 0x02000000
 FILE_READ_ATTRIBUTES = 0x80
+FILE_READ_DATA = 0x1  # FILE_LIST_DIRECTORY for directories
 GENERIC_READ = 0x80000000
 OPEN_EXISTING = 3
 FILE_SHARE_READ = 0x1
@@ -149,7 +150,10 @@ def _opened(api, path: str, *, content: bool, lock_rename: bool = False):
     flags = FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS
     access = GENERIC_READ if content else FILE_READ_ATTRIBUTES
     shares = FILE_SHARE_READ | FILE_SHARE_WRITE
-    if not lock_rename:
+    if lock_rename:
+        # Attribute-only handles do not enforce the deny-delete share on Windows.
+        access |= FILE_READ_DATA
+    else:
         shares |= FILE_SHARE_DELETE
     h = api.CreateFileW(path, access, shares,
         None, OPEN_EXISTING, flags, None)
@@ -199,7 +203,7 @@ def handle_native_request(project: str, relative: str, operation: str) -> dict:
     """Use only verified live handles; no second path-based file open."""
     root, requested = build_request(project, relative, operation)
     api = _winapi()
-    root_handle = _opened(api, root, content=False)
+    root_handle = _opened(api, root, content=False, lock_rename=True)
     try:
         root_info = _metadata(api, root_handle)
         if not root_info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY:

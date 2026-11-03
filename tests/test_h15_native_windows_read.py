@@ -32,11 +32,13 @@ class FakeWin32:
         self.handles = {}
         self.next_handle = 1000
         self.offsets = {}
+        self.opens = []
 
     def CreateFileW(self, path, access, share, security, disposition, flags, template):
         assert disposition == broker.OPEN_EXISTING
         assert flags & broker.FILE_FLAG_OPEN_REPARSE_POINT
         assert flags & broker.FILE_FLAG_BACKUP_SEMANTICS
+        self.opens.append((path, access, share))
         self.next_handle += 1
         self.handles[self.next_handle] = ("root" if
             ntpath.normcase(path) == ntpath.normcase(self.root) else "file")
@@ -116,6 +118,18 @@ class NativeWindowsReadTests(unittest.TestCase):
         self.assertEqual(result["size_bytes"], 10)
         self.assertEqual(len(mock.closed), 2)
         self.assertEqual(set(mock.closed), set(mock.handles))
+
+    def test_read_and_stat_hold_root_against_rename(self):
+        for operation in ("read", "stat"):
+            with self.subTest(operation=operation):
+                mock = FakeWin32()
+                with patch.object(broker, "_winapi", return_value=mock):
+                    broker.handle_native_request("hermes", "README.md", operation)
+                path, access, shares = mock.opens[0]
+                self.assertEqual(path, mock.root)
+                # FILE_LIST_DIRECTORY activates Windows share-delete enforcement.
+                self.assertTrue(access & 0x1)
+                self.assertFalse(shares & broker.FILE_SHARE_DELETE)
 
     def test_stat_directory_and_file_never_emit_contents(self):
         file = FakeWin32()

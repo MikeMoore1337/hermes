@@ -55,6 +55,41 @@ class NativeWindowsReadOnRunnerTests(unittest.TestCase):
         self.assertEqual(directory["kind"], "directory")
         self.assertNotIn("data", directory)
 
+    def test_root_cannot_be_renamed_during_read_or_stat(self):
+        real_open = broker._opened
+        moved = self.root.with_name("moved-code")
+        for operation in ("read", "stat"):
+            attempts = []
+            def checked_open(api, path, *, content, lock_rename=False):
+                if os.path.normcase(path) == os.path.normcase(str(self.file)):
+                    try:
+                        with self.assertRaises(OSError) as denied:
+                            os.rename(self.root, moved)
+                        self.assertIn(denied.exception.winerror, (5, 32))
+                        attempts.append(True)
+                    finally:
+                        if moved.exists():
+                            os.rename(moved, self.root)
+                return real_open(api, path, content=content, lock_rename=lock_rename)
+            with self.subTest(operation=operation), \
+                 patch.object(broker, "_opened", side_effect=checked_open):
+                result = broker.handle_native_request("hermes", r"src\safe.py", operation)
+                self.assertEqual(result["status"], "ok")
+                self.assertEqual(attempts, [True])
+
+    def test_locked_directory_handle_prevents_rename(self):
+        api = broker._winapi()
+        moved = self.root.with_name("moved-code")
+        handle = broker._opened(api, str(self.root), content=False, lock_rename=True)
+        try:
+            with self.assertRaises(OSError) as denied:
+                os.rename(self.root, moved)
+            self.assertIn(denied.exception.winerror, (5, 32))
+        finally:
+            api.CloseHandle(handle)
+            if moved.exists():
+                os.rename(moved, self.root)
+
     def test_win32_handle_read_via_real_mcp_dispatch(self):
         session = mcp.McpSession()
         init = session.handle({
