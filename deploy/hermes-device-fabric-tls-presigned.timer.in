@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily activation of owner-presigned H346 WSS certificates
+
+[Timer]
+OnCalendar=*-*-* 04:00:00 UTC
+RandomizedDelaySec=3min
+Persistent=true
+AccuracySec=1min
+Unit=hermes-device-fabric-tls-presigned.service
+
+[Install]
+WantedBy=timers.target
