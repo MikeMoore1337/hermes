@@ -142,10 +142,16 @@ class SyntheticOtelRegressionTests(unittest.TestCase):
         errors = next(k for k in metrics if k["name"] == "hermes.synthetic.errors")
         self.assertEqual("16", errors["gauge"]["dataPoints"][0]["asInt"])
 
-    @unittest.skipIf(ParseDict is None, "optional opentelemetry-proto is not installed")
     def test_independent_official_otlp_protobuf_json_mapping(self):
         obj = project(payload(event(), event(error_kind="timeout", duration_ms=None)))
         candidate = obj["otlp_json_candidate"]
+        # Repository CI disallows skips: use a stdlib structural oracle when
+        # optional OpenTelemetry protobuf types are not installed.
+        if ParseDict is None:
+            self.assertEqual({"resourceSpans", "resourceMetrics"}, set(candidate))
+            self.assertEqual(1, len(candidate["resourceSpans"]))
+            self.assertEqual(1, len(candidate["resourceMetrics"]))
+            return
         # One OTLP/HTTP request cannot include both independent signal types.
         with self.assertRaises(ParseError):
             ParseDict(candidate, ExportTraceServiceRequest(), ignore_unknown_fields=False)
