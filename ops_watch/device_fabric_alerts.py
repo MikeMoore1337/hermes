@@ -8,12 +8,16 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 import json
+import os
 from pathlib import Path
 import sqlite3
+import stat
 import subprocess
 
 DB = Path("/var/lib/hermes-device-fabric/devices.sqlite3")
 OPT_IN = Path("/var/lib/hermes-device-fabric/ops-watch-presence.json")
+# Separate root-only TLS consent: clients may be offline while their cert expires.
+TLS_OPT_IN = Path("/etc/hermes-device-fabric/ops-watch-tls.json")
 CERT = Path("/var/lib/hermes-device-fabric/tls/cert.pem")
 ROTATED_CERT = CERT.parent / "active" / "cert.pem"
 DEVICES = ("windows-pc", "linux-vps")
@@ -32,6 +36,57 @@ def _timestamp(value: object) -> datetime:
     return result.astimezone(UTC)
 
 
+def _tls_only_consent(at: datetime) -> bool | None:
+    """True for root-owned TLS-only consent, None if absent, False if unsafe.
+
+    The independent marker must not grant enrollment/device monitoring rights.
+    The old device opt-in remains supported when this marker is absent.
+    """
+    marker = TLS_OPT_IN
+    try:
+        parent = marker.parent.lstat()
+    except FileNotFoundError:
+        return None
+    except OSError:
+        return False
+    if (not stat.S_ISDIR(parent.st_mode) or
+            stat.S_IMODE(parent.st_mode) != 0o700 or
+            (os.name == "posix" and parent.st_uid != os.geteuid())):
+        return False
+    try:
+        info = marker.lstat()
+    except FileNotFoundError:
+        return None
+    except OSError:
+        return False
+    if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or
+            stat.S_IMODE(info.st_mode) != 0o600 or
+            not 0 < info.st_size <= 512 or
+            (os.name == "posix" and info.st_uid != os.geteuid())):
+        return False
+    try:
+        fd = os.open(marker, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        try:
+            opened = os.fstat(fd)
+            if (opened.st_dev != info.st_dev or opened.st_ino != info.st_ino or
+                    opened.st_size != info.st_size):
+                return False
+            data = os.read(fd, 513)
+        finally:
+            os.close(fd)
+        if len(data) != info.st_size:
+            return False
+        gate = json.loads(data.decode("utf-8"))
+        if (not isinstance(gate, dict) or
+                set(gate) != {"schema", "purpose", "enabled_at"} or
+                type(gate["schema"]) is not int or gate["schema"] != 1 or
+                gate["purpose"] != "tls-expiry"):
+            return False
+        return _timestamp(gate["enabled_at"]) <= at + FUTURE
+    except (OSError, ValueError, TypeError, KeyError, UnicodeError, OverflowError):
+        return False
+
+
 def certificate_status(cert: Path = CERT, opt_in: Path = OPT_IN, *,
                        now: datetime | None = None) -> str:
     """Warn before the seven-day pilot TLS identity expires.
@@ -41,15 +96,19 @@ def certificate_status(cert: Path = CERT, opt_in: Path = OPT_IN, *,
     """
     at = (now or datetime.now(UTC)).astimezone(UTC)
     try:
-        if opt_in.is_symlink() or not opt_in.is_file():
-            return "not_configured"
-        if opt_in.stat().st_size > 512:
+        independent = _tls_only_consent(at)
+        if independent is False:
             return "unknown"
-        gate = json.loads(opt_in.read_text(encoding="utf-8"))
-        if (not isinstance(gate, dict) or set(gate) !=
-                {"schema", "devices", "enabled_at"} or
-                gate["schema"] != 1 or gate["devices"] != list(DEVICES)):
-            return "unknown"
+        if independent is None:
+            if opt_in.is_symlink() or not opt_in.is_file():
+                return "not_configured"
+            if opt_in.stat().st_size > 512:
+                return "unknown"
+            gate = json.loads(opt_in.read_text(encoding="utf-8"))
+            if (not isinstance(gate, dict) or set(gate) !=
+                    {"schema", "devices", "enabled_at"} or
+                    gate["schema"] != 1 or gate["devices"] != list(DEVICES)):
+                return "unknown"
         # After an explicitly approved service migration, follow only the
         # root-managed "active" generation. Before migration retain the old
         # direct certificate path and all existing expiry semantics.
