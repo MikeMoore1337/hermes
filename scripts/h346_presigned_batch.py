@@ -101,7 +101,7 @@ def _manifest(paths: RotationPaths) -> tuple[Path, tuple[dict, ...]]:
         try:
             starts = dt.datetime.fromisoformat(slot["not_before"])
             ends = dt.datetime.fromisoformat(slot["not_after"])
-            if starts.tzinfo is None or ends.tzinfo is None or ends - starts != dt.timedelta(days=30):
+            if starts.tzinfo is None or ends.tzinfo is None or not dt.timedelta(days=1) <= ends - starts <= dt.timedelta(days=31):
                 raise BatchError("PRESIGNED_SLOT_INVALID_DATES")
         except (TypeError, ValueError) as exc:
             raise BatchError("PRESIGNED_SLOT_INVALID_DATES") from exc
