@@ -80,7 +80,7 @@ class ProductionDeployGuardTests(unittest.TestCase):
             bin_dir = root / "bin"
             bin_dir.mkdir()
             gh = bin_dir / "gh"
-            gh.write_text("#!/bin/sh\nprintf '%s\\n' \"$H632_TEST_FILES\"\n", encoding="utf-8")
+            gh.write_text("#!/bin/sh\n[ -z \"$H632_TEST_FILES\" ] || printf '%s\\n' \"$H632_TEST_FILES\"\n", encoding="utf-8")
             gh.chmod(0o755)
             output = root / "out"
             summary = root / "summary"
