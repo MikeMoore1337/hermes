@@ -238,6 +238,69 @@ cannot prove server key possession or recoverability from the expired
 pilot. Do not change live relay/systemd units until both real clients
 can prove the new CA after a separately authorized cutover window.
 
+## Finite one-time owner-signed batch (2026-11-03 owner approval)
+
+The owner authorized a **one-time** 15-certificate offline-style issuance
+inside a `--network none --read-only --cap-drop ALL` Docker container, with
+the CA signing key kept in tmpfs, memory swap explicitly disabled and no key
+export. This is **not equivalent to a physically offline CA or hardware HSM**.
+The Docker host administrator may access container memory and controls.
+After that container was deleted, there is no retained CA private key capable
+of renewing the same chain. Do not claim unlimited automatic issuance.
+
+Exactly 15 distinct service leaf keypairs were generated on Hermes VPS:
+the initial separately staged fallback, the already signed primary and
+future-01 through future-13. Both real clients verified the CA SHA-256
+`72e930d2ce5b3798237e1495ccfecf4300f303fb0f6b57f3accc9739b01d8ab0`.
+The CA expires 2027-12-28, the last pre-signed leaf expires 2027-10-24.
+Each future leaf has a **30-day validity** starting at a 25-day interval.
+This is a finite 355-day issuance horizon, not automatic CA renewal.
+
+The `scripts.h346_presigned_batch` helper is a strict, root-only,
+CA-pinned **activation scheduler**. Its archive is a root-owned 0700 directory
+at `/var/lib/hermes-device-fabric/tls/presigned-batch`, containing a
+root-owned 0600 `manifest.json` and only the approved `primary.pem` and
+`future-01.pem` .. `future-13.pem` with matching private leaf keys.
+The fallback is kept separately as the initial trusted generation.
+Never copy the owner CA signing key or any private device identity there.
+Keep the archive root-only: the presence service reads only the active
+group-readable generation, never the archive.
+
+The manifest schema is `hermes-h346-presigned-batch-v1`, with exactly
+the 14 ordered slots above, approved public CA DER digest and each public
+leaf DER digest / UTC validity window. An owner-admitted archive must
+verify *every* leaf/key pair and CA chain against this signed batch,
+confirm strict `DNS:localhost` and `serverAuth`, and check all
+permissions before the first timer activation.
+
+Once real Windows/YFC authenticated reconnect and an independently valid
+rollback generation have passed after the primary switch, install and
+`systemd-analyze verify` only the new templates:
+`deploy/hermes-device-fabric-tls-presigned.service.in` and
+`deploy/hermes-device-fabric-tls-presigned.timer.in`, substituting
+`@SOURCE@` with the exact approved immutable main SHA release. Do not
+enable the old `hermes-device-fabric-tls-rotation.timer` simultaneously.
+Never enable either timer until the archive passes admission.
+
+Use `python3 -B -m scripts.h346_presigned_batch check` to inspect the
+next step before enabling the owner-approved timer. `check` selects the
+next approved candidate but does not stage/promote it. The daily timer
+runs `auto` at 04:00 UTC, with persistent catch-up after reboot.
+It uses the existing single-pointer stage/activate, restart, strict
+loopback TLS and fail-closed rollback. If a previously published candidate
+failed or an interrupted transaction needs review, it never silently
+selects a later certificate. A bad candidate leaves a clear NO_GO.
+At the last leaf's threshold it returns
+`PRESIGNED_BATCH_EXHAUSTED_OWNER_RENEWAL_REQUIRED`; restore an owner
+signing operation well before October 2027.
+
+The previous legacy expired leaf **cannot provide a healthy rollback**.
+The signed fallback generation serves as that rollback while testing the
+primary. Retain the same approved CA in both Windows/YFC trust stores.
+Strict real authenticated device heartbeat evidence is required after
+every live switch, not merely localhost TLS success. Ops Watch TLS expiry
+and offline devices remain independent controls.
+
 ## Custody, revocation and emergency boundaries
 
 The private CA key remains OFFLINE. Only owner-signed, pre-staged service
