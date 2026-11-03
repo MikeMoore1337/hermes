@@ -153,8 +153,12 @@ jobs:
           umask 077
           printf '%s\n' "$HERMES_DEPLOY_KEY" > "$RUNNER_TEMP/hermes-key"
           printf '%s\n' "$HERMES_DEPLOY_KNOWN_HOSTS" > "$RUNNER_TEMP/hermes-known-hosts"
+          # The production full-unit sandbox can remain stdout-quiet for over
+          # four minutes; the SSH transport must not drop before its verdict.
+          # Encrypted server-alive pings keep it bounded without relaxing auth.
           ssh -T -i "$RUNNER_TEMP/hermes-key" -p "$HERMES_DEPLOY_PORT" \
             -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=yes \
+            -o ServerAliveInterval=15 -o ServerAliveCountMax=6 \
             -o "UserKnownHostsFile=$RUNNER_TEMP/hermes-known-hosts" \
             "$HERMES_DEPLOY_TARGET" "deploy $TARGET_SHA $ARCHIVE_SHA256" \
             < "$RUNNER_TEMP/hermes-main.tar.gz"
