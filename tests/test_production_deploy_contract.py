@@ -87,6 +87,10 @@ class MainDeployContractTests(unittest.TestCase):
             'ui_required=',
             'git archive --format=tar.gz',
             'StrictHostKeyChecking=yes',
+            # Secure keepalive avoids premature SSH idle disconnect while the
+            # sandboxed server full test suite is intentionally stdout-quiet.
+            'ServerAliveInterval=15',
+            'ServerAliveCountMax=6',
             'HERMES_DEPLOY_KNOWN_HOSTS',
             'cancel-in-progress: false',
             'contents: read',
@@ -97,6 +101,8 @@ class MainDeployContractTests(unittest.TestCase):
         self.assertNotIn('StrictHostKeyChecking=no', workflow)
         self.assertNotIn('known_hosts=/dev/null', workflow)
         self.assertNotIn('ssh-keyscan', workflow)
+        self.assertNotIn('ServerAliveInterval=0', workflow)
+        self.assertNotIn('ServerAliveCountMax=0', workflow)
 
 
 if __name__ == "__main__":
