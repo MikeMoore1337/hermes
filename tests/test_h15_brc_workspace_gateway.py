@@ -6,7 +6,8 @@ import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
-from scripts.h15_brc_workspace_gateway import apply, AuditError, DEVICE_HELP, WORKSPACE_DEVICE_HELP
+from scripts.h15_brc_workspace_gateway import (apply, AuditError, DEVICE_HELP, WORKSPACE_DEVICE_HELP,
+    OLD_LIVE_DEVICES, OLD_DEVICE_SEEN, NEW_LIVE_DEVICES, NEW_DEVICE_SEEN)
 from scripts.h15_brc_native_read_gateway import apply as apply_native
 REGISTRY = Path(__file__).resolve().parents[1] / "deploy/h15/workspace-registry.json"
 
@@ -19,6 +20,7 @@ class H15WorkspaceMcpTests(unittest.TestCase):
         p.mkdir(parents=True)
         self.server = p / "server.ts"
         self.module = p / "hermes-workspaces.ts"
+        self.invocation = p / "invoke.ts"
         self.server.write_text(
             "import { pinnedToolCatalog } from './hermes-tool-catalog.js';\n"
             + DEVICE_HELP + "\n"
@@ -26,6 +28,7 @@ class H15WorkspaceMcpTests(unittest.TestCase):
             "    const out = await invokeTool(hub, store, ctx, name, args as Record<string, unknown> | undefined);\n")
         (p / "hermes-policy.ts").write_text("export function isPermittedRemoteTool() {}\n")
         (p / "hermes-tool-catalog.ts").write_text("export function pinnedToolCatalog() {}\n")
+        self.invocation.write_text(OLD_LIVE_DEVICES + "\n" + OLD_DEVICE_SEEN + "\n")
         control = patch("scripts.h15_brc_workspace_gateway.evaluate")
         control.start()
         self.addCleanup(control.stop)
@@ -40,6 +43,8 @@ class H15WorkspaceMcpTests(unittest.TestCase):
         self.assertIn("args.deviceId = route.deviceId", content)
         self.assertIn(WORKSPACE_DEVICE_HELP, content)
         self.assertIn('"h15-win-05be75515428"', self.module.read_text())
+        self.assertIn(NEW_LIVE_DEVICES, self.invocation.read_text())
+        self.assertIn(NEW_DEVICE_SEEN, self.invocation.read_text())
 
     def test_duplicate_refused_without_changes(self):
         apply(self.root, REGISTRY)
@@ -50,7 +55,6 @@ class H15WorkspaceMcpTests(unittest.TestCase):
 
     def test_native_gateway_remains_compatible_with_workspace_routing(self):
         apply(self.root, REGISTRY)
-        (self.server.parent / "invoke.ts").write_text("export {};\n")
         with patch("scripts.h15_brc_native_read_gateway.evaluate"):
             apply_native(self.root)
         content = self.server.read_text()
@@ -61,6 +65,14 @@ class H15WorkspaceMcpTests(unittest.TestCase):
         self.server.write_text(self.server.read_text().replace("const out = await invokeTool", "const bad = await invokeTool"))
         with self.assertRaisesRegex(AuditError, "gateway_source_marker_drift"):
             apply(self.root, REGISTRY)
+        self.assertFalse(self.module.exists())
+
+    def test_device_presence_source_drift_refuses_before_changes(self):
+        self.invocation.write_text(self.invocation.read_text().replace(OLD_DEVICE_SEEN, "unexpected"))
+        before = self.server.read_bytes()
+        with self.assertRaisesRegex(AuditError, "device_presence_marker_drift"):
+            apply(self.root, REGISTRY)
+        self.assertEqual(before, self.server.read_bytes())
         self.assertFalse(self.module.exists())
 
     def test_permission_widening_denied(self):

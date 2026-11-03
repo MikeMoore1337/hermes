@@ -3,6 +3,7 @@
 // brc-agent processes in distinct disposable Docker filesystem namespaces.
 // This runs INSIDE isolated CI only. Never touches owner machines.
 import { createHash, randomBytes } from 'node:crypto';
+import { pathToFileURL } from 'node:url';
 
 const base = process.env.PUBLIC_URL ?? 'http://localhost:3000';
 const pinnedDeviceId = 'h15-win-05be75515428';
@@ -168,11 +169,31 @@ for (const args of [
        'H15_OAUTH_MCP_WORKSPACE_INVALID_REQUEST_DENIED');
 }
 
+// Real agents are connected, but old database activity must not mask heartbeats.
+const { SqliteStore } = await import(pathToFileURL('/opt/brc/packages/relay/dist/store/sqlite.js').href);
+const fixtureStore = new SqliteStore(process.env.BRC_DB ?? '/state/relay.sqlite');
+const staleActivity = Date.now() - 3600000;
+try {
+  const owner = fixtureStore.getUserByName(user);
+  if (!owner || fixtureStore.getDevice('ci-offline')) throw Error('INVALID_CI_DEVICE_FIXTURE');
+  fixtureStore.issueDeviceToken('ci-offline', owner.id, 'ci-offline', 'linux');
+  for (const id of [pinnedDeviceId, 'ci-native-two', 'ci-offline']) {
+    const update = fixtureStore.db.prepare('UPDATE devices SET last_seen = ? WHERE device_id = ? AND user_id = ?')
+      .run(staleActivity, id, owner.id);
+    if (Number(update.changes) !== 1) throw Error('CI_DEVICE_FIXTURE_UPDATE');
+  }
+} finally { fixtureStore.close(); }
 const list = await call('list_devices', {});
 const discovered = JSON.parse(list.content[0].text).devices;
 const ids = new Set(discovered.filter((x) => x.online).map((x) => x.deviceId));
 must(ids.size === 2 && ids.has(pinnedDeviceId) && ids.has('ci-native-two'),
      'TWO_NATIVE_REAL_MCP_DISCOVERY');
+must(discovered.filter(x => x.online).every(x => Number.isSafeInteger(x.lastSeen) &&
+     x.lastSeen > staleActivity + 60000 && x.lastSeen <= Date.now()),
+     'H15_CONNECTED_DEVICE_LAST_SEEN_IS_HEARTBEAT');
+const offline = discovered.find(x => x.deviceId === 'ci-offline');
+must(offline?.online === false && offline.lastSeen === staleActivity,
+     'H15_OFFLINE_DEVICE_LAST_SEEN_PRESERVED');
 const implicit = await call('read_file', { path: '/workspace/identity.txt' });
 must(implicit.isError === true, 'TWO_NATIVE_AMBIGUOUS_DEVICE_REFUSED');
 

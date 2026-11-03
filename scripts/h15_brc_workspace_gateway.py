@@ -12,6 +12,10 @@ IMP = "import { pinnedToolCatalog } from './hermes-tool-catalog.js';"
 LIST = "      ...pinnedToolCatalog().map(t => ({ ...t, inputSchema: withDeviceId(t.inputSchema) }))] };"
 CALL = "    const out = await invokeTool(hub, store, ctx, name, args as Record<string, unknown> | undefined);"
 DEVICE_HELP = "Target device id (from list_devices). Required when more than one device is online; may be omitted when only one device is connected."
+OLD_LIVE_DEVICES = "  const online = new Set(hub.list(userId).map((d) => d.deviceId));"
+NEW_LIVE_DEVICES = "  const online = new Map(hub.list(userId).map((d) => [d.deviceId, d.lastSeen] as const));"
+OLD_DEVICE_SEEN = "online: online.has(d.device_id), paused: !!d.paused, lastSeen: d.last_seen,"
+NEW_DEVICE_SEEN = "online: online.has(d.device_id), paused: !!d.paused, lastSeen: online.get(d.device_id) ?? d.last_seen,"
 WORKSPACE_DEVICE_HELP = ("Target device id (from list_devices). Optional for file operations on registered "
                          "project paths and their search sessions; otherwise required when multiple devices are online.")
 NEWIMP = "import { LIST_WORKSPACES_TOOL, RESOLVE_WORKSPACE_TOOL, listApprovedWorkspaces, resolveApprovedWorkspace } from './hermes-workspaces.js';"
@@ -59,20 +63,23 @@ def apply(root: Path, registry: Path, sha: str = UPSTREAM_SHA) -> dict:
     if cfg["workspace_root"] != "/workspace/projects":
         raise AuditError("unsafe_workspace_root")
     paths = [BASE / n for n in ("server.ts", "hermes-workspaces.ts",
-                                "hermes-policy.ts", "hermes-tool-catalog.ts")]
+                                "hermes-policy.ts", "hermes-tool-catalog.ts", "invoke.ts")]
     if any((root / p).is_symlink() or (root / p).parent.is_symlink() for p in paths):
         raise AuditError("symlink_relay_source")
-    sp, mod, pol, cat = [root / p for p in paths]
+    sp, mod, pol, cat, inv = [root / p for p in paths]
     if (not sp.is_file() or sp.stat().st_size > 100000 or mod.exists()
-        or not pol.is_file() or not cat.is_file()):
+        or not pol.is_file() or not cat.is_file() or not inv.is_file() or inv.stat().st_size > 100000):
         raise AuditError("hardened_relay_missing")
     original = sp.read_text(encoding="utf-8")
     policy = pol.read_text(encoding="utf-8")
+    invocation = inv.read_text(encoding="utf-8")
     if ("export function isPermittedRemoteTool" not in policy
         or "'list_workspaces'" in policy or "'resolve_workspace'" in policy):
         raise AuditError("remote_invocation_policy_unreviewed")
     if any(original.count(x) != 1 for x in (IMP, LIST, CALL, DEVICE_HELP)):
         raise AuditError("gateway_source_marker_drift")
+    if invocation.count(OLD_LIVE_DEVICES) != 1 or invocation.count(OLD_DEVICE_SEEN) != 1:
+        raise AuditError("device_presence_marker_drift")
     if "hermes-workspaces.js" in original:
         raise AuditError("already_patched")
     template_file = Path(__file__).resolve().parents[1] / "deploy/h15/hermes-workspaces.template.ts"
@@ -95,8 +102,10 @@ def apply(root: Path, registry: Path, sha: str = UPSTREAM_SHA) -> dict:
     if (patched == original or patched.count("name === 'resolve_workspace'") != 1
         or patched.count("routeWorkspaceCall(name, args") != 1):
         raise AuditError("patch_failed")
+    updated_invocation = invocation.replace(OLD_LIVE_DEVICES, NEW_LIVE_DEVICES).replace(OLD_DEVICE_SEEN, NEW_DEVICE_SEEN)
     mod.write_text(code, encoding="utf-8")
     sp.write_text(patched, encoding="utf-8")
+    inv.write_text(updated_invocation, encoding="utf-8")
     return {"status": "DISPOSABLE_RELAY_PATCHED",
             "tools": ["list_workspaces", "resolve_workspace"],
             "live_deployment": False, "git_verified": False}
