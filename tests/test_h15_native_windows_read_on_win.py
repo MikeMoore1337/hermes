@@ -76,6 +76,11 @@ class NativeWindowsReadOnRunnerTests(unittest.TestCase):
                 result = broker.handle_native_request("hermes", r"src\safe.py", operation)
                 self.assertEqual(result["status"], "ok")
                 self.assertEqual(attempts, [True])
+            os.rename(self.root, moved)
+            try:
+                self.assertTrue(moved.exists())
+            finally:
+                os.rename(moved, self.root)
 
     def test_locked_directory_handle_prevents_rename(self):
         api = broker._winapi()
@@ -89,6 +94,11 @@ class NativeWindowsReadOnRunnerTests(unittest.TestCase):
             api.CloseHandle(handle)
             if moved.exists():
                 os.rename(moved, self.root)
+        os.rename(self.root, moved)
+        try:
+            self.assertTrue(moved.exists())
+        finally:
+            os.rename(moved, self.root)
 
     def test_win32_handle_read_via_real_mcp_dispatch(self):
         session = mcp.McpSession()
