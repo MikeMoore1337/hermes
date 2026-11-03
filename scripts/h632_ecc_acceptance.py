@@ -17,7 +17,7 @@ import tempfile
 
 ECC_SHA = "25278e7d7b6cf6e6a4e7a6c8e10f14ff22f0eb5b"
 HERMES_IMAGE = "nousresearch/hermes-agent@sha256:a11574b7fe8e1631d7d88d556677dac693bc058abf558cdeb899155688c1bf05"
-NODE_IMAGE = "node:22.16.0-bookworm-slim"
+NODE_IMAGE = "node:22.16.0-bookworm-slim@sha256:048ed02c5fd52e86fda6fbd2f6a76cf0d4492fd6c6fee9e2c463ed5108da0e34"
 HERMES_SOURCE_SHA = "d923a5eb487a17c0a68801bba9ef0f56c81040a8"
 EXPECTED_PROFILE = {"rules-core", "agents-core", "commands-core", "platform-configs", "workflow-quality"}
 SKILLS = ("verification-loop", "tdd-workflow")
