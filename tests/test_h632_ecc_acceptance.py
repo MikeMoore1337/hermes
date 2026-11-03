@@ -58,5 +58,78 @@ class ECC632GuardTests(unittest.TestCase):
             self.assertNotEqual(snapshot(root), first)
 
 
+
+class ProductionDeployGuardTests(unittest.TestCase):
+    """Execute the real production-deploy decision block with a fake gh command."""
+
+    @staticmethod
+    def _script():
+        workflow = (Path(__file__).resolve().parents[1] /
+                    ".github/workflows/production-deploy.yml").read_text(encoding="utf-8")
+        marker = "      - name: Keep H-585 and H-632 source-only commits out of resident production"
+        chunk = workflow.split(marker, 1)[1].split("        run: |\n", 1)[1]
+        chunk = chunk.split("\n      - name:", 1)[0]
+        return "\n".join(line[10:] if line.startswith("          ") else line
+                         for line in chunk.splitlines())
+
+    def _decision(self, filenames):
+        import os
+        import subprocess
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            gh = bin_dir / "gh"
+            gh.write_text("#!/bin/sh\nprintf '%s\\n' \"$H632_TEST_FILES\"\n", encoding="utf-8")
+            gh.chmod(0o755)
+            output = root / "out"
+            summary = root / "summary"
+            env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}",
+                   "GH_TOKEN": "synthetic", "GITHUB_REPOSITORY": "example/test",
+                   "TARGET_SHA": "0" * 40, "GITHUB_OUTPUT": str(output),
+                   "GITHUB_STEP_SUMMARY": str(summary),
+                   "H632_TEST_FILES": "\n".join(filenames)}
+            p = subprocess.run(["bash", "-c", self._script()], env=env,
+                               capture_output=True, text=True, timeout=5, check=False)
+            return p.returncode, output.read_text() if output.exists() else "", (
+                summary.read_text() if summary.exists() else "")
+
+    def test_ecc_only_skips_production(self):
+        rc, output, summary = self._decision([
+            "scripts/h632_ecc_acceptance.py",
+            "tests/test_h632_ecc_acceptance.py",
+            ".github/workflows/h632-ecc-original-acceptance.yml",
+            ".github/workflows/production-deploy.yml",
+        ])
+        self.assertEqual(rc, 0)
+        self.assertIn("skip=true", output)
+        self.assertIn("H632_SOURCE_ONLY_NO_RESIDENT_DEPLOY=PASS", summary)
+
+    def test_existing_h585_exemption_kept(self):
+        rc, output, summary = self._decision(["scripts/h585_srt_pilot.py"])
+        self.assertEqual(rc, 0)
+        self.assertIn("skip=true", output)
+        self.assertIn("H585_SOURCE_ONLY_NO_RESIDENT_DEPLOY=PASS", summary)
+
+    def test_mixed_production_changes_must_not_skip(self):
+        for paths in (
+            ["scripts/h632_ecc_acceptance.py", "agent/agent.py"],
+            [".github/workflows/production-deploy.yml"],
+            ["docs/other.md"],
+        ):
+            with self.subTest(paths=paths):
+                rc, output, _ = self._decision(paths)
+                self.assertEqual(rc, 0)
+                self.assertNotIn("skip=true", output)
+
+    def test_empty_and_oversized_diff_fail_closed(self):
+        rc, output, _ = self._decision([])
+        self.assertNotEqual(rc, 0)
+        self.assertNotIn("skip=true", output)
+        rc, output, _ = self._decision(["scripts/h632_ecc_acceptance.py"] * 10)
+        self.assertEqual(rc, 0)
+        self.assertNotIn("skip=true", output)
+
+
 if __name__ == "__main__":
     unittest.main()
