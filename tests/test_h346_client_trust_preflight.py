@@ -190,6 +190,55 @@ class ClientTrustPreflightTests(unittest.TestCase):
             check(self.config_path, other, self.primary, self.fallback,
                   expected_device="linux-vps", expected_ca_sha256=fingerprint)
 
+    def test_expired_legacy_trust_is_preserved_but_does_not_block_new_ca(self):
+        # In production the original pilot is already expired. Its trust
+        # anchor remains parseable, but cannot authenticate an expired server.
+        expired = Path(self.tmp_case.name) / "expired-pilot.pem"
+        key = Path(self.tmp_case.name) / "expired-pilot.key"
+        csr = Path(self.tmp_case.name) / "expired-pilot.csr"
+        old_ca = Path(self.tmp_case.name) / "old-pilot-ca.pem"
+        config = Path(self.tmp_case.name) / "old-pilot-ca.cnf"
+        db = Path(self.tmp_case.name) / "old-ca-index"
+        db.touch()
+        (Path(self.tmp_case.name) / "old-ca-serial").write_text("01\n")
+        (Path(self.tmp_case.name) / "old-ca-certs").mkdir()
+        config.write_text(
+            "[ca]\ndefault_ca=local\n[local]\n"
+            "database=" + str(db) + "\n"
+            "new_certs_dir=" + str(Path(self.tmp_case.name) / "old-ca-certs") + "\n"
+            "serial=" + str(Path(self.tmp_case.name) / "old-ca-serial") + "\n"
+            "default_md=sha256\npolicy=identity\n"
+            "x509_extensions=server\n[identity]\ncommonName=supplied\n"
+            "[server]\nsubjectAltName=DNS:localhost\n"
+            "basicConstraints=critical,CA:FALSE\n"
+            "extendedKeyUsage=serverAuth\n")
+        openssl("req", "-newkey", "rsa:2048", "-nodes",
+                "-keyout", str(key), "-out", str(csr), "-subj", "/CN=localhost")
+        openssl("req", "-x509", "-key", str(key), "-days", "30",
+                "-out", str(old_ca), "-subj", "/CN=localhost")
+        openssl("ca", "-batch", "-config", str(config),
+                "-selfsign", "-cert", str(old_ca), "-keyfile", str(key),
+                "-in", str(csr), "-out", str(expired), "-notext",
+                "-startdate", "261001000000Z", "-enddate", "261002000000Z")
+        self.config["server_ca_pem"] = expired.read_text()
+        self.save()
+        result = self.preview()
+        self.assertEqual(result.existing_ca_count, 1)
+        self.assertFalse(result.already_trusted)
+        self.assertLess(result.overlap_bytes, 6144)
+
+    def test_fallback_not_signed_by_approved_ca_is_rejected(self):
+        with self.assertRaisesRegex(TrustError, "PUBLIC_CERTIFICATE_VERIFICATION_FAILED"):
+            check(self.config_path, self.new_ca, self.primary, self.legacy,
+                  expected_device="linux-vps", expected_ca_sha256=self.trust_pin)
+
+    def test_existing_windows_id_and_ssh_port_are_checked(self):
+        self.config["device_id"] = "windows-pc"
+        self.config["endpoint"] = "wss://localhost:38178"
+        self.save()
+        result = self.preview(expected_device="windows-pc")
+        self.assertEqual(result.device, "windows-pc")
+
     def test_tls_handshake_with_legacy_and_new_ca_overlap(self):
         def connect_with(trust):
             ctx = ssl.create_default_context(cadata=trust)
