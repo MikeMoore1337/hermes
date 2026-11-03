@@ -134,6 +134,22 @@ class GscPrepareContractTests(unittest.TestCase):
                 self.assertIn(required, installer)
         self.assertNotRegex(installer, r"\b(?:apt|apt-get|docker)\s+(?:install|run|exec|restart)\b")
 
+    def test_pinned_wheels_are_importable_by_unprivileged_gsc(self):
+        installer = INSTALLER.read_text(encoding="utf-8")
+        self.assertIn('(umask 022; "$venv/bin/python" -m pip', installer)
+        self.assertIn('runuser -u hermes-gsc -- env -i PATH=/usr/bin:/bin', installer)
+        self.assertIn('from google.auth.transport.requests import Request', installer)
+        self.assertIn('from google.oauth2 import service_account', installer)
+        self.assertIn('unprivileged_auth_import_failed', installer)
+        # This check is explicitly offline: no credentials or network inputs.
+        self.assertNotIn('https://oauth2.googleapis.com/token', installer)
+
+    def test_gsc_oneshot_uses_effective_bounded_start_timeout(self):
+        unit = SERVICE.read_text(encoding="utf-8")
+        self.assertIn('Type=oneshot', unit)
+        self.assertIn('TimeoutStartSec=100s', unit)
+        self.assertNotIn('RuntimeMaxSec=', unit)
+
     def test_no_credential_write_or_private_data_logging(self):
         script = INSTALLER.read_text(encoding="utf-8")
         self.assertIn("existing_credentials_require_separate_metadata_review", script)
