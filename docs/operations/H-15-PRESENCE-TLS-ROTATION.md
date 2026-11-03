@@ -18,9 +18,11 @@ seven-day pilot WSS identity, enroll devices or add command-execution access.
   requested evaluation time, and minimum remaining lifetime.
 - A root-owned generations directory keeps cert/key together. An atomic
   replacement of one active symlink switches **both** files at once.
-- One pending candidate, an exclusive process lock, and a fsynced rollback
-  marker prevent concurrency, accidental replays and unverified promotion
-  after interruption.
+- One pending candidate, an exclusive process lock, and a rollback marker
+  fsynced under a private temporary name before atomic publication prevent
+  concurrency, partial live markers and unverified promotion after interruption.
+  Once rollback succeeds, the interrupted candidate's pending pointer is
+  removed: the owner must explicitly re-stage it after review, not blindly retry.
 - Interrupted candidate staging is safely retryable with the **exact same**
   pre-signed certificate and private key. A fully published but not yet
   pending-linked generation is revalidated (permissions, trust chain, SAN,
@@ -87,16 +89,22 @@ break the clients. An operator must do the following IN ORDER:
 
 An authorized operator stages the next already signed leaf using the stage
 command, with at least three days remaining at activation. The root-only timer
-calls auto daily. If existing certificate expiry is more than three days away,
+calls auto daily and uses `Persistent=true` to catch up a missed tick after
+host downtime. This does not issue or sign certificates. If existing certificate expiry is more than three days away,
 it returns ROTATION=NOT_DUE. When due, auto requires a single pending candidate,
 changes one atomic pointer, restarts only the pinned presence service, checks
 the exact new certificate over TLS and reports ROTATION=PASS. Failure restores
 the original cert and service, reports ROTATION_ROLLED_BACK or
 ROLLBACK_HEALTH_UNVERIFIED, and does not retry the failed candidate blindly.
 
-A crash/power failure leaves a durable rollback marker, which auto/recover
-handles BEFORE any subsequent promotion. Old generations remain for rollback,
-not automatically pruned. Device TLS expiry and offline/recovery Ops Watch
+A crash/power failure after marker publication leaves a durable rollback
+marker, which auto/recover handles BEFORE any subsequent promotion. A crash
+while writing the temporary marker leaves no incomplete live marker. If the
+old leaf has already expired, auto permits recovery only when the old cert/key,
+CA chain, SAN and EKU revalidate at its historical valid time; the fresh
+pending leaf must still pass all present-time checks and the real TLS probe.
+Rollback to an expired leaf is reported as HEALTH_UNVERIFIED unless real TLS
+health is proven. Old generations remain for rollback, not automatically pruned. Device TLS expiry and offline/recovery Ops Watch
 alerts remain required. Local TLS success is NOT device heartbeat acceptance.
 
 ## Release gate
@@ -112,3 +120,23 @@ alerts remain required. Local TLS success is NOT device heartbeat acceptance.
 
 **Code release readiness does not imply production enablement.** Do not
 close #346 until actual owner host and both agent acceptance checks pass.
+
+## Custody, revocation and emergency boundaries
+
+The private CA key remains OFFLINE. Only owner-signed, pre-staged service
+certificates can be activated unattended. There is no CRL/OCSP or online
+revocation responder in this pilot; revoked identity rejection and emergency
+CA replacement are **not** operationally verified. Before accepting a revoked
+certificate policy, the owner must approve a separate offline-signed revocation
+procedure and test both clients. Never imply that an expired or removed leaf
+has been cryptographically revoked.
+
+If the legacy self-signed pilot identity expires before trust-bundle overlap
+is proven, its listening process does **not** establish a valid client TLS
+connection. Do not assume existing heartbeats can be used for the migration
+preflight. Prepare an owner-approved, out-of-band distribution of the public CA
+to both existing enrolled clients, verify strict CA+hostname TLS checks on
+Windows and YFC **before** the leaf switchover, retain their device IDs and
+secrets, and prove rollback in the approved maintenance window. Until both
+clients' trust can be verified, the expired pilot is an operational incident,
+not an authorization to replace live certificates or loosen verification.
