@@ -5,6 +5,7 @@ Never runs on the owner's Windows; all fixtures are under TemporaryDirectory.
 from __future__ import annotations
 
 import base64
+import ctypes
 import hashlib
 import json
 import os
@@ -54,6 +55,51 @@ class NativeWindowsReadOnRunnerTests(unittest.TestCase):
         directory = broker.handle_native_request("hermes", "", "stat")
         self.assertEqual(directory["kind"], "directory")
         self.assertNotIn("data", directory)
+
+    def test_read_refuses_an_already_open_writer(self):
+        api = broker._winapi()
+        writer = api.CreateFileW(str(self.file), 0x40000000,
+            broker.FILE_SHARE_READ | broker.FILE_SHARE_WRITE | broker.FILE_SHARE_DELETE,
+            None, broker.OPEN_EXISTING, 0, None)
+        self.assertNotEqual(writer, ctypes.c_void_p(-1).value)
+        try:
+            with self.assertRaisesRegex(broker.NativeReadRefused, "open_denied"):
+                broker.handle_native_request("hermes", r"src\safe.py", "read")
+            self.assertEqual(broker.handle_native_request(
+                "hermes", r"src\safe.py", "stat")["size_bytes"], len(self.data))
+        finally:
+            api.CloseHandle(writer)
+        self.assertEqual(base64.b64decode(broker.handle_native_request(
+            "hermes", r"src\safe.py", "read")["data"]), self.data)
+
+    def test_open_read_handle_blocks_a_new_writer_and_rename(self):
+        actual_read = broker._read_file_handle
+        moved = self.code / "moved.py"
+        attempts = []
+        def checked_read(api, handle, *, initial_size):
+            ctypes.set_last_error(0)
+            writer = api.CreateFileW(str(self.file), 0x40000000,
+                broker.FILE_SHARE_READ | broker.FILE_SHARE_WRITE | broker.FILE_SHARE_DELETE,
+                None, broker.OPEN_EXISTING, 0, None)
+            error = ctypes.get_last_error()
+            if writer != ctypes.c_void_p(-1).value:
+                api.CloseHandle(writer)
+                self.fail("writer opened during a native read")
+            self.assertEqual(error, 32)
+            try:
+                with self.assertRaises(OSError):
+                    os.rename(self.file, moved)
+            finally:
+                if moved.exists():
+                    os.rename(moved, self.file)
+            attempts.append(True)
+            return actual_read(api, handle, initial_size=initial_size)
+        with patch.object(broker, "_read_file_handle", side_effect=checked_read):
+            result = broker.handle_native_request("hermes", r"src\safe.py", "read")
+        self.assertEqual(attempts, [True])
+        self.assertEqual(base64.b64decode(result["data"]), self.data)
+        self.file.write_bytes(b"writer-after-read")
+        self.assertEqual(self.file.read_bytes(), b"writer-after-read")
 
     def test_root_cannot_be_renamed_during_read_or_stat(self):
         real_open = broker._opened

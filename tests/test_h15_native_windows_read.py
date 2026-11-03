@@ -131,6 +131,19 @@ class NativeWindowsReadTests(unittest.TestCase):
                 self.assertTrue(access & 0x1)
                 self.assertFalse(shares & broker.FILE_SHARE_DELETE)
 
+    def test_file_read_denies_concurrent_writers_and_renames(self):
+        for operation in ("read", "stat"):
+            with self.subTest(operation=operation):
+                mock = FakeWin32()
+                with patch.object(broker, "_winapi", return_value=mock):
+                    broker.handle_native_request("hermes", "README.md", operation)
+                _, _, shares = mock.opens[1]
+                if operation == "read":
+                    self.assertEqual(shares, broker.FILE_SHARE_READ)
+                else:
+                    self.assertEqual(shares, broker.FILE_SHARE_READ | broker.FILE_SHARE_WRITE |
+                                     broker.FILE_SHARE_DELETE)
+
     def test_stat_directory_and_file_never_emit_contents(self):
         file = FakeWin32()
         with patch.object(broker, "_winapi", return_value=file):

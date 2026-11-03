@@ -149,11 +149,14 @@ def _winapi():
 def _opened(api, path: str, *, content: bool, lock_rename: bool = False):
     flags = FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS
     access = GENERIC_READ if content else FILE_READ_ATTRIBUTES
-    shares = FILE_SHARE_READ | FILE_SHARE_WRITE
+    # Keep a content read stable while another process wants to write or rename.
+    shares = FILE_SHARE_READ
+    if not content:
+        shares |= FILE_SHARE_WRITE
     if lock_rename:
         # Attribute-only handles do not enforce the deny-delete share on Windows.
         access |= FILE_READ_DATA
-    else:
+    elif not content:
         shares |= FILE_SHARE_DELETE
     h = api.CreateFileW(path, access, shares,
         None, OPEN_EXISTING, flags, None)
