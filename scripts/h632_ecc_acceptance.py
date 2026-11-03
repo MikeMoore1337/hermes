@@ -347,6 +347,9 @@ def run(ecc: Path, output: Path) -> int:
 
 
 def main() -> int:
+    if not __debug__:
+        print("H-632 acceptance requires Python assertions enabled; refusing -O", file=sys.stderr)
+        return 2
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--ecc-root", type=Path, required=True)
     ap.add_argument("--out", type=Path, required=True)
