@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 from pathlib import Path, PurePosixPath
+import stat
 import subprocess
 import sys
 import tempfile
@@ -33,6 +34,53 @@ def snapshot(root: Path) -> dict[str, str]:
     return {str(p.relative_to(root)): digest(p.read_bytes()) for p in sorted(root.rglob("*")) if p.is_file() and not p.is_symlink()}
 
 
+
+def cleanup_ephemeral_ecc_cache(home: Path, baseline: dict[str, str],
+                                observed: dict[str, str]) -> dict[str, str]:
+    """Remove only the new ECC cache file from a disposable H-632 test HOME.
+
+    This is NOT part of upstream ECC uninstall, nor safe for a shared HOME.
+    No directories are deleted. A pre-existing file, symlink or hard link fails
+    closed. The original uninstaller verdict remains separate in the report.
+    """
+    if not home.is_absolute() or home.name != "home":
+        raise ValueError("Expected an absolute H-632 home path")
+    if not home.parent.name.startswith("h632-"):
+        raise ValueError("Not an H-632 disposable HOME")
+    key = ".claude/ecc/state.db"
+    if key in baseline or key not in observed:
+        raise ValueError("Cache is not exclusively test-created")
+    for parent in (home, home / ".claude", home / ".claude" / "ecc"):
+        metadata = parent.lstat()
+        if not stat.S_ISDIR(metadata.st_mode):
+            raise ValueError("Unsafe cache parent path")
+    cache = home / key
+    metadata = cache.lstat()
+    if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
+        raise ValueError("Unsafe cache file")
+    if not hasattr(os, "O_NOFOLLOW"):
+        raise RuntimeError("File cleanup requires OS-level O_NOFOLLOW")
+    flags = os.O_RDONLY | os.O_NOFOLLOW
+    descriptor = os.open(cache, flags)
+    try:
+        opened = os.fstat(descriptor)
+        if (opened.st_dev, opened.st_ino) != (metadata.st_dev, metadata.st_ino):
+            raise ValueError("Cache identity changed during open")
+        checksum = hashlib.sha256()
+        with os.fdopen(descriptor, "rb", closefd=False) as stream:
+            for chunk in iter(lambda: stream.read(65536), b""):
+                checksum.update(chunk)
+        if checksum.hexdigest() != observed[key]:
+            raise ValueError("Cache bytes changed after snapshot")
+        latest = cache.lstat()
+        if (latest.st_dev, latest.st_ino) != (opened.st_dev, opened.st_ino):
+            raise ValueError("Cache identity changed before unlink")
+    finally:
+        os.close(descriptor)
+    cache.unlink()
+    return {"path": key, "deleted_sha256": observed[key], "scope": "disposable-H632-HOME-only"}
+
+
 def validate_plan(payload: dict) -> dict:
     assert payload.get("dryRun") is True, "Original installer did not emit dry-run plan"
     p = payload["plan"]
@@ -51,6 +99,7 @@ def validate_plan(payload: dict) -> dict:
         assert relative.parts and relative.parts[0] not in ("cron", "plugins", "hooks", "secrets")
         assert str(relative) not in ("config.yaml", ".env", ".mcp.json", "mcp.json")
         targets.add(str(relative))
+    assert len(targets) == len(p["operations"]), "Destination collision in original plan"
     assert any(x.startswith("skills/") for x in targets), "No skills in actual plan"
     return {"selected_modules": sorted(modules), "operations": len(p["operations"]), "destinations": len(targets)}
 
@@ -133,7 +182,12 @@ def run(ecc: Path, output: Path) -> int:
             node = lambda entry, args: container_cmd(NODE_IMAGE, entry, args, ecc, home)
             args = ["./install.sh", "--target", "hermes", "--profile", "minimal"]
             plan_out = attempt(report, "original-dry-run", node("/bin/bash", args + ["--dry-run", "--json"]))
-            report["plan"] = validate_plan(json.loads(plan_out))
+            original_plan = json.loads(plan_out)
+            report["plan"] = validate_plan(original_plan)
+            planned = {
+                ".hermes/" + str(PurePosixPath(op["destinationPath"]).relative_to("/test-home/.hermes"))
+                for op in original_plan["plan"]["operations"]
+            }
             assert snapshot(home) == before, "Dry-run changed HOME"
             report["checks"]["original_plan_safe"] = True
             attempt(report, "original-install", node("/bin/bash", args + ["--json"]))
@@ -142,7 +196,13 @@ def run(ecc: Path, output: Path) -> int:
             assert all(after[k] == v for k, v in before.items()), "Original install altered unrelated files"
             side_effect_paths = sorted(p for p in after if not p.startswith(".hermes/"))
             report["cross_home_state_paths"] = side_effect_paths
-            assert set(side_effect_paths).issubset({".claude/ecc/state.db"}), f"Unreviewed cross-home writes: {side_effect_paths}"
+            assert side_effect_paths == [".claude/ecc/state.db"], f"Unreviewed cross-home writes: {side_effect_paths}"
+            added_files = set(after) - set(before)
+            expected_added = planned | {".hermes/ecc-install-state.json", ".claude/ecc/state.db"}
+            report["checks"]["installed_files_match_original_plan"] = added_files == expected_added
+            assert report["checks"]["installed_files_match_original_plan"], (
+                f"Unplanned files added={sorted(added_files - expected_added)[:5]} "
+                f"missing={sorted(expected_added - added_files)[:5]}")
             report["checks"]["unrelated_files_preserved"] = True
             for name in SKILLS:
                 skill = h / "skills" / name / "SKILL.md"
@@ -158,6 +218,18 @@ def run(ecc: Path, output: Path) -> int:
             assert all(again[k] == v for k, v in after.items() if k not in metadata_paths), "Reinstall changed managed content"
             assert len(again) == installed_count, "Reinstall duplicates or removes files"
             report["checks"]["reinstall_idempotent_files"] = True
+            lifecycle_before = snapshot(home)
+            for name, executable in (
+                ("original-doctor", ["scripts/doctor.js", "--target", "hermes", "--json"]),
+                ("original-repair-dry-run", ["scripts/repair.js", "--target", "hermes", "--dry-run", "--json"]),
+                ("original-update-dry-run", ["scripts/auto-update.js", "--target", "hermes",
+                                              "--repo-root", "/ecc", "--dry-run", "--json"]),
+            ):
+                raw_result = attempt(report, name, node("/usr/local/bin/node", executable))
+                parsed = json.loads(raw_result)
+                assert parsed.get("summary", {}).get("errorCount") == 0, f"{name} reported errors"
+                assert snapshot(home) == lifecycle_before, f"{name} changed HOME"
+            report["checks"]["original_doctor_repair_update_preview"] = True
             bad_before = snapshot(home)
             rc, stdout, stderr = exec_capture(node("/bin/bash", ["./install.sh", "--target", "hermes", "--profile", "not-a-real-profile", "--json"]))
             report["calls"].append({"name": "unsupported-profile", "exit": rc, "stdout_sha256": digest(stdout.encode()),
@@ -231,9 +303,18 @@ def run(ecc: Path, output: Path) -> int:
             report["checks"]["only_known_original_ecc_cache_residual"] = (
                 report["rollback_non_runtime_residual_files"] == [".claude/ecc/state.db"])
             assert not (h / "ecc-install-state.json").exists(), "Uninstall left ECC state"
-            assert not (h / "skills" / "verification-loop" / "SKILL.md").exists(), "Uninstall left managed skill"
-            assert not (h / "skills" / "tdd-workflow" / "SKILL.md").exists(), "Uninstall left managed skill"
+            report["checks"]["original_managed_files_removed"] = not bool(planned & set(uninstalled))
+            assert report["checks"]["original_managed_files_removed"], "Uninstall left original planned files"
             report["checks"]["upstream_uninstall_preserves_unrelated"] = True
+            assert report["checks"]["only_known_original_ecc_cache_residual"], "Unexpected non-native residue"
+            report["test_only_cache_cleanup"] = cleanup_ephemeral_ecc_cache(home, before, uninstalled)
+            cleaned = snapshot(home)
+            expected_cleaned = {**before, **{k: uninstalled[k] for k in native_new_files}}
+            report["checks"]["ecc_owned_files_fully_reverted_in_test_scope"] = cleaned == expected_cleaned
+            assert report["checks"]["ecc_owned_files_fully_reverted_in_test_scope"], "Unsafe test cleanup"
+            report["checks"]["hermes_runtime_files_preserved"] = all(
+                cleaned[k] == uninstalled[k] for k in native_new_files)
+            assert report["checks"]["hermes_runtime_files_preserved"]
             report["file_counts"] = {"before": len(before), "installed": len(after), "reinstalled": len(again), "uninstalled": len(uninstalled)}
             # Synthetic collision: a resident owner policy must never be overwritten.
             collision_home = Path(temp) / "collision"
@@ -266,6 +347,9 @@ def run(ecc: Path, output: Path) -> int:
 
 
 def main() -> int:
+    if not __debug__:
+        print("H-632 acceptance requires Python assertions enabled; refusing -O", file=sys.stderr)
+        return 2
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--ecc-root", type=Path, required=True)
     ap.add_argument("--out", type=Path, required=True)
