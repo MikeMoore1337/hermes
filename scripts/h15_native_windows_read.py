@@ -161,6 +161,8 @@ def _opened(api, path: str, *, content: bool, lock_rename: bool = False):
     h = api.CreateFileW(path, access, shares,
         None, OPEN_EXISTING, flags, None)
     if h == ctypes.c_void_p(-1).value:
+        if content and getattr(ctypes, "get_last_error", lambda: 0)() == 32:
+            raise NativeReadRefused("file_busy")
         raise NativeReadRefused("open_denied")
     return h
 

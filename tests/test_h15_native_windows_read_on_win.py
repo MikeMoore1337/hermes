@@ -63,8 +63,24 @@ class NativeWindowsReadOnRunnerTests(unittest.TestCase):
             None, broker.OPEN_EXISTING, 0, None)
         self.assertNotEqual(writer, ctypes.c_void_p(-1).value)
         try:
-            with self.assertRaisesRegex(broker.NativeReadRefused, "open_denied"):
+            with self.assertRaisesRegex(broker.NativeReadRefused, "file_busy"):
                 broker.handle_native_request("hermes", r"src\safe.py", "read")
+            session = mcp.McpSession()
+            session.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                            "params": {"protocolVersion": mcp.PROTOCOL,
+                                       "capabilities": {}, "clientInfo": {}}})
+            response = session.handle({"jsonrpc": "2.0", "id": 2,
+                "method": "tools/call", "params": {"name": "native_file_read",
+                "arguments": {"project": "hermes", "relative": r"src\safe.py"}}})
+            self.assertTrue(response["result"]["isError"])
+            self.assertEqual(json.loads(response["result"]["content"][0]["text"])["reason"],
+                             "native_file_busy")
+            wire = outbound.safe_call(session, {"type": "call", "id": "busy-1",
+                "tool": "native_file_read", "args": {
+                    "project": "hermes", "relative": r"src\safe.py"}}, set())
+            self.assertTrue(wire["result"]["isError"])
+            self.assertEqual(json.loads(wire["result"]["content"][0]["text"])["reason"],
+                             "native_file_busy")
             self.assertEqual(broker.handle_native_request(
                 "hermes", r"src\safe.py", "stat")["size_bytes"], len(self.data))
         finally:

@@ -13,6 +13,9 @@ const NAMES = ['native_file_stat', 'native_file_read', 'native_file_list'] as co
 const PROJECTS = ['hermes', 'your-fitness-coach', 'second-brain', 'ai-development-toolkit'];
 const DENY = { content: [{ type: 'text' as const,
   text: '{"status":"refused","reason":"native_read_unavailable"}' }], isError: true };
+const BUSY_TEXT = '{"status":"refused","reason":"native_file_busy",' +
+  '"message":"File is in use; retry after the other program closes it."}';
+const BUSY = { content: [{ type: 'text' as const, text: BUSY_TEXT }], isError: true };
 const ID = /^[A-Za-z0-9_-]{8,128}$/;
 const EXT = /\.(?:py|js|jsx|ts|tsx|mjs|cjs|md|mdx|txt|json|toml|yaml|yml|html|css|scss|sql|sh|ps1|go|rs|c|h|cpp|cs|xml)$/i;
 
@@ -125,10 +128,13 @@ export async function invokeOwnerNativeRead(
   const safeArgs = { project: args.project, relative: args.relative };
   const argsHash = createHash('sha256').update(JSON.stringify(safeArgs)).digest('hex').slice(0,16);
   let safe = null;
+  let busy = false;
   try {
     const response = await hub.call(deviceId, name, safeArgs, {
       client: { name: ctx.clientId }, timeoutMs: 8000,
     });
+    busy = read && response.isError === true && response.content.length === 1
+      && response.content[0]?.type === 'text' && response.content[0].text === BUSY_TEXT;
     if (!response.isError && response.content.length === 1
         && response.content[0]?.type === 'text'
         && typeof response.content[0].text === 'string'
@@ -148,5 +154,5 @@ export async function invokeOwnerNativeRead(
     return DENY;
   }
   return safe ? { content: [{ type: 'text' as const, text: JSON.stringify(safe) }],
-    isError: false } : DENY;
+    isError: false } : busy ? BUSY : DENY;
 }

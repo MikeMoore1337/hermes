@@ -144,6 +144,16 @@ class NativeWindowsReadTests(unittest.TestCase):
                     self.assertEqual(shares, broker.FILE_SHARE_READ | broker.FILE_SHARE_WRITE |
                                      broker.FILE_SHARE_DELETE)
 
+    def test_only_sharing_violation_is_reported_as_busy(self):
+        class Denied:
+            def CreateFileW(self, *_):
+                return ctypes.c_void_p(-1).value
+        for error, reason in ((32, "file_busy"), (5, "open_denied")):
+            with self.subTest(error=error), \
+                 patch.object(ctypes, "get_last_error", return_value=error, create=True), \
+                 self.assertRaisesRegex(broker.NativeReadRefused, "^" + reason + "$"):
+                broker._opened(Denied(), r"D:\synthetic\file.py", content=True)
+
     def test_stat_directory_and_file_never_emit_contents(self):
         file = FakeWin32()
         with patch.object(broker, "_winapi", return_value=file):

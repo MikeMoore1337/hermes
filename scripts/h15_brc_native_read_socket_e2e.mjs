@@ -45,6 +45,7 @@ const relay = buildRelay({
 let socket;
 let calls = 0;
 let corrupt = false;
+let busy = false;
 try {
   await new Promise((resolve, reject) => {
     relay.http.once('error', reject);
@@ -79,7 +80,9 @@ try {
     calls++;
     socket.send(JSON.stringify({
       type: 'result', id: msg.id,
-      result: { isError: false, content: [{ type: 'text', text: JSON.stringify(payload(msg.tool)) }] },
+      result: busy
+        ? { isError: true, content: [{ type: 'text', text: '{"status":"refused","reason":"native_file_busy","message":"File is in use; retry after the other program closes it."}' }] }
+        : { isError: false, content: [{ type: 'text', text: JSON.stringify(payload(msg.tool)) }] },
     }));
   });
   await once(socket, 'open');
@@ -117,6 +120,11 @@ try {
   const forged = await invokeOwnerNativeRead(relay.hub, relay.store, ctx, 'native_file_read', args);
   assert(forged.isError === true, 'NATIVE_FORGED_HASH_DENIED');
   corrupt = false;
+  busy = true;
+  const busyRead = await invokeOwnerNativeRead(relay.hub, relay.store, ctx, 'native_file_read', args);
+  assert(busyRead.isError === true && JSON.parse(busyRead.content[0].text).reason === 'native_file_busy',
+    'NATIVE_BUSY_RELAYED_AS_ERROR');
+  busy = false;
   const command = await invokeTool(relay.hub, relay.store, ctx, 'start_process',
     { deviceId: DEVICE_ID, command: 'not-executed' });
   assert(command.ok === false, 'NATIVE_GENERIC_PROCESS_DENIED');
