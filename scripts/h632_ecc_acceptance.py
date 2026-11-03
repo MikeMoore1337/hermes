@@ -165,20 +165,26 @@ def run(ecc: Path, output: Path) -> int:
             assert rc != 0 and snapshot(home) == bad_before, "Unsupported profile not rejected atomically"
             report["checks"]["unsupported_profile_refused"] = True
             # The pinned real NousResearch image exposes the real skills_list implementation.
-            probe = ('import json; from pathlib import Path; from tools.skills_tool import skills_list; '
+            probe = ('import json; from pathlib import Path; from tools.skills_tool import skills_list,skill_view; '
                      'stamp=json.loads(Path("/opt/hermes/install-stamp.json").read_text()); '
                      'x=json.loads(skills_list()); '
                      'names=[z.get("name", "") for z in x.get("skills", [])]; '
+                     'views={s:json.loads(skill_view(s, preprocess=False)) '
+                     'for s in ("verification-loop","tdd-workflow")}; '
                      'print(json.dumps({"success":x.get("success"),"count":len(names),'
                      '"source_sha":stamp.get("commit"),'
-                     '"found":{s:s in names for s in ("verification-loop","tdd-workflow")}}))')
+                     '"found":{s:s in names for s in views},'
+                     '"viewed":{s:(v.get("success") is True and v.get("name")==s and '
+                     'v.get("content", "").startswith("---")) for s,v in views.items()}}))')
             discovery_out = attempt(report, "real-hermes-skills-list",
                                     container_cmd(HERMES_IMAGE, "/opt/hermes/.venv/bin/python", ["-c", probe], ecc, home, hermes=True))
             discovery = json.loads(discovery_out.strip().splitlines()[-1])
             assert discovery["success"] is True and all(discovery["found"].values()), discovery
             assert discovery["source_sha"] == HERMES_SOURCE_SHA, "Wrong native NousResearch Hermes source"
+            assert all(discovery["viewed"].values()), "Native skill_view could not load ECC originals"
             report["native_hermes_discovery"] = discovery
             report["checks"]["real_hermes_skill_discovery"] = True
+            report["checks"]["real_hermes_skill_view_invoked"] = True
             # Negative runtime probes use only a disposable HOME and a network-less container.
             denial = ('const fs=require("node:fs"),net=require("node:net");'
                       'let out=false;try{fs.writeFileSync("/forbidden-outside-home.txt","x");}catch(e){out=true}'
