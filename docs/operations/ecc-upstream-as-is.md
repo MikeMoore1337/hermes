@@ -1,6 +1,6 @@
 # ECC для Hermes - штатное подключение «как есть» (Issue #632)
 
-**Статус 2026-10-27: SOURCE_REVIEWED / ISOLATED_INSTALL_NOT_RUN / LIVE_HERMES_NOT_VERIFIED.** Документ не устанавливает ECC, не меняет Hermes Agent runtime, не предоставляет разрешений, не запускает процессы и не подтверждает совместимость с production.
+**Исторический статус на 2026-10-27: SOURCE_REVIEWED / ISOLATED_INSTALL_NOT_RUN / LIVE_HERMES_NOT_VERIFIED.** Документ не устанавливает ECC, не меняет Hermes Agent runtime, не предоставляет разрешений, не запускает процессы и не подтверждает совместимость с production.
 
 ## Проверенный upstream
 
@@ -37,3 +37,21 @@
 В доступной сейчас Hermes VPS Docker-песочнице проверены лишь `node v24.22.0` и отсутствие `git`, `python3`, локального Hermes runtime и ECC checkout внутри `/workspace`. Нативный Windows агент в другой рабочей среде offline/paused. **Ни одна из этих наблюдаемых сред сейчас не доказывает пригодность для штатной установки ECC в действующий Hermes Agent.** Нельзя переносить проверку Docker-песочницы на Windows или production.
 
 Связанные правила: [AGENTS.md](../../AGENTS.md), [разделение владения](../architecture/OWNERSHIP.md), [модель угроз](../security/THREAT_MODEL.md), [development-only навыки](../../.agents/README.md), [H-01 #33](https://github.com/MikeMoore1337/hermes/issues/33). Пока не подтверждён изолированный runtime и его политики, **Issue #632 остаётся OPEN**.
+
+
+## Изолированная приёмка от 03.11.2026 - реальные результаты #632
+
+[PR #758](https://github.com/MikeMoore1337/hermes/pull/758) добавляет только проверочный стенд, тесты, CI и защиту от автоматического production-deploy. Он **не содержит ECC**, не меняет оригинальные `SKILL.md` и не устанавливает ECC в production. Этапы ниже подтверждены [изолированным GitHub Actions run #41718753287](https://github.com/MikeMoore1337/hermes/actions/runs/41718753287) и его JSON-артефактом, а не утверждением на основании исходников.
+
+- Закреплён ECC `affaan-m/ECC@25278e7d7b6cf6e6a4e7a6c8e10f14ff22f0eb5b`, `ecc-universal 2.2.3`, MIT. Текущий upstream `main` отличается: автоматического перехода на него нет.
+- Проверяемый оригинальный NousResearch Hermes: `v0.22.2`, commit `d923a5eb487a17c0a68801bba9ef0f56c81040a8`, образ `nousresearch/hermes-agent@sha256:a11574b7fe8e1631d7d88d556677dac693bc058abf558cdeb899155688c1bf05`.
+- Подготовка: GitHub-hosted disposable runner, `npm ci --omit=dev --ignore-scripts` по lockfile, затем оригинальный `install.sh` в Docker c `--network none --read-only --cap-drop ALL --user`. Нет production-монтирований, токенов или пользовательских данных.
+- **INSTALL=PASS:** оригинальные dry-run и установка `--target hermes --profile minimal` завершились кодом 0. План: 534 файловых операции. Профиль `minimal` развёрнут в семь модулей с зависимостями: `rules-core`, `agents-core`, `commands-core`, `platform-configs`, `workflow-quality`, `shared-script-utils`, `skill-unified-memory`; автоматический hooks-runtime в профиль не входит.
+- **REINSTALL=PASS:** повтор оригинального установщика завершился кодом 0 без дублирования файлов; обновлялись служебные state-файлы. Неподдерживаемый профиль отклонён с exit 1 и без мутаций.
+- **DISCOVERY=PASS / VIEW=PASS / EXECUTION=NOT_VERIFIED:** `tools.skills_tool.skills_list()` закреплённого настоящего Hermes обнаружил 54 навыка, включая ECC `verification-loop` и `tdd-workflow`. Оба `SKILL.md` установлены байтово как в оригинале. `skill_view(preprocess=False)` реально открыл их в Hermes. Это **не означает исполнение** шести стадий verification-loop или TDD-процесса: модельный runner не запускался; без отдельно разрешённого бесплатного offline executor подтверждения полноценного skill execution нет.
+- **OS DENY=PASS:** отрицательный запуск в одноразовом контейнере проверил отказ записи за пределами тестового HOME и отказ TCP-подключения. Second Brain vault, YFC production, secrets и Docker socket не подключались.
+- **UNINSTALL_EXIT=0 / COMPLETE_ROLLBACK=PARTIAL:** исходный ECC uninstall удалил управляемые навыки и install-state, не изменив исходные синтетические owner-файлы. Однако собственный ECC state-store оставил `~/.claude/ecc/state.db` (внутри тестового HOME, но вне `~/.hermes`). Запуск штатного Hermes также создал `SOUL.md`, пустой каталог `hooks/` и резервную копию конфигурации; они не являются доказательством установки ECC hooks. Эти артефакты отдельно атрибутируются через снимки до/после native discovery.
+- **POLICIES=PASS в проверенном отрицательном сценарии:** коллизия с заранее существующим синтетическим Hermes `AGENTS.md` не привела к его перезаписи. Настройки MCP и активные ECC hooks не разрешались и не запускались.
+- **CI / MERGE:** исходный диагностический workflow завершался `FAIL` для неполного полного отката, что корректно отмечает невыполненное условие. Независимый общий CI и H-585 регрессии проходят на ранее проверенных SHA; итоговый verdict следует определять только по последнему точному SHA PR. Без полного подтверждения и разрешённого production scope автоматический merge недопустим.
+
+Ограничение оригинала **нельзя скрывать зелёным CI**. Приёмка включения ECC в постоянный Hermes остаётся `NO-GO`; Issue [#632](https://github.com/MikeMoore1337/hermes/issues/632) остаётся **OPEN**. Для завершения нужны доказанный безопасный rollback всей изолированной среды и исполнение навыка реальным разрешённым модельным executor; наличие установленного файла или `skill_view` не удовлетворяет этому критерию. `Memory Vault`, cron, MCP, paid providers и резидентный режим остаются запрещены.

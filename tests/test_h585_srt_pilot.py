@@ -69,7 +69,7 @@ class H585SafetyProbeTests(unittest.TestCase):
         self.assertIn("if: steps.h585_scope.outputs.skip != 'true'", source)
         self.assertIn("*) source_only=false", source)
         self.assertIn("saw_pilot=false", source)
-        self.assertIn('"$source_only" == true && "$saw_pilot" == true', source)
+        self.assertIn('"$saw_pilot" == true || "$saw_ecc" == true', source)
         self.assertIn("scripts/h585_srt_pilot.py", source)
         self.assertIn(".github/workflows/h585-srt-isolated.yml", source)
 
@@ -78,7 +78,7 @@ class H585SafetyProbeTests(unittest.TestCase):
         workflow = Path(".github/workflows/production-deploy.yml").read_text(
             encoding="utf-8"
         )
-        section = workflow.split("      - name: Keep H-585 research-only merges", 1)[1]
+        section = workflow.split("      - name: Keep H-585", 1)[1]
         section = section.split("      - name: Verify current main", 1)[0]
         body = section.split("        run: |\n", 1)[1]
         script = "\n".join(
