@@ -27,6 +27,25 @@ function Hash-H454Bytes([byte[]]$Bytes){
     $hash=[Security.Cryptography.SHA256]::Create()
     try{return [BitConverter]::ToString($hash.ComputeHash($Bytes)).Replace('-','')}finally{$hash.Dispose()}
 }
+function Test-H454HiddenWssHealth([string]$Curl,[string]$Ca){
+    Require-H454 ([IO.Path]::IsPathRooted($Curl) -and [IO.Path]::IsPathRooted($Ca) -and
+        $Curl -cnotmatch '[\x00-\x1f"]' -and $Ca -cnotmatch '[\x00-\x1f"]') 'H454_ROUTE_WSS_TLS'
+    $info=[Diagnostics.ProcessStartInfo]::new();$info.FileName=$Curl
+    $info.Arguments='-q --proto "=https" --noproxy "*" --ssl-revoke-best-effort --silent --connect-timeout 2 --max-time 4 --cacert "'+$Ca+'" --resolve "brc-agent.internal:38184:127.0.0.1" --output NUL --write-out "%{http_code}" "https://brc-agent.internal:38184/"'
+    $info.UseShellExecute=$false;$info.CreateNoWindow=$true;$info.WindowStyle=[Diagnostics.ProcessWindowStyle]::Hidden
+    $info.RedirectStandardOutput=$true;$info.RedirectStandardError=$true
+    $process=[Diagnostics.Process]::new();$process.StartInfo=$info
+    try {
+        Require-H454 $process.Start() 'H454_ROUTE_WSS_TLS'
+        $output=$process.StandardOutput.ReadToEndAsync();$errors=$process.StandardError.ReadToEndAsync()
+        if(-not $process.WaitForExit(8000)){
+            try{$process.Kill();$null=$process.WaitForExit(2000)}catch{}
+            return $false
+        }
+        $text=$output.GetAwaiter().GetResult();$null=$errors.GetAwaiter().GetResult()
+        return ($process.ExitCode -eq 0 -and $text -ceq '404')
+    } finally {$process.Dispose()}
+}
 function Read-H454PinnedBytes([string]$Path,[string]$Sha256){
     $item=Get-Item -LiteralPath $Path -Force -ErrorAction Stop
     Require-H454 (-not $item.PSIsContainer -and -not ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -and
@@ -267,9 +286,7 @@ try{
                 foreach($listenerError in $listenerErrors){Require-H454 ($listenerError.CategoryInfo.Category -eq [Management.Automation.ErrorCategory]::ObjectNotFound) 'H454_ROUTE_LISTENER'}
                 Require-H454 ($plaintext.Count -eq 0 -and (Get-FileHash -LiteralPath $curl -Algorithm SHA256).Hash -ceq $CurlSha256 -and
                     (Get-AuthenticodeSignature -LiteralPath $curl).Status -eq 'Valid') 'H454_ROUTE_LISTENER'
-                $health=@(& $curl -q --proto '=https' --noproxy '*' --ssl-revoke-best-effort --silent --connect-timeout 2 --max-time 4 `
-                    --cacert $ca --resolve 'brc-agent.internal:38184:127.0.0.1' --output NUL --write-out '%{http_code}' 'https://brc-agent.internal:38184/' 2>$null)
-                Require-H454 ($LASTEXITCODE -eq 0 -and $health.Count -eq 1 -and $health[0] -ceq '404') 'H454_ROUTE_WSS_TLS'
+                Require-H454 (Test-H454HiddenWssHealth $curl $ca) 'H454_ROUTE_WSS_TLS'
                 if(-not $RestoreOriginal){
                     $fresh=Invoke-H454RecoveryDocker -Arguments @('container','inspect','1fbf00d9b711be215ab35eaea1f6ef549cc4a0930495e3d0776a965f8c75abb6') -DockerSha256 $DockerSha256
                     Require-H454 ($fresh.Code -eq 0 -and $fresh.Output.Length -gt 0) 'H454_ORIGINAL_PROFILE_INSPECT'
