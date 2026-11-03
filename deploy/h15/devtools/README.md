@@ -19,6 +19,12 @@ or a permission grant. The existing BRC image, ENTRYPOINT and CMD are inherited.
 - Work only in an owner-approved sandbox copy under `/workspace/projects`.
   No production checkout, YFC database, Second Brain vault or host home access.
 
+For the two Debian 12 x86-64 VPS sandboxes, `Dockerfile.vps` is a Git-only
+alternative: it installs Git and CA certificates, and leaves Python as it was
+in the pinned base image. The terminal fix supports the existing Perl runtime
+on this platform. It is still a local build candidate, not a live-device update;
+verify the base image, security findings and rollback independently on each VPS.
+
 ## Preparation (read-only)
 
 On the owner's Windows host, during an approved maintenance slot, obtain the
@@ -72,6 +78,9 @@ $newConfig = $candidate[0].Config | Select-Object $fields | ConvertTo-Json -Comp
 if ($oldConfig -cne $newConfig) { throw 'IMAGE_CONFIG_DRIFT' }
 ```
 
+For the Git-only VPS candidate, use `-f deploy/h15/devtools/Dockerfile.vps`
+instead of the full recipe. This does not install Python, pip or venv.
+
 The Docker build context is deliberately limited to `deploy/h15/devtools`,
 not the project root. The source recipe does not independently enforce
 the approval of the local base image. Keep the unique base tag and image ID
@@ -99,8 +108,19 @@ exception because the bind-mounted owner differs from UID 65534.
 This CRLF exception for the existing clone does **not** change the
 LF policy for newly cloned projects.
 
-## Observed owner candidate evidence (2026-10-21)
+## Observed candidate evidence
 
+- On 2026-11-03, the exact Git-only recipe and a separate layer with the
+  terminal, binary-read and edit-conflict fixes produced local candidate
+  `sha256:83c16120cd6ee05800b085a6510aea0ebdb9d103ced3dee1942ad75751bab2e5`.
+  A disposable non-root dispatcher smoke passed Git, Perl-supervised terminal
+  sessions, binary errors and ambiguous-edit rejection. This does not protect
+  existing-file edits against an external concurrent writer.
+- The same offline scanner/database reported 50 high/critical CVE/package
+  pairs on the original VPS base and 54 on this candidate: 11 added and 7
+  removed. The database reported no fixed version for the 11 added pairs.
+  Independent security triage and each device's actual image/rollback checks
+  remain required before any deployment.
 - Owner-built v3 DevTools candidate: Git 2.39.5, Python 3.11.2,
   Node 24.22.0; pinned OCI image index
   `sha256:8d28b0e1158b01c179ae1e6e1e399acaf3f502675522136d931ce08f2851a5a3`.

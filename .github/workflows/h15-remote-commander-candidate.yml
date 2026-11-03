@@ -11,6 +11,9 @@ on:
       - scripts/h454_terminal_supervisor.py
       - scripts/h454_terminal_supervisor.pl
       - tests/test_h454_terminal_supervisor.py
+      - deploy/h15/devtools/Dockerfile
+      - deploy/h15/devtools/Dockerfile.vps
+      - tests/test_h15_devtools_contract.py
       - scripts/h15_brc_sandbox_linux_e2e.mjs
       - tests/test_h15_brc_apply_policy_patch.py
       - scripts/h454_agent_no_auto_pair.py
@@ -48,6 +51,9 @@ on:
       - scripts/h454_terminal_supervisor.py
       - scripts/h454_terminal_supervisor.pl
       - tests/test_h454_terminal_supervisor.py
+      - deploy/h15/devtools/Dockerfile
+      - deploy/h15/devtools/Dockerfile.vps
+      - tests/test_h15_devtools_contract.py
       - scripts/h454_agent_no_auto_pair.py
       - scripts/h454_agent_no_auto_pair_e2e.mjs
       - tests/test_h454_agent_no_auto_pair.py
@@ -145,7 +151,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m unittest -v tests.test_h15_remote_commander_candidate_audit tests.test_h15_brc_apply_policy_patch tests.test_h454_terminal_supervisor tests.test_h15_brc_harden_relay tests.test_h15_brc_harden_gateway tests.test_h15_brc_harden_reconnect tests.test_h15_brc_harden_browser_csrf tests.test_h15_brc_oci_relay_contract tests.test_h15_brc_oci_receipt tests.test_h15_brc_offline_stage tests.test_h15_brc_offline_image_bundle tests.test_h15_brc_owner_deploy tests.test_h15_brc_release_approval
+          python3 -m unittest -v tests.test_h15_remote_commander_candidate_audit tests.test_h15_brc_apply_policy_patch tests.test_h454_terminal_supervisor tests.test_h15_devtools_contract tests.test_h15_brc_harden_relay tests.test_h15_brc_harden_gateway tests.test_h15_brc_harden_reconnect tests.test_h15_brc_harden_browser_csrf tests.test_h15_brc_oci_relay_contract tests.test_h15_brc_oci_receipt tests.test_h15_brc_offline_stage tests.test_h15_brc_offline_image_bundle tests.test_h15_brc_owner_deploy tests.test_h15_brc_release_approval
 
       - name: Workspace resolver and gateway negative contracts (offline)
         shell: bash
