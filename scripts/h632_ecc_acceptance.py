@@ -164,6 +164,9 @@ def run(ecc: Path, output: Path) -> int:
                                     "stderr_excerpt": stderr.strip()[:120]})
             assert rc != 0 and snapshot(home) == bad_before, "Unsupported profile not rejected atomically"
             report["checks"]["unsupported_profile_refused"] = True
+            # Attribute native Hermes init files separately from ECC installer output.
+            pre_native_files = snapshot(home)
+            pre_native_hooks_dir = (h / "hooks").is_dir()
             # The pinned real NousResearch image exposes the real skills_list implementation.
             probe = ('import json; from pathlib import Path; from tools.skills_tool import skills_list,skill_view; '
                      'stamp=json.loads(Path("/opt/hermes/install-stamp.json").read_text()); '
@@ -182,6 +185,14 @@ def run(ecc: Path, output: Path) -> int:
             assert discovery["success"] is True and all(discovery["found"].values()), discovery
             assert discovery["source_sha"] == HERMES_SOURCE_SHA, "Wrong native NousResearch Hermes source"
             assert all(discovery["viewed"].values()), "Native skill_view could not load ECC originals"
+            post_native_files = snapshot(home)
+            native_new_files = set(post_native_files) - set(pre_native_files)
+            report["native_runtime_new_files"] = sorted(native_new_files)
+            report["native_runtime_changed_files"] = sorted(
+                k for k in pre_native_files if pre_native_files[k] != post_native_files.get(k))
+            report["native_runtime_created_empty_hooks_dir"] = (
+                not pre_native_hooks_dir and (h / "hooks").is_dir()
+                and not any(p.is_file() for p in (h / "hooks").rglob("*")))
             report["native_hermes_discovery"] = discovery
             report["checks"]["real_hermes_skill_discovery"] = True
             report["checks"]["real_hermes_skill_view_invoked"] = True
@@ -203,7 +214,7 @@ def run(ecc: Path, output: Path) -> int:
                 "mcp_root_config": (h / "mcp.json").is_file(),
             }
             report["checks"]["no_active_hooks_or_mcp"] = not any((
-                report["installed_runtime_config"]["root_hooks_dir"],
+                bool(report["installed_runtime_config"]["root_hook_paths"]),
                 report["installed_runtime_config"]["mcp_root_file"],
                 report["installed_runtime_config"]["mcp_root_config"],
             ))
@@ -212,7 +223,13 @@ def run(ecc: Path, output: Path) -> int:
             uninstalled = snapshot(home)
             assert all(uninstalled.get(k) == v for k, v in before.items()), "Uninstall altered unrelated state"
             report["rollback_residual_paths"] = sorted(set(uninstalled) - set(before))
+            report["rollback_native_runtime_files"] = sorted(
+                (set(uninstalled) - set(before)) & native_new_files)
+            report["rollback_non_runtime_residual_files"] = sorted(
+                (set(uninstalled) - set(before)) - native_new_files)
             report["checks"]["exact_snapshot_rollback"] = (uninstalled == before)
+            report["checks"]["only_known_original_ecc_cache_residual"] = (
+                report["rollback_non_runtime_residual_files"] == [".claude/ecc/state.db"])
             assert not (h / "ecc-install-state.json").exists(), "Uninstall left ECC state"
             assert not (h / "skills" / "verification-loop" / "SKILL.md").exists(), "Uninstall left managed skill"
             assert not (h / "skills" / "tdd-workflow" / "SKILL.md").exists(), "Uninstall left managed skill"
