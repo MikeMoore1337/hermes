@@ -195,6 +195,16 @@ class ConfinedCacheCleanupTests(unittest.TestCase):
             cleanup_ephemeral_ecc_cache(self.home, {}, self.observed)
         self.assertTrue(link.is_file())
 
+    def test_optimized_python_rejects_entire_acceptance_runner(self):
+        import subprocess
+        import sys
+        p = subprocess.run([sys.executable, "-O", "-m", "scripts.h632_ecc_acceptance",
+                            "--preflight", "--ecc-root", "/nonexistent-H632",
+                            "--out", "/nonexistent-H632/report.json"],
+                           capture_output=True, text=True, check=False, timeout=8)
+        self.assertEqual(p.returncode, 2)
+        self.assertIn("refusing -O", p.stderr)
+
     def test_checks_cannot_be_stripped_with_python_optimization(self):
         import subprocess
         import sys
