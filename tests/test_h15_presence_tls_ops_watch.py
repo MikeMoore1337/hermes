@@ -27,6 +27,12 @@ class RotatedCertificateAlertTests(unittest.TestCase):
             "enabled_at": "2026-10-20T00:00:00+00:00",
         }), encoding="utf-8")
         self.now = datetime(2026, 10, 20, 12, tzinfo=UTC)
+        # Production may have a TLS-only consent marker enabled. Synthetic
+        # tests must resolve only their own explicit fixture, never /etc.
+        self.missing_tls_only = root / "tls-only-absent.json"
+        tls_patch = patch.object(alerts, "TLS_OPT_IN", self.missing_tls_only)
+        tls_patch.start()
+        self.addCleanup(tls_patch.stop)
 
     def sample(self, expiry):
         return subprocess.CompletedProcess(["openssl"], 0,
