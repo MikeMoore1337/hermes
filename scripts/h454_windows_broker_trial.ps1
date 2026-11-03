@@ -51,12 +51,13 @@ function Get-H454BrokerTrialState([hashtable]$RestoreArgs,[string]$CandidateId,[
 function Get-H454TrialRecordedOperation([hashtable]$RestoreArgs,[string]$CandidateId,[string]$Phase,
     [string]$Nonce,[string]$Target,[string]$Network,[long]$StartTicks,[long]$EndTicks) {
     $original=@('STOP_ORIGINAL','CONNECT_ORIGINAL','DISCONNECT_ORIGINAL')
-    $candidate=@('STOP_CANDIDATE','START_CANDIDATE','CONNECT_CANDIDATE','DISCONNECT_CANDIDATE')
+    $candidate=@('STOP_CANDIDATE','START_CANDIDATE','CONNECT_CANDIDATE','DISCONNECT_CANDIDATE','STAGE_CANDIDATE')
     $networkPhases=@('CONNECT_ORIGINAL','DISCONNECT_ORIGINAL','CONNECT_CANDIDATE','DISCONNECT_CANDIDATE')
     Require-H454 ($CandidateId -cmatch '^[a-f0-9]{64}$' -and $CandidateId -cne $RestoreArgs.AgentId -and
         $Nonce -cmatch '^[a-f0-9]{32}$' -and $Target -cmatch '^[a-f0-9]{64}$' -and
         (($Phase -cin $original -and $Target -ceq $RestoreArgs.AgentId) -or
-         ($Phase -cin $candidate -and $Target -ceq $CandidateId)) -and
+         ($Phase -cin $candidate -and $Target -ceq $CandidateId) -or
+         ($Phase -ceq 'STAGE_BROKER' -and $Target -cne $CandidateId -and $Target -cne $RestoreArgs.AgentId)) -and
         (($Phase -cin $networkPhases -and $Network -cmatch '^[a-f0-9]{64}$') -or
          ($Phase -cnotin $networkPhases -and $Network -ceq '-')) -and
         (($Phase -ceq 'STOP_ORIGINAL' -and $StartTicks -gt 0 -and $StartTicks -lt $EndTicks) -or
@@ -75,7 +76,7 @@ function Start-H454TrialRecordedOperation([hashtable]$RestoreArgs,[object]$Opera
     Assert-H454WssTaskFile $path $Operation.Hash 4096
 }
 
-function Resolve-H454TrialRecordedOperation([hashtable]$RestoreArgs,[string]$CandidateId) {
+function Resolve-H454TrialRecordedOperation([hashtable]$RestoreArgs,[string]$CandidateId,[string]$CandidateImage='') {
     Assert-H454RecoveryLock $RestoreArgs.StateDir $RestoreArgs.Lock
     $path=Join-Path $RestoreArgs.StateDir 'h454-broker-trial.inflight'
     if(-not (Test-Path -LiteralPath $path)){return $null}
@@ -95,18 +96,27 @@ function Resolve-H454TrialRecordedOperation([hashtable]$RestoreArgs,[string]$Can
     $prefix="H454-BROKER-TRIAL-RECEIPT-1`n$($operation.Hash)`n"
     $status=if($actual -ceq ($prefix+"HTTP_OK`n")){'HTTP_OK'}
         elseif($operation.Phase -ceq 'STOP_ORIGINAL' -and $actual -ceq ($prefix+"WINDOW_EXPIRED`n")){'WINDOW_EXPIRED'}
+        elseif($operation.Phase -cin @('STAGE_CANDIDATE','STAGE_BROKER') -and $actual -ceq ($prefix+"INPUT_INCOMPLETE`n")){'INPUT_INCOMPLETE'}
         else{throw 'H454_TRIAL_RECEIPT_INVALID'}
     $bytes=[Text.UTF8Encoding]::new($false).GetBytes($actual)
     Assert-H454WssTaskFile $receipt (Hash-H454Bytes $bytes) 256
     Assert-H454WssTaskFile $path $operation.Hash 4096
+    if($operation.Phase -ceq 'STAGE_BROKER'){
+        Require-H454 ($CandidateImage -cmatch '^sha256:[a-f0-9]{64}$') 'H454_TRIAL_RECEIPT_BROKER'
+        $state=Get-H454BrokerTrialState $RestoreArgs $CandidateId $CandidateImage -Pending
+        Require-H454 ($state.Original.Broker.Id -ceq $operation.Target) 'H454_TRIAL_RECEIPT_BROKER'
+    }
     [IO.File]::Delete($path)
     Require-H454 (-not (Test-Path -LiteralPath $path)) 'H454_TRIAL_OPERATION_UNKNOWN'
     try{[IO.File]::Delete($receipt)}catch{}
     return $status
 }
 
-function Start-H454TrialReceiptWorker([hashtable]$RestoreArgs,[object]$Operation) {
+function Start-H454TrialReceiptWorker([hashtable]$RestoreArgs,[object]$Operation,[byte[]]$InputBytes=$null) {
     Assert-H454RecoveryLock $RestoreArgs.StateDir $RestoreArgs.Lock
+    $isStage=$Operation.Phase -cin @('STAGE_CANDIDATE','STAGE_BROKER')
+    Require-H454 (($isStage -and $null -ne $InputBytes -and $InputBytes.Length -gt 0 -and $InputBytes.Length -le 16384 -and
+        $RestoreArgs.DockerSha256 -cmatch '^[A-F0-9]{64}$') -or (-not $isStage -and $null -eq $InputBytes)) 'H454_TRIAL_WORKER_INPUT'
     $powershell=Join-Path ([Environment]::SystemDirectory) 'WindowsPowerShell\v1.0\powershell.exe'
     $item=Get-Item -LiteralPath $powershell -Force -ErrorAction Stop
     $current=[Diagnostics.Process]::GetCurrentProcess()
@@ -117,17 +127,19 @@ function Start-H454TrialReceiptWorker([hashtable]$RestoreArgs,[object]$Operation
     Require-H454 ($RestoreArgs.StateDir.Length -le 1024 -and $RestoreArgs.StateDir -cnotmatch '[\x00-\x1f]') 'H454_TRIAL_WORKER_PATH'
     $sha=[Security.Cryptography.SHA256]::Create();$hashStream=[IO.File]::OpenRead($powershell)
     try{$workerHash=[BitConverter]::ToString($sha.ComputeHash($hashStream)).Replace('-','')}finally{$hashStream.Dispose();$sha.Dispose()}
+    $inputLength=if($isStage){$InputBytes.Length}else{0}
+    $dockerHash=if($isStage){$RestoreArgs.DockerSha256}else{'-'}
     $payload=@($RestoreArgs.StateDir,$Operation.Phase,$Operation.Nonce,$Operation.Target,$Operation.Network,
-        [string]$Operation.StartTicks,[string]$Operation.EndTicks,$Operation.Hash,$workerHash) -join "`n"
+        [string]$Operation.StartTicks,[string]$Operation.EndTicks,$Operation.Hash,$workerHash,[string]$inputLength,$dockerHash) -join "`n"
     $data=[Convert]::ToBase64String([Text.UTF8Encoding]::new($false).GetBytes($payload))
     $source=@'
 $ErrorActionPreference='Stop'
-$pipe=$null
+$pipe=$null;$secret=$null;$client=$null
 try {
     $parts=([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('__PAYLOAD__'))).Split([char]10)
-    if($parts.Count -ne 9){throw 'INPUT'}
+    if($parts.Count -ne 11){throw 'INPUT'}
     $p=[pscustomobject]@{state=$parts[0];phase=$parts[1];nonce=$parts[2];target=$parts[3];network=$parts[4];
-        start=$parts[5];end=$parts[6];hash=$parts[7];workerHash=$parts[8]}
+        start=$parts[5];end=$parts[6];hash=$parts[7];workerHash=$parts[8];inputLength=$parts[9];dockerHash=$parts[10]}
     if($p.nonce -cnotmatch '^[a-f0-9]{32}$' -or $p.target -cnotmatch '^[a-f0-9]{64}$' -or
        $p.hash -cnotmatch '^[A-F0-9]{64}$' -or $p.workerHash -cnotmatch '^[A-F0-9]{64}$' -or
        -not [IO.Path]::IsPathRooted($p.state)){throw 'INPUT'}
@@ -136,11 +148,12 @@ try {
     $sha=[Security.Cryptography.SHA256]::Create();$hashStream=[IO.File]::OpenRead($selfPath)
     try{$actual=[BitConverter]::ToString($sha.ComputeHash($hashStream)).Replace('-','')}finally{$hashStream.Dispose();$sha.Dispose()}
     if($actual -cne $p.workerHash){throw 'WORKER_DRIFT'}
-    $body='';$expected=204
+    $body='';$expected=204;$isStage=$false
     switch -CaseSensitive ($p.phase) {
         'STOP_ORIGINAL' {$uri='/v1.56/containers/'+$p.target+'/stop?t=10'}
         'STOP_CANDIDATE' {$uri='/v1.56/containers/'+$p.target+'/stop?t=10'}
         'START_CANDIDATE' {$uri='/v1.56/containers/'+$p.target+'/start'}
+        {$_ -cin @('STAGE_CANDIDATE','STAGE_BROKER')} {$isStage=$true}
         {$_ -cin @('CONNECT_ORIGINAL','CONNECT_CANDIDATE','DISCONNECT_ORIGINAL','DISCONNECT_CANDIDATE')} {
             if($p.network -cnotmatch '^[a-f0-9]{64}$'){throw 'NETWORK'}
             $connect=$p.phase.StartsWith('CONNECT_', [StringComparison]::Ordinal)
@@ -151,14 +164,73 @@ try {
         }
         default {throw 'PHASE'}
     }
-    $pipe=[IO.Pipes.NamedPipeClientStream]::new('.','dockerDesktopLinuxEngine',[IO.Pipes.PipeDirection]::InOut,[IO.Pipes.PipeOptions]::Asynchronous)
-    $pipe.Connect(5000)
     $status='HTTP_OK'
-    $now=[DateTime]::UtcNow.Ticks
-    if($p.phase -ceq 'STOP_ORIGINAL' -and
-       ($now -lt [long]$p.start -or $now+[TimeSpan]::FromSeconds(20).Ticks -gt [long]$p.end)) {
-        $status='WINDOW_EXPIRED'
+    if($isStage){
+        if($p.inputLength -cnotmatch '^[1-9][0-9]{0,4}$' -or [int]$p.inputLength -gt 16384 -or
+            $p.dockerHash -cnotmatch '^[A-F0-9]{64}$'){throw 'STAGE_INPUT'}
+        $secret=New-Object byte[] ([int]$p.inputLength);$offset=0;$stdin=[Console]::OpenStandardInput()
+        try{
+            while($offset -lt $secret.Length){
+                $read=$stdin.ReadAsync($secret,$offset,$secret.Length-$offset)
+                if(-not $read.Wait(5000)){$status='INPUT_INCOMPLETE';break}
+                $count=$read.GetAwaiter().GetResult();if($count -le 0){$status='INPUT_INCOMPLETE';break}
+                $offset+=$count
+            }
+        }finally{$stdin.Dispose()}
+        if($status -ceq 'HTTP_OK'){
+            foreach($name in @('DOCKER_HOST','DOCKER_CONTEXT','DOCKER_TLS_VERIFY','DOCKER_CERT_PATH','DOCKER_CONFIG','DOCKER_API_VERSION')){
+                if(-not [string]::IsNullOrEmpty([Environment]::GetEnvironmentVariable($name,'Process'))){throw 'DOCKER_ENV'}
+            }
+            $docker=Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'Docker\Docker\resources\bin\docker.exe'
+            $item=Get-Item -LiteralPath $docker -Force
+            while($null -ne $item){
+                if($item.Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'DOCKER_BINARY'}
+                if($item -is [IO.FileInfo]){$item=$item.Directory}else{$item=$item.Parent}
+            }
+            $sha=[Security.Cryptography.SHA256]::Create();$hashStream=[IO.File]::OpenRead($docker)
+            try{$actual=[BitConverter]::ToString($sha.ComputeHash($hashStream)).Replace('-','')}finally{$hashStream.Dispose();$sha.Dispose()}
+            if($actual -cne $p.dockerHash -or (Get-AuthenticodeSignature -LiteralPath $docker).Status -ne 'Valid'){throw 'DOCKER_BINARY'}
+            $bootstrap="eval(Buffer.from(process.argv[1],'base64').toString())"
+            if($p.phase -ceq 'STAGE_CANDIDATE'){
+                $script="const c=require('node:child_process');const p=c.spawn('/bin/sh',['/usr/local/bin/h15-stage.sh'],{stdio:['pipe','ignore','ignore']});process.stdin.pipe(p.stdin);p.on('error',()=>process.exit(2));p.on('close',x=>{if(x!==0)process.exit(2);process.stdout.write('H454_AGENT_STAGE_COMPLETE',()=>process.exit(0))})"
+                $script64=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($script))
+                $command='node -e '+$bootstrap+' '+$script64;$expectedText='H454_AGENT_STAGE_COMPLETE'
+            }else{$command='node /opt/hermes-rollback/stage.cjs';$expectedText='H454_BROKER_TOKEN_STAGED'}
+            $info=[Diagnostics.ProcessStartInfo]::new();$info.FileName=$docker
+            $info.Arguments='--host npipe:////./pipe/dockerDesktopLinuxEngine exec --interactive --user 65534:65534 '+$p.target+' '+$command
+            $info.UseShellExecute=$false;$info.CreateNoWindow=$true;$info.WindowStyle=[Diagnostics.ProcessWindowStyle]::Hidden
+            $info.RedirectStandardInput=$true;$info.RedirectStandardOutput=$true;$info.RedirectStandardError=$true
+            $client=[Diagnostics.Process]::new();$client.StartInfo=$info
+            if(-not $client.Start()){throw 'CLIENT_START'}
+            $discard=$client.StandardError.BaseStream.CopyToAsync([IO.Stream]::Null)
+            try{
+                $write=$client.StandardInput.BaseStream.WriteAsync($secret,0,$secret.Length)
+                if(-not $write.Wait(5000)){throw 'CLIENT_INPUT_TIMEOUT'}
+                $null=$write.GetAwaiter().GetResult()
+            }finally{$client.StandardInput.Close()}
+            $buffer=New-Object byte[] 128;$output=[IO.MemoryStream]::new();$deadline=[DateTime]::UtcNow.AddSeconds(45)
+            try{
+                while($true){
+                    $remaining=[int][Math]::Max(1,($deadline-[DateTime]::UtcNow).TotalMilliseconds)
+                    if([DateTime]::UtcNow -ge $deadline){throw 'CLIENT_OUTPUT_TIMEOUT'}
+                    $read=$client.StandardOutput.BaseStream.ReadAsync($buffer,0,$buffer.Length)
+                    if(-not $read.Wait($remaining)){throw 'CLIENT_OUTPUT_TIMEOUT'}
+                    $count=$read.GetAwaiter().GetResult();if($count -le 0){break}
+                    $output.Write($buffer,0,$count);if($output.Length -gt 128){throw 'CLIENT_OUTPUT_OVERSIZED'}
+                }
+                $remaining=[int][Math]::Max(1,($deadline-[DateTime]::UtcNow).TotalMilliseconds)
+                if(-not $client.WaitForExit($remaining) -or $client.ExitCode -ne 0 -or
+                    [Text.Encoding]::ASCII.GetString($output.ToArray()) -cne $expectedText){throw 'CLIENT_RESULT'}
+            }finally{$output.Dispose()}
+        }
     } else {
+        $pipe=[IO.Pipes.NamedPipeClientStream]::new('.','dockerDesktopLinuxEngine',[IO.Pipes.PipeDirection]::InOut,[IO.Pipes.PipeOptions]::Asynchronous)
+        $pipe.Connect(5000)
+        $now=[DateTime]::UtcNow.Ticks
+        if($p.phase -ceq 'STOP_ORIGINAL' -and
+           ($now -lt [long]$p.start -or $now+[TimeSpan]::FromSeconds(20).Ticks -gt [long]$p.end)) {
+            $status='WINDOW_EXPIRED'
+        } else {
         $request=[Text.Encoding]::ASCII.GetBytes("POST $uri HTTP/1.1`r`nHost: docker`r`nContent-Type: application/json`r`nContent-Length: $($body.Length)`r`nConnection: close`r`n`r`n$body")
         $write=$pipe.WriteAsync($request,0,$request.Length)
         if(-not $write.Wait(5000)){throw 'WRITE_TIMEOUT'}
@@ -177,12 +249,17 @@ try {
             }
             if($header -cnotmatch ('^HTTP/1\.[01] '+$expected+'(?: [^\r\n]*)?\r\n')){throw 'RESPONSE_STATUS'}
         } finally {$received.Dispose()}
+        }
     }
     $receipt=Join-Path $p.state ('h454-broker-op-'+$p.nonce+'.receipt')
     $bytes=[Text.UTF8Encoding]::new($false).GetBytes("H454-BROKER-TRIAL-RECEIPT-1`n$($p.hash)`n$status`n")
     $stream=[IO.FileStream]::new($receipt,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None,4096,[IO.FileOptions]::WriteThrough)
     try{$stream.Write($bytes,0,$bytes.Length);$stream.Flush($true)}finally{$stream.Dispose()}
-} catch {exit 2} finally {if($null -ne $pipe){$pipe.Dispose()}}
+} catch {exit 2} finally {
+    if($null -ne $secret){[Array]::Clear($secret,0,$secret.Length)}
+    if($null -ne $client){$client.Dispose()}
+    if($null -ne $pipe){$pipe.Dispose()}
+}
 '@
     Require-H454 ($source.Split(@('__PAYLOAD__'),[StringSplitOptions]::None).Length -eq 2) 'H454_TRIAL_WORKER_SOURCE'
     $source=$source.Replace('__PAYLOAD__',$data)
@@ -191,8 +268,19 @@ try {
     $info.Arguments='-NoProfile -NonInteractive -EncodedCommand '+$encoded
     $info.UseShellExecute=$false;$info.CreateNoWindow=$true;$info.WindowStyle=[Diagnostics.ProcessWindowStyle]::Hidden
     $info.EnvironmentVariables['PSModulePath']=Join-Path $PSHOME 'Modules'
+    if($isStage){$info.RedirectStandardInput=$true}
     $process=[Diagnostics.Process]::new();$process.StartInfo=$info
-    try{Require-H454 $process.Start() 'H454_TRIAL_WORKER_START';$null=$process.WaitForExit(30000)}finally{$process.Dispose()}
+    try{
+        Require-H454 $process.Start() 'H454_TRIAL_WORKER_START'
+        if($isStage){
+            try{
+                $write=$process.StandardInput.BaseStream.WriteAsync($InputBytes,0,$InputBytes.Length)
+                if(-not $write.Wait(5000)){throw 'H454_TRIAL_WORKER_INPUT_TIMEOUT'}
+                $null=$write.GetAwaiter().GetResult()
+            }finally{$process.StandardInput.Close()}
+        }
+        $null=$process.WaitForExit(30000)
+    }finally{$process.Dispose()}
 }
 
 function Assert-H454BrokerTrialSettled([hashtable]$RestoreArgs) {
@@ -233,7 +321,7 @@ function Complete-H454BrokerTrialOperation([hashtable]$RestoreArgs,[string]$Phas
 }
 
 function Invoke-H454BrokerTrialDocker([hashtable]$RestoreArgs,[string[]]$Arguments,[byte[]]$InputBytes=$null,
-    [datetime]$WindowStartUtc,[datetime]$WindowEndUtc,[string]$CandidateId) {
+    [datetime]$WindowStartUtc,[datetime]$WindowEndUtc,[string]$CandidateId,[string]$CandidateImage='',[string]$BrokerId='') {
     $phase=switch($Arguments[0]){
         'stop'{if($Arguments[-1] -ceq $RestoreArgs.AgentId){'STOP_ORIGINAL'}else{'STOP_CANDIDATE'}}
         'start'{'START_CANDIDATE'}
@@ -249,12 +337,26 @@ function Invoke-H454BrokerTrialDocker([hashtable]$RestoreArgs,[string[]]$Argumen
         default{'INVALID'}
     }
     $recorded=@('STOP_ORIGINAL','STOP_CANDIDATE','START_CANDIDATE','CONNECT_ORIGINAL','DISCONNECT_ORIGINAL',
-        'CONNECT_CANDIDATE','DISCONNECT_CANDIDATE')
+        'CONNECT_CANDIDATE','DISCONNECT_CANDIDATE','STAGE_CANDIDATE','STAGE_BROKER')
     if($phase -cin $recorded){
-        Require-H454 ($null -eq $InputBytes -and
-            (($Arguments[0] -ceq 'stop' -and $Arguments.Count -eq 4 -and $Arguments[1] -ceq '--time' -and $Arguments[2] -ceq '10') -or
-             ($Arguments[0] -ceq 'start' -and $Arguments.Count -eq 2) -or
-             ($Arguments[0] -ceq 'network' -and $Arguments.Count -eq 4))) 'H454_TRIAL_RECORDED_INPUT'
+        $isStage=$phase -cin @('STAGE_CANDIDATE','STAGE_BROKER')
+        if($isStage){
+            Require-H454 ($null -ne $InputBytes -and $InputBytes.Length -gt 0 -and $InputBytes.Length -le 16384 -and
+                $Arguments.Count -eq 7 -and $Arguments[1] -ceq '--interactive' -and $Arguments[2] -ceq '--user' -and
+                $Arguments[3] -ceq '65534:65534' -and
+                (($phase -ceq 'STAGE_CANDIDATE' -and $Arguments[4] -ceq $CandidateId -and
+                  $Arguments[5] -ceq '/bin/sh' -and $Arguments[6] -ceq '/usr/local/bin/h15-stage.sh') -or
+                 ($phase -ceq 'STAGE_BROKER' -and $BrokerId -cmatch '^[a-f0-9]{64}$' -and $Arguments[4] -ceq $BrokerId -and
+                  $Arguments[5] -ceq 'node' -and $Arguments[6] -ceq '/opt/hermes-rollback/stage.cjs'))) 'H454_TRIAL_RECORDED_INPUT'
+            foreach($name in @('DOCKER_HOST','DOCKER_CONTEXT','DOCKER_TLS_VERIFY','DOCKER_CERT_PATH','DOCKER_CONFIG','DOCKER_API_VERSION')){
+                Require-H454 ([string]::IsNullOrEmpty([Environment]::GetEnvironmentVariable($name,'Process'))) 'H454_DOCKER_ENV'
+            }
+        }else{
+            Require-H454 ($null -eq $InputBytes -and
+                (($Arguments[0] -ceq 'stop' -and $Arguments.Count -eq 4 -and $Arguments[1] -ceq '--time' -and $Arguments[2] -ceq '10') -or
+                 ($Arguments[0] -ceq 'start' -and $Arguments.Count -eq 2) -or
+                 ($Arguments[0] -ceq 'network' -and $Arguments.Count -eq 4))) 'H454_TRIAL_RECORDED_INPUT'
+        }
         $network=if($Arguments[0] -ceq 'network'){$Arguments[2]}else{'-'}
         $startTicks=0L;$endTicks=0L
         if($phase -ceq 'STOP_ORIGINAL'){
@@ -263,13 +365,16 @@ function Invoke-H454BrokerTrialDocker([hashtable]$RestoreArgs,[string[]]$Argumen
                 $now -ge $WindowStartUtc -and $now.AddSeconds(20) -le $WindowEndUtc) 'H454_TRIAL_WINDOW'
             $startTicks=$WindowStartUtc.Ticks;$endTicks=$WindowEndUtc.Ticks
         }
+        $target=if($isStage){$Arguments[4]}else{$Arguments[-1]}
         $operation=Get-H454TrialRecordedOperation $RestoreArgs $CandidateId $phase ([Guid]::NewGuid().ToString('N')) `
-            $Arguments[-1] $network $startTicks $endTicks
+            $target $network $startTicks $endTicks
         Start-H454TrialRecordedOperation $RestoreArgs $operation
-        Start-H454TrialReceiptWorker $RestoreArgs $operation
-        $status=Resolve-H454TrialRecordedOperation $RestoreArgs $CandidateId
+        Start-H454TrialReceiptWorker $RestoreArgs $operation $InputBytes
+        $status=Resolve-H454TrialRecordedOperation $RestoreArgs $CandidateId $CandidateImage
         Require-H454 ($null -ne $status) 'H454_TRIAL_DOCKER_HOLD'
-        Require-H454 ($status -ceq 'HTTP_OK') 'H454_TRIAL_WINDOW'
+        if($status -ceq 'WINDOW_EXPIRED'){throw 'H454_TRIAL_WINDOW'}
+        Require-H454 ($status -ceq 'HTTP_OK') 'H454_TRIAL_WORKER_INPUT_INCOMPLETE'
+        if($phase -ceq 'STAGE_BROKER'){return 'H454_BROKER_TOKEN_STAGED'}
         return ''
     }
     Start-H454BrokerTrialOperation $RestoreArgs $phase
@@ -341,12 +446,12 @@ function Start-H454BrokerTrial([hashtable]$RestoreArgs,[string]$CandidateId,[str
     $empty="const f=require('node:fs');try{const d=f.lstatSync('/run/brc');if(!d.isDirectory()||d.isSymbolicLink()||d.uid!==65534||(d.mode&511)!==448)throw 0;for(const p of ['ready','device.json','config.json']){try{f.lstatSync('/run/brc/'+p);throw 0}catch(e){if(e.code!=='ENOENT')throw 0}}process.stdout.write('H454_STAGE_EMPTY')}catch{process.exit(2)}"
     $empty64=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($empty))
     Require-H454 ((Invoke-H454BrokerTrialDocker $RestoreArgs @('exec','--user','65534:65534',$CandidateId,'node','-e',$bootstrap,$empty64)) -ceq 'H454_STAGE_EMPTY') 'H454_TRIAL_STAGE_DRIFT'
-    $null=Invoke-H454BrokerTrialDocker $RestoreArgs @('exec','--interactive','--user','65534:65534',$CandidateId,'/bin/sh','/usr/local/bin/h15-stage.sh') $AgentBytes
+    $null=Invoke-H454BrokerTrialDocker $RestoreArgs @('exec','--interactive','--user','65534:65534',$CandidateId,'/bin/sh','/usr/local/bin/h15-stage.sh') $AgentBytes -CandidateId $CandidateId
     $verifier64=[Convert]::ToBase64String($verifier)
     Require-H454 ((Invoke-H454BrokerTrialDocker $RestoreArgs @('exec','--interactive','--user','65534:65534',$CandidateId,'node','-e',$bootstrap,$verifier64) $AgentBytes) -ceq 'H454_STAGED_CREDENTIAL_MATCH') 'H454_TRIAL_STAGE_VERIFY'
     $state=Get-H454BrokerTrialState $RestoreArgs $CandidateId $CandidateImage -Pending
     Require-H454 ((Get-FileHash -LiteralPath $RestoreArgs.VerifierPath -Algorithm SHA256).Hash -ceq $RestoreArgs.VerifierSha256) 'H454_TRIAL_VERIFIER'
-    Require-H454 ((Invoke-H454BrokerTrialDocker $RestoreArgs @('exec','--interactive','--user','65534:65534',$state.Original.Broker.Id,'node','/opt/hermes-rollback/stage.cjs') $TokenBytes) -ceq 'H454_BROKER_TOKEN_STAGED') 'H454_TRIAL_STAGE_BROKER'
+    Require-H454 ((Invoke-H454BrokerTrialDocker $RestoreArgs @('exec','--interactive','--user','65534:65534',$state.Original.Broker.Id,'node','/opt/hermes-rollback/stage.cjs') $TokenBytes -CandidateId $CandidateId -CandidateImage $CandidateImage -BrokerId $state.Original.Broker.Id) -ceq 'H454_BROKER_TOKEN_STAGED') 'H454_TRIAL_STAGE_BROKER'
     $null=Get-H454BrokerTrialState $RestoreArgs $CandidateId $CandidateImage -Pending
     return [pscustomobject]@{Status='CANDIDATE_STAGED_MCP_REQUIRED';CandidateId=$CandidateId}
 }
@@ -355,7 +460,7 @@ function Restore-H454BrokerTrial([hashtable]$RestoreArgs,[string]$CandidateId,[s
     [byte[]]$TokenBytes=$null,[byte[]]$AgentBytes=$null,[switch]$Apply,[switch]$OwnerApproved) {
     Require-H454 (-not $Apply -or $OwnerApproved) 'H454_TRIAL_APPROVAL'
     Assert-H454BrokerTrialMarker $RestoreArgs $CandidateId $CandidateImage
-    if($Apply){$null=Resolve-H454TrialRecordedOperation $RestoreArgs $CandidateId}
+    if($Apply){$null=Resolve-H454TrialRecordedOperation $RestoreArgs $CandidateId $CandidateImage}
     Assert-H454BrokerTrialSettled $RestoreArgs
     $state=Get-H454BrokerTrialState $RestoreArgs $CandidateId $CandidateImage -Pending
     if(-not $Apply){return [pscustomobject]@{Status='RECOVERY_PREFLIGHT';CandidateRunning=$state.Candidate.State.Running}}

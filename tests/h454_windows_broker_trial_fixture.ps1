@@ -64,15 +64,17 @@ function Invoke-H454RecoveryDocker([string[]]$Arguments,[string]$DockerSha256,[b
     if($event -ceq $script:failure -and -not $script:failed){$script:failed=$true;throw 'H454_DOCKER_AMBIGUOUS'}
     return [pscustomobject]@{Code=0;Output=$output}
 }
-function Start-H454TrialReceiptWorker([hashtable]$RestoreArgs,[object]$Operation){
+function Start-H454TrialReceiptWorker([hashtable]$RestoreArgs,[object]$Operation,[byte[]]$InputBytes=$null){
     $arguments=switch -CaseSensitive ($Operation.Phase){
         {$_ -cin @('STOP_ORIGINAL','STOP_CANDIDATE')} {@('stop','--time','10',$Operation.Target)}
         'START_CANDIDATE' {@('start',$Operation.Target)}
         {$_ -cin @('CONNECT_ORIGINAL','CONNECT_CANDIDATE')} {@('network','connect',$Operation.Network,$Operation.Target)}
         {$_ -cin @('DISCONNECT_ORIGINAL','DISCONNECT_CANDIDATE')} {@('network','disconnect',$Operation.Network,$Operation.Target)}
+        'STAGE_CANDIDATE' {@('exec','--interactive','--user','65534:65534',$Operation.Target,'/bin/sh','/usr/local/bin/h15-stage.sh')}
+        'STAGE_BROKER' {@('exec','--interactive','--user','65534:65534',$Operation.Target,'node','/opt/hermes-rollback/stage.cjs')}
         default {throw 'FIXTURE_PHASE'}
     }
-    $null=Invoke-H454RecoveryDocker -Arguments $arguments -DockerSha256 $RestoreArgs.DockerSha256
+    $null=Invoke-H454RecoveryDocker -Arguments $arguments -DockerSha256 $RestoreArgs.DockerSha256 -InputBytes $InputBytes
     $receipt=Join-Path $RestoreArgs.StateDir ('h454-broker-op-'+$Operation.Nonce+'.receipt')
     $bytes=[Text.UTF8Encoding]::new($false).GetBytes("H454-BROKER-TRIAL-RECEIPT-1`n$($Operation.Hash)`nHTTP_OK`n")
     $stream=[IO.File]::Open($receipt,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
@@ -153,6 +155,38 @@ try{
     [IO.File]::WriteAllText($receipt,"H454-BROKER-TRIAL-RECEIPT-1`n$($recorded.Hash)`nHTTP_OK`n")
     Require-H454 ((Resolve-H454TrialRecordedOperation $args $script:candidateId) -ceq 'HTTP_OK' -and
         -not (Test-Path -LiteralPath $receipt) -and -not (Test-Path -LiteralPath (Join-Path $dir 'h454-broker-trial.inflight'))) 'FIXTURE_RECEIPT_RESOLVED'
+    $recorded=Get-H454TrialRecordedOperation $args $script:candidateId 'STAGE_CANDIDATE' ([Guid]::NewGuid().ToString('N')) $script:candidateId '-' 0 0
+    Start-H454TrialRecordedOperation $args $recorded
+    $receipt=Join-Path $dir ('h454-broker-op-'+$recorded.Nonce+'.receipt')
+    $trialPath=Join-Path $PSScriptRoot '..\scripts\h454_windows_broker_trial.ps1'
+    $trialAst=[Management.Automation.Language.Parser]::ParseFile($trialPath,[ref]$tokens,[ref]$errors)
+    $workers=@($trialAst.FindAll({param($x)$x -is [Management.Automation.Language.FunctionDefinitionAst] -and $x.Name -ceq 'Start-H454TrialReceiptWorker'},$true))
+    Require-H454 (@($errors).Count -eq 0 -and $workers.Count -eq 1) 'FIXTURE_WORKER_SOURCE'
+    $sources=@($workers[0].FindAll({param($x)$x -is [Management.Automation.Language.StringConstantExpressionAst] -and
+        $x.StringConstantType -eq 'SingleQuotedHereString' -and $x.Value.Contains('__PAYLOAD__')},$true))
+    Require-H454 ($sources.Count -eq 1) 'FIXTURE_WORKER_SOURCE'
+    $powershell=Join-Path ([Environment]::SystemDirectory) 'WindowsPowerShell\v1.0\powershell.exe'
+    $workerHash=(Get-FileHash -LiteralPath $powershell -Algorithm SHA256).Hash
+    $payload=@($dir,$recorded.Phase,$recorded.Nonce,$recorded.Target,$recorded.Network,'0','0',$recorded.Hash,$workerHash,'100',('D'*64)) -join "`n"
+    $encodedPayload=[Convert]::ToBase64String([Text.UTF8Encoding]::new($false).GetBytes($payload))
+    $workerSource=$sources[0].Value.Replace('__PAYLOAD__',$encodedPayload)
+    $encodedSource=[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($workerSource))
+    $info=[Diagnostics.ProcessStartInfo]::new();$info.FileName=$powershell
+    $info.Arguments='-NoProfile -NonInteractive -EncodedCommand '+$encodedSource
+    $info.UseShellExecute=$false;$info.CreateNoWindow=$true;$info.RedirectStandardInput=$true
+    $info.EnvironmentVariables['PSModulePath']=Join-Path $PSHOME 'Modules'
+    $worker=[Diagnostics.Process]::new();$worker.StartInfo=$info
+    try{
+        Require-H454 $worker.Start() 'FIXTURE_WORKER_START'
+        $partial=[Text.Encoding]::UTF8.GetBytes('H454_SYNTHETIC_PARTIAL_INPUT')
+        $worker.StandardInput.BaseStream.Write($partial,0,$partial.Length);$worker.StandardInput.Close()
+        Require-H454 ($worker.WaitForExit(15000) -and $worker.ExitCode -eq 0) 'FIXTURE_WORKER_EXIT'
+    }finally{$worker.Dispose()}
+    Require-H454 ((Test-Path -LiteralPath $receipt) -and
+        [IO.File]::ReadAllText($receipt) -ceq "H454-BROKER-TRIAL-RECEIPT-1`n$($recorded.Hash)`nINPUT_INCOMPLETE`n" -and
+        -not $workerSource.Contains('H454_SYNTHETIC_PARTIAL_INPUT')) 'FIXTURE_STAGE_INPUT_NOT_DISPATCHED'
+    Require-H454 ((Resolve-H454TrialRecordedOperation $args $script:candidateId) -ceq 'INPUT_INCOMPLETE' -and
+        -not (Test-Path -LiteralPath (Join-Path $dir 'h454-broker-trial.inflight'))) 'FIXTURE_STAGE_INPUT_NOT_DISPATCHED'
     Reset-Fixture
     $preview=Start-H454BrokerTrial @start
     Require-H454 ($preview.Status -ceq 'PREFLIGHT' -and $script:events.Count -eq 0) 'FIXTURE_PREVIEW'
@@ -196,6 +230,14 @@ try{
         }
         if($case -ceq 'success'){
             Require-H454 ($script:candidateRunning -and -not $script:originalRunning) 'FIXTURE_CANDIDATE_RUNNING'
+            $forged=Get-H454TrialRecordedOperation $args $script:candidateId 'STAGE_BROKER' ([Guid]::NewGuid().ToString('N')) ('0'*64) '-' 0 0
+            Start-H454TrialRecordedOperation $args $forged
+            $forgedReceipt=Join-Path $dir ('h454-broker-op-'+$forged.Nonce+'.receipt')
+            [IO.File]::WriteAllText($forgedReceipt,"H454-BROKER-TRIAL-RECEIPT-1`n$($forged.Hash)`nHTTP_OK`n")
+            $refused=$false
+            try{$null=Resolve-H454TrialRecordedOperation $args $script:candidateId $script:candidateImage}catch{$refused=$_.Exception.Message -ceq 'H454_TRIAL_RECEIPT_BROKER'}
+            Require-H454 ($refused -and (Test-Path -LiteralPath (Join-Path $dir 'h454-broker-trial.inflight'))) 'FIXTURE_RECEIPT_BROKER_IDENTITY'
+            [IO.File]::Delete($forgedReceipt);[IO.File]::Delete((Join-Path $dir 'h454-broker-trial.inflight'))
             $before=$script:events.Count;$refused=$false
             try{$null=Restore-H454BrokerTrial $args $script:candidateId $script:candidateImage ([byte[]](1,2)) $credential.AgentBytes -Apply -OwnerApproved}catch{$refused=$true}
             Require-H454 ($refused -and $script:events.Count -eq $before -and $script:candidateRunning) 'FIXTURE_BAD_RECOVERY_CREDENTIAL'
