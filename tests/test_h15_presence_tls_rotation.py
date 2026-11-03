@@ -10,6 +10,7 @@ import subprocess
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
 
 from scripts.h15_presence_tls_preflight import check, PreflightError
 from scripts.h15_presence_tls_rotation import (
@@ -518,6 +519,55 @@ class RotationTests(unittest.TestCase):
         self.assertFalse(_probe(ca=self.ca, leaf=wrong_cert, port=port))
         thread.join(timeout=6)
         self.assertFalse(thread.is_alive())
+
+
+    def test_real_tls_probe_survives_four_initial_connection_refusals(self):
+        cert, key = self.certificates[0]
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.load_cert_chain(str(cert), str(key))
+        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server.bind(("127.0.0.1", 0))
+        server.listen(1)
+        server.settimeout(5)
+        port = server.getsockname()[1]
+
+        def serve():
+            try:
+                conn, _ = server.accept()
+                with conn:
+                    with ctx.wrap_socket(conn, server_side=True):
+                        pass
+            finally:
+                server.close()
+
+        thread = threading.Thread(target=serve, daemon=True)
+        thread.start()
+        original = socket.create_connection
+        refused = []
+
+        def delayed_connect(*args, **kwargs):
+            if len(refused) < 4:
+                refused.append(True)
+                raise ConnectionRefusedError("synthetic startup race")
+            return original(*args, **kwargs)
+
+        with patch("scripts.h15_presence_tls_rotation.socket.create_connection",
+                   side_effect=delayed_connect) as connect, patch(
+                   "scripts.h15_presence_tls_rotation.time.sleep") as sleep:
+            self.assertTrue(_probe(ca=self.ca, leaf=cert, port=port))
+            self.assertEqual(connect.call_count, 5)
+            self.assertEqual(sleep.call_count, 4)
+        thread.join(timeout=6)
+        self.assertFalse(thread.is_alive())
+
+    def test_probe_times_out_without_weakened_tls_or_unbounded_retries(self):
+        cert, _ = self.certificates[0]
+        with patch("scripts.h15_presence_tls_rotation.socket.create_connection",
+                   side_effect=ConnectionRefusedError("synthetic outage")) as connect, patch(
+                   "scripts.h15_presence_tls_rotation.time.sleep") as sleep:
+            self.assertFalse(_probe(ca=self.ca, leaf=cert, port=38177))
+            self.assertEqual(connect.call_count, 8)
+            self.assertEqual(sleep.call_count, 7)
 
 
 if __name__ == "__main__":
