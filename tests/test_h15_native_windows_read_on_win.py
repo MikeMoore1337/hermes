@@ -8,6 +8,7 @@ import base64
 import ctypes
 import hashlib
 import json
+import mmap
 import os
 from pathlib import Path
 import tempfile
@@ -116,6 +117,17 @@ class NativeWindowsReadOnRunnerTests(unittest.TestCase):
         self.assertEqual(base64.b64decode(result["data"]), self.data)
         self.file.write_bytes(b"writer-after-read")
         self.assertEqual(self.file.read_bytes(), b"writer-after-read")
+
+    def test_read_refuses_a_live_writable_mapping(self):
+        with self.file.open("r+b") as writer:
+            mapping = mmap.mmap(writer.fileno(), 0, access=mmap.ACCESS_WRITE)
+        try:
+            with self.assertRaisesRegex(broker.NativeReadRefused, "file_busy"):
+                broker.handle_native_request("hermes", r"src\safe.py", "read")
+        finally:
+            mapping.close()
+        result = broker.handle_native_request("hermes", r"src\safe.py", "read")
+        self.assertEqual(base64.b64decode(result["data"]), self.data)
 
     def test_root_cannot_be_renamed_during_read_or_stat(self):
         real_open = broker._opened
