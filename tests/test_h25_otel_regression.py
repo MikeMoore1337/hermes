@@ -10,7 +10,8 @@ import unittest
 from unittest.mock import patch
 
 from eval_lane.offline_otel_projection import (
-    MAX_INPUT_BYTES, MAX_OUTPUT_BYTES, OfflineTelemetryDenied, project,
+    MAX_INPUT_BYTES, MAX_OUTPUT_BYTES, OfflineTelemetryDenied,
+    offline_otlp_json_requests, project,
 )
 from tests.test_h25_otel_offline import event, payload
 
@@ -37,6 +38,54 @@ class SyntheticOtelRegressionTests(unittest.TestCase):
         self.assertEqual(1, x["review"]["unknown_error_input_events"])
         self.assertEqual("NOT_MEASURED", x["review"]["cost_measurement_state"])
         self.assertEqual("NOT_MEASURED", x["review"]["tokens_measurement_state"])
+
+    def test_clean_span_is_unset_even_with_successful_retries(self):
+        # OTEL semconv: absence of an observed error does not justify OK.
+        obj = project(payload(event(error_kind="none", attempt_count=3, retry_count=2)))
+        span = obj["otlp_json_candidate"]["resourceSpans"][0]["scopeSpans"][0]["spans"][0]
+        self.assertEqual(0, span["status"]["code"])
+        self.assertNotIn("error.type", {a["key"] for a in span["attributes"]})
+
+    def test_error_type_attribute_is_low_cardinality_and_never_remote_text(self):
+        for error in ("timeout", "denied", "execution_error"):
+            with self.subTest(error=error):
+                obj = project(payload(event(error_kind=error)))
+                span = obj["otlp_json_candidate"]["resourceSpans"][0]["scopeSpans"][0]["spans"][0]
+                self.assertEqual(2, span["status"]["code"])
+                attr = {a["key"]: a["value"] for a in span["attributes"]}
+                self.assertEqual({"stringValue": error}, attr["error.type"])
+        obj = project(payload(event(error_kind="unknown")))
+        span = obj["otlp_json_candidate"]["resourceSpans"][0]["scopeSpans"][0]["spans"][0]
+        self.assertNotIn("error.type", {a["key"] for a in span["attributes"]})
+
+    def test_offline_signal_requests_have_two_strict_otlp_bodies(self):
+        fixture = payload(event(), event(error_kind="timeout"))
+        with patch("builtins.open", side_effect=AssertionError("unexpected file IO")):
+            with patch.object(socket.socket, "connect", side_effect=AssertionError("unexpected network")):
+                signal_bodies = offline_otlp_json_requests(fixture)
+        self.assertEqual({"traces", "metrics"}, set(signal_bodies))
+        self.assertEqual({"resourceSpans"}, set(signal_bodies["traces"]))
+        self.assertEqual({"resourceMetrics"}, set(signal_bodies["metrics"]))
+        self.assertEqual(signal_bodies, offline_otlp_json_requests(fixture))
+        self.assertNotIn("review", json.dumps(signal_bodies))
+        self.assertNotIn("CANARY_ONLY", json.dumps(signal_bodies))
+        if ParseDict is not None:
+            traces = ParseDict(signal_bodies["traces"], ExportTraceServiceRequest(),
+                               ignore_unknown_fields=False)
+            metrics = ParseDict(signal_bodies["metrics"], ExportMetricsServiceRequest(),
+                                ignore_unknown_fields=False)
+            self.assertEqual(2, len(traces.resource_spans[0].scope_spans[0].spans))
+            self.assertEqual(2, len(metrics.resource_metrics[0].scope_metrics[0].metrics))
+
+    def test_offline_signal_requests_reject_private_metadata(self):
+        for bad in (
+            {**event(), "authorization": "CANARY_ONLY"},
+            event(tool="unknown:CANARY_ONLY"),
+        ):
+            with self.subTest(kind=bad["tool"]):
+                with self.assertRaises(OfflineTelemetryDenied):
+                    offline_otlp_json_requests(payload(bad))
+
 
     def test_all_errors_counted_even_if_unsampled(self):
         x = project(payload(
