@@ -52,7 +52,7 @@ jobs:
                 saw_pilot=true ;;
               .github/workflows/h632-ecc-original-acceptance.yml|scripts/h632_ecc_acceptance.py|tests/test_h632_ecc_acceptance.py|docs/operations/ecc-upstream-as-is.md)
                 saw_ecc=true ;;
-              .github/workflows/production-deploy.yml) ;;
+              tests/test_h585_srt_pilot.py|.github/workflows/production-deploy.yml) ;;
               *) source_only=false ;;
             esac
           done
