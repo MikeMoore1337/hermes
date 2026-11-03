@@ -8,6 +8,7 @@ from pathlib import Path
 import socket
 import ssl
 import subprocess
+import sys
 import tempfile
 import threading
 import unittest
@@ -158,6 +159,26 @@ class ClientTrustPreflightTests(unittest.TestCase):
         os.chmod(self.config_path, 0o644)
         with self.assertRaisesRegex(TrustError, "CLIENT_CONFIG_PERMISSIONS_UNSAFE"):
             self.preview()
+
+    def test_cli_never_echoes_private_config_or_token(self):
+        command = [
+            sys.executable, "-B", "-m", "scripts.h346_client_trust_preflight",
+            "--config", str(self.config_path),
+            "--ca-public", str(self.new_ca),
+            "--primary-leaf", str(self.primary),
+            "--fallback-leaf", str(self.fallback),
+            "--device", "linux-vps",
+            "--expected-ca-sha256", self.trust_pin,
+        ]
+        process = subprocess.run(command, text=True, capture_output=True,
+                                 check=False, timeout=15)
+        self.assertEqual(process.returncode, 0, process.stderr)
+        self.assertIn("H346_CLIENT_TRUST_PREFLIGHT=PASS", process.stdout)
+        self.assertIn("H346_CLIENT_LIVE_HANDSHAKE=NOT_RUN", process.stdout)
+        combined = process.stdout + process.stderr
+        self.assertNotIn(self.config["token"], combined)
+        self.assertNotIn(self.config["server_ca_pem"], combined)
+        self.assertNotIn(str(self.config_path), combined)
 
     def test_corrupt_existing_trust_pem_rejected_without_writes(self):
         self.config["server_ca_pem"] = (
