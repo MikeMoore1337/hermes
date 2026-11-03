@@ -187,7 +187,7 @@ def run(ecc: Path, output: Path) -> int:
             attempt(report, "original-uninstall-dry-run", node("/usr/local/bin/node", ["scripts/uninstall.js", "--target", "hermes", "--dry-run", "--json"]))
             attempt(report, "original-uninstall", node("/usr/local/bin/node", ["scripts/uninstall.js", "--target", "hermes", "--json"]))
             uninstalled = snapshot(home)
-            assert all(uninstalled.get(k) == v for k, v in before.items()), "Rollback altered unrelated state"
+            assert uninstalled == before, "Original uninstall left managed artifacts or altered unrelated state"
             assert not (h / "ecc-install-state.json").exists(), "Uninstall left ECC state"
             assert not (h / "skills" / "verification-loop" / "SKILL.md").exists(), "Uninstall left managed skill"
             assert not (h / "skills" / "tdd-workflow" / "SKILL.md").exists(), "Uninstall left managed skill"
