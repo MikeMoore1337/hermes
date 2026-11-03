@@ -156,6 +156,9 @@ let socket={}; const hub={get:id=>id===win.deviceId?{socket}:undefined};
 const startArgs={path:good}; const startRoute=route('start_search',startArgs);
 const start=api.prepareWorkspaceSearch('start_search',startArgs,startRoute,hub,[win,other]);
 assert.equal(start.status,'start');
+assert.equal(api.finishWorkspaceSearch({content:[{type:'text',text:'unexpected success'}]},start,hub).reason,
+ 'search_response_unrecognized');
+assert.equal(api.finishWorkspaceSearch({isError:true,content:[{type:'text',text:'invalid request'}]},start,hub).status,'ok');
 const started={content:[{type:'text',text:'Started file search session: search_1_1793680000000\\nPattern: fixture\\n'}]};
 assert.equal(api.finishWorkspaceSearch(started,start,hub).status,'ok');
 const token=started.content[0].text.match(/^Started file search session: (hermes_search_[a-f0-9]{32}_search_1_1793680000000)/)?.[1];
@@ -175,6 +178,9 @@ assert.equal(api.prepareWorkspaceSearch('stop_search',{sessionId:'search_9_17936
 const output={content:[{type:'text',text:'Search session: search_1_1793680000000\\nfile search_1_1793680000000\\n'}]};
 assert.equal(api.finishWorkspaceSearch(output,follow,hub).status,'ok');
 assert.equal(output.content[0].text,'Search session: '+token+'\\nfile search_1_1793680000000\\n');
+const missing={content:[{type:'text',text:'Search session search_1_1793680000000 not found or already completed.'}]};
+assert.equal(api.finishWorkspaceSearch(missing,follow,hub).status,'ok');
+assert.equal(missing.isError,true);assert.ok(missing.content[0].text.includes(token));
 assert.equal(api.prepareWorkspaceSearch('stop_search',{sessionId:token,deviceId:other},
  {status:'unchanged'},hub,[win,other]).reason,'search_device_mismatch');
 assert.equal(api.prepareWorkspaceSearch('stop_search',{sessionId:'hermes_search_bad'},

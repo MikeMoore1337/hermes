@@ -44,7 +44,7 @@ ROUTERESULT = """
     if (out.ok) {
       const finished = finishWorkspaceSearch(out.result, search, hub);
       if (finished.status === 'refused')
-        return { content: [{ type: 'text', text: `Search connection changed: ${finished.reason}; check the device before retrying.` }], isError: true };
+        return { content: [{ type: 'text', text: `Search session unavailable: ${finished.reason}; check the device before retrying.` }], isError: true };
     }
 """
 

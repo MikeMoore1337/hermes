@@ -141,15 +141,19 @@ export function finishWorkspaceSearch(result: unknown, search: WorkspaceSearch, 
   if (search.status !== 'start' && search.status !== 'follow') return { status: 'ok' };
   if (hub.get(search.deviceId)?.socket !== search.socket)
     return { status: 'refused', reason: 'search_connection_changed' };
-  if (!result || typeof result !== 'object') return { status: 'ok' };
-  const content = (result as Record<string, unknown>).content;
+  if (!result || typeof result !== 'object') return { status: 'refused', reason: 'search_response_unrecognized' };
+  const response = result as Record<string, unknown>;
+  const content = response.content;
   if (!Array.isArray(content) || !content[0] || typeof content[0] !== 'object' ||
-      content[0].type !== 'text' || typeof content[0].text !== 'string') return { status: 'ok' };
+      content[0].type !== 'text' || typeof content[0].text !== 'string')
+    return response.isError === true ? { status: 'ok' } : { status: 'refused', reason: 'search_response_unrecognized' };
   const text: string = content[0].text;
   if (search.status === 'start') {
     const match = /^Started (?:file|content) search session: (search_[1-9][0-9]{0,15}_[0-9]{1,16})\n/.exec(text);
     if (match) content[0].text = text.replace(match[1], `hermes_search_${search.generation}_${match[1]}`);
+    else if (response.isError !== true) return { status: 'refused', reason: 'search_response_unrecognized' };
   } else {
+    if (text === `Search session ${search.nativeId} not found or already completed.`) response.isError = true;
     for (const prefix of [`Search session: ${search.nativeId}\n`, `Search session ${search.nativeId} `]) {
       if (text.startsWith(prefix)) {
         content[0].text = prefix.replace(search.nativeId, search.publicId) + text.slice(prefix.length);

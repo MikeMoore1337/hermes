@@ -215,6 +215,10 @@ must(searchResults.isError !== true && JSON.stringify(searchResults).includes(se
 const wrongSearchDevice = await call('get_more_search_results', { sessionId:searchId, deviceId:'ci-native-two' });
 must(wrongSearchDevice.isError === true && JSON.stringify(wrongSearchDevice).includes('search_device_mismatch'),
      'H15_WORKSPACE_SEARCH_OTHER_DEVICE_REFUSED');
+const missingSearchId = searchId.replace(/search_[1-9][0-9]*_[0-9]+$/, 'search_999999_1');
+const missingSearch = await call('stop_search', { sessionId:missingSearchId });
+must(missingSearch.isError === true && JSON.stringify(missingSearch).includes('not found'),
+     'H15_WORKSPACE_MISSING_SEARCH_IS_ERROR');
 const stoppedSearch = await call('stop_search', { sessionId:searchId });
 must(stoppedSearch.isError !== true && JSON.stringify(stoppedSearch).includes(searchId),
      'H15_WORKSPACE_SEARCH_STOP_ROUTED');
