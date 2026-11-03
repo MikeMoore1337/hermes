@@ -1,0 +1,150 @@
+name: H-632 original ECC offline acceptance
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/h632-ecc-original-acceptance.yml
+      - scripts/h632_ecc_acceptance.py
+      - tests/test_h632_ecc_acceptance.py
+      - docs/operations/ecc-upstream-as-is.md
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: h632-ecc-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  original-ecc-lifecycle:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout Hermes source without retained credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Run independent synthetic plan/guard tests
+        run: python3 -m unittest discover -s tests -p 'test_h632_ecc_acceptance.py' -v
+
+      - name: Verify disposable GitHub runner and acquire exact original ECC SHA
+        shell: bash
+        env:
+          ECC_SHA: 25278e7d7b6cf6e6a4e7a6c8e10f14ff22f0eb5b
+        run: |
+          set -euo pipefail
+          [[ '${{ runner.environment }}' == 'github-hosted' ]]
+          [[ "$RUNNER_OS" == 'Linux' ]]
+          [[ "$(id -u)" != 0 ]]
+          echo "ECC_SOURCE=$RUNNER_TEMP/ecc-h632-upstream" >> "$GITHUB_ENV"
+          git -c core.hooksPath=/dev/null clone --filter=blob:none --no-checkout \
+            https://github.com/affaan-m/ECC.git "$RUNNER_TEMP/ecc-h632-upstream"
+          git -C "$RUNNER_TEMP/ecc-h632-upstream" -c core.hooksPath=/dev/null checkout --detach "$ECC_SHA"
+          [[ "$(git -C "$RUNNER_TEMP/ecc-h632-upstream" rev-parse HEAD)" == "$ECC_SHA" ]]
+          python3 scripts/h632_ecc_acceptance.py \
+            --ecc-root "$RUNNER_TEMP/ecc-h632-upstream" \
+            --out "$RUNNER_TEMP/ecc632-preflight.json" --preflight
+
+      - name: Install original package dependencies without lifecycle scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$ECC_SOURCE"
+          npm ci --omit=dev --ignore-scripts --no-audit --no-fund --loglevel=error
+          test -d node_modules
+
+      - name: Obtain isolated test images (not production)
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker pull node:22.16.0-bookworm-slim@sha256:048ed02c5fd52e86fda6fbd2f6a76cf0d4492fd6c6fee9e2c463ed5108da0e34
+          docker pull nousresearch/hermes-agent@sha256:a11574b7fe8e1631d7d88d556677dac693bc058abf558cdeb899155688c1bf05
+          docker inspect --format '{{.Id}} {{.Architecture}}' node:22.16.0-bookworm-slim@sha256:048ed02c5fd52e86fda6fbd2f6a76cf0d4492fd6c6fee9e2c463ed5108da0e34
+          docker inspect --format '{{.Id}} {{.Architecture}}' \
+            nousresearch/hermes-agent@sha256:a11574b7fe8e1631d7d88d556677dac693bc058abf558cdeb899155688c1bf05
+
+      - name: Run original lifecycle and validate evidence without claiming product acceptance
+        shell: bash
+        run: |
+          set -uo pipefail
+          set +e
+          python3 scripts/h632_ecc_acceptance.py \
+            --ecc-root "$ECC_SOURCE" \
+            --out "$RUNNER_TEMP/ecc632-original-acceptance.json"
+          harness_exit="$?"
+          set -e
+          python3 -m json.tool "$RUNNER_TEMP/ecc632-original-acceptance.json" > /dev/null
+          H632_HARNESS_EXIT="$harness_exit" python3 - <<'PY'
+          import json, os, re
+          from pathlib import Path
+          p = Path(os.environ["RUNNER_TEMP"]) / "ecc632-original-acceptance.json"
+          report = json.loads(p.read_text(encoding="utf-8"))
+          expected_checks = (
+              "original_plan_safe", "unrelated_files_preserved",
+              "original_installer_installed_skills", "reinstall_idempotent_files",
+              "unsupported_profile_refused", "real_hermes_skill_discovery",
+              "real_hermes_skill_view_invoked", "os_network_and_outside_write_denied",
+              "no_active_hooks_or_mcp", "upstream_uninstall_preserves_unrelated",
+              "existing_owner_agents_preserved",
+          )
+          assert not report.get("error"), report.get("error")
+          for key in expected_checks:
+              assert report.get("checks", {}).get(key) is True, f"mandatory safety check failed: {key}"
+          calls = report.get("calls", [])
+          expected_calls = {
+              "original-dry-run": 0, "original-install": 0, "original-reinstall": 0,
+              "unsupported-profile": 1, "real-hermes-skills-list": 0,
+              "os-file-network-deny": 0, "original-uninstall-dry-run": 0,
+              "original-uninstall": 0, "owner-agents-collision": 0,
+          }
+          assert {c["name"]: c["exit"] for c in calls} == expected_calls, "Missing/unexpected original call"
+          assert report["ecc_sha"] == "25278e7d7b6cf6e6a4e7a6c8e10f14ff22f0eb5b"
+          assert report["provenance"]["license"] == "MIT"
+          assert report["native_hermes_discovery"]["source_sha"] == "d923a5eb487a17c0a68801bba9ef0f56c81040a8"
+          assert all(report["native_hermes_discovery"]["found"].values())
+          assert all(report["native_hermes_discovery"]["viewed"].values())
+          assert report["original_skill_execution"] == "BLOCKED_BY_OWNER_POLICY"
+          assert report["installed_runtime_config"]["root_hook_paths"] == []
+          assert not report["installed_runtime_config"]["mcp_root_file"]
+          assert not report["installed_runtime_config"]["mcp_root_config"]
+          assert all(
+              x == ".hermes/SOUL.md" or
+              re.fullmatch(r"\.hermes/backups/config/config\.yaml\.good\.[A-Za-z0-9_-]+", x)
+              for x in report.get("native_runtime_new_files", [])
+          ), "Unattributed Hermes native runtime changes"
+          status = report["status"]
+          if status == "PARTIAL_ORIGINAL_INSTALL_SECURITY_OR_ROLLBACK":
+              assert os.environ["H632_HARNESS_EXIT"] == "1", "Unexpected partial exit"
+              assert report["checks"]["exact_snapshot_rollback"] is False
+              assert report["checks"]["only_known_original_ecc_cache_residual"] is True
+              assert report["rollback_non_runtime_residual_files"] == [".claude/ecc/state.db"]
+              acceptance = "NO_GO: upstream ECC state.db survives native uninstall; original model-backed skills not executed"
+          elif status == "PASS_INSTALL_DISCOVERY_ROLLBACK_SKILL_EXECUTION_BLOCKED":
+              assert os.environ["H632_HARNESS_EXIT"] == "0"
+              assert report["checks"]["exact_snapshot_rollback"] is True
+              assert not report.get("rollback_non_runtime_residual_files")
+              acceptance = "PARTIAL: native uninstall clean, model-backed skills not executed"
+          else:
+              raise AssertionError("Unexpected/unreviewed acceptance outcome: " + str(status))
+          print("H632_RECEIPT_INTEGRITY=PASS")
+          print("H632_PRODUCT_ACCEPTANCE=" + acceptance)
+          print("H632_ORIGINAL_SKILL_EXECUTION=BLOCKED_BY_OWNER_POLICY")
+          print("H632_PRODUCTION_CHANGED=NO")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
+              f.write("### H632 source-only receipt verification: PASS\n\n")
+              f.write("**Product acceptance: " + acceptance + "**\n\n")
+              f.write("Original installation/discovery succeeded; no ECC model-backed skill was executed.\n\n")
+              f.write("GitHub CI success validates the evidence and safety boundaries only, NOT the #632 closure criteria.\n")
+          PY
+
+      - name: Retain sanitized read-only acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: h632-original-ecc-isolated-receipt
+          path: ${{ runner.temp }}/ecc632-original-acceptance.json
+          if-no-files-found: ignore
+          retention-days: 7
