@@ -8,6 +8,68 @@ import unittest
 
 if os.name == 'nt':
     class GuardOperatorBoundaryTests(unittest.TestCase):
+        def test_safety_check_keeps_guard_state_when_caller_shadows_it(self):
+            powershell = Path(os.environ['SystemRoot']) / 'System32/WindowsPowerShell/v1.0/powershell.exe'
+            source = Path(__file__).resolve().parents[1] / 'scripts/h454_windows_guard_operator.ps1'
+            script = r'''
+$ErrorActionPreference='Stop'
+$tokens=$null;$errors=$null
+$ast=[Management.Automation.Language.Parser]::ParseFile($env:H454_TEST_SOURCE,[ref]$tokens,[ref]$errors)
+$assignments=@($ast.FindAll({param($n) $n -is [Management.Automation.Language.AssignmentStatementAst] -and
+    $n.Left -is [Management.Automation.Language.VariableExpressionAst] -and
+    $n.Left.VariablePath.UserPath -ceq 'safetyCheck'},$true))
+if(@($errors).Count -ne 0 -or $assignments.Count -ne 1){throw 'SAFETY_CALLBACK_MISSING'}
+$script:state='pinned-root';$script:lock='pinned-lock'
+function Assert-H454RecoveryLock([string]$StateDir,$Lock){
+    if($StateDir -cne 'pinned-root' -or $Lock -cne 'pinned-lock'){throw 'CALLER_SHADOWED_STATE'}
+    throw 'PINNED_SCOPE_REACHED'
+}
+Invoke-Expression $assignments[0].Extent.Text
+function Invoke-Shadowed { $state=[pscustomobject]@{Original='other'};$lock='other-lock'; & $safetyCheck }
+try { Invoke-Shadowed;throw 'CALLBACK_DID_NOT_CHECK_LOCK' }
+catch { if($_.Exception.Message -cne 'PINNED_SCOPE_REACHED'){throw} }
+$script:context=[pscustomobject]@{Task=[pscustomobject]@{Principal=[pscustomobject]@{UserId='owner'}};Sid='sid';Launcher='launcher'}
+$script:backup='backup';$script:OriginalLauncherSha256='original';$script:GuardedLauncherSha256='guarded'
+$script:supervisor='supervisor';$script:SupervisorSha256='supervisor-hash'
+$script:config='config';$script:WssConfigSha256='config-hash';$script:ca='ca';$script:CaSha256='ca-hash'
+$script:curl='curl';$script:CurlSha256='curl-hash';$script:RestoreOriginal=$true
+function Require-H454([bool]$Condition,[string]$Reason){if(-not $Condition){throw $Reason}}
+function Assert-H454RecoveryLock($StateDir,$Lock){if($StateDir -cne 'pinned-root' -or $Lock -cne 'pinned-lock'){throw 'LOCK_SHADOWED'}}
+function Assert-H454WssLegacyUnchanged($Task,$Sid){if($Sid -cne 'sid' -or $Task.Principal.UserId -cne 'owner'){throw 'CONTEXT_SHADOWED'}}
+function Assert-H454WssTaskFile($Path,$Hash,$Limit){
+    $expected=@{backup='original';launcher='guarded';supervisor='supervisor-hash';config='config-hash';ca='ca-hash'}
+    if(-not $expected.ContainsKey([string]$Path) -or $expected[[string]$Path] -cne $Hash){throw 'FILE_PIN_SHADOWED'}
+}
+function Get-ScheduledTask { [CmdletBinding()]param($TaskName,$TaskPath) [pscustomobject]@{State='Running'} }
+function New-H454WssTaskDefinition($Supervisor,$Hash,$User,$When){
+    if($Supervisor -cne 'supervisor' -or $Hash -cne 'config-hash' -or $User -cne 'owner'){throw 'TASK_PIN_SHADOWED'}
+    return 'definition'
+}
+function Test-H454WssTaskMatch($Task,$Definition,$Sid,[switch]$Enabled){return ($Definition -ceq 'definition' -and $Sid -ceq 'sid' -and $Enabled)}
+function Get-NetTCPConnection { [CmdletBinding()]param($LocalPort,$State) }
+function Get-FileHash { [CmdletBinding()]param($LiteralPath,$Algorithm) if($LiteralPath -cne 'curl'){throw 'CURL_SHADOWED'};[pscustomobject]@{Hash='curl-hash'} }
+function Get-AuthenticodeSignature { [CmdletBinding()]param($LiteralPath) if($LiteralPath -cne 'curl'){throw 'CURL_SHADOWED'};[pscustomobject]@{Status='Valid'} }
+function Test-H454HiddenWssHealth($Curl,$Ca){return ($Curl -ceq 'curl' -and $Ca -ceq 'ca')}
+function Invoke-H454RecoveryDocker {throw 'MODE_SHADOWED'}
+function Invoke-Shadowed {
+    $state=[pscustomobject]@{Original='other'};$lock='other';$context='other';$backup='other'
+    $OriginalLauncherSha256='other';$GuardedLauncherSha256='other';$supervisor='other';$SupervisorSha256='other'
+    $config='other';$WssConfigSha256='other';$ca='other';$CaSha256='other';$curl='other';$CurlSha256='other';$RestoreOriginal=$false
+    & $safetyCheck
+}
+if(-not (Invoke-Shadowed)){throw 'SAFETY_CALLBACK_FAILED'}
+. ([scriptblock]::Create('function Invoke-CreatedShadow { $state=[pscustomobject]@{Original="other"};$lock="other"; & $safetyCheck }'))
+if(-not (Invoke-CreatedShadow)){throw 'CREATED_SCOPE_FAILED'}
+'H454_SAFETY_SCOPE=PASS'
+'''
+            encoded = base64.b64encode(script.encode('utf-16le')).decode('ascii')
+            result = subprocess.run([str(powershell), '-NoProfile', '-NonInteractive', '-EncodedCommand', encoded],
+                                    env={**os.environ, 'H454_TEST_SOURCE': str(source)},
+                                    capture_output=True, text=True, timeout=10,
+                                    creationflags=subprocess.CREATE_NO_WINDOW)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn('H454_SAFETY_SCOPE=PASS', result.stdout)
+
         def test_wss_health_child_is_hidden_and_bounded(self):
             powershell = Path(os.environ['SystemRoot']) / 'System32/WindowsPowerShell/v1.0/powershell.exe'
             source = Path(__file__).resolve().parents[1] / 'scripts/h454_windows_guard_operator.ps1'

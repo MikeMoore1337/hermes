@@ -271,29 +271,29 @@ try{
             $supervisor=Join-Path $state 'h454-wss-tunnel.ps1';$config=Join-Path $state 'h454-wss-tunnel-config.json'
             $ca=Join-Path $state 'wss-relay-ca.pem';$curl=Join-Path ([Environment]::GetFolderPath('System')) 'curl.exe'
             $safetyCheck={
-                Assert-H454RecoveryLock $state $lock
-                Assert-H454WssLegacyUnchanged $context.Task $context.Sid
-                Assert-H454WssTaskFile $backup $OriginalLauncherSha256 200000
-                Assert-H454WssTaskFile $context.Launcher $GuardedLauncherSha256 200000
-                Assert-H454WssTaskFile $supervisor $SupervisorSha256 65536
-                Assert-H454WssTaskFile $config $WssConfigSha256 8192
-                Assert-H454WssTaskFile $ca $CaSha256 65536
+                Assert-H454RecoveryLock $script:state $script:lock
+                Assert-H454WssLegacyUnchanged $script:context.Task $script:context.Sid
+                Assert-H454WssTaskFile $script:backup $script:OriginalLauncherSha256 200000
+                Assert-H454WssTaskFile $script:context.Launcher $script:GuardedLauncherSha256 200000
+                Assert-H454WssTaskFile $script:supervisor $script:SupervisorSha256 65536
+                Assert-H454WssTaskFile $script:config $script:WssConfigSha256 8192
+                Assert-H454WssTaskFile $script:ca $script:CaSha256 65536
                 $task=Get-ScheduledTask -TaskName 'HermesH454WssTunnel' -TaskPath '\' -ErrorAction Stop
-                $definition=New-H454WssTaskDefinition $supervisor $WssConfigSha256 ([string]$context.Task.Principal.UserId) ((Get-Date).AddMinutes(5))
-                Require-H454 ([string]$task.State -ceq 'Running' -and (Test-H454WssTaskMatch $task $definition $context.Sid -Enabled)) 'H454_ROUTE_WSS_TASK'
+                $definition=New-H454WssTaskDefinition $script:supervisor $script:WssConfigSha256 ([string]$script:context.Task.Principal.UserId) ((Get-Date).AddMinutes(5))
+                Require-H454 ([string]$task.State -ceq 'Running' -and (Test-H454WssTaskMatch $task $definition $script:context.Sid -Enabled)) 'H454_ROUTE_WSS_TASK'
                 $listenerErrors=@()
                 $plaintext=@(Get-NetTCPConnection -LocalPort 38180 -State Listen -ErrorAction SilentlyContinue -ErrorVariable +listenerErrors)
                 foreach($listenerError in $listenerErrors){Require-H454 ($listenerError.CategoryInfo.Category -eq [Management.Automation.ErrorCategory]::ObjectNotFound) 'H454_ROUTE_LISTENER'}
-                Require-H454 ($plaintext.Count -eq 0 -and (Get-FileHash -LiteralPath $curl -Algorithm SHA256).Hash -ceq $CurlSha256 -and
-                    (Get-AuthenticodeSignature -LiteralPath $curl).Status -eq 'Valid') 'H454_ROUTE_LISTENER'
-                Require-H454 (Test-H454HiddenWssHealth $curl $ca) 'H454_ROUTE_WSS_TLS'
-                if(-not $RestoreOriginal){
-                    $fresh=Invoke-H454RecoveryDocker -Arguments @('container','inspect','1fbf00d9b711be215ab35eaea1f6ef549cc4a0930495e3d0776a965f8c75abb6') -DockerSha256 $DockerSha256
+                Require-H454 ($plaintext.Count -eq 0 -and (Get-FileHash -LiteralPath $script:curl -Algorithm SHA256).Hash -ceq $script:CurlSha256 -and
+                    (Get-AuthenticodeSignature -LiteralPath $script:curl).Status -eq 'Valid') 'H454_ROUTE_LISTENER'
+                Require-H454 (Test-H454HiddenWssHealth $script:curl $script:ca) 'H454_ROUTE_WSS_TLS'
+                if(-not $script:RestoreOriginal){
+                    $fresh=Invoke-H454RecoveryDocker -Arguments @('container','inspect','1fbf00d9b711be215ab35eaea1f6ef549cc4a0930495e3d0776a965f8c75abb6') -DockerSha256 $script:DockerSha256
                     Require-H454 ($fresh.Code -eq 0 -and $fresh.Output.Length -gt 0) 'H454_ORIGINAL_PROFILE_INSPECT'
                     $items=@($fresh.Output | ConvertFrom-Json -ErrorAction Stop)
                     Require-H454 ($items.Count -eq 1 -and $items[0].State.Running -is [bool] -and -not $items[0].State.Running -and
                         [string]$items[0].State.Status -ceq 'exited' -and [string]$items[0].HostConfig.RestartPolicy.Name -ceq 'no') 'H454_ORIGINAL_PROFILE_STATE'
-                    Assert-H454OriginalProfile $items[0] $backup $OriginalLauncherSha256 `
+                    Assert-H454OriginalProfile $items[0] $script:backup $script:OriginalLauncherSha256 `
                         '1fbf00d9b711be215ab35eaea1f6ef549cc4a0930495e3d0776a965f8c75abb6' `
                         'sha256:0c95960c02e0dbe00a6a11ee6253d4055e4a7abf7671404b3f876dfdb95bd5d8' 'hermes-h15-windows-permanent' 'bridge'
                 }
