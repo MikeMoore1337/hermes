@@ -26,6 +26,13 @@ Production Docker cutover was approved by the owner and returned
 `CUTOVER_PENDING_BOTH_CLIENTS_E2E`. Its backup and rollback image are
 retained.
 
+On 2026-11-03, a separate bounded Windows BRC trial started the broker-route
+candidate and then restored the same original container with fresh staging.
+Real Codex MCP session, metadata and read checks passed on each, as did denial
+outside the sandbox. The next scheduled staging run returned 0. This does not
+establish post-change ChatGPT acceptance, three-device acceptance, interrupted
+live recovery, reboot recovery or permanent promotion.
+
 ## Real clients × devices
 
 | Capability | ChatGPT Windows sandbox | ChatGPT Hermes VPS sandbox | ChatGPT YFC VPS sandbox | Codex Windows sandbox | Codex Hermes VPS sandbox | Codex YFC VPS sandbox |
@@ -256,7 +263,7 @@ conversation failed to load during this attempt; no new ChatGPT PASS is claimed.
 | User goal / parity dimension | Hermes status | Required next acceptance |
 | --- | --- | --- |
 | Project selection without memorizing `deviceId` | PASS for four allowlisted sandbox clones via native tools in both clients | Expand catalog only through separately approved onboarding |
-| Original Windows filesystem / native process access | Native **READ-only** four original project roots PASS from ChatGPT and Codex, then bearer REVOKED and device PAUSED; host commands/write NOT AUTHORIZED without fresh per-operation owner approval | Never auto-enable native access or mount a whole drive/private vault |
+| Original Windows filesystem / native process access | Earlier four-root native read-only pilot passed, then bearer REVOKED and device PAUSED. The owner subsequently authorized reading, file modification and Git under `D:\Pet-projects`, excluding the private vault; this access is not yet enabled. | Enforce scoped OS access, path and link checks, audit and revocation; keep the private vault and unapproved operations closed |
 | New-project onboarding with safe conflict handling | OPEN (#455) | Design, visual approval, backend authorization, negative E2E |
 | Per-device diagnostics and actionable recovery | OPEN (#455) | Freshness, offline/auth/stale distinction; no browser RCE |
 | Reboot/reconnect without another registration | OPEN (#445) | Maintenance-window Windows reboot/login evidence |
@@ -419,9 +426,10 @@ these calls completed after midnight Moscow time.
 
 For Windows snapshot/preflight and the later delivered init evidence see
 [H454 native preflight](h454-windows-native-preflight.md). Keep #454 OPEN:
-login/reboot and actual rollback have not run, the native reader is
-revoked/paused, Control Center onboarding remains disabled, and full GitHub
-writes through MCP have no credential proof.
+the later bounded live rollback is described above, but login/reboot and
+interrupted live recovery remain unverified, the native reader is paused,
+Control Center onboarding remains disabled, and full GitHub writes through MCP
+have no credential proof.
 
 ### Windows init delivery — later on 2026-10-30
 

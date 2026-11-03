@@ -1,6 +1,6 @@
 # H454: authenticated BRC transport and interrupted-update recovery
 
-**The Windows WSS tunnel is active; the BRC cutover remains HOLD.** A private
+**The Windows WSS tunnel is active; one bounded live trial and return passed.** A private
 TLS proxy and a separately restricted SSH key are installed on the relay. The
 permanent Windows supervisor connected with pinned TLS and recovered its SSH
 child after a controlled termination while the original container was stopped.
@@ -9,9 +9,11 @@ the periodic task started a new supervisor with pinned TLS.
 The exact original container was restored through the isolated broker, and
 its Windows device is online. A real device-specific MCP `list_sessions`
 call succeeded; a workspace metadata call succeeded and an outside-path
-metadata request was refused. The production update operator and a rollback
-after cutover remain unverified. A concrete maintenance window is required
-before stopping BRC for a later cutover.
+metadata request was refused. On 2026-11-03 a bounded trial started the
+broker-route candidate, returned the same original container with fresh staging,
+and passed real Codex MCP checks on both. Permanent promotion and interrupted
+live recovery remain unverified. A concrete maintenance window is required
+before stopping BRC again.
 
 While the original was already stopped, its legacy scheduled task was disabled
 after checking the exclusive runtime lock, original container identity and
@@ -56,7 +58,8 @@ original base for the isolated broker route. Its file hashes are pinned; the
 runtime operator must still verify the base, network, broker and credentials.
 A disposable instance with synthetic credentials and relay rejected pairing
 without credentials, exposed only the surrogate to the agent terminal, and
-reconnected after a broker restart and restaging. It is not deployed.
+reconnected after a broker restart and restaging. The candidate was activated
+temporarily for the live trial and was not promoted.
 Docker Desktop reported different source strings for a test bind mount and a
 `--volumes-from` copy, although both read the same synthetic sentinel and a
 candidate write appeared on the host. This does not verify the real workspace.
@@ -68,8 +71,10 @@ cutover must connect it to the isolated network and disconnect the bridge before
 starting it. Docker Desktop refused connecting a container created with `none`.
 Disposable preparation and interruption fixtures passed. The guarded operator
 prepared the actual candidate in stopped state without credentials; the original
-remained running and a subsequent real MCP call passed. Switching to the
-candidate and returning from it remain unverified.
+remained running and a subsequent real MCP call passed. A later live trial
+switched to that candidate and returned the same original. The candidate is now
+stopped in `exited` state; the trial's start preflight requires `created`, so
+another attempt needs separately verified candidate preparation.
 
 The legacy Windows route sent its bearer to a plaintext local SSH forward.
 Checking the SSH PID before connecting does not authenticate the process that
@@ -354,9 +359,9 @@ the corresponding operation.
 If a receipt is missing or invalid, or a legacy/read-only operation has an
 unresolved marker, recovery remains HOLD. Inspecting current container state
 alone does not prove that an earlier operation can no longer complete; do not
-remove the marker or retry the mutation on that basis. The trial has not been
-run against the live container, and its source and tests do not establish a
-production cutover or rollback.
+remove the marker or retry the mutation on that basis. One normal-path trial
+has run against the live containers; it does not establish interrupted live
+recovery or a permanent production promotion.
 
 The periodic staging monitor may already hold `runtime.lock`. In that case the
 operator reports `RECOVERY_LOCK_BUSY` before this invocation makes any change.
@@ -384,8 +389,8 @@ plaintext rollback is not an automatic recovery step.
 
 A transport-secured baseline would be a different image and container; it does
 not fulfil the owner's requirement to restage credentials and restore the
-original container. The actual original has now been restored and restaged;
-returning it after a candidate cutover remains unverified.
+original container. The actual original was restored and restaged after the
+bounded candidate trial, but a permanent promotion adapter is still missing.
 
 `h454_isolated_rollback_proxy.mjs` is a source-only experiment for that gap.
 It selects one private IPv4 interface using the operator-pinned isolated
@@ -494,6 +499,17 @@ own stopped test container; it was identified by ID, image, command and label
 and removed. The corrected fixture completed and cleaned up.
 
 ## Evidence and limits
+
+- In the owner-approved 2026-11-03 16:15–16:45 MSK window, the real original
+  container was stopped, the pinned broker-route candidate was started and
+  staged, and the same original container was restarted and restaged. Real
+  Codex MCP calls passed session listing, allowed metadata and file reading on
+  both; an outside-sandbox metadata request was refused on both. The original's
+  `/run/brc` tmpfs staging files had change times after its restart, and the
+  operator verified the staged credentials without printing them. After the
+  original MCP check, the trial marker was acknowledged; a later scheduled
+  staging run returned 0. This was a bounded normal-path trial, not independent
+  ChatGPT acceptance, interrupted live recovery, reboot testing or promotion.
 
 - A real pinned BRC agent transport and relay were exercised together in an
   isolated container with synthetic certificates and token: tool call and
@@ -647,6 +663,6 @@ and removed. The corrected fixture completed and cleaned up.
   original-container rollback. A PowerShell 5.1 run also injected an ambiguous
   error, reacquired the fixture lock and recovered through the same synthetic
   route. This models an interruption; it did not terminate the operator process.
-- Taken together, the fixtures do not establish a production update operator,
-  original-container recovery, complete process-tree cleanup, login/reboot
-  recovery, a real power-loss guarantee or live MCP recovery.
+- Taken together, the fixtures alone do not establish a production update
+  operator, interrupted live recovery, complete process-tree cleanup,
+  login/reboot recovery or a real power-loss guarantee.
