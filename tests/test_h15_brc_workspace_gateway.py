@@ -6,7 +6,8 @@ import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
-from scripts.h15_brc_workspace_gateway import apply, AuditError
+from scripts.h15_brc_workspace_gateway import apply, AuditError, DEVICE_HELP, WORKSPACE_DEVICE_HELP
+from scripts.h15_brc_native_read_gateway import apply as apply_native
 REGISTRY = Path(__file__).resolve().parents[1] / "deploy/h15/workspace-registry.json"
 
 class H15WorkspaceMcpTests(unittest.TestCase):
@@ -20,6 +21,7 @@ class H15WorkspaceMcpTests(unittest.TestCase):
         self.module = p / "hermes-workspaces.ts"
         self.server.write_text(
             "import { pinnedToolCatalog } from './hermes-tool-catalog.js';\n"
+            + DEVICE_HELP + "\n"
             "      ...pinnedToolCatalog().map(t => ({ ...t, inputSchema: withDeviceId(t.inputSchema) }))] };\n"
             "    const out = await invokeTool(hub, store, ctx, name, args as Record<string, unknown> | undefined);\n")
         (p / "hermes-policy.ts").write_text("export function isPermittedRemoteTool() {}\n")
@@ -34,6 +36,9 @@ class H15WorkspaceMcpTests(unittest.TestCase):
         content = self.server.read_text()
         self.assertIn("listUserDevices(hub, store, ctx.userId)", content)
         self.assertLess(content.index("name === 'resolve_workspace'"), content.index("const out = await invokeTool"))
+        self.assertLess(content.index("routeWorkspaceCall(name, args"), content.index("const out = await invokeTool"))
+        self.assertIn("args.deviceId = route.deviceId", content)
+        self.assertIn(WORKSPACE_DEVICE_HELP, content)
         self.assertIn('"h15-win-05be75515428"', self.module.read_text())
 
     def test_duplicate_refused_without_changes(self):
@@ -42,6 +47,15 @@ class H15WorkspaceMcpTests(unittest.TestCase):
         with self.assertRaises(AuditError):
             apply(self.root, REGISTRY)
         self.assertEqual(prior, self.server.read_bytes())
+
+    def test_native_gateway_remains_compatible_with_workspace_routing(self):
+        apply(self.root, REGISTRY)
+        (self.server.parent / "invoke.ts").write_text("export {};\n")
+        with patch("scripts.h15_brc_native_read_gateway.evaluate"):
+            apply_native(self.root)
+        content = self.server.read_text()
+        self.assertLess(content.index("routeWorkspaceCall(name, args"), content.index("name === 'native_file_read'"))
+        self.assertLess(content.index("name === 'native_file_read'"), content.index("const out = await invokeTool"))
 
     def test_source_drift_denied(self):
         self.server.write_text(self.server.read_text().replace("const out = await invokeTool", "const bad = await invokeTool"))
@@ -96,6 +110,48 @@ for (const devices of [[],[other],[{...win,online:false}],[{...win,paused:true}]
  assert.equal(api.resolveApprovedWorkspace({project:'yfc'},devices).status,'refused');
 assert.equal(api.listApprovedWorkspaces([other]).workspaces.length,0);
 assert.equal(api.listApprovedWorkspaces([{...win,deviceId:'h15-win-foreign12345'}]).status,'not_connected');
+const good='/workspace/projects/hermes/src/main.py', outside='/workspace/identity.txt';
+const route=(name,args,devices=[win,other])=>api.routeWorkspaceCall(name,args,devices);
+for (const name of ['read_file','write_file','list_directory','get_file_info','create_directory','start_search'])
+ assert.deepEqual(route(name,{path:good}),{status:'routed',deviceId:win.deviceId});
+assert.deepEqual(route('list_directory',{path:'/workspace/projects/hermes/'}),
+ {status:'routed',deviceId:win.deviceId});
+assert.deepEqual(route('edit_block',{file_path:good}),{status:'routed',deviceId:win.deviceId});
+assert.deepEqual(route('move_file',{source:good,destination:'/workspace/projects/your-fitness-coach/file'}),
+ {status:'routed',deviceId:win.deviceId});
+assert.deepEqual(route('read_multiple_files',{paths:[good,'/workspace/projects/hermes/README.md']}),
+ {status:'routed',deviceId:win.deviceId});
+assert.deepEqual(route('write_pdf',{path:good,outputPath:'/workspace/projects/hermes/out.pdf',
+ content:[{type:'insert',sourcePdfPath:'/workspace/projects/hermes/in.pdf'}]}),
+ {status:'routed',deviceId:win.deviceId});
+for (const [name,args] of [
+ ['move_file',{source:good,destination:outside}],
+ ['read_multiple_files',{paths:[good,outside]}],
+ ['read_multiple_files',{paths:[good,42]}],
+ ['read_multiple_files',{paths:Array(65).fill(good)}],
+ ['write_pdf',{path:good,outputPath:outside}],
+ ['write_pdf',{path:good,content:Array(65).fill({type:'delete'})}],
+ ['write_pdf',{path:good,content:[{type:'insert',sourcePdfPath:outside}]}],
+ ['read_file',{path:'/workspace/projects/hermes/../private'}],
+ ['read_file',{path:'/workspace/projects/hermes//bad'}],
+ ['read_file',{path:'/workspace//projects/hermes/README.md'}],
+ ['read_file',{path:'/workspace//projects/hermes/../../secret'}],
+ ['read_file',{path:'/workspace/projects/elsewhere/../hermes/../../secret'}],
+ ['read_file',{path:'/workspace/projects/elsewhere/../hermes/README.md'}],
+ ['read_file',{path:'/workspace\\\\projects\\\\hermes\\\\README.md'}],
+ ['read_file',{path:'/workspace/projects/hermes/a\\\\..\\\\private'}],
+]) assert.equal(route(name,args).status,'refused');
+assert.equal(route('read_file',{path:'/workspace//projects/hermes/README.md'},[other]).status,'refused');
+assert.equal(route('read_multiple_files',{paths:Array(65).fill(good)},[other]).status,'refused');
+for (const devices of [[],[other],[{...win,online:false}],[{...win,paused:true}],
+ [win,win],[{...win,deviceId:'h15-win-foreign12345'}]])
+ assert.equal(route('read_file',{path:good},devices).reason,'owner_device_unavailable');
+for (const deviceId of ['',null,0])
+ assert.equal(route('read_file',{path:good,deviceId},[other]).reason,'invalid_device_id');
+for (const [name,args] of [['read_file',{path:outside}],['read_file',{path:good,deviceId:'ci-native-two'}],
+ ['start_process',{command:'cat '+good}],
+ ['get_more_search_results',{sessionId:'fixture'}],['native_file_read',{path:good}]])
+ assert.equal(route(name,args).status,'unchanged');
 console.log('H15_454_TS_RUNTIME=PASS');
 """
         proc = subprocess.run(["node", "-e", js, str(dest / "hermes-workspaces.js")],

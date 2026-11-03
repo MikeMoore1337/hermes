@@ -11,7 +11,11 @@ BASE = Path("packages/relay/src/mcp")
 IMP = "import { pinnedToolCatalog } from './hermes-tool-catalog.js';"
 LIST = "      ...pinnedToolCatalog().map(t => ({ ...t, inputSchema: withDeviceId(t.inputSchema) }))] };"
 CALL = "    const out = await invokeTool(hub, store, ctx, name, args as Record<string, unknown> | undefined);"
+DEVICE_HELP = "Target device id (from list_devices). Required when more than one device is online; may be omitted when only one device is connected."
+WORKSPACE_DEVICE_HELP = ("Target device id (from list_devices). Optional for file operations on registered "
+                         "project paths; otherwise required when multiple devices are online.")
 NEWIMP = "import { LIST_WORKSPACES_TOOL, RESOLVE_WORKSPACE_TOOL, listApprovedWorkspaces, resolveApprovedWorkspace } from './hermes-workspaces.js';"
+ROUTEIMP = "import { routeWorkspaceCall } from './hermes-workspaces.js';"
 NEWLIST = ("      ...pinnedToolCatalog().map(t => ({ ...t, inputSchema: withDeviceId(t.inputSchema) })),\n"
            "      LIST_WORKSPACES_TOOL, RESOLVE_WORKSPACE_TOOL] };")
 NEWCALL = """    if (name === 'list_workspaces' || name === 'resolve_workspace') {
@@ -22,6 +26,11 @@ NEWCALL = """    if (name === 'list_workspaces' || name === 'resolve_workspace')
       return { content: [{ type: 'text', text: JSON.stringify(result) }],
                isError: result.status === 'refused' };
     }
+"""
+ROUTECALL = """    const route = routeWorkspaceCall(name, args, listUserDevices(hub, store, ctx.userId));
+    if (route.status === 'refused')
+      return { content: [{ type: 'text', text: `Workspace routing refused: ${route.reason}` }], isError: true };
+    if (route.status === 'routed' && args) args.deviceId = route.deviceId;
 """
 
 def apply(root: Path, registry: Path, sha: str = UPSTREAM_SHA) -> dict:
@@ -47,7 +56,7 @@ def apply(root: Path, registry: Path, sha: str = UPSTREAM_SHA) -> dict:
     if ("export function isPermittedRemoteTool" not in policy
         or "'list_workspaces'" in policy or "'resolve_workspace'" in policy):
         raise AuditError("remote_invocation_policy_unreviewed")
-    if any(original.count(x) != 1 for x in (IMP, LIST, CALL)):
+    if any(original.count(x) != 1 for x in (IMP, LIST, CALL, DEVICE_HELP)):
         raise AuditError("gateway_source_marker_drift")
     if "hermes-workspaces.js" in original:
         raise AuditError("already_patched")
@@ -65,9 +74,11 @@ def apply(root: Path, registry: Path, sha: str = UPSTREAM_SHA) -> dict:
     code = template.replace("__HERMES_CATALOG__", json.dumps(rows, ensure_ascii=True))
     code = code.replace("__HERMES_DEVICE_NAME__", json.dumps(cfg["device_name"], ensure_ascii=True))
     code = code.replace("__HERMES_DEVICE_ID__", json.dumps(cfg["device_id"], ensure_ascii=True))
-    patched = (original.replace(IMP, IMP + "\n" + NEWIMP)
-               .replace(LIST, NEWLIST).replace(CALL, NEWCALL + CALL))
-    if patched == original or patched.count("name === 'resolve_workspace'") != 1:
+    patched = (original.replace(IMP, IMP + "\n" + NEWIMP + "\n" + ROUTEIMP)
+               .replace(LIST, NEWLIST).replace(DEVICE_HELP, WORKSPACE_DEVICE_HELP)
+               .replace(CALL, NEWCALL + ROUTECALL + CALL))
+    if (patched == original or patched.count("name === 'resolve_workspace'") != 1
+        or patched.count("routeWorkspaceCall(name, args") != 1):
         raise AuditError("patch_failed")
     mod.write_text(code, encoding="utf-8")
     sp.write_text(patched, encoding="utf-8")

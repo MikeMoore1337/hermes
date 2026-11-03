@@ -531,10 +531,15 @@ jobs:
           workspace_a="$RUNNER_TEMP/h15-native-agent-one"
           workspace_b="$RUNNER_TEMP/h15-native-agent-two"
           mkdir -p "$workspace_a" "$workspace_b"
+          mkdir -p "$workspace_a/projects/hermes" "$workspace_b/projects/hermes"
           printf 'real-ci-agent-one' > "$workspace_a/identity.txt"
           printf 'real-ci-agent-two' > "$workspace_b/identity.txt"
+          printf 'project-on-owner-device' > "$workspace_a/projects/hermes/identity.txt"
+          printf 'project-on-other-device' > "$workspace_b/projects/hermes/identity.txt"
           chmod 0777 "$workspace_a" "$workspace_b"
+          chmod 0755 "$workspace_a/projects" "$workspace_a/projects/hermes" "$workspace_b/projects" "$workspace_b/projects/hermes"
           chmod 0644 "$workspace_a/identity.txt" "$workspace_b/identity.txt"
+          chmod 0644 "$workspace_a/projects/hermes/identity.txt" "$workspace_b/projects/hermes/identity.txt"
           docker network create --internal "$net" >/dev/null
           cleanup() {
             docker rm -f "$agent_a" "$agent_b" "$relay" >/dev/null 2>&1 || true

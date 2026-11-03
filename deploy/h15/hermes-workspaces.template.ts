@@ -30,6 +30,69 @@ function ownerDevice(devices: unknown): Device | null {
 function isReady(d: Device | null): boolean {
   return !!d && d.online === true && d.paused === false;
 }
+type WorkspaceRoute =
+  | { status: 'unchanged' }
+  | { status: 'routed'; deviceId: string }
+  | { status: 'refused'; reason: string };
+
+// Automatic routing chooses a device; it does not grant filesystem access.
+export function routeWorkspaceCall(name: string, args: unknown, devices: unknown): WorkspaceRoute {
+  if (!args || typeof args !== 'object' || Array.isArray(args)) return { status: 'unchanged' };
+  const a = args as Record<string, unknown>;
+  if (Object.prototype.hasOwnProperty.call(a, 'deviceId'))
+    return typeof a.deviceId === 'string' && a.deviceId.length > 0
+      ? { status: 'unchanged' } : { status: 'refused', reason: 'invalid_device_id' };
+  let paths: unknown[];
+  switch (name) {
+    case 'read_file': case 'write_file': case 'create_directory': case 'list_directory':
+    case 'get_file_info': case 'start_search': paths = [a.path]; break;
+    case 'edit_block': paths = [a.file_path]; break;
+    case 'move_file': paths = [a.source, a.destination]; break;
+    case 'read_multiple_files':
+      if (!Array.isArray(a.paths) || a.paths.length === 0 || a.paths.length > 64)
+        return { status: 'refused', reason: 'workspace_paths_not_routable' };
+      paths = a.paths; break;
+    case 'write_pdf':
+      paths = [a.path];
+      if (Object.prototype.hasOwnProperty.call(a, 'outputPath')) paths.push(a.outputPath);
+      if (Array.isArray(a.content)) {
+        if (a.content.length > 64) return { status: 'refused', reason: 'workspace_paths_not_routable' };
+        for (const entry of a.content) {
+          if (entry && typeof entry === 'object' && !Array.isArray(entry) &&
+              Object.prototype.hasOwnProperty.call(entry, 'sourcePdfPath'))
+            paths.push((entry as Record<string, unknown>).sourcePdfPath);
+        }
+      }
+      break;
+    default: return { status: 'unchanged' };
+  }
+  const classify = (path: unknown): 'known' | 'outside' | 'unsafe' => {
+    if (typeof path !== 'string') return 'outside';
+    if (path.length > 4096 || /[\x00-\x1f\x7f]/.test(path)) return 'unsafe';
+    const slashes = path.replace(/\\/g, '/');
+    if (!slashes.startsWith('/')) return 'outside';
+    const parts: string[] = [];
+    const inWorkspace = (value: string) => WORKSPACES.some(w => value === w.root || value.startsWith(w.root + '/'));
+    let enteredWorkspace = false;
+    for (const part of slashes.split('/')) {
+      if (part === '' || part === '.') continue;
+      if (part === '..') parts.pop();
+      else parts.push(part);
+      if (parts.length === 3 && inWorkspace('/' + parts.join('/'))) enteredWorkspace = true;
+    }
+    const normalized = '/' + parts.join('/');
+    if (!inWorkspace(normalized)) return enteredWorkspace ? 'unsafe' : 'outside';
+    return path === normalized || path === normalized + '/' ? 'known' : 'unsafe';
+  };
+  const classifications = paths.map(classify);
+  if (classifications.every(x => x === 'outside')) return { status: 'unchanged' };
+  if (classifications.some(x => x !== 'known'))
+    return { status: 'refused', reason: 'workspace_paths_not_routable' };
+  const device = ownerDevice(devices);
+  if (!isReady(device) || typeof device?.deviceId !== 'string')
+    return { status: 'refused', reason: 'owner_device_unavailable' };
+  return { status: 'routed', deviceId: device.deviceId };
+}
 function norm(s: string): string {
   return s.trim().toLowerCase().replace(/_/g, ' ').replace(/\s+/g, ' ');
 }

@@ -176,6 +176,20 @@ must(ids.size === 2 && ids.has(pinnedDeviceId) && ids.has('ci-native-two'),
 const implicit = await call('read_file', { path: '/workspace/identity.txt' });
 must(implicit.isError === true, 'TWO_NATIVE_AMBIGUOUS_DEVICE_REFUSED');
 
+// Identical paths exist on both agents; the approved catalog must choose
+// the pinned owner device only when the caller omitted a device ID.
+const projectPath = '/workspace/projects/hermes/identity.txt';
+const autoProject = await call('read_file', { path: projectPath });
+must(autoProject.isError !== true && JSON.stringify(autoProject).includes('project-on-owner-device') &&
+     !JSON.stringify(autoProject).includes('project-on-other-device'),
+     'H15_WORKSPACE_PATH_ROUTES_TO_PINNED_DEVICE');
+const explicitOther = await call('read_file', { deviceId:'ci-native-two', path:projectPath });
+must(explicitOther.isError !== true && JSON.stringify(explicitOther).includes('project-on-other-device'),
+     'H15_WORKSPACE_EXPLICIT_DEVICE_UNCHANGED');
+const mixedPaths = await call('read_multiple_files', { paths:[projectPath, '/workspace/identity.txt'] });
+must(mixedPaths.isError === true && JSON.stringify(mixedPaths).includes('workspace_paths_not_routable'),
+     'H15_WORKSPACE_MIXED_PATHS_REFUSED');
+
 for (const [id, expected] of [
   [pinnedDeviceId, 'real-ci-agent-one'],
   ['ci-native-two', 'real-ci-agent-two'],
@@ -246,6 +260,12 @@ const stillOnline = await call('resolve_workspace', { project: 'YFC' });
 must(stillOnline.isError !== true &&
      JSON.parse(stillOnline.content?.[0]?.text ?? '{}').deviceId === pinnedDeviceId,
      'H15_OWNER_WORKSPACE_UNRELATED_DEVICE_PAUSE_UNAFFECTED');
+const resumed = await fetch(base + '/admin/device', {
+  method: 'POST', redirect: 'manual',
+  headers: { cookie, origin: base, 'content-type': 'application/x-www-form-urlencoded' },
+  body: form({ device_id: 'ci-native-two', action: 'resume' }),
+});
+must(resumed.status === 302, 'TWO_NATIVE_OTHER_DEVICE_RESUMED');
 
 const malformedToken = await fetch(base + '/mcp', {
   method: 'POST',
@@ -264,6 +284,21 @@ const stoppedWorkspace = await call('resolve_workspace', { project: 'YFC' });
 must(stoppedWorkspace.isError === true &&
      JSON.parse(stoppedWorkspace.content?.[0]?.text ?? '{}').reason === 'owner_device_unavailable',
      'H15_WORKSPACE_PAUSED_OWNER_DEVICE_REFUSED');
+const stoppedAuto = await call('read_file', { path:projectPath });
+must(stoppedAuto.isError === true && JSON.stringify(stoppedAuto).includes('owner_device_unavailable'),
+     'H15_WORKSPACE_PAUSED_OWNER_NO_FALLBACK');
+const otherStillOnline = await call('read_file', { deviceId:'ci-native-two', path:projectPath });
+must(otherStillOnline.isError !== true && JSON.stringify(otherStillOnline).includes('project-on-other-device'),
+     'H15_WORKSPACE_OTHER_DEVICE_REMAINS_ONLINE');
+const noncanonical = await call('read_file', { path:'/workspace//projects/hermes/identity.txt' });
+must(noncanonical.isError === true && JSON.stringify(noncanonical).includes('workspace_paths_not_routable'),
+     'H15_WORKSPACE_NONCANONICAL_NO_FALLBACK');
+const emptyDevice = await call('read_file', { deviceId:'', path:projectPath });
+must(emptyDevice.isError === true && JSON.stringify(emptyDevice).includes('invalid_device_id'),
+     'H15_WORKSPACE_EMPTY_DEVICE_NO_FALLBACK');
+const oversized = await call('read_multiple_files', { paths:Array(65).fill(projectPath) });
+must(oversized.isError === true && JSON.stringify(oversized).includes('workspace_paths_not_routable'),
+     'H15_WORKSPACE_OVERSIZED_NO_FALLBACK');
 console.log('H15_OAUTH_MCP_WORKSPACE_ROUTING_E2E=PASS');
 
 console.log('HERMES_BRC_TWO_REAL_NATIVE_AGENTS_OAUTH_MCP_E2E=PASS');
