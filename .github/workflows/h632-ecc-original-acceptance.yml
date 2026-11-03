@@ -60,9 +60,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          docker pull node:22.16.0-bookworm-slim
+          docker pull node:22.16.0-bookworm-slim@sha256:048ed02c5fd52e86fda6fbd2f6a76cf0d4492fd6c6fee9e2c463ed5108da0e34
           docker pull nousresearch/hermes-agent@sha256:a11574b7fe8e1631d7d88d556677dac693bc058abf558cdeb899155688c1bf05
-          docker inspect --format '{{.Id}} {{.Architecture}}' node:22.16.0-bookworm-slim
+          docker inspect --format '{{.Id}} {{.Architecture}}' node:22.16.0-bookworm-slim@sha256:048ed02c5fd52e86fda6fbd2f6a76cf0d4492fd6c6fee9e2c463ed5108da0e34
           docker inspect --format '{{.Id}} {{.Architecture}}' \
             nousresearch/hermes-agent@sha256:a11574b7fe8e1631d7d88d556677dac693bc058abf558cdeb899155688c1bf05
 
