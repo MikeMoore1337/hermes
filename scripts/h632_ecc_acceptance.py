@@ -18,6 +18,7 @@ import tempfile
 ECC_SHA = "25278e7d7b6cf6e6a4e7a6c8e10f14ff22f0eb5b"
 HERMES_IMAGE = "nousresearch/hermes-agent@sha256:a11574b7fe8e1631d7d88d556677dac693bc058abf558cdeb899155688c1bf05"
 NODE_IMAGE = "node:22.16.0-bookworm-slim"
+HERMES_SOURCE_SHA = "d923a5eb487a17c0a68801bba9ef0f56c81040a8"
 EXPECTED_PROFILE = {"rules-core", "agents-core", "commands-core", "platform-configs", "workflow-quality"}
 SKILLS = ("verification-loop", "tdd-workflow")
 
@@ -160,15 +161,18 @@ def run(ecc: Path, output: Path) -> int:
             assert rc != 0 and snapshot(home) == bad_before, "Unsupported profile not rejected atomically"
             report["checks"]["unsupported_profile_refused"] = True
             # The pinned real NousResearch image exposes the real skills_list implementation.
-            probe = ('import json; from tools.skills_tool import skills_list; '
+            probe = ('import json; from pathlib import Path; from tools.skills_tool import skills_list; '
+                     'stamp=json.loads(Path("/opt/hermes/install-stamp.json").read_text()); '
                      'x=json.loads(skills_list()); '
                      'names=[z.get("name", "") for z in x.get("skills", [])]; '
                      'print(json.dumps({"success":x.get("success"),"count":len(names),'
+                     '"source_sha":stamp.get("commit"),'
                      '"found":{s:s in names for s in ("verification-loop","tdd-workflow")}}))')
             discovery_out = attempt(report, "real-hermes-skills-list",
                                     container_cmd(HERMES_IMAGE, "/opt/hermes/.venv/bin/python", ["-c", probe], ecc, home, hermes=True))
             discovery = json.loads(discovery_out.strip().splitlines()[-1])
             assert discovery["success"] is True and all(discovery["found"].values()), discovery
+            assert discovery["source_sha"] == HERMES_SOURCE_SHA, "Wrong native NousResearch Hermes source"
             report["native_hermes_discovery"] = discovery
             report["checks"]["real_hermes_skill_discovery"] = True
             # Negative runtime probes use only a disposable HOME and a network-less container.
