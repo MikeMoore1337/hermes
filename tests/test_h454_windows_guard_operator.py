@@ -19,6 +19,11 @@ $matches=@($ast.FindAll({param($node) $node -is [Management.Automation.Language.
 if(@($errors).Count -ne 0 -or $matches.Count -ne 1){throw 'HEALTH_FUNCTION_MISSING'}
 function Require-H454([bool]$Condition,[string]$Reason){if(-not $Condition){throw $Reason}}
 . ([scriptblock]::Create($matches[0].Extent.Text))
+$tokens=$null; $errors=$null
+$ast=[Management.Automation.Language.Parser]::ParseFile($env:H454_TEST_TASK,[ref]$tokens,[ref]$errors)
+$matches=@($ast.FindAll({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -ceq 'Test-H454HiddenSupervisorPreflight'},$true))
+if(@($errors).Count -ne 0 -or $matches.Count -ne 1){throw 'SUPERVISOR_FUNCTION_MISSING'}
+. ([scriptblock]::Create($matches[0].Extent.Text))
 $dir=Join-Path $env:TEMP ('h454-hidden-test-'+[guid]::NewGuid().ToString('N'))
 $null=New-Item -ItemType Directory -Path $dir
 $exe=Join-Path $dir 'fixture.exe'
@@ -32,6 +37,15 @@ public class TestCurl {
   public static int Main(string[] args) {
     var window = GetConsoleWindow();
     if (window != IntPtr.Zero && IsWindowVisible(window)) return 8;
+    if (Array.IndexOf(args, "-Preflight") >= 0) {
+      int file = Array.IndexOf(args, "-File");
+      int hash = Array.IndexOf(args, "-ConfigSha256");
+      if (file < 0 || file + 1 >= args.Length || hash < 0 || hash + 1 >= args.Length ||
+          args[hash + 1] != new string('A', 64)) return 10;
+      Console.Write(args[file + 1].EndsWith("good.ps1") ?
+        "H454_WSS_TUNNEL_PREFLIGHT=PASS\r\n" : "WRONG\r\n");
+      return 0;
+    }
     int index = Array.IndexOf(args, "--cacert");
     if (index < 0 || index + 1 >= args.Length ||
         Array.IndexOf(args, "brc-agent.internal:38184:127.0.0.1") < 0 ||
@@ -46,6 +60,8 @@ public class TestCurl {
     if(-not (Test-H454HiddenWssHealth $exe 'C:\fixture folder\good.pem')){throw 'HIDDEN_HEALTH_FAILED'}
     if(Test-H454HiddenWssHealth $exe 'C:\fixture folder\bad.pem'){throw 'WRONG_STATUS_ACCEPTED'}
     if(Test-H454HiddenWssHealth $exe 'C:\fixture folder\slow.pem'){throw 'TIMEOUT_ACCEPTED'}
+    if(-not (Test-H454HiddenSupervisorPreflight $exe 'C:\fixture folder\good.ps1' ('A'*64))){throw 'HIDDEN_SUPERVISOR_FAILED'}
+    if(Test-H454HiddenSupervisorPreflight $exe 'C:\fixture folder\bad.ps1' ('A'*64)){throw 'BAD_SUPERVISOR_ACCEPTED'}
     try { $null=Test-H454HiddenWssHealth $exe 'C:\fixture"bad.pem'; throw 'BAD_PATH_ACCEPTED' }
     catch { if($_.Exception.Message -eq 'BAD_PATH_ACCEPTED'){throw} }
     'H454_HIDDEN_HEALTH=PASS'
@@ -56,7 +72,8 @@ public class TestCurl {
 '''
             encoded = base64.b64encode(script.encode('utf-16le')).decode('ascii')
             result = subprocess.run([str(powershell), '-NoProfile', '-NonInteractive', '-EncodedCommand', encoded],
-                                    env={**os.environ, 'H454_TEST_SOURCE': str(source)},
+                                    env={**os.environ, 'H454_TEST_SOURCE': str(source),
+                                         'H454_TEST_TASK': str(source.with_name('h454_windows_wss_task.ps1'))},
                                     capture_output=True, text=True, timeout=25,
                                     creationflags=subprocess.CREATE_NO_WINDOW)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

@@ -1,4 +1,24 @@
 #requires -Version 5.1
+function Test-H454HiddenSupervisorPreflight([string]$PowerShell,[string]$Supervisor,[string]$ConfigSha256){
+    if(-not ([IO.Path]::IsPathRooted($PowerShell) -and [IO.Path]::IsPathRooted($Supervisor) -and
+        $PowerShell -cnotmatch '[\x00-\x1f"]' -and $Supervisor -cnotmatch '[\x00-\x1f"]' -and
+        $ConfigSha256 -cmatch '^[A-F0-9]{64}$')){return $false}
+    $info=[Diagnostics.ProcessStartInfo]::new();$info.FileName=$PowerShell
+    $info.Arguments='-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "'+$Supervisor+'" -ConfigSha256 '+$ConfigSha256+' -Preflight'
+    $info.UseShellExecute=$false;$info.CreateNoWindow=$true;$info.WindowStyle=[Diagnostics.ProcessWindowStyle]::Hidden
+    $info.RedirectStandardOutput=$true;$info.RedirectStandardError=$true
+    $process=[Diagnostics.Process]::new();$process.StartInfo=$info
+    try {
+        if(-not $process.Start()){return $false}
+        $output=$process.StandardOutput.ReadToEndAsync();$errors=$process.StandardError.ReadToEndAsync()
+        if(-not $process.WaitForExit(30000)){
+            try{$process.Kill();$null=$process.WaitForExit(2000)}catch{}
+            return $false
+        }
+        $text=$output.GetAwaiter().GetResult();$null=$errors.GetAwaiter().GetResult()
+        return ($process.ExitCode -eq 0 -and $text -cmatch '^H454_WSS_TUNNEL_PREFLIGHT=PASS\r?\n?$')
+    } catch {return $false} finally {$process.Dispose()}
+}
 # The operator must verify protected files and the existing task before registration.
 function Get-H454WssTaskSid([string]$User) {
     try{
@@ -274,10 +294,7 @@ function Register-H454WssTaskDisabled(
     Assert-H454WssTaskGuardBytes ([IO.File]::ReadAllBytes($backup)) ([IO.File]::ReadAllBytes($launcher))
     $settings=[Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes($config)) | ConvertFrom-Json -ErrorAction Stop
     if($settings.launcherSha256 -cne $GuardedLauncherSha256){throw 'H454_WSS_TASK_CONFIG'}
-    $prior=$ErrorActionPreference;$ErrorActionPreference='SilentlyContinue';$global:LASTEXITCODE=-1
-    try{$output=@(& $powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $supervisor -ConfigSha256 $ConfigSha256 -Preflight 2>$null);$code=$LASTEXITCODE}
-    catch{$output=@();$code=-1}finally{$ErrorActionPreference=$prior}
-    if($code -ne 0 -or $output.Count -ne 1 -or $output[0] -cne 'H454_WSS_TUNNEL_PREFLIGHT=PASS'){throw 'H454_WSS_TASK_PREFLIGHT'}
+    if(-not (Test-H454HiddenSupervisorPreflight $powershell $supervisor $ConfigSha256)){throw 'H454_WSS_TASK_PREFLIGHT'}
     foreach($pair in @(@($launcher,$GuardedLauncherSha256,200000),@($backup,$OriginalLauncherSha256,200000),
         @($marker,$MarkerSha256,4096),@($supervisor,$SupervisorSha256,65536),@($config,$ConfigSha256,8192))){
         Assert-H454WssTaskFile $pair[0] $pair[1] $pair[2]
