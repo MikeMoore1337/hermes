@@ -153,7 +153,9 @@ def run(ecc: Path, output: Path) -> int:
             installed_count = len(after)
             attempt(report, "original-reinstall", node("/bin/bash", args + ["--json"]))
             again = snapshot(home)
-            assert all(again[k] == v for k, v in after.items() if k != ".hermes/ecc-install-state.json"), "Reinstall drift"
+            metadata_paths = {".hermes/ecc-install-state.json", ".claude/ecc/state.db"}
+            report["reinstall_metadata_updated"] = sorted(k for k in metadata_paths if after.get(k) != again.get(k))
+            assert all(again[k] == v for k, v in after.items() if k not in metadata_paths), "Reinstall changed managed content"
             assert len(again) == installed_count, "Reinstall duplicates or removes files"
             report["checks"]["reinstall_idempotent_files"] = True
             bad_before = snapshot(home)
