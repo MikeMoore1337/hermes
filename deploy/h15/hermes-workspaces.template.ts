@@ -93,6 +93,72 @@ export function routeWorkspaceCall(name: string, args: unknown, devices: unknown
     return { status: 'refused', reason: 'owner_device_unavailable' };
   return { status: 'routed', deviceId: device.deviceId };
 }
+type SearchHub = { get(id: string): { socket: object } | undefined };
+type WorkspaceSearch =
+  | { status: 'unchanged' }
+  | { status: 'refused'; reason: string }
+  | { status: 'start'; deviceId: string; socket: object; generation: string }
+  | { status: 'follow'; deviceId: string; socket: object; nativeId: string; publicId: string };
+const searchGenerations = new WeakMap<object, string>();
+const searchToken = /^hermes_search_([a-f0-9]{32})_(search_[1-9][0-9]{0,15}_[0-9]{1,16})$/;
+
+export function prepareWorkspaceSearch(name: string, args: unknown, route: WorkspaceRoute,
+                                       hub: SearchHub, devices: unknown): WorkspaceSearch {
+  if (!args || typeof args !== 'object' || Array.isArray(args)) return { status: 'unchanged' };
+  const a = args as Record<string, unknown>;
+  if (name === 'start_search' && route.status === 'routed') {
+    const socket = hub.get(route.deviceId)?.socket;
+    if (!socket || typeof socket !== 'object') return { status: 'refused', reason: 'owner_device_unavailable' };
+    let generation = searchGenerations.get(socket);
+    if (!generation) {
+      try {
+        const bytes = new Uint8Array(16);
+        globalThis.crypto.getRandomValues(bytes);
+        generation = Array.from(bytes, x => x.toString(16).padStart(2, '0')).join('');
+        searchGenerations.set(socket, generation);
+      } catch { return { status: 'refused', reason: 'search_identity_unavailable' }; }
+    }
+    return { status: 'start', deviceId: route.deviceId, socket, generation };
+  }
+  if ((name !== 'get_more_search_results' && name !== 'stop_search') ||
+      typeof a.sessionId !== 'string' || !a.sessionId.startsWith('hermes_search_'))
+    return { status: 'unchanged' };
+  const match = searchToken.exec(a.sessionId);
+  if (!match) return { status: 'refused', reason: 'search_session_invalid' };
+  if (Object.prototype.hasOwnProperty.call(a, 'deviceId') && a.deviceId !== DEVICE_ID)
+    return { status: 'refused', reason: 'search_device_mismatch' };
+  const device = ownerDevice(devices);
+  if (!isReady(device) || typeof device?.deviceId !== 'string')
+    return { status: 'refused', reason: 'owner_device_unavailable' };
+  const socket = hub.get(device.deviceId)?.socket;
+  if (!socket || typeof socket !== 'object' || searchGenerations.get(socket) !== match[1])
+    return { status: 'refused', reason: 'search_session_expired' };
+  return { status: 'follow', deviceId: device.deviceId, socket, nativeId: match[2], publicId: a.sessionId };
+}
+
+export function finishWorkspaceSearch(result: unknown, search: WorkspaceSearch, hub: SearchHub):
+    { status: 'ok' } | { status: 'refused'; reason: string } {
+  if (search.status !== 'start' && search.status !== 'follow') return { status: 'ok' };
+  if (hub.get(search.deviceId)?.socket !== search.socket)
+    return { status: 'refused', reason: 'search_connection_changed' };
+  if (!result || typeof result !== 'object') return { status: 'ok' };
+  const content = (result as Record<string, unknown>).content;
+  if (!Array.isArray(content) || !content[0] || typeof content[0] !== 'object' ||
+      content[0].type !== 'text' || typeof content[0].text !== 'string') return { status: 'ok' };
+  const text: string = content[0].text;
+  if (search.status === 'start') {
+    const match = /^Started (?:file|content) search session: (search_[1-9][0-9]{0,15}_[0-9]{1,16})\n/.exec(text);
+    if (match) content[0].text = text.replace(match[1], `hermes_search_${search.generation}_${match[1]}`);
+  } else {
+    for (const prefix of [`Search session: ${search.nativeId}\n`, `Search session ${search.nativeId} `]) {
+      if (text.startsWith(prefix)) {
+        content[0].text = prefix.replace(search.nativeId, search.publicId) + text.slice(prefix.length);
+        break;
+      }
+    }
+  }
+  return { status: 'ok' };
+}
 function norm(s: string): string {
   return s.trim().toLowerCase().replace(/_/g, ' ').replace(/\s+/g, ' ');
 }

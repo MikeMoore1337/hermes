@@ -189,6 +189,26 @@ must(explicitOther.isError !== true && JSON.stringify(explicitOther).includes('p
 const mixedPaths = await call('read_multiple_files', { paths:[projectPath, '/workspace/identity.txt'] });
 must(mixedPaths.isError === true && JSON.stringify(mixedPaths).includes('workspace_paths_not_routable'),
      'H15_WORKSPACE_MIXED_PATHS_REFUSED');
+const searchStart = await call('start_search', {
+  path:'/workspace/projects/hermes', pattern:'identity.txt', searchType:'files', timeout_ms:5000,
+});
+const searchText = searchStart.content?.[0]?.text ?? '';
+const searchId = searchText.match(/^Started file search session: (hermes_search_[a-f0-9]{32}_search_[1-9][0-9]*_[0-9]+)\n/)?.[1];
+must(searchStart.isError !== true && !!searchId, 'H15_WORKSPACE_SEARCH_SESSION_BOUND');
+let searchResults;
+for (let i=0;i<20;i++) {
+  searchResults = await call('get_more_search_results', { sessionId:searchId, length:20 });
+  if (JSON.stringify(searchResults).includes('identity.txt')) break;
+  await pause(100);
+}
+must(searchResults.isError !== true && JSON.stringify(searchResults).includes(searchId) &&
+     JSON.stringify(searchResults).includes('identity.txt'), 'H15_WORKSPACE_SEARCH_RESULTS_ROUTED');
+const wrongSearchDevice = await call('get_more_search_results', { sessionId:searchId, deviceId:'ci-native-two' });
+must(wrongSearchDevice.isError === true && JSON.stringify(wrongSearchDevice).includes('search_device_mismatch'),
+     'H15_WORKSPACE_SEARCH_OTHER_DEVICE_REFUSED');
+const stoppedSearch = await call('stop_search', { sessionId:searchId });
+must(stoppedSearch.isError !== true && JSON.stringify(stoppedSearch).includes(searchId),
+     'H15_WORKSPACE_SEARCH_STOP_ROUTED');
 
 for (const [id, expected] of [
   [pinnedDeviceId, 'real-ci-agent-one'],
@@ -287,6 +307,9 @@ must(stoppedWorkspace.isError === true &&
 const stoppedAuto = await call('read_file', { path:projectPath });
 must(stoppedAuto.isError === true && JSON.stringify(stoppedAuto).includes('owner_device_unavailable'),
      'H15_WORKSPACE_PAUSED_OWNER_NO_FALLBACK');
+const stoppedSearchOwner = await call('get_more_search_results', { sessionId:searchId });
+must(stoppedSearchOwner.isError === true && JSON.stringify(stoppedSearchOwner).includes('owner_device_unavailable'),
+     'H15_WORKSPACE_SEARCH_PAUSED_OWNER_NO_FALLBACK');
 const otherStillOnline = await call('read_file', { deviceId:'ci-native-two', path:projectPath });
 must(otherStillOnline.isError !== true && JSON.stringify(otherStillOnline).includes('project-on-other-device'),
      'H15_WORKSPACE_OTHER_DEVICE_REMAINS_ONLINE');

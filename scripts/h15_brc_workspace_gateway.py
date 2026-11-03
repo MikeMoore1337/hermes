@@ -13,9 +13,9 @@ LIST = "      ...pinnedToolCatalog().map(t => ({ ...t, inputSchema: withDeviceId
 CALL = "    const out = await invokeTool(hub, store, ctx, name, args as Record<string, unknown> | undefined);"
 DEVICE_HELP = "Target device id (from list_devices). Required when more than one device is online; may be omitted when only one device is connected."
 WORKSPACE_DEVICE_HELP = ("Target device id (from list_devices). Optional for file operations on registered "
-                         "project paths; otherwise required when multiple devices are online.")
+                         "project paths and their search sessions; otherwise required when multiple devices are online.")
 NEWIMP = "import { LIST_WORKSPACES_TOOL, RESOLVE_WORKSPACE_TOOL, listApprovedWorkspaces, resolveApprovedWorkspace } from './hermes-workspaces.js';"
-ROUTEIMP = "import { routeWorkspaceCall } from './hermes-workspaces.js';"
+ROUTEIMP = "import { routeWorkspaceCall, prepareWorkspaceSearch, finishWorkspaceSearch } from './hermes-workspaces.js';"
 NEWLIST = ("      ...pinnedToolCatalog().map(t => ({ ...t, inputSchema: withDeviceId(t.inputSchema) })),\n"
            "      LIST_WORKSPACES_TOOL, RESOLVE_WORKSPACE_TOOL] };")
 NEWCALL = """    if (name === 'list_workspaces' || name === 'resolve_workspace') {
@@ -27,10 +27,25 @@ NEWCALL = """    if (name === 'list_workspaces' || name === 'resolve_workspace')
                isError: result.status === 'refused' };
     }
 """
-ROUTECALL = """    const route = routeWorkspaceCall(name, args, listUserDevices(hub, store, ctx.userId));
+ROUTECALL = """    const routeDevices = listUserDevices(hub, store, ctx.userId);
+    const route = routeWorkspaceCall(name, args, routeDevices);
     if (route.status === 'refused')
       return { content: [{ type: 'text', text: `Workspace routing refused: ${route.reason}` }], isError: true };
     if (route.status === 'routed' && args) args.deviceId = route.deviceId;
+    const search = prepareWorkspaceSearch(name, args, route, hub, routeDevices);
+    if (search.status === 'refused')
+      return { content: [{ type: 'text', text: `Search session refused: ${search.reason}` }], isError: true };
+    if (search.status === 'follow' && args) {
+      args.deviceId = search.deviceId;
+      args.sessionId = search.nativeId;
+    }
+"""
+ROUTERESULT = """
+    if (out.ok) {
+      const finished = finishWorkspaceSearch(out.result, search, hub);
+      if (finished.status === 'refused')
+        return { content: [{ type: 'text', text: `Search connection changed: ${finished.reason}; check the device before retrying.` }], isError: true };
+    }
 """
 
 def apply(root: Path, registry: Path, sha: str = UPSTREAM_SHA) -> dict:
@@ -76,7 +91,7 @@ def apply(root: Path, registry: Path, sha: str = UPSTREAM_SHA) -> dict:
     code = code.replace("__HERMES_DEVICE_ID__", json.dumps(cfg["device_id"], ensure_ascii=True))
     patched = (original.replace(IMP, IMP + "\n" + NEWIMP + "\n" + ROUTEIMP)
                .replace(LIST, NEWLIST).replace(DEVICE_HELP, WORKSPACE_DEVICE_HELP)
-               .replace(CALL, NEWCALL + ROUTECALL + CALL))
+               .replace(CALL, NEWCALL + ROUTECALL + CALL + ROUTERESULT))
     if (patched == original or patched.count("name === 'resolve_workspace'") != 1
         or patched.count("routeWorkspaceCall(name, args") != 1):
         raise AuditError("patch_failed")

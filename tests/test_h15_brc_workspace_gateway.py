@@ -152,6 +152,30 @@ for (const [name,args] of [['read_file',{path:outside}],['read_file',{path:good,
  ['start_process',{command:'cat '+good}],
  ['get_more_search_results',{sessionId:'fixture'}],['native_file_read',{path:good}]])
  assert.equal(route(name,args).status,'unchanged');
+let socket={}; const hub={get:id=>id===win.deviceId?{socket}:undefined};
+const startArgs={path:good}; const startRoute=route('start_search',startArgs);
+const start=api.prepareWorkspaceSearch('start_search',startArgs,startRoute,hub,[win,other]);
+assert.equal(start.status,'start');
+const started={content:[{type:'text',text:'Started file search session: search_1_1793680000000\\nPattern: fixture\\n'}]};
+assert.equal(api.finishWorkspaceSearch(started,start,hub).status,'ok');
+const token=started.content[0].text.match(/^Started file search session: (hermes_search_[a-f0-9]{32}_search_1_1793680000000)/)?.[1];
+assert.ok(token);
+const followArgs={sessionId:token};
+const follow=api.prepareWorkspaceSearch('get_more_search_results',followArgs,{status:'unchanged'},hub,[win,other]);
+assert.equal(follow.status,'follow');assert.equal(follow.nativeId,'search_1_1793680000000');
+const output={content:[{type:'text',text:'Search session: search_1_1793680000000\\nfile search_1_1793680000000\\n'}]};
+assert.equal(api.finishWorkspaceSearch(output,follow,hub).status,'ok');
+assert.equal(output.content[0].text,'Search session: '+token+'\\nfile search_1_1793680000000\\n');
+assert.equal(api.prepareWorkspaceSearch('stop_search',{sessionId:token,deviceId:other},
+ {status:'unchanged'},hub,[win,other]).reason,'search_device_mismatch');
+assert.equal(api.prepareWorkspaceSearch('stop_search',{sessionId:'hermes_search_bad'},
+ {status:'unchanged'},hub,[win,other]).reason,'search_session_invalid');
+assert.equal(api.prepareWorkspaceSearch('stop_search',{sessionId:token},
+ {status:'unchanged'},hub,[{...win,paused:true},other]).reason,'owner_device_unavailable');
+socket={};
+assert.equal(api.prepareWorkspaceSearch('get_more_search_results',{sessionId:token},
+ {status:'unchanged'},hub,[win,other]).reason,'search_session_expired');
+assert.equal(api.finishWorkspaceSearch(started,start,hub).reason,'search_connection_changed');
 console.log('H15_454_TS_RUNTIME=PASS');
 """
         proc = subprocess.run(["node", "-e", js, str(dest / "hermes-workspaces.js")],
