@@ -64,6 +64,20 @@ function Invoke-H454RecoveryDocker([string[]]$Arguments,[string]$DockerSha256,[b
     if($event -ceq $script:failure -and -not $script:failed){$script:failed=$true;throw 'H454_DOCKER_AMBIGUOUS'}
     return [pscustomobject]@{Code=0;Output=$output}
 }
+function Start-H454TrialReceiptWorker([hashtable]$RestoreArgs,[object]$Operation){
+    $arguments=switch -CaseSensitive ($Operation.Phase){
+        {$_ -cin @('STOP_ORIGINAL','STOP_CANDIDATE')} {@('stop','--time','10',$Operation.Target)}
+        'START_CANDIDATE' {@('start',$Operation.Target)}
+        {$_ -cin @('CONNECT_ORIGINAL','CONNECT_CANDIDATE')} {@('network','connect',$Operation.Network,$Operation.Target)}
+        {$_ -cin @('DISCONNECT_ORIGINAL','DISCONNECT_CANDIDATE')} {@('network','disconnect',$Operation.Network,$Operation.Target)}
+        default {throw 'FIXTURE_PHASE'}
+    }
+    $null=Invoke-H454RecoveryDocker -Arguments $arguments -DockerSha256 $RestoreArgs.DockerSha256
+    $receipt=Join-Path $RestoreArgs.StateDir ('h454-broker-op-'+$Operation.Nonce+'.receipt')
+    $bytes=[Text.UTF8Encoding]::new($false).GetBytes("H454-BROKER-TRIAL-RECEIPT-1`n$($Operation.Hash)`nHTTP_OK`n")
+    $stream=[IO.File]::Open($receipt,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+    try{$stream.Write($bytes,0,$bytes.Length);$stream.Flush($true)}finally{$stream.Dispose()}
+}
 function Restore-H454Original {
     param($StateDir,$Lock,$MarkerSha256,$SafetyCheck,$Launcher,$LauncherSha256,$AgentId,$AgentImage,$AgentName,$DeviceId,
         $OldImage,$BrokerImage,$CaSha256,$DockerSha256,$VerifierPath,$VerifierSha256,$TokenBytes,$AgentBytes,[switch]$Apply,[switch]$OwnerApproved,[switch]$RestageOnly)
@@ -125,6 +139,20 @@ try{
         VerifierPath=$Verifier;VerifierSha256=(Get-FileHash -LiteralPath $Verifier -Algorithm SHA256).Hash}
     $start=@{RestoreArgs=$args;CandidateId=$script:candidateId;CandidateImage=$script:candidateImage;
         TokenBytes=$credential.TokenBytes;AgentBytes=$credential.AgentBytes;WindowStartUtc=[DateTime]::UtcNow.AddMinutes(-1);WindowEndUtc=[DateTime]::UtcNow.AddMinutes(10)}
+    $recorded=Get-H454TrialRecordedOperation $args $script:candidateId 'STOP_CANDIDATE' ([Guid]::NewGuid().ToString('N')) $script:candidateId '-' 0 0
+    Start-H454TrialRecordedOperation $args $recorded
+    Require-H454 ($null -eq (Resolve-H454TrialRecordedOperation $args $script:candidateId)) 'FIXTURE_RECEIPT_MISSING'
+    $refused=$false
+    try{Assert-H454BrokerTrialSettled $args}catch{$refused=$_.Exception.Message -ceq 'H454_TRIAL_UNKNOWN_STOP_CANDIDATE'}
+    Require-H454 $refused 'FIXTURE_RECEIPT_PENDING'
+    $receipt=Join-Path $dir ('h454-broker-op-'+$recorded.Nonce+'.receipt')
+    [IO.File]::WriteAllText($receipt,"H454-BROKER-TRIAL-RECEIPT-1`n$('F'*64)`nHTTP_OK`n")
+    $refused=$false
+    try{$null=Resolve-H454TrialRecordedOperation $args $script:candidateId}catch{$refused=$_.Exception.Message -ceq 'H454_TRIAL_RECEIPT_INVALID'}
+    Require-H454 ($refused -and (Test-Path -LiteralPath (Join-Path $dir 'h454-broker-trial.inflight'))) 'FIXTURE_RECEIPT_MISMATCH'
+    [IO.File]::WriteAllText($receipt,"H454-BROKER-TRIAL-RECEIPT-1`n$($recorded.Hash)`nHTTP_OK`n")
+    Require-H454 ((Resolve-H454TrialRecordedOperation $args $script:candidateId) -ceq 'HTTP_OK' -and
+        -not (Test-Path -LiteralPath $receipt) -and -not (Test-Path -LiteralPath (Join-Path $dir 'h454-broker-trial.inflight'))) 'FIXTURE_RECEIPT_RESOLVED'
     Reset-Fixture
     $preview=Start-H454BrokerTrial @start
     Require-H454 ($preview.Status -ceq 'PREFLIGHT' -and $script:events.Count -eq 0) 'FIXTURE_PREVIEW'
@@ -137,6 +165,10 @@ try{
     try{$null=Invoke-H454BrokerTrialDocker $args @('stop','--time','10',$script:originalId) -WindowStartUtc ([DateTime]::UtcNow.AddMinutes(-2)) -WindowEndUtc ([DateTime]::UtcNow.AddMinutes(-1))}
     catch{$refused=$_.Exception.Message -ceq 'H454_TRIAL_WINDOW'}
     Require-H454 ($refused -and $script:events.Count -eq 0 -and -not (Test-Path -LiteralPath (Join-Path $dir 'h454-broker-trial.inflight'))) 'FIXTURE_WINDOW_AT_DISPATCH'
+    $refused=$false
+    try{$null=Invoke-H454BrokerTrialDocker $args @('stop','--time','10',$script:originalId) -WindowStartUtc ([DateTime]::UtcNow.AddMinutes(-1)) -WindowEndUtc ([DateTime]::UtcNow.AddSeconds(5))}
+    catch{$refused=$_.Exception.Message -ceq 'H454_TRIAL_WINDOW'}
+    Require-H454 ($refused -and $script:events.Count -eq 0 -and -not (Test-Path -LiteralPath (Join-Path $dir 'h454-broker-trial.inflight'))) 'FIXTURE_WINDOW_TOO_SHORT'
     $cases=@('success','stop-original','original-connect-bridge','original-disconnect-private','candidate-connect-private',
         'candidate-disconnect-bridge','start-candidate','verify-empty','stage-candidate','verify-candidate','stage-broker')
     foreach($case in $cases){
