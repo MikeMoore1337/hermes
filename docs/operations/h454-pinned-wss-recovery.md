@@ -358,6 +358,11 @@ remove the marker or retry the mutation on that basis. The trial has not been
 run against the live container, and its source and tests do not establish a
 production cutover or rollback.
 
+The periodic staging monitor may already hold `runtime.lock`. In that case the
+operator reports `RECOVERY_LOCK_BUSY` before this invocation makes any change.
+Let the current owner finish, then inspect state again. A busy lock does not
+resolve an earlier pending operation or authorize retrying an ambiguous mutation.
+
 `h454_windows_network_guard.ps1` verifies a fresh Docker network
 snapshot's immutable identity, internal bridge mode, label and exact two-member
 set. Its rollback route check also requires the exact private IPv4 CIDR and

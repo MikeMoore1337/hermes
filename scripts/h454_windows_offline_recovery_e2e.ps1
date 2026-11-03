@@ -71,6 +71,19 @@ if($CrashChild){
 $lock=$null
 try {
     Reset-Fixture
+    $busy=[IO.File]::Open($lockPath,[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
+    try {
+        $reason=''
+        try { $null=Open-H454RecoveryLock $stateDir } catch { $reason=$_.Exception.Message }
+        Require-H454 ($reason -ceq 'RECOVERY_LOCK_BUSY') 'LOCK_CONTENTION_REASON'
+    } finally { $busy.Dispose() }
+    $badState=Join-Path $Fixture 'bad-state';$badLock=Join-Path $badState 'runtime.lock'
+    [IO.Directory]::CreateDirectory($badLock)|Out-Null
+    try {
+        $reason=''
+        try { $null=Open-H454RecoveryLock $badState } catch { $reason=$_.Exception.Message }
+        Require-H454 ($reason -cne '' -and $reason -cne 'RECOVERY_LOCK_BUSY') 'LOCK_OTHER_ERROR'
+    } finally { [IO.Directory]::Delete($badLock);[IO.Directory]::Delete($badState) }
     $lock=Open-H454RecoveryLock $stateDir
     [IO.File]::Delete($marker)
     Require-H454 ((New-H454TransitionMarker $stateDir $markerBytes $lock) -ceq $pins.MarkerHash) 'MARKER_CREATE'
@@ -168,7 +181,9 @@ try {
     $exe=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
     $arguments=@('-NoProfile','-NonInteractive','-File',('"'+$PSCommandPath+'"'),'-Source',('"'+$Source+'"'),
         '-GuardPath',('"'+$GuardPath+'"'),'-FixtureParent',('"'+$parent+'"'),'-Fixture',('"'+$Fixture+'"'),'-CrashChild')
-    $child=Start-Process -FilePath $exe -ArgumentList $arguments -PassThru -WindowStyle Hidden
+    $start=[Diagnostics.ProcessStartInfo]::new();$start.FileName=$exe;$start.Arguments=$arguments -join ' '
+    $start.UseShellExecute=$false;$start.CreateNoWindow=$true;$start.WindowStyle=[Diagnostics.ProcessWindowStyle]::Hidden
+    $child=[Diagnostics.Process]::Start($start)
     if(-not $child.WaitForExit(15000)){$child.Kill();throw 'CRASH_CHILD_TIMEOUT'}
     Require-H454 ($child.ExitCode -eq 73) 'CRASH_CHILD_FAILED'
     Require-H454 ((Get-FileHash $STATE_PATH).Hash -ceq $pins.OldStateHash -and

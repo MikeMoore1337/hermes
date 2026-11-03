@@ -12,7 +12,13 @@ function Open-H454RecoveryLock([string]$StateDir) {
             Assert-H454PrivateAcl $entry
         }
     }
-    $stream=[IO.File]::Open($lockPath,[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
+    try { $stream=[IO.File]::Open($lockPath,[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None) }
+    catch {
+        $errorValue=$_.Exception
+        if($errorValue -is [Management.Automation.MethodInvocationException]){$errorValue=$errorValue.InnerException}
+        if($errorValue -is [IO.IOException] -and ($errorValue.HResult -band 0xffff) -eq 32){throw 'RECOVERY_LOCK_BUSY'}
+        throw
+    }
     try { Assert-H454PrivateAcl $lockPath } catch { $stream.Dispose();throw }
     $script:h454RecoveryOwnedLock=$stream
     return $stream
