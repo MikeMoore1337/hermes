@@ -43,7 +43,7 @@ class SyntheticOtelTests(unittest.TestCase):
         self.assertRegex(span["traceId"], r"^[a-f0-9]{32}$")
         self.assertRegex(span["spanId"], r"^[a-f0-9]{16}$")
         self.assertEqual("hermes.synthetic.tool", span["name"])
-        self.assertEqual(1, span["status"]["code"])
+        self.assertEqual(0, span["status"]["code"])  # No observed error != validated OK
         metric = otlp["resourceMetrics"][0]["scopeMetrics"][0]["metrics"][0]
         self.assertEqual("hermes.synthetic.duration", metric["name"])
         self.assertEqual("ms", metric["unit"])

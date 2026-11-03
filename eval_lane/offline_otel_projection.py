@@ -139,14 +139,20 @@ def project(payload: Any) -> dict[str, Any]:
         ]
         if event["output_bytes_bounded"] is not None:
             attrs.append(_int_attr("hermes.output.bytes.bounded", event["output_bytes_bounded"]))
-        status_code = 0 if error == "unknown" else (1 if error == "none" else 2)
+        if error not in ("none", "unknown"):
+            # OTel semantic conventions: low-cardinality error.type on failed spans.
+            # The value comes only from our fixed allowlist, never remote text.
+            attrs.append(_string_attr("error.type", error))
+        # No error observed is not the same as explicit application-verified OK.
+        status_code = 2 if error not in ("none", "unknown") else 0
         spans.append({
             "traceId": trace_id, "spanId": span_id,
             "name": "hermes.synthetic." + event["kind"],
             "kind": 1, "startTimeUnixNano": str(start),
             "endTimeUnixNano": str(end), "attributes": attrs,
             # OTLP StatusCode: 0=UNSET, 1=OK, 2=ERROR.
-            # An unknown error outcome must never be reported as success.
+            # Only observed classified failures are ERROR; unverified successes
+            # and UNKNOWN outcomes are UNSET, never fabricated OK.
             "status": {"code": status_code},
         })
         known_points.append({
@@ -207,6 +213,20 @@ def project(payload: Any) -> dict[str, Any]:
     if len(json.dumps(result, separators=(",", ":")).encode("utf-8")) > MAX_OUTPUT_BYTES:
         raise OfflineTelemetryDenied("OUTPUT_SIZE_LIMIT")
     return result
+
+
+def offline_otlp_json_requests(payload: Any) -> dict[str, dict[str, Any]]:
+    """Build two signal-specific OTLP/HTTP JSON bodies from validated fixtures.
+
+    Pure, bounded, synthetic-only transformation: no endpoint, transport,
+    filesystem, exporter, collector or production instrumentor is provided.
+    Never use a caller-supplied prebuilt OTLP mapping as an input.
+    """
+    candidate = project(payload)["otlp_json_candidate"]
+    return {
+        "traces": {"resourceSpans": candidate["resourceSpans"]},
+        "metrics": {"resourceMetrics": candidate["resourceMetrics"]},
+    }
 
 
 def _no_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
