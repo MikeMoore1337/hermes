@@ -106,7 +106,7 @@ def _public_ca(path: Path) -> tuple[str, bytes]:
     detail = _openssl("x509", "-in", str(path), "-noout", "-text")
     if "CA:TRUE" not in detail or "Certificate Sign" not in detail:
         raise TrustError("CA_BASIC_CONSTRAINTS_REQUIRED")
-    _openssl("verify", "-CAfile", str(path), "-no-CApath",
+    _openssl("verify", "-CAfile", str(path), "-no-CApath", "-no-CAstore",
              "-check_ss_sig", str(path))
     _openssl("x509", "-in", str(path), "-noout", "-checkend", "604800")
     return blocks[0]
@@ -120,7 +120,7 @@ def _leaf(path: Path, ca: Path) -> bytes:
         raise TrustError("LEAF_NOT_ASCII_PEM") from exc
     if len(blocks) != 1:
         raise TrustError("LEAF_MUST_BE_ONE_CERTIFICATE")
-    _openssl("verify", "-CAfile", str(ca), "-no-CApath",
+    _openssl("verify", "-CAfile", str(ca), "-no-CApath", "-no-CAstore",
              "-purpose", "sslserver", "-verify_hostname", "localhost", str(path))
     _openssl("x509", "-in", str(path), "-noout", "-checkend", "259200")
     san = _openssl("x509", "-in", str(path), "-noout", "-ext", "subjectAltName")
