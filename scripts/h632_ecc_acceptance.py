@@ -190,8 +190,17 @@ def run(ecc: Path, output: Path) -> int:
                       's.on("timeout",()=>{s.destroy();console.log("NETWORK_TIMEOUT_DENIED");process.exit(0)});')
             attempt(report, "os-file-network-deny", node("/usr/local/bin/node", ["-e", denial]), timeout=15)
             report["checks"]["os_network_and_outside_write_denied"] = True
-            assert not (h / "hooks").exists() and not (h / ".mcp.json").exists()
-            report["checks"]["no_active_hooks_or_mcp"] = True
+            report["installed_runtime_config"] = {
+                "root_hooks_dir": (h / "hooks").is_dir(),
+                "root_hook_paths": sorted(str(p.relative_to(h)) for p in (h / "hooks").rglob("*") if p.is_file()) if (h / "hooks").is_dir() else [],
+                "mcp_root_file": (h / ".mcp.json").is_file(),
+                "mcp_root_config": (h / "mcp.json").is_file(),
+            }
+            report["checks"]["no_active_hooks_or_mcp"] = not any((
+                report["installed_runtime_config"]["root_hooks_dir"],
+                report["installed_runtime_config"]["mcp_root_file"],
+                report["installed_runtime_config"]["mcp_root_config"],
+            ))
             attempt(report, "original-uninstall-dry-run", node("/usr/local/bin/node", ["scripts/uninstall.js", "--target", "hermes", "--dry-run", "--json"]))
             attempt(report, "original-uninstall", node("/usr/local/bin/node", ["scripts/uninstall.js", "--target", "hermes", "--json"]))
             uninstalled = snapshot(home)
@@ -218,10 +227,11 @@ def run(ecc: Path, output: Path) -> int:
             report["calls"].append({"name": "owner-agents-collision", "exit": rc,
                                     "stdout_sha256": digest(stdout.encode()), "stderr_excerpt": stderr.strip()[:160]})
             report["checks"]["existing_owner_agents_preserved"] = (digest(policy.read_bytes()) == collision_before)
-            assert report["checks"]["existing_owner_agents_preserved"], "Upstream installer overwrote existing Hermes AGENTS.md"
             report["status"] = ("PASS_INSTALL_DISCOVERY_ROLLBACK_SKILL_EXECUTION_BLOCKED"
-                                if report["checks"]["exact_snapshot_rollback"]
-                                else "PARTIAL_ORIGINAL_ROLLBACK_RESIDUAL_FILES")
+                                if all((report["checks"]["exact_snapshot_rollback"],
+                                        report["checks"]["no_active_hooks_or_mcp"],
+                                        report["checks"]["existing_owner_agents_preserved"]))
+                                else "PARTIAL_ORIGINAL_INSTALL_SECURITY_OR_ROLLBACK")
     except Exception as e:
         report["status"] = "FAIL_OR_BLOCKED"
         report["error"] = type(e).__name__ + ": " + str(e)[:480]
