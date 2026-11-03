@@ -1,0 +1,94 @@
+name: H-632 original ECC offline acceptance
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/h632-ecc-original-acceptance.yml
+      - scripts/h632_ecc_acceptance.py
+      - tests/test_h632_ecc_acceptance.py
+      - docs/operations/ecc-upstream-as-is.md
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  original-ecc-lifecycle:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout Hermes source without retained credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Run independent synthetic plan/guard tests
+        run: python3 -m unittest discover -s tests -p 'test_h632_ecc_acceptance.py' -v
+
+      - name: Verify disposable GitHub runner and acquire exact original ECC SHA
+        shell: bash
+        env:
+          ECC_SHA: 25278e7d7b6cf6e6a4e7a6c8e10f14ff22f0eb5b
+        run: |
+          set -euo pipefail
+          [[ '${{ runner.environment }}' == 'github-hosted' ]]
+          [[ "$RUNNER_OS" == 'Linux' ]]
+          [[ "$(id -u)" != 0 ]]
+          echo "ECC_SOURCE=$RUNNER_TEMP/ecc-h632-upstream" >> "$GITHUB_ENV"
+          git -c core.hooksPath=/dev/null clone --filter=blob:none --no-checkout \
+            https://github.com/affaan-m/ECC.git "$RUNNER_TEMP/ecc-h632-upstream"
+          git -C "$RUNNER_TEMP/ecc-h632-upstream" -c core.hooksPath=/dev/null checkout --detach "$ECC_SHA"
+          [[ "$(git -C "$RUNNER_TEMP/ecc-h632-upstream" rev-parse HEAD)" == "$ECC_SHA" ]]
+          python3 scripts/h632_ecc_acceptance.py \
+            --ecc-root "$RUNNER_TEMP/ecc-h632-upstream" \
+            --out "$RUNNER_TEMP/ecc632-preflight.json" --preflight
+
+      - name: Install original package dependencies without lifecycle scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$ECC_SOURCE"
+          npm ci --omit=dev --ignore-scripts --no-audit --no-fund --loglevel=error
+          test -d node_modules
+
+      - name: Obtain isolated test images (not production)
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker pull node:22.16.0-bookworm-slim
+          docker pull nousresearch/hermes-agent@sha256:a11574b7fe8e1631d7d88d556677dac693bc058abf558cdeb899155688c1bf05
+          docker inspect --format '{{.Id}} {{.Architecture}}' node:22.16.0-bookworm-slim
+          docker inspect --format '{{.Id}} {{.Architecture}}' \
+            nousresearch/hermes-agent@sha256:a11574b7fe8e1631d7d88d556677dac693bc058abf558cdeb899155688c1bf05
+
+      - name: Execute original ECC install, actual Hermes discovery, deny tests, reinstall and uninstall
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/h632_ecc_acceptance.py \
+            --ecc-root "$ECC_SOURCE" \
+            --out "$RUNNER_TEMP/ecc632-original-acceptance.json"
+          python3 -m json.tool "$RUNNER_TEMP/ecc632-original-acceptance.json" > /dev/null
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          p = Path(os.environ['RUNNER_TEMP']) / 'ecc632-original-acceptance.json'
+          report = json.loads(p.read_text())
+          print('ECC original:', report['status'])
+          print('No model/provider/production:', report['original_skill_execution'])
+          print('Checks:', report['checks'])
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as f:
+              f.write(f"ECC original install: {report['status']}\n\n")
+              f.write(f"Hermes discovery: {report.get('native_hermes_discovery', 'NOT_VERIFIED')}\n\n")
+              f.write('Original model-backed skill execution: BLOCKED_BY_OWNER_POLICY\n')
+          PY
+
+      - name: Retain sanitized read-only acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: h632-original-ecc-isolated-receipt
+          path: ${{ runner.temp }}/ecc632-original-acceptance.json
+          if-no-files-found: ignore
+          retention-days: 7
