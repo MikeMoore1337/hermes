@@ -183,11 +183,14 @@ def _switch(paths: RotationPaths, name: str, pointer: str = "active") -> None:
 def _probe(*, ca: Path, leaf: Path, port: int = PORT, hostname: str = "localhost") -> bool:
     ctx = ssl.create_default_context(cafile=str(ca))
     ctx.check_hostname = True
-    # systemctl can mark a simple process active before it binds the port.
-    # Retry transport startup briefly, never a mismatched TLS identity.
-    for attempt in range(3):
+    # systemctl may report active while Python is still binding the WSS
+    # listener. On the owner VPS that race caused both first promotion and
+    # immediate rollback probes to miss a valid certificate, stranding the
+    # durable recovery marker despite a healthy fallback service.
+    # Bound both socket wait and retries; never retry a *wrong* TLS identity.
+    for attempt in range(8):
         try:
-            with socket.create_connection(("127.0.0.1", port), timeout=3) as sock:
+            with socket.create_connection(("127.0.0.1", port), timeout=1.5) as sock:
                 with ctx.wrap_socket(sock, server_hostname=hostname) as channel:
                     actual = channel.getpeercert(binary_form=True)
                     expected = subprocess.run(
@@ -196,9 +199,9 @@ def _probe(*, ca: Path, leaf: Path, port: int = PORT, hostname: str = "localhost
                     ).stdout
                     return channel.version() in ("TLSv1.2", "TLSv1.3") and actual == expected
         except (OSError, ssl.SSLError, TimeoutError, subprocess.SubprocessError):
-            if attempt == 2:
+            if attempt == 7:
                 return False
-            time.sleep(0.4)
+            time.sleep(0.5)
     return False
 
 
