@@ -521,44 +521,36 @@ class RotationTests(unittest.TestCase):
         self.assertFalse(thread.is_alive())
 
 
-    def test_real_tls_probe_survives_four_initial_connection_refusals(self):
-        cert, key = self.certificates[0]
-        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        ctx.load_cert_chain(str(cert), str(key))
-        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server.bind(("127.0.0.1", 0))
-        server.listen(1)
-        server.settimeout(5)
-        port = server.getsockname()[1]
-
-        def serve():
-            try:
-                conn, _ = server.accept()
-                with conn:
-                    with ctx.wrap_socket(conn, server_side=True):
-                        pass
-            finally:
-                server.close()
-
-        thread = threading.Thread(target=serve, daemon=True)
-        thread.start()
-        original = socket.create_connection
-        refused = []
-
-        def delayed_connect(*args, **kwargs):
-            if len(refused) < 4:
-                refused.append(True)
-                raise ConnectionRefusedError("synthetic startup race")
-            return original(*args, **kwargs)
-
+    def test_bounded_probe_retry_is_independent_of_os_startup_speed(self):
+        # The production VPS' isolated systemd test namespace may have a
+        # different socket scheduling time than GitHub CI. Test the retry
+        # state machine deterministically; a separate test below proves a
+        # genuine loopback TLS handshake and exact leaf identity.
+        from unittest.mock import MagicMock
+        cert, _ = self.certificates[0]
+        expected = subprocess.run(
+            ["openssl", "x509", "-in", str(cert), "-outform", "DER"],
+            capture_output=True, check=True, timeout=4).stdout
+        fake_sock = MagicMock()
+        fake_ctx = MagicMock()
+        channel = fake_ctx.wrap_socket.return_value.__enter__.return_value
+        channel.getpeercert.return_value = expected
+        channel.version.return_value = "TLSv1.3"
+        failures = [ConnectionRefusedError("startup pending") for _ in range(4)]
         with patch("scripts.h15_presence_tls_rotation.socket.create_connection",
-                   side_effect=delayed_connect) as connect, patch(
+                   side_effect=failures + [fake_sock]) as connect, patch(
+                   "scripts.h15_presence_tls_rotation.ssl.create_default_context",
+                   return_value=fake_ctx) as create_context, patch(
                    "scripts.h15_presence_tls_rotation.time.sleep") as sleep:
-            self.assertTrue(_probe(ca=self.ca, leaf=cert, port=port))
+            self.assertTrue(_probe(ca=self.ca, leaf=cert, port=38177))
             self.assertEqual(connect.call_count, 5)
             self.assertEqual(sleep.call_count, 4)
-        thread.join(timeout=6)
-        self.assertFalse(thread.is_alive())
+            create_context.assert_called_once_with(cafile=str(self.ca))
+            self.assertTrue(fake_ctx.check_hostname)
+            fake_ctx.wrap_socket.assert_called_once()
+            self.assertEqual(fake_ctx.wrap_socket.call_args.kwargs["server_hostname"],
+                             "localhost")
+            channel.getpeercert.assert_called_once_with(binary_form=True)
 
     def test_probe_times_out_without_weakened_tls_or_unbounded_retries(self):
         cert, _ = self.certificates[0]
