@@ -5,7 +5,9 @@ import tempfile
 from pathlib import Path
 import unittest
 
-from scripts.h632_ecc_acceptance import EXPECTED_PROFILE, snapshot, validate_plan
+from scripts.h632_ecc_acceptance import (
+    EXPECTED_PROFILE, cleanup_ephemeral_ecc_cache, digest, snapshot, validate_plan,
+)
 
 
 def plan(destinations):
@@ -129,6 +131,78 @@ class ProductionDeployGuardTests(unittest.TestCase):
         rc, output, _ = self._decision(["scripts/h632_ecc_acceptance.py"] * 10)
         self.assertEqual(rc, 0)
         self.assertNotIn("skip=true", output)
+
+
+class ConfinedCacheCleanupTests(unittest.TestCase):
+    """Only an H-632-created cache file inside a disposable HOME may be removed."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix="h632-")
+        self.addCleanup(self.tmp.cleanup)
+        self.home = Path(self.tmp.name) / "home"
+        self.home.mkdir()
+        self.cache = self.home / ".claude" / "ecc" / "state.db"
+        self.cache.parent.mkdir(parents=True)
+        self.cache.write_bytes(b"synthetic-state-db-not-personal")
+        self.observed = {".claude/ecc/state.db": digest(self.cache.read_bytes())}
+
+    def test_only_single_owned_cache_file_removed(self):
+        extra = self.home / "unrelated.txt"
+        extra.write_text("preserve", encoding="utf-8")
+        report = cleanup_ephemeral_ecc_cache(self.home, {}, self.observed)
+        self.assertEqual(report["scope"], "disposable-H632-HOME-only")
+        self.assertEqual(report["path"], ".claude/ecc/state.db")
+        self.assertFalse(self.cache.exists())
+        self.assertTrue(self.cache.parent.is_dir())
+        self.assertEqual(extra.read_text(encoding="utf-8"), "preserve")
+
+    def test_existing_file_is_not_owned_by_acceptance(self):
+        with self.assertRaises(AssertionError):
+            cleanup_ephemeral_ecc_cache(self.home, self.observed, self.observed)
+        self.assertTrue(self.cache.is_file())
+
+    def test_drifted_cache_is_refused(self):
+        self.cache.write_bytes(b"modified-other-data")
+        with self.assertRaisesRegex(AssertionError, "bytes changed"):
+            cleanup_ephemeral_ecc_cache(self.home, {}, self.observed)
+        self.assertTrue(self.cache.is_file())
+
+    def test_symlinked_cache_is_refused(self):
+        destination = Path(self.tmp.name) / "other-file"
+        destination.write_bytes(b"other-synthetic-file")
+        self.cache.unlink()
+        self.cache.symlink_to(destination)
+        with self.assertRaisesRegex(AssertionError, "Unsafe cache file"):
+            cleanup_ephemeral_ecc_cache(self.home, {}, self.observed)
+        self.assertEqual(destination.read_bytes(), b"other-synthetic-file")
+
+    def test_symlinked_parent_is_refused(self):
+        other = Path(self.tmp.name) / "unrelated-dir"
+        other.mkdir()
+        (other / "state.db").write_bytes(b"synthetic")
+        self.cache.unlink()
+        self.cache.parent.rmdir()
+        self.cache.parent.symlink_to(other, target_is_directory=True)
+        with self.assertRaisesRegex(AssertionError, "Unsafe cache parent"):
+            cleanup_ephemeral_ecc_cache(self.home, {},
+                                        {".claude/ecc/state.db": digest(b"synthetic")})
+        self.assertTrue((other / "state.db").is_file())
+
+    def test_hardlink_is_refused(self):
+        link = Path(self.tmp.name) / "hardlink"
+        link.hardlink_to(self.cache)
+        with self.assertRaisesRegex(AssertionError, "Unsafe cache file"):
+            cleanup_ephemeral_ecc_cache(self.home, {}, self.observed)
+        self.assertTrue(link.is_file())
+
+    def test_non_disposable_home_is_refused(self):
+        with tempfile.TemporaryDirectory(prefix="ordinary-") as directory:
+            user_home = Path(directory) / "home"
+            user_home.mkdir()
+            with self.assertRaisesRegex(AssertionError, "Not an H-632"):
+                cleanup_ephemeral_ecc_cache(user_home, {}, self.observed)
+
+
 
 
 if __name__ == "__main__":
