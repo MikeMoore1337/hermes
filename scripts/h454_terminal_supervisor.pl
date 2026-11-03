@@ -23,17 +23,23 @@ open(my $probe, '<', $children) or unavailable();
 close($probe) or unavailable();
 unavailable() if getppid() != $parent || $stopping;
 
-# Taint mode ignores Perl startup overrides; retain the parent's valid PATH.
-if (defined $ENV{PATH}) {
+# Perl's taint checks need a safe PATH while starting the shell; restore the
+# caller's PATH inside that shell before executing the requested command.
+my $has_path = exists($ENV{PATH}) ? '1' : '0';
+my $original_path = '';
+if ($has_path eq '1') {
     $ENV{PATH} =~ /\A([^\x00\r\n]*)\z/ or unavailable();
-    $ENV{PATH} = $1;
+    $original_path = $1;
 }
+$ENV{PATH} = '/usr/bin:/bin';
 for (@ARGV) { /\A([^\x00]*)\z/s or unavailable(); $_ = $1; }
 my $shell = fork();
 unavailable() unless defined $shell;
 if ($shell == 0) {
     if (setsid() != -1) {
-        eval { exec { $ARGV[0] } @ARGV; };
+        eval { exec { '/bin/sh' } '/bin/sh', '-c',
+            'if [ "$1" = 1 ]; then PATH=$2; export PATH; else unset PATH; fi; shift 2; exec "$@"',
+            'hermes-session', $has_path, $original_path, @ARGV; };
     }
     print STDERR "HERMES_TERMINAL_SUPERVISOR_UNAVAILABLE\n";
     POSIX::_exit(125);

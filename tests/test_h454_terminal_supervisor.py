@@ -174,6 +174,40 @@ class TerminalSupervisorTests(unittest.TestCase):
 class PerlTerminalSupervisorTests(TerminalSupervisorTests):
     supervisor_prefix = ["/usr/bin/perl", "-T", str(PERL_SUPERVISOR)]
 
+    def test_writable_path_is_restored_for_the_command(self):
+        original_path = f"{self.root}:/usr/bin:/bin"
+        env = dict(os.environ, PATH=original_path)
+        result = subprocess.run(
+            [*self.supervisor_prefix, str(os.getpid()), sys.executable, "-c",
+             "import os;print(os.environ['PATH'])"],
+            env=env, capture_output=True, text=True, timeout=5,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, original_path + "\n")
+
+    def test_absent_path_remains_absent_for_the_command(self):
+        env = dict(os.environ)
+        env.pop("PATH", None)
+        result = subprocess.run(
+            [*self.supervisor_prefix, str(os.getpid()), sys.executable, "-c",
+             "import os;print('PATH' in os.environ)"],
+            env=env, capture_output=True, text=True, timeout=5,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "False\n")
+
+    def test_path_with_shell_metacharacters_is_not_executed(self):
+        marker = self.root / "injected"
+        original_path = f"{self.root}/$(touch {marker}):/usr/bin:/bin"
+        result = subprocess.run(
+            [*self.supervisor_prefix, str(os.getpid()), sys.executable, "-c",
+             "import os;print(os.environ['PATH'])"],
+            env=dict(os.environ, PATH=original_path), capture_output=True, text=True, timeout=5,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, original_path + "\n")
+        self.assertFalse(marker.exists())
+
     def test_perl_startup_overrides_do_not_execute(self):
         marker = self.root / "perl-override"
         env = dict(os.environ, PERL5OPT=f"-M{marker}")
