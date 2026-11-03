@@ -327,6 +327,13 @@ const running = pid => {
   try { return !/^\d+ \(.*\) Z /.test(fs.readFileSync(`/proc/${pid}/stat`, 'utf8')); }
   catch (error) { if (error.code === 'ENOENT') return false; throw error; }
 };
+const usesSupervisor = fs.existsSync('/usr/bin/python3') ||
+  (process.arch === 'x64' && fs.existsSync('/usr/bin/perl'));
+if (process.env.H454_EXPECT_PERL_SUPERVISOR === '1') {
+  assert(process.arch === 'x64' && !fs.existsSync('/usr/bin/python3') &&
+    fs.existsSync('/usr/bin/perl') && fs.existsSync('/usr/bin/setsid'),
+    'MCP_PERL_ONLY_SUPERVISOR_FIXTURE');
+}
 let firstPid, secondPid, descendantPid;
 try {
   const first = await callTool('start_process', {command:`node ${treeWorker}`,shell:'/bin/sh',timeout_ms:500});
@@ -339,7 +346,6 @@ try {
   if (!Number.isSafeInteger(descendantPid) || descendantPid <= 1 || !running(descendantPid))
     throw Error('DESCENDANT_NOT_RUNNING');
 
-  const usesSupervisor = fs.existsSync('/usr/bin/python3');
   if (!usesSupervisor) assert(first.content.some(item =>
     item.text?.includes('Termination is limited to the process group; detached descendants may remain.')),
     'MCP_TERMINAL_GROUP_ONLY_WARNING');
@@ -397,7 +403,7 @@ setInterval(()=>{},1000);`);
     escaped = Number(fs.readFileSync(escapedFile, 'utf8'));
     if (!Number.isSafeInteger(escaped) || escaped <= 1 || !running(escaped)) throw Error('ESCAPED_CHILD_START');
     const result = await callTool('force_terminate', {pid:session});
-    if (fs.existsSync('/usr/bin/python3')) {
+    if (usesSupervisor) {
       for (let i=0; i<60 && running(escaped); i++) await pause(50);
       assert(result.isError !== true && !running(escaped), 'MCP_TERMINATE_DETACHED_CHILD_WITH_SUPERVISOR');
     } else {

@@ -9,6 +9,7 @@ on:
     paths:
       - scripts/h15_brc_apply_policy_patch.py
       - scripts/h454_terminal_supervisor.py
+      - scripts/h454_terminal_supervisor.pl
       - tests/test_h454_terminal_supervisor.py
       - scripts/h15_brc_sandbox_linux_e2e.mjs
       - tests/test_h15_brc_apply_policy_patch.py
@@ -45,6 +46,7 @@ on:
       - scripts/h15_remote_commander_candidate_audit.py
       - scripts/h15_brc_apply_policy_patch.py
       - scripts/h454_terminal_supervisor.py
+      - scripts/h454_terminal_supervisor.pl
       - tests/test_h454_terminal_supervisor.py
       - scripts/h454_agent_no_auto_pair.py
       - scripts/h454_agent_no_auto_pair_e2e.mjs
@@ -391,7 +393,7 @@ jobs:
             --security-opt no-new-privileges \
             --pids-limit 64 --memory 512m --cpus 1 \
             --tmpfs /tmp:rw,nosuid,nodev,size=16m \
-            -e HOME=/workspace/home -e BRC_HOME=/workspace/home/.brc \
+            -e HOME=/workspace/home -e BRC_HOME=/workspace/home/.brc -e H454_EXPECT_PERL_SUPERVISOR=1 \
             -v "$RUNNER_TEMP/brc-upstream:/opt/brc:ro" \
             -v "$workspace:/workspace:rw" \
             -v "$GITHUB_WORKSPACE/scripts/h15_brc_sandbox_linux_e2e.mjs:/e2e/run.mjs:ro" \

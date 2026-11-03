@@ -448,6 +448,8 @@ class BrcHardeningTests(unittest.TestCase):
         self.assertIn("if (!session.process.kill('SIGINT'))", terminal)
         self.assertIn("if (!session.process.kill('SIGKILL'))", terminal)
         self.assertIn("spawnOptions.detached = true", terminal)
+        self.assertIn("process.arch === 'x64' && existsSync('/usr/bin/perl')", terminal)
+        self.assertIn("['-T', '-e', h454PerlSupervisor", terminal)
         self.assertIn("h454LinuxSessions.get(session.process)", terminal)
         self.assertIn("session.process.pid !== pid", terminal)
         self.assertIn("session.process.kill('SIGTERM') : process.kill(-pid, 'SIGKILL')", terminal)

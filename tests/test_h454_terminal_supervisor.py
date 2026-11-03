@@ -1,5 +1,6 @@
 """Real Linux session processes; fixtures use only temporary files."""
 import os
+import platform
 from pathlib import Path
 import signal
 import subprocess
@@ -13,10 +14,13 @@ from scripts import h454_terminal_supervisor as supervisor
 
 
 SUPERVISOR = Path(__file__).resolve().parents[1] / "scripts/h454_terminal_supervisor.py"
+PERL_SUPERVISOR = SUPERVISOR.with_suffix(".pl")
 
 
 @unittest.skipUnless(sys.platform == "linux", "Linux subreaper required")
 class TerminalSupervisorTests(unittest.TestCase):
+    supervisor_prefix = [sys.executable, "-I", "-B", str(SUPERVISOR)]
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="h454-session-")
         self.addCleanup(self.temp.cleanup)
@@ -44,7 +48,7 @@ class TerminalSupervisorTests(unittest.TestCase):
 
     def launch(self, command):
         process = subprocess.Popen(
-            [sys.executable, "-I", "-B", str(SUPERVISOR), str(os.getpid()), *command],
+            [*self.supervisor_prefix, str(os.getpid()), *command],
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
         self.processes.append(process)
@@ -84,12 +88,21 @@ class TerminalSupervisorTests(unittest.TestCase):
 
     def test_normal_exit_preserves_output_and_status(self):
         result = subprocess.run(
-            [sys.executable, "-I", "-B", str(SUPERVISOR), str(os.getpid()), sys.executable,
+            [*self.supervisor_prefix, str(os.getpid()), sys.executable,
              "-c", "import sys;print('fixture output');sys.exit(7)"],
             capture_output=True, text=True, timeout=5,
         )
         self.assertEqual(result.returncode, 7)
         self.assertEqual(result.stdout, "fixture output\n")
+
+    def test_interactive_stdin_reaches_command(self):
+        result = subprocess.run(
+            [*self.supervisor_prefix, str(os.getpid()), sys.executable, "-c",
+             "print('reply:' + input())"], input="fixture\n", capture_output=True,
+            text=True, timeout=5,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "reply:fixture\n")
 
     def test_pid1_parent_is_accepted_without_running_as_pid1(self):
         libc = Mock()
@@ -106,7 +119,7 @@ class TerminalSupervisorTests(unittest.TestCase):
 
     def test_inherited_ignored_sigchld_does_not_hide_child_exit(self):
         result = subprocess.run(
-            [sys.executable, "-I", "-B", str(SUPERVISOR), str(os.getpid()),
+            [*self.supervisor_prefix, str(os.getpid()),
              sys.executable, "-c", "raise SystemExit(7)"],
             preexec_fn=lambda: signal.signal(signal.SIGCHLD, signal.SIG_IGN),
             capture_output=True, text=True, timeout=5,
@@ -116,7 +129,7 @@ class TerminalSupervisorTests(unittest.TestCase):
     def test_wrong_parent_cannot_start_command(self):
         marker = self.root / "should-not-exist"
         result = subprocess.run(
-            [sys.executable, "-I", "-B", str(SUPERVISOR), str(os.getpid() + 100000),
+            [*self.supervisor_prefix, str(os.getpid() + 100000),
              sys.executable, "-c", f"from pathlib import Path;Path({str(marker)!r}).touch()"],
             capture_output=True, text=True, timeout=5,
         )
@@ -126,7 +139,7 @@ class TerminalSupervisorTests(unittest.TestCase):
 
     def test_zero_parent_cannot_start_command(self):
         result = subprocess.run(
-            [sys.executable, "-I", "-B", str(SUPERVISOR), "0", sys.executable,
+            [*self.supervisor_prefix, "0", sys.executable,
              "-c", "raise SystemExit(7)"], capture_output=True, text=True, timeout=5,
         )
         self.assertEqual(result.returncode, 125)
@@ -138,7 +151,7 @@ class TerminalSupervisorTests(unittest.TestCase):
         child = ("import os,time;from pathlib import Path;"
                  f"Path({str(child_marker)!r}).write_text(str(os.getpid()));time.sleep(30)")
         parent = ("import os,subprocess,sys,time;from pathlib import Path;"
-                  f"p=subprocess.Popen([sys.executable,'-I','-B',{str(SUPERVISOR)!r},"
+                  f"p=subprocess.Popen({self.supervisor_prefix!r}+["
                   f"str(os.getpid()),sys.executable,'-c',{child!r}],"
                   "stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL);"
                   f"Path({str(supervisor_marker)!r}).write_text(str(p.pid));time.sleep(30)")
@@ -154,6 +167,23 @@ class TerminalSupervisorTests(unittest.TestCase):
             time.sleep(0.05)
         self.assertFalse(self.running(descendant))
         self.assertFalse(self.running(supervisor))
+
+
+@unittest.skipUnless(sys.platform == "linux" and platform.machine() == "x86_64"
+                     and Path("/usr/bin/perl").is_file(), "Linux x86-64 system Perl required")
+class PerlTerminalSupervisorTests(TerminalSupervisorTests):
+    supervisor_prefix = ["/usr/bin/perl", "-T", str(PERL_SUPERVISOR)]
+
+    def test_perl_startup_overrides_do_not_execute(self):
+        marker = self.root / "perl-override"
+        env = dict(os.environ, PERL5OPT=f"-M{marker}")
+        result = subprocess.run(
+            [*self.supervisor_prefix, str(os.getpid()), sys.executable, "-c", "print('safe')"],
+            env=env, capture_output=True, text=True, timeout=5,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "safe\n")
+        self.assertFalse(marker.exists())
 
 
 if __name__ == "__main__":

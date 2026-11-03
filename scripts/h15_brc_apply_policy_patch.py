@@ -201,15 +201,24 @@ def safe_termination(manager: str, tools: str) -> tuple[str, str]:
     source = supervisor.read_text(encoding="utf-8")
     if "def main()" not in source or "HERMES_TERMINAL_SUPERVISOR_UNAVAILABLE" not in source:
         raise AuditError("unreviewed_terminal_supervisor")
+    perl_supervisor = Path(__file__).with_name("h454_terminal_supervisor.pl")
+    if perl_supervisor.is_symlink() or not perl_supervisor.is_file() or perl_supervisor.stat().st_size > 10000:
+        raise AuditError("unreviewed_terminal_supervisor")
+    perl_source = perl_supervisor.read_text(encoding="utf-8")
+    if "HERMES_TERMINAL_SUPERVISOR_UNAVAILABLE" not in perl_source or "syscall(157, 36, 1" not in perl_source:
+        raise AuditError("unreviewed_terminal_supervisor")
     manager = manager.replace(first_import, first_import + "\nimport { existsSync } from 'node:fs';", 1)
     manager = manager.replace(declaration,
         "const h454LinuxSessions = new WeakMap<object, 'supervisor' | 'group'>();\n"
-        + "const h454Supervisor = " + json.dumps(source) + ";\n" + declaration, 1)
+        + "const h454Supervisor = " + json.dumps(source) + ";\n"
+        + "const h454PerlSupervisor = " + json.dumps(perl_source) + ";\n" + declaration, 1)
     manager = manager.replace(spawn,
         "    let h454Mode: 'supervisor' | 'group' | null = null;\n"
         "    if (process.platform === 'linux') {\n"
         "      spawnOptions.detached = true;\n"
-        "      if (existsSync('/usr/bin/python3')) {\n"
+        "      const hasPython = existsSync('/usr/bin/python3');\n"
+        "      const hasPerl = process.arch === 'x64' && existsSync('/usr/bin/perl');\n"
+        "      if (hasPython || hasPerl) {\n"
         "        let executable = spawnConfig.executable;\n"
         "        let args = spawnConfig.args;\n"
         "        if (spawnOptions.shell) {\n"
@@ -217,8 +226,11 @@ def safe_termination(manager: str, tools: str) -> tuple[str, str]:
         "          executable = typeof spawnOptions.shell === 'string' ? spawnOptions.shell : '/bin/sh';\n"
         "        }\n"
         "        delete spawnOptions.shell;\n"
-        "        spawnConfig = { executable: '/usr/bin/python3', useShellOption: false,\n"
-        "          args: ['-I', '-B', '-c', h454Supervisor, String(process.pid), executable, ...args] };\n"
+        "        spawnConfig = hasPython\n"
+        "          ? { executable: '/usr/bin/python3', useShellOption: false,\n"
+        "              args: ['-I', '-B', '-c', h454Supervisor, String(process.pid), executable, ...args] }\n"
+        "          : { executable: '/usr/bin/perl', useShellOption: false,\n"
+        "              args: ['-T', '-e', h454PerlSupervisor, '--', String(process.pid), executable, ...args] };\n"
         "        h454Mode = 'supervisor';\n"
         "      } else h454Mode = 'group';\n"
         "    }\n" + spawn + "\n"
