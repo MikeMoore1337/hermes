@@ -12,6 +12,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: h632-ecc-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   original-ecc-lifecycle:
     if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
