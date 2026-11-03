@@ -115,3 +115,15 @@ test("fork snapshot uses each workspace's device and rejects forged access",()=>
  const expired=clone(value);expired.devices[0].last_seen_age_seconds=299;
  assert.equal(parseBrcObservation(expired,Date.parse(expired.observed_at)+2000),null);
 });
+
+test("fork source check refuses presence that expired in transit",()=>{
+ const now=Date.now(), checked=goodSourceCheck();
+ checked.schema=2;checked.verification.native_host="not_probed";
+ checked.devices=[{name:"Laptop",status:"online",last_seen_age_seconds:290,command_execution:"not_verified"}];
+ checked.checked_at=new Date(now-10000).toISOString();
+ assert.deepEqual(parseBrcSourceCheck(checked,now),checked);
+ const staleHeartbeat=clone(checked);staleHeartbeat.devices[0].last_seen_age_seconds=291;
+ assert.equal(parseBrcSourceCheck(staleHeartbeat,now),null);
+ const staleSnapshot=clone(checked);staleSnapshot.snapshot_age_seconds=291;
+ assert.equal(parseBrcSourceCheck(staleSnapshot,now),null);
+});

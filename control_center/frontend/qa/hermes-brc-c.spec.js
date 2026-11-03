@@ -21,6 +21,65 @@ async function setup(page,packet=snapshot()){
  }));
  await page.goto("/hermes-brc");
 }
+for(const width of [320,390,1440]){
+ test(`fork visual evidence and actual scrolling ${width}`,async({page},testInfo)=>{
+  await page.setViewportSize({width,height:844});
+  await page.emulateMedia({reducedMotion:"reduce"});
+  const longName="project-"+"longname".repeat(11);
+  const value={schema:2,source:"hermes_brc_fork",status:"partial",observed_at:new Date().toISOString(),
+   execution_verified:false,native_host_access:"not_verified",onboarding_enabled:false,
+   devices:["online","offline","paused"].map((status,i)=>({name:["Laptop","Server","Sandbox"][i],
+    status,last_seen_age_seconds:1,command_execution:"not_verified"})),
+   workspaces:[{name:longName,root:"/workspace/projects/long-name",branch:"main",device_name:"Laptop",
+    git_verified:false,state:"reachable_not_git_verified"},
+   {name:"offline-project",root:"/workspace/projects/offline",branch:"main",device_name:"Server",
+    git_verified:false,state:"not_ready"}]};
+  await setup(page,value);
+  await expect(page.locator("#brc-selected-name")).toHaveText(longName);
+  await expect(page.locator("#brc-devices")).toContainText("ОНЛАЙН");
+  await expect(page.locator("#brc-devices")).toContainText("ОФЛАЙН");
+  await expect(page.locator("#brc-devices")).toContainText("ПРИОСТАНОВЛЕНО");
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(width+1);
+  await page.screenshot({path:testInfo.outputPath(`fork-evidence-${width}-top.png`),animations:"disabled"});
+  await page.locator("#brc-projects").evaluate(e=>e.scrollIntoView({block:"center"}));
+  await page.screenshot({path:testInfo.outputPath(`fork-evidence-${width}-projects.png`),animations:"disabled"});
+  await page.locator("#brc-selected-name").evaluate(e=>e.scrollIntoView({block:"center"}));
+  await page.screenshot({path:testInfo.outputPath(`fork-evidence-${width}-selected.png`),animations:"disabled"});
+  await page.locator("#brc-devices").evaluate(e=>e.scrollIntoView({block:"center"}));
+  await page.screenshot({path:testInfo.outputPath(`fork-evidence-${width}-devices.png`),animations:"disabled"});
+  await page.evaluate(()=>window.scrollTo(0,document.documentElement.scrollHeight));
+  if(width<400){
+   const bounds=await page.evaluate(()=>({footer:document.querySelector('.oc-footer').getBoundingClientRect().bottom,
+    bar:document.querySelector('.orbit-app-mobilebar').getBoundingClientRect().top}));
+   expect(bounds.footer,"footer obscured after scrolling to bottom").toBeLessThanOrEqual(bounds.bar+1);
+  }
+  await page.screenshot({path:testInfo.outputPath(`fork-evidence-${width}-bottom.png`),animations:"disabled"});
+ });
+}
+
+test("fork visual evidence for empty, refreshing and unavailable states",async({page},testInfo)=>{
+ await page.setViewportSize({width:390,height:844});
+ let release;
+ const waiting=new Promise(resolve=>{release=resolve;});
+ let requests=0;
+ await page.route("**/api/providers/hermes-brc",async route=>{
+  if(++requests===1)return route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({
+   schema:2,source:"hermes_brc_fork",status:"unavailable",observed_at:new Date().toISOString(),
+   execution_verified:false,native_host_access:"not_verified",onboarding_enabled:false,devices:[],workspaces:[]})});
+  await waiting;
+  return route.fulfill({status:503,contentType:"application/json",body:"{}"});
+ });
+ await page.goto("/hermes-brc");
+ await expect(page.getByText("Нет доступных проектов").first()).toBeVisible();
+ await page.locator("#brc-projects").evaluate(e=>e.scrollIntoView({block:"center"}));
+ await page.screenshot({path:testInfo.outputPath("fork-evidence-390-empty.png"),animations:"disabled"});
+ await page.getByRole("button",{name:"Обновить снимок"}).click();
+ await expect(page.getByRole("button",{name:"Обновление…"})).toBeDisabled();
+ await page.screenshot({path:testInfo.outputPath("fork-evidence-390-loading.png"),animations:"disabled"});
+ release();
+ await expect(page.locator("#brc-error")).toBeVisible();
+ await page.screenshot({path:testInfo.outputPath("fork-evidence-390-error.png"),animations:"disabled"});
+});
 for(const width of [320,1440]){
  test("fork observation routes each project to its own device "+width,async({page},testInfo)=>{
   await page.setViewportSize({width,height:900});

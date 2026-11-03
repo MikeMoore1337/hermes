@@ -109,7 +109,12 @@ export function parseBrcSourceCheck(value,now=Date.now()){
     !["relay","oauth","tools","git"].every(key=>value.verification[key]==="not_probed")||
     value.verification.onboarding!=="disabled"||
     value.verification.native_host!==(value.schema===1?"disabled":"not_probed"))return null;
- if(value.schema===2)return forkDevices(value.devices,value.status)?value:null;
+ if(value.schema===2){
+  const age=Math.max(0,now-stamp)/1000;
+  if(value.snapshot_age_seconds+age>300||!forkDevices(value.devices,value.status)||
+    value.devices.some(d=>d.status==="online"&&d.last_seen_age_seconds+age>300))return null;
+  return value;
+ }
  if(!Array.isArray(value.devices)||value.devices.length!==3||
     value.devices.some((d,i)=>!exact(d,deviceFields)||
       d.name!==commanderDevices[i]||!states.has(d.status)||
