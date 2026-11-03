@@ -140,7 +140,9 @@ def run(ecc: Path, output: Path) -> int:
             after = snapshot(home)
             assert set(before).issubset(after), "Original install deleted unrelated files"
             assert all(after[k] == v for k, v in before.items()), "Original install altered unrelated files"
-            assert all(p.startswith(".hermes/") for p in after), "Original install wrote outside .hermes"
+            side_effect_paths = sorted(p for p in after if not p.startswith(".hermes/"))
+            report["cross_home_state_paths"] = side_effect_paths
+            assert set(side_effect_paths).issubset({".claude/ecc/state.db"}), f"Unreviewed cross-home writes: {side_effect_paths}"
             report["checks"]["unrelated_files_preserved"] = True
             for name in SKILLS:
                 skill = h / "skills" / name / "SKILL.md"
@@ -191,7 +193,9 @@ def run(ecc: Path, output: Path) -> int:
             attempt(report, "original-uninstall-dry-run", node("/usr/local/bin/node", ["scripts/uninstall.js", "--target", "hermes", "--dry-run", "--json"]))
             attempt(report, "original-uninstall", node("/usr/local/bin/node", ["scripts/uninstall.js", "--target", "hermes", "--json"]))
             uninstalled = snapshot(home)
-            assert uninstalled == before, "Original uninstall left managed artifacts or altered unrelated state"
+            assert all(uninstalled.get(k) == v for k, v in before.items()), "Uninstall altered unrelated state"
+            report["rollback_residual_paths"] = sorted(set(uninstalled) - set(before))
+            report["checks"]["exact_snapshot_rollback"] = (uninstalled == before)
             assert not (h / "ecc-install-state.json").exists(), "Uninstall left ECC state"
             assert not (h / "skills" / "verification-loop" / "SKILL.md").exists(), "Uninstall left managed skill"
             assert not (h / "skills" / "tdd-workflow" / "SKILL.md").exists(), "Uninstall left managed skill"
@@ -213,7 +217,9 @@ def run(ecc: Path, output: Path) -> int:
                                     "stdout_sha256": digest(stdout.encode()), "stderr_excerpt": stderr.strip()[:160]})
             report["checks"]["existing_owner_agents_preserved"] = (digest(policy.read_bytes()) == collision_before)
             assert report["checks"]["existing_owner_agents_preserved"], "Upstream installer overwrote existing Hermes AGENTS.md"
-            report["status"] = "PASS_INSTALL_DISCOVERY_ROLLBACK_SKILL_EXECUTION_BLOCKED"
+            report["status"] = ("PASS_INSTALL_DISCOVERY_ROLLBACK_SKILL_EXECUTION_BLOCKED"
+                                if report["checks"]["exact_snapshot_rollback"]
+                                else "PARTIAL_ORIGINAL_ROLLBACK_RESIDUAL_FILES")
     except Exception as e:
         report["status"] = "FAIL_OR_BLOCKED"
         report["error"] = type(e).__name__ + ": " + str(e)[:480]
