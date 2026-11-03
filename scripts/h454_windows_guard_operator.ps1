@@ -204,6 +204,12 @@ try{
     $lockPath=Join-Path $state 'runtime.lock'
     Require-H454 (Test-Path -LiteralPath $lockPath -PathType Leaf) 'H454_GUARD_OPERATOR_LOCK'
     $lock=Open-H454RecoveryLock $state
+    if(-not $trial){
+        Assert-H454RecoveryLock $state $lock
+        foreach($name in @('h454-broker-trial.pending','h454-broker-trial.inflight')){
+            Require-H454 (-not (Test-H454WssStateEntry $state $name)) 'H454_BROKER_TRIAL_PENDING'
+        }
+    }
     if($CheckOriginal -or $PrepareRecoveryRoute -or $PrepareRecoveryBroker -or $RestoreOriginal){
         $profileSource=Join-Path $PSScriptRoot 'h454_windows_original_profile.ps1'
         $dockerSource=Join-Path $PSScriptRoot 'h454_windows_recovery_docker.ps1'

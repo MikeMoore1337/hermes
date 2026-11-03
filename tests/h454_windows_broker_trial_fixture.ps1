@@ -80,6 +80,42 @@ Require-H454 ([IO.Path]::GetDirectoryName($dir) -ceq $parent -and -not (Test-Pat
 $lock=$null;$credential=$null
 try{
     $lock=[IO.File]::Open((Join-Path $dir 'runtime.lock'),[IO.FileMode]::CreateNew,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
+    # Exercise the actual operator gate and state-entry enumeration, including the monitor path.
+    $guardPath=Join-Path $PSScriptRoot '..\scripts\h454_windows_guard_operator.ps1'
+    $taskPath=Join-Path $PSScriptRoot '..\scripts\h454_windows_wss_task.ps1'
+    $tokens=$null;$errors=$null
+    $guardAst=[Management.Automation.Language.Parser]::ParseFile($guardPath,[ref]$tokens,[ref]$errors)
+    Require-H454 (@($errors).Count -eq 0) 'FIXTURE_OPERATOR_PARSE'
+    $gate=@($guardAst.FindAll({param($x)$x -is [Management.Automation.Language.IfStatementAst] -and
+        $x.Extent.Text.StartsWith('if(-not $trial){')},$true))
+    $guardText=[IO.File]::ReadAllText($guardPath)
+    $gateStart=$guardText.IndexOf($gate[0].Extent.Text,[StringComparison]::Ordinal)
+    Require-H454 ($gate.Count -eq 1 -and $gateStart -gt $guardText.IndexOf('$lock=Open-H454RecoveryLock $state',[StringComparison]::Ordinal) -and
+        $gateStart -lt $guardText.IndexOf('if($CheckOriginal -or $PrepareRecoveryRoute',$gateStart,[StringComparison]::Ordinal)) 'FIXTURE_OPERATOR_GATE'
+    $taskAst=[Management.Automation.Language.Parser]::ParseFile($taskPath,[ref]$tokens,[ref]$errors)
+    $enumerator=@($taskAst.FindAll({param($x)$x -is [Management.Automation.Language.FunctionDefinitionAst] -and
+        $x.Name -ceq 'Test-H454WssStateEntry'},$true))
+    Require-H454 (@($errors).Count -eq 0 -and $enumerator.Count -eq 1) 'FIXTURE_STATE_ENUMERATOR'
+    . ([scriptblock]::Create($enumerator[0].Extent.Text))
+    $gateBlock=[scriptblock]::Create($gate[0].Extent.Text);$state=$dir;$trial=$false
+    & $gateBlock
+    foreach($name in @('H454-BROKER-TRIAL.PENDING','h454-broker-trial.inflight')){
+        $entry=Join-Path $dir $name
+        [IO.File]::WriteAllText($entry,'interrupted')
+        try{
+            $refused=$false
+            try{& $gateBlock}catch{$refused=$_.Exception.Message -ceq 'H454_BROKER_TRIAL_PENDING'}
+            Require-H454 $refused 'FIXTURE_MONITOR_BYPASS'
+            $trial=$true;& $gateBlock;$trial=$false
+        }finally{[IO.File]::Delete($entry)}
+    }
+    $entry=Join-Path $dir 'h454-broker-trial.pending'
+    [IO.Directory]::CreateDirectory($entry)|Out-Null
+    try{
+        $refused=$false
+        try{& $gateBlock}catch{$refused=$_.Exception.Message -ceq 'H454_BROKER_TRIAL_PENDING'}
+        Require-H454 $refused 'FIXTURE_TRIAL_MARKER_DIRECTORY'
+    }finally{[IO.Directory]::Delete($entry)}
     $raw=ConvertTo-Json -Compress -InputObject ([ordered]@{relayUrl='http://host.docker.internal:38180';deviceId='synthetic-device';
         deviceToken=('brc_dev_'+('a'*43));name='fixture';pairedAt='before'})
     $credential=Convert-H454BrokerCredential $raw 'synthetic-device'
