@@ -22,7 +22,7 @@ function New-H454WssTaskDefinition([string]$ScriptPath,[string]$ConfigSha256,[st
     $sid=Get-H454WssTaskSid $TaskUser
     if($sid -cne [Security.Principal.WindowsIdentity]::GetCurrent().User.Value){throw 'H454_WSS_TASK_PRINCIPAL'}
     $exe=Join-Path ([Environment]::GetFolderPath('System')) 'WindowsPowerShell\v1.0\powershell.exe'
-    $actionArguments='-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "'+$path+'" -ConfigSha256 '+$ConfigSha256
+    $actionArguments='-WindowStyle Hidden -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "'+$path+'" -ConfigSha256 '+$ConfigSha256
     $action=New-ScheduledTaskAction -Execute $exe -Argument $actionArguments
     $principal=New-ScheduledTaskPrincipal -UserId $TaskUser -LogonType Interactive -RunLevel Limited
     $settings=New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew `

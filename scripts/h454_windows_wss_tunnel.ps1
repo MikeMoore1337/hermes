@@ -169,7 +169,7 @@ try {
         Initialize-H454TunnelJob $PSCommandPath
         $h454JobInitialized=$true
     }
-    & $powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $identity -Mode Restore `
+    & $powershell -WindowStyle Hidden -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $identity -Mode Restore `
         -LauncherSha256 $settings.launcherSha256 -NodeSha256 $settings.nodeSha256 -OwnerApproved
     Require ($LASTEXITCODE -eq 0) 'H454_TUNNEL_IDENTITY'
     Require (@(Get-NetTCPConnection -LocalPort 38184 -State Listen -ErrorAction SilentlyContinue).Count -eq 0) 'H454_TUNNEL_PORT'

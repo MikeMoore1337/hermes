@@ -32,7 +32,7 @@ $start=(Get-Date).AddMinutes(5)
 $definition=New-H454WssTaskDefinition $path $digest $user $start
 $exe=Join-Path ([Environment]::GetFolderPath('System')) 'WindowsPowerShell\v1.0\powershell.exe'
 Require ($definition.Action.Execute -ceq $exe -and $definition.Action.Arguments -ceq
-    ('-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "'+$path+'" -ConfigSha256 '+$digest)) 'FIXTURE_ACTION'
+    ('-WindowStyle Hidden -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "'+$path+'" -ConfigSha256 '+$digest)) 'FIXTURE_ACTION'
 Require ([string]$definition.Principal.LogonType -ceq 'Interactive' -and
     [string]$definition.Principal.RunLevel -ceq 'Limited') 'FIXTURE_PRINCIPAL'
 Require (-not $definition.Settings.Enabled -and $definition.Settings.ExecutionTimeLimit -ceq 'PT0S' -and

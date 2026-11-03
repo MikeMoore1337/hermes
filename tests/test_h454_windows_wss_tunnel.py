@@ -19,6 +19,7 @@ class WssTunnelTests(unittest.TestCase):
         self.assertIn('Initialize-H454TunnelJob $PSCommandPath', result)
         self.assertIn("'-o','ServerAliveInterval=10'", result)
         self.assertIn("'-o','ServerAliveCountMax=2'", result)
+        self.assertIn('& $powershell -WindowStyle Hidden -NoProfile -NonInteractive', result)
         self.assertIn('& $ssh @sshArgs 1>$null 2>$null', result)
         self.assertIn('while($true){\ntry {', result)
         self.assertIn("'H454_WSS_TUNNEL=DISCONNECTED'", result)
