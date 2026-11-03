@@ -78,18 +78,29 @@ try{
     Require-H454 ($refused -and $script:events.Count -eq 0) 'FIXTURE_APPROVAL'
     $preview=Restore-H454Original @params
     Require-H454 ($preview.Status -ceq 'PREFLIGHT' -and $script:events.Count -eq 0) 'FIXTURE_PREVIEW'
-    foreach($point in @('connect','disconnect','start','agent-stage','broker-stage')){
-        Reset-Fixture;$script:failEvent=$point;$refused=$false
-        try{$null=Restore-H454Original @params -Apply -OwnerApproved}catch{$refused=$_.Exception.Message -ceq 'H454_DOCKER_AMBIGUOUS'}
-        Require-H454 $refused 'FIXTURE_AMBIGUOUS'
-        $script:failEvent=''
-        $result=Restore-H454Original @params -Apply -OwnerApproved
-        Require-H454 ($result.Status -ceq 'ORIGINAL_STAGED' -and $script:running -and $script:private -and
-            -not $script:bridge -and $script:agentStaged -and $script:events -cnotcontains 'stop') 'FIXTURE_RESUME'
-        foreach($operation in @('connect','disconnect','start','agent-stage')){
-            Require-H454 (@($script:events|Where-Object {$_ -ceq $operation}).Count -eq 1) 'FIXTURE_DUPLICATE_MUTATION'
+    foreach($mode in @('direct','trial')){
+        if($mode -ceq 'trial'){
+            $params.TrialMutation={
+                param([string[]]$Arguments,[byte[]]$InputBytes)
+                $script:mutationCalls++
+                return (Invoke-H454RecoveryDocker -Arguments $Arguments -DockerSha256 ('D'*64) -InputBytes $InputBytes)
+            }
+        }
+        foreach($point in @('connect','disconnect','start','agent-stage','broker-stage')){
+            Reset-Fixture;$script:mutationCalls=0;$script:failEvent=$point;$refused=$false
+            try{$null=Restore-H454Original @params -Apply -OwnerApproved}catch{$refused=$_.Exception.Message -ceq 'H454_DOCKER_AMBIGUOUS'}
+            Require-H454 $refused 'FIXTURE_AMBIGUOUS'
+            $script:failEvent=''
+            $result=Restore-H454Original @params -Apply -OwnerApproved
+            Require-H454 ($result.Status -ceq 'ORIGINAL_STAGED' -and $script:running -and $script:private -and
+                -not $script:bridge -and $script:agentStaged -and $script:events -cnotcontains 'stop') 'FIXTURE_RESUME'
+            foreach($operation in @('connect','disconnect','start','agent-stage')){
+                Require-H454 (@($script:events|Where-Object {$_ -ceq $operation}).Count -eq 1) 'FIXTURE_DUPLICATE_MUTATION'
+            }
+            if($mode -ceq 'trial'){Require-H454 ($script:mutationCalls -eq $script:events.Count) 'FIXTURE_MUTATION_BYPASS'}
         }
     }
+    $params.Remove('TrialMutation')
     Reset-Fixture;$script:bridge=$false;$script:private=$true;$script:running=$true;$script:wrongStage=$true
     $refused=$false;try{$null=Restore-H454Original @params -Apply -OwnerApproved}catch{$refused=$true}
     Require-H454 ($refused -and $script:events -cnotcontains 'agent-stage' -and $script:events -cnotcontains 'broker-stage') 'FIXTURE_STAGED_DRIFT'

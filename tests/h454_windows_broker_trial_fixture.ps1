@@ -24,6 +24,7 @@ $script:bridgeId='d'*64;$script:privateId='e'*64;$script:brokerId='f'*64
 $script:events=@();$script:failure='';$script:failed=$false
 function Reset-Fixture {
     $script:originalRunning=$true;$script:originalBridge=$false;$script:originalPrivate=$true
+    $script:originalStaged=$true
     $script:candidateRunning=$false;$script:candidateStatus='created';$script:candidateBridge=$true;$script:candidatePrivate=$false
     $script:events=@();$script:failure='';$script:failed=$false
 }
@@ -41,20 +42,24 @@ function Get-H454BrokerTrialState([hashtable]$RestoreArgs,[string]$CandidateId,[
 }
 function Invoke-H454RecoveryDocker([string[]]$Arguments,[string]$DockerSha256,[byte[]]$InputBytes=$null){
     $event='';$output=''
-    if($Arguments[0] -ceq 'stop' -and $Arguments[-1] -ceq $script:originalId){$event='stop-original';$script:originalRunning=$false}
+    if($Arguments[0] -ceq 'stop' -and $Arguments[-1] -ceq $script:originalId){$event='stop-original';$script:originalRunning=$false;$script:originalStaged=$false}
     elseif($Arguments[0] -ceq 'stop' -and $Arguments[-1] -ceq $script:candidateId){$event='stop-candidate';$script:candidateRunning=$false;$script:candidateStatus='exited'}
     elseif($Arguments[0] -ceq 'network'){
         $op=$Arguments[1];$network=$Arguments[2];$id=$Arguments[3]
         if($id -ceq $script:originalId -and $network -ceq $script:bridgeId -and $op -ceq 'connect'){$event='original-connect-bridge';$script:originalBridge=$true}
         elseif($id -ceq $script:originalId -and $network -ceq $script:privateId -and $op -ceq 'disconnect'){$event='original-disconnect-private';$script:originalPrivate=$false}
+        elseif($id -ceq $script:originalId -and $network -ceq $script:privateId -and $op -ceq 'connect'){$event='original-connect-private';$script:originalPrivate=$true}
+        elseif($id -ceq $script:originalId -and $network -ceq $script:bridgeId -and $op -ceq 'disconnect'){$event='original-disconnect-bridge';$script:originalBridge=$false}
         elseif($id -ceq $script:candidateId -and $network -ceq $script:privateId -and $op -ceq 'connect'){$event='candidate-connect-private';$script:candidatePrivate=$true}
         elseif($id -ceq $script:candidateId -and $network -ceq $script:bridgeId -and $op -ceq 'disconnect'){$event='candidate-disconnect-bridge';$script:candidateBridge=$false}
         elseif($id -ceq $script:candidateId -and $network -ceq $script:bridgeId -and $op -ceq 'connect'){$event='candidate-connect-bridge';$script:candidateBridge=$true}
         elseif($id -ceq $script:candidateId -and $network -ceq $script:privateId -and $op -ceq 'disconnect'){$event='candidate-disconnect-private';$script:candidatePrivate=$false}
         else{throw 'FIXTURE_NETWORK_OPERATION'}
-    }elseif($Arguments[0] -ceq 'start' -and $Arguments[1] -ceq $script:candidateId){$event='start-candidate';$script:candidateRunning=$true;$script:candidateStatus='running'}
+    }elseif($Arguments[0] -ceq 'start' -and $Arguments[1] -ceq $script:originalId){$event='start-original';$script:originalRunning=$true}
+    elseif($Arguments[0] -ceq 'start' -and $Arguments[1] -ceq $script:candidateId){$event='start-candidate';$script:candidateRunning=$true;$script:candidateStatus='running'}
     elseif($Arguments[0] -ceq 'exec' -and $Arguments -ccontains '/usr/local/bin/h15-stage.sh'){
-        $event='stage-candidate';Require-H454 ([Text.Encoding]::UTF8.GetString($InputBytes) -cnotmatch ('brc_dev_'+('a'*43))) 'FIXTURE_AGENT_SECRET'
+        $event=if($Arguments -ccontains $script:originalId){$script:originalStaged=$true;'stage-original'}else{'stage-candidate'}
+        Require-H454 ([Text.Encoding]::UTF8.GetString($InputBytes) -cnotmatch ('brc_dev_'+('a'*43))) 'FIXTURE_AGENT_SECRET'
     }elseif($Arguments[0] -ceq 'exec' -and $Arguments -ccontains '/opt/hermes-rollback/stage.cjs'){
         $event='stage-broker';Require-H454 ([Text.Encoding]::UTF8.GetString($InputBytes) -ceq ('brc_dev_'+('a'*43))) 'FIXTURE_BROKER_SECRET';$output='H454_BROKER_TOKEN_STAGED'
     }elseif($Arguments[0] -ceq 'exec' -and $Arguments -ccontains '--interactive'){$event='verify-candidate';$output='H454_STAGED_CREDENTIAL_MATCH'}
@@ -67,10 +72,10 @@ function Invoke-H454RecoveryDocker([string[]]$Arguments,[string]$DockerSha256,[b
 function Start-H454TrialReceiptWorker([hashtable]$RestoreArgs,[object]$Operation,[byte[]]$InputBytes=$null){
     $arguments=switch -CaseSensitive ($Operation.Phase){
         {$_ -cin @('STOP_ORIGINAL','STOP_CANDIDATE')} {@('stop','--time','10',$Operation.Target)}
-        'START_CANDIDATE' {@('start',$Operation.Target)}
+        {$_ -cin @('START_ORIGINAL','START_CANDIDATE')} {@('start',$Operation.Target)}
         {$_ -cin @('CONNECT_ORIGINAL','CONNECT_CANDIDATE')} {@('network','connect',$Operation.Network,$Operation.Target)}
         {$_ -cin @('DISCONNECT_ORIGINAL','DISCONNECT_CANDIDATE')} {@('network','disconnect',$Operation.Network,$Operation.Target)}
-        'STAGE_CANDIDATE' {@('exec','--interactive','--user','65534:65534',$Operation.Target,'/bin/sh','/usr/local/bin/h15-stage.sh')}
+        {$_ -cin @('STAGE_ORIGINAL','STAGE_CANDIDATE')} {@('exec','--interactive','--user','65534:65534',$Operation.Target,'/bin/sh','/usr/local/bin/h15-stage.sh')}
         'STAGE_BROKER' {@('exec','--interactive','--user','65534:65534',$Operation.Target,'node','/opt/hermes-rollback/stage.cjs')}
         default {throw 'FIXTURE_PHASE'}
     }
@@ -82,11 +87,15 @@ function Start-H454TrialReceiptWorker([hashtable]$RestoreArgs,[object]$Operation
 }
 function Restore-H454Original {
     param($StateDir,$Lock,$MarkerSha256,$SafetyCheck,$Launcher,$LauncherSha256,$AgentId,$AgentImage,$AgentName,$DeviceId,
-        $OldImage,$BrokerImage,$CaSha256,$DockerSha256,$VerifierPath,$VerifierSha256,$TokenBytes,$AgentBytes,[switch]$Apply,[switch]$OwnerApproved,[switch]$RestageOnly)
+        $OldImage,$BrokerImage,$CaSha256,$DockerSha256,$VerifierPath,$VerifierSha256,$TokenBytes,$AgentBytes,[switch]$Apply,[switch]$OwnerApproved,[switch]$RestageOnly,[scriptblock]$TrialMutation)
     Require-H454 ($Apply -and $OwnerApproved -and $AgentId -ceq $script:originalId -and -not $script:candidateRunning -and
-        $script:candidateBridge -and -not $script:candidatePrivate -and $null -ne $TokenBytes -and $null -ne $AgentBytes) 'FIXTURE_RESTORE'
-    $script:events+=@('restore-original');$script:originalRunning=$true;$script:originalBridge=$false;$script:originalPrivate=$true
-    if($script:failure -ceq 'restore-original' -and -not $script:failed){$script:failed=$true;throw 'H454_DOCKER_AMBIGUOUS'}
+        $script:candidateBridge -and -not $script:candidatePrivate -and $null -ne $TokenBytes -and $null -ne $AgentBytes -and $null -ne $TrialMutation) 'FIXTURE_RESTORE'
+    if($script:originalBridge -and -not $script:originalPrivate){$null=& $TrialMutation @('network','connect',$script:privateId,$AgentId) $null}
+    if($script:originalBridge -and $script:originalPrivate){$null=& $TrialMutation @('network','disconnect',$script:bridgeId,$AgentId) $null}
+    if(-not $script:originalRunning){$null=& $TrialMutation @('start',$AgentId) $null}
+    if(-not $script:originalStaged){$null=& $TrialMutation @('exec','--interactive','--user','65534:65534',$AgentId,'/bin/sh','/usr/local/bin/h15-stage.sh') $AgentBytes}
+    $null=& $TrialMutation @('exec','--interactive','--user','65534:65534',$script:brokerId,'node','/opt/hermes-rollback/stage.cjs') $TokenBytes
+    $script:events+=@('restore-original')
     return [pscustomobject]@{Status='ORIGINAL_STAGED';AgentId=$AgentId}
 }
 $parent=[IO.Path]::GetFullPath($FixtureParent)
@@ -208,7 +217,10 @@ try{
     foreach($case in $cases){
         Reset-Fixture;if($case -cne 'success'){$script:failure=$case}
         $interrupted=$false
-        try{$result=Start-H454BrokerTrial @start -Apply -OwnerApproved}catch{$interrupted=$_.Exception.Message -ceq 'H454_DOCKER_AMBIGUOUS'}
+        try{$result=Start-H454BrokerTrial @start -Apply -OwnerApproved}catch{
+            if($_.Exception.Message -cne 'H454_DOCKER_AMBIGUOUS'){throw}
+            $interrupted=$true
+        }
         Require-H454 (($case -ceq 'success' -and $result.Status -ceq 'CANDIDATE_STAGED_MCP_REQUIRED') -or
             ($case -cne 'success' -and $interrupted)) 'FIXTURE_TRIAL_RESULT'
         Require-H454 (Test-Path -LiteralPath (Join-Path $dir 'h454-broker-trial.pending')) 'FIXTURE_MARKER_MISSING'
@@ -255,7 +267,8 @@ try{
             Require-H454 ($done.Status -ceq 'RECOVERY_ACKNOWLEDGED' -and -not (Test-Path -LiteralPath (Join-Path $dir 'h454-broker-trial.pending'))) 'FIXTURE_ACKNOWLEDGMENT'
         }else{[IO.File]::Delete((Join-Path $dir 'h454-broker-trial.pending'))}
     }
-    foreach($case in @('stop-candidate','candidate-connect-bridge','candidate-disconnect-private','restore-original')){
+    foreach($case in @('stop-candidate','candidate-connect-bridge','candidate-disconnect-private','original-connect-private',
+        'original-disconnect-bridge','start-original','stage-original','stage-broker')){
         Reset-Fixture
         $null=Start-H454BrokerTrial @start -Apply -OwnerApproved
         $script:failure=$case;$refused=$false
@@ -264,17 +277,42 @@ try{
         Require-H454 ($refused -and (Test-Path -LiteralPath (Join-Path $dir 'h454-broker-trial.inflight'))) 'FIXTURE_RECOVERY_INTERRUPTED'
         $before=$script:events.Count;$refused=$false
         $phase=switch($case){'stop-candidate'{'STOP_CANDIDATE'} 'candidate-connect-bridge'{'CONNECT_CANDIDATE'}
-            'candidate-disconnect-private'{'DISCONNECT_CANDIDATE'} 'restore-original'{'RESTORE_ORIGINAL'}}
+            'candidate-disconnect-private'{'DISCONNECT_CANDIDATE'} 'original-connect-private'{'CONNECT_ORIGINAL'}
+            'original-disconnect-bridge'{'DISCONNECT_ORIGINAL'} 'start-original'{'START_ORIGINAL'}
+            'stage-original'{'STAGE_ORIGINAL'} 'stage-broker'{'STAGE_BROKER'}}
         try{$null=Restore-H454BrokerTrial $args $script:candidateId $script:candidateImage $credential.TokenBytes $credential.AgentBytes -Apply -OwnerApproved}
         catch{$refused=$_.Exception.Message -ceq ('H454_TRIAL_UNKNOWN_'+$phase)}
         Require-H454 ($refused -and $before -eq $script:events.Count) 'FIXTURE_RECOVERY_UNKNOWN_RETRIED'
-        [IO.File]::Delete((Join-Path $dir 'h454-broker-trial.inflight'))
+        $inflight=Join-Path $dir 'h454-broker-trial.inflight'
+        $fields=[IO.File]::ReadAllText($inflight).Split([char]10)
+        Require-H454 ($fields.Count -eq 8 -and $fields[0] -ceq 'H454-BROKER-TRIAL-INFLIGHT-2') 'FIXTURE_RECORDED_INTERRUPTION'
+        $settled=Get-H454TrialRecordedOperation $args $script:candidateId $fields[1] $fields[2] $fields[3] $fields[4] ([long]$fields[5]) ([long]$fields[6])
+        $receipt=Join-Path $dir ('h454-broker-op-'+$settled.Nonce+'.receipt')
+        [IO.File]::WriteAllText($receipt,"H454-BROKER-TRIAL-RECEIPT-1`n$($settled.Hash)`nHTTP_OK`n")
+        $attempts=@($script:events|Where-Object {$_ -ceq $case}).Count
         $script:failure=''
         $restored=Restore-H454BrokerTrial $args $script:candidateId $script:candidateImage $credential.TokenBytes $credential.AgentBytes -Apply -OwnerApproved
         Require-H454 ($restored.Status -ceq 'ORIGINAL_STAGED_MCP_REQUIRED' -and $script:originalRunning -and
             -not $script:candidateRunning -and $script:candidateBridge -and -not $script:candidatePrivate) 'FIXTURE_RECOVERY_RESUME'
+        $after=@($script:events|Where-Object {$_ -ceq $case}).Count
+        Require-H454 (($case -ceq 'stage-broker' -and $after -eq $attempts+1) -or
+            ($case -cne 'stage-broker' -and $after -eq $attempts)) 'FIXTURE_RECOVERY_DUPLICATE'
         [IO.File]::Delete((Join-Path $dir 'h454-broker-trial.pending'))
     }
+    Reset-Fixture
+    $null=Start-H454BrokerTrial @start -Apply -OwnerApproved
+    $null=Restore-H454BrokerTrial $args $script:candidateId $script:candidateImage $credential.TokenBytes $credential.AgentBytes -Apply -OwnerApproved
+    $script:failure='stage-broker';$script:failed=$false;$refused=$false
+    try{$null=Complete-H454BrokerTrial $args $script:candidateId $script:candidateImage $credential.TokenBytes $credential.AgentBytes -Apply -OwnerApproved -OriginalMcpObserved}
+    catch{$refused=$_.Exception.Message -ceq 'H454_DOCKER_AMBIGUOUS'}
+    Require-H454 ($refused -and (Test-Path -LiteralPath (Join-Path $dir 'h454-broker-trial.inflight'))) 'FIXTURE_ACK_INTERRUPTED'
+    $fields=[IO.File]::ReadAllText((Join-Path $dir 'h454-broker-trial.inflight')).Split([char]10)
+    $settled=Get-H454TrialRecordedOperation $args $script:candidateId $fields[1] $fields[2] $fields[3] $fields[4] ([long]$fields[5]) ([long]$fields[6])
+    $receipt=Join-Path $dir ('h454-broker-op-'+$settled.Nonce+'.receipt')
+    [IO.File]::WriteAllText($receipt,"H454-BROKER-TRIAL-RECEIPT-1`n$($settled.Hash)`nHTTP_OK`n")
+    $script:failure=''
+    $done=Complete-H454BrokerTrial $args $script:candidateId $script:candidateImage $credential.TokenBytes $credential.AgentBytes -Apply -OwnerApproved -OriginalMcpObserved
+    Require-H454 ($done.Status -ceq 'RECOVERY_ACKNOWLEDGED' -and -not (Test-Path -LiteralPath (Join-Path $dir 'h454-broker-trial.pending'))) 'FIXTURE_ACK_RESUME'
     'PS51_SYNTHETIC_BROKER_TRIAL_RECOVERY=PASS'
 }finally{
     if($null -ne $credential){[Array]::Clear($credential.TokenBytes,0,$credential.TokenBytes.Length);[Array]::Clear($credential.AgentBytes,0,$credential.AgentBytes.Length)}

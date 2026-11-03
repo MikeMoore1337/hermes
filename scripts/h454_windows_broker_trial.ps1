@@ -50,7 +50,7 @@ function Get-H454BrokerTrialState([hashtable]$RestoreArgs,[string]$CandidateId,[
 
 function Get-H454TrialRecordedOperation([hashtable]$RestoreArgs,[string]$CandidateId,[string]$Phase,
     [string]$Nonce,[string]$Target,[string]$Network,[long]$StartTicks,[long]$EndTicks) {
-    $original=@('STOP_ORIGINAL','CONNECT_ORIGINAL','DISCONNECT_ORIGINAL')
+    $original=@('STOP_ORIGINAL','START_ORIGINAL','CONNECT_ORIGINAL','DISCONNECT_ORIGINAL','STAGE_ORIGINAL')
     $candidate=@('STOP_CANDIDATE','START_CANDIDATE','CONNECT_CANDIDATE','DISCONNECT_CANDIDATE','STAGE_CANDIDATE')
     $networkPhases=@('CONNECT_ORIGINAL','DISCONNECT_ORIGINAL','CONNECT_CANDIDATE','DISCONNECT_CANDIDATE')
     Require-H454 ($CandidateId -cmatch '^[a-f0-9]{64}$' -and $CandidateId -cne $RestoreArgs.AgentId -and
@@ -96,7 +96,7 @@ function Resolve-H454TrialRecordedOperation([hashtable]$RestoreArgs,[string]$Can
     $prefix="H454-BROKER-TRIAL-RECEIPT-1`n$($operation.Hash)`n"
     $status=if($actual -ceq ($prefix+"HTTP_OK`n")){'HTTP_OK'}
         elseif($operation.Phase -ceq 'STOP_ORIGINAL' -and $actual -ceq ($prefix+"WINDOW_EXPIRED`n")){'WINDOW_EXPIRED'}
-        elseif($operation.Phase -cin @('STAGE_CANDIDATE','STAGE_BROKER') -and $actual -ceq ($prefix+"INPUT_INCOMPLETE`n")){'INPUT_INCOMPLETE'}
+        elseif($operation.Phase -cin @('STAGE_ORIGINAL','STAGE_CANDIDATE','STAGE_BROKER') -and $actual -ceq ($prefix+"INPUT_INCOMPLETE`n")){'INPUT_INCOMPLETE'}
         else{throw 'H454_TRIAL_RECEIPT_INVALID'}
     $bytes=[Text.UTF8Encoding]::new($false).GetBytes($actual)
     Assert-H454WssTaskFile $receipt (Hash-H454Bytes $bytes) 256
@@ -114,7 +114,7 @@ function Resolve-H454TrialRecordedOperation([hashtable]$RestoreArgs,[string]$Can
 
 function Start-H454TrialReceiptWorker([hashtable]$RestoreArgs,[object]$Operation,[byte[]]$InputBytes=$null) {
     Assert-H454RecoveryLock $RestoreArgs.StateDir $RestoreArgs.Lock
-    $isStage=$Operation.Phase -cin @('STAGE_CANDIDATE','STAGE_BROKER')
+    $isStage=$Operation.Phase -cin @('STAGE_ORIGINAL','STAGE_CANDIDATE','STAGE_BROKER')
     Require-H454 (($isStage -and $null -ne $InputBytes -and $InputBytes.Length -gt 0 -and $InputBytes.Length -le 16384 -and
         $RestoreArgs.DockerSha256 -cmatch '^[A-F0-9]{64}$') -or (-not $isStage -and $null -eq $InputBytes)) 'H454_TRIAL_WORKER_INPUT'
     $powershell=Join-Path ([Environment]::SystemDirectory) 'WindowsPowerShell\v1.0\powershell.exe'
@@ -152,8 +152,9 @@ try {
     switch -CaseSensitive ($p.phase) {
         'STOP_ORIGINAL' {$uri='/v1.56/containers/'+$p.target+'/stop?t=10'}
         'STOP_CANDIDATE' {$uri='/v1.56/containers/'+$p.target+'/stop?t=10'}
+        'START_ORIGINAL' {$uri='/v1.56/containers/'+$p.target+'/start'}
         'START_CANDIDATE' {$uri='/v1.56/containers/'+$p.target+'/start'}
-        {$_ -cin @('STAGE_CANDIDATE','STAGE_BROKER')} {$isStage=$true}
+        {$_ -cin @('STAGE_ORIGINAL','STAGE_CANDIDATE','STAGE_BROKER')} {$isStage=$true}
         {$_ -cin @('CONNECT_ORIGINAL','CONNECT_CANDIDATE','DISCONNECT_ORIGINAL','DISCONNECT_CANDIDATE')} {
             if($p.network -cnotmatch '^[a-f0-9]{64}$'){throw 'NETWORK'}
             $connect=$p.phase.StartsWith('CONNECT_', [StringComparison]::Ordinal)
@@ -191,7 +192,7 @@ try {
             try{$actual=[BitConverter]::ToString($sha.ComputeHash($hashStream)).Replace('-','')}finally{$hashStream.Dispose();$sha.Dispose()}
             if($actual -cne $p.dockerHash -or (Get-AuthenticodeSignature -LiteralPath $docker).Status -ne 'Valid'){throw 'DOCKER_BINARY'}
             $bootstrap="eval(Buffer.from(process.argv[1],'base64').toString())"
-            if($p.phase -ceq 'STAGE_CANDIDATE'){
+            if($p.phase -cin @('STAGE_ORIGINAL','STAGE_CANDIDATE')){
                 $script="const c=require('node:child_process');const p=c.spawn('/bin/sh',['/usr/local/bin/h15-stage.sh'],{stdio:['pipe','ignore','ignore']});process.stdin.pipe(p.stdin);p.on('error',()=>process.exit(2));p.on('close',x=>{if(x!==0)process.exit(2);process.stdout.write('H454_AGENT_STAGE_COMPLETE',()=>process.exit(0))})"
                 $script64=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($script))
                 $command='node -e '+$bootstrap+' '+$script64;$expectedText='H454_AGENT_STAGE_COMPLETE'
@@ -324,27 +325,30 @@ function Invoke-H454BrokerTrialDocker([hashtable]$RestoreArgs,[string[]]$Argumen
     [datetime]$WindowStartUtc,[datetime]$WindowEndUtc,[string]$CandidateId,[string]$CandidateImage='',[string]$BrokerId='') {
     $phase=switch($Arguments[0]){
         'stop'{if($Arguments[-1] -ceq $RestoreArgs.AgentId){'STOP_ORIGINAL'}else{'STOP_CANDIDATE'}}
-        'start'{'START_CANDIDATE'}
+        'start'{if($Arguments[-1] -ceq $RestoreArgs.AgentId){'START_ORIGINAL'}else{'START_CANDIDATE'}}
         'network'{
             $target=if($Arguments[-1] -ceq $RestoreArgs.AgentId){'ORIGINAL'}else{'CANDIDATE'}
             if($Arguments[1] -ceq 'connect'){'CONNECT_'+$target}elseif($Arguments[1] -ceq 'disconnect'){'DISCONNECT_'+$target}else{'INVALID'}
         }
         'exec'{
-            if($Arguments -ccontains '/usr/local/bin/h15-stage.sh'){'STAGE_CANDIDATE'}
+            if($Arguments -ccontains '/usr/local/bin/h15-stage.sh'){
+                if($Arguments[4] -ceq $RestoreArgs.AgentId){'STAGE_ORIGINAL'}else{'STAGE_CANDIDATE'}
+            }
             elseif($Arguments -ccontains '/opt/hermes-rollback/stage.cjs'){'STAGE_BROKER'}
             elseif($Arguments -ccontains '--interactive'){'VERIFY_CANDIDATE'}else{'CHECK_CANDIDATE'}
         }
         default{'INVALID'}
     }
-    $recorded=@('STOP_ORIGINAL','STOP_CANDIDATE','START_CANDIDATE','CONNECT_ORIGINAL','DISCONNECT_ORIGINAL',
-        'CONNECT_CANDIDATE','DISCONNECT_CANDIDATE','STAGE_CANDIDATE','STAGE_BROKER')
+    $recorded=@('STOP_ORIGINAL','STOP_CANDIDATE','START_ORIGINAL','START_CANDIDATE','CONNECT_ORIGINAL','DISCONNECT_ORIGINAL',
+        'CONNECT_CANDIDATE','DISCONNECT_CANDIDATE','STAGE_ORIGINAL','STAGE_CANDIDATE','STAGE_BROKER')
     if($phase -cin $recorded){
-        $isStage=$phase -cin @('STAGE_CANDIDATE','STAGE_BROKER')
+        $isStage=$phase -cin @('STAGE_ORIGINAL','STAGE_CANDIDATE','STAGE_BROKER')
         if($isStage){
             Require-H454 ($null -ne $InputBytes -and $InputBytes.Length -gt 0 -and $InputBytes.Length -le 16384 -and
                 $Arguments.Count -eq 7 -and $Arguments[1] -ceq '--interactive' -and $Arguments[2] -ceq '--user' -and
                 $Arguments[3] -ceq '65534:65534' -and
-                (($phase -ceq 'STAGE_CANDIDATE' -and $Arguments[4] -ceq $CandidateId -and
+                (((($phase -ceq 'STAGE_CANDIDATE' -and $Arguments[4] -ceq $CandidateId) -or
+                   ($phase -ceq 'STAGE_ORIGINAL' -and $Arguments[4] -ceq $RestoreArgs.AgentId)) -and
                   $Arguments[5] -ceq '/bin/sh' -and $Arguments[6] -ceq '/usr/local/bin/h15-stage.sh') -or
                  ($phase -ceq 'STAGE_BROKER' -and $BrokerId -cmatch '^[a-f0-9]{64}$' -and $Arguments[4] -ceq $BrokerId -and
                   $Arguments[5] -ceq 'node' -and $Arguments[6] -ceq '/opt/hermes-rollback/stage.cjs'))) 'H454_TRIAL_RECORDED_INPUT'
@@ -456,6 +460,15 @@ function Start-H454BrokerTrial([hashtable]$RestoreArgs,[string]$CandidateId,[str
     return [pscustomobject]@{Status='CANDIDATE_STAGED_MCP_REQUIRED';CandidateId=$CandidateId}
 }
 
+function New-H454TrialRestoreMutation {
+    # The callback runs synchronously within the recovery call that holds the pinned IDs.
+    return {
+        param([string[]]$Arguments,[byte[]]$InputBytes)
+        $output=Invoke-H454BrokerTrialDocker $RestoreArgs $Arguments $InputBytes -CandidateId $CandidateId -CandidateImage $CandidateImage -BrokerId $trialBrokerId
+        return [pscustomobject]@{Code=0;Output=$output}
+    }
+}
+
 function Restore-H454BrokerTrial([hashtable]$RestoreArgs,[string]$CandidateId,[string]$CandidateImage,
     [byte[]]$TokenBytes=$null,[byte[]]$AgentBytes=$null,[switch]$Apply,[switch]$OwnerApproved) {
     Require-H454 (-not $Apply -or $OwnerApproved) 'H454_TRIAL_APPROVAL'
@@ -482,10 +495,10 @@ function Restore-H454BrokerTrial([hashtable]$RestoreArgs,[string]$CandidateId,[s
         $state=Get-H454BrokerTrialState $RestoreArgs $CandidateId $CandidateImage -Pending
     }
     Require-H454 ($state.OnBridge -and -not $state.OnPrivate -and -not $state.Candidate.State.Running) 'H454_TRIAL_RECOVERY_STATE'
-    Start-H454BrokerTrialOperation $RestoreArgs 'RESTORE_ORIGINAL'
-    $restored=Restore-H454Original @RestoreArgs -TokenBytes $TokenBytes -AgentBytes $AgentBytes -Apply -OwnerApproved
+    $trialBrokerId=$state.Original.Broker.Id
+    $mutation=New-H454TrialRestoreMutation
+    $restored=Restore-H454Original @RestoreArgs -TokenBytes $TokenBytes -AgentBytes $AgentBytes -Apply -OwnerApproved -TrialMutation $mutation
     Require-H454 ($restored.Status -ceq 'ORIGINAL_STAGED' -and $restored.AgentId -ceq $RestoreArgs.AgentId) 'H454_TRIAL_RESTORE'
-    Complete-H454BrokerTrialOperation $RestoreArgs 'RESTORE_ORIGINAL'
     Assert-H454BrokerTrialMarker $RestoreArgs $CandidateId $CandidateImage
     return [pscustomobject]@{Status='ORIGINAL_STAGED_MCP_REQUIRED';AgentId=$restored.AgentId}
 }
@@ -494,16 +507,17 @@ function Complete-H454BrokerTrial([hashtable]$RestoreArgs,[string]$CandidateId,[
     [byte[]]$TokenBytes=$null,[byte[]]$AgentBytes=$null,[switch]$OriginalMcpObserved,[switch]$Apply,[switch]$OwnerApproved) {
     Require-H454 (-not $Apply -or ($OwnerApproved -and $OriginalMcpObserved)) 'H454_TRIAL_MCP_ACKNOWLEDGMENT'
     Assert-H454BrokerTrialMarker $RestoreArgs $CandidateId $CandidateImage
+    if($Apply){$null=Resolve-H454TrialRecordedOperation $RestoreArgs $CandidateId $CandidateImage}
     Assert-H454BrokerTrialSettled $RestoreArgs
     $state=Get-H454BrokerTrialState $RestoreArgs $CandidateId $CandidateImage -Pending
     Require-H454 ($state.Original.Agent.State.Running -and $state.Original.OnPrivate -and -not $state.Original.OnBridge -and
         -not $state.Candidate.State.Running -and $state.OnBridge -and -not $state.OnPrivate) 'H454_TRIAL_RECOVERY_STATE'
     if(-not $Apply){return [pscustomobject]@{Status='ACKNOWLEDGMENT_PREFLIGHT'}}
     Assert-H454BrokerTrialCredential $RestoreArgs $TokenBytes $AgentBytes
-    Start-H454BrokerTrialOperation $RestoreArgs 'ACKNOWLEDGE_ORIGINAL'
-    $restored=Restore-H454Original @RestoreArgs -TokenBytes $TokenBytes -AgentBytes $AgentBytes -Apply -OwnerApproved -RestageOnly
+    $trialBrokerId=$state.Original.Broker.Id
+    $mutation=New-H454TrialRestoreMutation
+    $restored=Restore-H454Original @RestoreArgs -TokenBytes $TokenBytes -AgentBytes $AgentBytes -Apply -OwnerApproved -RestageOnly -TrialMutation $mutation
     Require-H454 ($restored.Status -ceq 'ORIGINAL_STAGED' -and $restored.AgentId -ceq $RestoreArgs.AgentId) 'H454_TRIAL_RESTORE'
-    Complete-H454BrokerTrialOperation $RestoreArgs 'ACKNOWLEDGE_ORIGINAL'
     $state=Get-H454BrokerTrialState $RestoreArgs $CandidateId $CandidateImage -Pending
     Require-H454 ($state.Original.Agent.State.Running -and -not $state.Candidate.State.Running -and
         $state.Original.OnPrivate -and -not $state.Original.OnBridge -and $state.OnBridge -and -not $state.OnPrivate) 'H454_TRIAL_RECOVERY_STATE'

@@ -101,8 +101,12 @@ function Restore-H454Original(
     [string]$Launcher,[string]$LauncherSha256,[string]$AgentId,[string]$AgentImage,[string]$AgentName,[string]$DeviceId,
     [string]$OldImage,[string]$BrokerImage,[string]$CaSha256,[string]$DockerSha256,
     [string]$VerifierPath,[string]$VerifierSha256,[byte[]]$TokenBytes=$null,[byte[]]$AgentBytes=$null,
-    [switch]$Apply,[switch]$OwnerApproved,[switch]$RestageOnly
+    [switch]$Apply,[switch]$OwnerApproved,[switch]$RestageOnly,[scriptblock]$TrialMutation=$null
 ) {
+    function Invoke-H454OriginalMutation([string[]]$Arguments,[byte[]]$InputBytes=$null) {
+        if($null -ne $TrialMutation){return (& $TrialMutation $Arguments $InputBytes)}
+        return (Invoke-H454RecoveryDocker -Arguments $Arguments -DockerSha256 $DockerSha256 -InputBytes $InputBytes)
+    }
     Require-H454 (-not $Apply -or $OwnerApproved) 'H454_RESTORE_APPROVAL'
     foreach($hash in @($MarkerSha256,$LauncherSha256,$CaSha256,$DockerSha256,$VerifierSha256)){
         Require-H454 ($hash -cmatch '^[A-F0-9]{64}$') 'H454_RESTORE_PINS'
@@ -138,7 +142,7 @@ function Restore-H454Original(
         Require-H454 (-not $snapshot.Agent.State.Running) 'H454_RESTORE_RUNNING_ROUTE'
         $snapshot=Get-H454OriginalRestoreState @stateArgs
         Require-H454 (-not $snapshot.Agent.State.Running -and $snapshot.OnBridge -and -not $snapshot.OnPrivate) 'H454_RESTORE_STATE'
-        $connected=Invoke-H454RecoveryDocker -Arguments @('network','connect',$snapshot.Plan.Id,$AgentId) -DockerSha256 $DockerSha256
+        $connected=Invoke-H454OriginalMutation @('network','connect',$snapshot.Plan.Id,$AgentId)
         Require-H454 ($connected.Code -eq 0) 'H454_RESTORE_CONNECT'
         $snapshot=Get-H454OriginalRestoreState @stateArgs
     }
@@ -146,7 +150,7 @@ function Restore-H454Original(
         Require-H454 (-not $snapshot.Agent.State.Running) 'H454_RESTORE_RUNNING_ROUTE'
         $snapshot=Get-H454OriginalRestoreState @stateArgs
         Require-H454 (-not $snapshot.Agent.State.Running -and $snapshot.OnBridge -and $snapshot.OnPrivate) 'H454_RESTORE_STATE'
-        $disconnected=Invoke-H454RecoveryDocker -Arguments @('network','disconnect',$snapshot.Bridge.Id,$AgentId) -DockerSha256 $DockerSha256
+        $disconnected=Invoke-H454OriginalMutation @('network','disconnect',$snapshot.Bridge.Id,$AgentId)
         Require-H454 ($disconnected.Code -eq 0) 'H454_RESTORE_DISCONNECT'
         $snapshot=Get-H454OriginalRestoreState @stateArgs
     }
@@ -154,7 +158,7 @@ function Restore-H454Original(
     if(-not $snapshot.Agent.State.Running){
         $snapshot=Get-H454OriginalRestoreState @stateArgs
         Require-H454 (-not $snapshot.Agent.State.Running -and $snapshot.OnPrivate -and -not $snapshot.OnBridge) 'H454_RESTORE_STATE'
-        $started=Invoke-H454RecoveryDocker -Arguments @('start',$AgentId) -DockerSha256 $DockerSha256
+        $started=Invoke-H454OriginalMutation @('start',$AgentId)
         Require-H454 ($started.Code -eq 0) 'H454_RESTORE_START'
         $snapshot=Get-H454OriginalRestoreState @stateArgs
     }
@@ -170,7 +174,7 @@ function Restore-H454Original(
         Require-H454 ($emptyResult.Code -eq 0 -and $emptyResult.Output -ceq 'H454_STAGE_EMPTY') 'H454_RESTORE_STAGED_DRIFT'
         $snapshot=Get-H454OriginalRestoreState @stateArgs
         Assert-H454OriginalLiveRoute $snapshot $AgentId $DockerSha256
-        $stage=Invoke-H454RecoveryDocker -Arguments @('exec','--interactive','--user','65534:65534',$AgentId,'/bin/sh','/usr/local/bin/h15-stage.sh') -DockerSha256 $DockerSha256 -InputBytes $AgentBytes
+        $stage=Invoke-H454OriginalMutation @('exec','--interactive','--user','65534:65534',$AgentId,'/bin/sh','/usr/local/bin/h15-stage.sh') $AgentBytes
         Require-H454 ($stage.Code -eq 0) 'H454_RESTORE_STAGE_AGENT'
         $verified=Invoke-H454RecoveryDocker -Arguments @('exec','--interactive','--user','65534:65534',$AgentId,'node','-e',$bootstrap,$verifier64) -DockerSha256 $DockerSha256 -InputBytes $AgentBytes
         Require-H454 ($verified.Code -eq 0 -and $verified.Output -ceq 'H454_STAGED_CREDENTIAL_MATCH') 'H454_RESTORE_STAGED_DRIFT'
@@ -178,7 +182,7 @@ function Restore-H454Original(
     $snapshot=Get-H454OriginalRestoreState @stateArgs
     Assert-H454OriginalLiveRoute $snapshot $AgentId $DockerSha256
     Require-H454 ((Get-FileHash -LiteralPath $VerifierPath -Algorithm SHA256).Hash -ceq $VerifierSha256) 'H454_RESTORE_VERIFIER'
-    $staged=Invoke-H454RecoveryDocker -Arguments @('exec','--interactive','--user','65534:65534',$snapshot.Broker.Id,'node','/opt/hermes-rollback/stage.cjs') -DockerSha256 $DockerSha256 -InputBytes $TokenBytes
+    $staged=Invoke-H454OriginalMutation @('exec','--interactive','--user','65534:65534',$snapshot.Broker.Id,'node','/opt/hermes-rollback/stage.cjs') $TokenBytes
     Require-H454 ($staged.Code -eq 0 -and $staged.Output -ceq 'H454_BROKER_TOKEN_STAGED') 'H454_RESTORE_STAGE_BROKER'
     $snapshot=Get-H454OriginalRestoreState @stateArgs
     Assert-H454OriginalLiveRoute $snapshot $AgentId $DockerSha256
