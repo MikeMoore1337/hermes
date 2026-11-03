@@ -157,13 +157,13 @@ class ConfinedCacheCleanupTests(unittest.TestCase):
         self.assertEqual(extra.read_text(encoding="utf-8"), "preserve")
 
     def test_existing_file_is_not_owned_by_acceptance(self):
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(ValueError):
             cleanup_ephemeral_ecc_cache(self.home, self.observed, self.observed)
         self.assertTrue(self.cache.is_file())
 
     def test_drifted_cache_is_refused(self):
         self.cache.write_bytes(b"modified-other-data")
-        with self.assertRaisesRegex(AssertionError, "bytes changed"):
+        with self.assertRaisesRegex(ValueError, "bytes changed"):
             cleanup_ephemeral_ecc_cache(self.home, {}, self.observed)
         self.assertTrue(self.cache.is_file())
 
@@ -172,7 +172,7 @@ class ConfinedCacheCleanupTests(unittest.TestCase):
         destination.write_bytes(b"other-synthetic-file")
         self.cache.unlink()
         self.cache.symlink_to(destination)
-        with self.assertRaisesRegex(AssertionError, "Unsafe cache file"):
+        with self.assertRaisesRegex(ValueError, "Unsafe cache file"):
             cleanup_ephemeral_ecc_cache(self.home, {}, self.observed)
         self.assertEqual(destination.read_bytes(), b"other-synthetic-file")
 
@@ -183,7 +183,7 @@ class ConfinedCacheCleanupTests(unittest.TestCase):
         self.cache.unlink()
         self.cache.parent.rmdir()
         self.cache.parent.symlink_to(other, target_is_directory=True)
-        with self.assertRaisesRegex(AssertionError, "Unsafe cache parent"):
+        with self.assertRaisesRegex(ValueError, "Unsafe cache parent"):
             cleanup_ephemeral_ecc_cache(self.home, {},
                                         {".claude/ecc/state.db": digest(b"synthetic")})
         self.assertTrue((other / "state.db").is_file())
@@ -191,15 +191,31 @@ class ConfinedCacheCleanupTests(unittest.TestCase):
     def test_hardlink_is_refused(self):
         link = Path(self.tmp.name) / "hardlink"
         link.hardlink_to(self.cache)
-        with self.assertRaisesRegex(AssertionError, "Unsafe cache file"):
+        with self.assertRaisesRegex(ValueError, "Unsafe cache file"):
             cleanup_ephemeral_ecc_cache(self.home, {}, self.observed)
         self.assertTrue(link.is_file())
+
+    def test_checks_cannot_be_stripped_with_python_optimization(self):
+        import subprocess
+        import sys
+        command = (
+            "import sys; from pathlib import Path; "
+            "from scripts.h632_ecc_acceptance import cleanup_ephemeral_ecc_cache; "
+            "cleanup_ephemeral_ecc_cache(Path(sys.argv[1]), "
+            "{'.claude/ecc/state.db':'preexisting'}, "
+            "{'.claude/ecc/state.db':'preexisting'})"
+        )
+        executed = subprocess.run([sys.executable, "-O", "-c", command, str(self.home)],
+                                  capture_output=True, text=True, check=False, timeout=8)
+        self.assertNotEqual(executed.returncode, 0)
+        self.assertIn("Cache is not exclusively test-created", executed.stderr)
+        self.assertTrue(self.cache.is_file())
 
     def test_non_disposable_home_is_refused(self):
         with tempfile.TemporaryDirectory(prefix="ordinary-") as directory:
             user_home = Path(directory) / "home"
             user_home.mkdir()
-            with self.assertRaisesRegex(AssertionError, "Not an H-632"):
+            with self.assertRaisesRegex(ValueError, "Not an H-632"):
                 cleanup_ephemeral_ecc_cache(user_home, {}, self.observed)
 
 
