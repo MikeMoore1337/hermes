@@ -121,6 +121,64 @@ alerts remain required. Local TLS success is NOT device heartbeat acceptance.
 **Code release readiness does not imply production enablement.** Do not
 close #346 until actual owner host and both agent acceptance checks pass.
 
+## Ops Watch TLS-only expiry alerts (independent owner opt-in)
+
+The presence agent opt-in must remain disabled until both real clients pass
+boot/reconnect acceptance. However, an expired pilot certificate already
+prevents either client from completing TLS, so tying *certificate* expiry
+alerts to that presence consent creates a monitoring blind spot.
+
+The existing Ops Watch collector supports a separate **TLS-only** root-controlled
+consent. No scheduler, sender, network listener or device enrollment is added.
+When the dedicated marker is absent, the legacy presence opt-in continues to
+control certificate alerts as before. A malformed/symlinked TLS-only marker
+fails closed with `unknown`, never silently falling back to presence consent.
+
+On the Hermes VPS, **after owner approval**, create this marker one time using
+an already authorized root console. The parent must be owned by root and 0700;
+the JSON file must be root-owned 0600 with no hardlinks or symlinks.
+
+```bash
+python3 - <<'PY'
+import json, os, stat
+from datetime import datetime, timezone
+from pathlib import Path
+
+p = Path("/etc/hermes-device-fabric/ops-watch-tls.json")
+p.parent.mkdir(mode=0o700, exist_ok=True)
+st = p.parent.lstat()
+if (not stat.S_ISDIR(st.st_mode) or st.st_uid != 0 or
+        stat.S_IMODE(st.st_mode) != 0o700):
+    raise SystemExit("TLS_MONITOR_PARENT_UNTRUSTED")
+flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+fd = os.open(p, flags, 0o600)
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump({"schema": 1, "purpose": "tls-expiry",
+                   "enabled_at": datetime.now(timezone.utc).isoformat()}, f)
+        f.write("\n")
+        f.flush()
+        os.fsync(f.fileno())
+except BaseException:
+    p.unlink(missing_ok=True)
+    raise
+print("TLS_ONLY_OPS_WATCH=ENABLED")
+PY
+```
+
+No automatic service restart is needed. The **existing** 10-minute Ops Watch
+collector reads the fixed TLS leaf certificate expiry and queues the existing
+`device_tls_expiring` (48 hours) or `device_tls_expired` incident. The
+existing sender handles deduplicated owner notifications. The absence of
+`/var/lib/hermes-device-fabric/ops-watch-presence.json` continues to
+suppress device-offline incidents. Do not create that legacy marker prematurely.
+
+To verify without touching private keys, inspect the TLS status from the
+deployed approved source root and the existing collector/outbox status.
+For rollback of this *monitoring opt-in only*, move the marker into a
+root-private backup directory under a documented maintenance action; the
+monitor itself never changes the TLS listener or trust materials.
+
 ## Custody, revocation and emergency boundaries
 
 The private CA key remains OFFLINE. Only owner-signed, pre-staged service
