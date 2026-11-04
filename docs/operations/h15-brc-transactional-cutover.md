@@ -35,3 +35,33 @@ normal source deploy, OAuth tool calls, or Codex CLI.
 
 Exact current working OCI candidate pins and data recovery instructions
 must be verified from current main GitHub Actions before any live switch.
+
+## Read-only credential-state rollback gate (2026-11-04)
+
+An old SQLite backup can resurrect deleted OAuth clients, consumed codes,
+revoked access/refresh tokens, revoked API keys, unpaused devices or a rotated
+device credential. The successful disposable restore rehearsal above proves
+SQLite readability only; it does **not** prove safe reintroduction of old grants.
+
+Before considering an exceptional manual SQLite restoration, acquire **two**
+independent, consistent offline copies in a private POSIX scratch directory
+(owner-only `0700`; regular single-link files `0600`, no WAL/SHM sidecars):
+
+```sh
+python3 -m scripts.h15_brc_state_rollback_guard \
+  --snapshot-copy /private/scratch/snapshot.sqlite \
+  --current-copy /private/scratch/current.sqlite
+```
+
+Never pass the running database to this command. It reads only the two
+disposable copies, verifies SQLite integrity, compares security-relevant
+identities and hashes without printing them, and refuses stale credentials.
+`PASS_READ_ONLY_NO_CREDENTIAL_REINTRODUCTION` is a **necessary, insufficient**
+condition. An older snapshot may still lose newly issued credentials, break
+client sessions or be incompatible with the current/old relay binaries.
+Current in-memory requests and the cookie session secret are not assessed.
+Do not replace the current database automatically, whether this gate passes
+or not. Prefer the retained old container with **the current database**
+when schema compatibility is proven. Any emergency DB restoration requires
+a separate owner-approved procedure, re-authentication/re-pairing plan,
+client-level tests, and a verified runtime rollback before production GO.
