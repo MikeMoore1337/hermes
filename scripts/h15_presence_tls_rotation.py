@@ -196,6 +196,14 @@ def _probe_retry_pause() -> None:
     time.sleep(0.5)
 
 
+def _probe_expected_der(leaf: Path) -> bytes:
+    """Read the exact signed leaf identity; distinct from TLS trust checks."""
+    return subprocess.run(
+        ["openssl", "x509", "-in", str(leaf), "-outform", "DER"],
+        capture_output=True, check=True, timeout=3,
+    ).stdout
+
+
 def _probe(*, ca: Path, leaf: Path, port: int = PORT, hostname: str = "localhost") -> bool:
     ctx = _probe_tls_context(ca)
     # systemctl may report active while Python is still binding the WSS
@@ -208,10 +216,7 @@ def _probe(*, ca: Path, leaf: Path, port: int = PORT, hostname: str = "localhost
             with _probe_loopback(port) as sock:
                 with ctx.wrap_socket(sock, server_hostname=hostname) as channel:
                     actual = channel.getpeercert(binary_form=True)
-                    expected = subprocess.run(
-                        ["openssl", "x509", "-in", str(leaf), "-outform", "DER"],
-                        capture_output=True, check=True, timeout=3,
-                    ).stdout
+                    expected = _probe_expected_der(leaf)
                     return channel.version() in ("TLSv1.2", "TLSv1.3") and actual == expected
         except (OSError, ssl.SSLError, TimeoutError, subprocess.SubprocessError):
             if attempt == 7:
