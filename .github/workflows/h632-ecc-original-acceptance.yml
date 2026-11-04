@@ -417,7 +417,7 @@ jobs:
                               if isinstance(m, dict) and m.get("role") == "tool"]
           import re
           allowed = re.compile(
-              r"^python(?:3)?\s+(?:/test-home/fixture/)?h632_fixture_test\.py\s*$")
+              r"^(?:cd /test-home/fixture && )?python(?:3)?\s+(?:/test-home/fixture/)?h632_fixture_test\.py\s*$")
           terminal_commands = [str(a.get("command", "")).strip()
                                for n, a in executor_calls if n == "terminal"
                                and isinstance(a, dict)]
@@ -443,8 +443,7 @@ jobs:
               "local_model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
               "actual_tool_names": [n for n, _ in calls],
               "synthetic_terminal_commands": [
-                  c if re.fullmatch(r"[A-Za-z0-9_. /-]{1,180}", c) and
-                  ("h632_fixture_test.py" in c or "h632_tdd_cycle.py" in c)
+                  c if allowed.fullmatch(c)
                   else "redacted-sha256:" + hashlib.sha256(c.encode()).hexdigest()
                   for c in terminal_commands
               ],
@@ -574,7 +573,7 @@ jobs:
                           if isinstance(m, dict) and m.get("role") == "tool"]
           import re
           allowed = re.compile(
-              r"^python(?:3)?\s+(?:/test-home/fixture/)?h632_tdd_cycle\.py\s*$")
+              r"^(?:cd /test-home/fixture && )?python(?:3)?\s+(?:/test-home/fixture/)?h632_tdd_cycle\.py\s*$")
           terminal_commands = [str(a.get("command", "")).strip()
                                for n, a in exec_calls if n == "terminal"
                                and isinstance(a, dict)]
@@ -605,8 +604,7 @@ jobs:
               "model": "Qwen3.5-2B-Q4_K_M", "actual_model_calls": actual_model_calls,
               "actual_tool_names": [n for n, _ in calls],
               "synthetic_terminal_commands": [
-                  c if re.fullmatch(r"[A-Za-z0-9_. /-]{1,180}", c) and
-                  ("h632_tdd_cycle.py" in c or "h632_fixture_test.py" in c)
+                  c if allowed.fullmatch(c)
                   else "redacted-sha256:" + hashlib.sha256(c.encode()).hexdigest()
                   for c in terminal_commands
               ],
