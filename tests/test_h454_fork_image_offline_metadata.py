@@ -1,5 +1,4 @@
 """H-454 fork OCI image metadata precheck: offline, no Docker or owner state."""
-from copy import deepcopy
 import unittest
 
 from scripts.h454_fork_image_offline_metadata import (
@@ -9,6 +8,7 @@ from scripts.h454_fork_image_offline_metadata import (
 SHA = "sha256:" + "a" * 64
 COMMIT = "b" * 40
 SOURCE = "https://github.com/MikeMoore1337/hermes-remote-commander"
+_UNSET = object()
 
 
 def image():
@@ -28,9 +28,9 @@ def image():
 
 
 class ForkImageMetadataGate(unittest.TestCase):
-    def verify(self, obj=None, *, expected_image=SHA, expected_source_commit=COMMIT):
+    def verify(self, obj=_UNSET, *, expected_image=SHA, expected_source_commit=COMMIT):
         return verify_fork_image_metadata(
-            image() if obj is None else obj, expected_image=expected_image,
+            image() if obj is _UNSET else obj, expected_image=expected_image,
             expected_source_commit=expected_source_commit,
         )
 
