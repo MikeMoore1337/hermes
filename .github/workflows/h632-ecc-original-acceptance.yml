@@ -363,6 +363,33 @@ jobs:
           assert r["actual_model_calls"] >= 2
           print("H632_REAL_MODEL_ORIGINAL_ECC_SKILL_PHASE=PASS")
           PY
+          cp "$home/h632-model-receipt.json" h632-ecc-model-proof.json
+          docker run --rm --init --pull never --network none --read-only \
+            --cap-drop ALL --security-opt no-new-privileges:true --user "$(id -u):$(id -g)" \
+            --memory 1024m --cpus 1 --pids-limit 64 \
+            --tmpfs /tmp:rw,nosuid,nodev,noexec,size=64m \
+            --mount "type=bind,src=$ecc,dst=/ecc,readonly" \
+            --mount "type=bind,src=$home,dst=/test-home" \
+            --env HOME=/test-home --env HERMES_HOME=/test-home/.hermes \
+            --workdir /ecc --entrypoint /usr/local/bin/node "$NODE_IMAGE" \
+            scripts/uninstall.js --target hermes --json > "$work/uninstall-result.json"
+          python3 - <<'PY'
+          import hashlib
+          import os
+          from pathlib import Path
+          from scripts.h632_ecc_acceptance import cleanup_ephemeral_ecc_cache
+          home = Path(os.environ["RUNNER_TEMP"]) / "h632-model-smoke/home"
+          cache = home / ".claude/ecc/state.db"
+          assert cache.is_file(), "Expected original upstream ECC cache residual"
+          observed = {".claude/ecc/state.db": hashlib.sha256(cache.read_bytes()).hexdigest()}
+          receipt = cleanup_ephemeral_ecc_cache(home, {}, observed)
+          assert receipt["scope"] == "disposable-H632-HOME-only"
+          assert not cache.exists(), "Safe cache cleanup unsuccessful"
+          assert not (home / ".hermes/skills/verification-loop/SKILL.md").exists()
+          assert (home / "fixture/h632_fixture_test.py").is_file()
+          print("H632_ORIGINAL_UNINSTALL_AND_GUARDED_TEST_CACHE_CLEANUP=PASS")
+          print("H632_NATIVE_UPSTREAM_UNINSTALL_EXACT_ROLLBACK=FAIL_KNOWN_CACHE")
+          PY
 
       - name: Retain sanitized native model execution evidence
         if: always()
