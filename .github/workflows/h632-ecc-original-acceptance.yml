@@ -166,7 +166,7 @@ jobs:
       contents: read
     env:
       ECC_SHA: 25278e7d7b6cf6e6a4e7a6c8e10f14ff22f0eb5b
-      MODEL_SHA: 3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597
+      MODEL_SHA: aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223
       MODEL_IMAGE: ghcr.io/ggml-org/llama.cpp@sha256:9002e60256635720c05c50455fdebf992a98dc25466dc932758ecd7936244c1c
       HERMES_IMAGE: nousresearch/hermes-agent@sha256:a11574b7fe8e1631d7d88d556677dac693bc058abf558cdeb899155688c1bf05
       NODE_IMAGE: node:22.16.0-bookworm-slim@sha256:048ed02c5fd52e86fda6fbd2f6a76cf0d4492fd6c6fee9e2c463ed5108da0e34
@@ -196,10 +196,10 @@ jobs:
           docker pull "$MODEL_IMAGE"
           docker image inspect --format '{{.Id}} {{.Architecture}} {{json .RepoDigests}}' "$MODEL_IMAGE"
           curl --fail --location --retry 2 --max-time 600 --silent --show-error \
-            "https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/a06e946bb6b655725eafa393f4a9745d460374c9/Qwen3-4B-Instruct-2507-Q4_K_M.gguf" \
-            --output "$work/Qwen3-4B-Instruct-2507-Q4_K_M.gguf"
-          printf '%s  %s\n' "$MODEL_SHA" "$work/Qwen3-4B-Instruct-2507-Q4_K_M.gguf" | sha256sum --check -
-          test "$(stat -c %s "$work/Qwen3-4B-Instruct-2507-Q4_K_M.gguf")" -eq 2497281120
+            "https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/f6d5376be1edb4d416d56da11e5397a961aca8ae/Qwen3.5-2B-Q4_K_M.gguf" \
+            --output "$work/Qwen3.5-2B-Q4_K_M.gguf"
+          printf '%s  %s\n' "$MODEL_SHA" "$work/Qwen3.5-2B-Q4_K_M.gguf" | sha256sum --check -
+          test "$(stat -c %s "$work/Qwen3.5-2B-Q4_K_M.gguf")" -eq 1280835840
 
       - name: Install original ECC, invoke skill through real Hermes and isolated model
         shell: bash
@@ -270,9 +270,9 @@ jobs:
                            api_key="free-local-only", provider="custom",
                            api_mode="chat_completions", model="h632-local",
                            enabled_toolsets=["skills", "terminal"], max_iterations=4,
-                           max_tokens=256, quiet_mode=True, skip_context_files=True,
+                           max_tokens=192, quiet_mode=True, skip_context_files=True,
                            skip_memory=True, skip_background_review=True,
-                           save_trajectories=False, run_budget_seconds=480)
+                           save_trajectories=False, run_budget_seconds=300)
           tools = {t["function"]["name"] for t in agent.tools if t.get("type") == "function"}
           assert {"skill_view", "terminal"}.issubset(tools), sorted(tools)
           instructions = ("/no_think\nYou are the real Hermes Agent. Execute the original ECC "
@@ -317,8 +317,8 @@ jobs:
               "schema": "hermes-h632-original-skill-model-smoke-v1",
               "upstream_ecc_sha": "25278e7d7b6cf6e6a4e7a6c8e10f14ff22f0eb5b",
               "upstream_hermes_sha": stamp["commit"], "original_skill_sha256": skill_sha,
-              "local_model": "Qwen3-4B-Instruct-2507-Q4_K_M",
-              "local_model_sha256": "3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597",
+              "local_model": "Qwen3.5-2B-Q4_K_M",
+              "local_model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
               "actual_tool_names": [n for n, _ in calls],
               "actual_model_calls": result.get("api_calls"),
               "final_preview": str(result.get("final_response", ""))[:400],
@@ -338,14 +338,14 @@ jobs:
           docker run --detach --name "$model_container" --pull never --init \
             --network none --read-only --cap-drop ALL \
             --security-opt no-new-privileges:true --user "$(id -u):$(id -g)" \
-            --pids-limit 96 --memory 5600m --cpus 3 \
+            --pids-limit 96 --memory 3600m --cpus 3 \
             --tmpfs /tmp:rw,nosuid,nodev,size=256m --env HOME=/tmp \
             --mount "type=bind,src=$work,dst=/models,readonly" \
-            "$MODEL_IMAGE" --model /models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf \
-            --alias h632-local --ctx-size 65536 --threads 3 --parallel 1 --jinja --cache-type-k q4_0 --cache-type-v q4_0 \
+            "$MODEL_IMAGE" --model /models/Qwen3.5-2B-Q4_K_M.gguf \
+            --alias h632-local --ctx-size 65536 --threads 3 --parallel 1 --jinja --reasoning off --cache-type-k q4_0 --cache-type-v q4_0 \
             --temp 0.3 --host 127.0.0.1 --port 8080
           model_exit=0
-          timeout --signal=TERM --kill-after=10s 900s docker run --rm --init --pull never --network "container:$model_container" \
+          timeout --signal=TERM --kill-after=10s 600s docker run --rm --init --pull never --network "container:$model_container" \
             --read-only --cap-drop ALL --security-opt no-new-privileges:true \
             --user "$(id -u):$(id -g)" --pids-limit 96 --memory 1536m --cpus 1 \
             --tmpfs /tmp:rw,nosuid,nodev,noexec,size=128m \
@@ -385,7 +385,8 @@ jobs:
           print("H632_NATIVE_UPSTREAM_UNINSTALL_EXACT_ROLLBACK=FAIL_KNOWN_CACHE")
           PY
           if test "$model_exit" -ne 0; then
-            echo "H632_MODEL_BACKED_ORIGINAL_SKILL_PHASE=FAIL_NOT_PROVEN"
+            echo "H632_MODEL_BACKED_ORIGINAL_SKILL_PHASE=FAIL_NOT_PROVEN model_exit=$model_exit"
+            docker logs --tail 35 "$model_container" 2>&1 | grep -Ei 'context|slot|llama|timings|thinking|reasoning|tool|error' | tail -25 || true
             exit "$model_exit"
           fi
           python3 - <<'PY'
