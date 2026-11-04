@@ -11,7 +11,9 @@ $script:agent=[pscustomobject]@{Id=$script:agentId;State=[pscustomobject]@{Runni
     HostConfig=[pscustomobject]@{RestartPolicy=[pscustomobject]@{Name='no'}};
     NetworkSettings=[pscustomobject]@{Networks=[pscustomobject]@{bridge=[pscustomobject]@{NetworkID=$script:bridgeId;Aliases=@()}}}}
 $script:broker=[pscustomobject]@{Id=$script:brokerId;Config=[pscustomobject]@{Cmd=@('10.1.2.3','fixture','fixture')};State=[pscustomobject]@{Running=$true}}
-$script:old=[pscustomobject]@{State=[pscustomobject]@{Running=$false}}
+$script:old=[pscustomobject]@{State=[pscustomobject]@{Running=$false;Status='exited'};
+    NetworkSettings=[pscustomobject]@{Networks=[pscustomobject]@{
+        bridge=[pscustomobject]@{NetworkID=$script:bridgeId;Aliases=@()}}}}
 $script:bridge=[pscustomobject]@{Id=$script:bridgeId;Driver='bridge'}
 $script:network=[pscustomobject]@{Id=$script:privateId;Name=$script:networkName;Containers=[pscustomobject]@{}}
 $script:extra=''
