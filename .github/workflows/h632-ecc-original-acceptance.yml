@@ -270,12 +270,12 @@ jobs:
                            api_key="free-local-only", provider="custom",
                            api_mode="chat_completions", model="h632-local",
                            enabled_toolsets=["skills", "terminal"], max_iterations=5,
-                           max_tokens=240, quiet_mode=True, skip_context_files=True,
+                           max_tokens=768, quiet_mode=True, skip_context_files=True,
                            skip_memory=True, skip_background_review=True,
-                           save_trajectories=False, run_budget_seconds=320)
+                           save_trajectories=False, run_budget_seconds=600)
           tools = {t["function"]["name"] for t in agent.tools if t.get("type") == "function"}
           assert {"skill_view", "terminal"}.issubset(tools), sorted(tools)
-          instructions = ("You are the real Hermes Agent. Execute the original ECC "
+          instructions = ("/no_think\nYou are the real Hermes Agent. Execute the original ECC "
               "verification-loop skill on a synthetic test fixture only. "
               "Call skill_view with name verification-loop FIRST. "
               "Then call terminal with exact command "
@@ -321,6 +321,8 @@ jobs:
               "local_model_sha256": "8334b850b7bd46238c16b0c550df2138f0889bf433809008cc17a8b05761863e",
               "actual_tool_names": [n for n, _ in calls],
               "actual_model_calls": result.get("api_calls"),
+              "final_preview": str(result.get("final_response", ""))[:400],
+              "message_roles": [m.get("role") for m in result.get("messages", []) if isinstance(m, dict)],
               "model_called_original_skill_view": read_original,
               "model_executed_real_test_phase": executed_tests,
               "status": "PASS_MODEL_BACKED_ORIGINAL_SKILL_PHASE" if read_original and executed_tests else "FAIL_NOT_PROVEN",
@@ -342,6 +344,7 @@ jobs:
             "$MODEL_IMAGE" --model /models/SmolLM3-Q4_K_M.gguf \
             --alias h632-local --ctx-size 65536 --threads 3 --parallel 1 --jinja --cache-type-k q4_0 --cache-type-v q4_0 \
             --host 127.0.0.1 --port 8080
+          model_exit=0
           docker run --rm --init --pull never --network "container:$model_container" \
             --read-only --cap-drop ALL --security-opt no-new-privileges:true \
             --user "$(id -u):$(id -g)" --pids-limit 96 --memory 1536m --cpus 1 \
@@ -351,19 +354,10 @@ jobs:
             --env HERMES_WRITE_SAFE_ROOT=/test-home/.hermes \
             --env TERMINAL_ENV=local --env HERMES_QUIET=1 \
             --workdir /test-home/fixture \
-            --entrypoint /opt/hermes/.venv/bin/python "$HERMES_IMAGE" /test-home/run_model.py
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-          import os
-          p = Path(os.environ["RUNNER_TEMP"]) / "h632-model-smoke/home/h632-model-receipt.json"
-          r = json.loads(p.read_text())
-          assert r["status"] == "PASS_MODEL_BACKED_ORIGINAL_SKILL_PHASE"
-          assert r["model_called_original_skill_view"] and r["model_executed_real_test_phase"]
-          assert r["actual_model_calls"] >= 2
-          print("H632_REAL_MODEL_ORIGINAL_ECC_SKILL_PHASE=PASS")
-          PY
-          cp "$home/h632-model-receipt.json" h632-ecc-model-proof.json
+            --entrypoint /opt/hermes/.venv/bin/python "$HERMES_IMAGE" /test-home/run_model.py || model_exit=$?
+          if test -f "$home/h632-model-receipt.json"; then
+            cp "$home/h632-model-receipt.json" h632-ecc-model-proof.json
+          fi
           docker run --rm --init --pull never --network none --read-only \
             --cap-drop ALL --security-opt no-new-privileges:true --user "$(id -u):$(id -g)" \
             --memory 1024m --cpus 1 --pids-limit 64 \
@@ -389,6 +383,19 @@ jobs:
           assert (home / "fixture/h632_fixture_test.py").is_file()
           print("H632_ORIGINAL_UNINSTALL_AND_GUARDED_TEST_CACHE_CLEANUP=PASS")
           print("H632_NATIVE_UPSTREAM_UNINSTALL_EXACT_ROLLBACK=FAIL_KNOWN_CACHE")
+          PY
+          if test "$model_exit" -ne 0; then
+            echo "H632_MODEL_BACKED_ORIGINAL_SKILL_PHASE=FAIL_NOT_PROVEN"
+            exit "$model_exit"
+          fi
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r = json.loads(Path("h632-ecc-model-proof.json").read_text())
+          assert r["status"] == "PASS_MODEL_BACKED_ORIGINAL_SKILL_PHASE"
+          assert r["model_called_original_skill_view"] and r["model_executed_real_test_phase"]
+          assert r["actual_model_calls"] >= 2
+          print("H632_REAL_MODEL_ORIGINAL_ECC_SKILL_PHASE=PASS")
           PY
 
       - name: Retain sanitized native model execution evidence
