@@ -8,6 +8,9 @@ on:
       - tests/test_h632_ecc_acceptance.py
       - scripts/h632_full_verification.py
       - tests/test_h632_full_verification.py
+      - scripts/h632_model_authored_tdd.py
+      - scripts/h632_model_tdd_driver.py
+      - tests/test_h632_model_authored_tdd.py
       - docs/operations/ecc-upstream-as-is.md
   workflow_dispatch:
 
@@ -33,6 +36,7 @@ jobs:
         run: |
           python3 -m unittest discover -s tests -p 'test_h632_ecc_acceptance.py' -v
           python3 -m unittest discover -s tests -p 'test_h632_full_verification.py' -v
+          python3 -m unittest discover -s tests -p 'test_h632_model_authored_tdd.py' -v
 
       - name: Verify disposable GitHub runner and acquire exact original ECC SHA
         shell: bash
@@ -165,7 +169,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     needs: original-ecc-lifecycle
-    timeout-minutes: 35
+    timeout-minutes: 45
     permissions:
       contents: read
     env:
@@ -306,6 +310,9 @@ jobs:
               "H632_TDD_RED_GREEN_REFACTOR_COVERAGE_PASSED", encoding="utf-8")
           PY
           chmod 0644 "$home/fixture/h632_tdd_cycle.py"
+          cp scripts/h632_model_authored_tdd.py "$home/fixture/h632_model_authored_tdd.py"
+          cp scripts/h632_model_tdd_driver.py "$home/fixture/h632_model_tdd_driver.py"
+          chmod 0644 "$home/fixture/h632_model_authored_tdd.py" "$home/fixture/h632_model_tdd_driver.py"
           docker run --rm --init --pull never --network none --read-only \
             --cap-drop ALL --security-opt no-new-privileges:true --user "$(id -u):$(id -g)" \
             --memory 1024m --cpus 1 --pids-limit 64 \
@@ -786,6 +793,20 @@ jobs:
           assert tdd["autonomous_code_authoring_verified"] is False
           assert "final_preview" not in tdd
           print("H632_GUIDED_MODEL_ORIGINAL_ECC_TDD_CYCLE=PASS")
+          authored = json.loads(Path("h632-ecc-model-authored-tdd.json").read_text())
+          assert authored["status"] == "PASS_MODEL_WRITTEN_RED_GREEN"
+          assert authored["model_wrote_regression_tests"] is True
+          assert authored["model_wrote_fix_after_observed_red"] is True
+          assert authored["native_original_skill_view_preceded_code_generation"] is True
+          assert authored["model_tool_access"] == "NONE"
+          assert authored["autonomous_step_selection"] is False
+          assert len(authored["model_generation_api_calls"]) == 2
+          assert all(count >= 1 for count in authored["model_generation_api_calls"])
+          assert authored["red"]["exit"] == 1 and len(authored["red"]["errors"]) == 2
+          assert authored["green"] == {"exit": 0, "count": 2, "errors": []}
+          assert authored["return_coverage_percent"] >= 80
+          assert len(set(authored["git_checkpoints"])) == 3
+          print("H632_REAL_MODEL_WRITTEN_TDD_RED_GREEN=PASS")
           PY
 
       - name: Retain sanitized native model execution evidence
@@ -797,5 +818,7 @@ jobs:
             h632-ecc-model-proof.json
             h632-six-phase-proof.json
             h632-ecc-tdd-proof.json
+            h632-ecc-model-authored-tdd.json
+            h632-ecc-model-authored-failure.json
           if-no-files-found: ignore
           retention-days: 7
