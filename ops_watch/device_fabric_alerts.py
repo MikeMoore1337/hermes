@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 import hashlib
+import binascii
 import json
 import os
 from pathlib import Path
@@ -247,7 +248,8 @@ def presigned_batch_status(root: Path = BATCH_TLS_ROOT, *,
             return "renewal_due"
         return "healthy"
     except (OSError, ValueError, TypeError, KeyError, UnicodeError,
-            OverflowError, ssl.SSLError, subprocess.TimeoutExpired):
+            OverflowError, ssl.SSLError, binascii.Error,
+            subprocess.TimeoutExpired):
         return "unknown"
 
 
