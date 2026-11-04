@@ -159,6 +159,49 @@ $stopped.Proxy.State=[pscustomobject]@{Running=$false;Status='created';Paused=$f
 $stopped.Proxy.NetworkSettings.Networks.bridge.NetworkID='d'*64
 $refused=$false;try{CheckRecoveryRoute $stopped}catch{$refused=$true}
 Require-H454 $refused 'RECOVERY_ROUTE_STOPPED_WRONG_NETWORK_ID'
+
+# Docker Desktop can leave the exact stopped old proxy with a stale bridge
+# identity. The exception is explicit and may not apply to an active broker.
+function Test-StoppedLegacyProxy {
+    $route=TestRecoveryRoute
+    $route.Proxy.Name='/h454-recovery-'+$recoveryValue+'-proxy'
+    $route.Proxy.State=[pscustomobject]@{Running=$false;Status='exited';Paused=$false;Restarting=$false;Dead=$false}
+    $route.Proxy.NetworkSettings.Networks.PSObject.Properties.Remove($recoveryName)
+    $route.Proxy.NetworkSettings.Networks.bridge.NetworkID='d'*64
+    return $route
+}
+function Assert-StoppedLegacyProxy([object]$Route,[switch]$Connected,[string]$EntrypointPath='/opt/hermes-rollback/proxy.mjs') {
+    $plan=Assert-H454RecoveryNetwork $Route.Network $recoveryName $recoveryValue
+    Assert-H454RecoveryProxy $Route.Proxy ('h454-recovery-'+$recoveryValue+'-proxy') $recoveryValue $proxyImage '172.21.0.1' $caHash $plan ('f'*64) -Connected:$Connected -EntrypointPath $EntrypointPath -AllowStoppedLegacyProxyBridge
+}
+$legacy=Test-StoppedLegacyProxy
+$legacyPlan=Assert-H454RecoveryNetwork $legacy.Network $recoveryName $recoveryValue
+$refused=$false
+try { Assert-H454RecoveryProxy $legacy.Proxy ('h454-recovery-'+$recoveryValue+'-proxy') $recoveryValue $proxyImage '172.21.0.1' $caHash $legacyPlan ('f'*64) }
+catch{$refused=$_.Exception.Message -ceq 'H454_ROUTE_PROXY_NETWORK'}
+Require-H454 $refused 'RECOVERY_LEGACY_STALE_DENIED_BY_DEFAULT'
+Assert-StoppedLegacyProxy $legacy
+foreach($case in @('running','created','broker','connected','extra-network','wrong-image','wrong-label','wrong-name','wrong-alias','malformed-network-id','privileged')){
+    $candidate=Test-StoppedLegacyProxy
+    $connected=$false;$entry='/opt/hermes-rollback/proxy.mjs'
+    switch($case){
+        'running' {$candidate.Proxy.State.Running=$true;$candidate.Proxy.State.Status='running'}
+        'created' {$candidate.Proxy.State.Status='created'}
+        'broker' {$candidate.Proxy.Config.Entrypoint[1]='/opt/hermes-rollback/broker.mjs';$entry='/opt/hermes-rollback/broker.mjs'}
+        'connected' {$connected=$true}
+        'extra-network' {$candidate.Proxy.NetworkSettings.Networks | Add-Member -NotePropertyName 'foreign' -NotePropertyValue ([pscustomobject]@{})}
+        'wrong-image' {$candidate.Proxy.Image='sha256:'+('0'*64)}
+        'wrong-label' {$candidate.Proxy.Config.Labels.'com.hermes.h454.recovery'='d'*32}
+        'wrong-name' {$candidate.Proxy.Name='/h454-unowned-proxy'}
+        'wrong-alias' {$candidate.Proxy.NetworkSettings.Networks.bridge.Aliases=@('host.docker.internal')}
+        'malformed-network-id' {$candidate.Proxy.NetworkSettings.Networks.bridge.NetworkID='d'*63}
+        'privileged' {$candidate.Proxy.HostConfig.Privileged=$true}
+    }
+    $refused=$false
+    try{Assert-StoppedLegacyProxy $candidate -Connected:$connected -EntrypointPath $entry}catch{$refused=$true}
+    Require-H454 $refused ('RECOVERY_LEGACY_STALE_UNSAFE_ACCEPTED_'+$case)
+}
+'PS51_SYNTHETIC_STOPPED_LEGACY_PROXY_BRIDGE_EXCEPTION=PASS'
 $membership=TestRecoveryRoute
 $refused=$false;try{Assert-H454RecoveryRouteMembers $membership.Network $membership.Proxy ('C'*64)}catch{$refused=$true}
 Require-H454 $refused 'RECOVERY_ROUTE_FOREIGN_MEMBER'
