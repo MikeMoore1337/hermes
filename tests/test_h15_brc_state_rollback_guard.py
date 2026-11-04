@@ -95,6 +95,22 @@ class StateRollbackGuard(unittest.TestCase):
                 self.reset_current()
                 self.check_refused(sql)
 
+    def test_refuse_added_table_index_and_sqlite_schema_metadata(self):
+        # A rollback can also be unsafe when security fields match but a
+        # newer runtime added an unrelated table, index or schema metadata.
+        migrations = (
+            "CREATE TABLE new_runtime_state (id TEXT PRIMARY KEY)",
+            "CREATE INDEX owner_name_idx ON users(username)",
+            "PRAGMA user_version=9",
+            "PRAGMA application_id=1001",
+        )
+        for statement in migrations:
+            with self.subTest(statement=statement):
+                self.reset_current()
+                self.update(statement)
+                with self.assertRaisesRegex(CredentialRegressionDenied, "AUTH_SCHEMA_CHANGED"):
+                    compare_disposable_copies(self.snapshot, self.current)
+
     def test_refuse_unsafe_file_modes_and_sidecars(self):
         os.chmod(self.snapshot, 0o644)
         with self.assertRaisesRegex(CredentialRegressionDenied, "UNSAFE_COPY_PERMISSIONS"):
