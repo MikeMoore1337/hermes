@@ -88,6 +88,26 @@ def _state(conn: sqlite3.Connection) -> dict[str, dict[object, tuple]]:
     return result
 
 
+def _schema_contract(conn: sqlite3.Connection) -> tuple:
+    """Compare all explicit schema objects, including non-auth tables.
+
+    Schema equality is necessary for binary rollback compatibility but cannot
+    prove that either old or new Node runtime understands all stored values.
+    """
+    rows = conn.execute(
+        "SELECT type, name, tbl_name, sql FROM sqlite_master "
+        "WHERE type IN ('table', 'index', 'view', 'trigger') "
+        "AND name NOT LIKE 'sqlite_%' ORDER BY type, name LIMIT 4097"
+    ).fetchall()
+    if len(rows) > 4096:
+        raise CredentialRegressionDenied("UNEXPECTED_SCHEMA_SIZE")
+    return (
+        tuple(rows),
+        conn.execute("PRAGMA user_version").fetchone()[0],
+        conn.execute("PRAGMA application_id").fetchone()[0],
+    )
+
+
 def compare_disposable_copies(snapshot_copy: Path, current_copy: Path) -> str:
     if os.name != "posix":
         raise CredentialRegressionDenied("POSIX_OFFLINE_COPIES_REQUIRED")
@@ -106,9 +126,10 @@ def compare_disposable_copies(snapshot_copy: Path, current_copy: Path) -> str:
             a.execute("PRAGMA query_only=ON")
             b.execute("PRAGMA query_only=ON")
             saved, current = _state(a), _state(b)
+            saved_schema, current_schema = _schema_contract(a), _schema_contract(b)
     except sqlite3.DatabaseError as exc:
         raise CredentialRegressionDenied("SQLITE_READ_REFUSED") from exc
-    if saved.keys() != current.keys():
+    if saved.keys() != current.keys() or saved_schema != current_schema:
         raise CredentialRegressionDenied("AUTH_SCHEMA_CHANGED")
     for name, identities in saved.items():
         for key, old_fields in identities.items():

@@ -56,6 +56,11 @@ python3 -m scripts.h15_brc_state_rollback_guard \
 Never pass the running database to this command. It reads only the two
 disposable copies, verifies SQLite integrity, compares security-relevant
 identities and hashes without printing them, and refuses stale credentials.
+The gate also compares the complete explicit SQLite schema (tables, indexes,
+views and triggers), `user_version` and `application_id`. This fails closed if
+the new relay added a table, index or schema-version metadata without changing
+an existing credential. It does not establish binary or application compatibility.
+
 `PASS_READ_ONLY_NO_CREDENTIAL_REINTRODUCTION` is a **necessary, insufficient**
 condition. An older snapshot may still lose newly issued credentials, break
 client sessions or be incompatible with the current/old relay binaries.
