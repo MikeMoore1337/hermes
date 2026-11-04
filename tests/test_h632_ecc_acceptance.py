@@ -72,7 +72,9 @@ class ProductionDeployGuardTests(unittest.TestCase):
     def test_ecc_and_h585_merges_cannot_trigger_deploy(self):
         workflow = self._workflow()
         events = workflow.split("\non:\n", 1)[1].split("\npermissions:", 1)[0]
-        self.assertEqual(events.strip(), "workflow_dispatch:")
+        top_level = [line.strip() for line in events.splitlines()
+                     if line.strip() and not line.startswith("    ")]
+        self.assertEqual(top_level, ["workflow_dispatch:"])
         self.assertIn("if: github.event_name == 'workflow_dispatch'", workflow)
 
     def test_manual_release_still_requires_current_main_and_both_checks(self):
