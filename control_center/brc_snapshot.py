@@ -7,8 +7,10 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import os
 from pathlib import Path
 import re
+import stat
 
 SCHEMA = 1
 SOURCE = "hermes_brc_mcp"
@@ -191,9 +193,21 @@ def read_snapshot(path: Path = DEFAULT_OUTPUT, *, now: dt.datetime | None = None
     """
     path = Path(path)
     try:
-        if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_SNAPSHOT_BYTES:
+        before = path.lstat()
+        if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or before.st_size > MAX_SNAPSHOT_BYTES:
             _reject("snapshot_unavailable")
-        raw = path.read_bytes()
+        flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+        fd = os.open(path, flags)
+        try:
+            opened = os.fstat(fd)
+            if (not stat.S_ISREG(opened.st_mode) or opened.st_nlink != 1
+                or (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino)
+                or opened.st_size > MAX_SNAPSHOT_BYTES):
+                _reject("snapshot_unavailable")
+            with os.fdopen(fd, "rb", closefd=False) as stream:
+                raw = stream.read(MAX_SNAPSHOT_BYTES + 1)
+        finally:
+            os.close(fd)
         if len(raw) > MAX_SNAPSHOT_BYTES:
             _reject("snapshot_oversize")
         value = json.loads(raw)

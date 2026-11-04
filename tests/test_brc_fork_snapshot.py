@@ -1,11 +1,13 @@
 import copy
 import datetime as dt
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
-from control_center.brc_snapshot import SnapshotRejected, read_snapshot
+from control_center.brc_snapshot import MAX_SNAPSHOT_BYTES, SnapshotRejected, read_snapshot
 from control_center.brc_source_check import source_check
 
 
@@ -68,6 +70,62 @@ class ForkSnapshotTests(unittest.TestCase):
                 change(value)
                 with self.assertRaises(SnapshotRejected):
                     self.read(value)
+
+    @unittest.skipUnless(os.name == "posix", "requires POSIX symlinks")
+    def test_snapshot_replaced_by_symlink_during_read_is_refused(self):
+        private = self.path.parent / "private.json"
+        secret = snapshot()
+        secret["devices"][0]["name"] = "SYNTHETIC_PRIVATE_NAME"
+        secret["workspaces"][0]["device_name"] = "SYNTHETIC_PRIVATE_NAME"
+        private.write_text(json.dumps(secret), encoding="utf-8")
+        original_lstat = Path.lstat
+        for nofollow in (getattr(os, "O_NOFOLLOW", 0), 0):
+            with self.subTest(nofollow=nofollow):
+                self.path.unlink(missing_ok=True)
+                self.path.write_text(json.dumps(snapshot()), encoding="utf-8")
+                swapped = False
+
+                def swap_after_lstat(path, *args, **kwargs):
+                    nonlocal swapped
+                    info = original_lstat(path, *args, **kwargs)
+                    if path == self.path and not swapped:
+                        swapped = True
+                        path.unlink()
+                        path.symlink_to(private)
+                    return info
+
+                with patch.object(os, "O_NOFOLLOW", nofollow, create=True), \
+                     patch.object(Path, "lstat", swap_after_lstat):
+                    with self.assertRaises(SnapshotRejected):
+                        read_snapshot(self.path, now=NOW)
+                self.assertTrue(swapped)
+
+    @unittest.skipUnless(os.name == "posix", "requires POSIX hard links")
+    def test_hardlinked_snapshot_is_refused(self):
+        private = self.path.parent / "private.json"
+        private.write_text(json.dumps(snapshot()), encoding="utf-8")
+        os.link(private, self.path)
+        with self.assertRaises(SnapshotRejected):
+            read_snapshot(self.path, now=NOW)
+
+    def test_snapshot_that_grows_after_open_is_refused(self):
+        self.path.write_text(json.dumps(snapshot()), encoding="utf-8")
+        original_fstat = os.fstat
+        grown = False
+
+        def grow_after_fstat(fd):
+            nonlocal grown
+            info = original_fstat(fd)
+            if not grown:
+                grown = True
+                with self.path.open("ab") as stream:
+                    stream.write(b" " * (MAX_SNAPSHOT_BYTES + 1))
+            return info
+
+        with patch.object(os, "fstat", grow_after_fstat):
+            with self.assertRaises(SnapshotRejected):
+                read_snapshot(self.path, now=NOW)
+        self.assertTrue(grown)
 
 
 if __name__ == "__main__":
