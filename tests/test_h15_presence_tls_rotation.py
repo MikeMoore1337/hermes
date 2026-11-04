@@ -528,9 +528,9 @@ class RotationTests(unittest.TestCase):
         # genuine loopback TLS handshake and exact leaf identity.
         from unittest.mock import MagicMock
         cert, _ = self.certificates[0]
-        expected = subprocess.run(
-            ["openssl", "x509", "-in", str(cert), "-outform", "DER"],
-            capture_output=True, check=True, timeout=4).stdout
+        # Synthetic retry semantics do not spawn OpenSSL. The independent
+        # real-loopback test verifies actual DER extraction and CA checks.
+        expected = b"synthetic-leaf-der"
         fake_sock = MagicMock()
         fake_ctx = MagicMock()
         channel = fake_ctx.wrap_socket.return_value.__enter__.return_value
@@ -541,11 +541,14 @@ class RotationTests(unittest.TestCase):
                    side_effect=failures + [fake_sock]) as connect, patch(
                    "scripts.h15_presence_tls_rotation._probe_tls_context",
                    return_value=fake_ctx) as create_context, patch(
+                   "scripts.h15_presence_tls_rotation._probe_expected_der",
+                   return_value=expected) as read_der, patch(
                    "scripts.h15_presence_tls_rotation._probe_retry_pause") as sleep:
             self.assertTrue(_probe(ca=self.ca, leaf=cert, port=38177))
             self.assertEqual(connect.call_count, 5)
             self.assertEqual(sleep.call_count, 4)
             create_context.assert_called_once_with(self.ca)
+            read_der.assert_called_once_with(cert)
             connect.assert_called_with(38177)
             fake_ctx.wrap_socket.assert_called_once()
             self.assertEqual(fake_ctx.wrap_socket.call_args.kwargs["server_hostname"],
