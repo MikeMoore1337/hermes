@@ -45,8 +45,8 @@ done
 
 requirements="$release/deploy/requirements-gsc-readonly.txt"
 grep -Fxq 'google-auth==2.62.0' "$requirements" || fail "google_auth_pin_invalid"
-grep -Fxq 'requests==2.32.5' "$requirements" || fail "requests_pin_invalid"
-[[ "$(grep -Ev '^(#|[[:space:]]*$)' "$requirements")" == $'google-auth==2.62.0\nrequests==2.32.5' ]] ||
+grep -Fxq 'requests==2.33.0' "$requirements" || fail "requests_pin_invalid"
+[[ "$(grep -Ev '^(#|[[:space:]]*$)' "$requirements")" == $'google-auth==2.62.0\nrequests==2.33.0' ]] ||
   fail "requirements_scope_invalid"
 /usr/bin/python3 -c 'import sys; assert sys.version_info >= (3, 10)' ||
   fail "unsupported_python"
