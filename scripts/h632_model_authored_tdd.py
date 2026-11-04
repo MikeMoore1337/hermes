@@ -73,7 +73,7 @@ def check_tests(code: str) -> None:
         if (not isinstance(fn, ast.FunctionDef) or fn.name not in CASES
                 or fn.decorator_list or fn.args.posonlyargs or fn.args.args
                 or fn.args.kwonlyargs or fn.args.vararg or fn.args.kwarg
-                or fn.args.defaults or fn.args.kw_defaults
+                or fn.args.defaults or fn.args.kw_defaults or fn.returns is not None
                 or len(fn.body) != 1 or not isinstance(fn.body[0], ast.Assert)
                 or fn.body[0].msg is not None):
             raise ValueError("Unsafe test function shape")
