@@ -2,6 +2,11 @@ name: Hermes production deploy
 
 on:
   workflow_dispatch:
+    inputs:
+      release_sha:
+        description: 'Exact current main SHA approved by the owner for this cumulative release'
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -23,8 +28,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TARGET_SHA: ${{ github.sha }}
+          APPROVED_SHA: ${{ inputs.release_sha }}
         run: |
           set -euo pipefail
+          if [[ ! "$APPROVED_SHA" =~ ^[0-9a-f]{40}$ || "$APPROVED_SHA" != "$TARGET_SHA" ]]; then
+            echo "Manual dispatch refused: approved SHA does not match the selected revision" >&2
+            exit 1
+          fi
           current="$(gh api "repos/$GITHUB_REPOSITORY/branches/main" --jq .commit.sha)"
           if [[ "$current" != "$TARGET_SHA" ]]; then
             echo "superseded by $current"
@@ -91,8 +101,11 @@ jobs:
           HERMES_DEPLOY_TARGET: ${{ secrets.HERMES_DEPLOY_TARGET }}
           HERMES_DEPLOY_PORT: ${{ secrets.HERMES_DEPLOY_PORT }}
           HERMES_DEPLOY_KNOWN_HOSTS: ${{ secrets.HERMES_DEPLOY_KNOWN_HOSTS }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          latest="$(gh api "repos/$GITHUB_REPOSITORY/branches/main" --jq .commit.sha)"
+          [[ "$latest" == "$TARGET_SHA" ]] || { echo "Superseded before SSH" >&2; exit 1; }
           [[ -n "$HERMES_DEPLOY_KEY" && -n "$HERMES_DEPLOY_TARGET" &&
              -n "$HERMES_DEPLOY_PORT" && -n "$HERMES_DEPLOY_KNOWN_HOSTS" ]] ||
              { echo "Production SSH configuration missing" >&2; exit 1; }

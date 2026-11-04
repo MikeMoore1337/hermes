@@ -50,8 +50,8 @@ else:
 @unittest.skipUnless(shutil.which("bash") and shutil.which("jq"),
                      "bash and jq must be available")
 class SourceDeployGateTests(unittest.TestCase):
-    def run_gate(self, *, event="workflow_dispatch", main=SHA, quality="success",
-                 ui="pending"):
+    def run_gate(self, *, event="workflow_dispatch", main=SHA, approved=SHA,
+                 quality="success", ui="pending"):
         with TemporaryDirectory(prefix="h454-source-gate-") as dirname:
             base=Path(dirname)
             binpath=base/"bin"
@@ -67,6 +67,7 @@ class SourceDeployGateTests(unittest.TestCase):
             env=dict(os.environ,PATH=str(binpath)+os.pathsep+os.environ["PATH"],
                      GITHUB_REPOSITORY="MikeMoore1337/hermes",
                      TARGET_SHA=SHA,
+                     APPROVED_SHA=approved,
                      GITHUB_EVENT_NAME=event,
                      GITHUB_OUTPUT=str(output),
                      MOCK_MAIN_SHA=main,
@@ -115,9 +116,19 @@ class SourceDeployGateTests(unittest.TestCase):
         self.assertIn("deploy=false",out)
         self.assertNotIn("deploy=true",out)
 
+    def test_wrong_or_malformed_approved_sha_cannot_deploy(self):
+        for approved in (OTHER, SHA[:-1], "", "A" * 40):
+            with self.subTest(approved=approved):
+                code,stdout,stderr,out=self.run_gate(approved=approved,ui="success")
+                self.assertNotEqual(code,0)
+                self.assertNotIn("deploy=true",out)
+                self.assertIn("approved SHA",stderr)
+
     def test_manual_only_and_main_always_runs_ui_checks(self):
         workflow=WORKFLOW.read_text()
         self.assertIn("if: github.event_name == 'workflow_dispatch'",workflow)
+        self.assertIn('APPROVED_SHA: ${{ inputs.release_sha }}',workflow)
+        self.assertIn('Superseded before SSH',workflow)
         self.assertNotIn('workflow_run:',workflow)
         ui=(ROOT/".github/workflows/control-center-ui.yml").read_text()
         main_push=ui.split('  push:\n',1)[1].split('\npermissions:',1)[0]
