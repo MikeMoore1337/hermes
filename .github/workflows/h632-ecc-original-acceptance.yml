@@ -227,6 +227,70 @@ jobs:
               raise SystemExit(0 if result.wasSuccessful() else 1)
           PY
           chmod 0644 "$home/fixture/h632_fixture_test.py"
+          cat > "$home/fixture/h632_tdd_cycle.py" <<'PY'
+          #!/usr/bin/env python3
+          """Synthetic TDD RED/GREEN/refactor fixture, isolated from owner projects."""
+          from __future__ import annotations
+          import ast
+          import hashlib
+          from pathlib import Path
+          import subprocess
+          import sys
+          import trace
+          
+          root = Path("/test-home/fixture")
+          kata = root / "h632-tdd-disposable"
+          assert root.is_dir() and not kata.exists(), "Fixture must be fresh"
+          kata.mkdir(mode=0o700)
+          source = kata / "calc.py"
+          test = kata / "test_calc.py"
+          source.write_text(
+              "def add(a: int, b: int) -> int:\n"
+              "    return a - b\n", encoding="utf-8")
+          test.write_text(
+              "import unittest\nfrom calc import add\n"
+              "class TestAdd(unittest.TestCase):\n"
+              "    def test_positive(self): self.assertEqual(add(20, 22), 42)\n"
+              "    def test_negative(self): self.assertEqual(add(-2, 3), 1)\n",
+              encoding="utf-8")
+          
+          def test_result():
+              return subprocess.run([sys.executable, "-m", "unittest", "discover", "-s", str(kata),
+                                     "-p", "test_calc.py", "-v"], cwd=kata, capture_output=True,
+                                    text=True, timeout=20, check=False)
+          
+          red = test_result()
+          assert red.returncode != 0 and "Ran 2 tests" in red.stderr and "FAIL" in red.stderr, red.stderr[-500:]
+          assert "AssertionError" in red.stderr, "RED must be caused by functional bug"
+          print("H632_TDD_RED_EXPECTED_LOGIC_FAILURE=PASS", flush=True)
+          source.write_text(
+              "def add(a: int, b: int) -> int:\n"
+              "    return a + b\n", encoding="utf-8")
+          green = test_result()
+          assert green.returncode == 0 and "Ran 2 tests" in green.stderr and "OK" in green.stderr, green.stderr[-500:]
+          print("H632_TDD_GREEN_TWO_REAL_TESTS=PASS", flush=True)
+          source.write_text(
+              "def add(a: int, b: int) -> int:\n"
+              "    \"\"\"Add two integer operands.\"\"\"\n"
+              "    return sum((a, b))\n", encoding="utf-8")
+          refactor = test_result()
+          assert refactor.returncode == 0 and "Ran 2 tests" in refactor.stderr and "OK" in refactor.stderr
+          print("H632_TDD_REFACTOR_TESTS_STILL_GREEN=PASS", flush=True)
+          sys.path.insert(0, str(kata))
+          from calc import add
+          tracker = trace.Trace(count=True, trace=False)
+          assert tracker.runfunc(add, 20, 22) == 42
+          assert tracker.runfunc(add, -2, 3) == 1
+          records = tracker.results().counts
+          executed = {line for (file_name, line), count in records.items()
+                      if Path(file_name).resolve() == source.resolve() and count > 0}
+          root_ast = ast.parse(source.read_text(encoding="utf-8"))
+          returns = {n.lineno for n in ast.walk(root_ast) if isinstance(n, ast.Return)}
+          assert len(returns) == 1 and returns <= executed, (returns, executed)
+          print("H632_TDD_IMPLEMENTATION_RETURN_COVERAGE=100%", flush=True)
+          print("H632_TDD_SOURCE_SHA256=" + hashlib.sha256(source.read_bytes()).hexdigest(), flush=True)
+          PY
+          chmod 0644 "$home/fixture/h632_tdd_cycle.py"
           docker run --rm --init --pull never --network none --read-only \
             --cap-drop ALL --security-opt no-new-privileges:true --user "$(id -u):$(id -g)" \
             --memory 1024m --cpus 1 --pids-limit 64 \
@@ -239,6 +303,8 @@ jobs:
             ./install.sh --target hermes --profile minimal --json > "$work/install-result.json"
           cmp "$ecc/skills/verification-loop/SKILL.md" \
             "$home/.hermes/skills/verification-loop/SKILL.md"
+          cmp "$ecc/skills/tdd-workflow/SKILL.md" \
+            "$home/.hermes/skills/tdd-workflow/SKILL.md"
 
           cat > "$home/run_model.py" <<'PY'
           import hashlib
@@ -333,6 +399,103 @@ jobs:
               raise SystemExit(1)
           PY
           chmod 0644 "$home/run_model.py"
+          cat > "$home/run_tdd.py" <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+          import time
+          from urllib.request import urlopen
+          
+          home = Path("/test-home")
+          original = home / ".hermes/skills/tdd-workflow/SKILL.md"
+          skill_sha = hashlib.sha256(original.read_bytes()).hexdigest()
+          assert skill_sha == "8887afa786ef30de834e7567115d3df71934b343c3d9d849714f8ea43f979ee0"
+          stamp = json.loads(Path("/opt/hermes/install-stamp.json").read_text())
+          assert stamp["commit"] == "d923a5eb487a17c0a68801bba9ef0f56c81040a8"
+          for forbidden in ("/private-second-brain", "/private-yfc", "/run/secrets", "/var/run/docker.sock"):
+              assert not Path(forbidden).exists(), forbidden
+          for _ in range(50):
+              try:
+                  with urlopen("http://127.0.0.1:8080/health", timeout=3) as r:
+                      if r.status == 200:
+                          break
+              except Exception:
+                  pass
+              time.sleep(2)
+          else:
+              raise RuntimeError("Local offline LLM server did not become healthy")
+          from run_agent import AIAgent
+          agent = AIAgent(base_url="http://127.0.0.1:8080/v1",
+                          api_key="free-local-only", provider="custom",
+                          api_mode="chat_completions", model="h632-local",
+                          enabled_toolsets=["skills", "terminal"], max_iterations=4,
+                          max_tokens=192, quiet_mode=True, skip_context_files=True,
+                          skip_memory=True, skip_background_review=True,
+                          save_trajectories=False, run_budget_seconds=330)
+          available = {t["function"]["name"] for t in agent.tools if t.get("type") == "function"}
+          assert {"skill_view", "terminal"}.issubset(available), sorted(available)
+          instructions = ("/no_think\nYou are the real Hermes Agent. "
+              "Exercise the original ECC tdd-workflow on a disposable synthetic Python kata only. "
+              "First call skill_view with name tdd-workflow. Then call terminal with the exact command "
+              "'python3 /test-home/fixture/h632_tdd_cycle.py'. "
+              "The isolated fixture intentionally starts with two functional RED test failures, "
+              "then applies the smallest GREEN fix, refactors, reruns tests, and counts "
+              "implementation return statement coverage. Never claim steps without tool output. "
+              "Never use network, secrets, or unrelated files.")
+          result = agent.run_conversation(
+              "Use the real tools, not descriptions: first skill_view(name='tdd-workflow'), "
+              "then terminal(command='python3 /test-home/fixture/h632_tdd_cycle.py'). "
+              "Report RED, GREEN, refactor and coverage only if observed in real tool output.",
+              system_message=instructions)
+          assert isinstance(result, dict)
+          calls, outputs = [], []
+          for msg in result.get("messages", []):
+              if not isinstance(msg, dict):
+                  continue
+              if msg.get("role") == "assistant":
+                  for call in msg.get("tool_calls") or []:
+                      fn = call.get("function", {})
+                      args = fn.get("arguments", {})
+                      if isinstance(args, str):
+                          try:
+                              args = json.loads(args)
+                          except ValueError:
+                              args = {}
+                      calls.append((fn.get("name"), args))
+              if msg.get("role") == "tool":
+                  outputs.append(str(msg.get("content", "")))
+          view_at = next((i for i, (n, a) in enumerate(calls)
+                          if n == "skill_view" and a.get("name") == "tdd-workflow"), -1)
+          exec_at = next((i for i, (n, a) in enumerate(calls)
+                          if n == "terminal" and a.get("command", "").strip() ==
+                          "python3 /test-home/fixture/h632_tdd_cycle.py"), -1)
+          read_original = view_at >= 0 and any("Test-Driven Development Workflow" in o for o in outputs)
+          markers = ("H632_TDD_RED_EXPECTED_LOGIC_FAILURE=PASS",
+                     "H632_TDD_GREEN_TWO_REAL_TESTS=PASS",
+                     "H632_TDD_REFACTOR_TESTS_STILL_GREEN=PASS",
+                     "H632_TDD_IMPLEMENTATION_RETURN_COVERAGE=100%")
+          ran_cycle = exec_at > view_at and all(marker in "\n".join(outputs) for marker in markers)
+          allowed_calls = all(n in ("skill_view", "terminal") for n, _ in calls)
+          receipt = {
+              "schema": "hermes-h632-original-tdd-guided-model-smoke-v1",
+              "ecc_sha": "25278e7d7b6cf6e6a4e7a6c8e10f14ff22f0eb5b",
+              "hermes_sha": stamp["commit"], "original_tdd_sha256": skill_sha,
+              "model": "Qwen3.5-2B-Q4_K_M", "actual_model_calls": result.get("api_calls"),
+              "actual_tool_names": [n for n, _ in calls],
+              "model_read_original_tdd_skill": read_original,
+              "model_invoked_synthetic_tdd_cycle": ran_cycle,
+              "actual_red_green_refactor_coverage_markers": list(markers) if ran_cycle else [],
+              "fixture_actions_authored_by": "H632 deterministic synthetic test harness (NOT autonomous model code authoring)",
+              "status": "PASS_GUIDED_MODEL_TDD_CYCLE" if read_original and ran_cycle and allowed_calls
+                        else "FAIL_NOT_PROVEN",
+              "final_preview": str(result.get("final_response", ""))[:240],
+          }
+          (home / "h632-tdd-receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
+          print(json.dumps(receipt))
+          if receipt["status"] != "PASS_GUIDED_MODEL_TDD_CYCLE":
+              raise SystemExit(1)
+          PY
+          chmod 0644 "$home/run_tdd.py"
           model_container="h632-llama-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
           trap 'docker rm --force "$model_container" >/dev/null 2>&1 || true' EXIT
           docker run --detach --name "$model_container" --pull never --init \
@@ -357,6 +520,21 @@ jobs:
             --entrypoint /opt/hermes/.venv/bin/python "$HERMES_IMAGE" /test-home/run_model.py || model_exit=$?
           if test -f "$home/h632-model-receipt.json"; then
             cp "$home/h632-model-receipt.json" h632-ecc-model-proof.json
+          fi
+          if test "$model_exit" -eq 0; then
+            timeout --signal=TERM --kill-after=10s 480s docker run --rm --init --pull never --network "container:$model_container" \
+              --read-only --cap-drop ALL --security-opt no-new-privileges:true \
+              --user "$(id -u):$(id -g)" --pids-limit 96 --memory 1536m --cpus 1 \
+              --tmpfs /tmp:rw,nosuid,nodev,noexec,size=128m \
+              --mount "type=bind,src=$home,dst=/test-home" \
+              --env HOME=/test-home --env HERMES_HOME=/test-home/.hermes \
+              --env HERMES_WRITE_SAFE_ROOT=/test-home/.hermes \
+              --env TERMINAL_ENV=local --env HERMES_QUIET=1 \
+              --workdir /test-home/fixture \
+              --entrypoint /opt/hermes/.venv/bin/python "$HERMES_IMAGE" /test-home/run_tdd.py || model_exit=$?
+          fi
+          if test -f "$home/h632-tdd-receipt.json"; then
+            cp "$home/h632-tdd-receipt.json" h632-ecc-tdd-proof.json
           fi
           docker run --rm --init --pull never --network none --read-only \
             --cap-drop ALL --security-opt no-new-privileges:true --user "$(id -u):$(id -g)" \
@@ -397,6 +575,12 @@ jobs:
           assert r["model_called_original_skill_view"] and r["model_executed_real_test_phase"]
           assert r["actual_model_calls"] >= 2
           print("H632_REAL_MODEL_ORIGINAL_ECC_SKILL_PHASE=PASS")
+          tdd = json.loads(Path("h632-ecc-tdd-proof.json").read_text())
+          assert tdd["status"] == "PASS_GUIDED_MODEL_TDD_CYCLE"
+          assert tdd["model_read_original_tdd_skill"] and tdd["model_invoked_synthetic_tdd_cycle"]
+          assert tdd["actual_model_calls"] >= 2
+          assert tdd["fixture_actions_authored_by"].startswith("H632 deterministic")
+          print("H632_GUIDED_MODEL_ORIGINAL_ECC_TDD_CYCLE=PASS")
           PY
 
       - name: Retain sanitized native model execution evidence
@@ -404,6 +588,8 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: h632-ecc-model-backed-sanitized
-          path: h632-ecc-model-proof.json
+          path: |
+            h632-ecc-model-proof.json
+            h632-ecc-tdd-proof.json
           if-no-files-found: ignore
           retention-days: 7
