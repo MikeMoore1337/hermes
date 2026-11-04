@@ -166,7 +166,7 @@ jobs:
       contents: read
     env:
       ECC_SHA: 25278e7d7b6cf6e6a4e7a6c8e10f14ff22f0eb5b
-      MODEL_SHA: 6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e
+      MODEL_SHA: 8334b850b7bd46238c16b0c550df2138f0889bf433809008cc17a8b05761863e
       MODEL_IMAGE: ghcr.io/ggml-org/llama.cpp:server-b11046
       HERMES_IMAGE: nousresearch/hermes-agent@sha256:a11574b7fe8e1631d7d88d556677dac693bc058abf558cdeb899155688c1bf05
       NODE_IMAGE: node:22.16.0-bookworm-slim@sha256:048ed02c5fd52e86fda6fbd2f6a76cf0d4492fd6c6fee9e2c463ed5108da0e34
@@ -196,10 +196,10 @@ jobs:
           docker pull "$MODEL_IMAGE"
           docker image inspect --format '{{.Id}} {{.Architecture}} {{json .RepoDigests}}' "$MODEL_IMAGE"
           curl --fail --location --retry 2 --max-time 600 --silent --show-error \
-            "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/dd26da440ef0330c47919d1ecae0966d24022222/qwen2.5-1.5b-instruct-q4_k_m.gguf" \
-            --output "$work/qwen2.5-1.5b-instruct-q4_k_m.gguf"
-          printf '%s  %s\n' "$MODEL_SHA" "$work/qwen2.5-1.5b-instruct-q4_k_m.gguf" | sha256sum --check -
-          test "$(stat -c %s "$work/qwen2.5-1.5b-instruct-q4_k_m.gguf")" -eq 1117320736
+            "https://huggingface.co/ggml-org/SmolLM3-3B-GGUF/resolve/4965cb60b150737b68a0408c36aeefb65078f894/SmolLM3-Q4_K_M.gguf" \
+            --output "$work/SmolLM3-Q4_K_M.gguf"
+          printf '%s  %s\n' "$MODEL_SHA" "$work/SmolLM3-Q4_K_M.gguf" | sha256sum --check -
+          test "$(stat -c %s "$work/SmolLM3-Q4_K_M.gguf")" -ge 1800000000
 
       - name: Install original ECC, invoke skill through real Hermes and isolated model
         shell: bash
@@ -317,8 +317,8 @@ jobs:
               "schema": "hermes-h632-original-skill-model-smoke-v1",
               "upstream_ecc_sha": "25278e7d7b6cf6e6a4e7a6c8e10f14ff22f0eb5b",
               "upstream_hermes_sha": stamp["commit"], "original_skill_sha256": skill_sha,
-              "local_model": "Qwen2.5-1.5B-Instruct-Q4_K_M",
-              "local_model_sha256": "6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e",
+              "local_model": "SmolLM3-3B-Q4_K_M",
+              "local_model_sha256": "8334b850b7bd46238c16b0c550df2138f0889bf433809008cc17a8b05761863e",
               "actual_tool_names": [n for n, _ in calls],
               "actual_model_calls": result.get("api_calls"),
               "model_called_original_skill_view": read_original,
@@ -339,8 +339,8 @@ jobs:
             --pids-limit 96 --memory 4608m --cpus 3 \
             --tmpfs /tmp:rw,nosuid,nodev,size=256m --env HOME=/tmp \
             --mount "type=bind,src=$work,dst=/models,readonly" \
-            "$MODEL_IMAGE" --model /models/qwen2.5-1.5b-instruct-q4_k_m.gguf \
-            --alias h632-local --ctx-size 65536 --threads 3 --parallel 1 --jinja \
+            "$MODEL_IMAGE" --model /models/SmolLM3-Q4_K_M.gguf \
+            --alias h632-local --ctx-size 65536 --threads 3 --parallel 1 --jinja --cache-type-k q4_0 --cache-type-v q4_0 \
             --host 127.0.0.1 --port 8080
           docker run --rm --init --pull never --network "container:$model_container" \
             --read-only --cap-drop ALL --security-opt no-new-privileges:true \
