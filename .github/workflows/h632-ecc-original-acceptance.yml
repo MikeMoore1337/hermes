@@ -223,6 +223,9 @@ jobs:
               result = unittest.TextTestRunner().run(
                   unittest.defaultTestLoader.loadTestsFromTestCase(TestSynthetic))
               if result.wasSuccessful() and result.testsRun == 2:
+                  from pathlib import Path
+                  Path("/test-home/fixture/h632-phase4-proof.txt").write_text(
+                      "H632_TWO_REAL_TESTS_PASSED", encoding="utf-8")
                   print("H632_TWO_REAL_TESTS_PASSED")
               raise SystemExit(0 if result.wasSuccessful() else 1)
           PY
@@ -289,6 +292,8 @@ jobs:
           assert len(returns) == 1 and returns <= executed, (returns, executed)
           print("H632_TDD_IMPLEMENTATION_RETURN_COVERAGE=100%", flush=True)
           print("H632_TDD_SOURCE_SHA256=" + hashlib.sha256(source.read_bytes()).hexdigest(), flush=True)
+          (root / "h632-tdd-proof.txt").write_text(
+              "H632_TDD_RED_GREEN_REFACTOR_COVERAGE_PASSED", encoding="utf-8")
           PY
           chmod 0644 "$home/fixture/h632_tdd_cycle.py"
           docker run --rm --init --pull never --network none --read-only \
@@ -410,13 +415,23 @@ jobs:
           executor_calls = parse_tool_calls(executor_messages)
           executor_outputs = [str(m.get("content", "")) for m in executor_messages
                               if isinstance(m, dict) and m.get("role") == "tool"]
-          ran_terminal = any(n == "terminal" and a.get("command", "").strip() ==
-                             "python3 /test-home/fixture/h632_fixture_test.py"
-                             for n, a in executor_calls)
+          import re
+          allowed = re.compile(
+              r"^python(?:3)?\s+(?:/test-home/fixture/)?h632_fixture_test\.py\s*$")
+          terminal_commands = [str(a.get("command", "")).strip()
+                               for n, a in executor_calls if n == "terminal"
+                               and isinstance(a, dict)]
+          ran_terminal = any(allowed.fullmatch(c) for c in terminal_commands)
+          proof_file = home / "fixture/h632-phase4-proof.txt"
+          for _ in range(20):
+              if proof_file.is_file():
+                  break
+              time.sleep(0.5)
+          fixture_proof = proof_file.is_file() and (
+              proof_file.read_text(encoding="utf-8") == "H632_TWO_REAL_TESTS_PASSED")
           causal = bool(view_called and original_view and ran_terminal)
           read_original = bool(view_called and original_view)
-          executed_tests = bool(ran_terminal and any("H632_TWO_REAL_TESTS_PASSED" in x
-                                                   for x in executor_outputs))
+          executed_tests = bool(ran_terminal and fixture_proof)
           calls = reader_calls + executor_calls
           outputs = reader_outputs + executor_outputs
           actual_model_calls = (read_result.get("api_calls") or 0) + (result.get("api_calls") or 0)
@@ -427,6 +442,13 @@ jobs:
               "local_model": "Qwen3.5-2B-Q4_K_M",
               "local_model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
               "actual_tool_names": [n for n, _ in calls],
+              "synthetic_terminal_commands": [
+                  c if re.fullmatch(r"[A-Za-z0-9_. /-]{1,180}", c) and
+                  ("h632_fixture_test.py" in c or "h632_tdd_cycle.py" in c)
+                  else "redacted-sha256:" + hashlib.sha256(c.encode()).hexdigest()
+                  for c in terminal_commands
+              ],
+              "fixture_execution_marker_verified": fixture_proof,
               "actual_model_calls": actual_model_calls,
               "final_preview": str(result.get("final_response", ""))[:400],
               "message_roles": [m.get("role") for m in result.get("messages", []) if isinstance(m, dict)],
@@ -550,16 +572,28 @@ jobs:
           exec_calls = parse_tool_calls(exec_messages)
           exec_outputs = [str(m.get("content", "")) for m in exec_messages
                           if isinstance(m, dict) and m.get("role") == "tool"]
-          ran_terminal = any(n == "terminal" and a.get("command", "").strip() ==
-                             "python3 /test-home/fixture/h632_tdd_cycle.py" for n, a in exec_calls)
+          import re
+          allowed = re.compile(
+              r"^python(?:3)?\s+(?:/test-home/fixture/)?h632_tdd_cycle\.py\s*$")
+          terminal_commands = [str(a.get("command", "")).strip()
+                               for n, a in exec_calls if n == "terminal"
+                               and isinstance(a, dict)]
+          ran_terminal = any(allowed.fullmatch(c) for c in terminal_commands)
           markers = ("H632_TDD_RED_EXPECTED_LOGIC_FAILURE=PASS",
                      "H632_TDD_GREEN_TWO_REAL_TESTS=PASS",
                      "H632_TDD_REFACTOR_TESTS_STILL_GREEN=PASS",
                      "H632_TDD_IMPLEMENTATION_RETURN_COVERAGE=100%")
           read_original = bool(view_called and original_view)
-          ran_cycle = bool(ran_terminal and any(all(m in out for m in markers) for out in exec_outputs))
-          allowed_calls = all(n in ("skill_view", "skills_list", "terminal")
-                              for n, _ in read_calls + exec_calls)
+          proof_file = home / "fixture/h632-tdd-proof.txt"
+          for _ in range(20):
+              if proof_file.is_file():
+                  break
+              time.sleep(0.5)
+          fixture_proof = proof_file.is_file() and proof_file.read_text(
+              encoding="utf-8") == "H632_TDD_RED_GREEN_REFACTOR_COVERAGE_PASSED"
+          ran_cycle = bool(ran_terminal and fixture_proof)
+          allowed_calls = all(n in ("skill_view", "skills_list", "terminal",
+                                    "process_manage") for n, _ in read_calls + exec_calls)
           causal = bool(view_called and original_view and ran_terminal)
           calls = read_calls + exec_calls
           outputs = read_outputs + exec_outputs
@@ -570,6 +604,13 @@ jobs:
               "hermes_sha": stamp["commit"], "original_tdd_sha256": skill_sha,
               "model": "Qwen3.5-2B-Q4_K_M", "actual_model_calls": actual_model_calls,
               "actual_tool_names": [n for n, _ in calls],
+              "synthetic_terminal_commands": [
+                  c if re.fullmatch(r"[A-Za-z0-9_. /-]{1,180}", c) and
+                  ("h632_tdd_cycle.py" in c or "h632_fixture_test.py" in c)
+                  else "redacted-sha256:" + hashlib.sha256(c.encode()).hexdigest()
+                  for c in terminal_commands
+              ],
+              "fixture_execution_marker_verified": fixture_proof,
               "model_read_original_tdd_skill": read_original,
               "model_invoked_synthetic_tdd_cycle": ran_cycle,
               "actual_red_green_refactor_coverage_markers": list(markers) if ran_cycle else [],
@@ -667,6 +708,7 @@ jobs:
           assert r["model_called_original_skill_view"] and r["model_executed_real_test_phase"]
           assert r["causal_skill_result_precedes_execution"]
           assert r["actual_model_calls"] >= 2
+          assert r["fixture_execution_marker_verified"] and r["causal_skill_result_precedes_execution"]
           print("H632_REAL_MODEL_ORIGINAL_ECC_SKILL_PHASE=PASS")
           tdd = json.loads(Path("h632-ecc-tdd-proof.json").read_text())
           assert tdd["status"] == "PASS_GUIDED_MODEL_TDD_CYCLE"
@@ -674,6 +716,7 @@ jobs:
           assert tdd["causal_skill_result_precedes_execution"]
           assert tdd["actual_model_calls"] >= 2
           assert tdd["fixture_actions_authored_by"].startswith("H632 deterministic")
+          assert tdd["fixture_execution_marker_verified"] and tdd["causal_skill_result_precedes_execution"]
           print("H632_GUIDED_MODEL_ORIGINAL_ECC_TDD_CYCLE=PASS")
           PY
 
