@@ -20,11 +20,16 @@ function Get-H454OriginalRestoreState(
     $cmd=@($broker.Config.Cmd);Require-H454 ($cmd.Count -eq 3) 'H454_RESTORE_BROKER'
     $hostAddress=[string]$cmd[0];$hostNumber=Get-H454IPv4Number $hostAddress
     Require-H454 ((Test-H454PrivateIPv4 $hostNumber) -and ($hostNumber -lt $plan.Base -or $hostNumber -gt $plan.Last)) 'H454_RESTORE_BROKER'
-    # Only this exact owned old proxy may carry Docker Desktop's stale
-    # bridge identity while stopped. Broker/agent network IDs stay strict.
-    Require-H454 ($old.State.Running -is [bool] -and -not $old.State.Running -and
-        [string]$old.State.Status -ceq 'exited') 'H454_RESTORE_OLD_PROXY'
-    Assert-H454RecoveryProxy $old ($networkName+'-proxy') $label $OldImage $hostAddress $CaSha256 $plan $bridge.Id -AllowStoppedLegacyProxyBridge
+    # Preserve the ordinary created/exited-state check. Opt into the narrow
+    # Docker Desktop stale-ID exception only if the stopped old proxy has a
+    # nonempty bridge ID different from the current bridge. New/running/broker
+    # containers continue through strict identity checks.
+    Require-H454 ($old.State.Running -is [bool] -and -not $old.State.Running) 'H454_RESTORE_OLD_PROXY'
+    $oldBridge=$old.NetworkSettings.Networks.PSObject.Properties['bridge']
+    $staleOldBridge=($null -ne $oldBridge -and
+        -not [string]::IsNullOrEmpty([string]$oldBridge.Value.NetworkID) -and
+        [string]$oldBridge.Value.NetworkID -cne $bridge.Id)
+    Assert-H454RecoveryProxy $old ($networkName+'-proxy') $label $OldImage $hostAddress $CaSha256 $plan $bridge.Id -AllowStoppedLegacyProxyBridge:$staleOldBridge
     Assert-H454RecoveryProxy $broker ($networkName+'-broker') $label $BrokerImage $hostAddress $CaSha256 $plan $bridge.Id `
         -Connected -EntrypointPath '/opt/hermes-rollback/broker.mjs'
     Require-H454 ($broker.State.Running -and $agent.State.Running -is [bool] -and
