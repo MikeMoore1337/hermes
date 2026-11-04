@@ -421,7 +421,10 @@ jobs:
           assert len(phase_headings) == 6 and all(
               line.startswith(f"### Phase {i}:") for i, line in enumerate(phase_headings, 1))
           original_excerpt = original_text[:500] + "\n" + "\n".join(phase_headings)
-          executor = AIAgent(**common, enabled_toolsets=["terminal"], max_iterations=3,
+          # One model tool-call cycle: the pinned Hermes runtime then only
+          # summarizes, preventing a second unreviewed terminal action.
+          # The command allowlist below remains independently fail-closed.
+          executor = AIAgent(**common, enabled_toolsets=["terminal"], max_iterations=1,
                              max_tokens=128, run_budget_seconds=300)
           executor_tools = {t["function"]["name"] for t in executor.tools if t.get("type") == "function"}
           assert "terminal" in executor_tools and "skill_view" not in executor_tools
