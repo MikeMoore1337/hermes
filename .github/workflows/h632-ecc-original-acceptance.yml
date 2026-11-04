@@ -8,6 +8,9 @@ on:
       - tests/test_h632_ecc_acceptance.py
       - scripts/h632_full_verification.py
       - tests/test_h632_full_verification.py
+      - scripts/h632_model_authored_tdd.py
+      - scripts/h632_model_tdd_driver.py
+      - tests/test_h632_model_authored_tdd.py
       - docs/operations/ecc-upstream-as-is.md
   workflow_dispatch:
 
@@ -33,6 +36,7 @@ jobs:
         run: |
           python3 -m unittest discover -s tests -p 'test_h632_ecc_acceptance.py' -v
           python3 -m unittest discover -s tests -p 'test_h632_full_verification.py' -v
+          python3 -m unittest discover -s tests -p 'test_h632_model_authored_tdd.py' -v
 
       - name: Verify disposable GitHub runner and acquire exact original ECC SHA
         shell: bash
@@ -165,7 +169,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     needs: original-ecc-lifecycle
-    timeout-minutes: 35
+    timeout-minutes: 45
     permissions:
       contents: read
     env:
@@ -306,6 +310,9 @@ jobs:
               "H632_TDD_RED_GREEN_REFACTOR_COVERAGE_PASSED", encoding="utf-8")
           PY
           chmod 0644 "$home/fixture/h632_tdd_cycle.py"
+          cp scripts/h632_model_authored_tdd.py "$home/fixture/h632_model_authored_tdd.py"
+          cp scripts/h632_model_tdd_driver.py "$home/fixture/h632_model_tdd_driver.py"
+          chmod 0644 "$home/fixture/h632_model_authored_tdd.py" "$home/fixture/h632_model_tdd_driver.py"
           docker run --rm --init --pull never --network none --read-only \
             --cap-drop ALL --security-opt no-new-privileges:true --user "$(id -u):$(id -g)" \
             --memory 1024m --cpus 1 --pids-limit 64 \
@@ -414,10 +421,20 @@ jobs:
           assert len(phase_headings) == 6 and all(
               line.startswith(f"### Phase {i}:") for i, line in enumerate(phase_headings, 1))
           original_excerpt = original_text[:500] + "\n" + "\n".join(phase_headings)
-          executor = AIAgent(**common, enabled_toolsets=["terminal"], max_iterations=3,
+          # One model tool-call cycle: the pinned Hermes runtime then only
+          # summarizes, preventing a second unreviewed terminal action.
+          # The command allowlist below remains independently fail-closed.
+          executor = AIAgent(**common, enabled_toolsets=["terminal"], max_iterations=1,
                              max_tokens=128, run_budget_seconds=300)
+          # Native "terminal" toolset also advertises process_manage, which the
+          # small offline model may select instead of terminal. This ephemeral
+          # test agent restricts advertised tools to the genuine native terminal;
+          # the underlying Hermes tool dispatch and original ECC stay unchanged.
+          executor.tools = [t for t in executor.tools
+                            if t.get("function", {}).get("name") == "terminal"]
+          executor.valid_tool_names = {"terminal"}
           executor_tools = {t["function"]["name"] for t in executor.tools if t.get("type") == "function"}
-          assert "terminal" in executor_tools and "skill_view" not in executor_tools
+          assert executor_tools == {"terminal"}, executor_tools
           assert not {"tool_search", "tool_describe", "tool_call"} & executor_tools, executor_tools
           result = executor.run_conversation(
               "Original ECC verification-loop headings retrieved by real Hermes "
@@ -726,6 +743,27 @@ jobs:
           if test -f "$home/h632-tdd-receipt.json"; then
             cp "$home/h632-tdd-receipt.json" h632-ecc-tdd-proof.json
           fi
+          # Separate native-Hermes model code-generation probe; scripts stay test-only.
+          # The source is validated through a strict AST gate before execution.
+          if test "$model_exit" -eq 0; then
+            timeout --signal=TERM --kill-after=10s 660s docker run --rm --init --pull never --network "container:$model_container" \
+              --read-only --cap-drop ALL --security-opt no-new-privileges:true \
+              --user "$(id -u):$(id -g)" --pids-limit 96 --memory 1536m --cpus 1 \
+              --tmpfs /tmp:rw,nosuid,nodev,noexec,size=128m \
+              --mount "type=bind,src=$home,dst=/test-home" \
+              --env HOME=/test-home --env HERMES_HOME=/test-home/.hermes \
+              --env HERMES_WRITE_SAFE_ROOT=/test-home/.hermes \
+              --env TERMINAL_ENV=local --env HERMES_QUIET=1 \
+              --workdir /test-home/fixture \
+              --entrypoint /opt/hermes/.venv/bin/python "$HERMES_IMAGE" \
+              /test-home/fixture/h632_model_tdd_driver.py || model_exit=$?
+          fi
+          if test -f "$home/h632-model-authored-receipt.json"; then
+            cp "$home/h632-model-authored-receipt.json" h632-ecc-model-authored-tdd.json
+          fi
+          if test -f "$home/h632-model-authored-failure.json"; then
+            cp "$home/h632-model-authored-failure.json" h632-ecc-model-authored-failure.json
+          fi
           docker run --rm --init --pull never --network none --read-only \
             --cap-drop ALL --security-opt no-new-privileges:true --user "$(id -u):$(id -g)" \
             --memory 1024m --cpus 1 --pids-limit 64 \
@@ -786,6 +824,20 @@ jobs:
           assert tdd["autonomous_code_authoring_verified"] is False
           assert "final_preview" not in tdd
           print("H632_GUIDED_MODEL_ORIGINAL_ECC_TDD_CYCLE=PASS")
+          authored = json.loads(Path("h632-ecc-model-authored-tdd.json").read_text())
+          assert authored["status"] == "PASS_MODEL_WRITTEN_RED_GREEN"
+          assert authored["model_wrote_regression_tests"] is True
+          assert authored["model_wrote_fix_after_observed_red"] is True
+          assert authored["native_original_skill_view_preceded_code_generation"] is True
+          assert authored["model_tool_access"] == "NONE"
+          assert authored["autonomous_step_selection"] is False
+          assert len(authored["model_generation_api_calls"]) == 2
+          assert all(count >= 1 for count in authored["model_generation_api_calls"])
+          assert authored["red"]["exit"] == 1 and len(authored["red"]["errors"]) == 2
+          assert authored["green"] == {"exit": 0, "count": 2, "errors": []}
+          assert authored["return_coverage_percent"] >= 80
+          assert len(set(authored["git_checkpoints"])) == 3
+          print("H632_REAL_MODEL_WRITTEN_TDD_RED_GREEN=PASS")
           PY
 
       - name: Retain sanitized native model execution evidence
@@ -797,5 +849,7 @@ jobs:
             h632-ecc-model-proof.json
             h632-six-phase-proof.json
             h632-ecc-tdd-proof.json
+            h632-ecc-model-authored-tdd.json
+            h632-ecc-model-authored-failure.json
           if-no-files-found: ignore
           retention-days: 7
