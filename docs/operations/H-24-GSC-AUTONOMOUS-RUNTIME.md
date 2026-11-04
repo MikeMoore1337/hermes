@@ -150,7 +150,7 @@ Hermes VPS vps1777112993 через ранее разрешённый прямо
   /var/lib/hermes-gsc (hermes-gsc:hermes-gsc 0700),
   /opt/hermes-gsc (root:root 0755).
 - Создаёт отдельный root-owned Python venv; устанавливает только binary
-  wheels из официального PyPI для google-auth==2.62.0 и requests==2.32.5
+  wheels из официального PyPI для google-auth==2.62.0 и requests==2.33.0
   вместе с зависимостями; проверяет версии и pip check. Не запускает apt
   и не изменяет Python других сервисов. Нужен установленный Python 3.10+
   с venv; при отсутствии fail-closed.
