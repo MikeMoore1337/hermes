@@ -421,7 +421,8 @@ jobs:
           terminal_commands = [str(a.get("command", "")).strip()
                                for n, a in executor_calls if n == "terminal"
                                and isinstance(a, dict)]
-          ran_terminal = any(allowed.fullmatch(c) for c in terminal_commands)
+          ran_terminal = bool(terminal_commands) and all(
+              allowed.fullmatch(c) for c in terminal_commands)
           proof_file = home / "fixture/h632-phase4-proof.txt"
           for _ in range(20):
               if proof_file.is_file():
@@ -430,6 +431,8 @@ jobs:
           fixture_proof = proof_file.is_file() and (
               proof_file.read_text(encoding="utf-8") == "H632_TWO_REAL_TESTS_PASSED")
           causal = bool(view_called and original_view and ran_terminal)
+          allowed_calls = all(n in ("skill_view", "skills_list", "terminal", "process_manage")
+                              for n, _ in reader_calls + executor_calls)
           read_original = bool(view_called and original_view)
           executed_tests = bool(ran_terminal and fixture_proof)
           calls = reader_calls + executor_calls
@@ -460,7 +463,7 @@ jobs:
               "causal_skill_result_precedes_execution": causal,
               "stage_model_call_counts": [read_result.get("api_calls"), result.get("api_calls")],
               "execution_guidance": "Original unmodified skill text from native skill_view in a prior, separate model call",
-              "status": "PASS_MODEL_BACKED_ORIGINAL_SKILL_PHASE" if read_original and executed_tests and causal else "FAIL_NOT_PROVEN",
+              "status": "PASS_MODEL_BACKED_ORIGINAL_SKILL_PHASE" if read_original and executed_tests and causal and allowed_calls else "FAIL_NOT_PROVEN",
           }
           (home / "h632-model-receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
           print(json.dumps(receipt))
@@ -581,7 +584,8 @@ jobs:
           terminal_commands = [str(a.get("command", "")).strip()
                                for n, a in exec_calls if n == "terminal"
                                and isinstance(a, dict)]
-          ran_terminal = any(allowed.fullmatch(c) for c in terminal_commands)
+          ran_terminal = bool(terminal_commands) and all(
+              allowed.fullmatch(c) for c in terminal_commands)
           markers = ("H632_TDD_RED_EXPECTED_LOGIC_FAILURE=PASS",
                      "H632_TDD_GREEN_TWO_REAL_TESTS=PASS",
                      "H632_TDD_REFACTOR_TESTS_STILL_GREEN=PASS",
