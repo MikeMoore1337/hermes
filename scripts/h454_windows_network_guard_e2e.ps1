@@ -139,6 +139,9 @@ function CheckRecoveryRoute([object]$Route){
     Assert-H454RecoveryProxy $Route.Proxy $proxyName $recoveryValue $proxyImage '172.21.0.1' $caHash $plan ('f'*64) -Connected
 }
 CheckRecoveryRoute (TestRecoveryRoute)
+$nullMounts=TestRecoveryRoute
+$nullMounts.Proxy.Mounts=$null
+CheckRecoveryRoute $nullMounts
 $brokerRoute=TestRecoveryRoute
 $brokerRoute.Proxy.Config.Entrypoint[1]='/opt/hermes-rollback/broker.mjs'
 $brokerPlan=Assert-H454RecoveryNetwork $brokerRoute.Network $recoveryName $recoveryValue
@@ -181,6 +184,9 @@ try { Assert-H454RecoveryProxy $legacy.Proxy ('h454-recovery-'+$recoveryValue+'-
 catch{$refused=$_.Exception.Message -ceq 'H454_ROUTE_PROXY_NETWORK'}
 Require-H454 $refused 'RECOVERY_LEGACY_STALE_DENIED_BY_DEFAULT'
 Assert-StoppedLegacyProxy $legacy
+$nullLegacyMounts=Test-StoppedLegacyProxy
+$nullLegacyMounts.Proxy.Mounts=$null
+Assert-StoppedLegacyProxy $nullLegacyMounts
 foreach($case in @('running','created','broker','connected','extra-network','wrong-image','wrong-label','wrong-name','wrong-alias','malformed-network-id','privileged')){
     $candidate=Test-StoppedLegacyProxy
     $connected=$false;$entry='/opt/hermes-rollback/proxy.mjs'
