@@ -93,6 +93,19 @@ def prepare(path: Path):
     return {"status": "PREPARED", "source_sha256": sha((root / "src/math.js").read_bytes())}
 
 
+def checked_node_coverage(output: str) -> float:
+    """Accept genuine node:test counts on Node 22 (#) and newer (info sign)."""
+    prefix = r"(?:#|\\u2139)"
+    for key in ("tests", "pass"):
+        if not re.search(rf"(?m)^\\s*{prefix}\\s*{key}\\s+2\\s*$", output):
+            raise AssertionError("Actual 2/2 node:test execution missing: " + key)
+    coverage = re.search(
+        rf"(?m)^\\s*{prefix}\\s*all files\\s*\\|\\s*(\\d+(?:\\.\\d+)?)", output)
+    if not coverage or float(coverage.group(1)) < 80:
+        raise AssertionError("Measured line coverage less than 80%")
+    return float(coverage.group(1))
+
+
 def security_scan(root: Path):
     source = root / "src/math.js"
     if source.is_symlink() or not source.is_file():
@@ -134,12 +147,7 @@ def run(path: Path, tsc: str = "/opt/hermes/node_modules/typescript/lib/tsc.js")
               (_ for _ in ()).throw(AssertionError("Missing lint proof")))
 
         def tests_verified(p):
-            if not re.search(r"# tests\s+2", p.stdout) or not re.search(r"# pass\s+2", p.stdout):
-                raise AssertionError("Actual 2/2 node:test execution missing")
-            m = re.search(r"(?m)^#\s*all files\s*\|\s*(\d+(?:\.\d+)?)", p.stdout)
-            if not m or float(m.group(1)) < 80:
-                raise AssertionError("Measured line coverage less than 80%")
-            stages["4"]["coverage_line_percent"] = float(m.group(1))
+            stages["4"]["coverage_line_percent"] = checked_node_coverage(p.stdout)
         stage(4, "Tests with measured coverage", ["npm", "test"], tests_verified)
         stages["5"] = security_scan(root)
         stage(6, "Diff review", ["git", "diff", "--name-only"],
