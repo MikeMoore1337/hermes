@@ -426,8 +426,15 @@ jobs:
           # The command allowlist below remains independently fail-closed.
           executor = AIAgent(**common, enabled_toolsets=["terminal"], max_iterations=1,
                              max_tokens=128, run_budget_seconds=300)
+          # Native "terminal" toolset also advertises process_manage, which the
+          # small offline model may select instead of terminal. This ephemeral
+          # test agent restricts advertised tools to the genuine native terminal;
+          # the underlying Hermes tool dispatch and original ECC stay unchanged.
+          executor.tools = [t for t in executor.tools
+                            if t.get("function", {}).get("name") == "terminal"]
+          executor.valid_tool_names = {"terminal"}
           executor_tools = {t["function"]["name"] for t in executor.tools if t.get("type") == "function"}
-          assert "terminal" in executor_tools and "skill_view" not in executor_tools
+          assert executor_tools == {"terminal"}, executor_tools
           assert not {"tool_search", "tool_describe", "tool_call"} & executor_tools, executor_tools
           result = executor.run_conversation(
               "Original ECC verification-loop headings retrieved by real Hermes "
