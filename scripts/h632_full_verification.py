@@ -95,12 +95,12 @@ def prepare(path: Path):
 
 def checked_node_coverage(output: str) -> float:
     """Accept genuine node:test counts on Node 22 (#) and newer (info sign)."""
-    prefix = r"(?:#|\\u2139)"
+    prefix = r"(?:#|ℹ)"
     for key in ("tests", "pass"):
-        if not re.search(rf"(?m)^\\s*{prefix}\\s*{key}\\s+2\\s*$", output):
+        if not re.search(rf"(?m)^\s*{prefix}\s*{key}\s+2\s*$", output):
             raise AssertionError("Actual 2/2 node:test execution missing: " + key)
     coverage = re.search(
-        rf"(?m)^\\s*{prefix}\\s*all files\\s*\\|\\s*(\\d+(?:\\.\\d+)?)", output)
+        rf"(?m)^\s*{prefix}\s*all files\s*\|\s*(\d+(?:\.\d+)?)", output)
     if not coverage or float(coverage.group(1)) < 80:
         raise AssertionError("Measured line coverage less than 80%")
     return float(coverage.group(1))
