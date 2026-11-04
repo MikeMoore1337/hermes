@@ -301,6 +301,51 @@ Strict real authenticated device heartbeat evidence is required after
 every live switch, not merely localhost TLS success. Ops Watch TLS expiry
 and offline devices remain independent controls.
 
+## Early warning for the finite presigned CA batch (no signing key)
+
+The one-time CA was destroyed after issuing 15 public certificates, so
+**automatic activation is NOT automatic signing**. The 48-hour active-leaf
+expiry alarm alone would be dangerously late for issuing an entirely new CA
+and changing both approved device trust bundles.
+
+The existing root-controlled **TLS-only** Ops Watch consent now also governs
+a strictly read-only finite-batch horizon check. The monitor reads only
+`ca-public.pem` (public CA) and the 0600 root-owned
+`presigned-batch/manifest.json`. It **does not read any private leaf key,
+device identity token, SSH credential, or CA signing key**. It checks the
+attested public CA DER SHA-256 and complete 14-slot/25-day public schedule
+before calculating the smaller of the last leaf's expiration and public
+CA expiration. No new listener, timer, provider or account is introduced.
+
+The sanitized fixed incident codes are:
+
+- `device_ca_batch_renewal_due` - at most 90 days before the end of the
+  signed batch; arrange owner-approved signing and a staged client CA overlap
+  **without assuming a retained old CA key**.
+- `device_ca_batch_renewal_critical` - at most 30 days, critical; have a
+  replacement CA, signed primary/fallback, and verified Windows/YFC trust
+  migration ready before expiry.
+- `device_ca_batch_expired` - the signed supply has reached its end. It
+  is **not** cryptographic revocation and must not authorize bypassing TLS
+  checks, hostname checks, or public WSS exposure.
+
+With the actual signed batch ending **2027-10-24**, the first 90-day warning
+would become eligible approximately **2027-07-26**, and the critical warning
+approximately **2027-09-24**, subject to certificate exact UTC timestamps.
+The implementation evaluates current public CA expiry too. A malformed
+or unreadable protected manifest/CA produces `unknown`, never `healthy`;
+previously confirmed renewal incidents are retained during source outages.
+A missing TLS-only owner consent or a legacy installation without a batch
+remains `not_configured`, so old installations are not falsely alarmed.
+Notifications are deduplicated by the existing Ops Watch state journal.
+
+This monitor does not itself rotate a CA, execute an owner-signing container,
+revoke a leaked certificate or prove Windows LocalService survival across
+reboot. Any **compromised signer/CA** still requires a separate owner-approved
+replacement CA and removal of the old CA from both clients only AFTER
+strict genuine WSS acceptance under the new CA. Removing a trust anchor is
+not the same as publishing a CRL/OCSP revocation.
+
 ## Custody, revocation and emergency boundaries
 
 The private CA key remains OFFLINE. Only owner-signed, pre-staged service
