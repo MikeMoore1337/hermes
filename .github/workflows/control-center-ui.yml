@@ -81,6 +81,15 @@ jobs:
       - name: Browser checks (approved Atlas, protected GitHub login, mobile)
         working-directory: control_center/frontend
         run: npm run test:e2e
+      - name: Attach Hermes Commander synthetic visual evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: hermes-commander-visual-evidence
+          path: control_center/frontend/.artifacts/playwright-results/**/fork-evidence-*.png
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 7
       - name: Python per-provider, official Cloudflare billing and GitHub rate-limit contracts
         run: python3 -m unittest tests.test_provider_registry tests.test_cloudflare_billing tests.test_github_rate_limit tests.test_github_rate_history tests.test_provider_quota_ops_alerts -v
 

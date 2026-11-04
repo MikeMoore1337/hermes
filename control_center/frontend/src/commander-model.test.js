@@ -93,3 +93,37 @@ test("snapshot refuses extra fields, inconsistent presence and state promotion",
   assert.equal(parseBrcObservation(forged),null);
  }
 });
+
+test("fork snapshot uses each workspace's device and rejects forged access",()=>{
+ const value={schema:2,source:"hermes_brc_fork",status:"partial",observed_at:new Date().toISOString(),
+  execution_verified:false,native_host_access:"not_verified",onboarding_enabled:false,
+  devices:[{name:"Laptop",status:"online",last_seen_age_seconds:1,command_execution:"not_verified"},
+   {name:"Sandbox",status:"paused",last_seen_age_seconds:2,command_execution:"not_verified"}],
+  workspaces:[{name:"alpha",root:"/workspace/projects/alpha",branch:"main",device_name:"Laptop",git_verified:false,state:"reachable_not_git_verified"},
+   {name:"beta",root:"/workspace/projects/beta",branch:"dev",device_name:"Sandbox",git_verified:false,state:"not_ready"}]};
+ assert.deepEqual(parseBrcObservation(value),value);
+ assert.equal(projectSandboxRoot({repo:"alpha",root:"/workspace/projects/other"}),"/workspace/projects/other");
+ for(const mutate of [
+  v=>v.devices[0].deviceId="private",v=>v.workspaces[0].device_name="Other",
+  v=>v.workspaces[1].state="reachable_not_git_verified",v=>v.workspaces[0].root="/etc/secrets",
+  v=>v.workspaces[0].branch="../production",v=>v.workspaces[0].git_verified=true,
+  v=>v.devices[1].name="Laptop",v=>v.status="online",v=>v.onboarding_enabled=true,
+  v=>v.native_host_access=false,v=>v.devices[0].last_seen_age_seconds=301,
+ ]){const forged=clone(value);mutate(forged);assert.equal(parseBrcObservation(forged),null);}
+ const check=goodSourceCheck();check.schema=2;check.devices=value.devices;check.status="partial";check.verification.native_host="not_probed";
+ assert.deepEqual(parseBrcSourceCheck(check),check);
+ const expired=clone(value);expired.devices[0].last_seen_age_seconds=299;
+ assert.equal(parseBrcObservation(expired,Date.parse(expired.observed_at)+2000),null);
+});
+
+test("fork source check refuses presence that expired in transit",()=>{
+ const now=Date.now(), checked=goodSourceCheck();
+ checked.schema=2;checked.verification.native_host="not_probed";
+ checked.devices=[{name:"Laptop",status:"online",last_seen_age_seconds:290,command_execution:"not_verified"}];
+ checked.checked_at=new Date(now-10000).toISOString();
+ assert.deepEqual(parseBrcSourceCheck(checked,now),checked);
+ const staleHeartbeat=clone(checked);staleHeartbeat.devices[0].last_seen_age_seconds=291;
+ assert.equal(parseBrcSourceCheck(staleHeartbeat,now),null);
+ const staleSnapshot=clone(checked);staleSnapshot.snapshot_age_seconds=291;
+ assert.equal(parseBrcSourceCheck(staleSnapshot,now),null);
+});
