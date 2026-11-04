@@ -346,6 +346,66 @@ replacement CA and removal of the old CA from both clients only AFTER
 strict genuine WSS acceptance under the new CA. Removing a trust anchor is
 not the same as publishing a CRL/OCSP revocation.
 
+## Emergency CA rollover - owner-controlled, two distinct threat cases
+
+No old CA private key remains. **A signed CA cannot be renewed or used to sign
+a CRL after its signing key has been destroyed.** Revocation in the current
+Python SSLContext is not implemented via CRL or OCSP. Removing an old CA from
+*every* client trust store is a separate trust-retirement operation; removing
+one leaf file on the server is not cryptographic revocation.
+
+**If only one service leaf private key is compromised:** determine whether a
+different already signed certificate is valid **at the current UTC time**, has
+a separate unexposed key, a matching localhost SAN/serverAuth and the approved
+CA chain. If no safe currently valid leaf exists, fail closed; do not select
+a not-yet-valid future certificate, nor silently restore a leaked key. Stage
+and switch using the existing pointer transaction, verify exact live TLS and
+both genuine client heartbeats, and quarantine the compromised generation.
+Keep the restricted SSH/loopback boundary; this is not a CA compromise.
+
+**If the CA signing key or its integrity is compromised, or the finite series
+cannot be renewed:** the old CA may no longer be safe as *any* trust anchor.
+This requires an independent, explicitly owner-approved new CA. The previous
+one-time Docker signer consent does not permanently authorize unattended
+CA issuance, nor an always-on signing service.
+
+1. Authorize the new short-lived CA custody model and issue new distinct
+   primary and rollback leaves from owner-approved CSR public keys. Never
+   send signing keys, device tokens or SSH private keys to GitHub/ChatGPT.
+2. Independently attest the new CA public DER SHA-256, both new leaf chains,
+   DNS:localhost, serverAuth, validity and exact matching protected server
+   private keys. Do not reuse the old compromised issuer.
+3. Back up both client configs with their native ACL/owner protection, and
+   install **old + new** public CA trust on the already registered Windows
+   and YFC clients. Verify unchanged device IDs/tokens, TLS hostname
+   verification and SSH pinned known_hosts. Windows LocalService ProgramData
+   needs a separately authorized elevated administrator; the user-profile
+   bundle alone is not equivalent. Without that authority: **NO_GO**.
+4. Stage a valid new-CA **rollback** certificate and a separate new-CA
+   primary. Plan a maintenance cutover with old service rollback explicitly
+   forbidden when the old CA is compromised. Do not disconnect both clients
+   before a verified route for each exists.
+5. Switch only the loopback WSS service, prove exact new-CA TLS peer identity
+   and *fresh authenticated heartbeat* from both real clients. A local
+   openssl/SSL handshake alone is not sufficient.
+6. Atomically retire the old CA from **all** client trust bundles, including
+   protected Windows LocalService state, after new-CA proof. Reconnect and
+   verify both clients **again** under new-only trust, without CERT_NONE or
+   disabling check_hostname. A compromised CA cannot remain a trusted
+   fallback; retain only independent new-CA rollback.
+7. Update the owner-pinned batch public CA fingerprint and separately approved
+   automatic activation source through exact-HEAD CI, PR review, main CI and
+   production CD. Never silently rewrite the old batch or allow two timers
+   to run together. Preserve the old evidence and audit trail.
+8. If any stage fails, use an explicitly approved incident isolation procedure,
+   not automatic acceptance of the compromised CA. Report which real client
+   proofs and native permissions remain NOT_VERIFIED; leave #346 open.
+
+This runbook is a **prepared safety procedure, not an executed emergency
+reissue**. The absence of an online CA signer is intentional. The 90-day
+batch-runway warning is the point to schedule the ordinary new-CA rollover,
+not authorization for the monitor to perform it.
+
 ## Custody, revocation and emergency boundaries
 
 The private CA key remains OFFLINE. Only owner-signed, pre-staged service
