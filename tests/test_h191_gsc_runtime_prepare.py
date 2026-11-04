@@ -119,7 +119,7 @@ class GscPrepareContractTests(unittest.TestCase):
             line.strip() for line in REQUIREMENTS.read_text(encoding="utf-8").splitlines()
             if line.strip() and not line.startswith("#")
         ]
-        self.assertEqual(reqs, ["google-auth==2.62.0", "requests==2.32.5"])
+        self.assertEqual(reqs, ["google-auth==2.62.0", "requests==2.33.0"])
         installer = INSTALLER.read_text(encoding="utf-8")
         for required in (
             "--only-binary=:all:",
