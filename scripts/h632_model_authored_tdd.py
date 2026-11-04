@@ -195,7 +195,8 @@ def execute(root: Path, generate_tests, generate_fix) -> dict:
     (root / "calc.py").write_text(BASE, encoding="utf-8")
     (root / "run_tests.py").write_text(RUNNER, encoding="utf-8")
     (root / ".gitignore").write_text("h632-model-authored-receipt.json\n"
-                                      "h632-model-authored-proof.txt\n", encoding="utf-8")
+                                      "h632-model-authored-proof.txt\n"
+                                      "__pycache__/\n*.pyc\n", encoding="utf-8")
     git(root, "init", "--quiet", "--initial-branch=main")
     git(root, "add", "calc.py", "run_tests.py", ".gitignore")
     git(root, "commit", "--quiet", "-m", "h632: synthetic buggy baseline")
