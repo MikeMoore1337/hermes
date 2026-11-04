@@ -15,7 +15,7 @@ from unittest.mock import patch
 from scripts.h15_presence_tls_preflight import check, PreflightError
 from scripts.h15_presence_tls_rotation import (
     RotationError, RotationPaths, _active_name, _exclusive, _file,
-    _pending_name, _probe, _switch, _write, activate, auto, recover, stage,
+    _pending_name, _probe, _probe_tls_context, _switch, _write, activate, auto, recover, stage,
 )
 
 
@@ -528,35 +528,45 @@ class RotationTests(unittest.TestCase):
         # genuine loopback TLS handshake and exact leaf identity.
         from unittest.mock import MagicMock
         cert, _ = self.certificates[0]
-        expected = subprocess.run(
-            ["openssl", "x509", "-in", str(cert), "-outform", "DER"],
-            capture_output=True, check=True, timeout=4).stdout
+        # Synthetic retry semantics do not spawn OpenSSL. The independent
+        # real-loopback test verifies actual DER extraction and CA checks.
+        expected = b"synthetic-leaf-der"
         fake_sock = MagicMock()
         fake_ctx = MagicMock()
         channel = fake_ctx.wrap_socket.return_value.__enter__.return_value
         channel.getpeercert.return_value = expected
         channel.version.return_value = "TLSv1.3"
         failures = [ConnectionRefusedError("startup pending") for _ in range(4)]
-        with patch("scripts.h15_presence_tls_rotation.socket.create_connection",
+        with patch("scripts.h15_presence_tls_rotation._probe_loopback",
                    side_effect=failures + [fake_sock]) as connect, patch(
-                   "scripts.h15_presence_tls_rotation.ssl.create_default_context",
+                   "scripts.h15_presence_tls_rotation._probe_tls_context",
                    return_value=fake_ctx) as create_context, patch(
-                   "scripts.h15_presence_tls_rotation.time.sleep") as sleep:
+                   "scripts.h15_presence_tls_rotation._probe_expected_der",
+                   return_value=expected) as read_der, patch(
+                   "scripts.h15_presence_tls_rotation._probe_retry_pause") as sleep:
             self.assertTrue(_probe(ca=self.ca, leaf=cert, port=38177))
             self.assertEqual(connect.call_count, 5)
             self.assertEqual(sleep.call_count, 4)
-            create_context.assert_called_once_with(cafile=str(self.ca))
-            self.assertTrue(fake_ctx.check_hostname)
+            create_context.assert_called_once_with(self.ca)
+            read_der.assert_called_once_with(cert)
+            connect.assert_called_with(38177)
             fake_ctx.wrap_socket.assert_called_once()
             self.assertEqual(fake_ctx.wrap_socket.call_args.kwargs["server_hostname"],
                              "localhost")
             channel.getpeercert.assert_called_once_with(binary_form=True)
 
+    def test_probe_ca_context_requires_hostname_and_certificate_verification(self):
+        # This test actually runs the stdlib SSLContext constructor; unlike
+        # the retry simulation it never replaces the global ssl module.
+        ctx = _probe_tls_context(self.ca)
+        self.assertTrue(ctx.check_hostname)
+        self.assertEqual(ctx.verify_mode, ssl.CERT_REQUIRED)
+
     def test_probe_times_out_without_weakened_tls_or_unbounded_retries(self):
         cert, _ = self.certificates[0]
-        with patch("scripts.h15_presence_tls_rotation.socket.create_connection",
+        with patch("scripts.h15_presence_tls_rotation._probe_loopback",
                    side_effect=ConnectionRefusedError("synthetic outage")) as connect, patch(
-                   "scripts.h15_presence_tls_rotation.time.sleep") as sleep:
+                   "scripts.h15_presence_tls_rotation._probe_retry_pause") as sleep:
             self.assertFalse(_probe(ca=self.ca, leaf=cert, port=38177))
             self.assertEqual(connect.call_count, 8)
             self.assertEqual(sleep.call_count, 7)
