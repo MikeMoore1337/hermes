@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -126,6 +127,15 @@ class ForkSnapshotTests(unittest.TestCase):
             with self.assertRaises(SnapshotRejected):
                 read_snapshot(self.path, now=NOW)
         self.assertTrue(grown)
+
+    def test_snapshot_without_stable_file_identity_is_refused(self):
+        self.path.write_text(json.dumps(snapshot()), encoding="utf-8")
+        info = self.path.stat()
+        unidentifiable = SimpleNamespace(st_mode=info.st_mode, st_nlink=info.st_nlink,
+                                        st_dev=info.st_dev, st_ino=0, st_size=info.st_size)
+        with patch.object(os, "fstat", return_value=unidentifiable):
+            with self.assertRaises(SnapshotRejected):
+                read_snapshot(self.path, now=NOW)
 
 
 if __name__ == "__main__":

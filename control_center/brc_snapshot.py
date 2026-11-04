@@ -194,13 +194,14 @@ def read_snapshot(path: Path = DEFAULT_OUTPUT, *, now: dt.datetime | None = None
     path = Path(path)
     try:
         before = path.lstat()
-        if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or before.st_size > MAX_SNAPSHOT_BYTES:
+        if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or not before.st_ino
+            or before.st_size > MAX_SNAPSHOT_BYTES):
             _reject("snapshot_unavailable")
         flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
         fd = os.open(path, flags)
         try:
             opened = os.fstat(fd)
-            if (not stat.S_ISREG(opened.st_mode) or opened.st_nlink != 1
+            if (not stat.S_ISREG(opened.st_mode) or opened.st_nlink != 1 or not opened.st_ino
                 or (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino)
                 or opened.st_size > MAX_SNAPSHOT_BYTES):
                 _reject("snapshot_unavailable")
