@@ -83,11 +83,13 @@ jobs:
           p = Path(os.environ["RUNNER_TEMP"]) / "ecc632-original-acceptance.json"
           report = json.loads(p.read_text(encoding="utf-8"))
           expected_checks = (
-              "original_plan_safe", "unrelated_files_preserved",
+              "original_plan_safe", "unrelated_files_preserved", "installed_files_match_original_plan",
               "original_installer_installed_skills", "reinstall_idempotent_files",
-              "unsupported_profile_refused", "real_hermes_skill_discovery",
-              "real_hermes_skill_view_invoked", "os_network_and_outside_write_denied",
-              "no_active_hooks_or_mcp", "upstream_uninstall_preserves_unrelated",
+              "original_doctor_repair_update_preview", "unsupported_profile_refused",
+              "real_hermes_skill_discovery", "real_hermes_skill_view_invoked",
+              "os_network_and_outside_write_denied", "no_active_hooks_or_mcp",
+              "original_managed_files_removed", "upstream_uninstall_preserves_unrelated",
+              "ecc_owned_files_fully_reverted_in_test_scope", "hermes_runtime_files_preserved",
               "existing_owner_agents_preserved",
           )
           assert not report.get("error"), report.get("error")
@@ -96,6 +98,7 @@ jobs:
           calls = report.get("calls", [])
           expected_calls = {
               "original-dry-run": 0, "original-install": 0, "original-reinstall": 0,
+              "original-doctor": 0, "original-repair-dry-run": 0, "original-update-dry-run": 0,
               "unsupported-profile": 1, "real-hermes-skills-list": 0,
               "os-file-network-deny": 0, "original-uninstall-dry-run": 0,
               "original-uninstall": 0, "owner-agents-collision": 0,
@@ -121,7 +124,11 @@ jobs:
               assert report["checks"]["exact_snapshot_rollback"] is False
               assert report["checks"]["only_known_original_ecc_cache_residual"] is True
               assert report["rollback_non_runtime_residual_files"] == [".claude/ecc/state.db"]
-              acceptance = "NO_GO: upstream ECC state.db survives native uninstall; original model-backed skills not executed"
+              cleanup = report["test_only_cache_cleanup"]
+              assert cleanup["path"] == ".claude/ecc/state.db"
+              assert cleanup["scope"] == "disposable-H632-HOME-only"
+              assert len(cleanup["deleted_sha256"]) == 64
+              acceptance = "NO_GO: ECC-only test cleanup passed, but native uninstall leaves state.db; no model skill execution"
           elif status == "PASS_INSTALL_DISCOVERY_ROLLBACK_SKILL_EXECUTION_BLOCKED":
               assert os.environ["H632_HARNESS_EXIT"] == "0"
               assert report["checks"]["exact_snapshot_rollback"] is True
@@ -137,6 +144,7 @@ jobs:
               f.write("### H632 source-only receipt verification: PASS\n\n")
               f.write("**Product acceptance: " + acceptance + "**\n\n")
               f.write("Original installation/discovery succeeded; no ECC model-backed skill was executed.\n\n")
+              f.write("Controlled post-uninstall deletion is restricted to a test-created state.db in a disposable HOME; native ECC uninstall alone is still incomplete.\n\n")
               f.write("GitHub CI success validates the evidence and safety boundaries only, NOT the #632 closure criteria.\n")
           PY
 
