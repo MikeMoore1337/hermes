@@ -3,7 +3,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.h632_full_verification import prepare, run, root_checked, security_scan
+from scripts.h632_full_verification import (
+    checked_node_coverage, prepare, run, root_checked, security_scan,
+)
 
 
 class SixPhaseSafetyTests(unittest.TestCase):
@@ -47,6 +49,18 @@ class SixPhaseSafetyTests(unittest.TestCase):
     def test_unprepared_run_rejected(self):
         with self.assertRaisesRegex(ValueError, "not prepared"):
             run(self.root, "/does-not-exist.js")
+
+    def test_node_test_summary_accepts_old_and_new_prefix(self):
+        for prefix in ("#", "ℹ"):
+            output = (f"{prefix} tests 2\n{prefix} pass 2\n"
+                      f"{prefix} all files | 100.00 | 100.00 | 100.00 |\n")
+            self.assertEqual(checked_node_coverage(output), 100.0)
+
+    def test_node_test_summary_rejects_missing_tests_and_low_coverage(self):
+        with self.assertRaisesRegex(AssertionError, "pass"):
+            checked_node_coverage("# tests 2\n# pass 1\n# all files | 100.00\n")
+        with self.assertRaisesRegex(AssertionError, "coverage"):
+            checked_node_coverage("ℹ tests 2\nℹ pass 2\nℹ all files | 79.99\n")
 
     def test_failed_typecheck_cannot_create_success_marker_or_be_reused(self):
         prepare(self.root)
