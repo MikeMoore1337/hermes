@@ -18,19 +18,6 @@ on:
       - ".github/workflows/control-center-ui.yml"
   push:
     branches: [main]
-    paths:
-      - "control_center/**"
-      - "tests/test_control_center*.py"
-      - "tests/test_codex_usage.py"
-      - "tests/test_codex_policy_history.py"
-      - "tests/test_control_center_pwa.py"
-      - "tests/test_h15_oauth_egress_evidence.py"
-      - "scripts/h15_oauth_egress_evidence.py"
-      - "scripts/h15_caddy_callback_log_guard.py"
-      # Match production-deploy SHA gate: any scripts/h15_* change requires UI CI.
-      - "scripts/h15_*"
-      - "tests/test_h15_caddy_callback_log_guard.py"
-      - ".github/workflows/control-center-ui.yml"
 
 permissions:
   contents: read

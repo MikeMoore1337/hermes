@@ -2,8 +2,9 @@
 
 ## Действующая поставка и ограниченный H-01 (17.10.2026)
 
-Действует точный GitHub Flow и автоматическая production CD для одобренных
-модулей: [MAIN-AUTO-DEPLOY.md](MAIN-AUTO-DEPLOY.md). Точный результат - main
+Действует GitHub Flow и ручной production release только после отдельного
+разрешения владельца на конкретный cumulative SHA: [MAIN-AUTO-DEPLOY.md](MAIN-AUTO-DEPLOY.md).
+Merge и зелёный CI не запускают выпуск. Проверенный выпуск - main
 Quality/UI checks, successful Production CD и canonical receipt на VPS;
 зелёный CI **не** означает установленный systemd H-01 unit.
 

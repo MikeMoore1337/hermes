@@ -1,4 +1,4 @@
-"""Offline safety contract for automatic Hermes main-to-production delivery.
+"""Offline safety contract for manually approved Hermes production delivery.
 
 This test is deliberately static: the live VPS isolated systemd checks are validated
 separately, and no network, SSH, secrets or production calls occur in CI.
@@ -77,14 +77,13 @@ class MainDeployContractTests(unittest.TestCase):
     def test_ci_gate_and_host_identity(self):
         workflow = (ROOT / ".github/workflows/production-deploy.yml").read_text(encoding="utf-8")
         for fragment in (
-            'workflow_run:',
             'workflow_dispatch:',
-            'workflows: ["Hermes repository checks", "Hermes Control Center UI"]',
-            'Deployment deferred until its workflow_run completion.',
-            "github.event.workflow_run.conclusion == 'success'",
-            "github.event.workflow_run.event == 'push'",
+            "if: github.event_name == 'workflow_dispatch'",
+            'Manual dispatch refused: required SHA-scoped checks not green',
+            '[.workflow_runs[] | select(.name=="Hermes repository checks")]',
+            '[.workflow_runs[] | select(.name=="Hermes Control Center UI")]',
+            '"$quality" == success && "$ui" == success',
             'TARGET_SHA:',
-            'ui_required=',
             'git archive --format=tar.gz',
             'StrictHostKeyChecking=yes',
             # Secure keepalive avoids premature SSH idle disconnect while the
@@ -99,6 +98,8 @@ class MainDeployContractTests(unittest.TestCase):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, workflow)
         self.assertNotIn('StrictHostKeyChecking=no', workflow)
+        self.assertNotIn('workflow_run:', workflow)
+        self.assertNotIn('github.event.workflow_run', workflow)
         self.assertNotIn('known_hosts=/dev/null', workflow)
         self.assertNotIn('ssh-keyscan', workflow)
         self.assertNotIn('ServerAliveInterval=0', workflow)

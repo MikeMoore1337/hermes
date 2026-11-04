@@ -301,6 +301,111 @@ Strict real authenticated device heartbeat evidence is required after
 every live switch, not merely localhost TLS success. Ops Watch TLS expiry
 and offline devices remain independent controls.
 
+## Early warning for the finite presigned CA batch (no signing key)
+
+The one-time CA was destroyed after issuing 15 public certificates, so
+**automatic activation is NOT automatic signing**. The 48-hour active-leaf
+expiry alarm alone would be dangerously late for issuing an entirely new CA
+and changing both approved device trust bundles.
+
+The existing root-controlled **TLS-only** Ops Watch consent now also governs
+a strictly read-only finite-batch horizon check. The monitor reads only
+`ca-public.pem` (public CA) and the 0600 root-owned
+`presigned-batch/manifest.json`. It **does not read any private leaf key,
+device identity token, SSH credential, or CA signing key**. It checks the
+attested public CA DER SHA-256 and complete 14-slot/25-day public schedule
+before calculating the smaller of the last leaf's expiration and public
+CA expiration. No new listener, timer, provider or account is introduced.
+
+The sanitized fixed incident codes are:
+
+- `device_ca_batch_renewal_due` - at most 90 days before the end of the
+  signed batch; arrange owner-approved signing and a staged client CA overlap
+  **without assuming a retained old CA key**.
+- `device_ca_batch_renewal_critical` - at most 30 days, critical; have a
+  replacement CA, signed primary/fallback, and verified Windows/YFC trust
+  migration ready before expiry.
+- `device_ca_batch_expired` - the signed supply has reached its end. It
+  is **not** cryptographic revocation and must not authorize bypassing TLS
+  checks, hostname checks, or public WSS exposure.
+
+With the actual signed batch ending **2027-10-24**, the first 90-day warning
+would become eligible approximately **2027-07-26**, and the critical warning
+approximately **2027-09-24**, subject to certificate exact UTC timestamps.
+The implementation evaluates current public CA expiry too. A malformed
+or unreadable protected manifest/CA produces `unknown`, never `healthy`;
+previously confirmed renewal incidents are retained during source outages.
+A missing TLS-only owner consent or a legacy installation without a batch
+remains `not_configured`, so old installations are not falsely alarmed.
+Notifications are deduplicated by the existing Ops Watch state journal.
+
+This monitor does not itself rotate a CA, execute an owner-signing container,
+revoke a leaked certificate or prove Windows LocalService survival across
+reboot. Any **compromised signer/CA** still requires a separate owner-approved
+replacement CA and removal of the old CA from both clients only AFTER
+strict genuine WSS acceptance under the new CA. Removing a trust anchor is
+not the same as publishing a CRL/OCSP revocation.
+
+## Emergency CA rollover - owner-controlled, two distinct threat cases
+
+No old CA private key remains. **A signed CA cannot be renewed or used to sign
+a CRL after its signing key has been destroyed.** Revocation in the current
+Python SSLContext is not implemented via CRL or OCSP. Removing an old CA from
+*every* client trust store is a separate trust-retirement operation; removing
+one leaf file on the server is not cryptographic revocation.
+
+**If only one service leaf private key is compromised:** determine whether a
+different already signed certificate is valid **at the current UTC time**, has
+a separate unexposed key, a matching localhost SAN/serverAuth and the approved
+CA chain. If no safe currently valid leaf exists, fail closed; do not select
+a not-yet-valid future certificate, nor silently restore a leaked key. Stage
+and switch using the existing pointer transaction, verify exact live TLS and
+both genuine client heartbeats, and quarantine the compromised generation.
+Keep the restricted SSH/loopback boundary; this is not a CA compromise.
+
+**If the CA signing key or its integrity is compromised, or the finite series
+cannot be renewed:** the old CA may no longer be safe as *any* trust anchor.
+This requires an independent, explicitly owner-approved new CA. The previous
+one-time Docker signer consent does not permanently authorize unattended
+CA issuance, nor an always-on signing service.
+
+1. Authorize the new short-lived CA custody model and issue new distinct
+   primary and rollback leaves from owner-approved CSR public keys. Never
+   send signing keys, device tokens or SSH private keys to GitHub/ChatGPT.
+2. Independently attest the new CA public DER SHA-256, both new leaf chains,
+   DNS:localhost, serverAuth, validity and exact matching protected server
+   private keys. Do not reuse the old compromised issuer.
+3. Back up both client configs with their native ACL/owner protection, and
+   install **old + new** public CA trust on the already registered Windows
+   and YFC clients. Verify unchanged device IDs/tokens, TLS hostname
+   verification and SSH pinned known_hosts. Windows LocalService ProgramData
+   needs a separately authorized elevated administrator; the user-profile
+   bundle alone is not equivalent. Without that authority: **NO_GO**.
+4. Stage a valid new-CA **rollback** certificate and a separate new-CA
+   primary. Plan a maintenance cutover with old service rollback explicitly
+   forbidden when the old CA is compromised. Do not disconnect both clients
+   before a verified route for each exists.
+5. Switch only the loopback WSS service, prove exact new-CA TLS peer identity
+   and *fresh authenticated heartbeat* from both real clients. A local
+   openssl/SSL handshake alone is not sufficient.
+6. Atomically retire the old CA from **all** client trust bundles, including
+   protected Windows LocalService state, after new-CA proof. Reconnect and
+   verify both clients **again** under new-only trust, without CERT_NONE or
+   disabling check_hostname. A compromised CA cannot remain a trusted
+   fallback; retain only independent new-CA rollback.
+7. Update the owner-pinned batch public CA fingerprint and separately approved
+   automatic activation source through exact-HEAD CI, PR review, main CI and
+   production CD. Never silently rewrite the old batch or allow two timers
+   to run together. Preserve the old evidence and audit trail.
+8. If any stage fails, use an explicitly approved incident isolation procedure,
+   not automatic acceptance of the compromised CA. Report which real client
+   proofs and native permissions remain NOT_VERIFIED; leave #346 open.
+
+This runbook is a **prepared safety procedure, not an executed emergency
+reissue**. The absence of an online CA signer is intentional. The 90-day
+batch-runway warning is the point to schedule the ordinary new-CA rollover,
+not authorization for the monitor to perform it.
+
 ## Custody, revocation and emergency boundaries
 
 The private CA key remains OFFLINE. Only owner-signed, pre-staged service
