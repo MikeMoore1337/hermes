@@ -1,6 +1,6 @@
 # H454 - recover native original-Windows read parity in the active BRC relay
 
-This procedure is **not** the Hermes source-code auto-deploy. The running
+This procedure is **not** the Hermes source-code release. The running
 `hermes-brc-relay` image on `vps1777112993` must be upgraded separately.
 Observed legacy image (2026-10-27):
 `sha256:4f7c2d0a8f7a3e23e19b1e5110ba3722f37435ff93b9b352abb9122f0bbd5f`
@@ -26,7 +26,7 @@ prove that every other owner/transport/audit gate is healthy.
 2. The candidate's **compiled** `NATIVE_TOOLS` and **built OCI image**
    must each pass `H454_*_NATIVE_TOOLSET_3=PASS`, with exact names/order:
    `native_file_stat,native_file_read,native_file_list`. Do not accept
-   TypeScript source inspection or a green source auto-deploy in lieu of
+   TypeScript source inspection or a green source release in lieu of
    this check.
 3. Verify immutable OCI ID, archive SHA256, release manifest, CI job log,
    source provenance, OAuth/sandbox negative E2E and rollback rehearsal.

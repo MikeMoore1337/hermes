@@ -1,9 +1,6 @@
 """Fail-closed checks for #585. No network, sandbox or host config needed."""
 from __future__ import annotations
 
-import os
-import shutil
-import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -61,63 +58,13 @@ class H585SafetyProbeTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 verify(report)
 
-    def test_only_research_scope_can_bypass_automatic_production(self):
+    def test_research_merges_cannot_start_production_deployment(self):
         source = Path(".github/workflows/production-deploy.yml").read_text(
             encoding="utf-8"
         )
-        self.assertIn("id: h585_scope", source)
-        self.assertIn("if: steps.h585_scope.outputs.skip != 'true'", source)
-        self.assertIn("*) source_only=false", source)
-        self.assertIn("saw_pilot=false", source)
-        self.assertIn('"$saw_pilot" == true || "$saw_ecc" == true', source)
-        self.assertIn("scripts/h585_srt_pilot.py", source)
-        self.assertIn(".github/workflows/h585-srt-isolated.yml", source)
-
-    @unittest.skipUnless(shutil.which("bash"), "requires bash for actual deploy guard")
-    def test_deploy_scope_guard_real_bash_negative_cases(self):
-        workflow = Path(".github/workflows/production-deploy.yml").read_text(
-            encoding="utf-8"
-        )
-        section = workflow.split("      - name: Keep H-585", 1)[1]
-        section = section.split("      - name: Verify current main", 1)[0]
-        body = section.split("        run: |\n", 1)[1]
-        script = "\n".join(
-            line[10:] if line.startswith("          ") else line
-            for line in body.splitlines()
-        )
-        with tempfile.TemporaryDirectory(prefix="h585-guard-") as d:
-            temp = Path(d)
-            fake_gh = temp / "gh"
-            fake_gh.write_text('#!/bin/sh\ncat "$GH_SYNTHETIC_CHANGED"\n', encoding="utf-8")
-            fake_gh.chmod(0o755)
-            cases = (
-                (["scripts/h585_srt_pilot.py", "docs/operations/H-585-SRT-COMPARISON.md",
-                  ".github/workflows/production-deploy.yml"], True, 0),
-                (["scripts/h585_srt_pilot.py", "control_center/app.py"], False, 0),
-                ([".github/workflows/production-deploy.yml"], False, 0),
-                ([], False, 1),
-            )
-            for i, (paths, allowed, exit_status) in enumerate(cases):
-                with self.subTest(case=i):
-                    changed = temp / "changed.txt"
-                    changed.write_text("\n".join(paths) + ("\n" if paths else ""), encoding="utf-8")
-                    out = temp / "github-output.txt"
-                    out.write_text("", encoding="utf-8")
-                    env = os.environ.copy()
-                    env.update({
-                        "PATH": str(temp) + os.pathsep + env.get("PATH", ""),
-                        "GH_SYNTHETIC_CHANGED": str(changed),
-                        "GITHUB_REPOSITORY": "MikeMoore1337/hermes",
-                        "TARGET_SHA": "synthetic-no-network",
-                        "GITHUB_OUTPUT": str(out),
-                        "GITHUB_STEP_SUMMARY": str(temp / "summary.md"),
-                    })
-                    completed = subprocess.run(
-                        ["bash", "-euo", "pipefail", "-c", script],
-                        env=env, text=True, capture_output=True, timeout=5,
-                    )
-                    self.assertEqual(completed.returncode, exit_status, completed.stderr)
-                    self.assertEqual("skip=true" in out.read_text(encoding="utf-8"), allowed)
+        self.assertIn("workflow_dispatch:", source)
+        self.assertIn("if: github.event_name == 'workflow_dispatch'", source)
+        self.assertNotIn("workflow_run:", source)
 
     def test_fixture_initialization_cannot_replace_existing_content(self):
         with tempfile.TemporaryDirectory(prefix="h585-unittest-") as folder:
