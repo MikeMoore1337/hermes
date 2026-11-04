@@ -449,7 +449,11 @@ jobs:
               ],
               "fixture_execution_marker_verified": fixture_proof,
               "actual_model_calls": actual_model_calls,
-              "final_preview": str(result.get("final_response", ""))[:400],
+              "untrusted_model_response_sha256": hashlib.sha256(
+                  str(result.get("final_response", "")).encode("utf-8")).hexdigest(),
+              "verified_phases": [4] if executed_tests else [],
+              "unverified_phases": [1, 2, 3, 5, 6],
+              "verification_scope": "Phase 4 synthetic 2-test smoke only; no full six-phase verification",
               "message_roles": [m.get("role") for m in result.get("messages", []) if isinstance(m, dict)],
               "model_called_original_skill_view": read_original,
               "model_executed_real_test_phase": executed_tests,
@@ -619,7 +623,10 @@ jobs:
               "execution_guidance": "Exact original upstream spans returned by native skill_view before executor call",
               "status": "PASS_GUIDED_MODEL_TDD_CYCLE" if read_original and ran_cycle and allowed_calls and causal
                         else "FAIL_NOT_PROVEN",
-              "final_preview": str(result.get("final_response", ""))[:240],
+              "untrusted_model_response_sha256": hashlib.sha256(
+                  str(result.get("final_response", "")).encode("utf-8")).hexdigest(),
+              "tdd_execution_scope": "guided pre-authored synthetic fixture",
+              "autonomous_code_authoring_verified": False,
           }
           (home / "h632-tdd-receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
           print(json.dumps(receipt))
@@ -707,6 +714,8 @@ jobs:
           assert r["causal_skill_result_precedes_execution"]
           assert r["actual_model_calls"] >= 2
           assert r["fixture_execution_marker_verified"] and r["causal_skill_result_precedes_execution"]
+          assert r["verified_phases"] == [4] and r["unverified_phases"] == [1, 2, 3, 5, 6]
+          assert "final_preview" not in r
           print("H632_REAL_MODEL_ORIGINAL_ECC_SKILL_PHASE=PASS")
           tdd = json.loads(Path("h632-ecc-tdd-proof.json").read_text())
           assert tdd["status"] == "PASS_GUIDED_MODEL_TDD_CYCLE"
@@ -715,6 +724,9 @@ jobs:
           assert tdd["actual_model_calls"] >= 2
           assert tdd["fixture_actions_authored_by"].startswith("H632 deterministic")
           assert tdd["fixture_execution_marker_verified"] and tdd["causal_skill_result_precedes_execution"]
+          assert tdd["tdd_execution_scope"] == "guided pre-authored synthetic fixture"
+          assert tdd["autonomous_code_authoring_verified"] is False
+          assert "final_preview" not in tdd
           print("H632_GUIDED_MODEL_ORIGINAL_ECC_TDD_CYCLE=PASS")
           PY
 
