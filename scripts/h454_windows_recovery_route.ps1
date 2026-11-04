@@ -70,7 +70,7 @@ function Assert-H454RecoveryProxy(
         ($null -eq $hostConfig.Binds -or @($hostConfig.Binds).Count -eq 0) -and
         ($null -eq $hostConfig.Devices -or @($hostConfig.Devices).Count -eq 0) -and
         ($null -eq $hostConfig.DeviceRequests -or @($hostConfig.DeviceRequests).Count -eq 0) -and
-        @($Proxy.Mounts).Count -eq 0) 'H454_ROUTE_PROXY'
+        ($null -eq $Proxy.Mounts -or @($Proxy.Mounts).Count -eq 0)) 'H454_ROUTE_PROXY'
     foreach($entry in @($Proxy.Config.Env)){
         Require-H454 ($entry -is [string] -and $entry -cnotmatch '^(?:NODE_OPTIONS|NODE_PATH|NODE_EXTRA_CA_CERTS|NODE_TLS_REJECT_UNAUTHORIZED|LD_PRELOAD|LD_LIBRARY_PATH)=') 'H454_ROUTE_PROXY_ENV'
     }
