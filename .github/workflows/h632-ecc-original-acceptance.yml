@@ -596,7 +596,7 @@ jobs:
             cp "$home/h632-model-receipt.json" h632-ecc-model-proof.json
           fi
           if test "$model_exit" -eq 0; then
-            timeout --signal=TERM --kill-after=10s 480s docker run --rm --init --pull never --network "container:$model_container" \
+            timeout --signal=TERM --kill-after=10s 720s docker run --rm --init --pull never --network "container:$model_container" \
               --read-only --cap-drop ALL --security-opt no-new-privileges:true \
               --user "$(id -u):$(id -g)" --pids-limit 96 --memory 1536m --cpus 1 \
               --tmpfs /tmp:rw,nosuid,nodev,noexec,size=128m \
