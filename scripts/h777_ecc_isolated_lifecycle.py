@@ -86,9 +86,17 @@ def _verify_home(home: Path) -> tuple[Path, dict]:
     marker_st = _lstat(marker)
     if not stat.S_ISREG(marker_st.st_mode) or marker_st.st_uid != os.geteuid():
         raise ValueError("Invalid H777 ownership marker")
-    if marker_st.st_nlink != 1 or marker_st.st_size > 2_000_000:
+    if (marker_st.st_nlink != 1 or marker_st.st_size > 2_000_000
+            or marker_st.st_mode & 0o077):
         raise ValueError("Unsafe H777 ownership marker")
-    data = json.loads(marker.read_text(encoding="utf-8"))
+    fd = os.open(marker, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    with os.fdopen(fd, "r", encoding="utf-8") as stream:
+        opened = os.fstat(stream.fileno())
+        if (opened.st_dev != marker_st.st_dev
+                or opened.st_ino != marker_st.st_ino
+                or opened.st_nlink != 1):
+            raise ValueError("H777 marker identity changed")
+        data = json.load(stream)
     if not isinstance(data, dict) or any((
         data.get("schema") != SCHEMA,
         data.get("root_name") != home.name,
@@ -373,7 +381,10 @@ def inspect(home: Path) -> dict:
             set(rec["dirs"]) | _allowed_dirs(set(rec["planned"])
                 | {CANONICAL_STATE, KNOWN_RESIDUAL})))
         safe = not (unexpected or modified or missing or unexpected_dirs)
-        return {"status": "PASS_INVENTORY" if safe else "BLOCKED_UNSAFE",
+        status = ("BLOCKED_UNSAFE" if not safe else
+                  "PASS_INVENTORY" if rec["phase"] == "READY" else
+                  "INCOMPLETE_LIFECYCLE")
+        return {"status": status,
                 "home": str(home), "phase": rec["phase"],
                 "file_count": len(actual), "unexpected": unexpected,
                 "modified": modified, "missing": missing,
