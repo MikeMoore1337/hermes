@@ -299,6 +299,32 @@ def compare_auth(before, after):
                 "PASS_READ_ONLY_NO_CREDENTIAL_REINTRODUCTION", "AUTH_STATE_REGRESSION")
 
 
+
+def finalize_pending():
+    """Clear only our exact cutover marker; accept a prior verified removal.
+
+    The final WSS reconcile is checked after the success path deletes the
+    pending marker. If that final probe fails, the original relay/proxy may
+    still be restored. The rollback must not fail just because the success
+    path had already removed its own marker.
+    """
+    if not PENDING.exists() and not PENDING.is_symlink():
+        return False
+    protected(PENDING, 0o600)
+    protected(PINS_OLD, 0o600)
+    receipt = json.loads(PENDING.read_bytes())
+    require(isinstance(receipt, dict) and set(receipt) == {
+        "schema", "original_pin_sha256", "release_sha", "devices"
+    } and type(receipt["schema"]) is int and receipt["schema"] == 1
+        and receipt["original_pin_sha256"] == digest(PINS_OLD)
+        and receipt["release_sha"] == LIVE_SHA.read_text().strip()
+        and type(receipt["devices"]) is int
+        and 1 <= receipt["devices"] <= 25, "PENDING_RECEIPT_CHANGED")
+    PENDING.unlink()
+    sync_pin_directory()
+    return True
+
+
 def restore(original_pins, old_relay, old_proxy, new_relay_id, new_proxy_id, count):
     """Only remove identified task-owned candidates; never restore stale SQLite."""
     current_proxy = inspect("container", PROXY, optional=True)
@@ -378,8 +404,7 @@ def restore(original_pins, old_relay, old_proxy, new_relay_id, new_proxy_id, cou
     require(legacy.healthy(count, tries=60), "OLD_DEVICES_NOT_RECONNECTED")
     docker("update", "--restart", "unless-stopped", legacy.NAME)
     docker("update", "--restart", "unless-stopped", PROXY)
-    PENDING.unlink()
-    sync_pin_directory()
+    finalize_pending()
 
 
 def cutover(release_sha):

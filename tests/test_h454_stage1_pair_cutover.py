@@ -211,6 +211,42 @@ class CutoverTests(unittest.TestCase):
                 m.cutover("a" * 40)
             restore.assert_called_once()
 
+    def test_finalize_pending_missing_after_wss_commit_is_safe(self):
+        with tempfile.TemporaryDirectory() as directory:
+            missing = Path(directory) / "reconcile.pending"
+            with patch.object(m, "PENDING", missing), \
+                 patch.object(m, "sync_pin_directory") as sync:
+                m.finalize_pending()
+                sync.assert_not_called()
+
+    def test_finalize_pending_exact_receipt_only(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            backup = root / "stage1-original-pins.json"
+            backup.write_bytes(b"pinned-original")
+            pending = root / "reconcile.pending"
+            installed = root / "last-success.sha"
+            installed.write_text("a" * 40)
+            receipt = {
+                "schema": 1, "original_pin_sha256": m.digest(backup),
+                "release_sha": "a" * 40, "devices": 3,
+            }
+            with patch.object(m, "PENDING", pending), \
+                 patch.object(m, "PINS_OLD", backup), \
+                 patch.object(m, "LIVE_SHA", installed), \
+                 patch.object(m, "protected"), \
+                 patch.object(m, "sync_pin_directory") as sync:
+                pending.write_text(json.dumps(receipt))
+                m.finalize_pending()
+                self.assertFalse(pending.exists())
+                sync.assert_called_once()
+                sync.reset_mock()
+                pending.write_text(json.dumps(dict(receipt, original_pin_sha256="f" * 64)))
+                with self.assertRaisesRegex(m.Hold, "PENDING_RECEIPT_CHANGED"):
+                    m.finalize_pending()
+                self.assertTrue(pending.exists())
+                sync.assert_not_called()
+
     def test_foreign_sidecar_not_deleted(self):
         fake = {"Id": "f" * 64, "Image": m.LEGACY_IMAGE,
                 "HostConfig": {"NetworkMode": "host"}}
