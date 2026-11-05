@@ -43,6 +43,7 @@ _SUFFIX = (
     r"|/branches/[A-Za-z0-9._~%-]+"
     r"|/actions/runs\?head_sha=[0-9a-f]{40}&per_page=100"
     r"|/license\?ref=[0-9a-f]{40}"
+    r"|/contents\?ref=[0-9a-f]{40}"
     r"|/contents/NOTICE(?:\.txt|\.md)?\?ref=[0-9a-f]{40}"
     r"|/releases/latest"
     r"|/security-advisories\?per_page=5"
@@ -420,6 +421,50 @@ def _verified_public_blob(record: object) -> str:
     return hashlib.sha256(content).hexdigest()
 
 
+_ROOT_MARKERS = frozenset({
+    "pyproject.toml", "uv.lock", "requirements.txt", "setup.py",
+    "package.json", "package-lock.json", "pnpm-lock.yaml",
+    "Cargo.toml", "go.mod", "LICENSE", "LICENSE.txt", "LICENSE.md",
+    "NOTICE", "NOTICE.txt", "NOTICE.md",
+})
+_RECOGNIZED_LANGUAGES = frozenset({
+    "Python", "JavaScript", "TypeScript", "Go", "Rust", "Java",
+    "Shell", "C", "C++", "C#", "Ruby", "PHP", "Kotlin", "Swift",
+})
+_PILOT_STEPS = (
+    "Подтвердить источник и закрепить точный commit SHA.",
+    "Проверить текст LICENSE и NOTICE и условия использования.",
+    "Изучить применимые security advisories и зависимости.",
+    "Проверить совместимость с целевым проектом в изолированной среде.",
+    "Получить разрешение владельца до установки или интеграции.",
+)
+
+
+def _root_metadata(source, canonical: str, sha: str) -> dict:
+    """Read pinned root filename metadata only; never download its code."""
+    try:
+        entries = source.get(f"/repos/{canonical}/contents?ref={sha}")
+    except SourceUnavailable as exc:
+        if str(exc) in ("github_not_found", "github_forbidden_or_limited"):
+            return {"coverage": "NOT_AVAILABLE", "entry_count": 0, "markers": []}
+        raise
+    if type(entries) is not list:
+        raise SourceUnavailable("root_structure_invalid")
+    if len(entries) > 512:
+        return {"coverage": "PARTIAL", "entry_count": 0, "markers": []}
+    markers = set()
+    for item in entries:
+        if type(item) is not dict or type(item.get("name")) is not str:
+            raise SourceUnavailable("root_structure_invalid")
+        if item.get("type") == "file" and item["name"] in _ROOT_MARKERS:
+            markers.add(item["name"])
+    return {
+        "coverage": "OBSERVED_PINNED_ROOT",
+        "entry_count": len(entries),
+        "markers": sorted(markers),
+    }
+
+
 def radar_snapshot(source_repo: str, target_repo: str, *, client=None,
                    now: datetime | None = None) -> dict:
     """Observed immutable GitHub source and declared policy hints; not approval."""
@@ -444,6 +489,9 @@ def radar_snapshot(source_repo: str, target_repo: str, *, client=None,
     encoded_branch = urllib.parse.quote(branch, safe="")
     branch_obj = _obj(source.get(f"/repos/{canonical}/branches/{encoded_branch}"))
     sha = _safe_sha(_obj(branch_obj.get("commit")).get("sha"))
+    root_meta = _root_metadata(source, canonical, sha)
+    language = raw.get("language")
+    language = language if type(language) is str and language in _RECOGNIZED_LANGUAGES else "UNKNOWN"
     licence = "UNKNOWN"
     license_digest = None
     try:
@@ -498,7 +546,16 @@ def radar_snapshot(source_repo: str, target_repo: str, *, client=None,
         "license_spdx": licence, "advisory_signal": advisories,
         "compatibility_signal": "UNKNOWN",
     }
+    # The upstream default branch can advance during metadata retrieval.
+    # Refuse to combine observations if its current SHA changed.
+    final = _obj(source.get(f"/repos/{canonical}/branches/{encoded_branch}"))
+    if _safe_sha(_obj(final.get("commit")).get("sha")) != sha:
+        raise SourceUnavailable("source_commit_moved_during_capture")
     result = assess_radar(metadata, now=_utc(now))
+    result["dominant_language"] = language
+    result["root_metadata"] = root_meta
+    result["pilot_steps"] = list(_PILOT_STEPS)
+    result["release_tag_verified"] = False
     result["license_file_sha256"] = license_digest
     result["notice_file_sha256"] = notice_digest
     result["notice_checked_filename"] = notice_name
