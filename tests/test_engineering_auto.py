@@ -35,6 +35,12 @@ def report(*, statuses=None):
 
 
 class AutoEngineeringTests(unittest.TestCase):
+    def test_auto_lockfile_matches_installed_control_center_layout(self):
+        self.assertEqual(auto.LOCKFILE, Path(
+            "/opt/hermes-control-center/current/control_center/frontend/package-lock.json"
+        ))
+        self.assertEqual(auto.PACKAGES, ("react",))
+
     def test_fixed_four_module_sources_and_no_approval(self):
         calls = []
 
