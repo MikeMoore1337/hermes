@@ -23,6 +23,24 @@ def old_proxy():
 
 
 class CutoverTests(unittest.TestCase):
+    def setUp(self):
+        # Real owner-host deployment runs the offline test suite on a machine
+        # where a protected WSS rollback snapshot can already exist.
+        # Every test must see its own disposable fake pins path, never the
+        # actual production backup at /var/lib/hermes-h454-wss-sidecar.
+        scratch = tempfile.TemporaryDirectory(prefix="h454-stage1-test-pins-")
+        self.addCleanup(scratch.cleanup)
+        isolated = patch.object(m, "PINS_OLD", Path(scratch.name) / "synthetic-pins.json")
+        isolated.start()
+        self.addCleanup(isolated.stop)
+
+    def test_host_pin_fixture_is_not_production_state(self):
+        self.assertNotEqual(
+            m.PINS_OLD,
+            Path("/var/lib/hermes-h454-wss-sidecar/stage1-original-pins.json"),
+        )
+        self.assertFalse(m.PINS_OLD.exists())
+
     def test_execute_required(self):
         with patch.object(m, "cutover") as cutover:
             self.assertEqual(m.main(["cutover", "--release-sha", "a" * 40]), 2)
