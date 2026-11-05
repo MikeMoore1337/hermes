@@ -32,7 +32,8 @@ REPOS = (
 def collect(*, repo: str, source_repo: str | None = None,
             lockfile: Path | None = None,
             runtime: str | None = None, packages: list[str] | None = None,
-            now: datetime | None = None, github_client=None, registry_client=None,\n            max_open_prs: int = 10) -> dict:
+            now: datetime | None = None, github_client=None, registry_client=None,
+            max_open_prs: int = 10) -> dict:
     """Collect independently; never turn partial network success into full GO."""
     if repo not in REPOS:
         raise EngineeringFeedRefused("repo_not_allowlisted")
