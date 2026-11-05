@@ -220,7 +220,7 @@ def _native_command(ecc: Path, home: Path, tool: str, args: list[str]) -> list[s
     if tool not in ("install", "doctor", "uninstall"):
         raise ValueError("Unsupported original ECC entrypoint")
     source = checked_checkout(ecc)
-    if source["sha"] != ECC_SHA:
+    if source["upstream_ecc_sha"] != ECC_SHA:
         raise ValueError("Wrong ECC SHA")
     # Verify no tracked or untracked source modifications (node_modules is ignored).
     status = subprocess.run(["git", "-C", str(ecc), "status", "--porcelain",
@@ -348,7 +348,7 @@ def provision(ecc: Path, base: Path) -> dict:
         final, dirs = inventory(home)
         if set(final) != expected:
             raise ValueError("Original ECC doctor introduced unreviewed files")
-        _ensure_original_store_is_only_cache(home) if False else None
+        # The install_state projection must be removed by original uninstall.
         # During installation install_state contains the current target; only
         # retire after removing that projection using the original uninstaller.
         record.update({"files": final, "dirs": dirs, "phase": "READY"})
@@ -362,12 +362,22 @@ def inspect(home: Path) -> dict:
     home, rec = _verify_home(home)
     with exclusive_lock(home):
         actual, dirs = inventory(home)
-        unexpected = sorted(set(actual) - (
+        allowed = (
             set(rec["files"]) if rec["phase"] != "PREPARING"
-            else set(rec["planned"]) | {CANONICAL_STATE, KNOWN_RESIDUAL}))
-        return {"status": "PASS_INVENTORY" if not unexpected else "BLOCKED_UNEXPECTED",
+            else set(rec["planned"]) | {CANONICAL_STATE, KNOWN_RESIDUAL})
+        unexpected = sorted(set(actual) - allowed)
+        modified = sorted(k for k in actual if k in rec["files"]
+                          and actual[k] != rec["files"][k])
+        missing = sorted(set(rec["files"]) - set(actual)) if rec["phase"] == "READY" else []
+        unexpected_dirs = sorted(set(dirs) - (
+            set(rec["dirs"]) | _allowed_dirs(set(rec["planned"])
+                | {CANONICAL_STATE, KNOWN_RESIDUAL})))
+        safe = not (unexpected or modified or missing or unexpected_dirs)
+        return {"status": "PASS_INVENTORY" if safe else "BLOCKED_UNSAFE",
                 "home": str(home), "phase": rec["phase"],
                 "file_count": len(actual), "unexpected": unexpected,
+                "modified": modified, "missing": missing,
+                "unexpected_dirs": unexpected_dirs,
                 "ecc_sha": rec["ecc_sha"], "dir_count": len(dirs)}
 
 
