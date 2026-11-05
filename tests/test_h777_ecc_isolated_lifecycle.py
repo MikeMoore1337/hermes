@@ -209,6 +209,7 @@ class TestManagedLifecycleSynthetic(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "synthetic crash"):
             self.retire(home)
         self.assertEqual(managed.inspect(home)["phase"], "RETIRING")
+        self.assertEqual(managed.inspect(home)["status"], "INCOMPLETE_LIFECYCLE")
         self.assertTrue(home.is_dir())
         self.assertTrue(self.retire(home)["home_removed"])
 
@@ -221,6 +222,18 @@ class TestManagedLifecycleSynthetic(unittest.TestCase):
         with sqlite3.connect(home / managed.KNOWN_RESIDUAL) as conn:
             self.assertEqual(conn.execute("SELECT secret FROM sessions").fetchone(),
                              ("KEEP_ME",))
+
+    def test_group_readable_marker_rejected_before_retirement(self):
+        home = self.create()
+        marker = home / managed.MARKER
+        marker.chmod(0o644)
+        with self.assertRaisesRegex(ValueError, "Unsafe H777 ownership marker"):
+            managed._verify_home(home)
+        with self.assertRaisesRegex(ValueError, "Unsafe H777 ownership marker"):
+            self.retire(home)
+        self.assertTrue((home / managed.KNOWN_RESIDUAL).exists())
+        marker.chmod(0o600)
+        self.assertTrue(self.retire(home)["home_removed"])
 
     def test_forged_marker_cannot_delete_another_generated_directory(self):
         home = self.create()
