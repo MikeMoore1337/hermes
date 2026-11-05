@@ -26,7 +26,7 @@ REPOSITORY = "MikeMoore1337/hermes"
 UPSTREAM = "NousResearch/hermes-agent"
 # The same public lockfile shipped in the pinned Hermes owner checkout.
 # This is NOT the user's original Windows repository or a private registry.
-LOCKFILE = Path("/opt/hermes-agent-owner/control_center/frontend/package-lock.json")
+LOCKFILE = Path("/opt/hermes-control-center/current/control_center/frontend/package-lock.json")
 RUNTIME = "22.0.0"  # CI Node 22 toolchain target, not measured host Node.
 PACKAGES = ("react",)
 MAX_AUTO_SECONDS = 38
