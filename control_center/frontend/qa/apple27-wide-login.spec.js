@@ -86,7 +86,7 @@ for(const [width,height] of [[320,770],[393,852],[768,1024],[1440,900],[2048,115
    await expect(page.getByRole("heading",{name:"Вход в систему"})).toBeVisible();
    const m=await bounds(page,{
     header:".orbit-auth-header",brand:".orbit-auth-brand",
-    access:".orbit-auth-header-meta",actions:".orbit-auth-header-actions",
+    actions:".orbit-auth-header-actions",
     theme:".hcc-login-theme",login:".orbit-access-form",route:".orbit-auth-route"
    });
    expect(m.scrollWidth,"No horizontal overflow").toBeLessThanOrEqual(width+1);
@@ -96,9 +96,7 @@ for(const [width,height] of [[320,770],[393,852],[768,1024],[1440,900],[2048,115
    expect(m.theme.y).toBeGreaterThanOrEqual(m.header.y-1);
    expect(m.theme.bottom).toBeLessThanOrEqual(m.header.bottom+1);
    expect(separated(m.brand,m.theme),"Theme overlaps logo").toBe(true);
-   if(m.access.display!=="none"){
-    expect(separated(m.access,m.theme),"Theme overlaps private access label").toBe(true);
-   }
+   await expect(page.locator(".orbit-auth-header-meta, .orbit-access-top, .orbit-auth-footer")).toHaveCount(0);
    await expect(page.getByRole("button",{name:/Тема:/})).toBeVisible();
    await expect(page.getByRole("button",{name:"Войти через GitHub"})).toBeDisabled();
    await testInfo.attach("login-"+theme+"-"+width+".png",{
