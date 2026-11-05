@@ -55,6 +55,13 @@ jobs:
           npm ci --omit=dev --ignore-scripts --no-audit --no-fund --loglevel=error
           test -d node_modules/sql.js
 
+      - name: Diagnose only public tracked checkout status after npm-ci
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -C "$ECC_SOURCE" status --porcelain --untracked-files=normal
+          git -C "$ECC_SOURCE" diff --name-only
+
       - name: Prepare pinned offline container image
         run: |
           set -euo pipefail
