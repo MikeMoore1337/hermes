@@ -1,6 +1,6 @@
 import React, {useState} from "react";
-import {ArrowRight, ArrowUpRight, Check, Cpu, Github, LockKeyhole, Pause,
-  Play, ShieldCheck, Workflow} from "lucide-react";
+import {ArrowRight, ArrowUpRight, Github, LayoutDashboard, LockKeyhole, Pause,
+  Play, ShieldCheck} from "lucide-react";
 import "./orbit-login.css";
 
 /** Visual-only gateway. The server alone owns authentication and authorization. */
@@ -20,7 +20,7 @@ function Step({id,number,name,caption,selected,onClick,Icon}){
  return <button type="button" onClick={onClick} aria-pressed={selected}
    className={"orbit-route-node orbit-node-"+id+(selected?" is-current":"")}>
    <span className="orbit-node-label">{caption}<small>{number}</small></span>
-   <span className="orbit-node-name">{id==="identity"?<Icon size={18} aria-hidden="true"/>:<img src={id==="policy"?"/orbit-policy.svg":"/orbit-workspace.svg"} width="22" height="22" alt="" aria-hidden="true"/>}{name}</span>
+   <span className="orbit-node-name"><Icon className="orbit-route-icon" size={22} strokeWidth={2.2} aria-hidden="true"/>{name}</span>
    <span className="orbit-node-state"><span aria-hidden="true"/> {id==="identity"?"Поставщик входа":id==="policy"?"Проверка на сервере":"После разрешения"}</span>
  </button>;
 }
@@ -34,14 +34,12 @@ export default function OrbitLogin({active=false,unavailable=false,onBack,themeC
   <header className="orbit-auth-header">
    <div className="orbit-auth-brand"><Mark/><div><strong>HERMES</strong><span>COMMAND CENTER</span></div></div>
    <div className="orbit-auth-header-actions">
-    <div className="orbit-auth-header-meta"><span>ORBIT / 2.0</span><i aria-hidden="true"/><span><LockKeyhole size={14} aria-hidden="true"/> ПРИВАТНЫЙ ДОСТУП</span></div>
     {themeControl}
    </div>
   </header>
   <main className="orbit-auth-layout">
    <div className="orbit-auth-left">
     <div className="orbit-auth-intro">
-      <div className="orbit-auth-marker"><span className="orbit-auth-wave" aria-hidden="true"><i/><i/><i/></span> HERMES / ТОЧКА ВХОДА <small>№ 001</small></div>
       <h1>Все системы.<span>Один центр решений.</span></h1>
       <p>Единая точка доступа к проектам, сигналам и инструментам Hermes. Сначала подтверждение личности - затем рабочее пространство.</p>
     </div>
@@ -53,8 +51,6 @@ export default function OrbitLogin({active=false,unavailable=false,onBack,themeC
        </button>
       </div>
       <div className={"orbit-route-stage orbit-selected-"+selected}>
-       <div className="orbit-stage-coord">GATEWAY / ACCESS ROUTE / V2.0</div>
-       <div className="orbit-stage-outline" aria-hidden="true"/>
        <svg className="orbit-route-lines" viewBox="0 0 740 350" preserveAspectRatio="none" aria-hidden="true">
         <path className="orbit-line-base" d="M0 173H255M445 173H492L545 90H740M445 190H488L550 282H740"/>
         <path className="orbit-line-signal" d="M0 173H255M445 173H492L545 90H740M445 190H488L550 282H740"/>
@@ -62,13 +58,11 @@ export default function OrbitLogin({active=false,unavailable=false,onBack,themeC
        </svg>
        <Step id="identity" number="01" name="GitHub" Icon={Github} caption="ID PROVIDER" selected={selected==="identity"} onClick={()=>setSelected("identity")}/>
        <div className="orbit-auth-core" aria-label="Hermes Core - визуальная схема, не состояние реального агента">
-        <div className="orbit-core-top">H / SECURITY GATE</div>
         <div className="orbit-core-symbol"><img src="/orbit-brand.svg" alt="" width="86" height="86" aria-hidden="true"/></div>
-        <strong>HERMES <span>CORE</span></strong><small>ACCESS ROUTER</small>
+        <strong>HERMES <span>CORE</span></strong>
        </div>
        <Step id="policy" number="02" name="Политика доступа" Icon={ShieldCheck} caption="AUTHORIZATION" selected={selected==="policy"} onClick={()=>setSelected("policy")}/>
-       <Step id="workspace" number="03" name="Command Center" Icon={Cpu} caption="WORKSPACE" selected={selected==="workspace"} onClick={()=>setSelected("workspace")}/>
-       <div className="orbit-stage-bottom">SYS 00:01 / SCHEMATIC / NO LIVE LINK</div>
+       <Step id="workspace" number="03" name="Command Center" Icon={LayoutDashboard} caption="WORKSPACE" selected={selected==="workspace"} onClick={()=>setSelected("workspace")}/>
       </div>
       <div className="orbit-route-caption" aria-live="polite">
         <span className="orbit-phase-number">{phase.number}<small> / 03</small></span>
@@ -78,14 +72,11 @@ export default function OrbitLogin({active=false,unavailable=false,onBack,themeC
         </div>
       </div>
     </section>
-    <p className="orbit-auth-schematic-note"><span>СХЕМА ПРОЦЕССА</span><span>СОЕДИНЕНИЯ НЕ ЯВЛЯЮТСЯ ТЕЛЕМЕТРИЕЙ</span></p>
    </div>
    <aside className="orbit-auth-right">
     <div className="orbit-access-form" id="orbit-auth-form" tabIndex={-1}>
-     <div className="orbit-access-top"><span>ACCESS / 001</span><span><LockKeyhole size={12} aria-hidden="true"/> OAUTH</span></div>
      <div className="orbit-access-content">
       <div className="orbit-access-emblem"><img src="/orbit-brand.svg" alt="" width="60" height="60" aria-hidden="true"/></div>
-      <p className="orbit-access-tag"><span/> ЗАЩИЩЁННЫЙ ВХОД</p>
       <h2 className="orbit-access-label">Вход в систему</h2>
       <h3>Добро пожаловать<br/>в Hermes.</h3>
       <p className="orbit-access-lead">Войдите через GitHub, чтобы получить доступ к разрешённым функциям Command Center.</p>
@@ -102,19 +93,16 @@ export default function OrbitLogin({active=false,unavailable=false,onBack,themeC
       </p>
       <div className="orbit-access-steps">
        <div className="orbit-access-steps-head"><span>ПОСЛЕ ВХОДА</span><span>01 → 03</span></div>
-       <div><Github size={17} aria-hidden="true"/><span><strong>Идентификация</strong><small>Подтверждение через GitHub</small></span><b>01</b></div>
-       <div><img src="/orbit-policy.svg" alt="" width="21" height="21" aria-hidden="true"/><span><strong>Проверка доступа</strong><small>Разрешения и сессия на сервере</small></span><b>02</b></div>
-       <div><img src="/orbit-workspace.svg" alt="" width="21" height="21" aria-hidden="true"/><span><strong>Рабочее пространство</strong><small>Только в пределах разрешений</small></span><b>03</b></div>
+       <div><Github className="orbit-step-icon" size={21} strokeWidth={2.2} aria-hidden="true"/><span><strong>Идентификация</strong><small>Подтверждение через GitHub</small></span><b>01</b></div>
+       <div><ShieldCheck className="orbit-step-icon" size={21} strokeWidth={2.2} aria-hidden="true"/><span><strong>Проверка доступа</strong><small>Разрешения и сессия на сервере</small></span><b>02</b></div>
+       <div><LayoutDashboard className="orbit-step-icon" size={21} strokeWidth={2.2} aria-hidden="true"/><span><strong>Рабочее пространство</strong><small>Только в пределах разрешений</small></span><b>03</b></div>
       </div>
       {onBack&&!active&&!unavailable&&<button className="orbit-preview-link" type="button" onClick={onBack}>
        Открыть демонстрацию панели <ArrowUpRight size={16} aria-hidden="true"/>
       </button>}
-      <p className="orbit-access-security"><LockKeyhole size={16} aria-hidden="true"/> Доступ контролируется сервером. Схема маршрута не подтверждает наличие сессии или прав.</p>
      </div>
     </div>
-    <p className="orbit-right-foot">HERMES SECURITY / AUTH GATEWAY <span>V 2.0</span></p>
    </aside>
   </main>
-  <footer className="orbit-auth-footer"><span>HERMES COMMAND CENTER</span><span>ORBIT / AUTH EXPERIENCE</span><span><Check size={13} aria-hidden="true"/> ПРИВАТНАЯ ПАНЕЛЬ</span></footer>
  </div>;
 }
