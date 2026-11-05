@@ -66,6 +66,7 @@ test("Aero Glass navigation and disclosure work by keyboard at 393px",async({pag
  await expect(dock.getByRole("button",{name:"Commander"})).toBeVisible();
  await expect(dock.getByRole("button",{name:"Обзор"})).toHaveAttribute("aria-current","page");
  const disclosure=page.locator(".hcc-topology-details summary");
+ await expect(disclosure.locator("svg.hcc-topology-chevron")).toHaveCount(1);
  await disclosure.focus();await disclosure.press("Enter");
  await expect(page.locator(".orbit-graph")).toBeVisible();
  const more=dock.getByRole("button",{name:"Ещё"});
