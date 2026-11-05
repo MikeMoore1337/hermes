@@ -10,7 +10,7 @@ import unittest
 
 from scripts.h777_ecc_native_uninstall_gate import (
     KNOWN_RESIDUAL, classify, fresh_home, original_command,
-    planned_paths, snapshot, sqlite_semantic_snapshot,
+    planned_paths, seed_foreign_projection, snapshot, sqlite_semantic_snapshot,
 )
 
 
@@ -139,6 +139,20 @@ class TestH777TemporaryHome(unittest.TestCase):
         after = sqlite_semantic_snapshot(database)
         self.assertEqual(after["table_counts"], before["table_counts"])
         self.assertNotEqual(after["table_hashes"], before["table_hashes"])
+
+    def test_foreign_projection_fixture_uses_distinct_install_root(self):
+        database = self.temp / "foreign.db"
+        with sqlite3.connect(database) as db:
+            db.execute("CREATE TABLE install_state (target_id TEXT, target_root TEXT)")
+            db.execute("INSERT INTO install_state VALUES (?, ?)",
+                       ("hermes", "/test-home/.hermes"))
+        seed_foreign_projection(database)
+        with sqlite3.connect(database) as db:
+            self.assertEqual(db.execute(
+                "SELECT target_id,target_root FROM install_state").fetchall(),
+                [("hermes", "/unrelated-h777-owner/.hermes")])
+        with self.assertRaisesRegex(AssertionError, "Unexpected original"):
+            seed_foreign_projection(database)
 
     def test_sqlite_snapshot_refuses_symlink_and_invalid_database(self):
         owner = self.temp / "owner.db"
