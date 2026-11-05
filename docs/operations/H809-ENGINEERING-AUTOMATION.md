@@ -11,7 +11,7 @@
 - ReleaseGuard: текущий main Hermes, exact SHA и фактические GitHub CI.
 - MergeControl: ограниченная выборка открытых PR, head/base SHA и потенциальные пересечения файлов. Не доказательство реального Git-conflict.
 - OpenSource Radar: фиксированный публичный upstream NousResearch/hermes-agent, source SHA, LICENSE/NOTICE, root metadata и публичные advisory signals, без скачивания исходного кода и установки.
-- DepPilot: утверждённый публичный lockfile `control_center/frontend/package-lock.json` из уже доставленного checkout; пакет react. Node.js 22 - целевая версия CI toolchain, а не проверенная версия установленного Node на VPS. Совместимость не предполагается без доказательств.
+- DepPilot: утверждённый публичный lockfile `control_center/frontend/package-lock.json` из уже установленного выпуска Control Center (`/opt/hermes-control-center/current/control_center/frontend/package-lock.json`); пакет react. Node.js 22 - целевая версия CI toolchain, а не проверенная версия установленного Node на VPS. Совместимость не предполагается без доказательств.
 
 Недоступные сведения обозначаются NOT_AVAILABLE/INCONCLUSIVE. Ошибки источника, включая ограничения GitHub и неизвестные данные, **не** превращаются в GO.
 
