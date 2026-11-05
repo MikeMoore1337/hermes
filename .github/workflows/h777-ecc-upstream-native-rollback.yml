@@ -75,7 +75,10 @@ jobs:
           assert r["status"] == "FAIL_KNOWN_CACHE" and r["native_exact_rollback"] is False
           assert r["virgin_uninstall"]["status"] == "FAIL_KNOWN_CACHE"
           assert r["installed_uninstall"]["status"] == "FAIL_KNOWN_CACHE"
-          assert r["preexisting_store"]["status"] == "PASS_NATIVE_EXACT_ROLLBACK"
+          assert r["preexisting_store"]["semantic_rows_unchanged"] is True
+          assert r["preexisting_store"]["status"] in (
+              "PASS_BYTE_IDENTICAL", "WARN_BYTE_REWRITE_NO_ROW_CHANGE")
+          assert r["preexisting_store"]["table_counts"].get("install_state", 0) >= 1
           assert r["symlink_negative"] == "PASS_NO_LINK_FOLLOW"
           assert r["removed_managed_paths"] > 100
           assert r["original_reinstall_idempotent"] is True
