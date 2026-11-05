@@ -1,5 +1,5 @@
 import React,{useState} from "react";
-import {ArrowUpRight,ChevronRight,LockKeyhole,Pause,Play,ShieldCheck,Activity,Search,GitBranch,Monitor,Inbox,Gauge,Database,Info,RefreshCw} from "lucide-react";
+import {ArrowUpRight,ChevronRight,LockKeyhole,Pause,Play,ShieldCheck,Activity,Search,GitBranch,Monitor,Inbox,Gauge,Database,Info,RefreshCw,AlertTriangle} from "lucide-react";
 import {statuses,counts} from "./health.js";
 import "./orbit-operator.css";
 
@@ -77,18 +77,17 @@ export default function OrbitOverview({snapshot,error,onView,onRefresh,busy,Regi
   <section className="hcc-kpis" aria-label="Общие показатели">
    <div className="hcc-kpi"><div className="hcc-kpi-label">Источник данных <Database size={16} aria-hidden="true"/></div>
     <div className="hcc-kpi-value text">{snapshot?"Защищённый снимок":"—"}</div>
-    <div className="hcc-kpi-note">{snapshot?<ClockLabel value={snapshot.generated_at}/>:error||"Ожидает защищённого снимка"}</div></div>
+    <div className="hcc-kpi-note" role={error?"alert":undefined}>{snapshot?<ClockLabel value={snapshot.generated_at}/>:error||"Ожидает защищённого снимка"}</div></div>
    <div className="hcc-kpi"><div className="hcc-kpi-label">Активные единицы <Activity size={16} aria-hidden="true"/></div>
     <div className="hcc-kpi-value">{snapshot?stats.active:"—"}</div>
     <div className="hcc-kpi-note">{snapshot?stats.total+" единиц в снимке":"Нет подтверждённых данных"}</div></div>
-   <div className="hcc-kpi"><div className="hcc-kpi-label">Требует проверки <ShieldCheck size={16} aria-hidden="true"/></div>
+   <div className="hcc-kpi"><div className="hcc-kpi-label">Требует проверки <AlertTriangle size={16} aria-hidden="true"/></div>
     <div className="hcc-kpi-value">{snapshot?stats.attention:"—"}</div>
     <div className="hcc-kpi-note">{snapshot?"По текущему снимку":"Без данных оценка невозможна"}</div></div>
    <div className="hcc-kpi"><div className="hcc-kpi-label">Доступ <LockKeyhole size={16} aria-hidden="true"/></div>
     <div className="hcc-kpi-value text">Только чтение</div>
     <div className="hcc-kpi-note">Команды не разрешены</div></div>
   </section>
-  {error&&<div className="orbit-alert" role="alert">{error}</div>}
   <div className="hcc-grid">
    <section className="hcc-panel" aria-labelledby="hcc-attention-title">
     <header className="hcc-panel-head"><div><h2 id="hcc-attention-title">Требует внимания</h2><p>Проверенные сигналы и задачи для разбора</p></div>
