@@ -129,10 +129,10 @@ def _parse_lock(name: str, raw: bytes) -> tuple[str, dict[str, set[str]]]:
     except (ValueError, TypeError, KeyError, UnicodeError, tomllib.TOMLDecodeError, RecursionError):
         raise DepPilotRefused("lockfile_invalid") from None
     inventory: dict[str, set[str]] = {}
-    for name, version in parsed:
+    for package_name, version in parsed:
         if type(version) is not str or not 1 <= len(version) <= 80:
             raise DepPilotRefused("lockfile_invalid")
-        inventory.setdefault(name, set()).add(version)
+        inventory.setdefault(package_name, set()).add(version)
     return LOCKS[name], inventory
 
 
