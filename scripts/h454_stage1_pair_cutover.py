@@ -303,7 +303,12 @@ def restore(original_pins, old_relay, old_proxy, new_relay_id, new_proxy_id, cou
     """Only remove identified task-owned candidates; never restore stale SQLite."""
     current_proxy = inspect("container", PROXY, optional=True)
     if current_proxy and current_proxy["Id"] != old_proxy["Id"]:
-        labels = current_proxy["Config"].get("Labels") or {}
+        require(new_proxy_id and current_proxy.get("Id") == new_proxy_id
+                and current_proxy.get("Image") == LEGACY_IMAGE,
+                "FOREIGN_SIDE_CAR")
+        require(isinstance(original_pins.get("tls_directory"), str),
+                "FOREIGN_SIDE_CAR")
+        labels = (current_proxy.get("Config") or {}).get("Labels") or {}
         old_labels = old_proxy["Config"].get("Labels") or {}
         host = current_proxy.get("HostConfig") or {}
         expected_mounts = {
@@ -329,6 +334,9 @@ def restore(original_pins, old_relay, old_proxy, new_relay_id, new_proxy_id, cou
         docker("rm", "-f", new_proxy_id)
     current_relay = inspect("container", legacy.NAME, optional=True)
     if current_relay and current_relay["Id"] != old_relay["Id"]:
+        require(new_relay_id and current_relay.get("Id") == new_relay_id
+                and current_relay.get("Image") == FORK_IMAGE,
+                "FOREIGN_RELAY")
         host = current_relay.get("HostConfig") or {}
         mounts = current_relay.get("Mounts") or []
         require(new_relay_id and current_relay["Id"] == new_relay_id
