@@ -35,6 +35,15 @@ def collect(*, repo: str, source_repo: str | None = None,
     """Collect independently; never turn partial network success into full GO."""
     if repo not in REPOS:
         raise EngineeringFeedRefused("repo_not_allowlisted")
+    if ((lockfile is None and (runtime is not None or packages))
+            or (lockfile is not None and (runtime is None or not packages))):
+        raise EngineeringFeedRefused("lockfile_options_missing")
+    if source_repo is not None:
+        from qa_advisor.opensource_radar import _repo as validate_slug
+        try:
+            validate_slug(source_repo)
+        except ValueError:
+            raise EngineeringFeedRefused("source_repo_invalid") from None
     instant = now if now is not None else datetime.now(UTC)
     if type(instant) is not datetime or instant.tzinfo is None:
         raise EngineeringFeedRefused("clock_invalid")
