@@ -14,10 +14,12 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import shutil
+import sqlite3
 import stat
 import subprocess
 import sys
 import tempfile
+from urllib.parse import quote
 
 ECC_SHA = "b38be6a7f6350964d59328b52f0624e1d1d552d1"
 NODE_IMAGE = (
@@ -44,6 +46,28 @@ def snapshot(root: Path) -> dict[str, str]:
         elif not stat.S_ISDIR(info.st_mode):
             raise ValueError("Unexpected special file in synthetic HOME")
     return result
+
+
+def sqlite_semantic_snapshot(database: Path) -> dict:
+    """Hash actual SQLite rows, without exporting private values or writing DB."""
+    if database.is_symlink() or not database.is_file():
+        raise ValueError("Expected regular SQLite database without symlinks")
+    uri = "file:" + quote(str(database), safe="/") + "?mode=ro&immutable=1"
+    with sqlite3.connect(uri, uri=True) as db:
+        if db.execute("PRAGMA quick_check").fetchone() != ("ok",):
+            raise ValueError("Preexisting SQLite integrity failed")
+        names = sorted(row[0] for row in db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"))
+        if "install_state" not in names:
+            raise ValueError("Expected canonical ECC install-state schema missing")
+        counts = {}
+        fingerprints = {}
+        for name in names:
+            quoted = '"' + name.replace('"', '""') + '"'
+            rows = sorted(repr(tuple(row)) for row in db.execute("SELECT * FROM " + quoted))
+            counts[name] = len(rows)
+            fingerprints[name] = sha("\n".join(rows).encode("utf-8"))
+    return {"table_counts": counts, "table_hashes": fingerprints}
 
 
 def classify(before: dict[str, str], after: dict[str, str]) -> dict:
@@ -211,13 +235,26 @@ def run(ecc: Path, out: Path, expectation: str) -> int:
             database.parent.mkdir(mode=0o700, parents=True)
             shutil.copyfile(home / KNOWN_RESIDUAL, database)
             other_before = snapshot(other)
+            semantic_before = sqlite_semantic_snapshot(database)
             run_original(report, "uninstall-with-preexisting-store", ecc, other,
                          "/usr/local/bin/node",
                          ["scripts/uninstall.js", "--target", "hermes", "--json"])
             other_diff = classify(other_before, snapshot(other))
-            report["preexisting_store"] = other_diff
-            if other_diff["status"] != "PASS_NATIVE_EXACT_ROLLBACK":
-                raise AssertionError("Uninstall mutated preexisting cross-scope database")
+            semantic_after = sqlite_semantic_snapshot(database)
+            semantically_preserved = semantic_before == semantic_after
+            report["preexisting_store"] = {
+                "status": (
+                    "PASS_BYTE_IDENTICAL" if other_diff["status"] == "PASS_NATIVE_EXACT_ROLLBACK"
+                    else "WARN_BYTE_REWRITE_NO_ROW_CHANGE" if semantically_preserved
+                    else "FAIL_OWNER_SQLITE_ROWS_CHANGED"),
+                "bytes_unchanged": other_diff["status"] == "PASS_NATIVE_EXACT_ROLLBACK",
+                "semantic_rows_unchanged": semantically_preserved,
+                "table_counts": semantic_after["table_counts"],
+                "previous_table_hashes": semantic_before["table_hashes"],
+                "result_table_hashes": semantic_after["table_hashes"],
+            }
+            if not semantically_preserved:
+                raise AssertionError("Uninstall mutated preexisting cross-scope SQLite rows")
 
             run_original(report, "original-uninstall-dry-run", ecc, home,
                          "/usr/local/bin/node",
@@ -262,7 +299,8 @@ def run(ecc: Path, out: Path, expectation: str) -> int:
 
             report["native_exact_rollback"] = (
                 virgin["status"] == installed_diff["status"]
-                == "PASS_NATIVE_EXACT_ROLLBACK")
+                == "PASS_NATIVE_EXACT_ROLLBACK"
+                and report["preexisting_store"]["bytes_unchanged"])
             report["status"] = (
                 "PASS_NATIVE_EXACT_ROLLBACK"
                 if report["native_exact_rollback"] else "FAIL_KNOWN_CACHE")
