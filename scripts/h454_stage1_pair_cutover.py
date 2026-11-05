@@ -305,7 +305,7 @@ def restore(original_pins, old_relay, old_proxy, new_relay_id, new_proxy_id, cou
     if current_proxy and current_proxy["Id"] != old_proxy["Id"]:
         labels = current_proxy["Config"].get("Labels") or {}
         old_labels = old_proxy["Config"].get("Labels") or {}
-        host = current_proxy["HostConfig"]
+        host = current_proxy.get("HostConfig") or {}
         expected_mounts = {
             "/run/h454-wss/proxy.mjs": str(PIN_ROOT / "proxy.mjs"),
             "/run/h454-wss/relay.key": str(Path(original_pins["tls_directory"]) / "relay.key"),
@@ -329,7 +329,7 @@ def restore(original_pins, old_relay, old_proxy, new_relay_id, new_proxy_id, cou
         docker("rm", "-f", new_proxy_id)
     current_relay = inspect("container", legacy.NAME, optional=True)
     if current_relay and current_relay["Id"] != old_relay["Id"]:
-        host = current_relay["HostConfig"]
+        host = current_relay.get("HostConfig") or {}
         mounts = current_relay.get("Mounts") or []
         require(new_relay_id and current_relay["Id"] == new_relay_id
                 and current_relay["Image"] == FORK_IMAGE
