@@ -30,7 +30,7 @@ WORKFLOW_IDS = {
 }
 SHA = re.compile(r"[0-9a-f]{40}\Z")
 DEPENDENCY = re.compile(r"(?im)^Depends-on:[ \t]*#([1-9][0-9]{0,17})[ \t]*$")
-URL_PATH = re.compile(r"^/repos/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+/(?:pulls|branches|actions/runs|license|releases/latest|security-advisories)(?:[/?][A-Za-z0-9._~%/&=?#-]+)?\Z")
+URL_PATH = re.compile(r"^/repos/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+(?:/(?:pulls|branches|actions/runs|license|releases/latest|security-advisories)(?:[/?][A-Za-z0-9._~%/&=?#-]+)?)?\Z")
 
 
 class SourceUnavailable(ValueError):
@@ -97,7 +97,7 @@ class PublicGithub:
     def get(self, path: str):
         if (type(path) is not str or len(path) > 300 or not URL_PATH.fullmatch(path)
                 or ".." in path or "//" in path or "\\" in path
-                or "%2e" in path.lower() or "%2f" in path.lower()):
+                or "%2e" in path.lower()):
             raise SourceUnavailable("endpoint_not_allowlisted")
         if self.calls >= MAX_REQUESTS:
             raise SourceUnavailable("request_budget_exceeded")
