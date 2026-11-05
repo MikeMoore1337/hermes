@@ -30,7 +30,21 @@ WORKFLOW_IDS = {
 }
 SHA = re.compile(r"[0-9a-f]{40}\Z")
 DEPENDENCY = re.compile(r"(?im)^Depends-on:[ \t]*#([1-9][0-9]{0,17})[ \t]*$")
-URL_PATH = re.compile(r"^/repos/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+(?:/(?:pulls|branches|actions/runs|license|releases/latest|security-advisories)(?:[/?][A-Za-z0-9._~%/&=?#-]+)?)?\Z")
+_ROOT = r"/repos/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+"
+_SUFFIX = (
+    r"(?:"
+    r"|/pulls/[1-9][0-9]{0,17}"
+    r"|/pulls/[1-9][0-9]{0,17}/reviews\?per_page=100"
+    r"|/pulls/[1-9][0-9]{0,17}/files\?per_page=100&page=[12]"
+    r"|/pulls\?state=open&per_page=10&page=[12]"
+    r"|/branches/[A-Za-z0-9._~%-]+"
+    r"|/actions/runs\?head_sha=[0-9a-f]{40}&per_page=100"
+    r"|/license\?ref=[0-9a-f]{40}"
+    r"|/releases/latest"
+    r"|/security-advisories\?per_page=5"
+    r")"
+)
+URL_PATH = re.compile("^" + _ROOT + _SUFFIX + r"\Z")
 
 
 class SourceUnavailable(ValueError):
