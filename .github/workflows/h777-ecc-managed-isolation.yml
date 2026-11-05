@@ -1,0 +1,170 @@
+name: H-777 ECC managed isolated lifecycle acceptance
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/h777-ecc-managed-isolation.yml
+      - scripts/h777_ecc_isolated_lifecycle.py
+      - scripts/h777_ecc_native_uninstall_gate.py
+      - tests/test_h777_ecc_isolated_lifecycle.py
+      - docs/operations/h777-ecc-managed-isolation.md
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: h777-owned-ecc-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  managed-original-ecc:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout own source without credential retention
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Offline unit and negative guard tests
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_h777_ecc_isolated_lifecycle.py' -v
+          python3 -m unittest discover -s tests -p 'test_h777_ecc_native_uninstall_gate.py' -v
+
+      - name: Pin reviewed original ECC checkout
+        env:
+          ECC_SHA: b38be6a7f6350964d59328b52f0624e1d1d552d1
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          test "$RUNNER_OS" = Linux
+          test "$(id -u)" != 0
+          echo "ECC_SOURCE=$RUNNER_TEMP/ecc-h777-original" >> "$GITHUB_ENV"
+          git -c core.hooksPath=/dev/null clone --filter=blob:none --no-checkout             https://github.com/affaan-m/ECC.git "$RUNNER_TEMP/ecc-h777-original"
+          git -C "$RUNNER_TEMP/ecc-h777-original"             -c core.hooksPath=/dev/null checkout --detach "$ECC_SHA"
+          test "$(git -C "$RUNNER_TEMP/ecc-h777-original" rev-parse HEAD)" = "$ECC_SHA"
+          test -z "$(git -C "$RUNNER_TEMP/ecc-h777-original" status --porcelain --untracked-files=normal)"
+
+      - name: Prepare original dependency lockfile without lifecycle scripts
+        run: |
+          set -euo pipefail
+          cd "$ECC_SOURCE"
+          npm ci --omit=dev --ignore-scripts --no-audit --no-fund --loglevel=error
+          test -d node_modules/sql.js
+
+      - name: Prepare pinned offline container image
+        run: |
+          set -euo pipefail
+          docker pull node:22.16.0-bookworm-slim@sha256:048ed02c5fd52e86fda6fbd2f6a76cf0d4492fd6c6fee9e2c463ed5108da0e34
+
+      - name: Real original ECC provision and owner-scoped retirement
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import subprocess
+          import sys
+          import tempfile
+          from scripts.h777_ecc_isolated_lifecycle import KNOWN_RESIDUAL
+
+          root = Path(tempfile.mkdtemp(prefix="h777-runner-", dir=os.environ["RUNNER_TEMP"]))
+          root.chmod(0o700)
+          base = root / "isolated-homes"
+          base.mkdir(mode=0o700)
+          foreign = root / "foreign-owner.txt"
+          foreign.write_text("H777_UNRELATED_OWNER_CONTENT
+", encoding="utf-8")
+          foreign_digest = hashlib.sha256(foreign.read_bytes()).hexdigest()
+          ecc = Path(os.environ["ECC_SOURCE"])
+
+          def invoke(*args):
+              command = [sys.executable, "-m", "scripts.h777_ecc_isolated_lifecycle", *map(str, args)]
+              run = subprocess.run(command, capture_output=True, text=True,
+                                   timeout=280, check=False)
+              if run.returncode:
+                  raise AssertionError("H777 command failed: " +
+                                       run.stderr[:300])
+              return json.loads(run.stdout)
+
+          staged = invoke("provision", "--ecc-root", ecc, "--base", base)
+          assert staged["status"] == "PASS_ISOLATED_PROVISION", staged
+          assert staged["managed_count"] > 100, staged
+          home = Path(staged["home"])
+          assert home.parent == base and home.is_dir()
+          checked = invoke("inspect", "--home", home)
+          assert checked["status"] == "PASS_INVENTORY", checked
+          assert checked["phase"] == "READY"
+          assert (home / KNOWN_RESIDUAL).is_file()
+
+          # A new synthetic unrelated owner file must prevent cleanup.
+          foreign_inside = home / "owner-extra.txt"
+          foreign_inside.write_text("H777_UNRELATED_SYNTHETIC
+", encoding="utf-8")
+          denied = subprocess.run(
+              [sys.executable, "-m", "scripts.h777_ecc_isolated_lifecycle",
+               "retire", "--ecc-root", str(ecc), "--home", str(home)],
+              capture_output=True, text=True, check=False, timeout=30)
+          assert denied.returncode != 0
+          assert foreign_inside.read_text(encoding="utf-8") == "H777_UNRELATED_SYNTHETIC
+"
+          foreign_inside.unlink()
+
+          finished = invoke("retire", "--ecc-root", ecc, "--home", home)
+          assert finished["status"] == "PASS_ISOLATED_ROLLBACK", finished
+          assert finished["home_removed"] is True and not home.exists()
+          assert finished["native_exact_rollback"] is False
+          assert finished["native_residual_before_cleanup"] == [KNOWN_RESIDUAL]
+          assert finished["upstream_native_bug"] is True
+          assert foreign.exists()
+          assert hashlib.sha256(foreign.read_bytes()).hexdigest() == foreign_digest
+          assert list(base.iterdir()) == []
+
+          receipt = {
+              "schema": "h777-managed-original-ecc-acceptance-v1",
+              "ecc_sha": staged["ecc_sha"],
+              "managed_count": staged["managed_count"],
+              "provision": staged["status"],
+              "inspect": checked["status"],
+              "owner_file_denial": "PASS",
+              "owner_file_preserved": True,
+              "isolated_rollback": finished["status"],
+              "isolated_home_removed": finished["home_removed"],
+              "native_exact_rollback": finished["native_exact_rollback"],
+              "native_residual_before_isolated_cleanup": finished["native_residual_before_cleanup"],
+              "upstream_bug": "FAIL_KNOWN_CACHE",
+              "resident_activation": "NOT_RUN",
+              "production_deploy": "NOT_RUN",
+          }
+          Path("h777-managed-isolation-receipt.json").write_text(
+              json.dumps(receipt, sort_keys=True, indent=2) + "
+",
+              encoding="utf-8")
+          print("H777_ISOLATED_ORIGINAL_ECC_INSTALL=PASS")
+          print("H777_ISOLATED_MANAGED_ROLLBACK=PASS")
+          print("H777_OWNER_STATE_DENY=PASS")
+          print("H777_NATIVE_UPSTREAM_EXACT_ROLLBACK=FAIL_KNOWN_CACHE")
+          print("H777_RUNTIME_ACTIVATION=NO_GO")
+          PY
+          {
+            echo "### H777 managed original ECC isolation"
+            echo ""
+            echo "Isolated original install / managed retirement: **PASS**"
+            echo "Upstream native uninstall by itself: **FAIL_KNOWN_CACHE**"
+            echo "Resident Hermes / production: **NOT RUN**"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish sanitized lifecycle receipt
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: h777-owned-original-ecc-lifecycle
+          path: h777-managed-isolation-receipt.json
+          if-no-files-found: ignore
+          retention-days: 7
