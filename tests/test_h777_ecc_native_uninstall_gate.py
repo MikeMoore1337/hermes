@@ -4,12 +4,13 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import sqlite3
 import tempfile
 import unittest
 
 from scripts.h777_ecc_native_uninstall_gate import (
     KNOWN_RESIDUAL, classify, fresh_home, original_command,
-    planned_paths, snapshot,
+    planned_paths, snapshot, sqlite_semantic_snapshot,
 )
 
 
@@ -124,6 +125,30 @@ class TestH777TemporaryHome(unittest.TestCase):
         fake.symlink_to(real, target_is_directory=True)
         with self.assertRaisesRegex(ValueError, "Unsafe disposable"):
             original_command(ecc, fake, "/usr/local/bin/node", [])
+
+    def test_readonly_sqlite_table_hash_detects_semantic_changes(self):
+        database = self.temp / "legitimate.db"
+        with sqlite3.connect(database) as db:
+            db.execute("CREATE TABLE install_state (id TEXT, value TEXT)")
+            db.execute("INSERT INTO install_state VALUES ('other-home', 'keep-me')")
+        before = sqlite_semantic_snapshot(database)
+        self.assertEqual(before["table_counts"]["install_state"], 1)
+        self.assertEqual(before, sqlite_semantic_snapshot(database))
+        with sqlite3.connect(database) as db:
+            db.execute("UPDATE install_state SET value='changed'")
+        after = sqlite_semantic_snapshot(database)
+        self.assertEqual(after["table_counts"], before["table_counts"])
+        self.assertNotEqual(after["table_hashes"], before["table_hashes"])
+
+    def test_sqlite_snapshot_refuses_symlink_and_invalid_database(self):
+        owner = self.temp / "owner.db"
+        owner.write_bytes(b"PRIVATE_OWNER_NO_SQLITE")
+        link = self.temp / "link.db"
+        link.symlink_to(owner)
+        with self.assertRaises(ValueError):
+            sqlite_semantic_snapshot(link)
+        with self.assertRaises(sqlite3.DatabaseError):
+            sqlite_semantic_snapshot(owner)
 
     def test_no_test_home_may_overwrite_existing_files(self):
         home = fresh_home(self.temp, "never-installed")
