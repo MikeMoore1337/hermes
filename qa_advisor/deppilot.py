@@ -5,6 +5,8 @@ Candidate versions/engine ranges are externally supplied and UNVERIFIED.
 """
 from __future__ import annotations
 
+from qa_advisor.no_follow import open_nofollow
+
 import argparse
 from datetime import UTC, datetime, timedelta
 import hashlib
@@ -75,7 +77,7 @@ def _utc(value: Any) -> datetime:
 
 def _file(path: Path, *, limit: int) -> bytes:
     try:
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+        fd = open_nofollow(path)
         try:
             info = os.fstat(fd)
             if not stat.S_ISREG(info.st_mode) or not 2 <= info.st_size <= limit:
