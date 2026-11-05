@@ -1,0 +1,156 @@
+/* #811: targeted Aero Glass 27 polish. Reuse existing light/dark tokens only. */
+/* The previous diagnostic top strip and footer were removed in React. */
+.theme-orbit .orbit-app-layout{
+ height:calc(100dvh - 56px);
+}
+.theme-orbit .orbit-widget-module{
+ min-width:0;display:block;
+}
+.theme-orbit .orbit-widget-host{
+ display:block;min-width:0;
+}
+
+/* Search results must not inherit native Chromium grey button materials. */
+.theme-orbit .orbit-header-search-results{
+ scrollbar-width:thin;
+ scrollbar-color:var(--orbit-muted) transparent;
+}
+.theme-orbit .orbit-header-search-results button{
+ appearance:none;
+ border:1px solid transparent;
+ background:transparent;
+ color:var(--orbit-text);
+ font:560 13px var(--orbit-font-ui);
+}
+.theme-orbit .orbit-header-search-results button svg{
+ color:var(--orbit-subtext);flex:none;
+}
+.theme-orbit .orbit-header-search-results button:hover,
+.theme-orbit .orbit-header-search-results button:focus-visible{
+ background:var(--a27-nav-active);
+ border-color:var(--a27-border);
+}
+.theme-orbit .orbit-header-search-results button:active{
+ background:var(--a27-selected);
+}
+.theme-orbit .orbit-search-close,
+.theme-orbit .orbit-header-info button{color:var(--orbit-text)}
+.theme-orbit .orbit-header-info-actions{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.theme-orbit .orbit-header-info-actions a{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--orbit-accent-strong)}
+
+/* An explicit end-session action is separate from the informational proxy avatar. */
+.theme-orbit .orbit-topbar-tools .orbit-logout-button{
+ display:inline-flex;align-items:center;justify-content:center;gap:8px;
+ min-height:35px;padding:0 12px;
+ border:1px solid var(--a27-border);border-radius:11px;
+ color:var(--orbit-text);background:var(--a27-material);
+ font:650 12px var(--orbit-font-ui);white-space:nowrap;
+}
+.theme-orbit .orbit-topbar-tools .orbit-logout-button:hover{
+ color:var(--orbit-text);background:var(--a27-nav-active);border-color:var(--orbit-border-strong);
+}
+.theme-orbit .orbit-topbar-tools .orbit-logout-button svg{color:var(--orbit-subtext);flex:none}
+
+/* Normalize remaining fixed navy in the Commander context across both themes. */
+.theme-orbit .oc-path{
+ background:var(--orbit-panel-inset);
+ border-color:var(--a27-border);
+ border-radius:12px;
+}
+.theme-orbit .oc-path code{color:var(--orbit-text)}
+.theme-orbit .oc-path button{
+ background:var(--a27-material);
+ border:1px solid var(--a27-border);border-radius:9px;
+ color:var(--orbit-text);
+}
+.theme-orbit .oc-path button:hover{background:var(--a27-nav-active)}
+.theme-orbit .oc-context-facts{
+ background:var(--a27-border);
+ border-color:var(--a27-border);
+ border-radius:12px;overflow:hidden;
+}
+.theme-orbit .oc-context-facts>div{background:var(--a27-surface-2)}
+.theme-orbit .oc-context-facts span,.theme-orbit .oc-path-title{color:var(--orbit-subtext)}
+.theme-orbit .oc-context-facts strong{color:var(--orbit-text)}
+.theme-orbit .oc-check-guide{
+ background:var(--a27-surface-2);
+ border-color:var(--a27-border);border-radius:0 0 13px 13px;
+}
+.theme-orbit .oc-check-guide strong{color:var(--orbit-text)}
+.theme-orbit .oc-check-guide p,.theme-orbit .oc-check-guide>p:last-child{color:var(--orbit-subtext)}
+.theme-orbit .oc-check-guide>div>svg{color:var(--orbit-accent)}
+.theme-orbit .oc-context-head{border-color:var(--a27-border)}
+.theme-orbit .oc-context-head h2{color:var(--orbit-text)}
+.theme-orbit .oc-section-code{color:var(--orbit-accent-strong)}
+.theme-orbit .oc-state{background:var(--a27-material);border-radius:8px}
+.theme-orbit .oc-state-online{color:var(--orbit-good)}
+.theme-orbit .oc-state-offline{color:var(--orbit-danger)}
+.theme-orbit .oc-state-paused,.theme-orbit .oc-state-stale{color:var(--orbit-warning)}
+.theme-orbit .oc-project.selected{box-shadow:none}
+.theme-orbit .oc-project-mark{background:var(--a27-material)}
+.theme-orbit .oc-footer,.theme-orbit .oc-footer a{border-color:var(--a27-border);color:var(--orbit-subtext)}
+.theme-orbit .oc-footer a:hover{color:var(--orbit-accent-strong)}
+
+/* Other module examples: use the same surface palette, not legacy black tiles. */
+.theme-orbit .codex-panel{
+ background:var(--a27-surface);color:var(--orbit-text);
+ border-color:var(--a27-border);border-radius:14px;
+}
+.theme-orbit .codex-panel-title h2,
+.theme-orbit .codex-group-title,
+.theme-orbit .codex-meter-label strong,
+.theme-orbit .codex-history-head strong,
+.theme-orbit .codex-task-jobs li strong,
+.theme-orbit .codex-task-count strong{color:var(--orbit-text)}
+.theme-orbit .codex-message,.theme-orbit .codex-task-count,
+.theme-orbit .codex-chart-wrap,.theme-orbit .codex-track{
+ background:var(--a27-surface-2);color:var(--orbit-text);
+ border-color:var(--a27-border);
+}
+.theme-orbit .codex-task-count{border-radius:10px}
+.theme-orbit .codex-periods button.is-active{background:var(--a27-selected);color:var(--orbit-text)}
+.theme-orbit .codex-reload,.theme-orbit .codex-transitions summary{color:var(--orbit-accent-strong)}
+.theme-orbit .codex-chart-grid{stroke:var(--orbit-muted)}
+.theme-orbit .codex-chart-text{fill:var(--orbit-subtext)}
+
+/* External read-only widget panels keep their own data/permissions, adopt shell materials. */
+.theme-orbit :is(.ai272-panel,.infra294-panel,.quota295-panel){
+ background:var(--a27-surface);
+ border-color:var(--a27-border);color:var(--orbit-text);
+ border-radius:14px;
+}
+.theme-orbit :is(.ai272-metric,.infra294-card,.quota295-card,.quota295-window){
+ background:var(--a27-surface-2);
+ border-color:var(--a27-border);color:var(--orbit-text);
+ border-radius:11px;
+}
+.theme-orbit :is(.ai272-controls select,.ai272-controls button,.infra294-refresh,.infra294-toolbar select,.quota295-reload,.quota295-history select){
+ background:var(--a27-material);border-color:var(--a27-border);
+ color:var(--orbit-text);border-radius:10px;
+}
+.theme-orbit :is(.ai272-track,.infra294-track,.quota295-track){background:var(--orbit-panel-inset)}
+.theme-orbit :is(.infra294-chart svg,.quota295-chart svg){background:var(--a27-surface-2)}
+.theme-orbit :is(.ai272-status,.infra294-state,.quota295-status){border-color:var(--a27-border)}
+.theme-orbit :is(.infra294-online,.quota295-ok){color:var(--orbit-good)}
+.theme-orbit :is(.infra294-stale,.quota295-low){color:var(--orbit-warning)}
+.theme-orbit :is(.infra294-offline,.quota295-exhausted){color:var(--orbit-danger)}
+
+/* Keep window scrollbars in the theme rather than system beige over dark blue. */
+.theme-orbit :is(.orbit-content,.orbit-rail,.orbit-header-search-results,.orbit-widget-host){
+ scrollbar-width:thin;
+ scrollbar-color:var(--orbit-muted) transparent;
+}
+@media(max-width:700px){
+ .theme-orbit .orbit-app-layout{height:auto;min-height:100dvh}
+ .theme-orbit .orbit-topbar-tools .orbit-logout-button{min-height:35px;padding:0 9px;gap:5px}
+}
+@media(max-width:360px){
+ .theme-orbit .orbit-topbar-mobile-identity span{display:none}
+ .theme-orbit .orbit-topbar{padding-left:12px;padding-right:12px}
+ .theme-orbit .orbit-topbar-tools{gap:5px}
+ .theme-orbit .orbit-topbar-tools .orbit-logout-button{font-size:11px;padding:0 7px}
+}
+@media(forced-colors:active){
+ .theme-orbit .orbit-header-search-results button:focus-visible,
+ .theme-orbit .orbit-topbar-tools .orbit-logout-button:focus-visible{outline:2px solid Highlight;outline-offset:2px}
+}
