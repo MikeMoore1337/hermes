@@ -180,7 +180,7 @@ def review(raw: Any, *, now: datetime | None = None) -> dict:
     if len({(row["base_branch"], row["base_sha"]) for row in prs.values()}) > 1:
         reasons.add("multiple_base_refs")
     order = _order(prs) if "dependency_outside_window" not in reasons else []
-    if prs and not order:
+    if prs and not order and "dependency_outside_window" not in reasons:
         review_signals.add("dependency_cycle_or_incomplete")
     overlaps: list[dict] = []
     numbers = sorted(prs)
