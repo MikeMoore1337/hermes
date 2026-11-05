@@ -198,6 +198,7 @@ def review(raw: Any, *, now: datetime | None = None) -> dict:
                     "prs": [one, other],
                     "paths": shared[:MAX_FILES],
                     "classification": "POTENTIAL_OVERLAP_NOT_PROVEN_CONFLICT",
+                    "confidence": "PATH_HEURISTIC_ONLY",
                     "same_base_branch": prs[one]["base_branch"] == prs[other]["base_branch"],
                 })
     if overlaps:
@@ -213,9 +214,21 @@ def review(raw: Any, *, now: datetime | None = None) -> dict:
         "checked_at": checked.isoformat().replace("+00:00", "Z"),
         "reasons": sorted(reasons | review_signals),
         "prs_seen": len(prs),
+        "pr_refs": [
+            {
+                "number": n,
+                "base_branch": prs[n]["base_branch"],
+                "base_sha": prs[n]["base_sha"],
+                "head_sha": prs[n]["head_sha"],
+                "mergeability": prs[n]["mergeable"],
+                "files_complete": prs[n]["files_complete"],
+            }
+            for n in numbers
+        ],
         "overlaps": overlaps,
         "suggested_order": order,
         "pr_urls": [f"https://github.com/{data['repo']}/pull/{n}" for n in numbers],
+        "evidence_urls": [f"https://github.com/{data['repo']}/pull/{n}" for n in numbers],
         "evidence_verified": False,
         "dependency_claims_verified": False,
         "window_exhaustive_verified": False,
