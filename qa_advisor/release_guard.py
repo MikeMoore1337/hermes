@@ -75,7 +75,8 @@ def _check(raw: Any) -> dict:
     _sha(row["head_sha"], "check_sha_invalid")
     state, conclusion = row["status"], row["conclusion"]
     if (type(state) is not str or state not in STATES
-            or (state == "completed" and conclusion not in CONCLUSIONS)
+            or (state == "completed" and (type(conclusion) is not str
+                                           or conclusion not in CONCLUSIONS))
             or (state != "completed" and conclusion is not None)):
         raise ReleaseEvidenceRefused("check_state_invalid")
     return row
