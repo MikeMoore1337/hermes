@@ -24,7 +24,7 @@ function Step({id,number,name,caption,selected,onClick,Icon}){
    <span className="orbit-node-state"><span aria-hidden="true"/> {id==="identity"?"Поставщик входа":id==="policy"?"Проверка на сервере":"После разрешения"}</span>
  </button>;
 }
-export default function OrbitLogin({active=false,unavailable=false,onBack}){
+export default function OrbitLogin({active=false,unavailable=false,onBack,themeControl=null}){
  const [selected,setSelected]=useState("identity");
  const [playing,setPlaying]=useState(true);
  const phase=phases.find(p=>p.id===selected)||phases[0];
@@ -33,7 +33,10 @@ export default function OrbitLogin({active=false,unavailable=false,onBack}){
   <a className="orbit-auth-skip" href="#orbit-auth-form">Перейти к форме входа</a>
   <header className="orbit-auth-header">
    <div className="orbit-auth-brand"><Mark/><div><strong>HERMES</strong><span>COMMAND CENTER</span></div></div>
-   <div className="orbit-auth-header-meta"><span>ORBIT / 2.0</span><i aria-hidden="true"/><span><LockKeyhole size={14} aria-hidden="true"/> ПРИВАТНЫЙ ДОСТУП</span></div>
+   <div className="orbit-auth-header-actions">
+    <div className="orbit-auth-header-meta"><span>ORBIT / 2.0</span><i aria-hidden="true"/><span><LockKeyhole size={14} aria-hidden="true"/> ПРИВАТНЫЙ ДОСТУП</span></div>
+    {themeControl}
+   </div>
   </header>
   <main className="orbit-auth-layout">
    <div className="orbit-auth-left">

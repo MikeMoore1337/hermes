@@ -17,6 +17,7 @@ import "./orbit-operator.css";
 import "./orbit-unified.css";
 import "./apple27.css";
 import "./apple27-fidelity.css";
+import "./apple27-wide-login.css";
 
 const ISSUE33="https://github.com/MikeMoore1337/hermes/issues/33";
 const ISSUE163="https://github.com/MikeMoore1337/hermes/issues/163";
@@ -393,8 +394,8 @@ function OperatorApp({authMode,onLogout,theme,onTheme}){
 }
 
 function LoginPreview({onBack,active=false,unavailable=false,theme,onTheme}){
- return <div className="hcc-login-host"><OrbitLogin onBack={onBack} active={active} unavailable={unavailable}/>
-  <ThemeButton theme={theme} onTheme={onTheme} className="hcc-login-theme"/>
+ return <div className="hcc-login-host"><OrbitLogin onBack={onBack} active={active} unavailable={unavailable}
+   themeControl={<ThemeButton theme={theme} onTheme={onTheme} className="hcc-login-theme"/>}/>
  </div>;
 }
 function serverAuthBootstrap(){
