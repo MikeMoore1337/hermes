@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import signal
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -34,6 +35,10 @@ def report(*, statuses=None):
     }
 
 
+def unlimited_budget(_instant):
+    return nullcontext(True)
+
+
 class AutoEngineeringTests(unittest.TestCase):
     def test_auto_lockfile_matches_installed_control_center_layout(self):
         self.assertEqual(auto.LOCKFILE, Path(
@@ -52,7 +57,7 @@ class AutoEngineeringTests(unittest.TestCase):
         result = auto.refresh(
             now=NOW, collector=collector,
             saver=lambda value: saved.append(value) or "STORED_SANITIZED_ENGINEERING",
-            time_limit=nullcontext,
+            time_limit=nullcontext, budget=unlimited_budget,
             lockfile=Path("/isolated/approved/package-lock.json"),
         )
         self.assertEqual(result, "STORED")
@@ -72,34 +77,113 @@ class AutoEngineeringTests(unittest.TestCase):
         result = auto.refresh(
             now=NOW, collector=lambda **_: state,
             saver=lambda _: "STORED_SANITIZED_ENGINEERING",
-            time_limit=nullcontext,
+            time_limit=nullcontext, budget=unlimited_budget,
         )
         self.assertEqual(result, "PARTIAL")
 
-    def test_auto_45_minute_cadence_saves_only_in_selected_slot(self):
+    def test_durable_budget_enforces_45_minutes_even_after_restart(self):
+        if os.name != "posix":
+            self.skipTest("POSIX-only production lease")
+        calls, writes = [], []
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            directory.chmod(0o700)
+            lease = lambda instant: auto.reserve_budget(instant, directory=directory)
+            for minutes, expected in (
+                (0, "STORED"), (15, "SKIPPED_COOLDOWN"),
+                (30, "SKIPPED_COOLDOWN"), (45, "STORED"),
+            ):
+                result = auto.refresh(
+                    now=NOW + timedelta(minutes=minutes),
+                    collector=lambda **kwargs: calls.append(kwargs) or report(),
+                    saver=lambda r: writes.append(r) or "STORED_SANITIZED_ENGINEERING",
+                    time_limit=nullcontext, budget=lease,
+                    reader_factory=lambda: object(),
+                )
+                self.assertEqual(result, expected)
+            self.assertEqual(len(calls), 2)
+            self.assertEqual(len(writes), 2)
+            self.assertEqual(calls[0]["max_open_prs"], 3)
+            marker = directory / auto.AUTO_BUDGET_FILE
+            self.assertEqual(marker.stat().st_mode & 0o777, 0o600)
+
+    def test_failed_attempt_still_consumes_public_api_budget(self):
+        if os.name != "posix":
+            self.skipTest("POSIX-only production lease")
         calls = []
-        writes = []
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            directory.chmod(0o700)
+            lease = lambda instant: auto.reserve_budget(instant, directory=directory)
+
+            def failed(**kwargs):
+                calls.append(kwargs)
+                raise RuntimeError("synthetic public network failure")
+
+            with self.assertRaisesRegex(RuntimeError, "synthetic"):
+                auto.refresh(now=NOW, collector=failed, time_limit=nullcontext, budget=unlimited_budget,
+                             budget=lease)
+            self.assertEqual(
+                auto.refresh(now=NOW + timedelta(minutes=15), collector=failed,
+                             time_limit=nullcontext, budget=lease),
+                "SKIPPED_COOLDOWN",
+            )
+            self.assertEqual(len(calls), 1)
+
+    def test_invalid_or_unsafe_budget_file_fails_closed(self):
+        if os.name != "posix":
+            self.skipTest("POSIX-only production lease")
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            directory.chmod(0o700)
+            marker = directory / auto.AUTO_BUDGET_FILE
+            marker.write_text("untrusted", encoding="ascii")
+            marker.chmod(0o600)
+            with self.assertRaisesRegex(auto.AutoUnavailable, "engineering_budget_unsafe"):
+                with auto.reserve_budget(NOW, directory=directory):
+                    self.fail("invalid marker must not grant an API request")
+            marker.write_text("1700000000\\n", encoding="ascii")
+            marker.chmod(0o644)
+            with self.assertRaisesRegex(auto.AutoUnavailable, "engineering_budget_unsafe"):
+                with auto.reserve_budget(NOW, directory=directory):
+                    self.fail("loose permissions must never grant an API request")
+
+    def test_concurrent_run_does_not_obtain_budget(self):
+        if os.name != "posix":
+            self.skipTest("POSIX-only production lease")
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            directory.chmod(0o700)
+            marker = directory / auto.AUTO_BUDGET_FILE
+            fd = os.open(marker, os.O_RDWR | os.O_CREAT, 0o600)
+            try:
+                auto.fcntl.flock(fd, auto.fcntl.LOCK_EX)
+                with auto.reserve_budget(NOW, directory=directory) as granted:
+                    self.assertFalse(granted)
+            finally:
+                auto.fcntl.flock(fd, auto.fcntl.LOCK_UN)
+                os.close(fd)
+
+    def test_deadline_covers_persistence_not_only_github_reads(self):
+        inside = []
+        @contextmanager
+        def deadline_scope():
+            inside.append("open")
+            try:
+                yield
+            finally:
+                inside.append("closed")
+        def guarded_save(value):
+            self.assertEqual(inside, ["open"])
+            return "STORED_SANITIZED_ENGINEERING"
+
         result = auto.refresh(
-            now=NOW + timedelta(minutes=15),
-            collector=lambda **kwargs: calls.append(kwargs) or report(),
-            saver=lambda r: writes.append(r) or "STORED_SANITIZED_ENGINEERING",
-            time_limit=nullcontext,
-            reader_factory=lambda: object(),
-        )
-        self.assertEqual(result, "SKIPPED_CADENCE")
-        self.assertEqual(calls, [])
-        self.assertEqual(writes, [])
-        result = auto.refresh(
-            now=NOW + timedelta(minutes=45),
-            collector=lambda **kwargs: calls.append(kwargs) or report(),
-            saver=lambda r: writes.append(r) or "STORED_SANITIZED_ENGINEERING",
-            time_limit=nullcontext,
-            reader_factory=lambda: object(),
+            now=NOW, collector=lambda **_: report(),
+            saver=guarded_save, budget=unlimited_budget,
+            time_limit=deadline_scope,
         )
         self.assertEqual(result, "STORED")
-        self.assertEqual(len(calls), 1)
-        self.assertEqual(calls[0]["max_open_prs"], 3)
-        self.assertEqual(len(writes), 1)
+        self.assertEqual(inside, ["open", "closed"])
 
     def test_bounded_public_github_client_refuses_excess_requests(self):
         class Reader:
@@ -131,7 +215,7 @@ class AutoEngineeringTests(unittest.TestCase):
         auto.refresh(
             now=NOW, collector=collector,
             saver=lambda _: "STORED_SANITIZED_ENGINEERING",
-            time_limit=nullcontext,
+            time_limit=nullcontext, budget=unlimited_budget,
             reader_factory=lambda: "bounded-injected",
         )
         self.assertEqual(calls[0]["github_client"], "bounded-injected")
@@ -151,7 +235,7 @@ class AutoEngineeringTests(unittest.TestCase):
             auto.refresh(
                 now=NOW, collector=lambda **_: report(),
                 saver=lambda value: writes.append(value),
-                time_limit=expired,
+                time_limit=expired, budget=unlimited_budget,
             )
         self.assertEqual(writes, [])
 
@@ -160,7 +244,7 @@ class AutoEngineeringTests(unittest.TestCase):
             auto.refresh(
                 now=NOW, collector=lambda **_: report(),
                 saver=lambda _: "REFUSED",
-                time_limit=nullcontext,
+                time_limit=nullcontext, budget=unlimited_budget,
             )
 
     def test_reject_naive_timestamp(self):
