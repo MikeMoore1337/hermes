@@ -33,6 +33,10 @@ LEGACY_IMAGE = "sha256:6e5f74ae35d38713ba8cd4c7b7167eb92f57a2ea439c91b4c29d5aa8b
 ARCHIVE_HASH = "5853b9fe50f83775aafa0d22bbc21867cb1bcb7e8eb6e3d289a9962132ef7213"
 ARCHIVE = Path("/var/tmp/h454-stage1-image.koLrSWVF/relay.tar.gz")
 PIN_ROOT = Path("/var/lib/hermes-h454-wss-sidecar")
+REGISTRY_BLOB = "99e0e655190d5eb456f44917c3fafb5ecef3efab"
+LEGACY_REGISTRY_BLOB = "3fe542e779a7aa5de334aca6888a78c5b6fe2ebf"
+REGISTRY_TARGET = "/run/h454/workspace-registry.json"
+WINDOWS_SANDBOX_DEVICE = "h15-win-05be75515428"
 WSS_SOURCE_BLOB = "3f496e90a3aa26be69b3c2a24f413910e69af02c"
 ORIGINAL_PINS_SHA256 = "46b45a6b2b1873db0581e2d8d55fadaf18091b788432fc2a84440ebcbe60fbaa"
 ORIGINAL_PROFILE_SHA256 = "24b679a8887665909864f1eae3a11f8bd07a07e510aae5e22384c6b096f17f86"
@@ -69,6 +73,48 @@ def protected(path, mode, directory=False):
 
 def digest_bytes(data):
     return hashlib.sha256(data).hexdigest()
+
+
+def source_blob(data):
+    """Verify exact Git-tracked source bytes without reading project secrets."""
+    prefix = b"blob " + str(len(data)).encode("ascii") + b"\\0"
+    return hashlib.sha1(prefix + data).hexdigest()
+
+
+def registry_file():
+    return Path(__file__).resolve().parents[1] / "deploy/h15/workspace-registry-fork.json"
+
+
+def registry_contract():
+    """Strictly compare the fork schema-2 registry with the existing schema-1 owner registry."""
+    catalog = registry_file()
+    legacy_file = catalog.with_name("workspace-registry.json")
+    for target, blob in ((catalog, REGISTRY_BLOB),
+                         (legacy_file, LEGACY_REGISTRY_BLOB)):
+        protected(target, 0o444)
+        require(target.stat().st_size < 16384 and source_blob(target.read_bytes()) == blob,
+                "WORKSPACE_SOURCE_DRIFT")
+    value = json.loads(catalog.read_bytes())
+    original = json.loads(legacy_file.read_bytes())
+    require(original.get("schema") == 1
+            and original.get("workspace_root") == "/workspace/projects"
+            and original.get("device_name") == "H15 Windows permanent sandbox"
+            and set(original) == {"schema","workspace_root","device_name","workspaces"},
+            "WORKSPACE_OWNER_REGISTRY_DRIFT")
+    expected = [
+        {"name": v["name"], "aliases": v["aliases"],
+         "deviceId": WINDOWS_SANDBOX_DEVICE,
+         "root": original["workspace_root"] + "/" + v["name"],
+         "origin": "https://github.com/MikeMoore1337/" + v["repository"] + ".git",
+         "branch": v["branch"], "scope": "sandbox"}
+        for v in original["workspaces"]
+    ]
+    require(value == {"schema": 2, "workspaces": expected}
+            and len(expected) == 4
+            and set(v["name"] for v in expected) == {
+                "hermes","your-fitness-coach","ai-development-toolkit","second-brain"},
+            "WORKSPACE_FORK_REGISTRY_DRIFT")
+    return catalog
 
 
 def digest(path):
@@ -206,7 +252,12 @@ def read_only(release_sha):
     require(inspect("container", RELAY_OLD, optional=True) is None
             and inspect("container", PROXY_OLD, optional=True) is None,
             "EXISTING_STAGE1_CHECKPOINT")
-    require(not PINS_OLD.exists() and not PENDING.exists(), "RECOVERY_REQUIRED")
+    require(not PENDING.exists() and not PENDING.is_symlink(), "RECOVERY_REQUIRED")
+    if PINS_OLD.exists() or PINS_OLD.is_symlink():
+        protected(PINS_OLD, 0o600)
+        require(PINS.read_bytes() == PINS_OLD.read_bytes(),
+                "PREVIOUS_ROLLBACK_NOT_COMPLETE")
+    registry_contract()
     legacy.check_files()
     protected(legacy.BACKUPS, 0o700, directory=True)
     return old
@@ -244,7 +295,13 @@ def new_relay_args():
     args = legacy.run_args(FORK_IMAGE, "979:975")
     require(args[:2] == ["run", "-d"] and args[-1] == FORK_IMAGE,
             "LEGACY_RUNTIME_RECIPE_DRIFT")
-    args[-1:-1] = ["-e", "BRC_DB=/state/relay.sqlite", "-e", "HOME=/tmp"]
+    verified = registry_contract()
+    args[-1:-1] = [
+        "--mount", "type=bind,src=" + str(verified) +
+                   ",dst=" + REGISTRY_TARGET + ",readonly",
+        "-e", "BRC_WORKSPACE_REGISTRY=" + REGISTRY_TARGET,
+        "-e", "BRC_DB=/state/relay.sqlite",
+        "-e", "HOME=/tmp"]
     return args
 
 
@@ -374,10 +431,20 @@ def restore(original_pins, old_relay, old_proxy, new_relay_id, new_proxy_id, cou
                 and host["ReadonlyRootfs"] is True and host["Privileged"] is False
                 and "ALL" in (host.get("CapDrop") or [])
                 and set(host.get("SecurityOpt") or []) == {"no-new-privileges"}
-                and len(mounts) == 1 and mounts[0]["Type"] == "bind"
-                and mounts[0]["Source"] == "/var/lib/hermes-brc-relay"
-                and mounts[0]["Destination"] == "/state"
-                and mounts[0]["RW"] is True, "FOREIGN_RELAY")
+                and len(mounts) == 2
+                and {m.get("Destination") for m in mounts} ==
+                    {"/state", REGISTRY_TARGET}
+                and all(m.get("Type") == "bind"
+                        and ((m.get("Destination") == "/state"
+                              and m.get("Source") == "/var/lib/hermes-brc-relay"
+                              and m.get("RW") is True)
+                             or (m.get("Destination") == REGISTRY_TARGET
+                                 and m.get("Source") == str(registry_file())
+                                 and m.get("RW") is False))
+                        for m in mounts)
+                and "BRC_WORKSPACE_REGISTRY=" + REGISTRY_TARGET
+                    in (current_relay.get("Config",{}).get("Env") or []),
+                "FOREIGN_RELAY")
         docker("rm", "-f", new_relay_id)
     checkpoint = inspect("container", RELAY_OLD, optional=True)
     if checkpoint:
@@ -400,10 +467,12 @@ def restore(original_pins, old_relay, old_proxy, new_relay_id, new_proxy_id, cou
     original = PINS_OLD.read_bytes()
     if PINS.read_bytes() != original:
         replace_pins(original)
-    read_old_pin_pair(original)
-    require(legacy.healthy(count, tries=60), "OLD_DEVICES_NOT_RECONNECTED")
+    # The reconciler fingerprint includes RestartPolicy. Restore that exact
+    # original policy before verifying its pinned profile.
     docker("update", "--restart", "unless-stopped", legacy.NAME)
     docker("update", "--restart", "unless-stopped", PROXY)
+    read_old_pin_pair(original)
+    require(legacy.healthy(count, tries=60), "OLD_DEVICES_NOT_RECONNECTED")
     finalize_pending()
 
 
@@ -418,7 +487,11 @@ def cutover(release_sha):
             baseline_devices = legacy.devices()
             require(baseline_devices >= 1, "NO_LIVE_DEVICES")
             before = legacy.snapshot()
-            write_once(PINS_OLD, attested_raw)
+            if PINS_OLD.exists():
+                protected(PINS_OLD, 0o600)
+                require(PINS_OLD.read_bytes() == attested_raw, "OLD_PIN_BACKUP_DRIFT")
+            else:
+                write_once(PINS_OLD, attested_raw)
             marker = {
                 "schema": 1, "original_pin_sha256": digest(PINS_OLD),
                 "release_sha": release_sha, "devices": baseline_devices
@@ -534,8 +607,10 @@ def rollback_pair(release_sha, *, after_success=False):
                 new_proxy["Image"] == LEGACY_IMAGE and \
                 new_proxy["HostConfig"]["NetworkMode"] == "container:" + relay_id else ""
             restore(original, old_relay, old_proxy, relay_id, proxy_id, count)
-            require(wss.reconcile(str(PINS)) == "READY", "OLD_WSS_NOT_READY")
-            return old_relay["Id"], old_proxy["Id"]
+        # The existing reconciler locks pins.json independently. Calling it
+        # while locked_pins() holds that same inode deadlocks with LOCK_NB.
+        require(wss.reconcile(str(PINS)) == "READY", "OLD_WSS_NOT_READY")
+        return old_relay["Id"], old_proxy["Id"]
 
 
 def main(argv=None):
