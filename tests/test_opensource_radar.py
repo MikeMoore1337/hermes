@@ -85,7 +85,8 @@ class RadarTests(unittest.TestCase):
         self.assertEqual(check(raw)["status"], "HOLD_FOR_REVIEW")
         self.assertIn("reported_security_findings_review", check(raw)["reasons"])
         raw["advisory_signal"] = "UNKNOWN"
-        self.assertIn("security_not_verified", check(raw)["reasons"])
+        self.assertIn("security_data_unavailable", check(raw)["reasons"])
+        self.assertEqual(check(raw)["status"], "NEEDS_REVIEW")
         self.assertFalse(check(raw)["install_authorized"])
 
     def test_incompatible_target_is_reject_recommendation_only(self):
