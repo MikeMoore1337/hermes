@@ -24,7 +24,7 @@ async function isolate(page){
  return unexpected;
 }
 async function navigate(page,name,width){
- if(width<=980){
+ if(width<=700){
   const dock=page.locator(".orbit-app-mobilebar").getByRole("button",{name,exact:true});
   if(await dock.count()){await dock.click();return;}
   const more=page.locator(".orbit-app-mobilebar").getByRole("button",{name:"Ещё"});
