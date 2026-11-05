@@ -147,7 +147,8 @@ def _reader(client):
     return client if client is not None else PublicGithub()
 
 
-def _runs(source, repo: str, sha: str, workflow_ids: tuple[int, ...]) -> list[dict]:
+def _runs(source, repo: str, sha: str, workflow_ids: tuple[int, ...], *,
+          stage: str, branch: str) -> list[dict]:
     # GitHub may return an incomplete window. Never treat it as all checks.
     rows = _obj(source.get(
         f"/repos/{repo}/actions/runs?head_sha={sha}&per_page=100"
@@ -162,6 +163,11 @@ def _runs(source, repo: str, sha: str, workflow_ids: tuple[int, ...]) -> list[di
         entry = _obj(raw)
         ident = entry.get("workflow_id")
         if type(ident) is not int or ident not in workflow_ids:
+            continue
+        required_event = "pull_request" if stage == "PR" else "push"
+        if entry.get("event") != required_event:
+            continue
+        if stage == "RELEASE" and entry.get("head_branch") != branch:
             continue
         if _obj(entry.get("repository")).get("full_name") != repo:
             raise SourceUnavailable("actions_repo_mismatch")
@@ -251,7 +257,7 @@ def release_snapshot(repo: str, *, stage: str, pr: int | None = None,
         draft, mergeable = None, "not_applicable"
         review = {"state": "not_applicable", "head_sha": None}
     required = WORKFLOW_IDS[repo][stage]
-    checks = _runs(source, repo, sha, required)
+    checks = _runs(source, repo, sha, required, stage=stage, branch=branch)
     # Re-read the actual identity to reject a race during the bounded calls.
     if stage == "PR":
         after = _obj(source.get(f"/repos/{repo}/pulls/{number}"))
