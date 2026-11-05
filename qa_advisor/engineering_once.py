@@ -32,10 +32,13 @@ REPOS = (
 def collect(*, repo: str, source_repo: str | None = None,
             lockfile: Path | None = None,
             runtime: str | None = None, packages: list[str] | None = None,
-            now: datetime | None = None, github_client=None, registry_client=None) -> dict:
+            now: datetime | None = None, github_client=None, registry_client=None,
+            max_open_prs: int = 10) -> dict:
     """Collect independently; never turn partial network success into full GO."""
     if repo not in REPOS:
         raise EngineeringFeedRefused("repo_not_allowlisted")
+    if type(max_open_prs) is not int or not 1 <= max_open_prs <= 10:
+        raise EngineeringFeedRefused("pr_sample_invalid")
     if ((lockfile is None and (runtime is not None or packages))
             or (lockfile is not None and (runtime is None or not packages))):
         raise EngineeringFeedRefused("lockfile_options_missing")
@@ -57,7 +60,7 @@ def collect(*, repo: str, source_repo: str | None = None,
         ("release_guard", lambda: release_snapshot(
             repo, stage="RELEASE", client=github_client, now=instant)),
         ("merge_control", lambda: merge_snapshot(
-            repo, client=github_client, now=instant)),
+            repo, client=github_client, now=instant, max_prs=max_open_prs)),
     ):
         try:
             results[key] = operation()

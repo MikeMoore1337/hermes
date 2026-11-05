@@ -21,6 +21,7 @@ from qa_advisor import public_project_observe as project_feed
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Hermes owner CI read-only one-shot monitor")
     parser.add_argument("--execute", action="store_true")
+    parser.add_argument("--engineering-auto", action="store_true")
     args = parser.parse_args(argv)
     if not args.execute:
         print(json.dumps({"status": "NOT_EXECUTED"}))
@@ -55,13 +56,28 @@ def main(argv: list[str] | None = None) -> int:
         except (project_feed.PublicObserveError, GithubPublicError, SignalError,
                 OSError, TimeoutError, ValueError):
             public_status = "UNAVAILABLE"
+    # H809: opt-in after the existing CI and observation collectors.
+    # Each extra cycle has its own 38-second absolute wall-clock budget.
+    # No new timer, private token access, agent or GitHub write.
+    engineering_status = None
+    if args.engineering_auto:
+        try:
+            from qa_advisor import engineering_auto
+            engineering_status = engineering_auto.refresh()
+        except Exception:
+            # No externally controlled text is ever printed to the journal.
+            # Preserve existing signal/Observe receipts on any failure.
+            engineering_status = "UNAVAILABLE"
     # No token, SHA, raw text, full URL or HTTP body.
-    print(json.dumps({
+    result = {
         "status": "STORED" if receipt == "STORED_SAFE_CI_SIGNAL" else "PRESERVED",
         "signal": current["status"], "outbound_notifications": 0,
         "github_observe_feed": feed_status,
         "github_projects_feed": public_status,
-    }, sort_keys=True))
+    }
+    if engineering_status is not None:
+        result["engineering_control"] = engineering_status
+    print(json.dumps(result, sort_keys=True))
     return 0
 
 

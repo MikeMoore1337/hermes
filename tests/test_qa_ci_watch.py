@@ -88,8 +88,8 @@ class MainCIScheduleTests(unittest.TestCase):
             "ReadOnlyPaths=/etc/hermes-agent/github-actions-read.token",
             "StateDirectoryMode=0700", "User=root",
             "InaccessiblePaths=/var/lib/hermes /var/lib/hermes-agent ",
-            "ExecStart=/usr/bin/python3 -m qa_advisor.watch_once --execute",
-            "MemoryMax=96M", "TimeoutStartSec=22s",
+            "ExecStart=/usr/bin/python3 -m qa_advisor.watch_once --execute --engineering-auto",
+            "MemoryMax=96M", "TimeoutStartSec=75s", "CPUQuota=10%",
         ):
             with self.subTest(required=required):
                 self.assertIn(required,service)

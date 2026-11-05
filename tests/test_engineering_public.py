@@ -309,6 +309,46 @@ class ReadonlySourceTests(unittest.TestCase):
                          "POTENTIAL_OVERLAP_NOT_PROVEN_CONFLICT")
         self.assertFalse(report["merge_authorized"])
 
+    def test_automatic_pr_window_is_bounded_and_partial_if_more_exist(self):
+        sample = Fake({
+            f"/repos/{REPO}/pulls?state=open&per_page=3&page=1": [
+                {"number": 11}, {"number": 12}, {"number": 13},
+            ],
+            f"/repos/{REPO}/pulls?state=open&per_page=3&page=2": [
+                {"number": 14},
+            ],
+            f"/repos/{REPO}/pulls/11": pr(11),
+            f"/repos/{REPO}/pulls/12": pr(12),
+            f"/repos/{REPO}/pulls/13": pr(13),
+            f"/repos/{REPO}/pulls/11/files?per_page=100&page=1": [
+                {"filename": "a.py", "status": "modified"},
+            ],
+            f"/repos/{REPO}/pulls/12/files?per_page=100&page=1": [
+                {"filename": "b.py", "status": "modified"},
+            ],
+            f"/repos/{REPO}/pulls/13/files?per_page=100&page=1": [
+                {"filename": "c.py", "status": "modified"},
+            ],
+        })
+        result = eng.merge_snapshot(REPO, client=sample, now=NOW, max_prs=3)
+        self.assertEqual(result["prs_seen"], 3)
+        self.assertEqual(result["status"], "INCONCLUSIVE")
+        self.assertIn("pr_window_incomplete", result["reasons"])
+        self.assertFalse(result["window_exhaustive_verified"])
+        self.assertFalse(result["merge_authorized"])
+        self.assertEqual(len(result["pr_refs"]), 3)
+        self.assertIn(f"/repos/{REPO}/pulls?state=open&per_page=3&page=2",
+                      sample.calls)
+        self.assertNotIn(f"/repos/{REPO}/pulls/14", sample.calls)
+
+    def test_pr_window_rejects_invalid_limits_before_transport(self):
+        sample = Fake({})
+        for limit in (True, 0, -1, 11, "3"):
+            with self.subTest(limit=limit), self.assertRaisesRegex(
+                    eng.SourceUnavailable, "pr_sample_budget_invalid"):
+                eng.merge_snapshot(REPO, client=sample, now=NOW, max_prs=limit)
+        self.assertEqual(sample.calls, [])
+
     def test_radar_exposes_unknown_compatibility_not_installation(self):
         source = "example-org/example"
         s = Fake({
