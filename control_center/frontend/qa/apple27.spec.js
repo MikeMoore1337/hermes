@@ -135,13 +135,19 @@ test("Aero Glass light theme keeps registry, refresh and workspace readable",asy
  expect(styles.width).toBeLessThanOrEqual(1441);
  expect(denied).toEqual([]);expect(errors).toEqual([]);
 });
-test("Aero Glass iOS breadcrumb hides only the orphan chevron",async({page})=>{
+test("Aero Glass iOS toolbar shows brand and three functional tool buttons without breadcrumb",async({page})=>{
  const {denied,errors}=await sandbox(page);
  await page.setViewportSize({width:393,height:844});
  await page.goto("/");
- const chevrons=page.locator(".orbit-topbar-breadcrumb>svg");
- await expect(chevrons).toHaveCount(2);
- expect(await chevrons.nth(0).evaluate(el=>getComputedStyle(el).display)).toBe("none");
- await expect(chevrons.nth(1)).toBeVisible();
+ const bar=page.locator(".orbit-topbar");
+ await expect(bar.locator(".orbit-topbar-mobile-brand")).toBeVisible();
+ await expect(bar.locator(".orbit-topbar-breadcrumb")).toBeHidden();
+ await expect(bar.getByRole("button",{name:"Поиск по разделам"})).toBeVisible();
+ await expect(bar.getByRole("button",{name:/Тема:/})).toBeVisible();
+ await expect(bar.getByRole("button",{name:"Информация о центре"})).toBeVisible();
+ const more=page.locator(".orbit-app-mobilebar").getByRole("button",{name:"Ещё"});
+ await more.click();
+ await expect(page.locator(".orbit-rail")).toBeVisible();
+ await expect(page.locator(".orbit-nav-group-title").first()).toHaveText("РАБОЧЕЕ ПРОСТРАНСТВО");
  expect(denied).toEqual([]);expect(errors).toEqual([]);
 });
