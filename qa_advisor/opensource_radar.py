@@ -137,7 +137,9 @@ def assess(raw: Any, *, now: datetime | None = None) -> dict:
         holds.add("yfc_agpl_integration_hold")
     if data["advisory_signal"] == "REPORTED":
         holds.add("reported_security_findings_review")
-    elif data["advisory_signal"] in ("UNKNOWN", "NONE_OBSERVED"):
+    elif data["advisory_signal"] == "UNKNOWN":
+        flags.add("security_data_unavailable")
+    else:
         flags.add("security_not_verified")
     if data["compatibility_signal"] == "INCOMPATIBLE":
         rejects.add("reported_target_incompatibility")
