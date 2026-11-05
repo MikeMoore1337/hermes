@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager, nullcontext
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 import io
 import json
 import os
@@ -69,6 +69,69 @@ class AutoEngineeringTests(unittest.TestCase):
             time_limit=nullcontext,
         )
         self.assertEqual(result, "PARTIAL")
+
+    def test_auto_45_minute_cadence_saves_only_in_selected_slot(self):
+        calls = []
+        writes = []
+        result = auto.refresh(
+            now=NOW + timedelta(minutes=15),
+            collector=lambda **kwargs: calls.append(kwargs) or report(),
+            saver=lambda r: writes.append(r) or "STORED_SANITIZED_ENGINEERING",
+            time_limit=nullcontext,
+            reader_factory=lambda: object(),
+        )
+        self.assertEqual(result, "SKIPPED_CADENCE")
+        self.assertEqual(calls, [])
+        self.assertEqual(writes, [])
+        result = auto.refresh(
+            now=NOW + timedelta(minutes=45),
+            collector=lambda **kwargs: calls.append(kwargs) or report(),
+            saver=lambda r: writes.append(r) or "STORED_SANITIZED_ENGINEERING",
+            time_limit=nullcontext,
+            reader_factory=lambda: object(),
+        )
+        self.assertEqual(result, "STORED")
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]["max_open_prs"], 3)
+        self.assertEqual(len(writes), 1)
+
+    def test_bounded_public_github_client_refuses_excess_requests(self):
+        class Reader:
+            def __init__(self):
+                self.calls = 0
+
+            def get(self, path):
+                self.calls += 1
+                return {"schema": "synthetic"}
+
+        inner = Reader()
+        scoped = auto.BudgetedGithub(reader=inner)
+        for _ in range(auto.MAX_AUTO_GITHUB_GET):
+            self.assertEqual(scoped.get("/repos/MikeMoore1337/hermes"), {
+                "schema": "synthetic",
+            })
+        self.assertEqual(inner.calls, auto.MAX_AUTO_GITHUB_GET)
+        with self.assertRaisesRegex(auto.SourceUnavailable, "automatic_github_budget_exceeded"):
+            scoped.get("/repos/MikeMoore1337/hermes")
+        self.assertEqual(inner.calls, auto.MAX_AUTO_GITHUB_GET)
+
+    def test_auto_requires_shared_bounded_source_and_three_pr_window(self):
+        calls = []
+
+        def collector(**kwargs):
+            calls.append(kwargs)
+            return report()
+
+        auto.refresh(
+            now=NOW, collector=collector,
+            saver=lambda _: "STORED_SANITIZED_ENGINEERING",
+            time_limit=nullcontext,
+            reader_factory=lambda: "bounded-injected",
+        )
+        self.assertEqual(calls[0]["github_client"], "bounded-injected")
+        self.assertEqual(calls[0]["max_open_prs"], 3)
+        self.assertLessEqual(auto.MAX_AUTO_GITHUB_GET, 26)
+        self.assertEqual(auto.AUTO_EVERY_TICKS, 3)
 
     def test_no_persistence_when_collector_times_out(self):
         writes = []
