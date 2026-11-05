@@ -22,7 +22,8 @@ REPOS = {
     "MikeMoore1337/your-fitness-coach": frozenset({"dev", "master"}),
 }
 SHA = re.compile(r"[0-9a-f]{40}\Z")
-PATH = re.compile(r"[A-Za-z0-9._/@+\-]{1,180}\Z")
+# GitHub paths may contain spaces, unicode or bracketed route segments.
+# Paths are data only, NEVER shell arguments or URLs.
 STATUSES = frozenset({"added", "modified", "removed", "renamed"})
 MAX_PRS = 24
 MAX_FILES = 120
@@ -54,7 +55,8 @@ def _sha(value: Any, code: str) -> str:
 
 
 def _path(value: Any) -> str:
-    if (type(value) is not str or PATH.fullmatch(value) is None
+    if (type(value) is not str or not 1 <= len(value) <= 240
+            or not value.isprintable() or "\\" in value
             or value.startswith(("/", "./", ".git/"))
             or any(segment in ("", ".", "..") for segment in value.split("/"))):
         raise MergeEvidenceRefused("path_invalid")

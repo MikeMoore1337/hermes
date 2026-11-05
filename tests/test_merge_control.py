@@ -168,7 +168,7 @@ class MergeControlTests(unittest.TestCase):
 
     def test_reject_path_traversal_and_injection(self):
         for path in ("../../etc/passwd", "/root/secret", "./x", "a//b", "a/../b",
-                     "a\\b", "hello world.py", "a\nb", ".git/config", ""):
+                     "a\\b", "a\nb", ".git/config", ""):
             with self.subTest(path=path):
                 value = packet()
                 value["prs"][0]["files"] = [file(path)]
@@ -178,6 +178,16 @@ class MergeControlTests(unittest.TestCase):
         value["prs"][0]["files"] = [file("same.py"), file("same.py")]
         with self.assertRaisesRegex(MergeEvidenceRefused, "file_duplicate"):
             check(value)
+
+    def test_printable_unicode_and_spaces_are_handled_as_data(self):
+        value = packet([
+            pr(11, [file("docs/Начало работы.md")]),
+            pr(12, [file("docs/Начало работы.md")]),
+        ])
+        report = check(value)
+        self.assertEqual(report["status"], "REVIEW_REQUIRED")
+        self.assertEqual(report["overlaps"][0]["paths"], ["docs/Начало работы.md"])
+        self.assertFalse(report["execution_authorized"])
 
     def test_reject_malformed_renames_and_statuses(self):
         for bad in [
