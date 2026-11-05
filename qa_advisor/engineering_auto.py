@@ -125,7 +125,7 @@ def reserve_budget(instant: datetime, *, directory: Path = DIR):
                 permitted = False
             else:
                 raw = os.read(fd, MAX_AUTO_STATE_BYTES + 1)
-                if raw and re.fullmatch(rb"[0-9]{1,15}\\n", raw) is None:
+                if raw and re.fullmatch(rb"[0-9]{1,15}\n", raw) is None:
                     raise AutoUnavailable("engineering_budget_unsafe")
                 current = int(instant.timestamp())
                 last = int(raw[:-1]) if raw else None
@@ -134,7 +134,7 @@ def reserve_budget(instant: datetime, *, directory: Path = DIR):
                 if permitted:
                     # Commit an attempt before contacting GitHub. A failed or
                     # interrupted sweep still consumes its bounded allowance.
-                    payload = f"{current}\\n".encode("ascii")
+                    payload = f"{current}\n".encode("ascii")
                     os.lseek(fd, 0, os.SEEK_SET)
                     if os.write(fd, payload) != len(payload):
                         raise AutoUnavailable("engineering_budget_write_failed")
