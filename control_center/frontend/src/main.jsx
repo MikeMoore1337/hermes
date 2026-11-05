@@ -393,8 +393,8 @@ function OperatorApp({authMode,onLogout,theme,onTheme}){
 }
 
 function LoginPreview({onBack,active=false,unavailable=false,theme,onTheme}){
- return <div className="hcc-login-host"><OrbitLogin onBack={onBack} active={active} unavailable={unavailable}/>
-  <ThemeButton theme={theme} onTheme={onTheme} className="hcc-login-theme"/>
+ return <div className="hcc-login-host"><OrbitLogin onBack={onBack} active={active} unavailable={unavailable}
+   themeControl={<ThemeButton theme={theme} onTheme={onTheme} className="hcc-login-theme"/>}/>
  </div>;
 }
 function serverAuthBootstrap(){
