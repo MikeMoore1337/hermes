@@ -241,6 +241,7 @@ class TestManagedLifecycleSynthetic(unittest.TestCase):
         copied.mkdir(mode=0o700)
         shutil_marker = copied / managed.MARKER
         shutil_marker.write_bytes((home / managed.MARKER).read_bytes())
+        shutil_marker.chmod(0o600)
         with self.assertRaisesRegex(ValueError, "provenance"):
             managed._verify_home(copied)
         self.assertTrue(copied.exists())
