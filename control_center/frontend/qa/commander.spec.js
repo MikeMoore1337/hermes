@@ -1,7 +1,7 @@
 import {test,expect} from "@playwright/test";
 async function chooseOrbitView(page,label){
  const width=page.viewportSize()?.width||1280;
- if(width<=980){
+ if(width<=700){
   const quickName=label==="QA и CI"?"QA / CI":label==="Operator Inbox"?"Входящие":label;
   const bottom=page.locator(".orbit-app-mobilebar").getByRole("button",{name:quickName,exact:true});
   if(await bottom.count()){await bottom.click();return;}
@@ -61,7 +61,7 @@ test("BRC direct URL and browser history reuse one React app",async({page})=>{
  await expect(page.getByRole("main")).toHaveCount(1);
  await page.goBack();
  await expect(page).toHaveURL(/\/$/);
- await expect(page.getByRole("heading",{name:/Вся система/})).toBeVisible();
+ await expect(page.getByRole("heading",{name:/Рабочий стол/})).toBeVisible();
  await page.goForward();
  await expect(page).toHaveURL(/\/hermes-brc$/);
  await expect(page.getByRole("heading",{name:"Рабочие пространства"})).toBeVisible();
@@ -79,5 +79,5 @@ test("BRC navigation on mobile is inside the same Orbit drawer",async({page})=>{
  await page.locator(".atlas-section-nav").getByRole("button",{name:"Обзор"}).click();
  await expect(page).toHaveURL(/\/$/);
  await expect(page.locator(".orbit-rail")).toBeHidden();
- await expect(page.getByRole("heading",{name:/Вся система/})).toBeVisible();
+ await expect(page.getByRole("heading",{name:/Рабочий стол/})).toBeVisible();
 });
