@@ -359,9 +359,17 @@ def merge_snapshot(repo: str, *, client=None, now: datetime | None = None) -> di
                 "files_complete": files_complete, "files": sanitized,
                 "depends_on": dependencies,
             })
-        except (SourceUnavailable, ValueError, TypeError):
-            # A single offline/read-only GET, malformed PR, or a mid-read
-            # synchronization failure must never erase verified observations
+        except SourceUnavailable as exc:
+            # A changed HEAD/base cannot be downgraded into partial evidence:
+            # the snapshot itself raced during capture.
+            if str(exc) == "pr_changed_during_capture":
+                raise
+            complete = False
+            incomplete_sources += 1
+            continue
+        except (ValueError, TypeError):
+            # A malformed unrelated PR is skipped, never marked clean.
+            # A single offline/read-only GET failure must not erase the rest.
             # of other PRs or turn an incomplete sample into a clean signal.
             complete = False
             incomplete_sources += 1
