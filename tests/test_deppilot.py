@@ -146,6 +146,32 @@ class DepPilotTests(unittest.TestCase):
         self.assertEqual(r["findings"][0]["change"], "MULTIPLE_INSTALLED")
         self.assertEqual(r["status"], "INCONCLUSIVE")
 
+    def test_npm_hyphen_and_underscore_are_different_packages(self):
+        raw = json.dumps({
+            "lockfileVersion": 3,
+            "packages": {
+                "node_modules/a-b": {"version": "1.0.0"},
+                "node_modules/a_b": {"version": "2.0.0"},
+            },
+        }).encode()
+        candidates = [
+            entry(name="a_b", version="2.0.1", ecosystem="npm", minimum="18.0.0", maximum="26.0.0"),
+            entry(name="a-b", version="1.0.1", ecosystem="npm", minimum="18.0.0", maximum="26.0.0"),
+        ]
+        data = meta(raw, candidates)
+        data["runtime_version"] = "22.0.0"
+        result = check(raw, data, "package-lock.json")
+        self.assertEqual(result["inventory_count"], 2)
+        versions = {row["name"]: row["installed_versions"] for row in result["findings"]}
+        self.assertEqual(versions["a-b"], ["1.0.0"])
+        self.assertEqual(versions["a_b"], ["2.0.0"])
+
+    def test_empty_candidate_list_is_not_false_green(self):
+        result = check(UV, meta(UV, []))
+        self.assertEqual(result["status"], "INCONCLUSIVE")
+        self.assertIn("candidate_list_empty", result["reasons"])
+        self.assertFalse(result["latest_versions_verified"])
+
     def test_lock_hash_mismatch_prevents_stale_candidate_replay(self):
         wrong = meta(UV)
         with self.assertRaisesRegex(DepPilotRefused, "lock_hash_mismatch"):
