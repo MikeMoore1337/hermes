@@ -224,7 +224,7 @@ class ReadonlySourceTests(unittest.TestCase):
         result = eng.radar_snapshot(source, REPO, client=s, now=NOW)
         self.assertEqual(result["status"], "HOLD_FOR_REVIEW")
         self.assertIn("license_not_verified", result["reasons"])
-        self.assertIsNone(result["commit_url"] is None) if False else None
+        self.assertEqual(result["commit_url"], f"https://github.com/{source}/commit/{SHA}")
         self.assertFalse(result["install_authorized"])
 
     def test_public_http_get_is_get_only_no_credentials(self):
