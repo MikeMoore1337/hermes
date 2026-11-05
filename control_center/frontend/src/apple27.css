@@ -57,7 +57,7 @@
  -webkit-backdrop-filter:blur(28px) saturate(1.35);backdrop-filter:blur(28px) saturate(1.35)}
 .theme-orbit .orbit-rail-brand{height:86px;padding:13px 15px;border-color:var(--a27-border)}
 .theme-orbit .brand img{width:53px;height:49px}
-.theme-orbit .brand-text strong{font:760 15px/1.15 var(--orbit-font-ui);letter-spacing:.095em;color:var(--orbit-text);background:none;-webkit-text-fill-color:currentColor}
+.theme-orbit .brand-text strong{font:760 18px/1.15 var(--orbit-font-ui);letter-spacing:.15em;color:var(--orbit-text);background:none;-webkit-text-fill-color:currentColor}
 .theme-orbit .brand-text small{color:var(--orbit-subtext);font:650 8px/1.25 var(--orbit-font-ui);letter-spacing:.14em}
 .theme-orbit .orbit-rail-label{margin:21px 20px 9px;color:var(--orbit-muted);font-size:10px;letter-spacing:.04em}
 .theme-orbit .atlas-section-nav{background:transparent;padding:0 12px;border:0;align-items:stretch}
