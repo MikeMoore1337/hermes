@@ -186,6 +186,19 @@ def evaluate(raw: Any, *, now: datetime | None = None) -> dict:
         f"https://github.com/{data['repo']}/actions/runs/{checks[w]['run_id']}"
         for w in data["required_workflows"] if w in checks
     ]
+    # Workflow IDs are sourced only from the constrained evidence packet.
+    # Missing checks and changed SHAs must remain visible to the operator.
+    missing = sorted(w for w in data["required_workflows"] if w not in checks)
+    check_details = [
+        {
+            "workflow_id": w,
+            "run_id": checks[w]["run_id"],
+            "head_sha": checks[w]["head_sha"],
+            "status": checks[w]["status"],
+            "conclusion": checks[w]["conclusion"],
+        }
+        for w in sorted(data["required_workflows"]) if w in checks
+    ]
     return {
         "schema": REPORT_SCHEMA,
         "status": status,
@@ -193,8 +206,12 @@ def evaluate(raw: Any, *, now: datetime | None = None) -> dict:
         "stage": data["stage"],
         "branch": data["branch"],
         "candidate_sha": candidate,
+        "expected_sha": candidate,
+        "observed_sha": data["observed_head_sha"],
         "checked_at": checked.isoformat().replace("+00:00", "Z"),
         "reasons": sorted(blocked | inconclusive),
+        "missing_checks": missing,
+        "required_check_details": check_details,
         "required_count": len(data["required_workflows"]),
         "observed_count": len(checks),
         "evidence_urls": urls,
