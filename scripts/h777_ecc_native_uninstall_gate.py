@@ -70,6 +70,33 @@ def sqlite_semantic_snapshot(database: Path) -> dict:
     return {"table_counts": counts, "table_hashes": fingerprints}
 
 
+def seed_foreign_projection(database: Path) -> None:
+    """Re-scope only a disposable copied row to a truly unrelated target root.
+
+    Both Docker HOME mounts are /test-home: copying the raw DB alone does not
+    create a different install identity. Never modify an owner-owned DB.
+    """
+    if database.is_symlink() or not database.is_file():
+        raise ValueError("Foreign projection fixture must be a regular copied DB")
+    with sqlite3.connect(database) as db:
+        existing = db.execute(
+            "SELECT target_id, target_root FROM install_state").fetchall()
+        if existing != [("hermes", "/test-home/.hermes")]:
+            raise AssertionError("Unexpected original projection identity")
+        updated = db.execute(
+            "UPDATE install_state SET target_root=? WHERE target_id=? AND target_root=?",
+            ("/unrelated-h777-owner/.hermes", "hermes", "/test-home/.hermes"))
+        if updated.rowcount != 1:
+            raise AssertionError("Foreign projection fixture must change exactly one row")
+        db.commit()
+    with sqlite3.connect("file:" + quote(str(database), safe="/")
+                         + "?mode=ro&immutable=1", uri=True) as db:
+        identities = db.execute(
+            "SELECT target_id,target_root FROM install_state").fetchall()
+        if identities != [("hermes", "/unrelated-h777-owner/.hermes")]:
+            raise AssertionError("Foreign projection marker was not retained")
+
+
 def classify(before: dict[str, str], after: dict[str, str]) -> dict:
     changed = sorted(k for k in before if after.get(k) != before[k])
     residual = sorted(k for k in after if k not in before)
@@ -234,6 +261,7 @@ def run(ecc: Path, out: Path, expectation: str) -> int:
             database = other / KNOWN_RESIDUAL
             database.parent.mkdir(mode=0o700, parents=True)
             shutil.copyfile(home / KNOWN_RESIDUAL, database)
+            seed_foreign_projection(database)
             other_before = snapshot(other)
             semantic_before = sqlite_semantic_snapshot(database)
             run_original(report, "uninstall-with-preexisting-store", ecc, other,
