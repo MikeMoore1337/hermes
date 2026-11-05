@@ -189,6 +189,36 @@ class ReadonlySourceTests(unittest.TestCase):
         self.assertEqual(result["status"], "INCONCLUSIVE")
         self.assertIn("files_window_incomplete", result["reasons"])
 
+    def test_merge_changed_head_during_files_is_refused(self):
+        versions = [pr(11, files=1), pr(11, head="c" * 40, files=1)]
+        s = Fake({
+            f"/repos/{REPO}/pulls?state=open&per_page=10&page=1": [{"number": 11}],
+            f"/repos/{REPO}/pulls/11": lambda: versions.pop(0),
+            f"/repos/{REPO}/pulls/11/files?per_page=100&page=1": [
+                {"filename": "docs/safe.md", "status": "modified"},
+            ],
+        })
+        with self.assertRaisesRegex(eng.SourceUnavailable, "pr_changed_during_capture"):
+            eng.merge_snapshot(REPO, client=s, now=NOW)
+
+    def test_merge_unicode_paths_are_file_metadata_not_commands(self):
+        s = Fake({
+            f"/repos/{REPO}/pulls?state=open&per_page=10&page=1": [
+                {"number": 11}, {"number": 12},
+            ],
+            f"/repos/{REPO}/pulls/11": pr(11),
+            f"/repos/{REPO}/pulls/12": pr(12),
+            f"/repos/{REPO}/pulls/11/files?per_page=100&page=1": [
+                {"filename": "docs/Начало работы.md", "status": "modified"},
+            ],
+            f"/repos/{REPO}/pulls/12/files?per_page=100&page=1": [
+                {"filename": "docs/Начало работы.md", "status": "modified"},
+            ],
+        })
+        output = eng.merge_snapshot(REPO, client=s, now=NOW)
+        self.assertEqual(output["overlaps"][0]["paths"], ["docs/Начало работы.md"])
+        self.assertFalse(output["execution_authorized"])
+
     def test_radar_exposes_unknown_compatibility_not_installation(self):
         source = "example-org/example"
         s = Fake({
