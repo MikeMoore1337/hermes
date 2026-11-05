@@ -146,7 +146,7 @@ def assess(raw: Any, *, now: datetime | None = None) -> dict:
     status = (
         "REJECT_RECOMMENDED" if rejects
         else "HOLD_FOR_REVIEW" if holds
-        else "NEEDS_REVIEW" if flags
+        else "NEEDS_REVIEW" if flags - {"security_not_verified"}
         else "PILOT_REVIEW"
     )
     url = f"https://github.com/{source}"
