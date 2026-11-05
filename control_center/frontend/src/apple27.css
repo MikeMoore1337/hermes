@@ -161,8 +161,8 @@
 .hcc-topology-details>summary{display:flex;justify-content:space-between;align-items:center;cursor:pointer;padding:15px 17px;
  font-size:12px;font-weight:650;color:var(--orbit-text);list-style:none}
 .hcc-topology-details>summary::-webkit-details-marker{display:none}
-.hcc-topology-details>summary:after{content:"⌄";color:var(--orbit-muted)}
-.hcc-topology-details[open]>summary:after{transform:rotate(180deg)}
+.hcc-topology-details>summary .hcc-topology-chevron{flex:none;color:var(--orbit-muted);transform:rotate(90deg);transition:transform .18s ease}
+.hcc-topology-details[open]>summary .hcc-topology-chevron{transform:rotate(-90deg)}
 .hcc-topology-details .orbit-graph{background:var(--a27-window)}
 .hcc-topology-details .orbit-graph-detail{background:var(--a27-surface-2)}
 .hcc-topology-details .orbit-topology{border:0}
