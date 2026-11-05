@@ -3,7 +3,7 @@ import {createRoot} from "react-dom/client";
 import {ShieldCheck,LockKeyhole,Activity,RefreshCw,Search,Github,ArrowRight,
   AlertTriangle,Radio,Server,Clock3,Database,ExternalLink,ChevronsRight,ChevronDown,
   CircleHelp,ShieldAlert,Eye,Signal,Check,LogIn,ArrowUpRight,
-  LayoutDashboard,Inbox,Layers3,BookOpenText,FilePenLine,Bot,Gauge,Menu,X,ChevronRight,Monitor,Sun,Moon,Info} from "lucide-react";
+  LayoutDashboard,Inbox,Layers3,BookOpenText,FilePenLine,Bot,Gauge,Menu,X,ChevronRight,Monitor,Sun,Moon,Info,LogOut} from "lucide-react";
 import {groups,statuses,validSnapshot,counts,filterServices} from "./health.js";
 import "./style.css";
 import {registerPwa} from "./register-pwa.js";
@@ -18,6 +18,7 @@ import "./orbit-unified.css";
 import "./apple27.css";
 import "./apple27-fidelity.css";
 import "./apple27-wide-login.css";
+import "./apple27-polish.css";
 
 const ISSUE33="https://github.com/MikeMoore1337/hermes/issues/33";
 const ISSUE163="https://github.com/MikeMoore1337/hermes/issues/163";
@@ -108,7 +109,7 @@ function Header({view,authMode,onLogout,onMenu,menuOpen,activeWidget,theme,onThe
      <Info size={17} aria-hidden="true"/>
     </button>
     {authMode==="github"
-     ?<button type="button" className="orbit-owner-avatar" onClick={onLogout} aria-label="Выйти" title="Выйти"><span>H</span></button>
+     ?<button type="button" className="orbit-logout-button" onClick={onLogout} aria-label="Выйти" title="Завершить сеанс"><LogOut size={16} aria-hidden="true"/><span>Выйти</span></button>
      :<span className="orbit-owner-avatar" role="img" aria-label="Интерфейс Hermes"><span>H</span></span>}
    </div>
    {searchOpen&&<div className="orbit-header-search" role="dialog" aria-label="Поиск раздела">
@@ -124,7 +125,7 @@ function Header({view,authMode,onLogout,onMenu,menuOpen,activeWidget,theme,onThe
    {infoOpen&&<div className="orbit-header-info" role="status">
     <strong>Hermes Command Center</strong>
     <p>Данные служб отображаются по защищённому снимку. Действия в Hermes Commander доступны только в пределах разрешений текущей сессии.</p>
-    <button type="button" onClick={()=>setInfoOpen(false)}>Закрыть</button>
+    <div className="orbit-header-info-actions"><a href={ISSUE33} target="_blank" rel="noopener noreferrer">Политика доступа <ArrowUpRight size={14} aria-hidden="true"/></a><button type="button" onClick={()=>setInfoOpen(false)}>Закрыть</button></div>
    </div>}
  </header>;
 }
@@ -163,7 +164,6 @@ function Registry({snapshot,view,search,setSearch,filter,setFilter}){
    <div><span className="eyebrow">СЛУЖБЫ И КОМПОНЕНТЫ / SYSTEMD</span>
     <h2>{view==="all"?"Реестр служб":groups[view].name}</h2>
     <p>Статусы системных единиц, без прав управления.</p></div>
-   <InfoBadge>{services.length} объектов</InfoBadge>
   </div>
   <div className="registry-toolbar">
    <label className="search-field"><Search size={16} aria-hidden="true"/><span className="sr-only">Поиск по службам</span>
@@ -243,7 +243,7 @@ function SignalPanel({snapshot,error}){
  const problems=(snapshot?.services||[]).filter(s=>["failed","unknown","unexpected_active"].includes(s.state));
  return <aside className="side-stack">
   <section className="right-panel">
-   <div className="side-heading"><span className="eyebrow">СИГНАЛЫ И КОНТЕКСТ</span><InfoBadge tone="muted">Из snapshot</InfoBadge></div>
+   <div className="side-heading"><span className="eyebrow">СИГНАЛЫ И КОНТЕКСТ</span></div>
    <div className="signal-list">
     <div className="signal-item"><span className="timeline-point blue"/><div>
      <small>СИСТЕМНЫЙ СНИМОК</small><strong>{snapshot?"Данные получены":"Данные недоступны"}</strong>
@@ -326,13 +326,15 @@ function OperatorApp({authMode,onLogout,theme,onTheme}){
  };
  return <div className="shell theme-orbit">
   <a href="#main-content" className="skip-link">Перейти к основному содержимому</a>
-  <div className="orbit-project-label"><strong>HERMES / AERO GLASS 27</strong><span>Защищённое рабочее пространство</span></div>
+  
   <div className="orbit-app-layout">
    <aside className={"orbit-rail"+(menuOpen?" is-open":"")} aria-label="Разделы и рабочее пространство">
     <div className="orbit-rail-brand"><Brand/></div>
     <div className="atlas-section-nav" onClickCapture={event=>{
       const widget=event.target.closest(".ai272-nav,.quota295-nav,.infra294-nav");
       if(!widget)return;
+      // Keep a visible React mount for legacy panels after switching from YFC Articles.
+      if(window.location.pathname!=="/")window.history.pushState({view:"widget"},"","/");
       setActiveWidget(widget.matches(".ai272-nav")?"AI Usage Analytics":
        widget.matches(".quota295-nav")?"Квоты и инструменты":"Инфраструктура");
       if(menuOpen)setMenuOpen(false);
@@ -359,7 +361,8 @@ function OperatorApp({authMode,onLogout,theme,onTheme}){
    <div className="orbit-content">
     <Header view={view} authMode={authMode} onLogout={onLogout} onMenu={()=>setMenuOpen(v=>!v)} menuOpen={menuOpen} activeWidget={activeWidget} theme={theme} onTheme={onTheme} onView={onView}/>
     <main id="main-content" className="orbit-main" tabIndex={-1}>
-     {view==="all"?<><OrbitOverview snapshot={snapshot} error={error} onView={onView} onRefresh={reload} busy={busy} Registry={Registry}
+     {activeWidget?<div className="orbit-module-shell orbit-widget-module" aria-label={activeWidget}><div className="center-area orbit-widget-host"/></div>:
+      view==="all"?<><OrbitOverview snapshot={snapshot} error={error} onView={onView} onRefresh={reload} busy={busy} Registry={Registry}
       registryProps={{snapshot,view,search,setSearch,filter,setFilter}}/><div className="center-area orbit-compact-codex" aria-label="Данные Codex и дополнительные панели"><CodexPanel compact/></div></>:
       <div className="orbit-module-shell">
        {view!=="inbox"&&view!=="articles"&&view!=="commander"&&<OrbitModuleIntro view={view}/>}
@@ -382,7 +385,7 @@ function OperatorApp({authMode,onLogout,theme,onTheme}){
        </>}
       </div>}
     </main>
-    <footer className="footer">HERMES COMMAND CENTER <span>·</span> Состояние systemd, не результат выполнения заданий <span>·</span> <a href={ISSUE33} target="_blank" rel="noopener noreferrer">Политика доступа</a></footer>
+    
    </div>
    <nav className="orbit-app-mobilebar" aria-label="Мобильная навигация">
     {[["all","Обзор",LayoutDashboard],["inbox","Входящие",Inbox],["commander","Commander",Monitor]].map(([id,label,Icon])=>

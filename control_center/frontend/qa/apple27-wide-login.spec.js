@@ -60,7 +60,7 @@ for(const [width,height] of [[1440,900],[1920,1080],[2048,1152],[2560,1440],[344
   expect(m.topbar.w).toBeGreaterThan(500);
   if(width===1440){
    expect(Math.abs(m.shell.w-1354)).toBeLessThan(4);
-   expect(Math.abs(m.shell.h-805)).toBeLessThan(4);
+   expect(Math.abs(m.shell.h-(height-56))).toBeLessThan(4);
   }else{
    expect(m.shell.w).toBeGreaterThan(width===3440?2490:width*.88);
    expect(m.shell.h).toBeGreaterThan(height*.86);
