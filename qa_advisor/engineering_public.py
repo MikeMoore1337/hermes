@@ -6,6 +6,9 @@ new timers or repository content execution. A result never grants owner GO.
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
+import hashlib
 from datetime import UTC, datetime
 import json
 import re
@@ -40,6 +43,7 @@ _SUFFIX = (
     r"|/branches/[A-Za-z0-9._~%-]+"
     r"|/actions/runs\?head_sha=[0-9a-f]{40}&per_page=100"
     r"|/license\?ref=[0-9a-f]{40}"
+    r"|/contents/NOTICE(?:\.txt|\.md)?\?ref=[0-9a-f]{40}"
     r"|/releases/latest"
     r"|/security-advisories\?per_page=5"
     r")"
@@ -384,6 +388,38 @@ def merge_snapshot(repo: str, *, client=None, now: datetime | None = None) -> di
     return result
 
 
+MAX_SOURCE_FILE = 131072
+
+
+def _verified_public_blob(record: object) -> str:
+    """Hash a bounded file and verify its GitHub git-blob SHA-1 identifier.
+
+    The hash is content integrity against the REST source, not a signature,
+    license permission, clean supply chain, or human-reviewed provenance.
+    """
+    raw = _obj(record)
+    value = raw.get("content")
+    if (raw.get("encoding") != "base64"
+            or type(value) is not str or len(value) > 190000
+            or type(raw.get("size")) is not int
+            or not 0 < raw["size"] <= MAX_SOURCE_FILE
+            or type(raw.get("sha")) is not str
+            or re.fullmatch(r"[0-9a-f]{40}", raw["sha"]) is None):
+        raise SourceUnavailable("public_blob_invalid")
+    try:
+        content = base64.b64decode("".join(value.splitlines()), validate=True)
+    except (ValueError, binascii.Error):
+        raise SourceUnavailable("public_blob_invalid") from None
+    if len(content) != raw["size"]:
+        raise SourceUnavailable("public_blob_size_mismatch")
+    git_hash = hashlib.sha1(
+        b"blob " + str(len(content)).encode("ascii") + b"\x00" + content
+    ).hexdigest()
+    if git_hash != raw["sha"]:
+        raise SourceUnavailable("public_blob_sha_mismatch")
+    return hashlib.sha256(content).hexdigest()
+
+
 def radar_snapshot(source_repo: str, target_repo: str, *, client=None,
                    now: datetime | None = None) -> dict:
     """Observed immutable GitHub source and declared policy hints; not approval."""
@@ -409,8 +445,10 @@ def radar_snapshot(source_repo: str, target_repo: str, *, client=None,
     branch_obj = _obj(source.get(f"/repos/{canonical}/branches/{encoded_branch}"))
     sha = _safe_sha(_obj(branch_obj.get("commit")).get("sha"))
     licence = "UNKNOWN"
+    license_digest = None
     try:
         license_record = _obj(source.get(f"/repos/{canonical}/license?ref={sha}"))
+        license_digest = _verified_public_blob(license_record)
         license_obj = _obj(license_record.get("license"))
         claimed = license_obj.get("spdx_id")
         from qa_advisor.opensource_radar import LICENCES
@@ -419,6 +457,22 @@ def radar_snapshot(source_repo: str, target_repo: str, *, client=None,
     except SourceUnavailable as exc:
         if str(exc) != "github_not_found":
             raise
+    # Only conventional root filenames are probed. Missing files do not prove
+    # the project has no NOTICE/license obligations anywhere else.
+    notice_digest = None
+    notice_name = None
+    for name in ("NOTICE", "NOTICE.txt", "NOTICE.md"):
+        try:
+            notice_record = _obj(source.get(
+                f"/repos/{canonical}/contents/{name}?ref={sha}"
+            ))
+        except SourceUnavailable as exc:
+            if str(exc) == "github_not_found":
+                continue
+            raise
+        notice_digest = _verified_public_blob(notice_record)
+        notice_name = name
+        break
     release_date = None
     try:
         release = _obj(source.get(f"/repos/{canonical}/releases/latest"))
@@ -445,8 +499,14 @@ def radar_snapshot(source_repo: str, target_repo: str, *, client=None,
         "compatibility_signal": "UNKNOWN",
     }
     result = assess_radar(metadata, now=_utc(now))
-    # The exact commit is observed, but license and compatibility have NOT
-    # passed legal/technical verification and no source code was executed.
+    result["license_file_sha256"] = license_digest
+    result["notice_file_sha256"] = notice_digest
+    result["notice_checked_filename"] = notice_name
+    result["notice_status"] = (
+        "FOUND_STANDARD_ROOT_FILE" if notice_digest else "NOT_FOUND_STANDARD_ROOT_PATHS"
+    )
+    # Git blob integrity is not legal license review or full source provenance.
+    # Keep assess_radar's source_verified/license_verified=False and owner hold.
     return result
 
 
