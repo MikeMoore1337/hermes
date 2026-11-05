@@ -17,6 +17,10 @@ from control_center.github_observe_view import (
 from control_center.github_projects_view import (
     ProjectFeedRefused, validate as validate_public_feed, fresh as public_feed_fresh,
 )
+from control_center.engineering_view import (
+    EngineeringViewRefused, validate as validate_engineering_feed,
+    fresh as engineering_feed_fresh,
+)
 
 MAX_SNAPSHOT_BYTES = 131072
 MAX_EVENTS = 24
@@ -200,6 +204,81 @@ def _add_public_projects(overview, now, coverage, events):
             })
 
 
+# Fixed UI text only. Input reports provide enumerated statuses and counts,
+# never arbitrary descriptions, PR titles, URLs or permission grants.
+_ENGINEERING_LABELS = {
+    "release_guard": "ReleaseGuard",
+    "merge_control": "MergeControl",
+    "deppilot": "DepPilot",
+    "opensource_radar": "OpenSource Radar",
+}
+_ENGINEERING_STATUS = {
+    "BLOCKED": "Обнаружены блокировки",
+    "INCONCLUSIVE": "Недостаточно доказательств",
+    "READY_FOR_OWNER_REVIEW": "Нужно решение владельца",
+    "REVIEW_REQUIRED": "Требуется проверка",
+    "NO_OVERLAP_IN_SUPPLIED_WINDOW": "Пересечений в выборке не найдено",
+    "NO_CHANGES_IN_SUPPLIED_CANDIDATES": "В выбранных пакетах нет изменений",
+    "PILOT_REVIEW": "Требуется проверка перед пилотом",
+    "NEEDS_REVIEW": "Требуется проверка источника",
+    "HOLD_FOR_REVIEW": "Отложено до проверки",
+    "REJECT_RECOMMENDED": "Рекомендовано отказаться",
+}
+_ENGINEERING_BLOCKED = frozenset({
+    "BLOCKED", "HOLD_FOR_REVIEW", "REJECT_RECOMMENDED",
+})
+_ENGINEERING_NO_EVENT = frozenset({
+    "NO_OVERLAP_IN_SUPPLIED_WINDOW", "NO_CHANGES_IN_SUPPLIED_CANDIDATES",
+})
+
+
+def _add_engineering_reports(overview, now, coverage, events):
+    source = "engineering_control"
+    if not isinstance(overview, dict) or overview.get("engineering_feed") is None:
+        return
+    try:
+        report = validate_engineering_feed(overview["engineering_feed"])
+    except (EngineeringViewRefused, ValueError, AttributeError, TypeError):
+        coverage[source]["status"] = "PARTIAL"
+        coverage[source]["details"] = "Некорректный отчёт скрыт, проверка недоступна"
+        return
+    if not engineering_feed_fresh(report, now=now):
+        coverage[source]["status"] = "STALE"
+        coverage[source]["details"] = "Последний отчёт проверки устарел"
+        events.append({
+            **_event(source, "stale", category="needs_review", severity="warning",
+                     status="needs_review", observed=report["observed_at"],
+                     hint="Запустить явную повторную проверку источника.",
+                     evidence=None),
+            "title": "Engineering Control: отчёт устарел",
+            "detail": "Старый отчёт не подтверждает готовность релиза или отсутствие конфликтов.",
+        })
+        return
+    present = sum(item["status"] != "NOT_AVAILABLE" for item in report["sources"].values())
+    if not present:
+        return
+    coverage[source]["status"] = "PARTIAL"
+    coverage[source]["details"] = (
+        f"Только {present} из 4 ручных проверок; без автозапуска и разрешений"
+    )
+    for key, item in report["sources"].items():
+        status = item["status"]
+        if status == "NOT_AVAILABLE" or status in _ENGINEERING_NO_EVENT:
+            continue
+        blocked = status in _ENGINEERING_BLOCKED
+        events.append({
+            **_event(source, key, category="blocked" if blocked else "needs_review",
+                     severity="warning", status="blocked" if blocked else "needs_review",
+                     observed=item["checked_at"],
+                     hint="Проверить исходные свидетельства отдельно. "
+                          "Отчёт не разрешает исполнение, merge или production.",
+                     evidence=None),
+            "title": f"{_ENGINEERING_LABELS[key]}: {_ENGINEERING_STATUS[status]}",
+            "detail": f"Санитизированный отчёт, причин: {item['reason_count']}. "
+                      "Подлинность и полнота источника проверяются отдельно.",
+        })
+
+
 def assemble(overview: dict | None, scheduler: dict | None, *, now: dt.datetime | None = None) -> dict:
     """Only fixed labels and counts are copied. Never expose raw job IDs or error strings."""
     clock = now or dt.datetime.now(dt.timezone.utc)
@@ -215,6 +294,7 @@ def assemble(overview: dict | None, scheduler: dict | None, *, now: dt.datetime 
         "gh_toolkit": {"status": "NOT_AVAILABLE", "label": "AI Development Toolkit", "details": "Нет проверенного снимка GitHub"},
         "gh_yfc": {"status": "NOT_AVAILABLE", "label": "Your Fitness Coach", "details": "Нет проверенного снимка GitHub"},
         "gh_second_brain": {"status": "NOT_AVAILABLE", "label": "Second Brain (код)", "details": "Нет проверенного снимка GitHub"},
+        "engineering_control": {"status": "NOT_AVAILABLE", "label": "Engineering Control", "details": "Нет отчёта о проверках"},
     }
     if overview is not None:
         if not isinstance(overview, dict) or overview.get("schema") != SCHEMA or overview.get("mode") != "read_only":
@@ -295,6 +375,7 @@ def assemble(overview: dict | None, scheduler: dict | None, *, now: dt.datetime 
             coverage["scheduler"]["details"] = "Данные отсутствуют или недостаточны"
     _add_github_observations(overview, clock, coverage, events)
     _add_public_projects(overview, clock, coverage, events)
+    _add_engineering_reports(overview, clock, coverage, events)
     seen = set()
     unique = []
     for ev in events:
