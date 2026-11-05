@@ -1,0 +1,382 @@
+/*
+ * H796 / Hermes Aero Glass 27: wide-screen fluid shell and unified auth material.
+ * Visual-only. Authentication, authorization, routes and the PWA worker are unchanged.
+ * Loaded AFTER the approved Aero Glass styles.
+ */
+
+/* 1540 x 930 hard caps made the workspace look miniature on 2K screens.
+ * Preserve the approved 1440 x 900 arrangement while using the available room.
+ */
+@media (min-width: 981px) {
+  .theme-orbit .orbit-project-label {
+    max-width: 2600px;
+  }
+  .theme-orbit .orbit-app-layout {
+    max-width: 2600px;
+    height: calc(100dvh - 95px);
+    min-height: 670px;
+  }
+}
+
+@media (min-width: 1800px) {
+  .theme-orbit .orbit-app-layout {
+    grid-template-columns: clamp(260px, 14vw, 312px) minmax(0, 1fr);
+  }
+  .theme-orbit .orbit-main {
+    padding: clamp(33px, 2.5vw, 58px) clamp(36px, 2.8vw, 72px) 58px;
+  }
+  .theme-orbit .hcc-intro h1 {
+    font-size: clamp(36px, 2.1vw, 46px);
+  }
+  .theme-orbit .hcc-kpi {
+    padding: clamp(18px, 1.3vw, 26px);
+    min-height: clamp(138px, 12vh, 176px);
+  }
+  .theme-orbit .hcc-kpi-value {
+    font-size: clamp(28px, 1.8vw, 36px);
+  }
+  .theme-orbit .hcc-kpi-value.text {
+    font-size: clamp(23px, 1.4vw, 30px);
+  }
+  .theme-orbit .hcc-empty {
+    min-height: clamp(260px, 26vh, 385px);
+  }
+  .theme-orbit .hcc-link {
+    min-height: 67px;
+  }
+}
+
+/*
+ * Authentication - use the same material, palette and native-feeling contours
+ * as the approved desktop workspace. Keep GitHub OAuth unchanged.
+ */
+.hcc-login-host .orbit-auth {
+  --a27-login-surface: #1c2b40;
+  --a27-login-surface-raised: #253650;
+  --a27-login-stage: #15253a;
+  --a27-login-border: rgba(202, 222, 255, .15);
+  --a27-login-ink: #f4f8ff;
+  --a27-login-soft: #b6c8df;
+  --a27-login-accent: #89b7ff;
+  --a27-login-glass: rgba(29, 43, 63, .85);
+  --a27-login-shadow: 0 20px 65px rgba(0, 0, 0, .24);
+  color-scheme: dark;
+  color: var(--a27-login-ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+  background:
+    radial-gradient(ellipse 52% 62% at 17% 8%, rgba(77, 119, 191, .17), transparent 78%),
+    radial-gradient(ellipse 41% 53% at 97% 75%, rgba(40, 81, 148, .11), transparent 83%),
+    #101a29;
+}
+:root[data-hermes-resolved-theme="light"] .hcc-login-host .orbit-auth {
+  --a27-login-surface: #ffffff;
+  --a27-login-surface-raised: #eaf0f8;
+  --a27-login-stage: #e5edf8;
+  --a27-login-border: rgba(28, 53, 90, .14);
+  --a27-login-ink: #17243a;
+  --a27-login-soft: #50647e;
+  --a27-login-accent: #236bde;
+  --a27-login-glass: rgba(246, 250, 255, .88);
+  --a27-login-shadow: 0 18px 55px rgba(41, 60, 93, .13);
+  color-scheme: light;
+  color: var(--a27-login-ink);
+  background:
+    radial-gradient(ellipse 52% 62% at 17% 8%, rgba(104, 142, 207, .18), transparent 78%),
+    #e6eaf3;
+}
+.hcc-login-host .orbit-auth:before {
+  background: none;
+}
+.hcc-login-host .orbit-auth-header {
+  min-height: 78px;
+  height: auto;
+  padding: 12px clamp(16px, 3vw, 58px);
+  gap: 18px;
+  background: var(--a27-login-glass);
+  border-bottom: 1px solid var(--a27-login-border);
+  -webkit-backdrop-filter: blur(26px) saturate(1.25);
+  backdrop-filter: blur(26px) saturate(1.25);
+}
+.hcc-login-host .orbit-auth-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 0;
+  flex: 0 1 auto;
+  gap: clamp(10px, 1.4vw, 22px);
+  margin-left: auto;
+}
+.hcc-login-host .orbit-auth-header-meta {
+  gap: clamp(8px, 1.2vw, 20px);
+  color: var(--a27-login-soft);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+}
+.hcc-login-host .orbit-auth-header-meta > i {
+  background: var(--a27-login-border);
+}
+.hcc-login-host .orbit-auth-header-meta span:last-child {
+  color: var(--a27-login-soft);
+  font-family: inherit;
+  letter-spacing: .045em;
+  font-weight: 650;
+}
+.hcc-login-host .hcc-login-theme {
+  position: static;
+  inset: auto;
+  z-index: auto;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 96px;
+  min-height: 44px;
+  height: 44px;
+  padding: 0 12px;
+  margin: 0;
+  background: var(--a27-login-surface-raised);
+  color: var(--a27-login-ink);
+  border: 1px solid var(--a27-login-border);
+  border-radius: 12px;
+  white-space: nowrap;
+  font: 600 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+}
+.hcc-login-host .hcc-login-theme:hover {
+  background: var(--a27-login-surface);
+}
+.hcc-login-host .orbit-auth-layout {
+  max-width: 2600px;
+  grid-template-columns: minmax(0, 57fr) minmax(370px, 43fr);
+  min-height: calc(100dvh - 134px);
+}
+.hcc-login-host .orbit-auth-intro h1 {
+  font-weight: 760;
+  letter-spacing: -.035em;
+  color: var(--a27-login-ink);
+}
+.hcc-login-host .orbit-auth-intro h1 span {
+  color: var(--a27-login-soft);
+  font-weight: 430;
+}
+.hcc-login-host .orbit-auth-intro > p,
+.hcc-login-host .orbit-auth-schematic-note,
+.hcc-login-host .orbit-right-foot,
+.hcc-login-host .orbit-auth-footer {
+  color: var(--a27-login-soft);
+}
+.hcc-login-host .orbit-auth-route {
+  background: var(--a27-login-surface);
+  border: 1px solid var(--a27-login-border);
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: var(--a27-login-shadow);
+}
+.hcc-login-host .orbit-route-header,
+.hcc-login-host .orbit-route-caption {
+  background: var(--a27-login-surface);
+  border-color: var(--a27-login-border);
+}
+.hcc-login-host .orbit-route-header h2 {
+  color: var(--a27-login-ink);
+}
+.hcc-login-host .orbit-motion-control {
+  background: var(--a27-login-surface-raised);
+  color: var(--a27-login-ink);
+  border: 1px solid var(--a27-login-border);
+  border-radius: 10px;
+}
+.hcc-login-host .orbit-route-stage {
+  background:
+    radial-gradient(ellipse at 50% 52%, rgba(85, 142, 211, .09), transparent 70%),
+    var(--a27-login-stage);
+}
+.hcc-login-host .orbit-route-stage:before {
+  opacity: .58;
+}
+.hcc-login-host .orbit-route-node {
+  border-radius: 11px;
+  border: 1px solid var(--a27-login-border);
+  background: var(--a27-login-surface);
+  color: var(--a27-login-ink);
+}
+.hcc-login-host .orbit-route-node.is-current,
+.hcc-login-host .orbit-route-node:hover {
+  border-color: var(--a27-login-accent);
+  background: var(--a27-login-surface-raised);
+}
+.hcc-login-host .orbit-node-label,
+.hcc-login-host .orbit-node-state,
+.hcc-login-host .orbit-route-caption p,
+.hcc-login-host .orbit-route-caption strong span {
+  color: var(--a27-login-soft);
+}
+.hcc-login-host .orbit-route-caption strong,
+.hcc-login-host .orbit-access-steps strong {
+  color: var(--a27-login-ink);
+}
+.hcc-login-host .orbit-auth-core {
+  border-radius: 15px;
+  border-color: var(--a27-login-accent);
+  background: var(--a27-login-surface-raised);
+  box-shadow: 0 12px 45px rgba(0, 0, 0, .17);
+}
+.hcc-login-host .orbit-auth-core:before {
+  border-radius: 9px;
+  border-color: var(--a27-login-border);
+}
+.hcc-login-host .orbit-phase-selector button {
+  border-radius: 8px;
+}
+.hcc-login-host .orbit-auth-right {
+  background: var(--a27-login-glass);
+  border-left: 1px solid var(--a27-login-border);
+}
+.hcc-login-host .orbit-access-form {
+  width: 100%;
+  max-width: 530px;
+  border-radius: 22px;
+  overflow: hidden;
+  border: 1px solid var(--a27-login-border);
+  background: var(--a27-login-surface);
+  box-shadow: var(--a27-login-shadow);
+}
+.hcc-login-host .orbit-access-top {
+  background: var(--a27-login-surface-raised);
+  border-bottom: 1px solid var(--a27-login-border);
+  color: var(--a27-login-soft);
+}
+.hcc-login-host .orbit-access-emblem {
+  background: var(--a27-login-surface-raised);
+  border: 1px solid var(--a27-login-border);
+  border-radius: 14px;
+}
+.hcc-login-host .orbit-access-tag,
+.hcc-login-host .orbit-access-label {
+  color: var(--a27-login-accent);
+}
+.hcc-login-host .orbit-access-content h3 {
+  color: var(--a27-login-ink);
+  letter-spacing: -.03em;
+}
+.hcc-login-host .orbit-access-lead,
+.hcc-login-host .orbit-login-notice,
+.hcc-login-host .orbit-access-security,
+.hcc-login-host .orbit-access-steps small {
+  color: var(--a27-login-soft);
+}
+.hcc-login-host .orbit-github-cta {
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: #88bdff;
+  color: #101d31;
+  min-height: 52px;
+}
+.hcc-login-host .orbit-github-cta:hover {
+  background: #afd5ff;
+}
+.hcc-login-host .orbit-github-cta:disabled {
+  background: var(--a27-login-surface-raised);
+  color: var(--a27-login-soft);
+  border: 1px solid var(--a27-login-border);
+}
+.hcc-login-host .orbit-access-steps,
+.hcc-login-host .orbit-access-steps > div:not(.orbit-access-steps-head),
+.hcc-login-host .orbit-access-security,
+.hcc-login-host .orbit-auth-footer {
+  border-color: var(--a27-login-border);
+}
+.hcc-login-host .orbit-right-foot {
+  width: 100%;
+  max-width: 530px;
+}
+.hcc-login-host .orbit-auth-footer {
+  background: var(--a27-login-glass);
+  border-top: 1px solid var(--a27-login-border);
+}
+.hcc-login-host .orbit-auth :is(button, a, input, summary):focus-visible {
+  outline: 3px solid var(--a27-login-accent);
+  outline-offset: 3px;
+}
+/* Explicit light-mode controls and route panels, preserving the existing content. */
+:root[data-hermes-resolved-theme="light"] .hcc-login-host .orbit-route-stage {
+  background: #e5edf8;
+}
+:root[data-hermes-resolved-theme="light"] .hcc-login-host .orbit-route-node {
+  background: rgba(255, 255, 255, .94);
+}
+:root[data-hermes-resolved-theme="light"] .hcc-login-host .orbit-route-node.is-current {
+  background: #dae9fb;
+}
+:root[data-hermes-resolved-theme="light"] .hcc-login-host .orbit-auth-core {
+  background: #dce9fa;
+}
+:root[data-hermes-resolved-theme="light"] .hcc-login-host .orbit-github-cta {
+  background: #236bde;
+  color: #fff;
+}
+:root[data-hermes-resolved-theme="light"] .hcc-login-host .orbit-github-cta:disabled {
+  background: #edf2fa;
+  color: #52657e;
+  border: 1px solid rgba(28, 53, 90, .14);
+}
+@media (max-width: 1200px) {
+  .hcc-login-host .orbit-auth-layout {
+    grid-template-columns: minmax(0, 54fr) minmax(370px, 46fr);
+  }
+}
+@media (max-width: 900px) {
+  .hcc-login-host .orbit-auth-layout {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .hcc-login-host .orbit-auth-right {
+    border-left: 0;
+    border-top: 1px solid var(--a27-login-border);
+  }
+  .hcc-login-host .orbit-auth-header {
+    min-height: 70px;
+  }
+}
+@media (max-width: 640px) {
+  .hcc-login-host .orbit-auth-header-meta {
+    display: none;
+  }
+}
+@media (max-width: 520px) {
+  .hcc-login-host .orbit-auth-header {
+    min-height: 68px;
+    padding: 10px 16px;
+    gap: 8px;
+  }
+  .hcc-login-host .hcc-login-theme {
+    width: 44px;
+    min-width: 44px;
+    padding: 0;
+  }
+  .hcc-login-host .hcc-login-theme span {
+    display: none;
+  }
+  .hcc-login-host .orbit-auth-route {
+    border-radius: 16px;
+  }
+  .hcc-login-host .orbit-access-form {
+    border-radius: 18px;
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .hcc-login-host .orbit-auth-header,
+  .hcc-login-host .orbit-auth-right,
+  .hcc-login-host .orbit-auth-footer {
+    background: var(--a27-login-surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+@media (forced-colors: active) {
+  .hcc-login-host .orbit-access-form,
+  .hcc-login-host .orbit-auth-route,
+  .hcc-login-host .hcc-login-theme {
+    border: 1px solid CanvasText;
+  }
+}
