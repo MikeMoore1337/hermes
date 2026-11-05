@@ -375,7 +375,9 @@ def inspect(home: Path) -> dict:
             else set(rec["planned"]) | {CANONICAL_STATE, KNOWN_RESIDUAL})
         unexpected = sorted(set(actual) - allowed)
         modified = sorted(k for k in actual if k in rec["files"]
-                          and actual[k] != rec["files"][k])
+                          and actual[k] != rec["files"][k]
+                          and not (rec["phase"] == "RETIRING"
+                                   and k == KNOWN_RESIDUAL))
         missing = sorted(set(rec["files"]) - set(actual)) if rec["phase"] == "READY" else []
         unexpected_dirs = sorted(set(dirs) - (
             set(rec["dirs"]) | _allowed_dirs(set(rec["planned"])
