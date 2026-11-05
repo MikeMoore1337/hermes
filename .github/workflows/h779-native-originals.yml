@@ -1,0 +1,64 @@
+name: H779 native UX UI originals
+on:
+  push:
+    branches: [feat/h779-apple27-aero-glass]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  impeccable:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Load pinned Impeccable and invoke engine
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none --no-checkout https://github.com/pbakaus/impeccable.git "$RUNNER_TEMP/impeccable"
+          git -C "$RUNNER_TEMP/impeccable" checkout --detach 83dc1bbe4c37636632e72a7752e9cc433e9a9901
+          test "$(git -C "$RUNNER_TEMP/impeccable" rev-parse HEAD)" = 83dc1bbe4c37636632e72a7752e9cc433e9a9901
+          skill="$RUNNER_TEMP/impeccable/.agents/skills/impeccable/scripts/impeccable"
+          export IMPECCABLE_HOME="$RUNNER_TEMP/isolated-engine-cache"
+          cd control_center/frontend
+          echo "ORIGINAL=impeccable SHA=83dc1bbe4c37636632e72a7752e9cc433e9a9901"
+          sh "$skill" engine-probe
+          sh "$skill" context --target src/main.jsx
+          sh "$skill" concept-seed --scope direction --mode operate
+  taste:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: {node-version: '22'}
+      - name: Invoke original Taste direction draws
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none --no-checkout https://github.com/Leonxlnx/taste-skill.git "$RUNNER_TEMP/taste"
+          git -C "$RUNNER_TEMP/taste" checkout --detach 9b4bf937a1f69348126959c15d2f99a73e65699b
+          test "$(git -C "$RUNNER_TEMP/taste" rev-parse HEAD)" = 9b4bf937a1f69348126959c15d2f99a73e65699b
+          skill="$RUNNER_TEMP/taste/skills/taste-skill"
+          echo "ORIGINAL=taste SHA=9b4bf937a1f69348126959c15d2f99a73e65699b"
+          node "$skill/scripts/start.mjs" deal --page software --history "$RUNNER_TEMP/taste-history.json"
+          node "$skill/assets/layout/deal.mjs" --type software --has ui --history "$RUNNER_TEMP/taste-layout-history.json"
+  pro-max:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with: {python-version: '3.12'}
+      - name: Invoke original UI UX Pro Max search
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none --no-checkout https://github.com/nextlevelbuilder/ui-ux-pro-max-skill.git "$RUNNER_TEMP/pro"
+          git -C "$RUNNER_TEMP/pro" checkout --detach ccce51cba388476d4f403091ddb91636d5cd9fed
+          test "$(git -C "$RUNNER_TEMP/pro" rev-parse HEAD)" = ccce51cba388476d4f403091ddb91636d5cd9fed
+          search="$RUNNER_TEMP/pro/.claude/skills/ui-ux-pro-max/scripts/search.py"
+          echo "ORIGINAL=pro-max SHA=ccce51cba388476d4f403091ddb91636d5cd9fed"
+          python "$search" 'Apple macOS iOS monitoring dashboard glass light dark' --design-system --variance 4 --motion 3 --density 8 -p 'Hermes Command Center'
+          python "$search" 'responsive navigation keyboard focus safe area' --domain ux
+          python "$search" 'React dashboard state performance' --stack react
