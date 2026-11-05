@@ -480,6 +480,49 @@ class ReadonlySourceTests(unittest.TestCase):
         self.assertEqual(result["dominant_language"], "UNKNOWN")
         self.assertFalse(result["install_authorized"])
 
+    def test_release_tag_not_claimed_verified_from_latest_metadata(self):
+        source = "example-org/example"
+        s = Fake({
+            f"/repos/{source}": {
+                "full_name": source, "default_branch": "main",
+                "language": "Python", "archived": False, "fork": False,
+                "pushed_at": "2026-11-05T10:00:00Z",
+            },
+            f"/repos/{source}/branches/main": {"name": "main", "commit": {"sha": SHA}},
+            f"/repos/{source}/contents?ref={SHA}": [
+                {"name": "pyproject.toml", "type": "file"},
+            ],
+            f"/repos/{source}/license?ref={SHA}": {
+                **source_blob(), "license": {"spdx_id": "MIT"},
+            },
+            f"/repos/{source}/contents/NOTICE?ref={SHA}": eng.SourceUnavailable("github_not_found"),
+            f"/repos/{source}/contents/NOTICE.txt?ref={SHA}": eng.SourceUnavailable("github_not_found"),
+            f"/repos/{source}/contents/NOTICE.md?ref={SHA}": eng.SourceUnavailable("github_not_found"),
+            # GitHub "latest" may reference a tag or a different SHA.
+            f"/repos/{source}/releases/latest": {
+                "published_at": "2026-11-04T10:00:00Z",
+                "tag_name": "v9.0.0", "target_commitish": "b" * 40,
+            },
+            f"/repos/{source}/security-advisories?per_page=5": [],
+        })
+        result = eng.radar_snapshot(source, REPO, client=s, now=NOW)
+        self.assertFalse(result["release_tag_verified"])
+        self.assertFalse(result["source_verified"])
+        self.assertFalse(result["install_authorized"])
+        self.assertEqual(result["status"], "NEEDS_REVIEW")
+        self.assertNotIn("v9.0.0", json.dumps(result))
+
+    def test_oversized_root_listing_is_not_full_coverage(self):
+        class Root:
+            def get(self, path):
+                if "/contents?ref=" in path:
+                    return [{"type": "file", "name": "pyproject.toml"}] * 513
+                raise AssertionError("Unexpected path")
+        result = eng._root_metadata(Root(), "example-org/example", SHA)
+        self.assertEqual(result, {
+            "coverage": "PARTIAL", "entry_count": 0, "markers": [],
+        })
+
     def test_public_http_get_is_get_only_no_credentials(self):
         response = MagicMock()
         response.status = 200
