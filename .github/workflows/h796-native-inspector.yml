@@ -1,0 +1,41 @@
+name: H796 native Impeccable final detector (temporary)
+on:
+  push:
+    branches: [fix/h796-wide-apple-login]
+permissions: {contents: read}
+jobs:
+  native-design-detector:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Pinned original Impeccable mechanical detector
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none --no-checkout https://github.com/pbakaus/impeccable.git "$RUNNER_TEMP/impeccable"
+          git -C "$RUNNER_TEMP/impeccable" checkout --detach 83dc1bbe4c37636632e72a7752e9cc433e9a9901
+          test "$(git -C "$RUNNER_TEMP/impeccable" rev-parse HEAD)" = 83dc1bbe4c37636632e72a7752e9cc433e9a9901
+          export IMPECCABLE_HOME="$RUNNER_TEMP/h796-final-engine"
+          skill="$RUNNER_TEMP/impeccable/.agents/skills/impeccable/scripts/impeccable"
+          cd control_center/frontend
+          sh "$skill" engine-probe
+          sh "$skill" context --target src/OrbitLogin.jsx > "$RUNNER_TEMP/h796-context.txt"
+          mkdir -p .artifacts/h796-native-inspector
+          set +e
+          sh "$skill" detect --json src/OrbitLogin.jsx src/apple27-wide-login.css src/main.jsx > .artifacts/h796-native-inspector/findings.json 2> .artifacts/h796-native-inspector/stderr.txt
+          status=$?
+          set -e
+          echo "IMPECCABLE_SOURCE=83dc1bbe4c37636632e72a7752e9cc433e9a9901" >> "$GITHUB_STEP_SUMMARY"
+          echo "H796_EXACT_SOURCE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+          echo "NATIVE_DETECT_EXIT=$status" >> "$GITHUB_STEP_SUMMARY"
+          head -c 10000 .artifacts/h796-native-inspector/findings.json || true
+          exit "$status"
+      - name: Save sanitized native detector result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: h796-impeccable-native-inspector
+          path: control_center/frontend/.artifacts/h796-native-inspector/
+          if-no-files-found: warn
+          retention-days: 7
