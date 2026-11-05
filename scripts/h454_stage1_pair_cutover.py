@@ -34,6 +34,9 @@ ARCHIVE_HASH = "5853b9fe50f83775aafa0d22bbc21867cb1bcb7e8eb6e3d289a9962132ef7213
 ARCHIVE = Path("/var/tmp/h454-stage1-image.koLrSWVF/relay.tar.gz")
 PIN_ROOT = Path("/var/lib/hermes-h454-wss-sidecar")
 WSS_SOURCE_BLOB = "3f496e90a3aa26be69b3c2a24f413910e69af02c"
+ORIGINAL_PINS_SHA256 = "46b45a6b2b1873db0581e2d8d55fadaf18091b788432fc2a84440ebcbe60fbaa"
+ORIGINAL_PROFILE_SHA256 = "24b679a8887665909864f1eae3a11f8bd07a07e510aae5e22384c6b096f17f86"
+OBSERVED_PROFILE_SHA256 = "07f3bc0b2a2d58f558a897180dc81c9e6b63fdc0461795e15b2a6133344"
 PINS = PIN_ROOT / "pins.json"
 PINS_OLD = PIN_ROOT / "stage1-original-pins.json"
 PENDING = PIN_ROOT / "reconcile.pending"
@@ -62,6 +65,10 @@ def protected(path, mode, directory=False):
         and (stat.S_ISDIR(meta.st_mode) if directory else stat.S_ISREG(meta.st_mode))
         and (directory or meta.st_nlink == 1), "UNSAFE_PROTECTED_FILE"
     )
+
+
+def digest_bytes(data):
+    return hashlib.sha256(data).hexdigest()
 
 
 def digest(path):
@@ -152,6 +159,22 @@ def read_old_pin_pair(raw):
     require(pins["relay_name"] == legacy.NAME and pins["sidecar_name"] == PROXY
             and pins["relay_image"] == LEGACY_IMAGE
             and pins["sidecar_image"] == LEGACY_IMAGE, "EXISTING_WSS_PINS_CHANGED")
+    observed = inspect("container", pins["sidecar_id"])
+    actual_profile = wss.profile_sha256(observed)
+    attested = raw
+    if actual_profile != pins["profile_sha256"]:
+        # Owner-scoped dual-pin recovery of observed Docker metadata drift.
+        # Both the original complete pin file and the two profile fingerprints
+        # are immutable inputs. No live pin is silently rewritten in preflight.
+        require(digest_bytes(raw) == ORIGINAL_PINS_SHA256
+                and pins["profile_sha256"] == ORIGINAL_PROFILE_SHA256
+                and actual_profile == OBSERVED_PROFILE_SHA256,
+                "UNATTESTED_WSS_PROFILE_DRIFT")
+        pins = dict(pins, profile_sha256=actual_profile)
+        attested = (json.dumps(pins, sort_keys=True, separators=(",", ":")) + "\n").encode("ascii")
+        wss._pins(attested)
+    # Still enforce every original WSS security invariant, TLS identity,
+    # container/network binding, non-root runtime and mount contract.
     relay, sidecar = wss._snapshot(pins, PIN_ROOT, Path(pins["tls_directory"]))
     wss._namespace(relay, sidecar)
     fd = wss._directory(Path(pins["tls_directory"]))
@@ -160,8 +183,7 @@ def read_old_pin_pair(raw):
     finally:
         os.close(fd)
     wss._tls(pins, ca)
-    return pins, relay, sidecar
-
+    return pins, relay, sidecar, attested
 
 def read_only(release_sha):
     require(os.geteuid() == 0 and re.fullmatch(r"[0-9a-f]{40}", release_sha),
@@ -200,7 +222,8 @@ def approval(release_sha, relay, sidecar):
     record = json.loads(APPROVAL.read_text(encoding="utf-8"), object_pairs_hook=unique)
     require(set(record) == {
         "schema", "decision", "release_sha", "fork_commit", "image",
-        "archive_sha256", "legacy_image", "relay_id", "sidecar_id"
+        "archive_sha256", "legacy_image", "relay_id", "sidecar_id",
+        "original_pins_sha256", "observed_sidecar_profile_sha256"
     } and type(record["schema"]) is int and record["schema"] == 1
         and record["decision"] == "OWNER_APPROVED_H454_STAGE1_RELAY_WSS_CUTOVER"
         and record["release_sha"] == release_sha
@@ -208,6 +231,8 @@ def approval(release_sha, relay, sidecar):
         and record["image"] == FORK_IMAGE
         and record["archive_sha256"] == ARCHIVE_HASH
         and record["legacy_image"] == LEGACY_IMAGE
+        and record["original_pins_sha256"] == ORIGINAL_PINS_SHA256
+        and record["observed_sidecar_profile_sha256"] == OBSERVED_PROFILE_SHA256
         and record["relay_id"] == relay["Id"]
         and record["sidecar_id"] == sidecar["Id"], "APPROVAL_IDENTITY_MISMATCH")
 
@@ -322,12 +347,12 @@ def cutover(release_sha):
         read_only(release_sha)
         wss = load_existing_wss()
         with locked_pins() as original_raw:
-            original, relay, proxy = read_old_pin_pair(original_raw)
+            original, relay, proxy, attested_raw = read_old_pin_pair(original_raw)
             approval(release_sha, relay, proxy)
             baseline_devices = legacy.devices()
             require(baseline_devices >= 1, "NO_LIVE_DEVICES")
             before = legacy.snapshot()
-            write_once(PINS_OLD, original_raw)
+            write_once(PINS_OLD, attested_raw)
             marker = {
                 "schema": 1, "original_pin_sha256": digest(PINS_OLD),
                 "release_sha": release_sha, "devices": baseline_devices
