@@ -328,7 +328,6 @@ function OperatorApp({authMode,onLogout,theme,onTheme}){
   <div className="orbit-project-label"><strong>HERMES / AERO GLASS 27</strong><span>Защищённое рабочее пространство</span></div>
   <div className="orbit-app-layout">
    <aside className={"orbit-rail"+(menuOpen?" is-open":"")} aria-label="Разделы и рабочее пространство">
-    <div className="orbit-macos-dots" aria-hidden="true"><i/><i/><i/></div>
     <div className="orbit-rail-brand"><Brand/></div>
     <div className="atlas-section-nav" onClickCapture={event=>{
       const widget=event.target.closest(".ai272-nav,.quota295-nav,.infra294-nav");
