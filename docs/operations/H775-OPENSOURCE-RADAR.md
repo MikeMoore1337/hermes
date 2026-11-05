@@ -60,3 +60,24 @@ All results set \`source_verified=false\`, \`license_verified=false\`, \`compati
 - Exact-head CI/review; separately authorized deployment and runtime evidence.
 
 This module is not a duplicate of existing research/OSS catalog workflows (#61/#464). Its initial output is intentionally small and evidence-oriented, without creating another scheduler or database.
+
+
+## Exact-commit LICENSE / NOTICE content integrity (GitHub public adapter)
+
+The opt-in public reader now resolves an immutable source commit SHA, then obtains
+the standard GitHub license resource **at that exact ref**. It decodes a bounded
+base64 file (max 128 KiB), verifies the returned Git blob SHA-1 from actual
+bytes, and emits only a SHA-256 digest. Missing file or an invalid hash never
+proves license suitability.
+
+Likewise it checks only three **standard root** filenames \`NOTICE\`,
+\`NOTICE.txt\` and \`NOTICE.md\`, pinned to the same source commit. It records
+\`FOUND_STANDARD_ROOT_FILE\` with digest or
+\`NOT_FOUND_STANDARD_ROOT_PATHS\`. The latter does **not** prove the project
+has no NOTICE elsewhere or that redistributing it has no obligations.
+
+The reported SPDX identifier is still GitHub/source metadata;
+\`license_verified=false\`, \`compatibility_verified=false\`,
+\`security_scan=NOT_RUN\`, \`install_authorized=false\` and
+\`owner_approval=NOT_GRANTED\` remain unchanged. No file contents are returned,
+copied into Hermes, executed or exposed in the Command Center.
