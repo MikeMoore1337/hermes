@@ -259,6 +259,7 @@ class CutoverTests(unittest.TestCase):
             return ""
         candidate = {"Id": new_relay, "Image": m.FORK_IMAGE,
                      "Config": {"User": "979:975"}}
+        # Do not inspect production's root-owned H454 pins in DynamicUser tests.
         with patch.object(m.legacy, "lock", return_value=nullcontext()), \
              patch.object(m, "read_only"), \
              patch.object(m, "load_existing_wss", return_value=fake_wss), \
@@ -269,8 +270,6 @@ class CutoverTests(unittest.TestCase):
              patch.object(m, "approval"), \
              patch.object(m.legacy, "devices", return_value=3), \
              patch.object(m.legacy, "snapshot", side_effect=["before", "after"]), \
-             # Sandbox test: the real H454 pin directory is root-only 0700.
-             # Never stat it from systemd DynamicUser during offline CI.
              patch.object(m, "PINS_OLD", types.SimpleNamespace(exists=lambda: False)), \
              patch.object(m, "write_once"), \
              patch.object(m, "digest", return_value="f" * 64), \
@@ -295,6 +294,7 @@ class CutoverTests(unittest.TestCase):
     def test_failed_cutover_requests_original_pair_rollback(self):
         def refuse(*args):
             raise m.Hold("DOCKER_OPERATION_FAILED")
+        # Do not inspect production's root-owned H454 pins in DynamicUser tests.
         with patch.object(m.legacy, "lock", return_value=nullcontext()), \
              patch.object(m, "read_only"), \
              patch.object(m, "load_existing_wss"), \
@@ -304,8 +304,6 @@ class CutoverTests(unittest.TestCase):
              patch.object(m, "approval"), \
              patch.object(m.legacy, "devices", return_value=3), \
              patch.object(m.legacy, "snapshot", return_value="before"), \
-             # Sandbox test: the real H454 pin directory is root-only 0700.
-             # Never stat it from systemd DynamicUser during offline CI.
              patch.object(m, "PINS_OLD", types.SimpleNamespace(exists=lambda: False)), \
              patch.object(m, "write_once"), \
              patch.object(m, "digest", return_value="f" * 64), \
