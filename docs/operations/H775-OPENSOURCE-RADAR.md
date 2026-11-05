@@ -81,3 +81,21 @@ The reported SPDX identifier is still GitHub/source metadata;
 \`security_scan=NOT_RUN\`, \`install_authorized=false\` and
 \`owner_approval=NOT_GRANTED\` remain unchanged. No file contents are returned,
 copied into Hermes, executed or exposed in the Command Center.
+
+## Пилотный план и инвентаризация корня на закреплённом SHA
+
+Публичный read-only адаптер дополнительно читает **только метаданные**
+корневого каталога по точному commit SHA и передаёт распознанные имена
+конфигурационных файлов (`pyproject.toml`, `package.json`, `uv.lock`,
+`Cargo.toml`, `go.mod` и файлы LICENSE/NOTICE из закрытого перечня).
+Пользовательские имена и содержимое файлов не копируются в отчёт.
+
+Поле `root_metadata.coverage` различает `OBSERVED_PINNED_ROOT`,
+`PARTIAL` и `NOT_AVAILABLE`; основной язык выводится лишь из
+ограниченного списка известных языков GitHub, иначе `UNKNOWN`.
+Повторное чтение SHA исходной ветки выявляет изменение источника во
+время получения метаданных и прерывает проверку. `pilot_steps` - пять
+фиксированных шагов для **человеческой приёмки**, не выполняемые команды.
+`release_tag_verified=false`, `license_verified=false` и
+`compatibility_verified=false` сохраняются: метаданные корня и дата
+последнего релиза сами по себе этого не подтверждают.
