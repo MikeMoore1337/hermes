@@ -74,7 +74,7 @@ test("Aero Glass navigation and disclosure work by keyboard at 393px",async({pag
  const qa=page.locator(".atlas-section-nav").getByRole("button",{name:"QA и CI"});
  await qa.focus();await qa.press("Enter");
  await expect(more).toHaveAttribute("aria-expanded","false");
- await expect(page.getByRole("heading",{name:"QA и CI"})).toBeVisible();
+ await expect(page.locator(".orbit-module-intro h1")).toHaveText("QA и CI");
  await more.click();
  await page.keyboard.press("Escape");
  await expect(more).toHaveAttribute("aria-expanded","false");
