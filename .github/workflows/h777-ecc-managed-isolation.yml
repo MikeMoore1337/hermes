@@ -55,12 +55,18 @@ jobs:
           npm ci --omit=dev --ignore-scripts --no-audit --no-fund --loglevel=error
           test -d node_modules/sql.js
 
-      - name: Diagnose only public tracked checkout status after npm-ci
+      - name: Restore exact upstream yarn.lock after npm-ci if it alone changed
         shell: bash
         run: |
           set -euo pipefail
-          git -C "$ECC_SOURCE" status --porcelain --untracked-files=normal
-          git -C "$ECC_SOURCE" diff --name-only
+          status="$(git -C "$ECC_SOURCE" status --porcelain --untracked-files=normal)"
+          if [[ "$status" == " M yarn.lock" ]]; then
+            git -C "$ECC_SOURCE" -c core.hooksPath=/dev/null restore --source=HEAD --worktree -- yarn.lock
+          elif [[ -n "$status" ]]; then
+            echo "Unexpected upstream source modification after npm-ci; refusing to execute" >&2
+            exit 1
+          fi
+          test -z "$(git -C "$ECC_SOURCE" status --porcelain --untracked-files=normal)"
 
       - name: Prepare pinned offline container image
         run: |
