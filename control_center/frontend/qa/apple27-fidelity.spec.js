@@ -62,7 +62,7 @@ for(const [width,height,windowX,windowY,windowW] of [
     approx(m.window.height,805,2);
     approx(m.toolbar.height,72,2);
     approx(m.sidebar.width,width>=1181?260:width>=921?216:190,2);
-    await expect(page.locator(".orbit-macos-dots i")).toHaveCount(3);
+    await expect(page.locator(".orbit-macos-dots")).toHaveCount(0);
     await expect(page.getByRole("navigation",{name:"Разделы управления"})).toBeVisible();
     await expect(page.locator(".orbit-nav-group-title").filter({hasText:"РАБОЧЕЕ ПРОСТРАНСТВО"})).toBeVisible();
     await expect(page.locator(".orbit-nav-group-title").filter({hasText:"НАБЛЮДЕНИЕ"})).toBeVisible();
