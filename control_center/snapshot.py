@@ -23,6 +23,7 @@ from control_center.infrastructure import collect as collect_host_metrics
 from control_center.infrastructure import save as save_host_metrics
 from control_center.github_observe_view import load as read_github_observe_feed, FeedRefused
 from control_center.github_projects_view import load as read_public_projects_feed, ProjectFeedRefused
+from control_center.engineering_view import load as read_engineering_feed, EngineeringViewRefused
 
 
 DEFAULT_OUTPUT = Path("/var/lib/hermes-control-center/overview.json")
@@ -79,6 +80,11 @@ def collect(runner=subprocess.run, now=None) -> dict:
         public_projects = read_public_projects_feed()
     except (ProjectFeedRefused, OSError, ValueError):
         public_projects = None
+    # Existing root collector only: no new network, token or scheduler.
+    try:
+        engineering = read_engineering_feed()
+    except (EngineeringViewRefused, OSError, ValueError):
+        engineering = None
     bounded_state = next(x["state"] for x in services if x["id"] == "agent_bounded")
     policy = ("Ограниченный H-01 Ops AI: расписание активно. " if bounded_state == "active"
               else "Ограниченный H-01 Ops AI: расписание не подтверждено. ")
@@ -91,6 +97,7 @@ def collect(runner=subprocess.run, now=None) -> dict:
         "services": services,
         "github_observe_feed": github_observe,
         "github_project_feed": public_projects,
+        "engineering_feed": engineering,
         "research": read_owner_view(),
         "agent_policy": policy,
         "agent_runtime": {"scope": "bounded_event_driven", "scheduler_state": bounded_state,
