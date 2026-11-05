@@ -36,7 +36,7 @@ PIN_ROOT = Path("/var/lib/hermes-h454-wss-sidecar")
 WSS_SOURCE_BLOB = "3f496e90a3aa26be69b3c2a24f413910e69af02c"
 ORIGINAL_PINS_SHA256 = "46b45a6b2b1873db0581e2d8d55fadaf18091b788432fc2a84440ebcbe60fbaa"
 ORIGINAL_PROFILE_SHA256 = "24b679a8887665909864f1eae3a11f8bd07a07e510aae5e22384c6b096f17f86"
-OBSERVED_PROFILE_SHA256 = "07f3bc0b2a2d58f558a897180dc81c9e6b63fdc0461795e15b2a6133344"
+OBSERVED_PROFILE_SHA256 = "07f3bc0b2a2b9ab2d58f558a897180dc81c9e6b63fdc0461795e15b2a6133344"
 PINS = PIN_ROOT / "pins.json"
 PINS_OLD = PIN_ROOT / "stage1-original-pins.json"
 PENDING = PIN_ROOT / "reconcile.pending"
@@ -191,6 +191,9 @@ def read_only(release_sha):
     require(LIVE_SHA.read_text().strip() == release_sha, "INSTALLED_SHA_MISMATCH")
     protected(ARCHIVE.parent, 0o700, directory=True)
     protected(ARCHIVE, 0o600)
+    require(all(HEX.fullmatch(value) for value in (
+        ORIGINAL_PINS_SHA256, ORIGINAL_PROFILE_SHA256, OBSERVED_PROFILE_SHA256,
+        ARCHIVE_HASH)), "INVALID_STAGE1_PINS")
     require(ARCHIVE.stat().st_size <= 200000000
             and digest(ARCHIVE) == ARCHIVE_HASH, "ARCHIVE_DRIFT")
     image = inspect("image", FORK_IMAGE)
