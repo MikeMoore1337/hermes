@@ -1,7 +1,7 @@
 import {test,expect} from "@playwright/test";
 
 async function openOrbitWidget(page,label){
- if((page.viewportSize()?.width||1280)<=980){
+ if((page.viewportSize()?.width||1280)<=700){
   const more=page.locator(".orbit-app-mobilebar").getByRole("button",{name:"Ещё"});
   if(await more.getAttribute("aria-expanded")!=="true")await more.click();
  }
@@ -9,7 +9,7 @@ async function openOrbitWidget(page,label){
 }
 async function chooseOrbitView(page,label){
  const width=page.viewportSize()?.width||1280;
- if(width<=980){
+ if(width<=700){
   const quickName=label==="QA и CI"?"QA / CI":label==="Operator Inbox"?"Входящие":label;
   const bottom=page.locator(".orbit-app-mobilebar").getByRole("button",{name:quickName,exact:true});
   if(await bottom.count()){await bottom.click();return;}
