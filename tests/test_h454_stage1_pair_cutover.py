@@ -270,6 +270,7 @@ class CutoverTests(unittest.TestCase):
              patch.object(m.legacy, "devices", return_value=3), \
              patch.object(m.legacy, "snapshot", side_effect=["before", "after"]), \
              patch.object(m, "write_once"), \
+             patch.object(m, "PINS_OLD", types.SimpleNamespace(exists=lambda: False)), \
              patch.object(m, "digest", return_value="f" * 64), \
              patch.object(m, "sync_pin_directory"), \
              patch.object(m, "docker", side_effect=command), \
@@ -302,6 +303,7 @@ class CutoverTests(unittest.TestCase):
              patch.object(m.legacy, "devices", return_value=3), \
              patch.object(m.legacy, "snapshot", return_value="before"), \
              patch.object(m, "write_once"), \
+             patch.object(m, "PINS_OLD", types.SimpleNamespace(exists=lambda: False)), \
              patch.object(m, "digest", return_value="f" * 64), \
              patch.object(m, "sync_pin_directory"), \
              patch.object(m, "docker", side_effect=refuse), \
