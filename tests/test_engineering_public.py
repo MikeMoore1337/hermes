@@ -28,10 +28,12 @@ def pr(number=42, *, head=SHA, base=BASE_SHA, draft=False, mergeable=True,
     }
 
 
-def run(workflow=381262090, *, head=SHA, conclusion="success", status="completed"):
+def run(workflow=381262090, *, head=SHA, conclusion="success", status="completed",
+        event="pull_request", branch="feature/demo"):
     return {
         "id": 321, "workflow_id": workflow,
         "head_sha": head, "status": status, "conclusion": conclusion,
+        "event": event, "head_branch": branch,
         "repository": {"full_name": REPO},
     }
 
@@ -108,6 +110,29 @@ class ReadonlySourceTests(unittest.TestCase):
         with self.assertRaisesRegex(eng.SourceUnavailable, "pr_changed_during_capture"):
             eng.release_snapshot(REPO, stage="PR", pr=42, client=s, now=NOW)
 
+    def test_pr_ci_must_be_pull_request_not_push_or_dispatch(self):
+        s = release_source()
+        packet = s.table[f"/repos/{REPO}/actions/runs?head_sha={SHA}&per_page=100"]
+        for event in ("push", "workflow_dispatch", "issues"):
+            with self.subTest(event=event):
+                packet["workflow_runs"][0]["event"] = event
+                report = eng.release_snapshot(REPO, stage="PR", pr=42, client=s, now=NOW)
+                self.assertEqual(report["status"], "INCONCLUSIVE")
+                self.assertIn("required_check_missing", report["reasons"])
+
+    def test_release_ci_must_be_main_push(self):
+        path = f"/repos/{REPO}/actions/runs?head_sha={SHA}&per_page=100"
+        fake = Fake({
+            f"/repos/{REPO}/branches/main": {"name": "main", "commit": {"sha": SHA}},
+            path: {"total_count": 2, "workflow_runs": [
+                run(event="pull_request", branch="feature/nope"),
+                {**run(386820934, event="push", branch="feature/stale"), "id": 333},
+            ]},
+        })
+        result = eng.release_snapshot(REPO, stage="RELEASE", client=fake, now=NOW)
+        self.assertEqual(result["status"], "INCONCLUSIVE")
+        self.assertIn("required_check_missing", result["reasons"])
+
     def test_missing_and_partial_actions_windows_fail_closed(self):
         s = release_source()
         path = f"/repos/{REPO}/actions/runs?head_sha={SHA}&per_page=100"
@@ -124,8 +149,8 @@ class ReadonlySourceTests(unittest.TestCase):
         s = Fake({
             f"/repos/{REPO}/branches/main": {"name": "main", "commit": {"sha": SHA}},
             f"/repos/{REPO}/actions/runs?head_sha={SHA}&per_page=100": {
-                "total_count": 2, "workflow_runs": [run(), {
-                    **run(386820934), "id": 333,
+                "total_count": 2, "workflow_runs": [run(event="push", branch="main"), {
+                    **run(386820934, event="push", branch="main"), "id": 333,
                 }],
             },
         })
