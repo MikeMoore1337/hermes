@@ -295,73 +295,93 @@ def merge_snapshot(repo: str, *, client=None, now: datetime | None = None) -> di
         ), maximum=MAX_PR_WINDOW)
         complete = len(extra) == 0
     prs = []
+    incomplete_sources = 0
     for item in rows:
-        num = _safe_id(_obj(item).get("number"))
-        raw = _obj(source.get(f"/repos/{repo}/pulls/{num}"))
-        if raw.get("number") != num or raw.get("state") != "open":
-            raise SourceUnavailable("pr_changed_during_capture")
-        base = _obj(raw.get("base"))
-        branch = base.get("ref")
-        if branch not in REPOSITORIES[repo].values():
-            complete = False
-            continue
-        if _obj(base.get("repo")).get("full_name") != repo:
-            raise SourceUnavailable("base_repo_invalid")
-        head_sha = _safe_sha(_obj(raw.get("head")).get("sha"))
-        base_sha = _safe_sha(base.get("sha"))
-        files = _array(source.get(
-            f"/repos/{repo}/pulls/{num}/files?per_page=100&page=1"
-        ), maximum=100)
-        if len(files) == 100:
-            extra = _array(source.get(
-                f"/repos/{repo}/pulls/{num}/files?per_page=100&page=2"
-            ), maximum=100)
-            files += extra
-        expected_files = raw.get("changed_files")
-        files_complete = (type(expected_files) is int and expected_files == len(files)
-                          and len(files) <= MAX_FILES)
-        sanitized = []
-        for changed in files[:MAX_FILES]:
-            f = _obj(changed)
-            state = f.get("status")
-            if state not in ("added", "modified", "removed", "renamed"):
-                files_complete = False
+        try:
+            num = _safe_id(_obj(item).get("number"))
+            raw = _obj(source.get(f"/repos/{repo}/pulls/{num}"))
+            if raw.get("number") != num or raw.get("state") != "open":
+                raise SourceUnavailable("pr_changed_during_capture")
+            base = _obj(raw.get("base"))
+            branch = base.get("ref")
+            if branch not in REPOSITORIES[repo].values():
+                complete = False
                 continue
-            sanitized.append({
-                "path": f.get("filename"),
-                "previous_path": f.get("previous_filename") if state == "renamed" else None,
-                "status": state,
+            if _obj(base.get("repo")).get("full_name") != repo:
+                raise SourceUnavailable("base_repo_invalid")
+            head_sha = _safe_sha(_obj(raw.get("head")).get("sha"))
+            base_sha = _safe_sha(base.get("sha"))
+            files = _array(source.get(
+                f"/repos/{repo}/pulls/{num}/files?per_page=100&page=1"
+            ), maximum=100)
+            if len(files) == 100:
+                extra = _array(source.get(
+                    f"/repos/{repo}/pulls/{num}/files?per_page=100&page=2"
+                ), maximum=100)
+                files += extra
+            expected_files = raw.get("changed_files")
+            files_complete = (type(expected_files) is int and expected_files == len(files)
+                              and len(files) <= MAX_FILES)
+            sanitized = []
+            for changed in files[:MAX_FILES]:
+                f = _obj(changed)
+                state = f.get("status")
+                if state not in ("added", "modified", "removed", "renamed"):
+                    files_complete = False
+                    continue
+                sanitized.append({
+                    "path": f.get("filename"),
+                    "previous_path": f.get("previous_filename") if state == "renamed" else None,
+                    "status": state,
+                })
+            # Recheck identity after paginated file reads. A synchronized PR may
+            # otherwise combine a new head with old changed paths.
+            current = _obj(source.get(f"/repos/{repo}/pulls/{num}"))
+            if (current.get("number") != num or current.get("state") != "open"
+                    or _obj(current.get("head")).get("sha") != head_sha
+                    or _obj(current.get("base")).get("sha") != base_sha
+                    or current.get("changed_files") != expected_files):
+                raise SourceUnavailable("pr_changed_during_capture")
+            body = raw.get("body")
+            dependencies = []
+            if type(body) is str and len(body) <= 2048:
+                dependencies = sorted(set(int(x) for x in DEPENDENCY.findall(body)))
+                dependencies = [x for x in dependencies if x != num][:10]
+            elif body:
+                complete = False
+            draft = raw.get("draft")
+            if type(draft) is not bool:
+                raise SourceUnavailable("pr_draft_invalid")
+            prs.append({
+                "number": num, "head_sha": head_sha, "base_sha": base_sha,
+                "base_branch": branch, "draft": draft,
+                "mergeable": _mergeability(raw.get("mergeable")),
+                "files_complete": files_complete, "files": sanitized,
+                "depends_on": dependencies,
             })
-        # Recheck identity after paginated file reads. A synchronized PR may
-        # otherwise combine a new head with old changed paths.
-        current = _obj(source.get(f"/repos/{repo}/pulls/{num}"))
-        if (current.get("number") != num or current.get("state") != "open"
-                or _obj(current.get("head")).get("sha") != head_sha
-                or _obj(current.get("base")).get("sha") != base_sha
-                or current.get("changed_files") != expected_files):
-            raise SourceUnavailable("pr_changed_during_capture")
-        body = raw.get("body")
-        dependencies = []
-        if type(body) is str and len(body) <= 2048:
-            dependencies = sorted(set(int(x) for x in DEPENDENCY.findall(body)))
-            dependencies = [x for x in dependencies if x != num][:10]
-        elif body:
+        except SourceUnavailable as exc:
+            # A changed HEAD/base cannot be downgraded into partial evidence:
+            # the snapshot itself raced during capture.
+            if str(exc) == "pr_changed_during_capture":
+                raise
             complete = False
-        draft = raw.get("draft")
-        if type(draft) is not bool:
-            raise SourceUnavailable("pr_draft_invalid")
-        prs.append({
-            "number": num, "head_sha": head_sha, "base_sha": base_sha,
-            "base_branch": branch, "draft": draft,
-            "mergeable": _mergeability(raw.get("mergeable")),
-            "files_complete": files_complete, "files": sanitized,
-            "depends_on": dependencies,
-        })
+            incomplete_sources += 1
+            continue
+        except (ValueError, TypeError):
+            # Malformed unrelated PR data cannot erase evidence from other PRs
+            # or convert an incomplete window into a clean signal.
+            complete = False
+            incomplete_sources += 1
+            continue
     evidence = {
         "schema": "hermes-mergecontrol-evidence-v1", "repo": repo,
         "observed_at": stamp, "window_complete": complete, "prs": prs,
     }
-    return assess_merge(evidence, now=_utc(now))
+    result = assess_merge(evidence, now=_utc(now))
+    # Counts are from observed list entries only; no imaginary full history.
+    result["skipped_prs"] = incomplete_sources
+    result["window_exhaustive_verified"] = False
+    return result
 
 
 def radar_snapshot(source_repo: str, target_repo: str, *, client=None,
