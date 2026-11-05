@@ -368,9 +368,8 @@ def merge_snapshot(repo: str, *, client=None, now: datetime | None = None) -> di
             incomplete_sources += 1
             continue
         except (ValueError, TypeError):
-            # A malformed unrelated PR is skipped, never marked clean.
-            # A single offline/read-only GET failure must not erase the rest.
-            # of other PRs or turn an incomplete sample into a clean signal.
+            # Malformed unrelated PR data cannot erase evidence from other PRs
+            # or convert an incomplete window into a clean signal.
             complete = False
             incomplete_sources += 1
             continue
