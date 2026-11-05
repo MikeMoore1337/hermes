@@ -1,0 +1,105 @@
+name: H-777 ECC native upstream uninstall regression
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/h777-ecc-upstream-native-rollback.yml
+      - scripts/h777_ecc_native_uninstall_gate.py
+      - tests/test_h777_ecc_native_uninstall_gate.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  upstream-original-uninstall:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout Hermes source without credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Verify fail-closed classification and disposable Docker scope
+        run: python3 -m unittest discover -s tests -p 'test_h777_ecc_native_uninstall_gate.py' -v
+
+      - name: Acquire exact reviewed original ECC without running source hooks
+        shell: bash
+        env:
+          ECC_SHA: b38be6a7f6350964d59328b52f0624e1d1d552d1
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = "github-hosted"
+          test "$RUNNER_OS" = "Linux"
+          test "$(id -u)" != 0
+          echo "ECC_SOURCE=$RUNNER_TEMP/h777-original-ecc" >> "$GITHUB_ENV"
+          git -c core.hooksPath=/dev/null clone --filter=blob:none --no-checkout \
+            https://github.com/affaan-m/ECC.git "$RUNNER_TEMP/h777-original-ecc"
+          git -C "$RUNNER_TEMP/h777-original-ecc" \
+            -c core.hooksPath=/dev/null checkout --detach "$ECC_SHA"
+          test "$(git -C "$RUNNER_TEMP/h777-original-ecc" rev-parse HEAD)" = "$ECC_SHA"
+          grep -q '"license": "MIT"' "$RUNNER_TEMP/h777-original-ecc/package.json"
+
+      - name: Prepare original upstream package dependencies without lifecycle scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$ECC_SOURCE"
+          npm ci --omit=dev --ignore-scripts --no-audit --no-fund --loglevel=error
+          test -d node_modules/sql.js
+
+      - name: Obtain pinned isolated test runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker pull node:22.16.0-bookworm-slim@sha256:048ed02c5fd52e86fda6fbd2f6a76cf0d4492fd6c6fee9e2c463ed5108da0e34
+          docker inspect --format '{{.Id}} {{.Architecture}}' \
+            node:22.16.0-bookworm-slim@sha256:048ed02c5fd52e86fda6fbd2f6a76cf0d4492fd6c6fee9e2c463ed5108da0e34
+
+      - name: Run genuine upstream original uninstall and preserve known FAIL receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/h777_ecc_native_uninstall_gate.py \
+            --ecc-root "$ECC_SOURCE" \
+            --out h777-ecc-native-result.json \
+            --expectation known-failure
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r = json.loads(Path("h777-ecc-native-result.json").read_text(encoding="utf-8"))
+          assert r["scope"] == "disposable-h777-homes-github-hosted-docker-only"
+          assert r["provenance"]["upstream_ecc_sha"] == "b38be6a7f6350964d59328b52f0624e1d1d552d1"
+          assert r["status"] == "FAIL_KNOWN_CACHE" and r["native_exact_rollback"] is False
+          assert r["virgin_uninstall"]["status"] == "FAIL_KNOWN_CACHE"
+          assert r["installed_uninstall"]["status"] == "FAIL_KNOWN_CACHE"
+          assert r["preexisting_store"]["semantic_rows_unchanged"] is True
+          assert r["preexisting_store"]["status"] in (
+              "PASS_BYTE_IDENTICAL", "WARN_BYTE_REWRITE_NO_ROW_CHANGE")
+          assert r["preexisting_store"]["table_counts"].get("install_state", 0) >= 1
+          assert r["symlink_negative"] == "PASS_NO_LINK_FOLLOW"
+          assert r["removed_managed_paths"] > 100
+          assert r["original_reinstall_idempotent"] is True
+          assert len(r["original_calls"]) >= 8
+          print("H777_UPSTREAM_NATIVE_EXACT_ROLLBACK=FAIL_KNOWN_CACHE")
+          print("H777_DISPOSABLE_OS_DENY_AND_OWNER_STATE=PASS")
+          print("H777_PRODUCT_ACCEPTANCE=NO_GO")
+          PY
+          {
+            echo '### H-777 native upstream uninstall receipt'
+            echo ''
+            echo 'Original ECC native exact rollback: **FAIL_KNOWN_CACHE**'
+            echo 'This successful job validates an expected failure; it does **not** resolve issue #777.'
+            echo 'Only disposable test homes were created. No production files modified.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Retain sanitized upstream regression receipt
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: h777-original-ecc-native-uninstall
+          path: h777-ecc-native-result.json
+          if-no-files-found: ignore
+          retention-days: 7
