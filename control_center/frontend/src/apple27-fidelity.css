@@ -433,3 +433,11 @@
  .theme-orbit .hcc-actions .hcc-action:first-child{flex:1;min-width:0}
  .theme-orbit .hcc-actions .hcc-action-primary{flex:0 0 auto}
 }
+
+
+/* Preserve keyboard skip-link's place above the toolbar, not behind it. */
+.theme-orbit .skip-link:focus-visible{
+ position:relative;display:block;top:auto;left:auto;
+ width:max-content;max-width:calc(100% - 24px);
+ margin:8px 12px;z-index:2000;
+}
