@@ -269,6 +269,9 @@ class CutoverTests(unittest.TestCase):
              patch.object(m, "approval"), \
              patch.object(m.legacy, "devices", return_value=3), \
              patch.object(m.legacy, "snapshot", side_effect=["before", "after"]), \
+             # Sandbox test: the real H454 pin directory is root-only 0700.
+             # Never stat it from systemd DynamicUser during offline CI.
+             patch.object(m, "PINS_OLD", types.SimpleNamespace(exists=lambda: False)), \
              patch.object(m, "write_once"), \
              patch.object(m, "digest", return_value="f" * 64), \
              patch.object(m, "sync_pin_directory"), \
@@ -301,6 +304,9 @@ class CutoverTests(unittest.TestCase):
              patch.object(m, "approval"), \
              patch.object(m.legacy, "devices", return_value=3), \
              patch.object(m.legacy, "snapshot", return_value="before"), \
+             # Sandbox test: the real H454 pin directory is root-only 0700.
+             # Never stat it from systemd DynamicUser during offline CI.
+             patch.object(m, "PINS_OLD", types.SimpleNamespace(exists=lambda: False)), \
              patch.object(m, "write_once"), \
              patch.object(m, "digest", return_value="f" * 64), \
              patch.object(m, "sync_pin_directory"), \
