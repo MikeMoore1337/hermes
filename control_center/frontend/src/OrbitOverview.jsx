@@ -1,5 +1,5 @@
 import React,{useState} from "react";
-import {ArrowUpRight,ChevronRight,LockKeyhole,Pause,Play,ShieldCheck,Activity,Search,GitBranch} from "lucide-react";
+import {ArrowUpRight,ChevronRight,LockKeyhole,Pause,Play,ShieldCheck,Activity,Search,GitBranch,Monitor,Inbox,Gauge,Database} from "lucide-react";
 import {statuses,counts} from "./health.js";
 import "./orbit-operator.css";
 
@@ -41,6 +41,7 @@ function CoreNode({selected,onSelect}){
   <span className="orbit-core-context">СХЕМА НАБЛЮДЕНИЯ / НЕ АГЕНТ</span>
  </button>;
 }
+
 export default function OrbitOverview({snapshot,error,onView,onRefresh,busy,Registry,registryProps}){
  const [selected,setSelected]=useState("core");
  const [moving,setMoving]=useState(true);
@@ -53,26 +54,63 @@ export default function OrbitOverview({snapshot,error,onView,onRefresh,busy,Regi
  const statusInfo=selected==="core"?
    {title:"Hermes Core",text:"Схематическое представление наблюдаемых источников. Реальный агент и выполнение команд здесь не включаются.",state:"Не является телеметрией"}:
    {title:selectedMeta.label,
-    text:selectedService?selectedService.name+" · "+selectedService.unit+" · "+stateLabel(selectedService.state)+". Источник: защищённый снимок systemd.": "Для этого узла нет подтверждённых данных в текущем снимке.",
+    text:selectedService?selectedService.name+" · "+selectedService.unit+" · "+stateLabel(selectedService.state)+". Источник: защищённый снимок systemd.":"Для этого узла нет подтверждённых данных в текущем снимке.",
     state:selectedService?stateLabel(selectedService.state):"Не проверено"};
- return <div className="orbit-overview">
-  <section className="orbit-page-intro">
-   <div className="orbit-intro-copy">
-    <span className="orbit-intro-kicker"><i aria-hidden="true"/> HERMES / СИСТЕМНЫЙ ОБЗОР</span>
-    <h1>Вся система.<span>В одном поле зрения.</span></h1>
-    <p>Состояние компонентов и сигналы, требующие внимания. Данные берутся из разрешённого снимка, без запуска команд.</p>
+ const shortcuts=[
+  {id:"commander",label:"Hermes Commander",detail:"Устройства и подключения",icon:Monitor},
+  {id:"inbox",label:"Входящие",detail:"Очередь на ручную проверку",icon:Inbox},
+  {id:"qa",label:"QA и CI",detail:"Проверки и результаты",icon:ShieldCheck},
+  {id:"codex",label:"Лимиты AI",detail:"Аналитика использования",icon:Gauge}
+ ];
+ return <div className="hcc-overview">
+  <header className="hcc-intro">
+   <div><span className="hcc-kicker">HERMES COMMAND CENTER</span>
+    <h1>Рабочий стол</h1>
+    <p>Наблюдение, входящие и состояние контуров в одном месте. Отображаются только подтверждённые состояния.</p>
    </div>
-   <div className="orbit-intro-identity">
-    <img src="/orbit-brand.svg" alt="" width="68" height="68"/><div><span>ORBIT / 3.0</span><strong>COMMAND<br/>INTELLIGENCE</strong><small>Hermes Control Center</small></div>
+   <div className="hcc-actions">
+    <button type="button" className="hcc-action" onClick={()=>onView("commander")}><Monitor size={16} aria-hidden="true"/> Hermes Commander</button>
+    <button type="button" className="hcc-action hcc-action-primary" onClick={onRefresh} disabled={busy}><Activity size={16} aria-hidden="true"/>{busy?"Обновление…":"Обновить"}</button>
    </div>
-  </section>
-  <section className="orbit-stats" aria-label="Общие показатели">
-   <div><span>ИСТОЧНИК ДАННЫХ</span><strong>{snapshot?"SYSTEMD SNAPSHOT":"НЕТ ДАННЫХ"}</strong><small>{snapshot?<ClockLabel value={snapshot.generated_at}/>:error||"Снимок не получен"}</small></div>
-   <div><span>АКТИВНЫЕ ЕДИНИЦЫ</span><strong>{snapshot?String(stats.active).padStart(2,"0"):"—"}<small> / {snapshot?stats.total:"—"}</small></strong><small>Активные службы и таймеры</small></div>
-   <div className={attention.length?"has-attention":""}><span>ТРЕБУЮТ ПРОВЕРКИ</span><strong>{snapshot?String(stats.attention).padStart(2,"0"):"—"}</strong><small>Сбой / неизвестное состояние</small></div>
-   <div><span>РЕЖИМ ДОСТУПА</span><strong className="orbit-readonly">READ <small>/ ONLY</small></strong><small>Команды управления недоступны</small></div>
+  </header>
+  <section className="hcc-kpis" aria-label="Общие показатели">
+   <div className="hcc-kpi"><div className="hcc-kpi-label">Источник данных <Database size={16} aria-hidden="true"/></div>
+    <div className="hcc-kpi-value text">{snapshot?"Защищённый снимок":"—"}</div>
+    <div className="hcc-kpi-note">{snapshot?<ClockLabel value={snapshot.generated_at}/>:error||"Ожидает защищённого снимка"}</div></div>
+   <div className="hcc-kpi"><div className="hcc-kpi-label">Активные единицы <Activity size={16} aria-hidden="true"/></div>
+    <div className="hcc-kpi-value">{snapshot?stats.active:"—"}</div>
+    <div className="hcc-kpi-note">{snapshot?stats.total+" единиц в снимке":"Нет подтверждённых данных"}</div></div>
+   <div className="hcc-kpi"><div className="hcc-kpi-label">Требует проверки <ShieldCheck size={16} aria-hidden="true"/></div>
+    <div className="hcc-kpi-value">{snapshot?stats.attention:"—"}</div>
+    <div className="hcc-kpi-note">{snapshot?"По текущему снимку":"Без данных оценка невозможна"}</div></div>
+   <div className="hcc-kpi"><div className="hcc-kpi-label">Доступ <LockKeyhole size={16} aria-hidden="true"/></div>
+    <div className="hcc-kpi-value text">Только чтение</div>
+    <div className="hcc-kpi-note">Показатели без команд управления</div></div>
   </section>
   {error&&<div className="orbit-alert" role="alert">{error}</div>}
+  <div className="hcc-grid">
+   <section className="hcc-panel" aria-labelledby="hcc-attention-title">
+    <header className="hcc-panel-head"><div><h2 id="hcc-attention-title">Требует внимания</h2><p>Проверенные сигналы и задачи для разбора</p></div>
+     <span className="hcc-pill">{snapshot?attention.length+" сигналов":"Нет снимка"}</span></header>
+    {!snapshot?<div className="hcc-empty"><ShieldCheck aria-hidden="true"/><strong>Данные пока недоступны</strong><p>Здесь появятся только подтверждённые сигналы. Демонстрационные инциденты не показываются.</p><button type="button" className="hcc-action" onClick={()=>onView("ops")}>Открыть наблюдение <ChevronRight size={14}/></button></div>:
+     !attention.length?<div className="hcc-empty"><ShieldCheck aria-hidden="true"/><strong>Нет сигналов для разбора</strong><p>По текущему снимку отсутствуют службы в состояниях сбоя, неизвестности или запуска без допуска.</p></div>:
+     <div className="hcc-attention-list">{attention.slice(0,7).map(s=><button key={s.id} type="button" className="hcc-attention-row" onClick={()=>onView(s.id==="qa"?"qa":s.id==="research"?"research":s.id.startsWith("agent")?"agent":"ops")}>
+      <span><strong>{s.name}</strong><small>{s.unit} · Источник: systemd</small></span><span className="hcc-status">{stateLabel(s.state)}</span>
+     </button>)}</div>}
+   </section>
+   <section className="hcc-panel" aria-labelledby="hcc-workspaces-title">
+    <header className="hcc-panel-head"><div><h2 id="hcc-workspaces-title">Рабочие разделы</h2><p>Быстрые переходы к инструментам</p></div><span className="hcc-pill">Все разделы</span></header>
+    <div className="hcc-links">{shortcuts.map(s=>{const Icon=s.icon;return <button key={s.id} type="button" className="hcc-link" onClick={()=>onView(s.id)}>
+     <span className="hcc-link-icon"><Icon size={18} aria-hidden="true"/></span><span><strong>{s.label}</strong><small>{s.detail}</small></span><ChevronRight size={16} aria-hidden="true"/>
+    </button>;})}</div>
+   </section>
+  </div>
+  <section className="hcc-panel hcc-registry" aria-labelledby="hcc-registry-title">
+   <header className="hcc-panel-head"><div><h2 id="hcc-registry-title">Состояние контуров</h2><p>Сводка без неподтверждённых статусов</p></div><button type="button" className="hcc-action" onClick={()=>onView("ops")}>Все службы <ChevronRight size={14}/></button></header>
+   {Registry&&<Registry {...registryProps}/>}
+  </section>
+  <details className="hcc-topology-details">
+   <summary>Архитектура потоков - подробная схема</summary>
   <div className="orbit-main-grid">
    <section className="orbit-topology" aria-labelledby="orbit-topology-title">
     <div className="orbit-panel-head">
@@ -116,11 +154,7 @@ export default function OrbitOverview({snapshot,error,onView,onRefresh,busy,Regi
     <button type="button" className="orbit-attention-cta" onClick={()=>onView("inbox")}>Открыть входящие <ArrowUpRight size={15}/></button>
    </aside>
   </div>
-  <section className="orbit-registry-section">
-   <div className="orbit-module-head"><div><span className="orbit-section-code">03 / СЛУЖБЫ И КОМПОНЕНТЫ</span><h2>Состояние контуров</h2></div>
-    <button type="button" className="orbit-small-button" onClick={onRefresh} disabled={busy}><Activity size={16} aria-hidden="true"/>{busy?"Обновление…":"Обновить снимок"}</button></div>
-   {Registry&&<Registry {...registryProps}/>}
-   <p className="orbit-data-footnote"><ShieldCheck size={15} aria-hidden="true"/> Активный таймер не доказывает успешность последнего задания. Отсутствующие данные не заменяются демонстрацией.</p>
-  </section>
+
+  </details>
  </div>;
 }
