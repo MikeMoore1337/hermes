@@ -121,8 +121,7 @@ class AutoEngineeringTests(unittest.TestCase):
                 raise RuntimeError("synthetic public network failure")
 
             with self.assertRaisesRegex(RuntimeError, "synthetic"):
-                auto.refresh(now=NOW, collector=failed, time_limit=nullcontext, budget=unlimited_budget,
-                             budget=lease)
+                auto.refresh(now=NOW, collector=failed, time_limit=nullcontext, budget=lease)
             self.assertEqual(
                 auto.refresh(now=NOW + timedelta(minutes=15), collector=failed,
                              time_limit=nullcontext, budget=lease),
@@ -142,7 +141,7 @@ class AutoEngineeringTests(unittest.TestCase):
             with self.assertRaisesRegex(auto.AutoUnavailable, "engineering_budget_unsafe"):
                 with auto.reserve_budget(NOW, directory=directory):
                     self.fail("invalid marker must not grant an API request")
-            marker.write_text("1700000000\\n", encoding="ascii")
+            marker.write_text("1700000000\n", encoding="ascii")
             marker.chmod(0o644)
             with self.assertRaisesRegex(auto.AutoUnavailable, "engineering_budget_unsafe"):
                 with auto.reserve_budget(NOW, directory=directory):
