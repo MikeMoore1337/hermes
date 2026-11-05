@@ -1,0 +1,64 @@
+name: H779 final build and visual QA (temporary branch-only)
+on:
+  push:
+    branches: [feat/h779-apple27-aero-glass]
+permissions:
+  contents: write
+jobs:
+  build-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: control_center/frontend/package-lock.json
+      - name: Build pinned static UI
+        working-directory: control_center/frontend
+        run: |
+          npm ci --ignore-scripts --no-fund --no-audit
+          npm run check
+          npm run test
+          npm run build
+      - name: Commit only generated assets to task branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/feat/h779-apple27-aero-glass"
+          git add -A control_center/web/
+          if git diff --cached --quiet; then
+            echo "STATIC_BUILD=SYNCED" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if git diff --cached --name-only | grep -v '^control_center/web/'; then
+            echo "Non-static file staged" >&2
+            exit 1
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'build(ui): sync H779 theme and module assets'
+          git push origin "HEAD:$GITHUB_REF"
+          echo "STATIC_BUILD_COMMITTED=$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+      - name: Install Playwright Chromium for isolated screenshot QA
+        working-directory: control_center/frontend
+        run: npx playwright install --with-deps chromium
+      - name: Aero Glass 27 real browser tests and evidence
+        working-directory: control_center/frontend
+        env:
+          PLAYWRIGHT_HTML_OPEN: never
+          PLAYWRIGHT_HTML_OUTPUT_DIR: .artifacts/h779-report
+        run: npm run test:e2e -- apple27.spec.js --reporter=html --workers=1
+      - name: Upload AFTER screenshot attachments
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: h779-aero-glass-synthetic-after-screenshots
+          path: |
+            control_center/frontend/.artifacts/h779-report/
+            control_center/frontend/.artifacts/playwright-results/
+          if-no-files-found: warn
+          retention-days: 7
