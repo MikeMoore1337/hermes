@@ -326,6 +326,14 @@ def merge_snapshot(repo: str, *, client=None, now: datetime | None = None) -> di
                 "previous_path": f.get("previous_filename") if state == "renamed" else None,
                 "status": state,
             })
+        # Recheck identity after paginated file reads. A synchronized PR may
+        # otherwise combine a new head with old changed paths.
+        current = _obj(source.get(f"/repos/{repo}/pulls/{num}"))
+        if (current.get("number") != num or current.get("state") != "open"
+                or _obj(current.get("head")).get("sha") != head_sha
+                or _obj(current.get("base")).get("sha") != base_sha
+                or current.get("changed_files") != expected_files):
+            raise SourceUnavailable("pr_changed_during_capture")
         body = raw.get("body")
         dependencies = []
         if type(body) is str and len(body) <= 2048:
