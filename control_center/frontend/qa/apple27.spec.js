@@ -49,6 +49,11 @@ test("Aero Glass theme control persists light/dark without storing protected sta
  }));
  expect(prefs.theme).toBe("light");
  expect(prefs.keys.filter(x=>x.includes("hermes-control-center-ui-theme"))).toEqual(["hermes-control-center-ui-theme"]);
+ await page.goto("/?preview=login");
+ await expect(page.getByRole("heading",{name:"Вход в систему"})).toBeVisible();
+ await expect(page.locator("html")).toHaveAttribute("data-hermes-resolved-theme","light");
+ const authBackground=await page.locator(".orbit-auth").evaluate(el=>getComputedStyle(el).backgroundColor);
+ expect(authBackground).toBe("rgb(230, 234, 243)");
  expect(denied).toEqual([]);expect(errors).toEqual([]);
 });
 test("Aero Glass navigation and disclosure work by keyboard at 393px",async({page})=>{
