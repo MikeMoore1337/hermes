@@ -16,6 +16,7 @@ import HermesCommander from "./HermesCommander.jsx";
 import "./orbit-operator.css";
 import "./orbit-unified.css";
 import "./apple27.css";
+import "./apple27-fidelity.css";
 
 const ISSUE33="https://github.com/MikeMoore1337/hermes/issues/33";
 const ISSUE163="https://github.com/MikeMoore1337/hermes/issues/163";
