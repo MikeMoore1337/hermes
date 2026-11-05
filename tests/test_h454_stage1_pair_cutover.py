@@ -142,6 +142,75 @@ class CutoverTests(unittest.TestCase):
         self.assertEqual(approved["profile_sha256"], m.OBSERVED_PROFILE_SHA256)
         self.assertEqual(json.loads(accepted)["profile_sha256"], m.OBSERVED_PROFILE_SHA256)
 
+    def test_pair_cutover_order_and_client_gate(self):
+        from unittest.mock import Mock
+        new_relay = "d" * 64
+        new_proxy = "e" * 64
+        events = []
+        fake_wss = types.SimpleNamespace(
+            _pins=lambda data: {"tls_directory": "/synthetic"},
+            _snapshot=lambda *args: ({}, {}),
+            _namespace=lambda *args: None,
+            reconcile=lambda *args: "READY",
+        )
+        def command(*args):
+            events.append(args)
+            if args[0] == "run":
+                return new_relay
+            return ""
+        candidate = {"Id": new_relay, "Image": m.FORK_IMAGE,
+                     "Config": {"User": "979:975"}}
+        with patch.object(m.legacy, "lock", return_value=nullcontext()), \
+             patch.object(m, "read_only"), \
+             patch.object(m, "load_existing_wss", return_value=fake_wss), \
+             patch.object(m, "locked_pins", return_value=nullcontext(b"original")), \
+             patch.object(m, "read_old_pin_pair",
+                          return_value=({"tls_directory": "/synthetic"},
+                                        old_relay(), old_proxy(), b"approved")), \
+             patch.object(m, "approval"), \
+             patch.object(m.legacy, "devices", return_value=3), \
+             patch.object(m.legacy, "snapshot", side_effect=["before", "after"]), \
+             patch.object(m, "write_once"), \
+             patch.object(m, "digest", return_value="f" * 64), \
+             patch.object(m, "sync_pin_directory"), \
+             patch.object(m, "docker", side_effect=command), \
+             patch.object(m, "new_relay_args", return_value=["run", "-d", m.FORK_IMAGE]), \
+             patch.object(m, "inspect", return_value=candidate), \
+             patch.object(m, "create_sidecar", return_value=new_proxy), \
+             patch.object(m, "updated_pins", return_value=b"{}"), \
+             patch.object(m, "replace_pins"), \
+             patch.object(m.legacy, "healthy", return_value=True), \
+             patch.object(m, "compare_auth") as guard, \
+             patch.object(m, "PENDING", types.SimpleNamespace(unlink=lambda: None)):
+            self.assertEqual(m.cutover("a" * 40), (new_relay, new_proxy))
+        self.assertLess(events.index(("stop", "--time", "12", m.PROXY)),
+                        events.index(("stop", "--time", "20", m.legacy.NAME)))
+        self.assertLess(events.index(("rename", m.legacy.NAME, m.RELAY_OLD)),
+                        events.index(("run", "-d", m.FORK_IMAGE)))
+        self.assertIn(("start", new_proxy), events)
+        guard.assert_called_once_with("before", "after")
+
+    def test_failed_cutover_requests_original_pair_rollback(self):
+        def refuse(*args):
+            raise m.Hold("DOCKER_OPERATION_FAILED")
+        with patch.object(m.legacy, "lock", return_value=nullcontext()), \
+             patch.object(m, "read_only"), \
+             patch.object(m, "load_existing_wss"), \
+             patch.object(m, "locked_pins", return_value=nullcontext(b"original")), \
+             patch.object(m, "read_old_pin_pair",
+                          return_value=({}, old_relay(), old_proxy(), b"accepted")), \
+             patch.object(m, "approval"), \
+             patch.object(m.legacy, "devices", return_value=3), \
+             patch.object(m.legacy, "snapshot", return_value="before"), \
+             patch.object(m, "write_once"), \
+             patch.object(m, "digest", return_value="f" * 64), \
+             patch.object(m, "sync_pin_directory"), \
+             patch.object(m, "docker", side_effect=refuse), \
+             patch.object(m, "restore") as restore:
+            with self.assertRaisesRegex(m.Hold, "ORIGINAL_PAIR_RESTORED"):
+                m.cutover("a" * 40)
+            restore.assert_called_once()
+
     def test_foreign_sidecar_not_deleted(self):
         fake = {"Id": "f" * 64, "Image": m.LEGACY_IMAGE,
                 "HostConfig": {"NetworkMode": "host"}}
