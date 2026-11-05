@@ -35,7 +35,7 @@ async function iconContrast(page,iconSelector,backgroundSelector) {
   const surface=document.querySelector(backgroundSelector);
   if(!icon||!surface)throw new Error("Missing icon or background");
   const channels=color=>{
-   const numbers=color.match(/[\\d.]+/g)?.slice(0,3).map(Number);
+   const numbers=color.match(/[0-9.]+/g)?.slice(0,3).map(Number);
    if(!numbers||numbers.length!==3)throw new Error("Invalid RGB: "+color);
    return numbers;
   };
