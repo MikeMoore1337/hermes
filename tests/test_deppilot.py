@@ -254,12 +254,14 @@ class DepPilotTests(unittest.TestCase):
             lock = Path(folder) / "uv.lock"
             cand = Path(folder) / "candidates.json"
             lock.write_bytes(UV)
-            cand.write_text(json.dumps(meta()), encoding="utf-8")
+            stale = meta()
+            stale["observed_at"] = "2000-01-01T00:00:00Z"  # deterministic CLI stale fixture
+            cand.write_text(json.dumps(stale), encoding="utf-8")
             snapshot = lock.read_bytes()
             buffer = io.StringIO()
             with redirect_stdout(buffer):
                 code = main(["--lockfile", str(lock), "--candidates", str(cand)])
-            self.assertEqual(code, 2)  # fixture is stale at live clock time
+            self.assertEqual(code, 2)  # fixture is explicitly stale
             self.assertEqual(lock.read_bytes(), snapshot)
             self.assertEqual(json.loads(buffer.getvalue())["status"], "INCONCLUSIVE")
             symlink = Path(folder) / "alias.json"
