@@ -243,3 +243,102 @@
  .theme-orbit .orbit-app-layout,.theme-orbit .orbit-rail,.theme-orbit .orbit-app-mobilebar{border:1px solid CanvasText}
  .theme-orbit .hcc-action-primary{background:Highlight;color:HighlightText}
 }
+
+/* Legacy module surfaces: keep feature contracts, translate only material tokens. */
+.theme-orbit .oc-page{
+ --oc-bg:var(--a27-window);--oc-panel:var(--a27-surface);--oc-line:var(--a27-border);
+ --oc-muted:var(--orbit-muted);--oc-blue:var(--orbit-accent);--oc-text:var(--orbit-text);
+ color:var(--orbit-text);font-family:var(--orbit-font-ui)
+}
+.theme-orbit .oc-intro h1{font-size:32px;color:var(--orbit-text)}
+.theme-orbit .oc-intro p,.theme-orbit .oc-section-head p,.theme-orbit .oc-context-head p{color:var(--orbit-subtext)}
+.theme-orbit .oc-intro-symbol{color:var(--orbit-accent)}
+.theme-orbit .oc-intro-symbol>div{border-color:var(--a27-border)}
+.theme-orbit .oc-intro-symbol span{color:var(--orbit-muted)}
+.theme-orbit .oc-summary{background:var(--a27-surface);border:1px solid var(--a27-border);border-radius:14px}
+.theme-orbit .oc-summary>div+div{border-color:var(--a27-border)}
+.theme-orbit .oc-summary>div>span,.theme-orbit .oc-summary small{color:var(--orbit-subtext);font-family:var(--orbit-font-ui)}
+.theme-orbit .oc-summary strong{font-family:var(--orbit-font-ui);color:var(--orbit-text)}
+.theme-orbit .oc-summary .oc-readonly{color:var(--orbit-accent)}
+.theme-orbit .oc-actions>div:first-child{color:var(--orbit-subtext)}
+.theme-orbit .oc-action,.theme-orbit .oc-primary{background:var(--a27-material);color:var(--orbit-text);border-color:var(--a27-border);border-radius:11px;min-height:44px}
+.theme-orbit .oc-action:hover,.theme-orbit .oc-primary:hover{background:var(--a27-selected)}
+.theme-orbit .oc-search{background:var(--orbit-panel-inset);border-color:var(--a27-border);border-radius:11px;color:var(--orbit-subtext)}
+.theme-orbit .oc-search input{color:var(--orbit-text)}
+.theme-orbit .oc-search input::placeholder{color:var(--orbit-muted)}
+.theme-orbit .oc-project{background:var(--a27-surface-2);color:var(--orbit-text);border-color:var(--a27-border);border-radius:11px}
+.theme-orbit .oc-project:hover,.theme-orbit .oc-project.selected{background:var(--a27-selected);border-color:var(--orbit-accent)}
+.theme-orbit .oc-project small,.theme-orbit .oc-project>svg{color:var(--orbit-subtext)}
+.theme-orbit .oc-project-mark{color:var(--orbit-accent);border-color:var(--a27-border);border-radius:9px}
+.theme-orbit .oc-empty,.theme-orbit .oc-panel-foot{color:var(--orbit-subtext);border-color:var(--a27-border)}
+.theme-orbit .oc-context-head,.theme-orbit .oc-state{border-color:var(--a27-border)}
+.theme-orbit .oc-state{color:var(--orbit-subtext)}
+.theme-orbit .oc-state-online{color:var(--orbit-good)}
+.theme-orbit .oc-state-offline{color:var(--orbit-danger)}
+.theme-orbit .oc-state-paused,.theme-orbit .oc-state-stale{color:var(--orbit-warning)}
+.theme-orbit .oi-root{color:var(--orbit-text);font-family:var(--orbit-font-ui)}
+.theme-orbit .oi-header p,.theme-orbit .oi-metric small,.theme-orbit .oi-detail>p{color:var(--orbit-subtext)}
+.theme-orbit .oi-overline,.theme-orbit .oi-metric-label{color:var(--orbit-accent)}
+.theme-orbit .oi-refresh,.theme-orbit .oi-placeholder button{background:var(--a27-material);color:var(--orbit-text);border-color:var(--a27-border);border-radius:11px}
+.theme-orbit .oi-metric{background:var(--a27-surface);border-color:var(--a27-border);box-shadow:none}
+.theme-orbit .oi-metric strong{color:var(--orbit-text)}
+.theme-orbit .oi-queue,.theme-orbit .oi-sources,.theme-orbit .oi-detail{background:var(--a27-surface);border-color:var(--a27-border)}
+.theme-orbit .oi-queue-count,.theme-orbit .oi-filters button{background:var(--a27-material);color:var(--orbit-subtext);border-color:var(--a27-border);border-radius:10px}
+.theme-orbit .oi-filters button.is-active{color:var(--orbit-text);border-color:var(--orbit-accent);background:var(--a27-selected)}
+.theme-orbit .oi-search{background:var(--orbit-panel-inset);border-color:var(--a27-border);border-radius:11px}
+.theme-orbit .oi-search input{background:transparent;color:var(--orbit-text)}
+.theme-orbit .oi-search input::placeholder{color:var(--orbit-muted)}
+.theme-orbit .oi-row{border-color:var(--a27-border);color:var(--orbit-text)}
+.theme-orbit .oi-row:hover,.theme-orbit .oi-row.is-selected{background:var(--a27-selected)}
+.theme-orbit .oi-row-copy small,.theme-orbit .oi-row-time,.theme-orbit .oi-disclaimer,.theme-orbit .oi-sources li small{color:var(--orbit-muted)}
+.theme-orbit .oi-sources li,.theme-orbit .oi-detail dl{border-color:var(--a27-border)}
+.theme-orbit .oi-detail h3,.theme-orbit .oi-sources h2,.theme-orbit .oi-queue-head h2{color:var(--orbit-text)}
+.theme-orbit .ye-root{color:var(--orbit-text);font-family:var(--orbit-font-ui)}
+.theme-orbit .ye-paper p,.theme-orbit .ye-description,.theme-orbit .ye-queue-item small{color:var(--orbit-subtext)}
+.theme-orbit .ye-paper h2,.theme-orbit .ye-section h3,.theme-orbit .ye-evidence h3,.theme-orbit .ye-meta h3{color:var(--orbit-text)}
+.theme-orbit .ye-queue-item{color:var(--orbit-text)}
+.theme-orbit .ye-queue-item:hover,.theme-orbit .ye-queue-item.ye-selected{background:var(--a27-selected)}
+.theme-orbit .ye-claim{background:var(--a27-surface-2);border-color:var(--a27-border);border-radius:11px}
+.theme-orbit .ye-login-controls input{background:var(--orbit-panel-inset);color:var(--orbit-text);border-color:var(--a27-border)}
+.theme-orbit .ye-login-controls button,.theme-orbit .ye-paper-tools button,.theme-orbit .ye-paper-actions button,.theme-orbit .ye-modal-actions button{
+ min-height:44px;border-radius:10px;border-color:var(--a27-border);background:var(--a27-material);color:var(--orbit-text)}
+.theme-orbit .ye-paper-actions button{background:var(--orbit-accent);color:var(--a27-window)}
+.theme-orbit .ye-paper-tools button:hover{background:var(--a27-selected)}
+.theme-orbit :is(.ye-paper,.oi-root,.oc-page) :is(button,input,select,textarea):focus-visible{outline:3px solid var(--orbit-focus);outline-offset:3px}
+@media(max-width:650px){
+ .theme-orbit .oc-intro h1{font-size:27px}
+ .theme-orbit .oc-summary{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .theme-orbit .oc-summary>div{padding:14px}
+}
+/* Login uses resolved theme so system light and explicit light use the same treatment. */
+:root[data-hermes-resolved-theme="light"] .orbit-auth{
+ --oa-bg:#e6eaf3;--oa-panel:#fff;--oa-deep:#edf2fa;--oa-ink:#17243a;
+ --oa-soft:#52657e;--oa-ice:#236bde;--oa-edge:rgba(27,48,80,.14);--oa-warm:#9b5a16;
+ color:var(--oa-ink);background:#e6eaf3;
+}
+:root[data-hermes-resolved-theme="light"] :is(.orbit-auth-header,.orbit-auth-right){background:#f7f9fc;border-color:rgba(27,48,80,.12)}
+:root[data-hermes-resolved-theme="light"] :is(.orbit-auth-brand strong,.orbit-auth-intro h1,.orbit-route-header h2,.orbit-access-content h3){color:#17243a}
+:root[data-hermes-resolved-theme="light"] :is(.orbit-auth-intro h1 span,.orbit-auth-intro>p,.orbit-auth-header-meta,.orbit-access-lead,
+ .orbit-login-notice,.orbit-access-security,.orbit-auth-footer,.orbit-auth-schematic-note){color:#52657e}
+:root[data-hermes-resolved-theme="light"] .orbit-auth-route{background:#fff;border-color:rgba(27,48,80,.13);border-radius:16px;overflow:hidden}
+:root[data-hermes-resolved-theme="light"] .orbit-access-form{background:#fff;border-color:rgba(27,48,80,.15);border-radius:17px;box-shadow:0 20px 60px rgba(27,48,80,.09);overflow:hidden}
+:root[data-hermes-resolved-theme="light"] .orbit-access-top{background:#edf2fa;border-color:rgba(27,48,80,.12);color:#52657e}
+:root[data-hermes-resolved-theme="light"] .orbit-access-label,:root[data-hermes-resolved-theme="light"] .orbit-access-tag{color:#236bde}
+:root[data-hermes-resolved-theme="light"] .orbit-access-steps{border-color:rgba(27,48,80,.12)}
+:root[data-hermes-resolved-theme="light"] .orbit-access-steps-head{color:#50627b}
+:root[data-hermes-resolved-theme="light"] .orbit-access-steps>div:not(.orbit-access-steps-head){border-color:rgba(27,48,80,.12)}
+:root[data-hermes-resolved-theme="light"] .orbit-access-steps strong{color:#17243a}
+:root[data-hermes-resolved-theme="light"] .orbit-access-steps small{color:#52657e}
+:root[data-hermes-resolved-theme="light"] .orbit-access-security{border-color:rgba(27,48,80,.12)}
+:root[data-hermes-resolved-theme="light"] .orbit-auth-footer{border-color:rgba(27,48,80,.12)}
+:root[data-hermes-resolved-theme="light"] .orbit-route-header{border-color:rgba(27,48,80,.12)}
+:root[data-hermes-resolved-theme="light"] .orbit-route-caption{background:#edf2fa;border-color:rgba(27,48,80,.12)}
+:root[data-hermes-resolved-theme="light"] .orbit-route-caption strong{color:#17243a}
+:root[data-hermes-resolved-theme="light"] .orbit-route-caption strong span,:root[data-hermes-resolved-theme="light"] .orbit-route-caption p{color:#52657e}
+:root[data-hermes-resolved-theme="light"] .orbit-route-stage{background:#eaf1fa}
+:root[data-hermes-resolved-theme="light"] .orbit-route-node{background:#fff;border-color:#b9cde2;color:#17243a}
+:root[data-hermes-resolved-theme="light"] .orbit-route-node:hover,:root[data-hermes-resolved-theme="light"] .orbit-route-node.is-current{background:#dae9fb;border-color:#236bde}
+:root[data-hermes-resolved-theme="light"] .orbit-node-label,:root[data-hermes-resolved-theme="light"] .orbit-node-state{color:#50627b}
+:root[data-hermes-resolved-theme="light"] .orbit-auth-core{background:#dae8f5}
+:root[data-hermes-resolved-theme="light"] .orbit-auth-core :is(strong,small){color:#17243a}
+:root[data-hermes-resolved-theme="light"] .orbit-auth-core strong span{color:#50627b}
