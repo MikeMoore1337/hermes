@@ -361,6 +361,7 @@ function App(){
   const update=()=>{
    const light=theme==="light"||(theme==="system"&&mq.matches);
    document.documentElement.dataset.hermesTheme=theme;
+   document.documentElement.dataset.hermesResolvedTheme=light?"light":"dark";
    document.querySelector('meta[name="theme-color"]')?.setAttribute("content",light?"#f7f9fc":"#142033");
   };
   update();
