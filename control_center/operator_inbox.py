@@ -259,7 +259,7 @@ def _add_engineering_reports(overview, now, coverage, events):
         return
     coverage[source]["status"] = "PARTIAL"
     coverage[source]["details"] = (
-        f"Только {present} из 4 ручных проверок; без автозапуска и разрешений"
+        f"Доступно {present} из 4 проверок; запуск действий и релизов запрещён"
     )
     for key, item in report["sources"].items():
         status = item["status"]
