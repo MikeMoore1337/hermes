@@ -91,6 +91,8 @@ class CutoverTests(unittest.TestCase):
             "legacy_image": m.LEGACY_IMAGE,
             "relay_id": "a" * 64,
             "sidecar_id": "b" * 64,
+            "original_pins_sha256": m.ORIGINAL_PINS_SHA256,
+            "observed_sidecar_profile_sha256": m.OBSERVED_PROFILE_SHA256,
         }
         class Approval:
             parent = Path("/private")
@@ -102,6 +104,43 @@ class CutoverTests(unittest.TestCase):
             m.approval("a" * 40, old_relay(), old_proxy())
             with self.assertRaises(m.Hold):
                 m.approval("f" * 40, old_relay(), old_proxy())
+
+    def test_unreviewed_profile_drift_fails_closed(self):
+        pins = {
+            "relay_name": m.legacy.NAME, "sidecar_name": m.PROXY,
+            "relay_image": m.LEGACY_IMAGE, "sidecar_image": m.LEGACY_IMAGE,
+            "sidecar_id": "b" * 64, "profile_sha256": m.ORIGINAL_PROFILE_SHA256,
+        }
+        fake_wss = types.SimpleNamespace(
+            _pins=lambda b: pins, profile_sha256=lambda x: "f" * 64,
+        )
+        with patch.object(m, "wss", fake_wss), patch.object(m, "inspect") as inspector:
+            with self.assertRaisesRegex(m.Hold, "UNATTESTED_WSS_PROFILE_DRIFT"):
+                m.read_old_pin_pair(b"untrusted")
+            inspector.assert_called_once()
+
+    def test_dual_pin_retains_strict_wss_validation(self):
+        pins = {
+            "relay_name": m.legacy.NAME, "sidecar_name": m.PROXY,
+            "relay_image": m.LEGACY_IMAGE, "sidecar_image": m.LEGACY_IMAGE,
+            "sidecar_id": "b" * 64, "profile_sha256": m.ORIGINAL_PROFILE_SHA256,
+            "tls_directory": "/synthetic",
+        }
+        def verify_pin(data):
+            return json.loads(data) if data.startswith(b"{") else pins
+        fake_wss = types.SimpleNamespace(
+            _pins=verify_pin, profile_sha256=lambda x: m.OBSERVED_PROFILE_SHA256,
+            _snapshot=lambda *args: ({"Id": "a" * 64}, {"Id": "b" * 64}),
+            _namespace=lambda *args: None, _tls=lambda *args: None,
+            _directory=lambda *args: __import__("os").open("/dev/null", __import__("os").O_RDONLY),
+            _read_file=lambda *args, **kwargs: b"synthetic-ca",
+        )
+        with patch.object(m, "wss", fake_wss), \
+             patch.object(m, "inspect"), \
+             patch.object(m, "digest_bytes", return_value=m.ORIGINAL_PINS_SHA256):
+            approved, _, _, accepted = m.read_old_pin_pair(b"old-pins")
+        self.assertEqual(approved["profile_sha256"], m.OBSERVED_PROFILE_SHA256)
+        self.assertEqual(json.loads(accepted)["profile_sha256"], m.OBSERVED_PROFILE_SHA256)
 
     def test_foreign_sidecar_not_deleted(self):
         fake = {"Id": "f" * 64, "Image": m.LEGACY_IMAGE,
