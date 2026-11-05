@@ -76,3 +76,19 @@ Its `skipped_prs` count is explicit, `window_exhaustive_verified=false`, and
 An actual mid-read HEAD/base change still fails closed with
 `pr_changed_during_capture`; the module does **not** quietly combine revisions.
 Neither `REVIEW_REQUIRED` nor a valid-looking overlap authorizes a merge.
+
+## Проверяемая детализация ReleaseGuard и MergeControl
+
+В машинно-читаемом выводе ReleaseGuard дополнительно доступны
+`expected_sha`, `observed_sha`, список `missing_checks` (проверенные числовые
+workflow ID) и `required_check_details` со статусом, run ID и SHA.
+Эти поля относятся **только к полученным свидетельствам** и не меняют
+`required_workflow_policy_verified=false`, `production_evidence=NOT_VERIFIED`
+и `owner_approval=NOT_GRANTED`.
+
+MergeControl сохраняет `pr_refs` с head/base SHA, базовой веткой,
+статусом mergeability и полнотой файлов, а также `evidence_urls`.
+Для каждого пересечения добавлено `confidence=PATH_HEURISTIC_ONLY`:
+совпадающие пути не являются доказательством Git merge conflict.
+Обе детализации остаются в явном CLI-отчёте; в Operator Inbox попадают
+**только** перечневые статусы и число причин, без SHA, URL и путей.

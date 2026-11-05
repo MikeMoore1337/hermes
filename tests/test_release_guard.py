@@ -58,6 +58,13 @@ class ReleaseGuardTests(unittest.TestCase):
         self.assertFalse(result["required_workflow_policy_verified"])
         self.assertEqual(result["production_evidence"], "NOT_VERIFIED")
         self.assertEqual(result["candidate_sha"], SHA)
+        self.assertEqual(result["expected_sha"], SHA)
+        self.assertEqual(result["observed_sha"], SHA)
+        self.assertEqual(result["missing_checks"], [])
+        self.assertEqual(result["required_check_details"], [{
+            "workflow_id": 381262090, "run_id": 12345,
+            "head_sha": SHA, "status": "completed", "conclusion": "success",
+        }])
         self.assertEqual(result["required_count"], 1)
         self.assertEqual(result["evidence_urls"], [
             "https://github.com/MikeMoore1337/hermes/actions/runs/12345",
@@ -97,6 +104,8 @@ class ReleaseGuardTests(unittest.TestCase):
         raw["checks"] = []
         self.assertEqual(check(raw)["status"], "INCONCLUSIVE")
         self.assertIn("required_check_missing", check(raw)["reasons"])
+        self.assertEqual(check(raw)["missing_checks"], [381262090])
+        self.assertEqual(check(raw)["required_check_details"], [])
 
     def test_branch_sha_and_ci_sha_mismatches(self):
         for key, reason in (("observed_head_sha", "branch_sha_mismatch"),
@@ -108,6 +117,12 @@ class ReleaseGuardTests(unittest.TestCase):
                 raw["checks"][0]["head_sha"] = OLD
             self.assertEqual(check(raw)["status"], "INCONCLUSIVE")
             self.assertIn(reason, check(raw)["reasons"])
+            report = check(raw)
+            if key == "observed_head_sha":
+                self.assertEqual(report["observed_sha"], OLD)
+                self.assertEqual(report["expected_sha"], SHA)
+            else:
+                self.assertEqual(report["required_check_details"][0]["head_sha"], OLD)
 
     def test_unknown_head_and_stale_or_future_evidence(self):
         raw = evidence()

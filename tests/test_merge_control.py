@@ -54,6 +54,18 @@ class MergeControlTests(unittest.TestCase):
         self.assertEqual(result["status"], "NO_OVERLAP_IN_SUPPLIED_WINDOW")
         self.assertEqual(result["overlaps"], [])
         self.assertEqual(result["prs_seen"], 2)
+        self.assertEqual(result["pr_refs"], [
+            {"number": 11, "base_branch": "main", "base_sha": BASE,
+             "head_sha": hex(11)[2:].zfill(40), "mergeability": "clean",
+             "files_complete": True},
+            {"number": 12, "base_branch": "main", "base_sha": BASE,
+             "head_sha": hex(12)[2:].zfill(40), "mergeability": "clean",
+             "files_complete": True},
+        ])
+        self.assertEqual(result["evidence_urls"], [
+            "https://github.com/MikeMoore1337/hermes/pull/11",
+            "https://github.com/MikeMoore1337/hermes/pull/12",
+        ])
         self.assertEqual(result["pr_urls"], [
             "https://github.com/MikeMoore1337/hermes/pull/11",
             "https://github.com/MikeMoore1337/hermes/pull/12",
@@ -71,6 +83,7 @@ class MergeControlTests(unittest.TestCase):
         self.assertEqual(result["overlaps"], [{
             "prs": [11, 12], "paths": ["src/api.py"],
             "classification": "POTENTIAL_OVERLAP_NOT_PROVEN_CONFLICT",
+            "confidence": "PATH_HEURISTIC_ONLY",
             "same_base_branch": True,
         }])
         self.assertNotIn("github_dirty_reported_input_only", result["reasons"])
