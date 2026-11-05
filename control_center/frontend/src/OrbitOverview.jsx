@@ -70,7 +70,7 @@ export default function OrbitOverview({snapshot,error,onView,onRefresh,busy,Regi
     <p>Наблюдение, входящие и управление контекстом в одном месте.</p>
    </div>
    <div className="hcc-actions">
-    <button type="button" className="hcc-action" onClick={()=>onView("commander")}><Monitor size={16} aria-hidden="true"/> Hermes Commander</button>
+    
     <button type="button" className="hcc-action hcc-action-primary" onClick={onRefresh} disabled={busy}><RefreshCw size={16} aria-hidden="true"/>{busy?"Обновление…":"Обновить"}</button>
    </div>
   </header>
