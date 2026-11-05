@@ -342,3 +342,47 @@
 :root[data-hermes-resolved-theme="light"] .orbit-auth-core{background:#dae8f5}
 :root[data-hermes-resolved-theme="light"] .orbit-auth-core :is(strong,small){color:#17243a}
 :root[data-hermes-resolved-theme="light"] .orbit-auth-core strong span{color:#50627b}
+
+
+/* H779 finish pass: old Atlas selectors must not override the light material palette. */
+.theme-orbit .atlas-section-nav .orbit-side-refresh .refresh-button{
+ background:var(--a27-material);color:var(--orbit-text);
+ border:1px solid var(--a27-border);border-radius:10px
+}
+.theme-orbit .atlas-section-nav .orbit-side-refresh .refresh-button:hover:not(:disabled){
+ background:var(--a27-selected);color:var(--orbit-text)
+}
+.theme-orbit .orbit-workspace-pill{color:var(--orbit-text)}
+.theme-orbit .orbit-workspace-pill strong{color:var(--orbit-text)}
+.theme-orbit .orbit-workspace-pill small{color:var(--orbit-subtext)}
+.theme-orbit .search-field,.theme-orbit .status-filter{
+ background:var(--orbit-panel-inset);color:var(--orbit-subtext);
+ border:1px solid var(--orbit-border-strong);border-radius:10px
+}
+.theme-orbit .search-field input,.theme-orbit .status-filter select{
+ background:transparent;color:var(--orbit-text)
+}
+.theme-orbit .search-field input::placeholder{color:var(--orbit-muted)}
+.theme-orbit .status-filter svg{color:var(--orbit-subtext)}
+.theme-orbit .status-filter option{background:var(--orbit-panel);color:var(--orbit-text)}
+.theme-orbit .registry-toolbar{
+ background:var(--a27-surface);border-bottom:1px solid var(--a27-border)
+}
+.theme-orbit .service-table th{
+ background:var(--a27-surface-2);color:var(--orbit-subtext);
+ border-bottom-color:var(--a27-border)
+}
+.theme-orbit .service-table td{border-bottom-color:var(--a27-border)}
+.theme-orbit .service-table tbody tr:hover{background:var(--a27-selected)}
+.theme-orbit .service-label strong{color:var(--orbit-text)}
+.theme-orbit .service-label small,.theme-orbit .registry-disclaimer{color:var(--orbit-subtext)}
+.theme-orbit .service-icon{
+ background:var(--a27-selected);border-color:var(--a27-border);
+ color:var(--orbit-accent);border-radius:9px
+}
+@media(max-width:980px){
+ .theme-orbit .orbit-topbar-breadcrumb>svg:first-of-type{display:none}
+ .theme-orbit .orbit-app-mobilebar{
+  background:color-mix(in srgb,var(--a27-window) 96%,transparent);
+ }
+}
