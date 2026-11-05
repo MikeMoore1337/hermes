@@ -1,0 +1,67 @@
+name: H779 owner-approved v0.1 fidelity QA (temporary)
+on:
+  push:
+    branches: [feat/h779-apple27-aero-glass]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build-capture:
+    if: github.ref == 'refs/heads/feat/h779-apple27-aero-glass'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: true
+          fetch-depth: 1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: control_center/frontend/package-lock.json
+      - name: Pinned frontend build and source tests
+        working-directory: control_center/frontend
+        run: |
+          npm ci --ignore-scripts --no-fund --no-audit
+          npm run check
+          npm run test
+          npm run build
+      - name: Synchronize only tracked static Vite assets to H779 branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/feat/h779-apple27-aero-glass"
+          git add -A control_center/web/
+          if git diff --cached --quiet; then
+            echo "STATIC_ASSETS=ALREADY_SYNCED" >> "$GITHUB_STEP_SUMMARY"
+          else
+            if git diff --cached --name-only | grep -v '^control_center/web/'; then
+              echo "Unexpected staged path" >&2
+              exit 1
+            fi
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git commit -m 'build(ui): sync approved v0.1 fidelity assets'
+            git push origin "HEAD:$GITHUB_REF"
+            echo "STATIC_ASSETS_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Install pinned Chromium
+        working-directory: control_center/frontend
+        run: npx playwright install --with-deps chromium
+      - name: Real browser fidelity and no-data safety
+        working-directory: control_center/frontend
+        env:
+          PLAYWRIGHT_HTML_OPEN: never
+          PLAYWRIGHT_HTML_OUTPUT_DIR: .artifacts/h779-fidelity-report
+        run: npm run test:e2e -- apple27-fidelity.spec.js --reporter=html --workers=1
+      - name: Upload screenshot and exact geometry evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: h779-approved-v01-fidelity
+          path: |
+            control_center/frontend/.artifacts/h779-fidelity-report/
+            control_center/frontend/.artifacts/playwright-results/
+          if-no-files-found: warn
+          retention-days: 7
