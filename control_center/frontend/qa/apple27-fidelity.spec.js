@@ -64,9 +64,9 @@ for(const [width,height,windowX,windowY,windowW] of [
     approx(m.sidebar.width,width>=1181?260:width>=921?216:190,2);
     await expect(page.locator(".orbit-macos-dots i")).toHaveCount(3);
     await expect(page.getByRole("navigation",{name:"Разделы управления"})).toBeVisible();
-    await expect(page.getByText("РАБОЧЕЕ ПРОСТРАНСТВО")).toBeVisible();
-    await expect(page.getByText("НАБЛЮДЕНИЕ")).toBeVisible();
-    await expect(page.getByText("КОНТЕНТ")).toBeHidden(); // proxy auth cannot expose YFC editor
+    await expect(page.locator(".orbit-nav-group-title").filter({hasText:"РАБОЧЕЕ ПРОСТРАНСТВО"})).toBeVisible();
+    await expect(page.locator(".orbit-nav-group-title").filter({hasText:"НАБЛЮДЕНИЕ"})).toBeVisible();
+    await expect(page.locator(".orbit-nav-group-title").filter({hasText:"КОНТЕНТ"})).toHaveCount(0); // proxy auth cannot expose YFC editor
    }else{
     approx(m.toolbar.height,70,2);
     expect(m.dock.display).toBe("flex");
