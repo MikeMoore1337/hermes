@@ -14,7 +14,8 @@ from qa_advisor.engineering_feed import (
     EngineeringFeedRefused, build, save,
 )
 from qa_advisor.engineering_public import (
-    SourceUnavailable, release_snapshot, merge_snapshot, radar_snapshot,
+    PublicGithub, SourceUnavailable, release_snapshot, merge_snapshot,
+    radar_snapshot,
 )
 from qa_advisor.deppilot_registry import (
     RegistryUnavailable, candidates_for,
@@ -47,6 +48,10 @@ def collect(*, repo: str, source_repo: str | None = None,
     instant = now if now is not None else datetime.now(UTC)
     if type(instant) is not datetime or instant.tzinfo is None:
         raise EngineeringFeedRefused("clock_invalid")
+    # Share one bounded public GitHub request budget for this whole sweep.
+    # One module cannot silently create a fresh unlimited transport budget.
+    if github_client is None:
+        github_client = PublicGithub()
     results: dict = {}
     for key, operation in (
         ("release_guard", lambda: release_snapshot(
