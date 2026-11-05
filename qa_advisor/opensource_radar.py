@@ -5,6 +5,8 @@ missing reports, or authorize license use/deployment.
 """
 from __future__ import annotations
 
+from qa_advisor.no_follow import open_nofollow
+
 import argparse
 from datetime import UTC, datetime, timedelta
 import json
@@ -175,7 +177,7 @@ def assess(raw: Any, *, now: datetime | None = None) -> dict:
 
 def _read(path: Path) -> Any:
     try:
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+        fd = open_nofollow(path)
         try:
             info = os.fstat(fd)
             if not stat.S_ISREG(info.st_mode) or not 2 <= info.st_size <= MAX_BYTES:
