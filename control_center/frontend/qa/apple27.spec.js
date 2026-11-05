@@ -103,3 +103,44 @@ for(const width of [320,393,768,1440,1920]){
   expect(denied).toEqual([]);expect(errors).toEqual([]);
  });
 }
+
+
+test("Aero Glass light theme keeps registry, refresh and workspace readable",async({page})=>{
+ const {denied,errors}=await sandbox(page);
+ await page.setViewportSize({width:1440,height:900});
+ await page.emulateMedia({colorScheme:"light",reducedMotion:"reduce"});
+ await page.goto("/");
+ await expect(page.getByRole("heading",{name:"Рабочий стол"})).toBeVisible();
+ const styles=await page.evaluate(()=>{
+  const css=selector=>getComputedStyle(document.querySelector(selector));
+  return {
+   refreshBackground:css(".atlas-section-nav .refresh-button").backgroundColor,
+   refreshText:css(".atlas-section-nav .refresh-button").color,
+   workspaceText:css(".orbit-workspace-pill strong").color,
+   searchBackground:css(".search-field").backgroundColor,
+   searchText:css(".search-field input").color,
+   tableBackground:css(".service-table th").backgroundColor,
+   labelText:css(".service-label strong").color,
+   width:document.documentElement.scrollWidth
+  };
+ });
+ expect(styles.refreshBackground).not.toBe("rgb(16, 37, 58)");
+ expect(styles.refreshText).toBe("rgb(23, 36, 58)");
+ expect(styles.workspaceText).toBe("rgb(23, 36, 58)");
+ expect(styles.searchBackground).toBe("rgb(243, 246, 251)");
+ expect(styles.searchText).toBe("rgb(23, 36, 58)");
+ expect(styles.tableBackground).toBe("rgb(240, 244, 249)");
+ expect(styles.labelText).toBe("rgb(23, 36, 58)");
+ expect(styles.width).toBeLessThanOrEqual(1441);
+ expect(denied).toEqual([]);expect(errors).toEqual([]);
+});
+test("Aero Glass iOS breadcrumb hides only the orphan chevron",async({page})=>{
+ const {denied,errors}=await sandbox(page);
+ await page.setViewportSize({width:393,height:844});
+ await page.goto("/");
+ const chevrons=page.locator(".orbit-topbar-breadcrumb>svg");
+ await expect(chevrons).toHaveCount(2);
+ expect(await chevrons.nth(0).evaluate(el=>getComputedStyle(el).display)).toBe("none");
+ await expect(chevrons.nth(1)).toBeVisible();
+ expect(denied).toEqual([]);expect(errors).toEqual([]);
+});
