@@ -313,10 +313,15 @@ class ReadonlySourceTests(unittest.TestCase):
         source = "example-org/example"
         s = Fake({
             f"/repos/{source}": {
-                "full_name": source, "default_branch": "main", "archived": False,
+                "full_name": source, "default_branch": "main", "language": "Python", "archived": False,
                 "fork": False, "pushed_at": "2026-11-05T10:00:00Z",
             },
             f"/repos/{source}/branches/main": {"name": "main", "commit": {"sha": SHA}},
+            f"/repos/{source}/contents?ref={SHA}": [
+                {"name": "pyproject.toml", "type": "file"},
+                {"name": "LICENSE.txt", "type": "file"},
+                {"name": "custom-secret-info", "type": "file"},
+            ],
             f"/repos/{source}/license?ref={SHA}": {**source_blob(), "license": {"spdx_id": "MIT"}},
             f"/repos/{source}/contents/NOTICE?ref={SHA}": eng.SourceUnavailable("github_not_found"),
             f"/repos/{source}/contents/NOTICE.txt?ref={SHA}": eng.SourceUnavailable("github_not_found"),
@@ -326,6 +331,14 @@ class ReadonlySourceTests(unittest.TestCase):
         })
         result = eng.radar_snapshot(source, REPO, client=s, now=NOW)
         self.assertEqual(result["source_repo"], source)
+        self.assertEqual(result["dominant_language"], "Python")
+        self.assertEqual(result["root_metadata"], {
+            "coverage": "OBSERVED_PINNED_ROOT", "entry_count": 3,
+            "markers": ["LICENSE.txt", "pyproject.toml"],
+        })
+        self.assertEqual(len(result["pilot_steps"]), 5)
+        self.assertFalse(result["release_tag_verified"])
+        self.assertNotIn("custom-secret-info", json.dumps(result))
         self.assertEqual(result["status"], "NEEDS_REVIEW")
         self.assertIn("target_compatibility_unknown", result["reasons"])
         self.assertFalse(result["license_verified"])
@@ -343,6 +356,11 @@ class ReadonlySourceTests(unittest.TestCase):
                 "fork": False, "pushed_at": "2026-11-05T10:00:00Z",
             },
             f"/repos/{source}/branches/main": {"name": "main", "commit": {"sha": SHA}},
+            f"/repos/{source}/contents?ref={SHA}": [
+                {"name": "pyproject.toml", "type": "file"},
+                {"name": "LICENSE.txt", "type": "file"},
+                {"name": "custom-secret-info", "type": "file"},
+            ],
             f"/repos/{source}/license?ref={SHA}": eng.SourceUnavailable("github_not_found"),
             f"/repos/{source}/contents/NOTICE?ref={SHA}": eng.SourceUnavailable("github_not_found"),
             f"/repos/{source}/contents/NOTICE.txt?ref={SHA}": eng.SourceUnavailable("github_not_found"),
@@ -367,6 +385,11 @@ class ReadonlySourceTests(unittest.TestCase):
                 "pushed_at": "2026-11-05T10:00:00Z",
             },
             f"/repos/{source}/branches/main": {"name": "main", "commit": {"sha": SHA}},
+            f"/repos/{source}/contents?ref={SHA}": [
+                {"name": "pyproject.toml", "type": "file"},
+                {"name": "LICENSE.txt", "type": "file"},
+                {"name": "custom-secret-info", "type": "file"},
+            ],
             f"/repos/{source}/license?ref={SHA}": {
                 **source_blob(license_body), "license": {"spdx_id": "MIT"},
             },
@@ -394,12 +417,68 @@ class ReadonlySourceTests(unittest.TestCase):
                 "pushed_at": "2026-11-05T10:00:00Z",
             },
             f"/repos/{source}/branches/main": {"name": "main", "commit": {"sha": SHA}},
+            f"/repos/{source}/contents?ref={SHA}": [
+                {"name": "pyproject.toml", "type": "file"},
+                {"name": "LICENSE.txt", "type": "file"},
+                {"name": "custom-secret-info", "type": "file"},
+            ],
             f"/repos/{source}/license?ref={SHA}": {
                 **forged, "license": {"spdx_id": "MIT"},
             },
         })
         with self.assertRaisesRegex(eng.SourceUnavailable, "public_blob_sha_mismatch"):
             eng.radar_snapshot(source, REPO, client=s, now=NOW)
+
+    def test_radar_refuses_default_branch_sha_changed_mid_scan(self):
+        source = "example-org/example"
+        refs = [
+            {"name": "main", "commit": {"sha": SHA}},
+            {"name": "main", "commit": {"sha": "c" * 40}},
+        ]
+        s = Fake({
+            f"/repos/{source}": {
+                "full_name": source, "default_branch": "main", "language": "Python",
+                "archived": False, "fork": False,
+                "pushed_at": "2026-11-05T10:00:00Z",
+            },
+            f"/repos/{source}/branches/main": lambda: refs.pop(0),
+            f"/repos/{source}/contents?ref={SHA}": [
+                {"type": "file", "name": "pyproject.toml"},
+            ],
+            f"/repos/{source}/license?ref={SHA}": {
+                **source_blob(), "license": {"spdx_id": "MIT"},
+            },
+            f"/repos/{source}/contents/NOTICE?ref={SHA}": eng.SourceUnavailable("github_not_found"),
+            f"/repos/{source}/contents/NOTICE.txt?ref={SHA}": eng.SourceUnavailable("github_not_found"),
+            f"/repos/{source}/contents/NOTICE.md?ref={SHA}": eng.SourceUnavailable("github_not_found"),
+            f"/repos/{source}/releases/latest": eng.SourceUnavailable("github_not_found"),
+            f"/repos/{source}/security-advisories?per_page=5": [],
+        })
+        with self.assertRaisesRegex(eng.SourceUnavailable, "source_commit_moved_during_capture"):
+            eng.radar_snapshot(source, REPO, client=s, now=NOW)
+
+    def test_radar_root_missing_is_unknown_not_empty_verified(self):
+        source = "example-org/example"
+        s = Fake({
+            f"/repos/{source}": {
+                "full_name": source, "default_branch": "main",
+                "language": "../../untrusted language",
+                "archived": False, "fork": False,
+                "pushed_at": "2026-11-05T10:00:00Z",
+            },
+            f"/repos/{source}/branches/main": {"name": "main", "commit": {"sha": SHA}},
+            f"/repos/{source}/contents?ref={SHA}": eng.SourceUnavailable("github_not_found"),
+            f"/repos/{source}/license?ref={SHA}": eng.SourceUnavailable("github_not_found"),
+            f"/repos/{source}/contents/NOTICE?ref={SHA}": eng.SourceUnavailable("github_not_found"),
+            f"/repos/{source}/contents/NOTICE.txt?ref={SHA}": eng.SourceUnavailable("github_not_found"),
+            f"/repos/{source}/contents/NOTICE.md?ref={SHA}": eng.SourceUnavailable("github_not_found"),
+            f"/repos/{source}/releases/latest": eng.SourceUnavailable("github_not_found"),
+            f"/repos/{source}/security-advisories?per_page=5": [],
+        })
+        result = eng.radar_snapshot(source, REPO, client=s, now=NOW)
+        self.assertEqual(result["root_metadata"]["coverage"], "NOT_AVAILABLE")
+        self.assertEqual(result["dominant_language"], "UNKNOWN")
+        self.assertFalse(result["install_authorized"])
 
     def test_public_http_get_is_get_only_no_credentials(self):
         response = MagicMock()
