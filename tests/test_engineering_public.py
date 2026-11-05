@@ -244,6 +244,57 @@ class ReadonlySourceTests(unittest.TestCase):
         self.assertEqual(output["overlaps"][0]["paths"], ["docs/Начало работы.md"])
         self.assertFalse(output["execution_authorized"])
 
+    def test_network_failure_on_one_pr_produces_partial_report(self):
+        first = pr(11)
+        second = pr(12)
+        s = Fake({
+            f"/repos/{REPO}/pulls?state=open&per_page=10&page=1": [
+                {"number": 11}, {"number": 12},
+            ],
+            f"/repos/{REPO}/pulls/11": first,
+            f"/repos/{REPO}/pulls/12": second,
+            f"/repos/{REPO}/pulls/11/files?per_page=100&page=1":
+                eng.SourceUnavailable("github_network_unavailable"),
+            f"/repos/{REPO}/pulls/12/files?per_page=100&page=1": [
+                {"filename": "src/a.py", "status": "modified"},
+            ],
+        })
+        report = eng.merge_snapshot(REPO, client=s, now=NOW)
+        self.assertEqual(report["status"], "INCONCLUSIVE")
+        self.assertIn("pr_window_incomplete", report["reasons"])
+        self.assertEqual(report["skipped_prs"], 1)
+        self.assertEqual(report["prs_seen"], 1)
+        self.assertEqual(report["overlaps"], [])
+        self.assertFalse(report["window_exhaustive_verified"])
+        self.assertFalse(report["merge_authorized"])
+
+    def test_failed_third_pr_does_not_hide_verified_overlap(self):
+        first, second, third = pr(11), pr(12), pr(13)
+        s = Fake({
+            f"/repos/{REPO}/pulls?state=open&per_page=10&page=1": [
+                {"number": 11}, {"number": 12}, {"number": 13},
+            ],
+            f"/repos/{REPO}/pulls/11": first,
+            f"/repos/{REPO}/pulls/12": second,
+            f"/repos/{REPO}/pulls/13": third,
+            f"/repos/{REPO}/pulls/11/files?per_page=100&page=1": [
+                {"filename": "shared.txt", "status": "modified"},
+            ],
+            f"/repos/{REPO}/pulls/12/files?per_page=100&page=1": [
+                {"filename": "shared.txt", "status": "modified"},
+            ],
+            f"/repos/{REPO}/pulls/13/files?per_page=100&page=1":
+                eng.SourceUnavailable("github_network_unavailable"),
+        })
+        report = eng.merge_snapshot(REPO, client=s, now=NOW)
+        self.assertEqual(report["status"], "REVIEW_REQUIRED")
+        self.assertIn("pr_window_incomplete", report["reasons"])
+        self.assertEqual(report["skipped_prs"], 1)
+        self.assertEqual(report["overlaps"][0]["paths"], ["shared.txt"])
+        self.assertEqual(report["overlaps"][0]["classification"],
+                         "POTENTIAL_OVERLAP_NOT_PROVEN_CONFLICT")
+        self.assertFalse(report["merge_authorized"])
+
     def test_radar_exposes_unknown_compatibility_not_installation(self):
         source = "example-org/example"
         s = Fake({
