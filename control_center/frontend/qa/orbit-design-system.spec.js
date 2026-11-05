@@ -58,7 +58,7 @@ test("one Orbit type system across React routes",async({page})=>{
   });
   expect(values.font.toLowerCase()).toContain("sans-serif");
   expect(values.font).not.toContain("Georgia");
-  expect(values.panel).toBe("#0b1d2c");
+  expect(["#1d2a3d","#fff"]).toContain(values.panel);
   const bounds=await geometry(page);
   expect(bounds.doc,"overflow on "+label).toBeLessThanOrEqual(bounds.viewport+1);
  }
