@@ -73,14 +73,113 @@ class CutoverTests(unittest.TestCase):
         args = ["run", "-d", "--read-only", "--mount",
                 "type=bind,src=/var/lib/hermes-brc-relay,dst=/state",
                 "--env-file", "/etc/hermes-brc-relay/relay.env", m.FORK_IMAGE]
-        with patch.object(m.legacy, "run_args", return_value=args):
+        with patch.object(m.legacy, "run_args", return_value=args), \
+             patch.object(m, "registry_contract",
+                          return_value=Path("/pinned/stage1-catalog.json")):
             cmd = m.new_relay_args()
         self.assertIn("BRC_DB=/state/relay.sqlite", cmd)
+        self.assertIn("BRC_WORKSPACE_REGISTRY=" + m.REGISTRY_TARGET, cmd)
+        self.assertIn("type=bind,src=/pinned/stage1-catalog.json,dst=" +
+                      m.REGISTRY_TARGET + ",readonly", cmd)
+        self.assertEqual(cmd.count("--mount"), 2)
         self.assertIn("HOME=/tmp", cmd)
         self.assertIn("--read-only", cmd)
         self.assertEqual(cmd[-1], m.FORK_IMAGE)
 
+    def test_fork_registry_derives_only_four_owner_workspaces(self):
+        with patch.object(m, "protected"):
+            path = m.registry_contract()
+        document = json.loads(path.read_bytes())
+        self.assertEqual(document["schema"], 2)
+        self.assertEqual(len(document["workspaces"]), 4)
+        self.assertEqual(set(v["deviceId"] for v in document["workspaces"]),
+                         {m.WINDOWS_SANDBOX_DEVICE})
+        self.assertEqual(set(v["name"] for v in document["workspaces"]),
+                         {"hermes", "your-fitness-coach",
+                          "second-brain", "ai-development-toolkit"})
+        self.assertTrue(all(v["scope"] == "sandbox" for v in document["workspaces"]))
+
+    def test_registry_source_drift_refused(self):
+        with patch.object(m, "protected"), \
+             patch.object(m, "source_blob", return_value="0" * 40):
+            with self.assertRaisesRegex(m.Hold, "WORKSPACE_SOURCE_DRIFT"):
+                m.registry_contract()
+
+    def test_old_pair_restart_restored_before_profile_hash(self):
+        events = []
+        relay = dict(old_relay(), State={"Running": True})
+        proxy = dict(old_proxy(), State={"Running": True},
+                     HostConfig={"NetworkMode": "container:" + relay["Id"]})
+        def lookup(kind, name, optional=False):
+            return {m.legacy.NAME: relay, m.PROXY: proxy}.get(name)
+        def command(*args):
+            events.append(args)
+            return ""
+        def review(raw):
+            self.assertIn(("update", "--restart", "unless-stopped", m.legacy.NAME), events)
+            self.assertIn(("update", "--restart", "unless-stopped", m.PROXY), events)
+            events.append(("PROFILE",))
+        pin = types.SimpleNamespace(read_bytes=lambda: b"attested")
+        with patch.object(m, "inspect", side_effect=lookup), \
+             patch.object(m, "docker", side_effect=command), \
+             patch.object(m, "PINS", pin), patch.object(m, "PINS_OLD", pin), \
+             patch.object(m, "read_old_pin_pair", side_effect=review), \
+             patch.object(m.legacy, "healthy", return_value=True), \
+             patch.object(m, "finalize_pending"):
+            m.restore({}, relay, proxy, "", "", 3)
+        self.assertEqual(events[-1], ("PROFILE",))
+
+    def test_recover_reconciles_only_after_pins_lock_released(self):
+        from contextlib import contextmanager
+        locked = {"value": False}
+        @contextmanager
+        def pin_lock():
+            locked["value"] = True
+            try:
+                yield b"attested"
+            finally:
+                locked["value"] = False
+        relay = dict(old_relay(), State={"Running": True})
+        proxy = dict(old_proxy(), State={"Running": True},
+                     HostConfig={"NetworkMode": "container:" + relay["Id"]})
+        def lookup(kind, name, optional=False):
+            return {m.legacy.NAME: relay, m.PROXY: proxy}.get(name)
+        def reconcile(path):
+            self.assertFalse(locked["value"])
+            return "READY"
+        fake_wss = types.SimpleNamespace(
+            _pins=lambda _: {
+                "relay_name": m.legacy.NAME, "sidecar_name": m.PROXY,
+                "relay_image": m.LEGACY_IMAGE, "sidecar_image": m.LEGACY_IMAGE,
+                "relay_id": relay["Id"], "sidecar_id": proxy["Id"],
+            },
+            reconcile=reconcile,
+        )
+        receipt = json.dumps({
+            "schema": 1, "original_pin_sha256": "f" * 64,
+            "release_sha": "a" * 40, "devices": 3,
+        }).encode()
+        with patch.object(m.os, "geteuid", return_value=0), \
+             patch.object(m, "LIVE_SHA",
+                          types.SimpleNamespace(read_text=lambda: "a" * 40)), \
+             patch.object(m.legacy, "lock", return_value=nullcontext()), \
+             patch.object(m, "load_existing_wss", return_value=fake_wss), \
+             patch.object(m, "protected"), \
+             patch.object(m, "PINS_OLD",
+                          types.SimpleNamespace(read_bytes=lambda: b"attested")), \
+             patch.object(m, "PENDING",
+                          types.SimpleNamespace(read_bytes=lambda: receipt)), \
+             patch.object(m, "locked_pins", side_effect=pin_lock), \
+             patch.object(m, "digest", return_value="f" * 64), \
+             patch.object(m, "inspect", side_effect=lookup), \
+             patch.object(m, "approval"), \
+             patch.object(m, "restore") as restored:
+            self.assertEqual(m.rollback_pair("a" * 40), (relay["Id"], proxy["Id"]))
+            restored.assert_called_once()
+        self.assertFalse(locked["value"])
+
     def test_approval_matches_exact_sha_and_pair(self):
+
         data = {
             "schema": 1,
             "decision": "OWNER_APPROVED_H454_STAGE1_RELAY_WSS_CUTOVER",
