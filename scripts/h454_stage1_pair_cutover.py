@@ -77,7 +77,7 @@ def digest_bytes(data):
 
 def source_blob(data):
     """Verify exact Git-tracked source bytes without reading project secrets."""
-    prefix = b"blob " + str(len(data)).encode("ascii") + b"\\0"
+    prefix = b"blob " + str(len(data)).encode("ascii") + b"\0"
     return hashlib.sha1(prefix + data).hexdigest()
 
 
