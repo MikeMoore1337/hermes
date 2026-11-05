@@ -81,7 +81,12 @@ def checked_checkout(ecc: Path) -> dict:
 
 
 def original_command(ecc: Path, home: Path, entry: str, args: list[str]) -> list[str]:
-    if not home.is_dir() or home.is_symlink():
+    if (not home.is_dir() or home.is_symlink()
+            or not home.parent.name.startswith("h777-")
+            or home.name not in {
+                "never-installed", "installed-then-uninstalled",
+                "preexisting-state", "symlink-negative",
+            }):
         raise ValueError("Unsafe disposable H777 HOME")
     return [
         "docker", "run", "--rm", "--init", "--pull=never",
