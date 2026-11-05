@@ -53,12 +53,12 @@ def _version(value: Any) -> tuple[int, int, int] | None:
     return tuple((parts + [0, 0])[:3])
 
 
-def _name(value: Any) -> str:
+def _name(value: Any, ecosystem: str) -> str:
     if type(value) is not str or NAME.fullmatch(value) is None:
         raise DepPilotRefused("package_name_invalid")
     # Both pip and npm package names are treated case-insensitively only
     # for this plan; no guessed aliases between ecosystems.
-    return value.lower().replace("_", "-")
+    return value.lower().replace("_", "-") if ecosystem == "pypi" else value.lower()
 
 
 def _utc(value: Any) -> datetime:
@@ -105,7 +105,7 @@ def _parse_lock(name: str, raw: bytes) -> tuple[str, dict[str, set[str]]]:
             for item in items:
                 if type(item) is not dict:
                     raise ValueError()
-                parsed.append((_name(item.get("name")), item.get("version")))
+                parsed.append((_name(item.get("name"), LOCKS[name]), item.get("version")))
         else:
             data = json.loads(raw)
             if (type(data) is not dict or data.get("lockfileVersion") not in (2, 3)
@@ -125,7 +125,7 @@ def _parse_lock(name: str, raw: bytes) -> tuple[str, dict[str, set[str]]]:
                 tail = tail.removeprefix("node_modules/")
                 if type(record) is not dict:
                     raise ValueError()
-                parsed.append((_name(tail), record.get("version")))
+                parsed.append((_name(tail, LOCKS[name]), record.get("version")))
     except (ValueError, TypeError, KeyError, UnicodeError, tomllib.TOMLDecodeError, RecursionError):
         raise DepPilotRefused("lockfile_invalid") from None
     inventory: dict[str, set[str]] = {}
@@ -143,7 +143,7 @@ def _candidate(item: Any, ecosystem: str) -> dict:
     }, "candidate_shape_invalid")
     if type(item["ecosystem"]) is not str or item["ecosystem"] != ecosystem:
         raise DepPilotRefused("candidate_ecosystem_invalid")
-    name = _name(item["name"])
+    name = _name(item["name"], ecosystem)
     candidate_version = item["candidate_version"]
     if type(candidate_version) is not str or not 1 <= len(candidate_version) <= 80:
         raise DepPilotRefused("candidate_version_invalid")
@@ -212,6 +212,8 @@ def plan(lock_name: str, lock_raw: bytes, metadata: Any, *, now: datetime | None
     if len(set(names)) != len(names):
         raise DepPilotRefused("candidate_duplicate")
     reasons = set()
+    if not candidates:
+        reasons.add("candidate_list_empty")
     if checked - timestamp > MAX_AGE or timestamp > checked + SKEW:
         reasons.add("candidate_metadata_stale_or_future")
     findings = []
