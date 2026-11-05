@@ -145,12 +145,12 @@ class TestH777TemporaryHome(unittest.TestCase):
         with sqlite3.connect(database) as db:
             db.execute("CREATE TABLE install_state (target_id TEXT, target_root TEXT)")
             db.execute("INSERT INTO install_state VALUES (?, ?)",
-                       ("hermes", "/test-home/.hermes"))
+                       ("hermes-home", "/test-home/.hermes"))
         seed_foreign_projection(database)
         with sqlite3.connect(database) as db:
             self.assertEqual(db.execute(
                 "SELECT target_id,target_root FROM install_state").fetchall(),
-                [("hermes", "/unrelated-h777-owner/.hermes")])
+                [("hermes-home", "/unrelated-h777-owner/.hermes")])
         with self.assertRaisesRegex(AssertionError, "Unexpected original"):
             seed_foreign_projection(database)
 
