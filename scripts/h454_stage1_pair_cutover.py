@@ -303,17 +303,47 @@ def restore(original_pins, old_relay, old_proxy, new_relay_id, new_proxy_id, cou
     """Only remove identified task-owned candidates; never restore stale SQLite."""
     current_proxy = inspect("container", PROXY, optional=True)
     if current_proxy and current_proxy["Id"] != old_proxy["Id"]:
+        labels = current_proxy["Config"].get("Labels") or {}
+        old_labels = old_proxy["Config"].get("Labels") or {}
+        host = current_proxy["HostConfig"]
+        expected_mounts = {
+            "/run/h454-wss/proxy.mjs": str(PIN_ROOT / "proxy.mjs"),
+            "/run/h454-wss/relay.key": str(Path(original_pins["tls_directory"]) / "relay.key"),
+            "/run/h454-wss/relay.crt": str(Path(original_pins["tls_directory"]) / "relay.crt"),
+        }
+        mounts = current_proxy.get("Mounts") or []
         require(new_proxy_id and current_proxy["Id"] == new_proxy_id
                 and current_proxy["Image"] == LEGACY_IMAGE
-                and current_proxy["HostConfig"]["NetworkMode"] ==
-                "container:" + new_relay_id, "FOREIGN_SIDE_CAR")
+                and labels.get("com.hermes.h454.role") == "wss-proxy"
+                and labels.get("com.hermes.h454.request") ==
+                    old_labels.get("com.hermes.h454.request")
+                and current_proxy["Config"]["User"] == "65534:65534"
+                and host["NetworkMode"] == "container:" + new_relay_id
+                and host["ReadonlyRootfs"] is True and host["Privileged"] is False
+                and "ALL" in (host.get("CapDrop") or [])
+                and set(host.get("SecurityOpt") or []) == {"no-new-privileges"}
+                and len(mounts) == 3
+                and all(mnt["Type"] == "bind" and mnt["RW"] is False
+                        and expected_mounts.get(mnt["Destination"]) == mnt["Source"]
+                        for mnt in mounts), "FOREIGN_SIDE_CAR")
         docker("rm", "-f", new_proxy_id)
     current_relay = inspect("container", legacy.NAME, optional=True)
     if current_relay and current_relay["Id"] != old_relay["Id"]:
+        host = current_relay["HostConfig"]
+        mounts = current_relay.get("Mounts") or []
         require(new_relay_id and current_relay["Id"] == new_relay_id
                 and current_relay["Image"] == FORK_IMAGE
+                and current_relay["Config"]["User"] == "979:975"
                 and current_relay["Config"]["Labels"].get("com.hermes.scope") ==
-                "h15-brc-owner-relay", "FOREIGN_RELAY")
+                    "h15-brc-owner-relay"
+                and host["NetworkMode"] == "hermes-brc-internal"
+                and host["ReadonlyRootfs"] is True and host["Privileged"] is False
+                and "ALL" in (host.get("CapDrop") or [])
+                and set(host.get("SecurityOpt") or []) == {"no-new-privileges"}
+                and len(mounts) == 1 and mounts[0]["Type"] == "bind"
+                and mounts[0]["Source"] == "/var/lib/hermes-brc-relay"
+                and mounts[0]["Destination"] == "/state"
+                and mounts[0]["RW"] is True, "FOREIGN_RELAY")
         docker("rm", "-f", new_relay_id)
     checkpoint = inspect("container", RELAY_OLD, optional=True)
     if checkpoint:
@@ -439,8 +469,13 @@ def rollback_pair(release_sha, *, after_success=False):
                 require(current_pins["relay_image"] == FORK_IMAGE
                         and current_pins["sidecar_image"] == LEGACY_IMAGE,
                         "FORK_PAIR_NOT_ACTIVE")
-                count = legacy.devices()
-                require(count >= 1, "NO_ACTIVE_DEVICES")
+                try:
+                    count = legacy.devices()
+                except (OSError, ValueError, legacy.CutoverDenied):
+                    # A broken new relay must not prevent recovery of the old
+                    # one. The full client/device matrix remains a post-rollback gate.
+                    count = 1
+                count = max(1, count)
                 data = {
                     "schema": 1, "original_pin_sha256": digest(PINS_OLD),
                     "release_sha": release_sha, "devices": count
