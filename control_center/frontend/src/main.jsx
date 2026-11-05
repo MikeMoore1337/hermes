@@ -3,7 +3,7 @@ import {createRoot} from "react-dom/client";
 import {ShieldCheck,LockKeyhole,Activity,RefreshCw,Search,Github,ArrowRight,
   AlertTriangle,Radio,Server,Clock3,Database,ExternalLink,ChevronsRight,ChevronDown,
   CircleHelp,ShieldAlert,Eye,Signal,Check,LogIn,ArrowUpRight,
-  LayoutDashboard,Inbox,Layers3,BookOpenText,FilePenLine,Bot,Gauge,Menu,X,ChevronRight} from "lucide-react";
+  LayoutDashboard,Inbox,Layers3,BookOpenText,FilePenLine,Bot,Gauge,Menu,X,ChevronRight,Monitor,Sun,Moon} from "lucide-react";
 import {groups,statuses,validSnapshot,counts,filterServices} from "./health.js";
 import "./style.css";
 import {registerPwa} from "./register-pwa.js";
@@ -15,10 +15,24 @@ import OrbitOverview from "./OrbitOverview.jsx";
 import HermesCommander from "./HermesCommander.jsx";
 import "./orbit-operator.css";
 import "./orbit-unified.css";
+import "./apple27.css";
 
 const ISSUE33="https://github.com/MikeMoore1337/hermes/issues/33";
 const ISSUE163="https://github.com/MikeMoore1337/hermes/issues/163";
 const UI_VERSION="0.3.0";
+const THEME_KEY="hermes-control-center-ui-theme";
+const themeModes=["system","dark","light"];
+const themeLabels={system:"Системная",dark:"Тёмная",light:"Светлая"};
+function initialTheme(){
+ try{const saved=localStorage.getItem(THEME_KEY);return themeModes.includes(saved)?saved:"system";}
+ catch{return "system";}
+}
+function ThemeButton({theme,onTheme,className="hcc-theme-toggle"}){
+ const Icon=theme==="dark"?Moon:theme==="light"?Sun:Monitor;
+ return <button type="button" className={className} aria-label={"Тема: "+themeLabels[theme]+". Переключить"} title={"Тема: "+themeLabels[theme]} onClick={onTheme}>
+  <Icon size={16} strokeWidth={1.7} aria-hidden="true"/><span>{themeLabels[theme]}</span>
+ </button>;
+}
 const nav=["all","inbox","articles","commander","ops","research","qa","agent","codex"];
 const navName=key=>key==="commander"?"Hermes Commander":key==="articles"?"Статьи YFC":groups[key].name;
 const icons={news:Radio,ops:Activity,alerts:Signal,qa:ShieldCheck,
@@ -46,7 +60,7 @@ function Nav({view,onView,mode,activeWidget}){
  })}
  </nav>;
 }
-function Header({view,authMode,onLogout,onMenu,menuOpen,activeWidget}){
+function Header({view,authMode,onLogout,onMenu,menuOpen,activeWidget,theme,onTheme}){
  return <header className="orbit-topbar">
    <button type="button" className="orbit-topbar-menu" onClick={onMenu} aria-expanded={menuOpen} aria-label={menuOpen?"Закрыть меню разделов":"Открыть меню разделов"}>
     {menuOpen?<X size={20}/>:<Menu size={20}/>}
@@ -54,6 +68,7 @@ function Header({view,authMode,onLogout,onMenu,menuOpen,activeWidget}){
    <img className="orbit-topbar-mobile-brand" src="/orbit-brand.svg" alt="" width="31" height="31" aria-hidden="true"/>
    <div className="orbit-topbar-breadcrumb"><span>HERMES</span><ChevronRight size={15}/><span>COMMAND CENTER</span><ChevronRight size={15}/><strong>{activeWidget||navName(view)}</strong></div>
    <div className="orbit-topbar-tools">
+    <ThemeButton theme={theme} onTheme={onTheme}/>
     <InfoBadge tone="outline"><LockKeyhole size={13} aria-hidden="true"/> {view==="articles"?"Публикация вручную":"Только чтение"}</InfoBadge>
     {authMode==="github"&&<button type="button" className="owner-button" onClick={onLogout}><LogIn size={15} aria-hidden="true"/> Выйти</button>}
    </div>
@@ -197,7 +212,7 @@ function SignalPanel({snapshot,error}){
   </section>
  </aside>;
 }
-function OperatorApp({authMode,onLogout}){
+function OperatorApp({authMode,onLogout,theme,onTheme}){
  const [view,setView]=useState(()=>window.location.pathname==="/hermes-brc"?"commander":"all");
  const [menuOpen,setMenuOpen]=useState(false);
  const [activeWidget,setActiveWidget]=useState(null);
@@ -288,7 +303,7 @@ function OperatorApp({authMode,onLogout}){
    </aside>
    <button type="button" aria-label="Закрыть меню" className={"orbit-rail-backdrop"+(menuOpen?" is-open":"")} onClick={()=>setMenuOpen(false)} tabIndex={menuOpen?0:-1}/>
    <div className="orbit-content">
-    <Header view={view} authMode={authMode} onLogout={onLogout} onMenu={()=>setMenuOpen(v=>!v)} menuOpen={menuOpen} activeWidget={activeWidget}/>
+    <Header view={view} authMode={authMode} onLogout={onLogout} onMenu={()=>setMenuOpen(v=>!v)} menuOpen={menuOpen} activeWidget={activeWidget} theme={theme} onTheme={onTheme}/>
     <main id="main-content" className="orbit-main" tabIndex={-1}>
      {view==="all"?<><OrbitOverview snapshot={snapshot} error={error} onView={onView} onRefresh={reload} busy={busy} Registry={Registry}
       registryProps={{snapshot,view,search,setSearch,filter,setFilter}}/><div className="center-area orbit-compact-codex" aria-label="Данные Codex и дополнительные панели"><CodexPanel compact/></div></>:
@@ -316,7 +331,7 @@ function OperatorApp({authMode,onLogout}){
     <footer className="footer">HERMES COMMAND CENTER <span>·</span> Состояние systemd, не результат выполнения заданий <span>·</span> <a href={ISSUE33} target="_blank" rel="noopener noreferrer">Политика доступа</a></footer>
    </div>
    <nav className="orbit-app-mobilebar" aria-label="Мобильная навигация">
-    {[["all","Обзор",LayoutDashboard],["inbox","Входящие",Inbox],["research","Исследования",BookOpenText],["qa","QA / CI",ShieldCheck]].map(([id,label,Icon])=>
+    {[["all","Обзор",LayoutDashboard],["inbox","Входящие",Inbox],["commander","Commander",Monitor]].map(([id,label,Icon])=>
      <button key={id} type="button" aria-current={view===id?"page":undefined} onClick={()=>onView(id)}><Icon size={19} aria-hidden="true"/>{label}</button>)}
     <button type="button" aria-expanded={menuOpen} onClick={()=>setMenuOpen(v=>!v)}><Menu size={19} aria-hidden="true"/>Ещё</button>
    </nav>
@@ -324,8 +339,10 @@ function OperatorApp({authMode,onLogout}){
  </div>;
 }
 
-function LoginPreview({onBack,active=false,unavailable=false}){
- return <OrbitLogin onBack={onBack} active={active} unavailable={unavailable}/>;
+function LoginPreview({onBack,active=false,unavailable=false,theme,onTheme}){
+ return <div className="hcc-login-host"><OrbitLogin onBack={onBack} active={active} unavailable={unavailable}/>
+  <ThemeButton theme={theme} onTheme={onTheme} className="hcc-login-theme"/>
+ </div>;
 }
 function serverAuthBootstrap(){
  const root=document.getElementById("root");
@@ -337,6 +354,20 @@ function serverAuthBootstrap(){
 function App(){
  const preview=new URLSearchParams(location.search).get("preview")==="login";
  const [auth,setAuth]=useState(serverAuthBootstrap);
+ const [theme,setTheme]=useState(initialTheme);
+ const cycleTheme=useCallback(()=>setTheme(x=>themeModes[(themeModes.indexOf(x)+1)%themeModes.length]),[]);
+ useEffect(()=>{
+  const mq=window.matchMedia("(prefers-color-scheme: light)");
+  const update=()=>{
+   const light=theme==="light"||(theme==="system"&&mq.matches);
+   document.documentElement.dataset.hermesTheme=theme;
+   document.querySelector('meta[name="theme-color"]')?.setAttribute("content",light?"#f7f9fc":"#142033");
+  };
+  update();
+  mq.addEventListener?.("change",update);
+  try{localStorage.setItem(THEME_KEY,theme);}catch{/* preference storage may be disabled */}
+  return()=>mq.removeEventListener?.("change",update);
+ },[theme]);
  useEffect(()=>{
   if(serverAuthBootstrap())return;
   let active=true;
@@ -361,10 +392,10 @@ function App(){
   }catch(_){/* remain on protected screen; expiry will deny future APIs */}
  },[]);
  if(!auth)return <div className="auth-wait" role="status">Проверка доступа к Hermes Control Center…</div>;
- if(auth.mode==="unavailable")return <LoginPreview unavailable/>;
- if(auth.mode==="github"&&!auth.authenticated)return <LoginPreview active/>;
- if(preview)return <LoginPreview onBack={()=>window.location.assign("/")}/>;
- return <OperatorApp authMode={auth.mode} onLogout={logout}/>;
+ if(auth.mode==="unavailable")return <LoginPreview unavailable theme={theme} onTheme={cycleTheme}/>;
+ if(auth.mode==="github"&&!auth.authenticated)return <LoginPreview active theme={theme} onTheme={cycleTheme}/>;
+ if(preview)return <LoginPreview onBack={()=>window.location.assign("/")} theme={theme} onTheme={cycleTheme}/>;
+ return <OperatorApp authMode={auth.mode} onLogout={logout} theme={theme} onTheme={cycleTheme}/>;
 }
 createRoot(document.getElementById("root")).render(<App/>);
 void registerPwa();
