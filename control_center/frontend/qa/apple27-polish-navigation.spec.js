@@ -36,10 +36,19 @@ async function setTheme(page,theme){
  await page.reload();
  await expect(page.locator("html")).toHaveAttribute("data-hermes-resolved-theme",theme);
 }
+async function openMobileNav(page){
+ const dock=page.locator(".orbit-app-mobilebar");
+ if(await dock.isVisible()){
+  const more=dock.getByRole("button",{name:"Ещё"});
+  if(await more.getAttribute("aria-expanded")!=="true")await more.click();
+ }
+}
 async function navigateFromArticles(page,buttonClass,panelClass){
+ await openMobileNav(page);
  const sidebar=page.locator(".atlas-section-nav");
  await sidebar.getByRole("button",{name:"Статьи YFC"}).click();
  await expect(page.locator(".ye-root")).toBeVisible();
+ await openMobileNav(page);
  const widget=sidebar.locator("."+buttonClass);
  await expect(widget).toBeVisible();
  await widget.focus();
@@ -80,9 +89,11 @@ for(const [width,height] of [[393,852],[1440,900]]){
     ["quota295-nav","quota295-panel"]]){
     await navigateFromArticles(page,buttonClass,panelClass);
    }
+   await openMobileNav(page);
    await page.locator(".atlas-section-nav").getByRole("button",{name:"Обзор"}).click();
    await expect(page.locator(".hcc-overview")).toBeVisible();
    await expect(page.locator(".orbit-widget-module")).toHaveCount(0);
+   await openMobileNav(page);
    await page.locator(".atlas-section-nav").getByRole("button",{name:"Hermes Commander"}).click();
    await expect(page.locator(".oc-page")).toBeVisible();
    const materials=await page.evaluate(()=>({
