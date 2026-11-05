@@ -38,6 +38,12 @@
 .theme-orbit .orbit-header-info-actions{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
 .theme-orbit .orbit-header-info-actions a{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--orbit-accent-strong)}
 
+/* The proxy-mode identity mark must be as quiet as the selected theme. */
+.theme-orbit .orbit-topbar-tools .orbit-owner-avatar{
+ background:var(--a27-material);color:var(--orbit-text);
+ border:1px solid var(--a27-border);box-shadow:none;
+}
+
 /* An explicit end-session action is separate from the informational proxy avatar. */
 .theme-orbit .orbit-topbar-tools .orbit-logout-button{
  display:inline-flex;align-items:center;justify-content:center;gap:8px;
