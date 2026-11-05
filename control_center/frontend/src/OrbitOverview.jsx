@@ -1,5 +1,5 @@
 import React,{useState} from "react";
-import {ArrowUpRight,ChevronRight,LockKeyhole,Pause,Play,ShieldCheck,Activity,Search,GitBranch,Monitor,Inbox,Gauge,Database} from "lucide-react";
+import {ArrowUpRight,ChevronRight,LockKeyhole,Pause,Play,ShieldCheck,Activity,Search,GitBranch,Monitor,Inbox,Gauge,Database,Info,RefreshCw} from "lucide-react";
 import {statuses,counts} from "./health.js";
 import "./orbit-operator.css";
 
@@ -63,14 +63,15 @@ export default function OrbitOverview({snapshot,error,onView,onRefresh,busy,Regi
   {id:"codex",label:"Лимиты AI",detail:"Аналитика использования",icon:Gauge}
  ];
  return <div className="hcc-overview">
+  {!snapshot&&<div className="hcc-snapshot-notice" role="status"><Info size={16} aria-hidden="true"/><span>Нет подтверждённого снимка. Данные и команды не проверены.</span></div>}
   <header className="hcc-intro">
    <div><span className="hcc-kicker">HERMES COMMAND CENTER</span>
     <h1>Рабочий стол</h1>
-    <p>Наблюдение, входящие и состояние контуров в одном месте. Отображаются только подтверждённые состояния.</p>
+    <p>Наблюдение, входящие и управление контекстом в одном месте.</p>
    </div>
    <div className="hcc-actions">
     <button type="button" className="hcc-action" onClick={()=>onView("commander")}><Monitor size={16} aria-hidden="true"/> Hermes Commander</button>
-    <button type="button" className="hcc-action hcc-action-primary" onClick={onRefresh} disabled={busy}><Activity size={16} aria-hidden="true"/>{busy?"Обновление…":"Обновить"}</button>
+    <button type="button" className="hcc-action hcc-action-primary" onClick={onRefresh} disabled={busy}><RefreshCw size={16} aria-hidden="true"/>{busy?"Обновление…":"Обновить"}</button>
    </div>
   </header>
   <section className="hcc-kpis" aria-label="Общие показатели">
@@ -85,7 +86,7 @@ export default function OrbitOverview({snapshot,error,onView,onRefresh,busy,Regi
     <div className="hcc-kpi-note">{snapshot?"По текущему снимку":"Без данных оценка невозможна"}</div></div>
    <div className="hcc-kpi"><div className="hcc-kpi-label">Доступ <LockKeyhole size={16} aria-hidden="true"/></div>
     <div className="hcc-kpi-value text">Только чтение</div>
-    <div className="hcc-kpi-note">Показатели без команд управления</div></div>
+    <div className="hcc-kpi-note">Команды не разрешены</div></div>
   </section>
   {error&&<div className="orbit-alert" role="alert">{error}</div>}
   <div className="hcc-grid">
@@ -107,7 +108,23 @@ export default function OrbitOverview({snapshot,error,onView,onRefresh,busy,Regi
   </div>
   <section className="hcc-panel hcc-registry" aria-labelledby="hcc-registry-title">
    <header className="hcc-panel-head"><div><h2 id="hcc-registry-title">Состояние контуров</h2><p>Сводка без неподтверждённых статусов</p></div><button type="button" className="hcc-action" onClick={()=>onView("ops")}>Все службы <ChevronRight size={14}/></button></header>
-   {Registry&&<Registry {...registryProps}/>}
+   <div className="hcc-contour-summary">
+    <p className="hcc-contour-hint"><Info size={15} aria-hidden="true"/> Обновление данных зависит от доступности защищённого API</p>
+    <div className="hcc-contour-cards">
+     {[
+      {label:"Ops Watch",id:"ops"},
+      {label:"Research Scout",id:"research"},
+      {label:"Hermes Commander",id:null}
+     ].map(item=>{
+      const service=item.id?services.find(x=>x.id===item.id):null;
+      return <div className="hcc-contour-item" key={item.label}>
+       <small>{item.label}</small>
+       <strong>{service?stateLabel(service.state):item.id?"Нет данных":"Состояние не проверено"}</strong>
+      </div>;
+     })}
+    </div>
+   </div>
+   {Registry&&<Registry {...registryProps}/>} 
   </section>
   <details className="hcc-topology-details">
    <summary><span>Архитектура потоков - подробная схема</span><ChevronRight className="hcc-topology-chevron" size={17} aria-hidden="true"/></summary>
