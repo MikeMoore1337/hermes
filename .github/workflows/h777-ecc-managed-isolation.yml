@@ -79,8 +79,7 @@ jobs:
           base = root / "isolated-homes"
           base.mkdir(mode=0o700)
           foreign = root / "foreign-owner.txt"
-          foreign.write_text("H777_UNRELATED_OWNER_CONTENT
-", encoding="utf-8")
+          foreign.write_text("H777_UNRELATED_OWNER_CONTENT" + chr(10), encoding="utf-8")
           foreign_digest = hashlib.sha256(foreign.read_bytes()).hexdigest()
           ecc = Path(os.environ["ECC_SOURCE"])
 
@@ -105,15 +104,13 @@ jobs:
 
           # A new synthetic unrelated owner file must prevent cleanup.
           foreign_inside = home / "owner-extra.txt"
-          foreign_inside.write_text("H777_UNRELATED_SYNTHETIC
-", encoding="utf-8")
+          foreign_inside.write_text("H777_UNRELATED_SYNTHETIC" + chr(10), encoding="utf-8")
           denied = subprocess.run(
               [sys.executable, "-m", "scripts.h777_ecc_isolated_lifecycle",
                "retire", "--ecc-root", str(ecc), "--home", str(home)],
               capture_output=True, text=True, check=False, timeout=30)
           assert denied.returncode != 0
-          assert foreign_inside.read_text(encoding="utf-8") == "H777_UNRELATED_SYNTHETIC
-"
+          assert foreign_inside.read_text(encoding="utf-8") == "H777_UNRELATED_SYNTHETIC" + chr(10)
           foreign_inside.unlink()
 
           finished = invoke("retire", "--ecc-root", ecc, "--home", home)
@@ -143,8 +140,7 @@ jobs:
               "production_deploy": "NOT_RUN",
           }
           Path("h777-managed-isolation-receipt.json").write_text(
-              json.dumps(receipt, sort_keys=True, indent=2) + "
-",
+              json.dumps(receipt, sort_keys=True, indent=2) + chr(10),
               encoding="utf-8")
           print("H777_ISOLATED_ORIGINAL_ECC_INSTALL=PASS")
           print("H777_ISOLATED_MANAGED_ROLLBACK=PASS")
