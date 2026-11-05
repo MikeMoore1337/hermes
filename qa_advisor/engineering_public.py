@@ -285,7 +285,8 @@ def release_snapshot(repo: str, *, stage: str, pr: int | None = None,
     return result
 
 
-def merge_snapshot(repo: str, *, client=None, now: datetime | None = None,\n                   max_prs: int = MAX_PR_WINDOW) -> dict:
+def merge_snapshot(repo: str, *, client=None, now: datetime | None = None,
+                   max_prs: int = MAX_PR_WINDOW) -> dict:
     """Bounded open-PR sampling and changed-path risk; no textual merge proof."""
     _repo(repo)
     if type(max_prs) is not int or not 1 <= max_prs <= MAX_PR_WINDOW:
