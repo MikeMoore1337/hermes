@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import base64
+import hashlib
 import io
 import json
 import urllib.error
@@ -35,6 +37,18 @@ def run(workflow=381262090, *, head=SHA, conclusion="success", status="completed
         "head_sha": head, "status": status, "conclusion": conclusion,
         "event": event, "head_branch": branch,
         "repository": {"full_name": REPO},
+    }
+
+
+def source_blob(content=b"MIT License\n", name="LICENSE.txt"):
+    return {
+        "name": name,
+        "encoding": "base64",
+        "content": base64.b64encode(content).decode("ascii"),
+        "size": len(content),
+        "sha": hashlib.sha1(
+            b"blob " + str(len(content)).encode("ascii") + b"\x00" + content
+        ).hexdigest(),
     }
 
 
@@ -303,7 +317,10 @@ class ReadonlySourceTests(unittest.TestCase):
                 "fork": False, "pushed_at": "2026-11-05T10:00:00Z",
             },
             f"/repos/{source}/branches/main": {"name": "main", "commit": {"sha": SHA}},
-            f"/repos/{source}/license?ref={SHA}": {"license": {"spdx_id": "MIT"}},
+            f"/repos/{source}/license?ref={SHA}": {**source_blob(), "license": {"spdx_id": "MIT"}},
+            f"/repos/{source}/contents/NOTICE?ref={SHA}": eng.SourceUnavailable("github_not_found"),
+            f"/repos/{source}/contents/NOTICE.txt?ref={SHA}": eng.SourceUnavailable("github_not_found"),
+            f"/repos/{source}/contents/NOTICE.md?ref={SHA}": eng.SourceUnavailable("github_not_found"),
             f"/repos/{source}/releases/latest": {"published_at": "2026-11-04T10:00:00Z"},
             f"/repos/{source}/security-advisories?per_page=5": [],
         })
@@ -312,6 +329,9 @@ class ReadonlySourceTests(unittest.TestCase):
         self.assertEqual(result["status"], "NEEDS_REVIEW")
         self.assertIn("target_compatibility_unknown", result["reasons"])
         self.assertFalse(result["license_verified"])
+        self.assertEqual(result["license_file_sha256"], hashlib.sha256(b"MIT License\n").hexdigest())
+        self.assertEqual(result["notice_status"], "NOT_FOUND_STANDARD_ROOT_PATHS")
+        self.assertIsNone(result["notice_file_sha256"])
         self.assertFalse(result["source_executed"])
         self.assertFalse(result["install_authorized"])
 
@@ -324,6 +344,9 @@ class ReadonlySourceTests(unittest.TestCase):
             },
             f"/repos/{source}/branches/main": {"name": "main", "commit": {"sha": SHA}},
             f"/repos/{source}/license?ref={SHA}": eng.SourceUnavailable("github_not_found"),
+            f"/repos/{source}/contents/NOTICE?ref={SHA}": eng.SourceUnavailable("github_not_found"),
+            f"/repos/{source}/contents/NOTICE.txt?ref={SHA}": eng.SourceUnavailable("github_not_found"),
+            f"/repos/{source}/contents/NOTICE.md?ref={SHA}": eng.SourceUnavailable("github_not_found"),
             f"/repos/{source}/releases/latest": eng.SourceUnavailable("github_not_found"),
             f"/repos/{source}/security-advisories?per_page=5": eng.SourceUnavailable("github_forbidden_or_limited"),
         })
@@ -332,6 +355,51 @@ class ReadonlySourceTests(unittest.TestCase):
         self.assertIn("license_not_verified", result["reasons"])
         self.assertEqual(result["commit_url"], f"https://github.com/{source}/commit/{SHA}")
         self.assertFalse(result["install_authorized"])
+
+    def test_radar_checks_notice_pinned_blob_and_no_raw_text(self):
+        source = "example-org/example"
+        license_body = b"MIT License\n"
+        notice_body = b"Copyright test upstream\n"
+        s = Fake({
+            f"/repos/{source}": {
+                "full_name": source, "default_branch": "main",
+                "archived": False, "fork": False,
+                "pushed_at": "2026-11-05T10:00:00Z",
+            },
+            f"/repos/{source}/branches/main": {"name": "main", "commit": {"sha": SHA}},
+            f"/repos/{source}/license?ref={SHA}": {
+                **source_blob(license_body), "license": {"spdx_id": "MIT"},
+            },
+            f"/repos/{source}/contents/NOTICE?ref={SHA}": source_blob(notice_body, "NOTICE"),
+            f"/repos/{source}/releases/latest": {"published_at": "2026-11-04T10:00:00Z"},
+            f"/repos/{source}/security-advisories?per_page=5": [],
+        })
+        result = eng.radar_snapshot(source, REPO, client=s, now=NOW)
+        self.assertEqual(result["notice_status"], "FOUND_STANDARD_ROOT_FILE")
+        self.assertEqual(result["notice_checked_filename"], "NOTICE")
+        self.assertEqual(result["notice_file_sha256"], hashlib.sha256(notice_body).hexdigest())
+        self.assertEqual(result["license_file_sha256"], hashlib.sha256(license_body).hexdigest())
+        self.assertNotIn("Copyright test upstream", json.dumps(result))
+        self.assertFalse(result["license_verified"])
+        self.assertFalse(result["install_authorized"])
+
+    def test_radar_rejects_tampered_license_blob(self):
+        source = "example-org/example"
+        forged = source_blob()
+        forged["sha"] = "f" * 40
+        s = Fake({
+            f"/repos/{source}": {
+                "full_name": source, "default_branch": "main",
+                "archived": False, "fork": False,
+                "pushed_at": "2026-11-05T10:00:00Z",
+            },
+            f"/repos/{source}/branches/main": {"name": "main", "commit": {"sha": SHA}},
+            f"/repos/{source}/license?ref={SHA}": {
+                **forged, "license": {"spdx_id": "MIT"},
+            },
+        })
+        with self.assertRaisesRegex(eng.SourceUnavailable, "public_blob_sha_mismatch"):
+            eng.radar_snapshot(source, REPO, client=s, now=NOW)
 
     def test_public_http_get_is_get_only_no_credentials(self):
         response = MagicMock()
