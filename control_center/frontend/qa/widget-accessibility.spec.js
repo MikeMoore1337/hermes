@@ -1,7 +1,7 @@
 import {test,expect} from "@playwright/test";
 
 async function openOrbitWidget(page,label){
- if((page.viewportSize()?.width||1280)<=980){
+ if((page.viewportSize()?.width||1280)<=700){
   const more=page.locator(".orbit-app-mobilebar").getByRole("button",{name:"Ещё"});
   if(await more.getAttribute("aria-expanded")!=="true")await more.click();
  }

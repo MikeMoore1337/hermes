@@ -70,7 +70,7 @@ async function openInbox(page){
  await page.goto("/");
  // Navigation is part of existing authenticated Atlas app.
  const width=page.viewportSize()?.width||1280;
- if(width<=980)await page.locator(".orbit-app-mobilebar").getByRole("button",{name:"Входящие"}).click();
+ if(width<=700)await page.locator(".orbit-app-mobilebar").getByRole("button",{name:"Входящие"}).click();
  else await page.locator(".atlas-section-nav").getByRole("button",{name:"Operator Inbox"}).click();
  await expect(page.getByRole("heading",{name:"Operator Inbox"})).toBeVisible();
 }
