@@ -164,7 +164,6 @@ function Registry({snapshot,view,search,setSearch,filter,setFilter}){
    <div><span className="eyebrow">СЛУЖБЫ И КОМПОНЕНТЫ / SYSTEMD</span>
     <h2>{view==="all"?"Реестр служб":groups[view].name}</h2>
     <p>Статусы системных единиц, без прав управления.</p></div>
-   <InfoBadge>{services.length} объектов</InfoBadge>
   </div>
   <div className="registry-toolbar">
    <label className="search-field"><Search size={16} aria-hidden="true"/><span className="sr-only">Поиск по службам</span>
@@ -244,7 +243,7 @@ function SignalPanel({snapshot,error}){
  const problems=(snapshot?.services||[]).filter(s=>["failed","unknown","unexpected_active"].includes(s.state));
  return <aside className="side-stack">
   <section className="right-panel">
-   <div className="side-heading"><span className="eyebrow">СИГНАЛЫ И КОНТЕКСТ</span><InfoBadge tone="muted">Из snapshot</InfoBadge></div>
+   <div className="side-heading"><span className="eyebrow">СИГНАЛЫ И КОНТЕКСТ</span></div>
    <div className="signal-list">
     <div className="signal-item"><span className="timeline-point blue"/><div>
      <small>СИСТЕМНЫЙ СНИМОК</small><strong>{snapshot?"Данные получены":"Данные недоступны"}</strong>
