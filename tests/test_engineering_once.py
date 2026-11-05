@@ -61,6 +61,19 @@ class SweepTests(unittest.TestCase):
         release.assert_called_once()
         merge.assert_called_once()
 
+    def test_one_github_budget_is_shared_by_all_modules(self):
+        common = object()
+        with patch.object(one, "PublicGithub", return_value=common) as factory:
+            with patch.object(one, "release_snapshot", return_value=output("release_guard")) as release:
+                with patch.object(one, "merge_snapshot", return_value=output("merge_control")) as merge:
+                    with patch.object(one, "radar_snapshot", return_value=output("opensource_radar")) as radar:
+                        feed = one.collect(repo=REPO, source_repo="pypa/sampleproject", now=NOW)
+        factory.assert_called_once_with()
+        self.assertIs(release.call_args.kwargs["client"], common)
+        self.assertIs(merge.call_args.kwargs["client"], common)
+        self.assertIs(radar.call_args.kwargs["client"], common)
+        self.assertEqual(feed["sources"]["opensource_radar"]["status"], "HOLD_FOR_REVIEW")
+
     def test_partial_api_failure_preserves_other_source(self):
         with patch.object(one, "release_snapshot",
                           side_effect=one.SourceUnavailable("github_network_unavailable")):
