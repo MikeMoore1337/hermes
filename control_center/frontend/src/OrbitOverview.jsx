@@ -110,7 +110,7 @@ export default function OrbitOverview({snapshot,error,onView,onRefresh,busy,Regi
    {Registry&&<Registry {...registryProps}/>}
   </section>
   <details className="hcc-topology-details">
-   <summary>Архитектура потоков - подробная схема</summary>
+   <summary><span>Архитектура потоков - подробная схема</span><ChevronRight className="hcc-topology-chevron" size={17} aria-hidden="true"/></summary>
   <div className="orbit-main-grid">
    <section className="orbit-topology" aria-labelledby="orbit-topology-title">
     <div className="orbit-panel-head">
