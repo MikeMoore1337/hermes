@@ -43,7 +43,7 @@ async function rects(page){
  });
 }
 for(const [width,height,windowX,windowY,windowW] of [
- [1440,900,43,69,1354],[768,900,23,69,722],[393,852,0,0,393],[320,770,0,0,320]
+ [1440,900,43,28,1354],[768,900,23,28,722],[393,852,0,0,393],[320,770,0,0,320]
 ]){
  for(const theme of ["dark","light"]){
   test("approved v0.1 geometry "+theme+" "+width,async({page},testInfo)=>{
@@ -59,10 +59,11 @@ for(const [width,height,windowX,windowY,windowW] of [
    expect(m.document,"horizontal overflow").toBeLessThanOrEqual(m.viewport+1);
    approx(m.window.x,windowX,2);approx(m.window.y,windowY,2);approx(m.window.width,windowW,3);
    if(width>700){
-    approx(m.window.height,805,2);
+    approx(m.window.height,height-56,2);
     approx(m.toolbar.height,72,2);
     approx(m.sidebar.width,width>=1181?260:width>=921?216:190,2);
     await expect(page.locator(".orbit-macos-dots")).toHaveCount(0);
+    await expect(page.locator(".orbit-project-label,.footer")).toHaveCount(0);
     await expect(page.getByRole("navigation",{name:"Разделы управления"})).toBeVisible();
     await expect(page.locator(".orbit-nav-group-title").filter({hasText:"РАБОЧЕЕ ПРОСТРАНСТВО"})).toBeVisible();
     await expect(page.locator(".orbit-nav-group-title").filter({hasText:"НАБЛЮДЕНИЕ"})).toBeVisible();
