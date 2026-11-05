@@ -81,11 +81,11 @@ def seed_foreign_projection(database: Path) -> None:
     with sqlite3.connect(database) as db:
         existing = db.execute(
             "SELECT target_id, target_root FROM install_state").fetchall()
-        if existing != [("hermes", "/test-home/.hermes")]:
+        if existing != [("hermes-home", "/test-home/.hermes")]:
             raise AssertionError("Unexpected original projection identity")
         updated = db.execute(
             "UPDATE install_state SET target_root=? WHERE target_id=? AND target_root=?",
-            ("/unrelated-h777-owner/.hermes", "hermes", "/test-home/.hermes"))
+            ("/unrelated-h777-owner/.hermes", "hermes-home", "/test-home/.hermes"))
         if updated.rowcount != 1:
             raise AssertionError("Foreign projection fixture must change exactly one row")
         db.commit()
@@ -93,7 +93,7 @@ def seed_foreign_projection(database: Path) -> None:
                          + "?mode=ro&immutable=1", uri=True) as db:
         identities = db.execute(
             "SELECT target_id,target_root FROM install_state").fetchall()
-        if identities != [("hermes", "/unrelated-h777-owner/.hermes")]:
+        if identities != [("hermes-home", "/unrelated-h777-owner/.hermes")]:
             raise AssertionError("Foreign projection marker was not retained")
 
 
