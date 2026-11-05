@@ -60,3 +60,9 @@ Existing \`qa_advisor/watch_once.py\`, systemd timers, root-owned state, Control
 ## GitHub Flow
 
 Issue → branch → PR → exact HEAD quality and relevant UI checks → reviewed merge. Deployment is a distinct owner-approved manual action, never implied by code merged to \`main\`. See repository \`AGENTS.md\`.
+
+## Cross-platform explicit file reads
+
+The offline evidence and DepPilot lockfile CLIs use `qa_advisor.no_follow.open_nofollow` to open an explicitly selected local file. On Linux the reader uses `O_NOFOLLOW`/`O_CLOEXEC`; on Windows it uses `CreateFileW` with `FILE_FLAG_OPEN_REPARSE_POINT` and verifies `FILE_ATTRIBUTE_REPARSE_POINT` **on the opened handle** before conversion to an owned Python file descriptor. No arbitrary shell command or new file permission is added.
+
+Only the **final path component** is protected by the helper; it does **not** establish a safe boundary for attacker-controlled parent junctions or a trusted origin for the file contents. Run against a reviewed workspace or trusted temporary directory and continue validating input schemas, SHA and size. A Windows system lacking symlink creation privileges cannot exercise the symlink-negative integration case; record it as `SKIPPED` rather than claiming OS-level enforcement was fully tested.
