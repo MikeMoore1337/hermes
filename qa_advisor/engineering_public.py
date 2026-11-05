@@ -39,7 +39,7 @@ _SUFFIX = (
     r"|/pulls/[1-9][0-9]{0,17}"
     r"|/pulls/[1-9][0-9]{0,17}/reviews\?per_page=100"
     r"|/pulls/[1-9][0-9]{0,17}/files\?per_page=100&page=[12]"
-    r"|/pulls\?state=open&per_page=10&page=[12]"
+    r"|/pulls\?state=open&per_page=(?:[1-9]|10)&page=[12]"
     r"|/branches/[A-Za-z0-9._~%-]+"
     r"|/actions/runs\?head_sha=[0-9a-f]{40}&per_page=100"
     r"|/license\?ref=[0-9a-f]{40}"
@@ -285,19 +285,21 @@ def release_snapshot(repo: str, *, stage: str, pr: int | None = None,
     return result
 
 
-def merge_snapshot(repo: str, *, client=None, now: datetime | None = None) -> dict:
+def merge_snapshot(repo: str, *, client=None, now: datetime | None = None,\n                   max_prs: int = MAX_PR_WINDOW) -> dict:
     """Bounded open-PR sampling and changed-path risk; no textual merge proof."""
     _repo(repo)
+    if type(max_prs) is not int or not 1 <= max_prs <= MAX_PR_WINDOW:
+        raise SourceUnavailable("pr_sample_budget_invalid")
     source = _reader(client)
     stamp = _iso(now)
     rows = _array(source.get(
-        f"/repos/{repo}/pulls?state=open&per_page={MAX_PR_WINDOW}&page=1"
-    ), maximum=MAX_PR_WINDOW)
-    complete = len(rows) < MAX_PR_WINDOW
+        f"/repos/{repo}/pulls?state=open&per_page={max_prs}&page=1"
+    ), maximum=max_prs)
+    complete = len(rows) < max_prs
     if not complete:
         extra = _array(source.get(
-            f"/repos/{repo}/pulls?state=open&per_page={MAX_PR_WINDOW}&page=2"
-        ), maximum=MAX_PR_WINDOW)
+            f"/repos/{repo}/pulls?state=open&per_page={max_prs}&page=2"
+        ), maximum=max_prs)
         complete = len(extra) == 0
     prs = []
     incomplete_sources = 0
