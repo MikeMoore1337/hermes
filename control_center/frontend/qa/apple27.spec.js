@@ -32,6 +32,8 @@ test("Aero Glass theme control persists light/dark without storing protected sta
  const {denied,errors}=await sandbox(page);
  await page.emulateMedia({colorScheme:"light"});
  await page.goto("/");
+ await page.evaluate(()=>localStorage.setItem("hermes-control-center-ui-theme","light"));
+ await page.reload();
  const button=page.getByRole("button",{name:/Тема:/});
  await expect(button).toBeVisible();
  expect((await snapshot(page)).panel).toBe("#fff");
@@ -111,6 +113,9 @@ test("Aero Glass light theme keeps registry, refresh and workspace readable",asy
  await page.setViewportSize({width:1440,height:900});
  await page.emulateMedia({colorScheme:"light",reducedMotion:"reduce"});
  await page.goto("/");
+ await page.evaluate(()=>localStorage.setItem("hermes-control-center-ui-theme","light"));
+ await page.reload();
+ await expect(page.locator("html")).toHaveAttribute("data-hermes-theme","light");
  await expect(page.getByRole("heading",{name:"Рабочий стол"})).toBeVisible();
  const styles=await page.evaluate(()=>{
   const css=selector=>getComputedStyle(document.querySelector(selector));
