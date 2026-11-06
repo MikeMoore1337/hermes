@@ -1,6 +1,6 @@
-import React,{useCallback,useEffect,useMemo,useState} from "react";
+import React,{useCallback,useEffect,useMemo,useRef,useState} from "react";
 import {AlertCircle,AlertTriangle,Ban,CheckCircle2,ChevronRight,Clock3,
-  Database,ExternalLink,Inbox,RefreshCw,Search,ShieldCheck,Signal} from "lucide-react";
+  ArrowLeft,Database,ExternalLink,Inbox,RefreshCw,Search,ShieldCheck,Signal} from "lucide-react";
 import "./operator-inbox.css";
 
 const filters=[
@@ -39,7 +39,7 @@ function InboxPanel({event}){
  if(!event)return <div className="oi-detail-empty"><Signal size={22} aria-hidden="true"/><p>Выберите событие, чтобы изучить основание и подсказку.</p></div>;
  return <section className="oi-detail" aria-label="Подробности выбранного события">
   <span className="oi-overline">СВЕДЕНИЯ ОБ ОБНАРУЖЕНИИ</span>
-  <h3>{event.title}</h3>
+  <h3 id="oi-detail-title" tabIndex={-1}>{event.title}</h3>
   <span className={"oi-state oi-state-"+event.severity}>{groupLabels[event.category]}</span>
   <p>{event.detail}</p>
   <dl>
@@ -60,8 +60,12 @@ export default function OperatorInbox(){
  const [filter,setFilter]=useState("all");
  const [query,setQuery]=useState("");
  const [selected,setSelected]=useState(null);
+ const [detailOpen,setDetailOpen]=useState(false);
+ const [compact,setCompact]=useState(()=>window.matchMedia("(max-width:1150px)").matches);
+ const drawerRef=useRef(null);
+ const triggerRef=useRef(null);
  const [nonce,setNonce]=useState(0);
- const reload=useCallback(()=>setNonce(v=>v+1),[]);
+ const reload=useCallback(()=>{setDetailOpen(false);setNonce(v=>v+1);},[]);
  useEffect(()=>{
   const controller=new AbortController();let alive=true;
   async function load(){
@@ -86,6 +90,34 @@ export default function OperatorInbox(){
       .includes(query.trim().toLocaleLowerCase("ru")))
  ),[events,filter,query]);
  const current=shown.find(e=>e.event_id===selected)||shown[0]||null;
+ const closeDetails=useCallback(()=>{
+  setDetailOpen(false);
+  requestAnimationFrame(()=>triggerRef.current?.focus());
+ },[]);
+ useEffect(()=>{
+  const media=window.matchMedia("(max-width:1150px)");
+  const update=()=>setCompact(media.matches);
+  update();
+  media.addEventListener("change",update);
+  return()=>media.removeEventListener("change",update);
+ },[]);
+ useEffect(()=>{
+  if(!compact||!detailOpen)return;
+  const previousOverflow=document.body.style.overflow;
+  document.body.style.overflow="hidden";
+  drawerRef.current?.querySelector(".oi-detail-back")?.focus();
+  const onKey=event=>{
+   if(event.key==="Escape"){event.preventDefault();closeDetails();return;}
+   if(event.key!=="Tab")return;
+   const focusable=Array.from(drawerRef.current?.querySelectorAll("button:not([disabled]),a[href]")||[]);
+   if(!focusable.length)return;
+   const first=focusable[0],last=focusable[focusable.length-1];
+   if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}
+   else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}
+  };
+  document.addEventListener("keydown",onKey);
+  return()=>{document.body.style.overflow=previousOverflow;document.removeEventListener("keydown",onKey);};
+ },[compact,detailOpen,closeDetails]);
  const coverage=Object.entries(response?.sources||{});
  const hasMissing=coverage.some(([,v])=>v.status!=="SUPPORTED");
  return <section className="oi-root" aria-label="Operator Inbox">
@@ -120,18 +152,18 @@ export default function OperatorInbox(){
       <span className="oi-queue-count">{shown.length} из {events.length}</span></div>
      <div className="oi-filters" role="group" aria-label="Категории событий">
       {filters.map(f=><button key={f.id} type="button" aria-pressed={filter===f.id}
-       className={filter===f.id?"is-active":""} onClick={()=>{setFilter(f.id);setSelected(null);}}>{f.label}</button>)}
+       className={filter===f.id?"is-active":""} onClick={()=>{setFilter(f.id);setSelected(null);setDetailOpen(false);}}>{f.label}</button>)}
      </div>
      <label className="oi-search"><Search size={16} aria-hidden="true"/>
       <span className="sr-only">Поиск событий</span>
-      <input aria-label="Поиск событий" value={query} onChange={e=>{setQuery(e.target.value);setSelected(null);}} placeholder="Название или источник"/></label>
+      <input aria-label="Поиск событий" value={query} onChange={e=>{setQuery(e.target.value);setSelected(null);setDetailOpen(false);}} placeholder="Название или источник"/></label>
      {shown.length===0?<div className="oi-queue-empty" role="status">
        <CheckCircle2 size={29} aria-hidden="true"/>
        <strong>{events.length===0?"Нет подтверждённых сигналов":"Нет событий по фильтру"}</strong>
-       <p>{events.length===0?"Охват неполный: проверьте доступность источников справа.":"Измените фильтр или поиск, чтобы увидеть другие записи."}</p>
+       <p>{events.length===0?"Охват неполный: проверьте доступность источников в разделе ниже.":"Измените фильтр или поиск, чтобы увидеть другие записи."}</p>
       </div>:<div className="oi-list">
       {shown.map(e=><button type="button" key={e.event_id} className={"oi-row oi-row-"+e.severity+(current?.event_id===e.event_id?" is-selected":"")}
-        aria-pressed={current?.event_id===e.event_id} onClick={()=>setSelected(e.event_id)}>
+        aria-pressed={current?.event_id===e.event_id} onClick={ev=>{triggerRef.current=ev.currentTarget;setSelected(e.event_id);setDetailOpen(true);}}>
        <span className="oi-row-mark" aria-hidden="true">{e.severity==="critical"?<AlertCircle size={18}/>:e.category==="blocked"?<Ban size={18}/>:<AlertTriangle size={18}/>}</span>
        <span className="oi-row-copy"><span className="oi-row-status">{groupLabels[e.category]} · {e.source}</span>
         <strong>{e.title}</strong><small>{e.detail}</small></span>
@@ -140,15 +172,23 @@ export default function OperatorInbox(){
       </div>}
      <p className="oi-disclaimer">Данные не равны подтверждению успешной работы агентов. Сигналы дедуплицированы по источнику и идентификатору.</p>
     </div>
-    <aside className="oi-aside" aria-label="Источники и сведения">
-     <section className="oi-sources" aria-label="Доступность источников">
-      <span className="oi-overline">ПОЛНОТА НАБЛЮДЕНИЯ</span><h2>Источники данных</h2>
+    <aside className="oi-aside" aria-label="Сведения о событии и источниках">
+     {compact&&detailOpen&&<button type="button" className="oi-detail-scrim" aria-label="Закрыть сведения о событии" onClick={closeDetails} tabIndex={-1}/>}
+     <div ref={drawerRef} className={"oi-detail-drawer"+(detailOpen?" is-open":"")}
+      role={compact&&detailOpen?"dialog":undefined} aria-modal={compact&&detailOpen?"true":undefined}
+      aria-label={compact&&detailOpen?"Сведения об обнаружении":undefined}>
+      <div className="oi-detail-nav"><button type="button" className="oi-detail-back" onClick={closeDetails}>
+       <ArrowLeft size={17} aria-hidden="true"/> К событиям</button></div>
+      <InboxPanel event={current}/>
+     </div>
+     <details className="oi-sources" aria-label="Доступность источников">
+      <summary><span><span className="oi-overline">ПОЛНОТА НАБЛЮДЕНИЯ</span><h2>Источники данных</h2></span>
+       <span className="oi-coverage-count">{response.summary.available_sources} / {response.summary.source_count}</span></summary>
       <ul>{coverage.map(([id,s])=><li key={id}>
         <div><strong>{s.label}</strong><small>{s.details}</small></div>
         <span className={"oi-source-status oi-source-"+s.status.toLowerCase()}>{coverageLabels[s.status]}</span>
       </li>)}</ul>
-     </section>
-     <InboxPanel event={current}/>
+     </details>
     </aside>
    </div>
   </>}
