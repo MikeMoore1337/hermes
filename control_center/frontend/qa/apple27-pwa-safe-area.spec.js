@@ -2,7 +2,7 @@ import {test,expect} from "@playwright/test";
 
 /** #816. Deterministic iPhone standalone safe-area simulation; no real owner OAuth. */
 test.use({serviceWorkers:"block"});
-async function isolated(page){
+async function isolated(page,{safeTop=59,safeBottom=34}={}){
  const errors=[],external=[];
  page.on("pageerror",err=>errors.push(err.message));
  await page.route("**/*",route=>{
@@ -16,6 +16,15 @@ async function isolated(page){
    status:503,contentType:"application/json",
    body:'{"error":"synthetic_unavailable"}'});
   return route.continue();
+ });
+ // Inject the safe-area fixture via the existing same-origin CSS response.
+ // Production CSP disallows inline style tags; never bypass that policy.
+ await page.route("**/style.css",async route=>{
+  const response=await route.fetch();
+  const originalCSS=await response.text();
+  const override="\n.theme-orbit{--hermes-pwa-safe-top:"+safeTop+
+   "px!important;--hermes-pwa-safe-bottom:"+safeBottom+"px!important}\n";
+  await route.fulfill({response,body:originalCSS+override});
  });
  return {errors,external};
 }
@@ -44,11 +53,6 @@ for(const [w,h] of [[320,770],[393,852],[430,932],[700,900]]){
    await page.evaluate(t=>localStorage.setItem("hermes-control-center-ui-theme",t),theme);
    await page.reload();
    await expect(page.locator("html")).toHaveAttribute("data-hermes-resolved-theme",theme);
-   // Desktop Chromium has zero safe-area inset. Simulate an iPhone Dynamic
-   // Island (59px top) and home indicator (34px bottom) without fake production.
-   await page.addStyleTag({content:`
-    .theme-orbit{--hermes-pwa-safe-top:59px!important;
-      --hermes-pwa-safe-bottom:34px!important}`});
    const header=page.locator(".orbit-topbar"),dock=page.locator(".orbit-app-mobilebar");
    await expect(header).toBeVisible();await expect(dock).toBeVisible();
    const hdr=await rect(header),nav=await rect(dock);
@@ -93,11 +97,9 @@ for(const [w,h] of [[320,770],[393,852],[430,932],[700,900]]){
 }
 
 test("Safari-like no safe-area keeps 70px header and symmetrical 12px bottom dock",async({page})=>{
- const {errors,external}=await isolated(page);
+ const {errors,external}=await isolated(page,{safeTop:0,safeBottom:0});
  await page.setViewportSize({width:393,height:852});
  await page.goto("/");
- await page.addStyleTag({content:`
-  .theme-orbit{--hermes-pwa-safe-top:0px!important;--hermes-pwa-safe-bottom:0px!important}`});
  const header=await rect(page.locator(".orbit-topbar"));
  const dock=await rect(page.locator(".orbit-app-mobilebar"));
  expect(header.height).toBeCloseTo(70,0);
