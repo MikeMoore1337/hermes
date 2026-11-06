@@ -1,7 +1,6 @@
 /* H779 Aero Glass 27. Visual-only: the backend remains the source of permissions and truth. */
 :root{color-scheme:dark}
 :root[data-hermes-theme="light"]{color-scheme:light}
-:root[data-hermes-theme="system"]{color-scheme:dark light}
 .theme-orbit{
  --orbit-font-ui:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;
  --orbit-font-mono:ui-monospace,"SFMono-Regular",Consolas,monospace;
@@ -31,21 +30,6 @@
  --a27-material:rgba(248,251,255,.87);--a27-glass:rgba(249,252,255,.93);
  --a27-border:rgba(27,48,80,.12);--a27-selected:rgba(46,110,240,.1);
  --a27-shadow:0 24px 70px rgba(56,79,117,.18),0 3px 15px rgba(61,77,112,.08);
-}
-@media(prefers-color-scheme:light){
- :root[data-hermes-theme="system"] .theme-orbit{
-  --orbit-bg:#e6eaf3;--orbit-rail:#edf2fa;
-  --orbit-panel:#fff;--orbit-panel-alt:#f0f4f9;--orbit-panel-inset:#f3f6fb;
-  --orbit-border:rgba(27,48,80,.12);--orbit-border-strong:rgba(27,48,80,.2);
-  --orbit-text:#17243a;--orbit-subtext:#50627b;--orbit-muted:#64778f;
-  --orbit-accent:#236bde;--orbit-accent-strong:#1f5dcb;--orbit-focus:#2c68c7;
-  --orbit-good:#177b57;--orbit-warning:#9b5a16;--orbit-danger:#b42331;
-  --a27-page:#e6eaf3;--a27-window:#f7f9fc;--a27-rail:rgba(232,239,250,.89);
-  --a27-surface:#fff;--a27-surface-2:#f0f4f9;
-  --a27-material:rgba(248,251,255,.87);--a27-glass:rgba(249,252,255,.93);
-  --a27-border:rgba(27,48,80,.12);--a27-selected:rgba(46,110,240,.1);
-  --a27-shadow:0 24px 70px rgba(56,79,117,.18),0 3px 15px rgba(61,77,112,.08);
- }
 }
 /* shell - desktop */
 .shell.theme-orbit{min-height:100dvh;background:
@@ -220,7 +204,7 @@
  display:inline-flex;align-items:center;justify-content:center;gap:6px;border:1px solid rgba(180,190,210,.4);
  border-radius:12px;color:#f5f8ff;background:#253246;padding:0 12px;font:550 12px -apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
 :root[data-hermes-theme="light"] .hcc-login-theme{background:#fff;color:#17243a}
-:root[data-hermes-theme="light"] .orbit-auth,:root[data-hermes-theme="system"] .orbit-auth{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
+:root[data-hermes-theme="light"] .orbit-auth{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
 :root[data-hermes-theme="light"] .orbit-auth{--oa-bg:#e6eaf3;--oa-panel:#fff;--oa-deep:#edf2fa;--oa-ink:#17243a;
  --oa-soft:#52657e;--oa-ice:#236bde;--oa-edge:rgba(27,48,80,.14);--oa-warm:#9b5a16;
  color:var(--oa-ink);background:#e6eaf3}
