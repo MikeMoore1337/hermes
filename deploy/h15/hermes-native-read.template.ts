@@ -65,7 +65,10 @@ function eligibleDevice(hub: DeviceHub, store: SqliteStore, owner: string) {
   const row = devices[0];
   if (row.paused || row.platform !== 'win32' || !ID.test(row.device_id)) return null;
   const online = hub.get(row.device_id);
-  if (!online || online.ownerId !== owner || online.info.platform !== 'win32'
+  const liveTokenHash = online?.socket &&
+    (online.socket as typeof online.socket & {hermesAuthTokenHash?: string}).hermesAuthTokenHash;
+  if (!online || typeof row.token_hash !== 'string' || liveTokenHash !== row.token_hash
+      || online.ownerId !== owner || online.info.platform !== 'win32'
       || online.info.name !== DEVICE_NAME || online.info.deviceId !== row.device_id
       || online.tools.length !== 3
       || NAMES.some(n => !online.tools.some(t => t.name === n))

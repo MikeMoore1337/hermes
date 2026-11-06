@@ -131,8 +131,9 @@ const assert=require('node:assert/strict');
 const crypto=require('node:crypto');
 const {NATIVE_TOOLS,invokeOwnerNativeRead}=require(process.argv[1]);
 const good={device_id:'h15-native-abcdefgh',name:'H15 Windows native read-only',
- platform:'win32',paused:0};
-const agent={ownerId:'owner-A', info:{deviceId:good.device_id,name:good.name,platform:'win32'},
+ platform:'win32',paused:0,token_hash:'synthetic-paired-hash'};
+const agent={ownerId:'owner-A', socket:{hermesAuthTokenHash:good.token_hash},
+ info:{deviceId:good.device_id,name:good.name,platform:'win32'},
  tools:NATIVE_TOOLS.map(t=>({name:t.name}))};
 const raw=Buffer.from('abc');
 const verified={status:'ok',project:'hermes',relative:'README.md',action:'read',
@@ -141,7 +142,8 @@ const verified={status:'ok',project:'hermes',relative:'README.md',action:'read',
 const safeList={status:'ok',project:'hermes',relative:'',action:'list',kind:'directory',
  entries:[{name:'README.md',kind:'file'},{name:'src',kind:'directory'}],truncated:false};
 let calls=0,logs=[];
-let store={listDevices(owner){return owner==='owner-A'?[good]:[]},
+let currentRow=good;
+let store={listDevices(owner){return owner==='owner-A'?[currentRow]:[]},
  audit(e){logs.push(e)}};
 let hub={get(id){return id===good.device_id?agent:undefined},
  async call(id,name,args){calls++;return {isError:false,content:[{type:'text',text:JSON.stringify(
@@ -166,6 +168,11 @@ const ctx={userId:'owner-A',clientId:'chatgpt'};
  assert.equal(calls,2);
  assert.equal((await invokeOwnerNativeRead(hub,store,{userId:'other',clientId:'codex'},'native_file_read',{project:'hermes',relative:'README.md'})).isError,true);
  assert.equal(calls,2);
+ currentRow={...good,token_hash:'rotated-token-hash'};
+ assert.equal((await invokeOwnerNativeRead(hub,store,ctx,'native_file_read',
+   {project:'hermes',relative:'README.md'})).isError,true);
+ assert.equal(calls,2);
+ currentRow=good;
  for(const altered of [
  {...agent,ownerId:'other'}, {...agent,tools:[...agent.tools,{name:'start_process'}]},
  {...agent,info:{...agent.info,platform:'linux'}}]){

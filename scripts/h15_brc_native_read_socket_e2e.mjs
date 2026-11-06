@@ -147,6 +147,13 @@ try {
   const paused = await invokeOwnerNativeRead(relay.hub, relay.store, ctx, 'native_file_read', args);
   assert(paused.isError === true && calls === beforePaused, 'NATIVE_PAUSED_DENIED');
   relay.store.setDevicePaused(DEVICE_ID, false);
+  // Rotate the credential without closing the old socket first.
+  // Native reads must fail BEFORE a remote call is dispatched.
+  const beforeRekey = calls;
+  relay.store.issueDeviceToken(DEVICE_ID, owner.id, DEVICE_NAME, 'win32');
+  const rekeyed = await invokeOwnerNativeRead(relay.hub, relay.store, ctx, 'native_file_read', args);
+  assert(rekeyed.isError === true && calls === beforeRekey,
+    'NATIVE_REVOKED_SOCKET_HASH_DENIED');
   socket.close(1000);
   assert(await until(() => !relay.hub.get(DEVICE_ID)), 'NATIVE_DISCONNECT_OBSERVED');
   const offline = await invokeOwnerNativeRead(relay.hub, relay.store, ctx, 'native_file_stat', args);
