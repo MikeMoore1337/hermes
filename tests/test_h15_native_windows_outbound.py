@@ -17,7 +17,7 @@ from scripts import h15_native_windows_mcp_stdio as mcp
 def settings():
     return outbound.parse_settings(
         "wss://hermes.mikemoore.top/ws",
-        "h15-native-readonly-12345",
+        outbound.EXPECTED_DEVICE_ID,
         "a" * 48,
     )
 
@@ -123,20 +123,20 @@ class OutboundReadOnlyTests(unittest.TestCase):
             "file:///ws", "", None,
         ]:
             with self.subTest(url=url), self.assertRaises(outbound.NativeTransportDenied):
-                outbound.parse_settings(url, "h15-native-readonly-12345", "a"*48)
+                outbound.parse_settings(url, outbound.EXPECTED_DEVICE_ID, "a"*48)
 
     def test_tunneled_loopback_requires_explicit_mode_and_literal_ipv4(self):
         url = "ws://127.0.0.1:38183/ws"
         with self.assertRaises(outbound.NativeTransportDenied):
-            outbound.parse_settings(url, "h15-native-readonly-12345", "a"*48)
+            outbound.parse_settings(url, outbound.EXPECTED_DEVICE_ID, "a"*48)
         conf = outbound.parse_settings(
-            url, "h15-native-readonly-12345", "a"*48,
+            url, outbound.EXPECTED_DEVICE_ID, "a"*48,
             tunneled_loopback=True)
         self.assertEqual(conf.websocket_url, url)
-        self.assertEqual(conf.device_id, "h15-native-readonly-12345")
+        self.assertEqual(conf.device_id, outbound.EXPECTED_DEVICE_ID)
         with self.assertRaises(outbound.NativeTransportDenied):
             outbound.parse_settings(
-                "wss://hermes.mikemoore.top/ws", "h15-native-readonly-12345",
+                "wss://hermes.mikemoore.top/ws", outbound.EXPECTED_DEVICE_ID,
                 "a"*48, tunneled_loopback=True)
         with self.assertRaises(outbound.NativeTransportDenied):
             outbound.parse_settings(
@@ -162,12 +162,12 @@ class OutboundReadOnlyTests(unittest.TestCase):
         for url in invalid:
             with self.subTest(url=url), self.assertRaises(outbound.NativeTransportDenied):
                 outbound.parse_settings(
-                    url, "h15-native-readonly-12345", "a"*48,
+                    url, outbound.EXPECTED_DEVICE_ID, "a"*48,
                     tunneled_loopback=True)
 
     def test_tunneled_loopback_socket_still_only_advertises_read(self):
         cfg = outbound.parse_settings(
-            "ws://127.0.0.1:38183/ws", "h15-native-readonly-12345", "a"*48,
+            "ws://127.0.0.1:38183/ws", outbound.EXPECTED_DEVICE_ID, "a"*48,
             tunneled_loopback=True)
         connector = FakeConnector([welcome(), call("id-1", name="start_process"),
                                    call("id-2", name="native_file_stat")])
@@ -184,10 +184,11 @@ class OutboundReadOnlyTests(unittest.TestCase):
     def test_refuses_bad_device_tokens_and_ids(self):
         for device, token in [
             ("", "a"*48), ("../../something", "a"*48),
-            ("h15-native-readonly-12345", ""),
-            ("h15-native-readonly-12345", "secret\nAuthorization:evil"),
-            ("h15-native-readonly-12345", "abc"),
-            ("h15-native-readonly-12345", "a"*1025),
+            ("h454-win-unapproved-other", "a"*48),
+            (outbound.EXPECTED_DEVICE_ID, ""),
+            (outbound.EXPECTED_DEVICE_ID, "secret\nAuthorization:evil"),
+            (outbound.EXPECTED_DEVICE_ID, "abc"),
+            (outbound.EXPECTED_DEVICE_ID, "a"*1025),
         ]:
             with self.subTest(device=device, token=token[:8]):
                 with self.assertRaises(outbound.NativeTransportDenied):

@@ -5,8 +5,10 @@ Never runs on the owner's Windows; all fixtures are under TemporaryDirectory.
 from __future__ import annotations
 
 import base64
+import ctypes
 import hashlib
 import json
+import mmap
 import os
 from pathlib import Path
 import tempfile
@@ -55,6 +57,123 @@ class NativeWindowsReadOnRunnerTests(unittest.TestCase):
         self.assertEqual(directory["kind"], "directory")
         self.assertNotIn("data", directory)
 
+    def test_read_refuses_an_already_open_writer(self):
+        api = broker._winapi()
+        writer = api.CreateFileW(str(self.file), 0x40000000,
+            broker.FILE_SHARE_READ | broker.FILE_SHARE_WRITE | broker.FILE_SHARE_DELETE,
+            None, broker.OPEN_EXISTING, 0, None)
+        self.assertNotEqual(writer, ctypes.c_void_p(-1).value)
+        try:
+            with self.assertRaisesRegex(broker.NativeReadRefused, "file_busy"):
+                broker.handle_native_request("hermes", r"src\safe.py", "read")
+            session = mcp.McpSession()
+            session.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                            "params": {"protocolVersion": mcp.PROTOCOL,
+                                       "capabilities": {}, "clientInfo": {}}})
+            response = session.handle({"jsonrpc": "2.0", "id": 2,
+                "method": "tools/call", "params": {"name": "native_file_read",
+                "arguments": {"project": "hermes", "relative": r"src\safe.py"}}})
+            self.assertTrue(response["result"]["isError"])
+            self.assertEqual(json.loads(response["result"]["content"][0]["text"])["reason"],
+                             "native_file_busy")
+            wire = outbound.safe_call(session, {"type": "call", "id": "busy-1",
+                "tool": "native_file_read", "args": {
+                    "project": "hermes", "relative": r"src\safe.py"}}, set())
+            self.assertTrue(wire["result"]["isError"])
+            self.assertEqual(json.loads(wire["result"]["content"][0]["text"])["reason"],
+                             "native_file_busy")
+            self.assertEqual(broker.handle_native_request(
+                "hermes", r"src\safe.py", "stat")["size_bytes"], len(self.data))
+        finally:
+            api.CloseHandle(writer)
+        self.assertEqual(base64.b64decode(broker.handle_native_request(
+            "hermes", r"src\safe.py", "read")["data"]), self.data)
+
+    def test_open_read_handle_blocks_a_new_writer_and_rename(self):
+        actual_read = broker._read_file_handle
+        moved = self.code / "moved.py"
+        attempts = []
+        def checked_read(api, handle, *, initial_size):
+            ctypes.set_last_error(0)
+            writer = api.CreateFileW(str(self.file), 0x40000000,
+                broker.FILE_SHARE_READ | broker.FILE_SHARE_WRITE | broker.FILE_SHARE_DELETE,
+                None, broker.OPEN_EXISTING, 0, None)
+            error = ctypes.get_last_error()
+            if writer != ctypes.c_void_p(-1).value:
+                api.CloseHandle(writer)
+                self.fail("writer opened during a native read")
+            self.assertEqual(error, 32)
+            try:
+                with self.assertRaises(OSError):
+                    os.rename(self.file, moved)
+            finally:
+                if moved.exists():
+                    os.rename(moved, self.file)
+            attempts.append(True)
+            return actual_read(api, handle, initial_size=initial_size)
+        with patch.object(broker, "_read_file_handle", side_effect=checked_read):
+            result = broker.handle_native_request("hermes", r"src\safe.py", "read")
+        self.assertEqual(attempts, [True])
+        self.assertEqual(base64.b64decode(result["data"]), self.data)
+        self.file.write_bytes(b"writer-after-read")
+        self.assertEqual(self.file.read_bytes(), b"writer-after-read")
+
+    def test_read_refuses_a_live_writable_mapping(self):
+        with self.file.open("r+b") as writer:
+            mapping = mmap.mmap(writer.fileno(), 0, access=mmap.ACCESS_WRITE)
+        try:
+            with self.assertRaisesRegex(broker.NativeReadRefused, "file_busy"):
+                broker.handle_native_request("hermes", r"src\safe.py", "read")
+        finally:
+            mapping.close()
+        result = broker.handle_native_request("hermes", r"src\safe.py", "read")
+        self.assertEqual(base64.b64decode(result["data"]), self.data)
+
+    def test_root_cannot_be_renamed_during_read_or_stat(self):
+        real_open = broker._opened
+        moved = self.root.with_name("moved-code")
+        for operation in ("read", "stat"):
+            attempts = []
+            def checked_open(api, path, *, content, lock_rename=False):
+                if os.path.normcase(path) == os.path.normcase(str(self.file)):
+                    try:
+                        with self.assertRaises(OSError) as denied:
+                            os.rename(self.root, moved)
+                        self.assertIn(denied.exception.winerror, (5, 32))
+                        attempts.append(True)
+                    finally:
+                        if moved.exists():
+                            os.rename(moved, self.root)
+                return real_open(api, path, content=content, lock_rename=lock_rename)
+            with self.subTest(operation=operation), \
+                 patch.object(broker, "_opened", side_effect=checked_open):
+                result = broker.handle_native_request("hermes", r"src\safe.py", operation)
+                self.assertEqual(result["status"], "ok")
+                self.assertEqual(attempts, [True])
+            os.rename(self.root, moved)
+            try:
+                self.assertTrue(moved.exists())
+            finally:
+                os.rename(moved, self.root)
+
+    def test_locked_directory_handle_prevents_rename(self):
+        api = broker._winapi()
+        moved = self.root.with_name("moved-code")
+        handle = broker._opened(api, str(self.root), content=False, lock_rename=True)
+        try:
+            with self.assertRaises(OSError) as denied:
+                os.rename(self.root, moved)
+            self.assertIn(denied.exception.winerror, (5, 32))
+        finally:
+            api.CloseHandle(handle)
+            if moved.exists():
+                os.rename(moved, self.root)
+        os.rename(self.root, moved)
+        try:
+            self.assertTrue(moved.exists())
+        finally:
+            os.rename(moved, self.root)
+
     def test_win32_handle_read_via_real_mcp_dispatch(self):
         session = mcp.McpSession()
         init = session.handle({
@@ -99,7 +218,7 @@ class NativeWindowsReadOnRunnerTests(unittest.TestCase):
                 return json.dumps(self.events.pop(0))
         socket = SyntheticSocket()
         settings = outbound.parse_settings(
-            "wss://hermes.mikemoore.top/ws", "native-ci-win-handle-123", "x"*40)
+            "wss://hermes.mikemoore.top/ws", outbound.EXPECTED_DEVICE_ID, "x"*40)
         outcome = outbound.run_session(settings, lambda *_args, **_kwargs: socket)
         self.assertEqual(outcome, "idle_timeout")
         self.assertEqual(socket.responses[0]["type"], "hello")
@@ -147,6 +266,9 @@ class NativeWindowsReadOnRunnerTests(unittest.TestCase):
         (self.root / "README.md").write_text("# synthetic")
         (self.root / ".env").write_text("DO_NOT_EXPOSE=1")
         (self.root / "config.local").write_text("private")
+        (self.root / "credentials.json").write_text("CI_SECRET_CANARY")
+        (self.root / "secrets.yaml").write_text("CI_SECRET_CANARY")
+        (self.root / ".tokens.json").write_text("CI_SECRET_CANARY")
         (self.root / "private-vault").mkdir()
         (self.root / ".git").mkdir()
         (self.root / "binary.exe").write_bytes(b"native-program")
@@ -213,7 +335,7 @@ class NativeWindowsReadOnRunnerTests(unittest.TestCase):
                 return json.dumps(self.events.pop(0))
         sock = MockSocket()
         settings = outbound.parse_settings(
-            "wss://hermes.mikemoore.top/ws", "native-ci-win-handle-123", "x"*40)
+            "wss://hermes.mikemoore.top/ws", outbound.EXPECTED_DEVICE_ID, "x"*40)
         self.assertEqual(outbound.run_session(settings, lambda *a,**k:sock),
                          "idle_timeout")
         output = json.loads(sock.output[-1]["result"]["content"][0]["text"])

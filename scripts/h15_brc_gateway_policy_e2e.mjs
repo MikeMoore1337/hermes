@@ -28,7 +28,7 @@ const device = {
   ownerId: 'test-owner',
   deviceId: 'd-test',
   socket: {hermesAuthTokenHash: 'ci-token-hash'},
-  info: { name: 'untrusted-device' },
+  info: { deviceId: 'd-test', name: 'untrusted-device', platform: 'linux', arch: 'x64' },
   tools: [
     'get_config', 'get_recent_tool_calls', 'set_config_value',
     'send_file_transfer', 'start_process', 'read_file', 'write_file',
@@ -46,7 +46,9 @@ const hub = {
     return { isError: false, content: [{ type: 'text', text: 'fake-' + name }] };
   },
 };
-let grant = {user_id: 'test-owner', token_hash: 'ci-token-hash', paused: false};
+const validGrant = {device_id: 'd-test', user_id: 'test-owner', token_hash: 'ci-token-hash',
+  paused: false, platform: 'linux/docker'};
+let grant = { ...validGrant };
 const store = {
   getDevice: () => grant,
   audit: row => { audited++; auditRows.push(row); },
@@ -86,13 +88,55 @@ if (forwarded !== 3 || audited !== 3) {
   throw Error('INCORRECT_ALLOWLIST_ROUTING_OR_AUDIT');
 }
 
+// Registration uses linux/docker for approved sandboxes; upstream pairing
+// records linux/<arch>, while the live hello reports linux and arch separately.
+for (const [stored, arch] of [['linux/docker', 'x64'], ['linux/x64', 'x64'],
+                              ['linux/arm64', 'arm64']]) {
+  grant = { ...validGrant, platform: stored };
+  device.info = { ...device.info, platform: 'linux', arch };
+  const before = forwarded;
+  const result = await invokeTool(hub, store, ctx, 'read_file', {deviceId:'d-test',path:'fixture'});
+  if (!result.ok || forwarded !== before + 1) throw Error('VALID_LINUX_IDENTITY_REFUSED:' + stored);
+}
+for (const [stored, live, arch] of [
+  ['win32', 'win32', 'x64'], ['win32', 'linux', 'x64'],
+  ['linux/docker', 'win32', 'x64'], ['linux/x64', 'win32', 'x64'],
+  ['linux/x64', 'linux', 'arm64'], ['linux/arm64', 'linux', 'x64'],
+  ['linux/docker', 'darwin', 'x64'], ['linux', 'linux', 'x64'],
+  [null, 'linux', 'x64'], ['linux/docker', 'linux', ''],
+  ['linux/docker', 'linux', undefined], ['linux/docker', 'linux', null],
+  ['linux/docker', 'linux', 37], ['linux/docker', 'linux', {}],
+  ['linux/docker', 'linux', []], ['linux/docker', 'linux', 'undefined'],
+  ['linux/docker', 'linux', 'riscv64'], ['linux/x64', 'linux', 'x64/other'],
+]) {
+  grant = { ...validGrant, platform: stored };
+  device.info = { ...device.info, platform: live, arch };
+  const before = forwarded;
+  const result = await invokeTool(hub, store, ctx, 'read_file', {deviceId:'d-test',path:'fixture'});
+  if (result.ok || result.status !== 403 || result.message !== 'HERMES_NATIVE_GENERIC_TOOL_DENIED'
+      || forwarded !== before) throw Error('PLATFORM_MISMATCH_FORWARDED:' + String(stored) + ':' + live);
+}
+device.info = { ...device.info, platform: 'linux', arch: 'x64' };
+for (const mismatch of ['stored-device', 'live-device', 'live-owner']) {
+  grant = { ...validGrant, device_id: mismatch === 'stored-device' ? 'other' : 'd-test' };
+  device.info.deviceId = mismatch === 'live-device' ? 'other' : 'd-test';
+  device.ownerId = mismatch === 'live-owner' ? 'other-owner' : 'test-owner';
+  const before = forwarded;
+  const result = await invokeTool(hub, store, ctx, 'read_file', {deviceId:'d-test',path:'fixture'});
+  if (result.ok || forwarded !== before) throw Error('DEVICE_IDENTITY_MISMATCH_FORWARDED:' + mismatch);
+}
+device.info.deviceId = 'd-test';
+device.ownerId = 'test-owner';
+grant = { ...validGrant };
+console.log('HERMES_BRC_PLATFORM_AND_DEVICE_IDENTITY_BOUNDARY=PASS');
+
 // A removed, transferred, re-keyed or paused device must not be able to run a
 // queued tool even when its old socket remains present in DeviceHub.
 const deniedGrants = [
   ['deleted', undefined, 403],
-  ['wrong_owner', {user_id:'other-owner',token_hash:'ci-token-hash',paused:false}, 403],
-  ['rotated_token', {user_id:'test-owner',token_hash:'another-hash',paused:false}, 403],
-  ['paused', {user_id:'test-owner',token_hash:'ci-token-hash',paused:true}, 423],
+  ['wrong_owner', {...validGrant,user_id:'other-owner'}, 403],
+  ['rotated_token', {...validGrant,token_hash:'another-hash'}, 403],
+  ['paused', {...validGrant,paused:true}, 423],
 ];
 for (const [scenario, candidate, expectedStatus] of deniedGrants) {
   grant = candidate;
@@ -103,7 +147,7 @@ for (const [scenario, candidate, expectedStatus] of deniedGrants) {
     throw Error('DEVICE_GRANT_BOUNDARY_BYPASS:' + scenario);
   }
 }
-grant = {user_id:'test-owner',token_hash:'ci-token-hash',paused:false};
+grant = { ...validGrant };
 console.log('HERMES_BRC_DELETED_REKEYED_CROSS_OWNER_AND_PAUSED_GRANTS=DENIED');
 
 

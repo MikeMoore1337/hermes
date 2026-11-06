@@ -20,7 +20,9 @@ const { NATIVE_TOOLS, invokeOwnerNativeRead } =
 const { pinnedToolCatalog } = await import(pathToFileURL(path.join(cwd, 'packages/relay/dist/mcp/hermes-tool-catalog.js')).href);
 
 const DEVICE_NAME = 'H15 Windows native read-only';
-const DEVICE_ID = 'h15-native-ci-read-12345678';
+// The relay now pins the exact existing Win32 device ID. This disposable
+// test uses an isolated local SQLite store and ephemeral loopback socket.
+const DEVICE_ID = 'h454-win-01335a1f6e6705b4';
 const tmp = mkdtempSync(path.join(tmpdir(), 'h454-native-wss-ci-'));
 const secret = () => randomBytes(32).toString('hex');
 const assert = (predicate, label) => {
@@ -45,6 +47,7 @@ const relay = buildRelay({
 let socket;
 let calls = 0;
 let corrupt = false;
+let busy = false;
 try {
   await new Promise((resolve, reject) => {
     relay.http.once('error', reject);
@@ -79,7 +82,9 @@ try {
     calls++;
     socket.send(JSON.stringify({
       type: 'result', id: msg.id,
-      result: { isError: false, content: [{ type: 'text', text: JSON.stringify(payload(msg.tool)) }] },
+      result: busy
+        ? { isError: true, content: [{ type: 'text', text: '{"status":"refused","reason":"native_file_busy","message":"File is in use; retry after the other program closes it."}' }] }
+        : { isError: false, content: [{ type: 'text', text: JSON.stringify(payload(msg.tool)) }] },
     }));
   });
   await once(socket, 'open');
@@ -103,6 +108,9 @@ try {
   for (const bad of [
     { project: 'hermes', relative: '..\\README.md' },
     { project: 'hermes', relative: 'vault\\secrets.md' },
+    { project: 'hermes', relative: 'credentials.json' },
+    { project: 'hermes', relative: 'src\\secrets.yaml' },
+    { project: 'hermes', relative: '.tokens.json' },
     { project: 'hermes', relative: 'README.md', deviceId: DEVICE_ID },
     { project: 'unknown', relative: 'README.md' },
   ]) {
@@ -117,14 +125,40 @@ try {
   const forged = await invokeOwnerNativeRead(relay.hub, relay.store, ctx, 'native_file_read', args);
   assert(forged.isError === true, 'NATIVE_FORGED_HASH_DENIED');
   corrupt = false;
+  busy = true;
+  const busyRead = await invokeOwnerNativeRead(relay.hub, relay.store, ctx, 'native_file_read', args);
+  assert(busyRead.isError === true && JSON.parse(busyRead.content[0].text).reason === 'native_file_busy',
+    'NATIVE_BUSY_RELAYED_AS_ERROR');
+  busy = false;
   const command = await invokeTool(relay.hub, relay.store, ctx, 'start_process',
     { deviceId: DEVICE_ID, command: 'not-executed' });
-  assert(command.ok === false, 'NATIVE_GENERIC_PROCESS_DENIED');
+  assert(command.ok === false && command.status === 403
+    && command.message === 'HERMES_NATIVE_GENERIC_TOOL_DENIED', 'NATIVE_GENERIC_PROCESS_DENIED');
+  const liveNative = relay.hub.get(DEVICE_ID);
+  assert(!!liveNative, 'NATIVE_RUNTIME_DEVICE_PRESENT');
+  for (const name of ['read_file', 'write_file', 'start_process']) {
+    liveNative.tools.push({name, description:'synthetic forged tool',
+      inputSchema:{type:'object',properties:{},additionalProperties:true}});
+    const before = calls;
+    const forgedTool = await invokeTool(relay.hub, relay.store, ctx, name,
+      {deviceId:DEVICE_ID, path:'synthetic', command:'synthetic-never-execute'});
+    assert(forgedTool.ok === false && forgedTool.status === 403
+      && forgedTool.message === 'HERMES_NATIVE_GENERIC_TOOL_DENIED' && calls === before,
+      'NATIVE_FORGED_GENERIC_' + name.toUpperCase() + '_DENIED');
+    liveNative.tools.pop();
+  }
   const beforePaused = calls;
   relay.store.setDevicePaused(DEVICE_ID, true);
   const paused = await invokeOwnerNativeRead(relay.hub, relay.store, ctx, 'native_file_read', args);
   assert(paused.isError === true && calls === beforePaused, 'NATIVE_PAUSED_DENIED');
   relay.store.setDevicePaused(DEVICE_ID, false);
+  // Rotate the credential without closing the old socket first.
+  // Native reads must fail BEFORE a remote call is dispatched.
+  const beforeRekey = calls;
+  relay.store.issueDeviceToken(DEVICE_ID, owner.id, DEVICE_NAME, 'win32');
+  const rekeyed = await invokeOwnerNativeRead(relay.hub, relay.store, ctx, 'native_file_read', args);
+  assert(rekeyed.isError === true && calls === beforeRekey,
+    'NATIVE_REVOKED_SOCKET_HASH_DENIED');
   socket.close(1000);
   assert(await until(() => !relay.hub.get(DEVICE_ID)), 'NATIVE_DISCONNECT_OBSERVED');
   const offline = await invokeOwnerNativeRead(relay.hub, relay.store, ctx, 'native_file_stat', args);

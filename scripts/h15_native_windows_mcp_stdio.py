@@ -125,10 +125,13 @@ def _error(identifier: str | int | None, code: int, message: str) -> dict[str, A
             "error": {"code": code, "message": message}}
 
 
-def _tool_error(identifier: str | int) -> dict[str, Any]:
+def _tool_error(identifier: str | int, *, busy: bool = False) -> dict[str, Any]:
+    text = ('{"status":"refused","reason":"native_file_busy",'
+            '"message":"File is in use; retry after the other program closes it."}' if busy else
+            '{"status":"refused","reason":"native_read_denied"}')
     return _ok(identifier, {
         "isError": True,
-        "content": [{"type": "text", "text": '{"status":"refused","reason":"native_read_denied"}'}]
+        "content": [{"type": "text", "text": text}]
     })
 
 
@@ -259,7 +262,9 @@ class McpSession:
                       if operation == "list" else
                       native.handle_native_request(project, relative, operation))
             result = _sanitized_result(result, project, relative, operation)
-        except (native.NativeReadRefused, ProtocolRefused, OSError, ValueError):
+        except native.NativeReadRefused as exc:
+            return _tool_error(identifier, busy=operation == "read" and str(exc) == "file_busy")
+        except (ProtocolRefused, OSError, ValueError):
             return _tool_error(identifier)
         return _ok(identifier, {
             "content": [{"type": "text",

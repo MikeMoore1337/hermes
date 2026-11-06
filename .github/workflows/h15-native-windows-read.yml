@@ -73,6 +73,19 @@ jobs:
           python -B -m unittest -v tests.test_h15_native_windows_read_on_win
           if ($LASTEXITCODE -ne 0) { throw "WIN32_HANDLE_E2E_FAIL" }
           Write-Output "H454_NATIVE_WIN32_SYNTHETIC=PASS"
+      - name: Assert native Windows kernel ACL boundaries using disposable LocalService task
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:RUNNER_OS -ne 'Windows' -or -not $env:RUNNER_TEMP) {
+            throw 'WIN32_ISOLATED_RUNNER_REQUIRED'
+          }
+          # Existing controlled fixture creates a disposable task and removes it
+          # in finally. Never touches the owner PC, original Git roots or tokens.
+          & .\scripts\h15_windows_os_sandbox_e2e.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'H454_WINDOWS_OS_ACL_E2E_FAILED' }
+          Write-Output 'H454_WIN32_OS_ACL_ISOLATION=PASS'
+
       - name: Verify crash-safe one-use effect ledger on disposable Windows state
         shell: pwsh
         run: |

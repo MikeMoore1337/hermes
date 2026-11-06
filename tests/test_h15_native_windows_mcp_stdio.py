@@ -91,6 +91,23 @@ class NativeWindowsMcpStdioTests(unittest.TestCase):
         self.assertNotIn("data", outcome)
         fake.assert_called_once_with("hermes", "README.md", "stat")
 
+    def test_only_read_busy_gets_a_bounded_actionable_error(self):
+        for operation, reason, expected in (
+            ("native_file_read", "file_busy", "native_file_busy"),
+            ("native_file_stat", "file_busy", "native_read_denied"),
+            ("native_file_read", "file_busy with private details", "native_read_denied"),
+        ):
+            with self.subTest(operation=operation, reason=reason), \
+                 patch.object(mcp.native, "handle_native_request",
+                              side_effect=native.NativeReadRefused(reason)):
+                _, data = serve(initialization(), invoke(2, operation))
+            result = data[1]["result"]
+            self.assertTrue(result["isError"])
+            expected_result = {"status": "refused", "reason": expected}
+            if expected == "native_file_busy":
+                expected_result["message"] = "File is in use; retry after the other program closes it."
+            self.assertEqual(json.loads(result["content"][0]["text"]), expected_result)
+
     def test_not_initialized_unknown_and_no_shell_methods(self):
         with patch.object(mcp.native, "handle_native_request") as native_call:
             rc, data = serve(

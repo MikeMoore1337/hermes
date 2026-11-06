@@ -9,11 +9,17 @@ import type { SqliteStore } from '../store/sqlite.js';
 import type { InvokeContext } from './invoke.js';
 
 const DEVICE_NAME = 'H15 Windows native read-only';
+// Preserve the single owner-approved original Win32 device identity.
+const NATIVE_DEVICE_ID = 'h454-win-01335a1f6e6705b4';
 const NAMES = ['native_file_stat', 'native_file_read', 'native_file_list'] as const;
 const PROJECTS = ['hermes', 'your-fitness-coach', 'second-brain', 'ai-development-toolkit'];
 const DENY = { content: [{ type: 'text' as const,
   text: '{"status":"refused","reason":"native_read_unavailable"}' }], isError: true };
+const BUSY_TEXT = '{"status":"refused","reason":"native_file_busy",' +
+  '"message":"File is in use; retry after the other program closes it."}';
+const BUSY = { content: [{ type: 'text' as const, text: BUSY_TEXT }], isError: true };
 const ID = /^[A-Za-z0-9_-]{8,128}$/;
+const SENSITIVE_STEM = /^\.?(?:secrets?|credentials?|tokens?|passwords?|api[-_]?keys?|service[-_]?accounts?|private[-_]?keys?|config[._-]local)(?:[._-]|$)/i;
 const EXT = /\.(?:py|js|jsx|ts|tsx|mjs|cjs|md|mdx|txt|json|toml|yaml|yml|html|css|scss|sql|sh|ps1|go|rs|c|h|cpp|cs|xml)$/i;
 
 export const NATIVE_TOOLS = NAMES.map(name => ({
@@ -50,25 +56,39 @@ function allowedArgs(input: unknown, read: boolean): input is {project: string; 
       || ['.git', '.hg', '.svn', '.ssh', '.aws', '.gnupg', '.vault',
           'vault', 'private-vault', 'secrets', '.secrets', 'node_modules',
           '__pycache__', '.terraform', '.next', '.cache'].includes(p.toLowerCase())
-      || p.toLowerCase() === '.env' || p.toLowerCase().startsWith('.env.'))) return false;
+      || p.toLowerCase() === '.env' || p.toLowerCase().startsWith('.env.')
+      || SENSITIVE_STEM.test(p))) return false;
   if (/(?:\.pem|\.key|\.pfx|\.p12|\.kdbx|\.sqlite3?|\.db)$/i.test(path)
       || /^(?:id_rsa|id_ed25519|credentials|config\.local)$/i.test(parts[parts.length - 1])) return false;
   return !read || EXT.test(path);
 }
 
 function eligibleDevice(hub: DeviceHub, store: SqliteStore, owner: string) {
-  const devices = store.listDevices(owner).filter(d => d.name === DEVICE_NAME);
-  if (devices.length !== 1) return null;
-  const row = devices[0];
-  if (row.paused || row.platform !== 'win32' || !ID.test(row.device_id)) return null;
-  const online = hub.get(row.device_id);
-  if (!online || online.ownerId !== owner || online.info.platform !== 'win32'
-      || online.info.name !== DEVICE_NAME || online.info.deviceId !== row.device_id
-      || online.tools.length !== 3
-      || NAMES.some(n => !online.tools.some(t => t.name === n))
-      || online.tools.some(t => !NAMES.includes(t.name as typeof NAMES[number]))) return null;
-  return online.info.deviceId;
+  try {
+    const devices = store.listDevices(owner).filter(d => d.name === DEVICE_NAME);
+    if (devices.length !== 1) return null;
+    const row = devices[0];
+    if (row.device_id !== NATIVE_DEVICE_ID || row.paused
+        || row.platform !== 'win32' || !ID.test(row.device_id)
+        || typeof row.token_hash !== 'string'
+        || !/^[a-f0-9]{64}$/.test(row.token_hash)) return null;
+    const online = hub.get(row.device_id);
+    const liveTokenHash = online?.socket &&
+      (online.socket as typeof online.socket & {hermesAuthTokenHash?: string}).hermesAuthTokenHash;
+    if (!online || liveTokenHash !== row.token_hash
+        || online.ownerId !== owner || online.info.platform !== 'win32'
+        || online.info.name !== DEVICE_NAME || online.info.deviceId !== row.device_id
+        || online.tools.length !== 3
+        || NAMES.some(n => !online.tools.some(t => t.name === n))
+        || online.tools.some(t => !NAMES.includes(t.name as typeof NAMES[number]))) return null;
+    return online.info.deviceId;
+  } catch {
+    // An unavailable device, grant store or corrupted record is a denial,
+    // including during the post-read and post-audit reauthorization.
+    return null;
+  }
 }
+
 function validatedResult(value: unknown, a: {project: string; relative: string},
                          operation: 'read' | 'stat' | 'list') {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
@@ -125,10 +145,13 @@ export async function invokeOwnerNativeRead(
   const safeArgs = { project: args.project, relative: args.relative };
   const argsHash = createHash('sha256').update(JSON.stringify(safeArgs)).digest('hex').slice(0,16);
   let safe = null;
+  let busy = false;
   try {
     const response = await hub.call(deviceId, name, safeArgs, {
       client: { name: ctx.clientId }, timeoutMs: 8000,
     });
+    busy = read && response.isError === true && response.content.length === 1
+      && response.content[0]?.type === 'text' && response.content[0].text === BUSY_TEXT;
     if (!response.isError && response.content.length === 1
         && response.content[0]?.type === 'text'
         && typeof response.content[0].text === 'string'
@@ -138,6 +161,12 @@ export async function invokeOwnerNativeRead(
         name === 'native_file_list' ? 'list' : read ? 'read' : 'stat');
     }
   } catch { /* Never forward agent error, filepath, output, or credentials. */ }
+  // The bearer may be revoked while the read is in flight. Re-authorize
+  // before logging a success; agent replies are never authority to release.
+  if (eligibleDevice(hub, store, ctx.userId) !== deviceId) {
+    safe = null;
+    busy = false;
+  }
   try {
     store.audit({ ts: started, user_id: ctx.userId, device_id: deviceId,
       client: ctx.clientId, tool: name, args_hash: argsHash,
@@ -147,6 +176,9 @@ export async function invokeOwnerNativeRead(
     // No audit trail => no sensitive original-host data leaves this relay.
     return DENY;
   }
+  // A revocation racing the audit also invalidates the response.
+  // A transient owner/DB failure fails closed, not to stale access.
+  if (eligibleDevice(hub, store, ctx.userId) !== deviceId) return DENY;
   return safe ? { content: [{ type: 'text' as const, text: JSON.stringify(safe) }],
-    isError: false } : DENY;
+    isError: false } : busy ? BUSY : DENY;
 }

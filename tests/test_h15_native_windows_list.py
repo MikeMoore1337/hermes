@@ -116,7 +116,7 @@ class NativeListContract(unittest.TestCase):
                                             "reconnect_requires_readonly_catalog"):
                     outbound.run_bounded_reconnect(
                         outbound.parse_settings("wss://hermes.mikemoore.top/ws",
-                                                "h454-device-test-abc", "a"*48),
+                                                outbound.EXPECTED_DEVICE_ID, "a"*48),
                         lambda *_: None, pause=lambda _: None)
 
 
