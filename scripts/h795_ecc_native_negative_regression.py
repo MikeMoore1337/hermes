@@ -146,10 +146,16 @@ def run(ecc: Path, out: Path) -> int:
             link.parent.mkdir(parents=True)
             link.symlink_to(external)
             linked_before = snapshot(linked)
-            code, _ = native(report, "external-symlink-uninstall", ecc, linked)
+            code, result = native(report, "external-symlink-uninstall", ecc, linked)
             assert code == 0 and snapshot(linked) == linked_before
             assert sha(external.read_bytes()) == external_hash
-            report["external_symlink"] = "PASS_NO_EXTERNAL_MODIFICATION"
+            projection = result.get("installStateProjection", {})
+            report["external_symlink"] = {
+                "status": "FAIL_ZERO_EXIT_WITH_PROJECTION_WARNING" if
+                projection.get("status") == "warning" else "CHECK_DIAGNOSTICS",
+                "outside_bytes_preserved": True,
+                "exit": code,
+            }
 
             # Hardlink to outside test HOME: no external inode may be mutated.
             hard, hard_base = new_home(stack)
@@ -162,9 +168,12 @@ def run(ecc: Path, out: Path) -> int:
             assert hard_db.stat().st_nlink == 2
             code, _ = native(report, "external-hardlink-uninstall", ecc, hard)
             assert code == 0 and sha(external_db.read_bytes()) == external_hash
+            link_still_shared = hard_db.stat().st_ino == external_db.stat().st_ino
             report["external_hardlink"] = {
-                "status": "PASS_OUTSIDE_BYTES_PRESERVED",
-                "link_still_shared": hard_db.stat().st_ino == external_db.stat().st_ino,
+                "status": "FAIL_HARDLINK_ACCEPTED_REPLACED" if code == 0
+                and not link_still_shared else "CHECK_HARDLINK_BEHAVIOR",
+                "outside_bytes_preserved": True,
+                "link_still_shared": link_still_shared,
                 "target_db_exists": hard_db.exists(),
             }
 
@@ -197,6 +206,8 @@ def run(ecc: Path, out: Path) -> int:
                     "exit": code,
                     "projection_status": projection.get("status", "not-reported"),
                     "owner_files_unchanged": True,
+                    "status": "FAIL_ZERO_EXIT_WITH_PROJECTION_WARNING" if code == 0
+                    and projection.get("status") == "warning" else "CHECK_DIAGNOSTICS",
                 }
             finally:
                 private.chmod(0o700)
@@ -209,7 +220,11 @@ def run(ecc: Path, out: Path) -> int:
             code, _ = native(report, "original-installed-repeat-uninstall", ecc, installed)
             assert code == 0 and snapshot(installed) == after_first
             report["installed_repeat"] = "PASS_IDEMPOTENT_BUT_CACHE_RETAINED"
-            report["status"] = "PASS_GUARDS_WITH_KNOWN_NATIVE_CACHE_DEFECT"
+            assert report["external_symlink"]["status"] == "FAIL_ZERO_EXIT_WITH_PROJECTION_WARNING"
+            assert report["external_hardlink"]["status"] == "FAIL_HARDLINK_ACCEPTED_REPLACED"
+            assert report["corrupt_sqlite"]["status"] == "FAIL_ZERO_EXIT_WITH_PROJECTION_WARNING"
+            assert report["write_denial"]["status"] == "FAIL_ZERO_EXIT_WITH_PROJECTION_WARNING"
+            report["status"] = "CONFIRMED_KNOWN_NATIVE_DEFECTS_OWNER_PRESERVED"
     except Exception as error:
         report["status"] = "FAIL_UNEXPECTED"
         report["error_class"] = type(error).__name__
@@ -221,7 +236,7 @@ def run(ecc: Path, out: Path) -> int:
         "native_exact_rollback": report["upstream_native_exact_rollback"],
         "original_calls": len(report["original_calls"]),
     }))
-    return 0 if report["status"] == "PASS_GUARDS_WITH_KNOWN_NATIVE_CACHE_DEFECT" else 1
+    return 0 if report["status"] == "CONFIRMED_KNOWN_NATIVE_DEFECTS_OWNER_PRESERVED" else 1
 
 
 if __name__ == "__main__":
