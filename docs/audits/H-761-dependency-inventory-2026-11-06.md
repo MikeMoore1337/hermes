@@ -14,6 +14,18 @@ Machine-readable complete **frontend lockfile package records** (not installed p
 | GitHub Actions | **23 YAML workflows** in main | Reviewed explicit `uses` references; exact-SHA pin update in [PR #822](https://github.com/MikeMoore1337/hermes/pull/822). H454 candidate workflow mutable tags are deferred due to overlapping [PR #692](https://github.com/MikeMoore1337/hermes/pull/692). No full CI acceptance of all workflows claimed |
 | External upstream | Hermes Agent v0.22.2, BRC fork, ECC, Harness² pinned according to source docs and issue #764 | No automatic upstream bump, no E2E/activation; issues #199/#795/#629 keep independent scopes |
 
+### Exact Docker FROM references (source-only)
+
+| Dockerfile | FROM reference(s) |
+|---|---|
+| `deploy/h15/Dockerfile.brc-relay` | `FROM node:24-bookworm-slim@sha256:a5f4366e834695d5f363b920c104953a535d3a9864d1bdf74566a0ebe01daee5 AS builder`, `FROM node:24-bookworm-slim@sha256:a5f4366e834695d5f363b920c104953a535d3a9864d1bdf74566a0ebe01daee5 AS runtime` |
+| `deploy/h15/devtools/Dockerfile` | `FROM ${BRC_BASE_IMAGE}` |
+| `docker/v0221-native-tool-policy-test/Dockerfile` | `FROM nousresearch/hermes-agent@sha256:cd9cb455576d27c9b6311de1104494ad7e221b6e68dc77e9ac2a8af661a4dc21` |
+| `docker/v0222-native-tool-policy-test/Dockerfile` | `FROM nousresearch/hermes-agent@sha256:a11574b7fe8e1631d7d88d556677dac693bc058abf558cdeb899155688c1bf05` |
+| `docker/v0222-pyjwt-fixed-candidate/Dockerfile` | `FROM nousresearch/hermes-agent@sha256:a11574b7fe8e1631d7d88d556677dac693bc058abf558cdeb899155688c1bf05` |
+
+Note: the devtools `FROM ${BRC_BASE_IMAGE}` is a variable: its exact permitted value must be confirmed at build invocation. The H-15 offline workflow also performs `docker pull python:3.13-slim` without an immutable digest; this is a separate **REVIEW_REQUIRED** provenance risk and **was not** silently changed in PR #822.
+
 ## Decisions and applicability
 
 - **KEEP**: GSC `requests==2.33.0` already fixed in merged [PR #765](https://github.com/MikeMoore1337/hermes/pull/765). `google-auth==2.62.0` has no newly established applicable advisory in this review; lack of proof is **not** a claim of safety.
