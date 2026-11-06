@@ -8,14 +8,15 @@
     "github_main_sha": "VERIFIED",
     "npm_lock_parsed": "VERIFIED",
     "full_python_import_graph": "NOT_RUN",
-    "isolated_npm_install": "NOT_RUN",
-    "npm_audit_all": "NOT_RUN",
-    "pip_audit": "NOT_RUN",
+    "isolated_npm_install": "PASS_GITHUB_ACTIONS_PR825_SHA_5b22a34f0847754e4442d76051e6ee74010466ca",
+    "npm_audit_all": "PASS_0_REPORTED_VULNERABILITIES_GITHUB_ACTIONS_PR825_SHA_5b22a34f0847754e4442d76051e6ee74010466ca",
+    "pip_audit": "PASS_NO_KNOWN_VULNERABILITIES_GITHUB_ACTIONS_PR826_SHA_4fd191d8d2e130ff6bca8ede719518c035f83b9a",
     "trivy_current_db": "NOT_RUN",
     "docker_build": "NOT_RUN",
-    "browser_regression": "NOT_RUN",
+    "browser_regression": "PASS_SYNTHETIC_GITHUB_UI_WORKFLOW_PR825_SHA_5b22a34f0847754e4442d76051e6ee74010466ca_NOT_PRODUCTION",
     "installed_vps_runtime": "NOT_RUN",
-    "independent_review": "PENDING"
+    "independent_review": "NOT_VERIFIED_SEPARATE_REVIEWER",
+    "python_gsc_314_install": "PASS_GITHUB_ACTIONS_PR826_SHA_4fd191d8d2e130ff6bca8ede719518c035f83b9a"
   },
   "python": {
     "manifest": "deploy/requirements-gsc-readonly.txt",
@@ -999,5 +1000,54 @@
       "verified_current_runtime": false
     }
   ],
-  "no_deploy_or_runtime_change": true
+  "no_deploy_or_runtime_change": true,
+  "fresh_ci_evidence": [
+    {
+      "scope": "frontend source and lockfile (120 packages)",
+      "pr": 825,
+      "sha": "5b22a34f0847754e4442d76051e6ee74010466ca",
+      "run": "https://github.com/MikeMoore1337/hermes/actions/runs/42228040544",
+      "results": [
+        "npm ci PASS",
+        "npm audit including dev and transitive reported 0 vulnerabilities",
+        "production npm audit 0 vulnerabilities",
+        "Vite build PASS",
+        "committed bundle source parity PASS",
+        "Playwright E2E run SUCCESS"
+      ],
+      "disclaimer": "Audit registry results are time-scoped; E2E is CI synthetic not production"
+    },
+    {
+      "scope": "isolated GSC Python 3.14",
+      "pr": 826,
+      "sha": "4fd191d8d2e130ff6bca8ede719518c035f83b9a",
+      "run": "https://github.com/MikeMoore1337/hermes/actions/runs/42228544921",
+      "results": [
+        "11 installed third-party Python distributions observed in GSC venv",
+        "pip check PASS",
+        "google.auth import and requests==2.33.0 contract PASS",
+        "pip-audit==2.10.1 direct+transitive No known vulnerabilities found"
+      ],
+      "disclaimer": "No Google OAuth or VPS install; scanner database at CI run time"
+    },
+    {
+      "scope": "H15 ephemeral CI image and Actions",
+      "pr": 822,
+      "sha": "e2b9f07e0eef5cc3f1d41f299ef60144b516021c",
+      "run": "https://github.com/MikeMoore1337/hermes/actions/runs/42228801514",
+      "results": [
+        "previously observed Docker Hub image tag digest sha256:09a17cad02668ae61ece136b4fd36ac3849e14f670ebedb637ea3e15580525bc",
+        "pinned docker run completed with EPHEMERAL_OFFLINE_KERNEL_BOUNDARY=PASS"
+      ],
+      "disclaimer": "Not a signed OCI provenance attestation or a scan of the separate Hermes Agent runtime"
+    }
+  ],
+  "reaudit_snapshot": {
+    "base_main_sha": "e76c04a77ba9446ebb3fc959aa95fd57ea6ab12d",
+    "observed_later_main_sha": "7cc4237721107434425c0e7638606aeb6296e253",
+    "frontend_lockfile_blob_sha_unchanged": true,
+    "gsc_requirements_blob_sha_unchanged": true,
+    "other_changes_in_main": "Control Center UI source/assets; this report does not reclassify their runtime",
+    "evaluated_at_utc": "2026-11-06"
+  }
 }
