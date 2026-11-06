@@ -56,7 +56,7 @@ jobs:
       - name: Run real OS probe in disposable offline nonroot container
         run: |
           set -euo pipefail
-          docker pull python:3.13-slim
+          docker pull python:3.13-slim@sha256:09a17cad02668ae61ece136b4fd36ac3849e14f670ebedb637ea3e15580525bc
           docker run --rm \
             --network none \
             --cap-drop ALL \
@@ -72,7 +72,7 @@ jobs:
             --workdir /repo \
             --env PYTHONDONTWRITEBYTECODE=1 \
             --env PYTHONPATH=/repo \
-            python:3.13-slim \
+            python:3.13-slim@sha256:09a17cad02668ae61ece136b4fd36ac3849e14f670ebedb637ea3e15580525bc \
             python -m eval_lane.isolation_probe > offline-isolation-proof.json
           python3 - <<'PY'
           import json
