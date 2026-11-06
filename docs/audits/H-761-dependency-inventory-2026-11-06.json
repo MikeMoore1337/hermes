@@ -784,7 +784,52 @@
       "docker/v0222-pyjwt-fixed-candidate/Dockerfile"
     ],
     "runtime_images_intentionally_not_pulled": true,
-    "notes": "Live OS package/CVE inventory requires exact image digest and authorized isolated scanner; legacy findings from Hermes #199 are not reproduced here."
+    "notes": "Live OS package/CVE inventory requires exact image digest and authorized isolated scanner; legacy findings from Hermes #199 are not reproduced here.",
+    "dockerfile_from_references": [
+      {
+        "file": "deploy/h15/Dockerfile.brc-relay",
+        "from": [
+          "FROM node:24-bookworm-slim@sha256:a5f4366e834695d5f363b920c104953a535d3a9864d1bdf74566a0ebe01daee5 AS builder",
+          "FROM node:24-bookworm-slim@sha256:a5f4366e834695d5f363b920c104953a535d3a9864d1bdf74566a0ebe01daee5 AS runtime"
+        ],
+        "image_digest_or_variable_read_from_source": true
+      },
+      {
+        "file": "deploy/h15/devtools/Dockerfile",
+        "from": [
+          "FROM ${BRC_BASE_IMAGE}"
+        ],
+        "image_digest_or_variable_read_from_source": true
+      },
+      {
+        "file": "docker/v0221-native-tool-policy-test/Dockerfile",
+        "from": [
+          "FROM nousresearch/hermes-agent@sha256:cd9cb455576d27c9b6311de1104494ad7e221b6e68dc77e9ac2a8af661a4dc21"
+        ],
+        "image_digest_or_variable_read_from_source": true
+      },
+      {
+        "file": "docker/v0222-native-tool-policy-test/Dockerfile",
+        "from": [
+          "FROM nousresearch/hermes-agent@sha256:a11574b7fe8e1631d7d88d556677dac693bc058abf558cdeb899155688c1bf05"
+        ],
+        "image_digest_or_variable_read_from_source": true
+      },
+      {
+        "file": "docker/v0222-pyjwt-fixed-candidate/Dockerfile",
+        "from": [
+          "FROM nousresearch/hermes-agent@sha256:a11574b7fe8e1631d7d88d556677dac693bc058abf558cdeb899155688c1bf05"
+        ],
+        "image_digest_or_variable_read_from_source": true
+      }
+    ],
+    "known_mutable_ci_image_reference": {
+      "workflow": ".github/workflows/h15-evals-offline-smoke.yml",
+      "image": "python:3.13-slim",
+      "observation": "docker pull and docker run source-level, image digest not fixed",
+      "decision": "REVIEW_REQUIRED",
+      "note": "Do not select a digest without verifying official manifest, architecture and smoke"
+    }
   },
   "github_actions": {
     "workflow_count": 23,
@@ -837,6 +882,27 @@
       "actions/checkout@v4.2.2": "11bd71901bbe5b1630ceea73d27597364c9af683",
       "actions/upload-artifact@v4.6.2": "ea165f8d65b6e75b540449e92b4886f43607fa02",
       "actions/setup-python@v6.0.0": "e797f83bcb11b83ae66e0230d6156d7c80228e7c"
+    },
+    "uses_scope_summary": {
+      "actions_checkout": [
+        "v4 tag in H15 (proposed pin PR #822)",
+        "v4 tag in H454 (overlapping PR #692)",
+        "v4.2.2 SHA in other reviewed workflows"
+      ],
+      "actions_upload_artifact": [
+        "v4 tag in H15 (proposed pin PR #822)",
+        "v4.6.2 SHA in reviewed workflows"
+      ],
+      "actions_setup_python": [
+        "v5 tag in H454 (overlapping PR #692)",
+        "v6.0.0 SHA in reviewed workflows"
+      ],
+      "actions_setup_node": [
+        "v4.4.0 SHA"
+      ],
+      "aquasecurity_trivy_action": [
+        "v0.36.0 SHA"
+      ]
     }
   },
   "upstream": {
