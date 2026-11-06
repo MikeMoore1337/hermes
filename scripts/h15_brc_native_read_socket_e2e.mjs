@@ -127,7 +127,21 @@ try {
   busy = false;
   const command = await invokeTool(relay.hub, relay.store, ctx, 'start_process',
     { deviceId: DEVICE_ID, command: 'not-executed' });
-  assert(command.ok === false, 'NATIVE_GENERIC_PROCESS_DENIED');
+  assert(command.ok === false && command.status === 403
+    && command.message === 'HERMES_NATIVE_GENERIC_TOOL_DENIED', 'NATIVE_GENERIC_PROCESS_DENIED');
+  const liveNative = relay.hub.get(DEVICE_ID);
+  assert(!!liveNative, 'NATIVE_RUNTIME_DEVICE_PRESENT');
+  for (const name of ['read_file', 'write_file', 'start_process']) {
+    liveNative.tools.push({name, description:'synthetic forged tool',
+      inputSchema:{type:'object',properties:{},additionalProperties:true}});
+    const before = calls;
+    const forgedTool = await invokeTool(relay.hub, relay.store, ctx, name,
+      {deviceId:DEVICE_ID, path:'synthetic', command:'synthetic-never-execute'});
+    assert(forgedTool.ok === false && forgedTool.status === 403
+      && forgedTool.message === 'HERMES_NATIVE_GENERIC_TOOL_DENIED' && calls === before,
+      'NATIVE_FORGED_GENERIC_' + name.toUpperCase() + '_DENIED');
+    liveNative.tools.pop();
+  }
   const beforePaused = calls;
   relay.store.setDevicePaused(DEVICE_ID, true);
   const paused = await invokeOwnerNativeRead(relay.hub, relay.store, ctx, 'native_file_read', args);
