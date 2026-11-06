@@ -5,6 +5,7 @@ on:
     paths:
       - .github/workflows/h777-ecc-upstream-native-rollback.yml
       - scripts/h777_ecc_native_uninstall_gate.py
+      - scripts/h795_ecc_native_negative_regression.py
       - tests/test_h777_ecc_native_uninstall_gate.py
   workflow_dispatch:
 
@@ -91,15 +92,49 @@ jobs:
             echo '### H-777 native upstream uninstall receipt'
             echo ''
             echo 'Original ECC native exact rollback: **FAIL_KNOWN_CACHE**'
-            echo 'This successful job validates an expected failure; it does **not** resolve issue #777.'
+            echo 'This successful job validates an expected failure; it does **not** resolve upstream issue #795.'
             echo 'Only disposable test homes were created. No production files modified.'
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify H795 original uninstall negative cases in disposable Docker
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m scripts.h795_ecc_native_negative_regression \
+            "$ECC_SOURCE" h795-ecc-negative-result.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r = json.loads(Path("h795-ecc-negative-result.json").read_text(encoding="utf-8"))
+          assert r["provenance"]["upstream_ecc_sha"] == "b38be6a7f6350964d59328b52f0624e1d1d552d1"
+          assert r["scope"] == "disposable-h777-homes-github-hosted-docker-only"
+          assert r["status"] == "CONFIRMED_KNOWN_NATIVE_DEFECTS_OWNER_PRESERVED"
+          assert not r["upstream_native_exact_rollback"]
+          assert r["strict_empty_home"]["status"] == "FAIL_KNOWN_CACHE"
+          assert r["foreign_sqlite"]["table_counts"]["sessions"] >= 1
+          assert r["foreign_sqlite"]["table_counts"]["decisions"] >= 1
+          assert r["external_symlink"]["status"] == "FAIL_ZERO_EXIT_WITH_PROJECTION_WARNING"
+          assert r["external_symlink"]["outside_bytes_preserved"]
+          assert r["external_hardlink"]["status"] == "FAIL_HARDLINK_ACCEPTED_REPLACED"
+          assert r["external_hardlink"]["outside_bytes_preserved"]
+          assert r["corrupt_sqlite"]["status"] == "FAIL_ZERO_EXIT_WITH_PROJECTION_WARNING"
+          assert r["write_denial"]["status"] == "FAIL_ZERO_EXIT_WITH_PROJECTION_WARNING"
+          assert r["abrupt_interruption"] == "NOT_RUN"
+          assert len(r["original_calls"]) >= 10
+          print("H795_UPSTREAM_NATIVE_EXACT_ROLLBACK=FAIL_KNOWN_CACHE")
+          print("H795_OWNER_DATA_PRESERVED=PASS")
+          print("H795_NATIVE_HARDLINK_FAIL_CLOSED=FAIL_KNOWN")
+          print("H795_NATIVE_PROJECTION_ERROR_EXIT=FAIL_KNOWN")
+          print("H795_ABRUPT_INTERRUPTION=NOT_RUN")
+          PY
 
       - name: Retain sanitized upstream regression receipt
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: h777-original-ecc-native-uninstall
-          path: h777-ecc-native-result.json
+          path: |
+            h777-ecc-native-result.json
+            h795-ecc-negative-result.json
           if-no-files-found: ignore
           retention-days: 7
