@@ -108,17 +108,23 @@ jobs:
           r = json.loads(Path("h795-ecc-negative-result.json").read_text(encoding="utf-8"))
           assert r["provenance"]["upstream_ecc_sha"] == "b38be6a7f6350964d59328b52f0624e1d1d552d1"
           assert r["scope"] == "disposable-h777-homes-github-hosted-docker-only"
-          assert r["status"] == "PASS_GUARDS_WITH_KNOWN_NATIVE_CACHE_DEFECT"
+          assert r["status"] == "CONFIRMED_KNOWN_NATIVE_DEFECTS_OWNER_PRESERVED"
           assert not r["upstream_native_exact_rollback"]
           assert r["strict_empty_home"]["status"] == "FAIL_KNOWN_CACHE"
           assert r["foreign_sqlite"]["table_counts"]["sessions"] >= 1
           assert r["foreign_sqlite"]["table_counts"]["decisions"] >= 1
-          assert r["external_symlink"] == "PASS_NO_EXTERNAL_MODIFICATION"
-          assert r["external_hardlink"]["status"] == "PASS_OUTSIDE_BYTES_PRESERVED"
+          assert r["external_symlink"]["status"] == "FAIL_ZERO_EXIT_WITH_PROJECTION_WARNING"
+          assert r["external_symlink"]["outside_bytes_preserved"]
+          assert r["external_hardlink"]["status"] == "FAIL_HARDLINK_ACCEPTED_REPLACED"
+          assert r["external_hardlink"]["outside_bytes_preserved"]
+          assert r["corrupt_sqlite"]["status"] == "FAIL_ZERO_EXIT_WITH_PROJECTION_WARNING"
+          assert r["write_denial"]["status"] == "FAIL_ZERO_EXIT_WITH_PROJECTION_WARNING"
           assert r["abrupt_interruption"] == "NOT_RUN"
           assert len(r["original_calls"]) >= 10
           print("H795_UPSTREAM_NATIVE_EXACT_ROLLBACK=FAIL_KNOWN_CACHE")
-          print("H795_OWNER_DATA_AND_NEGATIVE_CASES=PASS")
+          print("H795_OWNER_DATA_PRESERVED=PASS")
+          print("H795_NATIVE_HARDLINK_FAIL_CLOSED=FAIL_KNOWN")
+          print("H795_NATIVE_PROJECTION_ERROR_EXIT=FAIL_KNOWN")
           print("H795_ABRUPT_INTERRUPTION=NOT_RUN")
           PY
 
