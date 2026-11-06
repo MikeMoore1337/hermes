@@ -111,8 +111,8 @@ for(const [width,height] of [[320,770],[393,852],[1440,900],[2048,1152]]){
     outer:getComputedStyle(el.closest(".search-field")).outlineStyle
    }));
    expect(focus.inner,"The input must not draw a second blue outline").toBe("none");
-   expect(focus.outer,"Composite control must not draw an additional outline").toBe("none");
-   expect(focus.shadow,"One visible focus ring around the search container").not.toBe("none");
+   expect(focus.outer,"Single visible focus outline on the composite control").not.toBe("none");
+   expect(focus.shadow,"Avoid a second shadow ring").toBe("none");
    await input.fill("Ops");
    await expect(page.getByRole("row",{name:/Ops Watch/})).toBeVisible();
    const labelFont=await page.locator(".service-label small").first().evaluate(el=>parseFloat(getComputedStyle(el).fontSize));
@@ -132,7 +132,7 @@ for(const [width,height] of [[320,770],[393,852],[1440,900],[2048,1152]]){
    const inboxInput=page.locator(".oi-search input");
    await inboxInput.focus();
    expect(await inboxInput.evaluate(el=>getComputedStyle(el).outlineStyle)).toBe("none");
-   expect(await page.locator(".oi-search").evaluate(el=>getComputedStyle(el).boxShadow)).not.toBe("none");
+   expect(await page.locator(".oi-search").evaluate(el=>getComputedStyle(el).outlineStyle)).not.toBe("none");
 
    await openView(page,"Квоты и инструменты",width);
    const cards=page.locator(".quota295-card");
