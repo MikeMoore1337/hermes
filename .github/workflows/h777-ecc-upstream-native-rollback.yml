@@ -100,7 +100,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 scripts/h795_ecc_native_negative_regression.py \
+          python3 -m scripts.h795_ecc_native_negative_regression \
             "$ECC_SOURCE" h795-ecc-negative-result.json
           python3 - <<'PY'
           import json
