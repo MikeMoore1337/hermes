@@ -20,6 +20,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from ops_watch.advisor_adapter import AdvisorAdapterError, read_events
+from ops_watch.core import InputError
+from ops_watch.state_store import read_current
 from ops_watch.incident_advisor import (
     AdvisorInputError, AdvisorOutputError, build_prompt, evaluate_result,
     prepare_context, validate_result,
@@ -265,8 +267,21 @@ def run() -> dict[str, object]:
         if previous["utc_date"] != day:
             previous["utc_date"], previous["calls"] = day, 0
         rows = read_events(OPS_DATA, provenance="readonly_snapshot")
+        # Transition history is not the same as the current active incidents.
+        # A previously valid "new" event may already have a later "resolved"
+        # transition. Never consume a provider call for a resolved episode.
+        try:
+            active_codes = {item["code"] for item in read_current(OPS_DATA)}
+        except (InputError, OSError, AttributeError):
+            raise AdvisorAdapterError("source_unavailable") from None
         candidates = [
-            row for row in rows if row["analysis"]["decision"] == "ADVISOR_CANDIDATE"
+            row for row in rows
+            if row["analysis"]["decision"] == "ADVISOR_CANDIDATE"
+            and row["phase"] == "new"
+            and any(
+                code in active_codes
+                for code in row["event"]["technical_metadata"]["active_codes"]
+            )
         ]
         if not candidates:
             return {"status": "NO_ADVISOR_CANDIDATE", "calls_today": previous["calls"]}
