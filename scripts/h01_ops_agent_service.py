@@ -267,18 +267,25 @@ def run() -> dict[str, object]:
         if previous["utc_date"] != day:
             previous["utc_date"], previous["calls"] = day, 0
         rows = read_events(OPS_DATA, provenance="readonly_snapshot")
-        # Transition history is not the same as the current active incidents.
-        # A previously valid "new" event may already have a later "resolved"
-        # transition. Never consume a provider call for a resolved episode.
+        # Zero eligible transitions must not read additional production state:
+        # isolated non-root deploy tests cannot access the real Ops Watch DB.
+        # More importantly, a rule-only tick needs no second DB read.
+        candidates = [
+            row for row in rows
+            if row["analysis"]["decision"] == "ADVISOR_CANDIDATE"
+            and row["phase"] == "new"
+        ]
+        if not candidates:
+            return {"status": "NO_ADVISOR_CANDIDATE", "calls_today": previous["calls"]}
+        # Transition history is not the same as current active incidents.
+        # Never consume a provider call for an already recovered episode.
         try:
             active_codes = {item["code"] for item in read_current(OPS_DATA)}
         except (InputError, OSError, AttributeError):
             raise AdvisorAdapterError("source_unavailable") from None
         candidates = [
-            row for row in rows
-            if row["analysis"]["decision"] == "ADVISOR_CANDIDATE"
-            and row["phase"] == "new"
-            and any(
+            row for row in candidates
+            if any(
                 code in active_codes
                 for code in row["event"]["technical_metadata"]["active_codes"]
             )
