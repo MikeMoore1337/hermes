@@ -89,7 +89,7 @@ export default function OperatorInbox(){
   (!query.trim()||[e.title,e.detail,e.source].join(" ").toLocaleLowerCase("ru")
       .includes(query.trim().toLocaleLowerCase("ru")))
  ),[events,filter,query]);
- const current=shown.find(e=>e.event_id===selected)||shown[0]||null;
+ const current=shown.find(e=>e.event_id===selected)||(!compact?shown[0]:null);
  const closeDetails=useCallback(()=>{
   setDetailOpen(false);
   requestAnimationFrame(()=>triggerRef.current?.focus());
