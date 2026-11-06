@@ -181,6 +181,23 @@ const ctx={userId:'owner-A',clientId:'chatgpt'};
  }
  assert.equal(calls,2);
  hub.get=()=>agent;
+ // A rekey between dispatch and delivery must not release host contents.
+ hub.call=async()=>{currentRow={...good,token_hash:'rotated-during-read'};
+   return {isError:false,content:[{type:'text',text:JSON.stringify(verified)}]}};
+ const duringRead=await invokeOwnerNativeRead(hub,store,ctx,'native_file_read',
+   {project:'hermes',relative:'README.md'});
+ assert.equal(duringRead.isError,true);
+ assert.equal(logs.at(-1).ok,0);
+ currentRow=good;
+ // A revocation during the audit boundary must also suppress delivery.
+ hub.call=async()=>({isError:false,content:[{type:'text',text:JSON.stringify(verified)}]});
+ const auditBefore=store.audit;
+ store.audit=e=>{logs.push(e);currentRow={...good,token_hash:'rotated-during-audit'}};
+ const duringAudit=await invokeOwnerNativeRead(hub,store,ctx,'native_file_read',
+   {project:'hermes',relative:'README.md'});
+ assert.equal(duringAudit.isError,true);
+ store.audit=auditBefore;
+ currentRow=good;
  hub.call=async()=>({isError:false,content:[{type:'text',text:JSON.stringify({
    ...safeList,entries:[{name:'.env',kind:'file'}]})}]});
  assert.equal((await invokeOwnerNativeRead(hub,store,ctx,'native_file_list',
