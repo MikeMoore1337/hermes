@@ -1,7 +1,7 @@
 /* #295: one independent read-only quota card per actually identified service. */
 (() => {
   "use strict";
-  const ids = ["cloudflare_workers_ai", "codex", "desktop_commander", "github_api"];
+  const ids = ["cloudflare_workers_ai", "github_api"];
   const labels = {cloudflare_workers_ai: "Cloudflare Workers AI", codex: "Codex / ChatGPT",
     desktop_commander: "Desktop Commander", github_api: "GitHub API"};
   const stateText = {ok: "Доступно", low: "Квота на исходе",
@@ -294,8 +294,8 @@
       const titleIcon=window.HermesOrbitIcons?.make("quota","heading");
       if(titleIcon)titleHeading.prepend(titleIcon);
       add("p","quota295-note",title,
-        "Каждому сервису - отдельная карточка. Неизвестное потребление не равно нулю.");
-      const button=add("button","quota295-reload",head,"Обновить");button.type="button";button.onclick=refresh;
+        "Codex отображается единой карточкой выше. Источники Cloudflare и GitHub показаны отдельно.");
+      const button=add("button","quota295-reload",head,"Обновить источники");button.type="button";button.onclick=refresh;
       grid=add("div","quota295-grid",section);
       announcement=add("p","sr-only",section);
       announcement.setAttribute("role","status");
