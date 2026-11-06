@@ -147,6 +147,12 @@ export async function invokeOwnerNativeRead(
         name === 'native_file_list' ? 'list' : read ? 'read' : 'stat');
     }
   } catch { /* Never forward agent error, filepath, output, or credentials. */ }
+  // The bearer may be revoked while the read is in flight. Re-authorize
+  // before logging a success; agent replies are never authority to release.
+  if (eligibleDevice(hub, store, ctx.userId) !== deviceId) {
+    safe = null;
+    busy = false;
+  }
   try {
     store.audit({ ts: started, user_id: ctx.userId, device_id: deviceId,
       client: ctx.clientId, tool: name, args_hash: argsHash,
@@ -156,6 +162,9 @@ export async function invokeOwnerNativeRead(
     // No audit trail => no sensitive original-host data leaves this relay.
     return DENY;
   }
+  // A revocation racing the audit also invalidates the response.
+  // A transient owner/DB failure fails closed, not to stale access.
+  if (eligibleDevice(hub, store, ctx.userId) !== deviceId) return DENY;
   return safe ? { content: [{ type: 'text' as const, text: JSON.stringify(safe) }],
     isError: false } : busy ? BUSY : DENY;
 }
