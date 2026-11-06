@@ -136,10 +136,10 @@ chmod 0755 "$work" "$work/src"
 chmod -R a+rX,go-w "$work/src"
 isolated_python() {
   # Fast prechecks retain 240s; only the growing full unit suite gets a
-  # separately bounded 360s budget. Never disable DynamicUser or isolation.
+  # separately bounded 540s budget. Never disable DynamicUser or isolation.
   local runtime_max_sec=240
   if [[ "${1:-}" == "--full-unit-suite" ]]; then
-    runtime_max_sec=360
+    runtime_max_sec=540
     shift
   fi
   systemd-run --wait --collect --pipe --quiet \
@@ -154,8 +154,9 @@ isolated_python scripts/validate_repo.py || die "repo validation failed"
 isolated_python scripts/check_policy_index.py || die "policy check failed"
 isolated_python scripts/check_markdown_links.py || die "markdown links failed"
 # The 2-vCPU production host reached its 240s deadline on 2026-11-01
-# (3215 tests; identical exact-SHA CI passed). Provide a bounded 360s
-# suite-only budget without changing precheck limits, sandboxing or quotas.
+# (3215 tests), then its 360s deadline on 2026-11-06 (3674 tests,
+# release run 42272349433). The suite remains mandatory and isolated.
+# Use a bounded 540s suite-only budget, preserving all other safeguards.
 # On failure, print only allowlisted unittest summary lines: the arbitrary
 # fixture stdout/HTTP payload stays in the root-only on-host test log.
 isolated_python --full-unit-suite -m unittest discover -s tests -q > "$work/tests.log" 2>&1 || {
