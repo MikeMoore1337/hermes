@@ -106,6 +106,7 @@ class H01OpsContractTests(unittest.TestCase):
                  patch.object(agent, "verify_host"), patch.object(agent, "verify_credentials"), \
                  patch.object(agent, "safe_image", return_value="sha256:" + "a" * 64), \
                  patch.object(agent, "read_events", return_value=[candidate()]), \
+                 patch.object(agent, "read_current", return_value=[{"code": "drain_failures"}]), \
                  patch.object(agent, "model_once",
                               return_value={"status": "PASS", "result": {"priority": "high"}, "quality": "PASS"}) as provider:
                 first = agent.run()
@@ -124,6 +125,7 @@ class H01OpsContractTests(unittest.TestCase):
                  patch.object(agent, "verify_host"), patch.object(agent, "verify_credentials"), \
                  patch.object(agent, "safe_image", return_value="sha256:" + "a" * 64), \
                  patch.object(agent, "read_events", return_value=[candidate()]), \
+                 patch.object(agent, "read_current", return_value=[{"code": "drain_failures"}]), \
                  patch.object(agent, "model_once", side_effect=agent.H01Denied("agent_result_unverified")) as provider:
                 with self.assertRaises(agent.H01Denied):
                     agent.run()
@@ -131,6 +133,66 @@ class H01OpsContractTests(unittest.TestCase):
             self.assertEqual(provider.call_count, 1)
             saved = json.loads((state / "state.json").read_text(encoding="utf-8"))
             self.assertEqual(saved["last_status"], "agent_result_unverified")
+
+
+    def test_resolved_natural_candidate_does_not_consume_budget(self):
+        """A #263 new transition followed by #264 resolved is not live work."""
+        with tempfile.TemporaryDirectory() as tmp:
+            state = Path(tmp) / "agent"
+            with patch.object(agent, "STATE", state), \
+                 patch.object(agent, "verify_host"), patch.object(agent, "verify_credentials"), \
+                 patch.object(agent, "safe_image", return_value="sha256:" + "a" * 64), \
+                 patch.object(agent, "read_events", return_value=[
+                     candidate(263),
+                     {"event_id": 264, "phase": "resolved",
+                      "analysis": {"decision": "RULES_ONLY"}},
+                 ]), \
+                 patch.object(agent, "read_current", return_value=[]), \
+                 patch.object(agent, "model_once") as model:
+                outcome = agent.run()
+            self.assertEqual(outcome["status"], "NO_ADVISOR_CANDIDATE")
+            self.assertFalse((state / "state.json").exists())
+            model.assert_not_called()
+
+    def test_newer_active_episode_selected_after_old_recovery(self):
+        """A fresh active event can be processed even if earlier code recovered."""
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(agent, "STATE", Path(tmp) / "agent"), \
+                 patch.object(agent, "verify_host"), patch.object(agent, "verify_credentials"), \
+                 patch.object(agent, "safe_image", return_value="sha256:" + "a" * 64), \
+                 patch.object(agent, "read_events", return_value=[
+                     candidate(263),
+                     {"event_id": 264, "phase": "resolved",
+                      "analysis": {"decision": "RULES_ONLY"}},
+                     candidate(275),
+                 ]), \
+                 patch.object(agent, "read_current", return_value=[
+                     {"code": "drain_failures"}
+                 ]), \
+                 patch.object(agent, "model_once", return_value={
+                     "status": "PASS", "result": {"priority": "high"}, "quality": "PASS"
+                 }) as model:
+                outcome = agent.run()
+            self.assertEqual((outcome["status"], outcome["event_id"]), ("PASS", 275))
+            model.assert_called_once()
+
+    def test_unavailable_current_state_fails_closed_before_reservation(self):
+        """The source-of-truth incident state must be readable before model use."""
+        from ops_watch.core import InputError
+        with tempfile.TemporaryDirectory() as tmp:
+            state = Path(tmp) / "agent"
+            with patch.object(agent, "STATE", state), \
+                 patch.object(agent, "verify_host"), patch.object(agent, "verify_credentials"), \
+                 patch.object(agent, "safe_image", return_value="sha256:" + "a" * 64), \
+                 patch.object(agent, "read_events", return_value=[candidate(263)]), \
+                 patch.object(agent, "read_current", side_effect=InputError("unavailable")), \
+                 patch.object(agent, "model_once") as model:
+                with self.assertRaisesRegex(
+                    agent.AdvisorAdapterError, "source_unavailable"
+                ):
+                    agent.run()
+            self.assertFalse((state / "state.json").exists())
+            model.assert_not_called()
 
     def test_reservation_syncs_parent_directory_after_atomic_replace(self):
         """File fsync plus rename alone is not a durable crash-safe reservation."""
@@ -181,6 +243,7 @@ class H01OpsContractTests(unittest.TestCase):
                  patch.object(agent, "verify_credentials"), \
                  patch.object(agent, "safe_image", return_value="sha256:" + "a" * 64), \
                  patch.object(agent, "read_events", return_value=[candidate()]), \
+                 patch.object(agent, "read_current", return_value=[{"code": "drain_failures"}]), \
                  patch.object(agent, "model_once") as provider, \
                  patch.object(agent.os, "fsync", side_effect=fail_directory_sync):
                 with self.assertRaisesRegex(OSError, "simulated_parent_fsync_error"):
