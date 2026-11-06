@@ -194,6 +194,35 @@ class H01OpsContractTests(unittest.TestCase):
             self.assertFalse((state / "state.json").exists())
             model.assert_not_called()
 
+
+    def test_real_sqlite_transition_and_recovery_never_replay(self):
+        """Integration: actual Ops SQLite events/state with no Docker/provider."""
+        from datetime import UTC, datetime, timedelta
+        from ops_watch.state_store import persist
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            ops = root / "ops"
+            ops.mkdir()
+            incident = {"code": "drain_failures", "fingerprint": "ops:drain_failures"}
+            t0 = datetime(2026, 11, 5, 12, 32, tzinfo=UTC)
+            persist(ops, [incident], lambda: [], observed=t0)
+            persist(ops, [], lambda: [], observed=t0 + timedelta(minutes=2))
+            with patch.object(agent, "STATE", root / "state"), \
+                 patch.object(agent, "OPS_DATA", ops), \
+                 patch.object(agent, "verify_host"), patch.object(agent, "verify_credentials"), \
+                 patch.object(agent, "safe_image", return_value="sha256:" + "a" * 64), \
+                 patch.object(agent, "model_once", return_value={
+                     "status": "PASS", "result": {"priority": "high"}, "quality": "PASS"
+                 }) as model:
+                self.assertEqual(agent.run()["status"], "NO_ADVISOR_CANDIDATE")
+                model.assert_not_called()
+                self.assertFalse((root / "state" / "state.json").exists())
+                persist(ops, [incident], lambda: [], observed=t0 + timedelta(minutes=4))
+                outcome = agent.run()
+                self.assertEqual((outcome["status"], outcome["event_id"]), ("PASS", 3))
+                model.assert_called_once()
+
     def test_reservation_syncs_parent_directory_after_atomic_replace(self):
         """File fsync plus rename alone is not a durable crash-safe reservation."""
         import stat
