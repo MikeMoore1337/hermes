@@ -26,14 +26,20 @@ const ISSUE33="https://github.com/MikeMoore1337/hermes/issues/33";
 const ISSUE163="https://github.com/MikeMoore1337/hermes/issues/163";
 const UI_VERSION="0.3.0";
 const THEME_KEY="hermes-control-center-ui-theme";
-const themeModes=["system","dark","light"];
-const themeLabels={system:"Системная",dark:"Тёмная",light:"Светлая"};
+const themeModes=["dark","light"];
+const themeLabels={dark:"Тёмная",light:"Светлая"};
 function initialTheme(){
- try{const saved=localStorage.getItem(THEME_KEY);return themeModes.includes(saved)?saved:"system";}
- catch{return "system";}
+ try{
+  const saved=localStorage.getItem(THEME_KEY);
+  if(themeModes.includes(saved))return saved;
+  // One-time migration: preserve the previously visible system-derived color,
+  // then persist it as an explicit choice. Never keep following OS changes.
+  if(saved==="system")return window.matchMedia?.("(prefers-color-scheme: light)").matches?"light":"dark";
+ }catch{/* storage and media access may be unavailable */}
+ return "dark";
 }
 function ThemeButton({theme,onTheme,className="hcc-theme-toggle"}){
- const Icon=theme==="dark"?Moon:theme==="light"?Sun:Monitor;
+ const Icon=theme==="dark"?Moon:Sun;
  return <button type="button" className={className} aria-label={"Тема: "+themeLabels[theme]+". Переключить"} title={"Тема: "+themeLabels[theme]} onClick={onTheme}>
   <Icon size={16} strokeWidth={1.7} aria-hidden="true"/><span>{themeLabels[theme]}</span>
  </button>;
@@ -416,17 +422,11 @@ function App(){
  const [theme,setTheme]=useState(initialTheme);
  const cycleTheme=useCallback(()=>setTheme(x=>themeModes[(themeModes.indexOf(x)+1)%themeModes.length]),[]);
  useEffect(()=>{
-  const mq=window.matchMedia("(prefers-color-scheme: light)");
-  const update=()=>{
-   const light=theme==="light"||(theme==="system"&&mq.matches);
-   document.documentElement.dataset.hermesTheme=theme;
-   document.documentElement.dataset.hermesResolvedTheme=light?"light":"dark";
-   document.querySelector('meta[name="theme-color"]')?.setAttribute("content",light?"#f7f9fc":"#142033");
-  };
-  update();
-  mq.addEventListener?.("change",update);
+  const light=theme==="light";
+  document.documentElement.dataset.hermesTheme=theme;
+  document.documentElement.dataset.hermesResolvedTheme=theme;
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content",light?"#f7f9fc":"#142033");
   try{localStorage.setItem(THEME_KEY,theme);}catch{/* preference storage may be disabled */}
-  return()=>mq.removeEventListener?.("change",update);
  },[theme]);
  useEffect(()=>{
   if(serverAuthBootstrap())return;
