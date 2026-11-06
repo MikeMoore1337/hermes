@@ -63,7 +63,7 @@ for(const width of [393,1440]){
   setup(page);
   await page.goto("/");
   const sectionNav=page.locator(".atlas-section-nav");
-  await chooseOrbitView(page,"Лимиты AI");
+  await chooseOrbitView(page,"Квоты и инструменты");
   await expect(page.getByRole("heading",{name:"Лимиты Codex"})).toBeVisible();
   await expect(page.getByText("58% осталось")).toBeVisible();
   await expect(page.getByText("15% осталось")).toBeVisible();
@@ -82,25 +82,28 @@ for(const width of [393,1440]){
 test("No source is not misrepresented as available",async({page})=>{
  setup(page,"not_configured");
  await page.goto("/");
- await chooseOrbitView(page,"Лимиты AI");
+ await chooseOrbitView(page,"Квоты и инструменты");
  await expect(page.getByText("Не подключён",{exact:true})).toBeVisible();
  await expect(page.getByRole("progressbar")).toHaveCount(0);
  await expect(page.getByText(/после авторизации на VPS/i)).toBeVisible();
 });
 
-test("Review summary exposes read-only Codex panel",async({page})=>{
+test("Overview has no duplicate Codex card; quotas show full read-only panel",async({page})=>{
  setup(page);
  await page.goto("/");
- await expect(page.getByRole("heading",{name:"Лимиты Codex"})).toBeVisible();
- await expect(page.getByRole("button",{name:"Показать подробности"})).toBeVisible();
- await page.getByRole("button",{name:"Показать подробности"}).click();
- await expect(page.getByText("58% осталось")).toBeVisible();
+ await expect(page.locator(".codex-panel")).toHaveCount(0);
+ await chooseOrbitView(page,"Квоты и инструменты");
+ const codex=page.getByRole("region",{name:"Лимиты Codex"});
+ await expect(codex).toBeVisible();
+ await expect(codex.getByText("58% осталось")).toBeVisible();
+ await expect(page.locator(".codex-panel")).toHaveCount(1);
+ await expect(page.locator('.quota295-card[data-provider="codex"]')).toHaveCount(0);
 });
 
 test("Codex history period and threshold controls remain read-only",async({page})=>{
  setup(page);
  await page.goto("/");
- await chooseOrbitView(page,"Лимиты AI");
+ await chooseOrbitView(page,"Квоты и инструменты");
  await expect(page.getByText("История квот")).toBeVisible();
  await page.getByRole("button",{name:"30 дн."}).click();
  await expect(page.getByRole("button",{name:"30 дн."})).toHaveAttribute("aria-pressed","true");
@@ -115,7 +118,7 @@ for(const width of [393,1440]){
   await page.setViewportSize({width,height:900});
   setup(page);
   await page.goto("/");
-  await chooseOrbitView(page,"Лимиты AI");
+  await chooseOrbitView(page,"Квоты и инструменты");
   const queue=page.getByRole("region",{name:"Очередь заданий Codex"});
   await expect(queue).toBeVisible();
   await expect(queue.getByText("Автозапуск выключен")).toBeVisible();
