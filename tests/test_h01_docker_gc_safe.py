@@ -1,11 +1,9 @@
 """Offline contract tests for the owner-approved, but NOT installed, Docker GC fix."""
 from __future__ import annotations
 
-import os
-import subprocess
 import unittest
 from pathlib import Path
-from unittest.mock import Mock, call, patch
+from unittest.mock import Mock, patch
 
 from scripts import h01_docker_gc_safe as gc
 from scripts.h01_ops_agent_service import H01Denied
