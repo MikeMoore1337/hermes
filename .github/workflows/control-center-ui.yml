@@ -53,6 +53,11 @@ jobs:
       - name: Production dependency vulnerability gate
         working-directory: control_center/frontend
         run: npm audit --omit=dev --audit-level=high
+      # H-761: include dev tools and transitive packages, not only production deps.
+      # An advisory >= moderate is a failed security gate, never silently ignored.
+      - name: Full npm dependency audit (including dev dependencies)
+        working-directory: control_center/frontend
+        run: npm audit --audit-level=moderate
       - name: Python allowlist/API/OAuth security regression tests
         run: python3 -m unittest tests.test_codex_usage tests.test_codex_analytics tests.test_codex_analytics_api tests.test_codex_policy_history tests.test_control_center tests.test_control_center_operator_inbox tests.test_control_center_inbox_http tests.test_control_center_assets tests.test_control_center_aero_assets tests.test_control_center_oauth tests.test_control_center_broker tests.test_control_center_credentials tests.test_control_center_unix_http_integration -v
       - name: PWA manifest, SW and offline privacy tests
