@@ -44,7 +44,7 @@ function ThemeButton({theme,onTheme,className="hcc-theme-toggle"}){
   <Icon size={16} strokeWidth={1.7} aria-hidden="true"/><span>{themeLabels[theme]}</span>
  </button>;
 }
-const nav=["all","inbox","articles","commander","ops","research","qa","agent","codex"];
+const nav=["all","inbox","articles","commander","ops","research","qa","agent"];
 const navName=key=>key==="commander"?"Hermes Commander":key==="articles"?"Статьи YFC":groups[key].name;
 const icons={news:Radio,ops:Activity,alerts:Signal,qa:ShieldCheck,
   research:Search,network:ShieldCheck,agent_bounded:Activity,agent:LockKeyhole};
@@ -59,10 +59,10 @@ function Brand({large=false}){
 function InfoBadge({children,tone=""}){return <span className={"badge "+tone}>{children}</span>;}
 function State({value}){const p=statuses[value]||statuses.unknown;return <span className={"state state-"+p.tone}><i aria-hidden="true"/>{p.label}</span>;}
 const navIcons={all:LayoutDashboard,inbox:Inbox,articles:FilePenLine,commander:Layers3,ops:Activity,research:BookOpenText,qa:ShieldCheck,agent:Bot,codex:Gauge};
-const sidebarName={all:"Обзор",inbox:"Входящие",commander:"Hermes Commander",ops:"Ops Watch",research:"Research Scout",qa:"QA / CI",agent:"AI Agent",codex:"Codex / лимиты",articles:"Статьи YFC"};
+const sidebarName={all:"Обзор",inbox:"Входящие",commander:"Hermes Commander",ops:"Ops Watch",research:"Research Scout",qa:"QA / CI",agent:"AI Agent",articles:"Статьи YFC"};
 const navSections=[
  {title:"РАБОЧЕЕ ПРОСТРАНСТВО",keys:["all","inbox","commander"]},
- {title:"НАБЛЮДЕНИЕ",keys:["ops","research","qa","agent","codex"]},
+ {title:"НАБЛЮДЕНИЕ",keys:["ops","research","qa","agent"]},
  {title:"КОНТЕНТ",keys:["articles"]}
 ];
 function Nav({view,onView,mode,activeWidget}){
@@ -324,6 +324,11 @@ function OperatorApp({authMode,onLogout,theme,onTheme}){
   return()=>window.removeEventListener("popstate",restore);
  },[]);
  const onView=key=>{
+  // Existing dashboard shortcuts still target the unified quota section.
+  if(key==="codex"||key==="quotas"){
+   const tab=document.querySelector(".quota295-nav");
+   if(tab){tab.click();return;}
+  }
   // Close independent monitoring overlays when switching React views,
   // including the mobile navigation that has no .nav-link event target.
   window.dispatchEvent(new Event("hermes:orbit-view-change"));
@@ -369,9 +374,19 @@ function OperatorApp({authMode,onLogout,theme,onTheme}){
    <div className="orbit-content">
     <Header view={view} authMode={authMode} onLogout={onLogout} onMenu={()=>setMenuOpen(v=>!v)} menuOpen={menuOpen} activeWidget={activeWidget} theme={theme} onTheme={onTheme} onView={onView}/>
     <main id="main-content" className="orbit-main" tabIndex={-1}>
-     {activeWidget?<div className="orbit-module-shell orbit-widget-module" aria-label={activeWidget}><div className="center-area orbit-widget-host"/></div>:
+     {activeWidget?<div className="orbit-module-shell orbit-widget-module" aria-label={activeWidget}>
+      {activeWidget==="Квоты и инструменты"&&<header className="quota-unified-intro">
+       <div><span className="eyebrow">РЕСУРСЫ И НАБЛЮДЕНИЕ</span>
+        <h1>Ресурсы AI и инструменты</h1>
+        <p>Подтверждённые лимиты, история и очередь Codex. Неизвестное потребление не равно нулю.</p>
+       </div>
+      </header>}
+      <div className="center-area orbit-widget-host">
+       {activeWidget==="Квоты и инструменты"&&<CodexPanel/>}
+      </div>
+     </div>:
       view==="all"?<><OrbitOverview snapshot={snapshot} error={error} onView={onView} onRefresh={reload} busy={busy} Registry={Registry}
-      registryProps={{snapshot,view,search,setSearch,filter,setFilter}}/><div className="center-area orbit-compact-codex" aria-label="Данные Codex и дополнительные панели"><CodexPanel compact/></div></>:
+      registryProps={{snapshot,view,search,setSearch,filter,setFilter}}/></>:
       <div className="orbit-module-shell">
        {view!=="inbox"&&view!=="articles"&&view!=="commander"&&<OrbitModuleIntro view={view}/>}
        {view==="commander"?<HermesCommander/>:view==="articles"?<YfcArticles/>:view==="inbox"?<OperatorInbox/>:
@@ -379,11 +394,11 @@ function OperatorApp({authMode,onLogout,theme,onTheme}){
         {error&&<div className="inline-error" role="alert"><AlertTriangle size={17}/>{error}</div>}
         <div className="operator-grid">
          <div className="center-area">
-          {view==="codex"?<CodexPanel/>:<>
+          {<>
            {view==="research"&&<ResearchPanel research={snapshot?.research}/>}
            <Registry snapshot={snapshot} view={view} search={search} setSearch={setSearch} filter={filter} setFilter={setFilter}/>
           </>}
-          {view!=="codex"&&<section className="context-panel"><div><span className="eyebrow">ИСТОЧНИК</span><strong>systemd · защищённый снимок</strong>
+          {<section className="context-panel"><div><span className="eyebrow">ИСТОЧНИК</span><strong>systemd · защищённый снимок</strong>
             <p>Разрешённый список {snapshot?.services?.length??"—"} компонентов, без журналов и токенов.</p></div>
            <div><span className="eyebrow">РЕЖИМ</span><strong>Только чтение</strong><p>Данные обновляются раз в минуту.</p></div>
            <a href={ISSUE163} target="_blank" rel="noopener noreferrer">Задача разработки <ExternalLink size={14}/></a></section>}
