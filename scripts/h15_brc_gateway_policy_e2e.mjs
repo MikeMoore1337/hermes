@@ -28,7 +28,7 @@ const device = {
   ownerId: 'test-owner',
   deviceId: 'd-test',
   socket: {hermesAuthTokenHash: 'ci-token-hash'},
-  info: { name: 'untrusted-device', platform: 'linux/docker' },
+  info: { name: 'untrusted-device' },
   tools: [
     'get_config', 'get_recent_tool_calls', 'set_config_value',
     'send_file_transfer', 'start_process', 'read_file', 'write_file',
@@ -46,7 +46,7 @@ const hub = {
     return { isError: false, content: [{ type: 'text', text: 'fake-' + name }] };
   },
 };
-let grant = {user_id: 'test-owner', token_hash: 'ci-token-hash', paused: false, platform: 'linux/docker'};
+let grant = {user_id: 'test-owner', token_hash: 'ci-token-hash', paused: false};
 const store = {
   getDevice: () => grant,
   audit: row => { audited++; auditRows.push(row); },
@@ -103,7 +103,7 @@ for (const [scenario, candidate, expectedStatus] of deniedGrants) {
     throw Error('DEVICE_GRANT_BOUNDARY_BYPASS:' + scenario);
   }
 }
-grant = {user_id:'test-owner',token_hash:'ci-token-hash',paused:false,platform:'linux/docker'};
+grant = {user_id:'test-owner',token_hash:'ci-token-hash',paused:false};
 console.log('HERMES_BRC_DELETED_REKEYED_CROSS_OWNER_AND_PAUSED_GRANTS=DENIED');
 
 

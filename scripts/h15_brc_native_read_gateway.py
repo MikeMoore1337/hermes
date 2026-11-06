@@ -22,16 +22,6 @@ NATIVE_CALL = """    if (name === 'native_file_read' || name === 'native_file_st
     }
 """
 NATIVE_LIST = "      LIST_WORKSPACES_TOOL, RESOLVE_WORKSPACE_TOOL, ...NATIVE_TOOLS] };"
-INVOKE_ANCHOR = "  const started = Date.now();"
-NATIVE_GENERIC_GUARD = """  // The original Win32 host must never inherit generic Docker tools.
-  // Native read tools are routed independently via the owner-scoped gate.
-  // Enforce BOTH the persisted device platform and the live agent identity.
-  if (dev.info.platform !== 'linux/docker'
-      || store.getDevice(deviceId)?.platform !== 'linux/docker') {
-    return { ok: false, status: 403, message: 'HERMES_NATIVE_GENERIC_TOOL_DENIED' };
-  }
-"""
-
 
 def apply(root: Path, *, sha: str = UPSTREAM_SHA) -> dict[str, object]:
     if sha != UPSTREAM_SHA:
@@ -39,11 +29,10 @@ def apply(root: Path, *, sha: str = UPSTREAM_SHA) -> dict[str, object]:
     evaluate(root, sha=sha)
     server = root / MCP / "server.ts"
     target = root / MCP / "hermes-native-read.ts"
-    invoke_file = root / MCP / "invoke.ts"
     dependencies = (MCP / "hermes-workspaces.ts", MCP / "hermes-policy.ts",
                     MCP / "hermes-tool-catalog.ts", MCP / "invoke.ts")
     template = Path(__file__).resolve().parents[1] / "deploy/h15/hermes-native-read.template.ts"
-    for path in (server, target, invoke_file, *(root / x for x in dependencies), template):
+    for path in (server, target, *(root / x for x in dependencies), template):
         if path.is_symlink() or path.parent.is_symlink():
             raise AuditError("native_relay_source_symlink")
     if (not server.is_file() or server.stat().st_size > 120000
@@ -51,11 +40,8 @@ def apply(root: Path, *, sha: str = UPSTREAM_SHA) -> dict[str, object]:
         or not template.is_file() or template.stat().st_size > 20000):
         raise AuditError("native_relay_source_not_ready")
     original = server.read_text(encoding="utf-8")
-    invoke = invoke_file.read_text(encoding="utf-8")
     code = template.read_text(encoding="utf-8")
-    if (any(original.count(marker) != 1 for marker in (IMPORT, LIST, CALL))
-            or invoke.count(INVOKE_ANCHOR) != 1
-            or "HERMES_NATIVE_GENERIC_TOOL_DENIED" in invoke):
+    if any(original.count(marker) != 1 for marker in (IMPORT, LIST, CALL)):
         raise AuditError("native_relay_marker_drift")
     if (NATIVE_IMPORT in original or NATIVE_CALL in original
         or "NATIVE_TOOLS" in original or "invokeOwnerNativeRead" in original
@@ -67,15 +53,11 @@ def apply(root: Path, *, sha: str = UPSTREAM_SHA) -> dict[str, object]:
     updated = (original.replace(IMPORT, IMPORT + "\n" + NATIVE_IMPORT)
                .replace(LIST, NATIVE_LIST)
                .replace(CALL, NATIVE_CALL + CALL))
-    updated_invoke = invoke.replace(INVOKE_ANCHOR, NATIVE_GENERIC_GUARD + INVOKE_ANCHOR)
-    if (updated == original or updated_invoke == invoke
-            or updated.count("return await invokeOwnerNativeRead(") != 1
-            or updated_invoke.count("HERMES_NATIVE_GENERIC_TOOL_DENIED") != 1):
+    if updated == original or updated.count("return await invokeOwnerNativeRead(") != 1:
         raise AuditError("native_relay_patch_no_effect")
     # Template and all source preflight checks completed before any write.
     target.write_text(code, encoding="utf-8")
     server.write_text(updated, encoding="utf-8")
-    invoke_file.write_text(updated_invoke, encoding="utf-8")
     return {"status": "DISPOSABLE_NATIVE_READ_RELAY_PATCHED",
             "tools": ["native_file_read", "native_file_stat", "native_file_list"],
             "owner_device_required": True, "native_host_execution": False,

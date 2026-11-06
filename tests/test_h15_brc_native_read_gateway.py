@@ -7,8 +7,7 @@ import unittest
 from unittest.mock import patch
 
 from scripts.h15_brc_native_read_gateway import (
-    apply, MCP, IMPORT, LIST, CALL, NATIVE_IMPORT, NATIVE_CALL,
-    INVOKE_ANCHOR, NATIVE_GENERIC_GUARD,
+    apply, MCP, IMPORT, LIST, CALL, NATIVE_IMPORT, NATIVE_CALL
 )
 from scripts.h15_remote_commander_candidate_audit import AuditError
 
@@ -24,9 +23,7 @@ class NativeReadGatewayTests(unittest.TestCase):
             IMPORT + "\n" + LIST + "\n" + CALL + "\n", encoding="utf-8")
         for f in ("hermes-workspaces.ts","hermes-policy.ts",
                   "hermes-tool-catalog.ts","invoke.ts"):
-            (self.folder / f).write_text(
-                INVOKE_ANCHOR + "\n" if f == "invoke.ts" else "export {};\n",
-                encoding="utf-8")
+            (self.folder / f).write_text("export {};\n", encoding="utf-8")
         p = patch("scripts.h15_brc_native_read_gateway.evaluate")
         p.start()
         self.addCleanup(p.stop)
@@ -42,21 +39,15 @@ class NativeReadGatewayTests(unittest.TestCase):
         self.assertLess(actual.index(NATIVE_CALL), actual.index(CALL))
         self.assertIn("invokeOwnerNativeRead", (self.folder / "hermes-native-read.ts").read_text())
         self.assertNotIn("deviceId: { type", (self.folder / "hermes-native-read.ts").read_text())
-        invoke = (self.folder / "invoke.ts").read_text()
-        self.assertEqual(invoke.count(NATIVE_GENERIC_GUARD), 1)
-        self.assertLess(invoke.index(NATIVE_GENERIC_GUARD), invoke.index(INVOKE_ANCHOR))
-        self.assertIn("store.getDevice(deviceId)?.platform", invoke)
 
     def test_double_patch_denied_without_further_modifications(self):
         apply(self.root)
         before = self.server.read_bytes()
         target = (self.folder / "hermes-native-read.ts").read_bytes()
-        invoke_before = (self.folder / "invoke.ts").read_bytes()
         with self.assertRaises(AuditError):
             apply(self.root)
         self.assertEqual(before, self.server.read_bytes())
         self.assertEqual(target, (self.folder / "hermes-native-read.ts").read_bytes())
-        self.assertEqual(invoke_before, (self.folder / "invoke.ts").read_bytes())
 
     def test_source_drift_rejected_before_any_write(self):
         self.server.write_text(self.server.read_text().replace(CALL, "UNREVIEWED()"))
@@ -65,16 +56,6 @@ class NativeReadGatewayTests(unittest.TestCase):
             apply(self.root)
         self.assertFalse((self.folder / "hermes-native-read.ts").exists())
         self.assertEqual(self.server.read_bytes(), original)
-
-    def test_missing_native_invoke_anchor_denies_before_any_changes(self):
-        invoke = self.folder / "invoke.ts"
-        invoke.write_text("export {};\n", encoding="utf-8")
-        original = self.server.read_bytes()
-        with self.assertRaisesRegex(AuditError, "native_relay_marker_drift"):
-            apply(self.root)
-        self.assertEqual(self.server.read_bytes(), original)
-        self.assertEqual(invoke.read_text(), "export {};\n")
-        self.assertFalse((self.folder / "hermes-native-read.ts").exists())
 
     def test_missing_hardened_modules_denied(self):
         (self.folder / "hermes-policy.ts").unlink()
@@ -205,12 +186,9 @@ const ctx={userId:'owner-A',clientId:'chatgpt'};
         self.assertEqual(p.returncode, 0, p.stderr + p.stdout)
         self.assertIn("H454_OWNER_NATIVE_RELAY_TS_RUNTIME=PASS", p.stdout)
 
-    def test_native_original_generic_dispatch_is_explicitly_denied(self):
+    def test_unreviewed_generic_dispatch_never_modified(self):
         apply(self.root)
-        invoke = (self.folder / "invoke.ts").read_text()
-        self.assertEqual(invoke.count("HERMES_NATIVE_GENERIC_TOOL_DENIED"), 1)
-        self.assertIn("dev.info.platform !== 'linux/docker'", invoke)
-        self.assertIn("store.getDevice(deviceId)?.platform !== 'linux/docker'", invoke)
+        self.assertEqual((self.folder / "invoke.ts").read_text(), "export {};\n")
         self.assertEqual((self.folder / "hermes-policy.ts").read_text(), "export {};\n")
         s = self.server.read_text()
         self.assertIn(CALL, s)
