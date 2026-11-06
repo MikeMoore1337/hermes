@@ -69,7 +69,7 @@ async function openView(page,name,width){
   const more=page.locator(".orbit-app-mobilebar").getByRole("button",{name:"Ещё"});
   if(await more.getAttribute("aria-expanded")!=="true")await more.click();
  }
- await nav.getByRole("button",{name,exact:true}).click();
+ await nav.locator(".nav-link").filter({hasText:name}).click();
 }
 async function contrast(page,foreground,background){
  return page.evaluate(([fg,bg])=>{
