@@ -79,7 +79,7 @@ for(const [w,h] of [[320,770],[393,852],[430,932],[700,900]]){
    const sheet=await rect(page.locator(".orbit-rail"));
    expect(sheet.y,"Bottom sheet does not cover status bar/header").toBeGreaterThanOrEqual(hdr.bottom+4);
    expect(sheet.bottom,"Bottom sheet remains above dock").toBeLessThanOrEqual(nav.y-8);
-   await more.click();
+   await page.keyboard.press("Escape");
    await expect(more).toHaveAttribute("aria-expanded","false");
 
    const overflow=await page.evaluate(()=>document.documentElement.scrollWidth-innerWidth);
