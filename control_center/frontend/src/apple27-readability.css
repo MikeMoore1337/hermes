@@ -142,3 +142,18 @@
     outline:2px solid Highlight;outline-offset:2px;box-shadow:none;
   }
 }
+
+/* Approved Inbox + quotas v1: a single Codex card above two compact provider cards. */
+.theme-orbit .quota-unified-intro{display:flex;align-items:center;margin-bottom:15px;min-width:0}
+.theme-orbit .quota-unified-intro h1{font-size:clamp(24px,2.2vw,32px);line-height:1.2;letter-spacing:-.025em;margin:6px 0;color:var(--orbit-text)}
+.theme-orbit .quota-unified-intro p{font-size:13px;line-height:1.5;color:var(--orbit-subtext);margin:0}
+.theme-orbit .quota295-panel{padding:0;background:transparent;border:0;box-shadow:none}
+.theme-orbit .quota295-head{justify-content:flex-end;margin:0 0 -6px}
+.theme-orbit .quota295-head>div:first-child{display:none}
+.theme-orbit .quota295-card{min-height:0}
+.theme-orbit .orbit-widget-host>.codex-panel{min-width:0}
+@media(max-width:700px){
+ .theme-orbit .quota-unified-intro{margin-bottom:12px}
+ .theme-orbit .quota-unified-intro h1{font-size:24px}
+ .theme-orbit .quota-unified-intro p{font-size:12px}
+}
