@@ -75,8 +75,13 @@ def read_external_summary(relative: str, *, home: Path | None = None) -> dict:
     if (
         source.is_symlink() or not source.is_dir() or root.is_symlink()
         or marker.is_symlink() or not marker.is_file()
-        or marker.read_text(encoding="utf-8").strip() != PIN
     ):
+        raise UpstreamRejected("PINNED_SOURCE_NOT_INSTALLED")
+    try:
+        marker_pin = marker.read_text(encoding="utf-8").strip()
+    except UnicodeError as exc:
+        raise UpstreamRejected("PINNED_SOURCE_NOT_INSTALLED") from exc
+    if marker_pin != PIN:
         raise UpstreamRejected("PINNED_SOURCE_NOT_INSTALLED")
     try:
         rev = subprocess.run(["git", "-C", str(source), "rev-parse", "HEAD"],
@@ -138,9 +143,12 @@ def main() -> int:
         return 2
     try:
         report = read_external_summary(sys.argv[1])
-    except (OSError, UpstreamRejected) as exc:
-        # No untrusted file bodies, passwords or absolute paths in error messages.
+    except UpstreamRejected as exc:
         print(f"HARNESS2_SUMMARY_REJECTED: {exc}", file=sys.stderr)
+        return 2
+    except OSError:
+        # OSError may embed a private absolute path in its text.
+        print("HARNESS2_SUMMARY_REJECTED: FILE_ACCESS_FAILED", file=sys.stderr)
         return 2
     print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
