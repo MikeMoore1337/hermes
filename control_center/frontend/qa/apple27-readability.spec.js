@@ -49,7 +49,7 @@ async function synthetic(page){
    return route.abort("blockedbyclient");
   }
   const bodies={
-   "/api/overview":{schema:1,mode:"read_only",generated_at:observedAt,services},
+   "/api/overview":{schema:1,mode:"read_only",generated_at:new Date().toISOString(),services},
    "/api/operator/inbox":inbox,
    "/api/providers/registry":{schema:1,read_only:true,observed_at:observedAt,providers}
   };
