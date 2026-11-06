@@ -68,6 +68,7 @@ class H01OpsContractTests(unittest.TestCase):
     def test_no_event_never_calls_provider(self):
         with tempfile.TemporaryDirectory() as tmp:
             with patch.object(agent, "STATE", Path(tmp) / "agent"), \
+                 patch.object(agent, "OPS_DATA", Path(tmp) / "synthetic-ops"), \
                  patch.object(agent, "verify_host"), patch.object(agent, "verify_credentials"), \
                  patch.object(agent, "safe_image", return_value="sha256:" + "a" * 64), \
                  patch.object(agent, "read_events", return_value=[]), \
