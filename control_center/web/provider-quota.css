@@ -3,7 +3,7 @@
 .quota295-panel[hidden]{display:none!important}
 /* The existing floating DC device panel duplicates its quota card and overlaps 320px. */
 .quota295-active .dc-toggle,.quota295-active .dc-panel{display:none!important}
-.quota295-active .center-area>:not(.quota295-panel){display:none!important}
+.quota295-active .center-area>:not(.quota295-panel):not(.codex-panel){display:none!important}
 .quota295-head{display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:14px}
 .quota295-head h2{font-size:23px;font-weight:650;margin:8px 0}
 .quota295-note,.quota295-timestamp{font-size:12px;line-height:1.55;color:var(--muted,#9aaac4);margin:6px 0;overflow-wrap:anywhere}
@@ -31,3 +31,8 @@
 .quota295-panel button:focus-visible,.quota295-panel select:focus-visible,.quota295-panel summary:focus-visible{outline:2px solid #70abff;outline-offset:2px}
 @media(max-width:1100px){.quota295-grid{grid-template-columns:1fr}}
 @media(max-width:450px){.quota295-panel{padding:12px}.quota295-card{padding:12px}.quota295-head h2{font-size:20px}}
+
+/* Approved v1: Codex stays a single live React card, provider registry lists only other services. */
+.quota295-active .orbit-widget-host{display:grid;gap:16px;align-content:start}
+.quota295-active .quota295-head>div:first-child{display:none}
+.quota295-active .quota295-head{justify-content:flex-end}

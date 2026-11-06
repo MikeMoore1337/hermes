@@ -84,31 +84,39 @@ test("same CPU label identifies Hermes and YFC hosts, history identifies its own
  await expect(region.getByRole("img",{name:"История VPS YFC: CPU"})).toHaveCount(0);
 });
 
-test("quota progressbars report usage and remaining with provider context",async({page})=>{
+test("unified Codex and provider progressbars retain accessible usage semantics",async({page})=>{
  await overview(page);
  const window=(label,used,remaining)=>({
   label,metric:"provider_quota",unit:"percent",quota_limit:null,
   used:null,remaining:null,used_percent:used,remaining_percent:remaining,
   reset_at_utc:null,source_kind:"official_api"
  });
+ await page.route("**/api/providers/codex",route=>route.fulfill({
+  status:200,contentType:"application/json",
+  body:JSON.stringify({schema:1,source:"codex-app-server",status:"low",
+   observed_at:new Date().toISOString(),limits:[{limit_id:"codex",status:"low",
+    windows:[{duration_minutes:300,remaining_percent:19,resets_at:null}]}]})
+ }));
  await page.route("**/api/providers/registry",route=>route.fulfill({
   status:200,contentType:"application/json",
   body:JSON.stringify({schema:1,read_only:true,providers:[
-   {id:"codex",status:"low",notes:"official_account_snapshot",windows:[window("Пять часов",81,19)]},
-   {id:"desktop_commander",status:"exhausted",notes:"remote_calls_blocked",
-    windows:[window("Удалённые вызовы",100,0)]},
+   {id:"github_api",status:"ok",notes:"per_token_rate_limit_collected",
+    windows:[window("API core",25,75)]},
    {id:"cloudflare_workers_ai",status:"unknown",notes:"account_usage_unavailable",
     windows:[window("Неизвестный остаток",null,null)]}
   ]})
  }));
  await page.goto("/");
  await openOrbitWidget(page,"Квоты и инструменты");
- const panel=page.getByRole("region",{name:"Квоты и инструменты Hermes"});
- const codex=panel.getByRole("progressbar",{name:"Codex / ChatGPT: Пять часов"});
- await expect(codex).toHaveAttribute("aria-valuenow","81");
- await expect(codex).toHaveAttribute("aria-valuetext","Использовано: 81%; осталось: 19%");
- const desktop=panel.getByRole("progressbar",{name:"Desktop Commander: Удалённые вызовы"});
- await expect(desktop).toHaveAttribute("aria-valuenow","100");
- await expect(desktop).toHaveAttribute("aria-valuetext","Использовано: 100%; осталось: 0%");
- await expect(panel.locator('[data-provider="cloudflare_workers_ai"] [role="progressbar"]')).toHaveCount(0);
+ const codex=page.getByRole("region",{name:"Лимиты Codex"});
+ const codexMeter=codex.getByRole("progressbar",{name:"Осталось в окне 5 часов"});
+ await expect(codexMeter).toHaveAttribute("aria-valuenow","19");
+ await expect(codex.getByText("19% осталось")).toBeVisible();
+ const providers=page.getByRole("region",{name:"Квоты и инструменты Hermes"});
+ const github=providers.getByRole("progressbar",{name:"GitHub API: API core"});
+ await expect(github).toHaveAttribute("aria-valuenow","25");
+ await expect(github).toHaveAttribute("aria-valuetext","Использовано: 25%; осталось: 75%");
+ await expect(providers.locator('[data-provider="desktop_commander"]')).toHaveCount(0);
+ await expect(providers.locator('[data-provider="codex"]')).toHaveCount(0);
+ await expect(providers.locator('[data-provider="cloudflare_workers_ai"] [role="progressbar"]')).toHaveCount(0);
 });

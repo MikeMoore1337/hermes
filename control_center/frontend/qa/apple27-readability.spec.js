@@ -125,10 +125,12 @@ for(const [width,height] of [[320,770],[393,852],[1440,900],[2048,1152]]){
    expect(await contrast(page,".oi-row-copy small",".oi-queue")).toBeGreaterThanOrEqual(4.5);
    await expect(page.locator(".oi-notice")).toBeVisible();
    expect(await contrast(page,".oi-notice",".oi-notice")).toBeGreaterThanOrEqual(4.5);
+   if(width<=1150)await page.locator(".oi-row").first().click();
    const hint=page.locator(".oi-action-hint");
    await expect(hint).toBeVisible();
    const hintSurface=await hint.evaluate(el=>getComputedStyle(el).backgroundColor);
    expect(hintSurface).not.toBe("rgb(17, 44, 73)");
+   if(width<=1150)await page.getByRole("button",{name:"К событиям"}).click();
    const inboxInput=page.locator(".oi-search input");
    await inboxInput.focus();
    expect(await inboxInput.evaluate(el=>getComputedStyle(el).outlineStyle)).toBe("none");
@@ -136,7 +138,8 @@ for(const [width,height] of [[320,770],[393,852],[1440,900],[2048,1152]]){
 
    await openView(page,"Квоты и инструменты",width);
    const cards=page.locator(".quota295-card");
-   await expect(cards).toHaveCount(4);
+   await expect(cards).toHaveCount(2);
+   await expect(page.locator(".codex-panel")).toHaveCount(1);
    await expect(page.locator(".quota295-card[data-provider='cloudflare_workers_ai']")).toBeVisible();
    await expect(page.locator(".quota295-card[data-provider='github_api']")).toBeVisible();
    const boxes=await cards.evaluateAll(items=>items.map(el=>{
@@ -144,14 +147,11 @@ for(const [width,height] of [[320,770],[393,852],[1440,900],[2048,1152]]){
     return {x:r.x,y:r.y,w:r.width,h:r.height,bottom:r.bottom};
    }));
    if(width>=1440){
-    expect(Math.abs(boxes[0].y-boxes[1].y),"Top row aligned").toBeLessThanOrEqual(1);
-    expect(Math.abs(boxes[0].h-boxes[1].h),"Top cards equal height").toBeLessThanOrEqual(1);
-    expect(Math.abs(boxes[2].y-boxes[3].y),"Second row aligned").toBeLessThanOrEqual(1);
-    expect(Math.abs(boxes[2].h-boxes[3].h),"Second row cards equal height").toBeLessThanOrEqual(1);
+    expect(Math.abs(boxes[0].y-boxes[1].y),"Both provider cards aligned").toBeLessThanOrEqual(1);
+    expect(Math.abs(boxes[0].h-boxes[1].h),"Provider cards equal height").toBeLessThanOrEqual(1);
     expect(Math.abs(boxes[0].w-boxes[1].w),"Equal column widths").toBeLessThanOrEqual(1);
-    expect(boxes[2].y).toBeGreaterThanOrEqual(boxes[0].bottom+10);
    }else{
-    for(let i=1;i<boxes.length;i++)expect(boxes[i].y).toBeGreaterThan(boxes[i-1].bottom);
+    expect(boxes[1].y).toBeGreaterThan(boxes[0].bottom);
    }
    const smallQuota=await cards.first().locator(".quota295-note").first()
     .evaluate(el=>parseFloat(getComputedStyle(el).fontSize));
