@@ -92,7 +92,13 @@ export default function OperatorInbox(){
  const current=shown.find(e=>e.event_id===selected)||(!compact?shown[0]:null);
  const closeDetails=useCallback(()=>{
   setDetailOpen(false);
-  requestAnimationFrame(()=>triggerRef.current?.focus());
+  // Do not steal focus when the user has already moved to another control.
+  requestAnimationFrame(()=>{
+   const focused=document.activeElement;
+   if(focused===document.body||drawerRef.current?.contains(focused)){
+    triggerRef.current?.focus();
+   }
+  });
  },[]);
  useEffect(()=>{
   const media=window.matchMedia("(max-width:1150px)");
