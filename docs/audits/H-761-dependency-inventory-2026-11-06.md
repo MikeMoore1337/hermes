@@ -12,7 +12,7 @@ Machine-readable complete **frontend lockfile package records** (not installed p
 | React/Vite | `control_center/frontend/package.json` + package-lock v3: **120 nonroot package records**, 121 including root; exact versions preserved in JSON | No fresh npm audit (all dependencies), npm ci/build/Playwright or compiled web bundle check on this SHA in this source-only review |
 | Docker | **5 Dockerfiles**: immutable digest references for NousResearch agent and Node BRC relay; devtools base requires a supplied immutable digest | No fresh exact-image OS/package scan, new vulnerability DB, build/runtime smoke or source-to-image provenance |
 | GitHub Actions | **23 YAML workflows** in main | Reviewed explicit `uses` references; exact-SHA pin update in [PR #822](https://github.com/MikeMoore1337/hermes/pull/822). H454 candidate workflow mutable tags are deferred due to overlapping [PR #692](https://github.com/MikeMoore1337/hermes/pull/692). No full CI acceptance of all workflows claimed |
-| External upstream | Hermes Agent v0.22.2, BRC fork, ECC, Harness² pinned according to source docs and issue #764 | No automatic upstream bump, no E2E/activation; issues #199/#795/#629 keep independent scopes |
+| External upstream | Hermes Agent v0.22.2, BRC fork, ECC, Harness² pinned according to source docs and issue #764 | No automatic upstream bump, no E2E/activation; issues #199/#632/#629 keep independent scopes |
 
 ### Exact Docker FROM references (source-only)
 
