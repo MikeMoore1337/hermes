@@ -218,7 +218,7 @@ class NativeWindowsReadOnRunnerTests(unittest.TestCase):
                 return json.dumps(self.events.pop(0))
         socket = SyntheticSocket()
         settings = outbound.parse_settings(
-            "wss://hermes.mikemoore.top/ws", "native-ci-win-handle-123", "x"*40)
+            "wss://hermes.mikemoore.top/ws", outbound.EXPECTED_DEVICE_ID, "x"*40)
         outcome = outbound.run_session(settings, lambda *_args, **_kwargs: socket)
         self.assertEqual(outcome, "idle_timeout")
         self.assertEqual(socket.responses[0]["type"], "hello")
@@ -332,7 +332,7 @@ class NativeWindowsReadOnRunnerTests(unittest.TestCase):
                 return json.dumps(self.events.pop(0))
         sock = MockSocket()
         settings = outbound.parse_settings(
-            "wss://hermes.mikemoore.top/ws", "native-ci-win-handle-123", "x"*40)
+            "wss://hermes.mikemoore.top/ws", outbound.EXPECTED_DEVICE_ID, "x"*40)
         self.assertEqual(outbound.run_session(settings, lambda *a,**k:sock),
                          "idle_timeout")
         output = json.loads(sock.output[-1]["result"]["content"][0]["text"])

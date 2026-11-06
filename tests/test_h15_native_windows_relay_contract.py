@@ -21,6 +21,14 @@ class NativeContractTests(unittest.TestCase):
             self.assertIsNotNone(literal, str(file))
             self.assertEqual(literal.group(1), DEVICE_NAME, str(file))
 
+    def test_native_id_pinned_to_owner_original_windows_device(self):
+        self.assertEqual(EXPECTED_DEVICE_ID, "h454-win-01335a1f6e6705b4")
+        relay = RELAY.read_text(encoding="utf-8")
+        self.assertIn(
+            "const NATIVE_DEVICE_ID = '" + EXPECTED_DEVICE_ID + "';",
+            relay,
+        )
+
     def test_native_hello_exposes_exact_three_operations(self):
         conf = parse_settings("wss://hermes.mikemoore.top/ws",
                               EXPECTED_DEVICE_ID, "a" * 48)
