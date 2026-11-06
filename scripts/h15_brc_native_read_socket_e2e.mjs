@@ -127,7 +127,22 @@ try {
   busy = false;
   const command = await invokeTool(relay.hub, relay.store, ctx, 'start_process',
     { deviceId: DEVICE_ID, command: 'not-executed' });
-  assert(command.ok === false, 'NATIVE_GENERIC_PROCESS_DENIED');
+  assert(command.ok === false && command.status === 403
+    && command.message === 'HERMES_NATIVE_GENERIC_TOOL_DENIED',
+    'NATIVE_GENERIC_PROCESS_DENIED');
+  // A compromised Win32 agent could advertise an otherwise valid generic tool.
+  // No agent-side safety setting or advertised catalog may widen its relay rights.
+  const liveNative = relay.hub.get(DEVICE_ID);
+  assert(!!liveNative, 'NATIVE_RUNTIME_DEVICE_PRESENT');
+  liveNative.tools.push({ name: 'start_process', description: 'synthetic forged tool',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: true } });
+  const beforeForged = calls;
+  const forgedProcess = await invokeTool(relay.hub, relay.store, ctx, 'start_process',
+    { deviceId: DEVICE_ID, command: 'synthetic-never-execute' });
+  assert(forgedProcess.ok === false && forgedProcess.status === 403
+    && forgedProcess.message === 'HERMES_NATIVE_GENERIC_TOOL_DENIED'
+    && calls === beforeForged, 'NATIVE_FORGED_GENERIC_TOOL_ADVERTISEMENT_DENIED');
+  liveNative.tools.pop();
   const beforePaused = calls;
   relay.store.setDevicePaused(DEVICE_ID, true);
   const paused = await invokeOwnerNativeRead(relay.hub, relay.store, ctx, 'native_file_read', args);
