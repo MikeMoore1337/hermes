@@ -1,0 +1,144 @@
+/* #814 - Aero Glass 27 readability corrections; visual only.
+   Preserve authenticated routes, status semantics, and API contracts. */
+
+/* Use consistent secondary-text contrast on opaque data surfaces. */
+.theme-orbit{
+  --orbit-subtext:#c2d1e3;
+  --orbit-muted:#a9bdd4;
+  --a27-border:rgba(228,237,254,.17);
+}
+:root[data-hermes-resolved-theme="light"] .theme-orbit{
+  --orbit-subtext:#40526c;
+  --orbit-muted:#4c6079;
+  --a27-border:rgba(27,48,80,.16);
+}
+
+/* Keep labels and evidence legible rather than relying on tiny pale text. */
+.theme-orbit .eyebrow{font-size:11px;letter-spacing:.09em;color:var(--orbit-accent);line-height:1.4}
+.theme-orbit :is(.oi-metric-label,.oi-overline,.oc-section-code,.oc-path-title,.oc-section-info){
+  font-size:11px;letter-spacing:.04em;line-height:1.45;
+}
+.theme-orbit :is(.oi-metric small,.oi-row-copy small,.oi-row-time,.oi-disclaimer,
+  .oi-sources li small,.oi-detail dt,.oi-detail dd,.oi-source-status,
+  .oi-detail>p,.oi-readonly,.oc-section-head p,.oc-summary small,
+  .oc-devices li small,.oc-diagnostic,.oc-project small,
+  .service-label small,.unit-type,.registry-disclaimer,.context-panel p,
+  .signal-item p,.signal-disclaimer,.quota295-timestamp,.quota295-note,
+  .ai272-metric small,.infra294-metric small,.infra294-updated,
+  .codex-disclaimer,.codex-task-count span,.codex-task-jobs li small){
+  font-size:12px;line-height:1.5;
+}
+.theme-orbit :is(.oi-row-copy small,.oi-row-time,.oi-disclaimer,.oi-sources li small,
+  .oi-detail dt,.oi-detail>p,.oi-metric small,.oc-devices li small,
+  .oc-diagnostic,.oc-summary small,.oc-project small,
+  .service-label small,.unit-type,.registry-disclaimer,
+  .context-panel p,.signal-item p,.signal-disclaimer,.codex-disclaimer){
+  color:var(--orbit-subtext);
+}
+.theme-orbit :is(.oi-detail dd,.service-label strong,.signal-item strong){color:var(--orbit-text)}
+.theme-orbit .signal-item strong{font-size:13px}
+.theme-orbit .signal-item small{font-size:11px;letter-spacing:.05em;color:var(--orbit-accent)}
+.theme-orbit .service-table{font-size:13px}
+.theme-orbit .service-table th{font-size:11px;letter-spacing:.05em;font-weight:650}
+.theme-orbit .oc-unverified{color:var(--orbit-warning)!important}
+.theme-orbit .oc-denied{color:var(--orbit-danger)!important}
+.theme-orbit .oc-section-info,.theme-orbit .oc-path-title{color:var(--orbit-subtext)}
+.theme-orbit .oi-metric-label,.theme-orbit .oi-overline{color:var(--orbit-subtext)}
+.theme-orbit .oi-sources li strong,.theme-orbit .oi-row-copy strong{font-size:13px}
+
+/* Status meaning stays explicit; remove fixed brown/dark surfaces from light UI. */
+.theme-orbit .oi-notice{
+  background:color-mix(in srgb,var(--orbit-warning) 9%,var(--a27-surface));
+  color:var(--orbit-warning);
+  border:1px solid color-mix(in srgb,var(--orbit-warning) 35%,var(--a27-border));
+  border-radius:11px;
+}
+.theme-orbit .oi-row-mark{
+  background:color-mix(in srgb,var(--orbit-danger) 13%,var(--a27-surface));
+  color:var(--orbit-danger);
+}
+.theme-orbit .oi-row-warning .oi-row-mark{
+  background:color-mix(in srgb,var(--orbit-warning) 15%,var(--a27-surface));
+  color:var(--orbit-warning);
+}
+.theme-orbit .oi-row-status,.theme-orbit .oi-source-partial,.theme-orbit .oi-source-stale{color:var(--orbit-warning)}
+.theme-orbit .oi-row-critical .oi-row-status{color:var(--orbit-danger)}
+.theme-orbit .oi-source-supported,.theme-orbit .oi-readonly{color:var(--orbit-good)}
+.theme-orbit .oi-source-not_available{color:var(--orbit-subtext)}
+.theme-orbit .oi-state{
+  color:var(--orbit-warning);
+  background:color-mix(in srgb,var(--orbit-warning) 10%,var(--a27-surface));
+  border-color:color-mix(in srgb,var(--orbit-warning) 35%,var(--a27-border));
+}
+.theme-orbit .oi-state-critical{
+  color:var(--orbit-danger);
+  background:color-mix(in srgb,var(--orbit-danger) 10%,var(--a27-surface));
+  border-color:color-mix(in srgb,var(--orbit-danger) 35%,var(--a27-border));
+}
+.theme-orbit .oi-action-hint{
+  background:var(--a27-surface-2);color:var(--orbit-text);
+  border-color:var(--a27-border);border-radius:11px;
+}
+.theme-orbit .oi-action-hint strong{color:var(--orbit-text)}
+.theme-orbit .oi-action-hint p{color:var(--orbit-subtext)}
+.theme-orbit .oi-detail dd{font-size:12px}
+.theme-orbit .codex-chip{color:var(--orbit-subtext);border-color:var(--a27-border)}
+.theme-orbit .codex-chip-good{color:var(--orbit-good)}
+.theme-orbit .codex-chip-warn{color:var(--orbit-warning)}
+.theme-orbit .codex-chip-bad{color:var(--orbit-danger)}
+
+/* One focus indicator on the outside of a composite search control.
+   A nested input outline caused the double, partially clipped blue rectangle. */
+.theme-orbit :is(.search-field,.oi-search,.oc-search,.status-filter):focus-within{
+  outline:2px solid var(--orbit-focus);outline-offset:1px;
+  border-color:var(--a27-border);box-shadow:none;
+}
+.theme-orbit :is(.search-field,.oi-search,.oc-search) input:focus-visible,
+.theme-orbit :is(.search-field,.oi-search,.oc-search) input:focus,
+.theme-orbit .status-filter select:focus-visible{
+  outline:0;box-shadow:none;
+}
+.theme-orbit :is(.search-field,.oi-search,.oc-search) input{
+  caret-color:var(--orbit-text);
+}
+.theme-orbit :is(.search-field,.oi-search,.oc-search) input::placeholder{color:var(--orbit-muted)}
+
+/* Two equal tracks with equal card heights within each row.
+   The heading and history actions stay anchored; mobile remains one column. */
+.theme-orbit .quota295-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  align-items:stretch;
+  gap:16px;
+}
+.theme-orbit .quota295-card{
+  display:flex;flex-direction:column;gap:12px;
+  min-width:0;min-height:100%;padding:18px;
+  border-radius:13px;
+}
+.theme-orbit .quota295-card .quota295-history{margin-top:auto}
+.theme-orbit .quota295-card-head h3{font-size:18px;line-height:1.3}
+.theme-orbit .quota295-status{font-size:12px;color:var(--orbit-subtext)}
+.theme-orbit .quota295-ok{color:var(--orbit-good)}
+.theme-orbit .quota295-low{color:var(--orbit-warning)}
+.theme-orbit .quota295-exhausted{color:var(--orbit-danger)}
+.theme-orbit :is(.quota295-note,.quota295-window,.quota295-values){color:var(--orbit-subtext)}
+.theme-orbit .quota295-windows{min-width:0}
+.theme-orbit .quota295-window{background:var(--a27-surface);border-radius:10px}
+.theme-orbit .quota295-window strong{color:var(--orbit-text)}
+.theme-orbit .quota295-history{border-color:var(--a27-border)}
+.theme-orbit .quota295-history summary{color:var(--orbit-text)}
+
+@media(max-width:1100px){
+  .theme-orbit .quota295-grid{grid-template-columns:minmax(0,1fr)}
+  .theme-orbit .quota295-card{min-height:0}
+}
+@media(max-width:450px){
+  .theme-orbit .quota295-card{padding:13px}
+  .theme-orbit .quota295-card-head h3{font-size:16px}
+}
+@media(forced-colors:active){
+  .theme-orbit :is(.search-field,.oi-search,.oc-search,.status-filter):focus-within{
+    outline:2px solid Highlight;outline-offset:2px;box-shadow:none;
+  }
+}
