@@ -20,6 +20,7 @@ import "./apple27-fidelity.css";
 import "./apple27-wide-login.css";
 import "./apple27-polish.css";
 import "./apple27-readability.css";
+import "./apple27-pwa-safe-area.css";
 
 const ISSUE33="https://github.com/MikeMoore1337/hermes/issues/33";
 const ISSUE163="https://github.com/MikeMoore1337/hermes/issues/163";
