@@ -60,7 +60,7 @@ export default function OrbitOverview({snapshot,error,onView,onRefresh,busy,Regi
   {id:"commander",label:"Hermes Commander",detail:"Устройства и подключения",icon:Monitor},
   {id:"inbox",label:"Входящие",detail:"Очередь на ручную проверку",icon:Inbox},
   {id:"qa",label:"QA и CI",detail:"Проверки и результаты",icon:ShieldCheck},
-  {id:"codex",label:"Лимиты AI",detail:"Аналитика использования",icon:Gauge}
+  {id:"quotas",label:"Квоты и инструменты",detail:"История и очередь Codex",icon:Gauge}
  ];
  return <div className="hcc-overview">
   {!snapshot&&<div className="hcc-snapshot-notice" role="status"><Info size={16} aria-hidden="true"/><span>Нет подтверждённого снимка. Данные и команды не проверены.</span></div>}
