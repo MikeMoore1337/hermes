@@ -71,6 +71,7 @@ class H01OpsContractTests(unittest.TestCase):
                  patch.object(agent, "verify_host"), patch.object(agent, "verify_credentials"), \
                  patch.object(agent, "safe_image", return_value="sha256:" + "a" * 64), \
                  patch.object(agent, "read_events", return_value=[]), \
+                 patch.object(agent, "read_current", side_effect=AssertionError("unexpected Ops Watch read")), \
                  patch.object(agent, "model_once") as provider:
                 outcome = agent.run()
             self.assertEqual(outcome["status"], "NO_ADVISOR_CANDIDATE")
@@ -94,6 +95,7 @@ class H01OpsContractTests(unittest.TestCase):
                  patch.object(agent, "verify_credentials"), \
                  patch.object(agent, "safe_image", return_value="sha256:" + "a" * 64), \
                  patch.object(advisor_adapter, "inspect", return_value=rows), \
+                 patch.object(agent, "read_current", side_effect=AssertionError("unexpected Ops Watch read")), \
                  patch.object(agent, "model_once") as model:
                 result = agent.run()
         self.assertEqual(result["status"], "NO_ADVISOR_CANDIDATE")
