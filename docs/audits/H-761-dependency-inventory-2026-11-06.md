@@ -46,3 +46,17 @@ Note: the devtools `FROM ${BRC_BASE_IMAGE}` is a variable: its exact permitted v
 - Open PR overlap check: #746, #743, #742, #692; do not change shared H15/H454 workflow/runtime/transport files.
 
 **Exit decision**: #761 remains OPEN until fresh vulnerability inventory (including transitive/install/runtime), risk classification and justified fixes, dependency audit, regression and exact-head CI, and independent review are actually completed. This report itself must not be used as a security waiver or production GO.
+
+## Сверка с новым `main` и результаты реального CI (06.11.2026)
+
+После исходной инвентаризации `main` продвинулся до [`7cc4237721107434425c0e7638606aeb6296e253`](https://github.com/MikeMoore1337/hermes/commit/7cc4237721107434425c0e7638606aeb6296e253), но **blob SHA `package-lock.json` и GSC requirements не изменились**, поэтому следующие аудиты относятся к тому же набору версий. Изменения в Control Center JS/CSS не означают, что эта документация проверила каждую live-функцию.
+
+| Область | Точное проверенное основание | Результат | Ограничение |
+| --- | --- | --- | --- |
+| Frontend, включая dev/transitive | [PR #825](https://github.com/MikeMoore1337/hermes/pull/825), SHA `5b22a34f0847754e4442d76051e6ee74010466ca`, [CI #42228040544](https://github.com/MikeMoore1337/hermes/actions/runs/42228040544) | `npm ci` PASS, полный `npm audit --audit-level=moderate` **found 0 vulnerabilities**, production-only audit 0; Vite/committed bundle/Playwright browser CI SUCCESS | Результат на дату CI; не signed SBOM, не проверка production-сервера |
+| Python 3.14 GSC | [PR #826](https://github.com/MikeMoore1337/hermes/pull/826), SHA `4fd191d8d2e130ff6bca8ede719518c035f83b9a`, [CI #42228544921](https://github.com/MikeMoore1337/hermes/actions/runs/42228544921) | `pip check` PASS, импорт `google.auth` и `requests==2.33.0` PASS; `pip-audit==2.10.1` **No known vulnerabilities found** с учётом транзитивных зависимостей; 11 сторонних установленных пакетов GSC | Это изолированный CI, без Google OAuth, VPS или resident Hermes |
+| H-15 disposable proof | [PR #822](https://github.com/MikeMoore1337/hermes/pull/822), SHA `e2b9f07e0eef5cc3f1d41f299ef60144b516021c`, [CI #42228801514](https://github.com/MikeMoore1337/hermes/actions/runs/42228801514) | Подтверждённый Docker Hub digest `sha256:09a17cad02668ae61ece136b4fd36ac3849e14f670ebedb637ea3e15580525bc`, испытание изоляции после закрепления PASS | Не является аттестацией издателя или обновлением Hermes Agent image |
+
+**Источник угроз и оставшиеся риски:** Нет оснований объявить отсутствие неизвестных CVE только по `npm audit`/`pip-audit`; для Hermes Agent v0.22.2 исторические findings и остаточная применимость остаются в #199 (не подменяются свежими результатами этой #761). BRC security #764 уже принят. Открытый #692 редактирует H454 CI, поэтому отдельные mutable Actions там оставлены для неконфликтующей последующей правки.
+
+**Границы приёмки:** Docker SBOM/Trivy с обновлённой базой по фактическим runtime образам, полное перечисление установленного upstream Python 3.14.7, ОС/host kernel/SSH/XML reachability, независимое внешнее code/security review и установка на production **NOT_RUN/DEFERRED**. Статус #761 не может считаться полным GO из-за этого раздела. Выводы относятся только к указанным SHA и CI, а не автоматически к любому будущему `main`.
