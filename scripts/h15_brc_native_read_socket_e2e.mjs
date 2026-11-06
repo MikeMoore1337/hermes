@@ -20,7 +20,9 @@ const { NATIVE_TOOLS, invokeOwnerNativeRead } =
 const { pinnedToolCatalog } = await import(pathToFileURL(path.join(cwd, 'packages/relay/dist/mcp/hermes-tool-catalog.js')).href);
 
 const DEVICE_NAME = 'H15 Windows native read-only';
-const DEVICE_ID = 'h15-native-ci-read-12345678';
+// The relay now pins the exact existing Win32 device ID. This disposable
+// test uses an isolated local SQLite store and ephemeral loopback socket.
+const DEVICE_ID = 'h454-win-01335a1f6e6705b4';
 const tmp = mkdtempSync(path.join(tmpdir(), 'h454-native-wss-ci-'));
 const secret = () => randomBytes(32).toString('hex');
 const assert = (predicate, label) => {

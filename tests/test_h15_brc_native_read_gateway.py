@@ -130,7 +130,7 @@ class NativeReadGatewayTests(unittest.TestCase):
 const assert=require('node:assert/strict');
 const crypto=require('node:crypto');
 const {NATIVE_TOOLS,invokeOwnerNativeRead}=require(process.argv[1]);
-const good={device_id:'h15-native-abcdefgh',name:'H15 Windows native read-only',
+const good={device_id:'h454-win-01335a1f6e6705b4',name:'H15 Windows native read-only',
  platform:'win32',paused:0,token_hash:'a'.repeat(64)};
 const agent={ownerId:'owner-A', socket:{hermesAuthTokenHash:good.token_hash},
  info:{deviceId:good.device_id,name:good.name,platform:'win32'},
@@ -177,6 +177,21 @@ const ctx={userId:'owner-A',clientId:'chatgpt'};
  assert.equal(calls,2);
  assert.equal((await invokeOwnerNativeRead(hub,store,{userId:'other',clientId:'codex'},'native_file_read',{project:'hermes',relative:'README.md'})).isError,true);
  assert.equal(calls,2);
+ // A separately paired Win32 device with the same owner/name and a
+ // matching fresh token is NOT the approved original Windows identity.
+ const realGet=hub.get;
+ const impostorId='h454-win-unapproved-other';
+ currentRow={...good,device_id:impostorId};
+ hub.get=id=>id===impostorId
+   ? {...agent,info:{...agent.info,deviceId:impostorId}}
+   : undefined;
+ const wrongNative=await invokeOwnerNativeRead(hub,store,ctx,'native_file_read',
+   {project:'hermes',relative:'README.md'});
+ assert.equal(wrongNative.isError,true);
+ assert.equal(JSON.parse(wrongNative.content[0].text).reason,'native_read_unavailable');
+ assert.equal(calls,2);
+ hub.get=realGet;
+ currentRow=good;
  currentRow={...good,token_hash:'rotated-token-hash'};
  assert.equal((await invokeOwnerNativeRead(hub,store,ctx,'native_file_read',
    {project:'hermes',relative:'README.md'})).isError,true);

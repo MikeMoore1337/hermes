@@ -9,6 +9,8 @@ import type { SqliteStore } from '../store/sqlite.js';
 import type { InvokeContext } from './invoke.js';
 
 const DEVICE_NAME = 'H15 Windows native read-only';
+// Preserve the single owner-approved original Win32 device identity.
+const NATIVE_DEVICE_ID = 'h454-win-01335a1f6e6705b4';
 const NAMES = ['native_file_stat', 'native_file_read', 'native_file_list'] as const;
 const PROJECTS = ['hermes', 'your-fitness-coach', 'second-brain', 'ai-development-toolkit'];
 const DENY = { content: [{ type: 'text' as const,
@@ -64,7 +66,8 @@ function eligibleDevice(hub: DeviceHub, store: SqliteStore, owner: string) {
     const devices = store.listDevices(owner).filter(d => d.name === DEVICE_NAME);
     if (devices.length !== 1) return null;
     const row = devices[0];
-    if (row.paused || row.platform !== 'win32' || !ID.test(row.device_id)
+    if (row.device_id !== NATIVE_DEVICE_ID || row.paused
+        || row.platform !== 'win32' || !ID.test(row.device_id)
         || typeof row.token_hash !== 'string'
         || !/^[a-f0-9]{64}$/.test(row.token_hash)) return null;
     const online = hub.get(row.device_id);
