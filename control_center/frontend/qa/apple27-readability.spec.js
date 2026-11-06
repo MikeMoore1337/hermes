@@ -73,7 +73,11 @@ async function openView(page,name,width){
 }
 async function contrast(page,foreground,background){
  return page.evaluate(([fg,bg])=>{
-  const channels=color=>(color.match(/[0-9.]+/g)||[]).slice(0,3).map(Number);
+  const channels=color=>{
+   const values=(color.match(/[0-9.]+/g)||[]).slice(0,3).map(Number);
+   // Chromium serializes color-mix() as color(srgb r g b), not rgb(255...).
+   return color.startsWith("color(srgb ")?values.map(v=>v*255):values;
+  };
   const luminance=color=>{
    const rgb=channels(color);
    if(rgb.length!==3)throw Error("Invalid CSS RGB "+color);
