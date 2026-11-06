@@ -1,0 +1,1053 @@
+{
+  "schema": "hermes-dependency-source-inventory-v1",
+  "scope": "source-only, incomplete security acceptance",
+  "generated_date_utc": "2026-11-06",
+  "repository": "MikeMoore1337/hermes",
+  "base_main_sha": "e76c04a77ba9446ebb3fc959aa95fd57ea6ab12d",
+  "checks": {
+    "github_main_sha": "VERIFIED",
+    "npm_lock_parsed": "VERIFIED",
+    "full_python_import_graph": "NOT_RUN",
+    "isolated_npm_install": "PASS_GITHUB_ACTIONS_PR825_SHA_5b22a34f0847754e4442d76051e6ee74010466ca",
+    "npm_audit_all": "PASS_0_REPORTED_VULNERABILITIES_GITHUB_ACTIONS_PR825_SHA_5b22a34f0847754e4442d76051e6ee74010466ca",
+    "pip_audit": "PASS_NO_KNOWN_VULNERABILITIES_GITHUB_ACTIONS_PR826_SHA_4fd191d8d2e130ff6bca8ede719518c035f83b9a",
+    "trivy_current_db": "NOT_RUN",
+    "docker_build": "NOT_RUN",
+    "browser_regression": "PASS_SYNTHETIC_GITHUB_UI_WORKFLOW_PR825_SHA_5b22a34f0847754e4442d76051e6ee74010466ca_NOT_PRODUCTION",
+    "installed_vps_runtime": "NOT_RUN",
+    "independent_review": "NOT_VERIFIED_SEPARATE_REVIEWER",
+    "python_gsc_314_install": "PASS_GITHUB_ACTIONS_PR826_SHA_4fd191d8d2e130ff6bca8ede719518c035f83b9a"
+  },
+  "python": {
+    "manifest": "deploy/requirements-gsc-readonly.txt",
+    "explicit_top_level_pins": {
+      "google-auth": "2.62.0",
+      "requests": "2.33.0"
+    },
+    "transitive_packages": "UNRESOLVED_NO_ISOLATED_INSTALL",
+    "runtime_image_package_history": {
+      "source": "docs/operations/H-01-LOCAL-IMAGE-INVENTORY.md",
+      "observed_date": "2026-10-15",
+      "python_venv_distributions_entries": 146,
+      "unique_normalized_names": 145,
+      "os_package_records": 274,
+      "not_refreshed": true
+    }
+  },
+  "frontend": {
+    "manifest": "control_center/frontend/package.json",
+    "lockfile": "control_center/frontend/package-lock.json",
+    "lockfile_blob_sha": "dfc61ef5066287e378c21b4c1387a90bcb38c896",
+    "lockfile_version": 3,
+    "lock_package_records": 121,
+    "non_root_package_records": 120,
+    "manifest_direct_dependencies": {
+      "lucide-react": "0.468.0",
+      "react": "19.2.0",
+      "react-dom": "19.2.0"
+    },
+    "manifest_dev_dependencies": {
+      "@playwright/test": "^1.56.1",
+      "@vitejs/plugin-react": "5.0.4",
+      "vite": "7.3.7"
+    },
+    "react_server_dom_packages_detected": 0,
+    "packages": [
+      {
+        "path": "node_modules/@babel/code-frame",
+        "version": "7.29.7",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/@babel/compat-data",
+        "version": "7.29.7",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/@babel/core",
+        "version": "7.29.7",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/@babel/generator",
+        "version": "7.29.8",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/@babel/helper-compilation-targets",
+        "version": "7.29.7",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/@babel/helper-globals",
+        "version": "7.29.7",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/@babel/helper-module-imports",
+        "version": "7.29.7",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/@babel/helper-module-transforms",
+        "version": "7.29.7",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/@babel/helper-plugin-utils",
+        "version": "7.29.7",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/@babel/helper-string-parser",
+        "version": "7.29.7",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/@babel/helper-validator-identifier",
+        "version": "7.29.7",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/@babel/helper-validator-option",
+        "version": "7.29.7",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/@babel/helpers",
+        "version": "7.29.10",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/@babel/parser",
+        "version": "7.29.9",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/@babel/plugin-transform-react-jsx-self",
+        "version": "7.29.7",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/@babel/plugin-transform-react-jsx-source",
+        "version": "7.29.7",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/@babel/template",
+        "version": "7.29.7",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/@babel/traverse",
+        "version": "7.29.10",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/@babel/types",
+        "version": "7.29.8",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/@esbuild/aix-ppc64",
+        "version": "0.28.2",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@esbuild/android-arm",
+        "version": "0.28.2",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@esbuild/android-arm64",
+        "version": "0.28.2",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@esbuild/android-x64",
+        "version": "0.28.2",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@esbuild/darwin-arm64",
+        "version": "0.28.2",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@esbuild/darwin-x64",
+        "version": "0.28.2",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@esbuild/freebsd-arm64",
+        "version": "0.28.2",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@esbuild/freebsd-x64",
+        "version": "0.28.2",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@esbuild/linux-arm",
+        "version": "0.28.2",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@esbuild/linux-arm64",
+        "version": "0.28.2",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@esbuild/linux-ia32",
+        "version": "0.28.2",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@esbuild/linux-loong64",
+        "version": "0.28.2",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@esbuild/linux-mips64el",
+        "version": "0.28.2",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@esbuild/linux-ppc64",
+        "version": "0.28.2",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@esbuild/linux-riscv64",
+        "version": "0.28.2",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@esbuild/linux-s390x",
+        "version": "0.28.2",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@esbuild/linux-x64",
+        "version": "0.28.2",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@esbuild/netbsd-arm64",
+        "version": "0.28.2",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@esbuild/netbsd-x64",
+        "version": "0.28.2",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@esbuild/openbsd-arm64",
+        "version": "0.28.2",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@esbuild/openbsd-x64",
+        "version": "0.28.2",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@esbuild/openharmony-arm64",
+        "version": "0.28.2",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@esbuild/sunos-x64",
+        "version": "0.28.2",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@esbuild/win32-arm64",
+        "version": "0.28.2",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@esbuild/win32-ia32",
+        "version": "0.28.2",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@esbuild/win32-x64",
+        "version": "0.28.2",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@jridgewell/gen-mapping",
+        "version": "0.3.13",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/@jridgewell/remapping",
+        "version": "2.3.5",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/@jridgewell/resolve-uri",
+        "version": "3.1.2",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/@jridgewell/sourcemap-codec",
+        "version": "1.6.0",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/@jridgewell/trace-mapping",
+        "version": "0.3.31",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/@napi-rs/lzma-linux-x64-gnu",
+        "version": "1.5.1",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@playwright/test",
+        "version": "1.56.1",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/@rolldown/pluginutils",
+        "version": "1.0.0-beta.38",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/@rollup/rollup-android-arm-eabi",
+        "version": "4.64.7",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@rollup/rollup-android-arm64",
+        "version": "4.64.7",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@rollup/rollup-darwin-arm64",
+        "version": "4.64.7",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@rollup/rollup-darwin-x64",
+        "version": "4.64.7",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@rollup/rollup-freebsd-arm64",
+        "version": "4.64.7",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@rollup/rollup-freebsd-x64",
+        "version": "4.64.7",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@rollup/rollup-linux-arm-gnueabihf",
+        "version": "4.64.7",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@rollup/rollup-linux-arm-musleabihf",
+        "version": "4.64.7",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@rollup/rollup-linux-arm64-gnu",
+        "version": "4.64.7",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@rollup/rollup-linux-arm64-musl",
+        "version": "4.64.7",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@rollup/rollup-linux-loong64-gnu",
+        "version": "4.64.7",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@rollup/rollup-linux-loong64-musl",
+        "version": "4.64.7",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@rollup/rollup-linux-ppc64-gnu",
+        "version": "4.64.7",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@rollup/rollup-linux-ppc64-musl",
+        "version": "4.64.7",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@rollup/rollup-linux-riscv64-gnu",
+        "version": "4.64.7",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@rollup/rollup-linux-riscv64-musl",
+        "version": "4.64.7",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@rollup/rollup-linux-s390x-gnu",
+        "version": "4.64.7",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@rollup/rollup-linux-x64-gnu",
+        "version": "4.64.7",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@rollup/rollup-linux-x64-musl",
+        "version": "4.64.7",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@rollup/rollup-openbsd-x64",
+        "version": "4.64.7",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@rollup/rollup-openharmony-arm64",
+        "version": "4.64.7",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@rollup/rollup-win32-arm64-msvc",
+        "version": "4.64.7",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@rollup/rollup-win32-ia32-msvc",
+        "version": "4.64.7",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@rollup/rollup-win32-x64-gnu",
+        "version": "4.64.7",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@rollup/rollup-win32-x64-msvc",
+        "version": "4.64.7",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/@types/babel__core",
+        "version": "7.20.5",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/@types/babel__generator",
+        "version": "7.27.0",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/@types/babel__template",
+        "version": "7.4.4",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/@types/babel__traverse",
+        "version": "7.28.0",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/@types/estree",
+        "version": "1.0.9",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/@vitejs/plugin-react",
+        "version": "5.0.4",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/baseline-browser-mapping",
+        "version": "2.11.29",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/browserslist",
+        "version": "4.29.3",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/caniuse-lite",
+        "version": "1.0.30001816",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/convert-source-map",
+        "version": "2.0.0",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/debug",
+        "version": "4.4.3",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/electron-to-chromium",
+        "version": "1.5.458",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/esbuild",
+        "version": "0.28.2",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/escalade",
+        "version": "3.2.0",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/fdir",
+        "version": "6.5.0",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/fsevents",
+        "version": "2.3.3",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/gensync",
+        "version": "1.0.0-beta.2",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/js-tokens",
+        "version": "4.0.0",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/jsesc",
+        "version": "3.1.0",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/json5",
+        "version": "2.2.3",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/lru-cache",
+        "version": "5.1.1",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/lucide-react",
+        "version": "0.468.0",
+        "dev": false,
+        "optional": false
+      },
+      {
+        "path": "node_modules/ms",
+        "version": "2.1.3",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/nanoid",
+        "version": "3.3.20",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/node-releases",
+        "version": "2.0.59",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/picocolors",
+        "version": "1.1.1",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/picomatch",
+        "version": "4.0.7",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/playwright",
+        "version": "1.56.1",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/playwright-core",
+        "version": "1.56.1",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/playwright/node_modules/fsevents",
+        "version": "2.3.2",
+        "dev": true,
+        "optional": true
+      },
+      {
+        "path": "node_modules/postcss",
+        "version": "8.5.30",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/react",
+        "version": "19.2.0",
+        "dev": false,
+        "optional": false
+      },
+      {
+        "path": "node_modules/react-dom",
+        "version": "19.2.0",
+        "dev": false,
+        "optional": false
+      },
+      {
+        "path": "node_modules/react-refresh",
+        "version": "0.17.0",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/rollup",
+        "version": "4.64.7",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/scheduler",
+        "version": "0.27.0",
+        "dev": false,
+        "optional": false
+      },
+      {
+        "path": "node_modules/semver",
+        "version": "6.3.1",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/source-map-js",
+        "version": "1.2.2",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/tinyglobby",
+        "version": "0.2.17",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/update-browserslist-db",
+        "version": "1.3.4",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/vite",
+        "version": "7.3.7",
+        "dev": true,
+        "optional": false
+      },
+      {
+        "path": "node_modules/yallist",
+        "version": "3.1.1",
+        "dev": true,
+        "optional": false
+      }
+    ]
+  },
+  "docker": {
+    "file_count": 5,
+    "files": [
+      "deploy/h15/Dockerfile.brc-relay",
+      "deploy/h15/devtools/Dockerfile",
+      "docker/v0221-native-tool-policy-test/Dockerfile",
+      "docker/v0222-native-tool-policy-test/Dockerfile",
+      "docker/v0222-pyjwt-fixed-candidate/Dockerfile"
+    ],
+    "runtime_images_intentionally_not_pulled": true,
+    "notes": "Live OS package/CVE inventory requires exact image digest and authorized isolated scanner; legacy findings from Hermes #199 are not reproduced here.",
+    "dockerfile_from_references": [
+      {
+        "file": "deploy/h15/Dockerfile.brc-relay",
+        "from": [
+          "FROM node:24-bookworm-slim@sha256:a5f4366e834695d5f363b920c104953a535d3a9864d1bdf74566a0ebe01daee5 AS builder",
+          "FROM node:24-bookworm-slim@sha256:a5f4366e834695d5f363b920c104953a535d3a9864d1bdf74566a0ebe01daee5 AS runtime"
+        ],
+        "image_digest_or_variable_read_from_source": true
+      },
+      {
+        "file": "deploy/h15/devtools/Dockerfile",
+        "from": [
+          "FROM ${BRC_BASE_IMAGE}"
+        ],
+        "image_digest_or_variable_read_from_source": true
+      },
+      {
+        "file": "docker/v0221-native-tool-policy-test/Dockerfile",
+        "from": [
+          "FROM nousresearch/hermes-agent@sha256:cd9cb455576d27c9b6311de1104494ad7e221b6e68dc77e9ac2a8af661a4dc21"
+        ],
+        "image_digest_or_variable_read_from_source": true
+      },
+      {
+        "file": "docker/v0222-native-tool-policy-test/Dockerfile",
+        "from": [
+          "FROM nousresearch/hermes-agent@sha256:a11574b7fe8e1631d7d88d556677dac693bc058abf558cdeb899155688c1bf05"
+        ],
+        "image_digest_or_variable_read_from_source": true
+      },
+      {
+        "file": "docker/v0222-pyjwt-fixed-candidate/Dockerfile",
+        "from": [
+          "FROM nousresearch/hermes-agent@sha256:a11574b7fe8e1631d7d88d556677dac693bc058abf558cdeb899155688c1bf05"
+        ],
+        "image_digest_or_variable_read_from_source": true
+      }
+    ],
+    "known_mutable_ci_image_reference": {
+      "workflow": ".github/workflows/h15-evals-offline-smoke.yml",
+      "image": "python:3.13-slim",
+      "observation": "docker pull and docker run source-level, image digest not fixed",
+      "decision": "REVIEW_REQUIRED",
+      "note": "Do not select a digest without verifying official manifest, architecture and smoke"
+    }
+  },
+  "github_actions": {
+    "workflow_count": 23,
+    "files": [
+      ".github/workflows/control-center-ui.yml",
+      ".github/workflows/control-center-visual-evidence.yml",
+      ".github/workflows/device-fabric-windows.yml",
+      ".github/workflows/device-fabric-wss.yml",
+      ".github/workflows/github-event-observe.yml",
+      ".github/workflows/h15-codex-workspaces.yml",
+      ".github/workflows/h15-evals-offline-smoke.yml",
+      ".github/workflows/h15-native-windows-read.yml",
+      ".github/workflows/h15-remote-commander-candidate.yml",
+      ".github/workflows/h15-windows-os-sandbox.yml",
+      ".github/workflows/h19-pinned-native-runtime.yml",
+      ".github/workflows/h445-windows-docker-inventory.yml",
+      ".github/workflows/h454-native-ssh-guard.yml",
+      ".github/workflows/h454-windows-candidate-contract.yml",
+      ".github/workflows/h585-srt-isolated.yml",
+      ".github/workflows/h632-ecc-original-acceptance.yml",
+      ".github/workflows/h777-ecc-managed-isolation.yml",
+      ".github/workflows/h777-ecc-upstream-native-rollback.yml",
+      ".github/workflows/ops-incident-advisor-windows.yml",
+      ".github/workflows/orchestration-native-sqlite.yml",
+      ".github/workflows/production-deploy.yml",
+      ".github/workflows/provider-boundary.yml",
+      ".github/workflows/quality.yml"
+    ],
+    "mutable_tags_at_base": [
+      {
+        "workflow": ".github/workflows/h15-evals-offline-smoke.yml",
+        "refs": [
+          "actions/checkout@v4",
+          "actions/upload-artifact@v4"
+        ],
+        "decision": "UPDATE",
+        "proposed_pr": 822
+      },
+      {
+        "workflow": ".github/workflows/h454-windows-candidate-contract.yml",
+        "refs": [
+          "actions/checkout@v4",
+          "actions/setup-python@v5"
+        ],
+        "decision": "DEFER",
+        "reason": "Concurrent PR #692 edits the same workflow"
+      }
+    ],
+    "known_checked_pins": {
+      "actions/checkout@v4.2.2": "11bd71901bbe5b1630ceea73d27597364c9af683",
+      "actions/upload-artifact@v4.6.2": "ea165f8d65b6e75b540449e92b4886f43607fa02",
+      "actions/setup-python@v6.0.0": "e797f83bcb11b83ae66e0230d6156d7c80228e7c"
+    },
+    "uses_scope_summary": {
+      "actions_checkout": [
+        "v4 tag in H15 (proposed pin PR #822)",
+        "v4 tag in H454 (overlapping PR #692)",
+        "v4.2.2 SHA in other reviewed workflows"
+      ],
+      "actions_upload_artifact": [
+        "v4 tag in H15 (proposed pin PR #822)",
+        "v4.6.2 SHA in reviewed workflows"
+      ],
+      "actions_setup_python": [
+        "v5 tag in H454 (overlapping PR #692)",
+        "v6.0.0 SHA in reviewed workflows"
+      ],
+      "actions_setup_node": [
+        "v4.4.0 SHA"
+      ],
+      "aquasecurity_trivy_action": [
+        "v0.36.0 SHA"
+      ]
+    }
+  },
+  "upstream": {
+    "agent": {
+      "source": "NousResearch/hermes-agent",
+      "installed_version": "v0.22.2 pinned source",
+      "git_sha": "d923a5eb487a17c0a68801bba9ef0f56c81040a8",
+      "image_digest": "sha256:a11574b7fe8e1631d7d88d556677dac693bc058abf558cdeb899155688c1bf05",
+      "decision": "DEFER",
+      "separate_issue": 199
+    },
+    "brc": {
+      "source": "MikeMoore1337/hermes-remote-commander",
+      "source_main_as_reported_in_issue_764": "09d1a7ef83d1b6c5aecc7439d8d0829a8b742713",
+      "decision": "KEEP_SOURCE_FIXES",
+      "separate_issue": 764,
+      "runtime_verification": "NOT_RUN"
+    },
+    "ecc": {
+      "source": "affaan-m/ECC",
+      "pinned_sha": "25278e7d7b6cf6e6a4e7a6c8e10f14ff22f0eb5b",
+      "decision": "KEEP",
+      "separate_issue": 632
+    },
+    "harness2": {
+      "source": "google-research/harness2",
+      "pinned_sha": "1cfe254e8d25b15f37048c3730134686abe60335",
+      "decision": "KEEP",
+      "separate_issue": 629
+    }
+  },
+  "candidate_decisions": [
+    {
+      "component": "requests",
+      "current": "2.33.0",
+      "decision": "KEEP",
+      "reason": "PR #765 already merged; do not duplicate"
+    },
+    {
+      "component": "React/React DOM",
+      "current": "19.2.0",
+      "candidate": "19.2.9 or 19.3.1",
+      "decision": "REVIEW_REQUIRED",
+      "reason": "Requires npm ci, lockfile, new compiled tracked bundle and browser E2E. No react-server-dom-* in current npm lock graph"
+    },
+    {
+      "component": "Vite",
+      "current": "7.3.7",
+      "candidate": "8.x",
+      "decision": "DEFER",
+      "reason": "Major migration; verify with Vite/React plugin/browser regression. CVE-2026-39364 affects 7.1.0-7.3.1, not pinned 7.3.7"
+    },
+    {
+      "component": "@vitejs/plugin-react",
+      "current": "5.0.4",
+      "candidate": "6.2.1",
+      "decision": "DEFER",
+      "reason": "Major migration; test separately before upgrade"
+    },
+    {
+      "component": "@playwright/test",
+      "current": "1.56.1",
+      "candidate": "1.65.0",
+      "decision": "REVIEW_REQUIRED",
+      "reason": "Dev tool update with browser binary/Node requirement changes"
+    },
+    {
+      "component": "lucide-react",
+      "current": "0.468.0",
+      "decision": "DEFER",
+      "reason": "No evidenced security issue; substantial icon API/UI risk"
+    },
+    {
+      "component": "NousResearch Hermes Agent",
+      "current": "v0.22.2",
+      "candidate": "v0.22.7 reported 2026-11-05",
+      "decision": "DEFER",
+      "reason": "Source, OCI, ownership and native tool guard parity not reviewed; #199"
+    }
+  ],
+  "historical_security_evidence": [
+    {
+      "source_issue": 199,
+      "scanner_date": "2026-10-16",
+      "image": "v0.22.2",
+      "critical": 4,
+      "high": 270,
+      "verified_current": false
+    },
+    {
+      "source_issue": 764,
+      "area": "BRC fork source",
+      "finding": "Earlier Zod/transitive advisories fixed in merged fork PRs, production deployment not established",
+      "verified_current_runtime": false
+    }
+  ],
+  "no_deploy_or_runtime_change": true,
+  "fresh_ci_evidence": [
+    {
+      "scope": "frontend source and lockfile (120 packages)",
+      "pr": 825,
+      "sha": "5b22a34f0847754e4442d76051e6ee74010466ca",
+      "run": "https://github.com/MikeMoore1337/hermes/actions/runs/42228040544",
+      "results": [
+        "npm ci PASS",
+        "npm audit including dev and transitive reported 0 vulnerabilities",
+        "production npm audit 0 vulnerabilities",
+        "Vite build PASS",
+        "committed bundle source parity PASS",
+        "Playwright E2E run SUCCESS"
+      ],
+      "disclaimer": "Audit registry results are time-scoped; E2E is CI synthetic not production"
+    },
+    {
+      "scope": "isolated GSC Python 3.14",
+      "pr": 826,
+      "sha": "4fd191d8d2e130ff6bca8ede719518c035f83b9a",
+      "run": "https://github.com/MikeMoore1337/hermes/actions/runs/42228544921",
+      "results": [
+        "11 installed third-party Python distributions observed in GSC venv",
+        "pip check PASS",
+        "google.auth import and requests==2.33.0 contract PASS",
+        "pip-audit==2.10.1 direct+transitive No known vulnerabilities found"
+      ],
+      "disclaimer": "No Google OAuth or VPS install; scanner database at CI run time"
+    },
+    {
+      "scope": "H15 ephemeral CI image and Actions",
+      "pr": 822,
+      "sha": "e2b9f07e0eef5cc3f1d41f299ef60144b516021c",
+      "run": "https://github.com/MikeMoore1337/hermes/actions/runs/42228801514",
+      "results": [
+        "previously observed Docker Hub image tag digest sha256:09a17cad02668ae61ece136b4fd36ac3849e14f670ebedb637ea3e15580525bc",
+        "pinned docker run completed with EPHEMERAL_OFFLINE_KERNEL_BOUNDARY=PASS"
+      ],
+      "disclaimer": "Not a signed OCI provenance attestation or a scan of the separate Hermes Agent runtime"
+    }
+  ],
+  "reaudit_snapshot": {
+    "base_main_sha": "e76c04a77ba9446ebb3fc959aa95fd57ea6ab12d",
+    "observed_later_main_sha": "7cc4237721107434425c0e7638606aeb6296e253",
+    "frontend_lockfile_blob_sha_unchanged": true,
+    "gsc_requirements_blob_sha_unchanged": true,
+    "other_changes_in_main": "Control Center UI source/assets; this report does not reclassify their runtime",
+    "evaluated_at_utc": "2026-11-06"
+  }
+}
