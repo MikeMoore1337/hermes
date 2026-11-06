@@ -90,9 +90,8 @@
 /* One focus indicator on the outside of a composite search control.
    A nested input outline caused the double, partially clipped blue rectangle. */
 .theme-orbit :is(.search-field,.oi-search,.oc-search,.status-filter):focus-within{
-  outline:0;
-  border-color:var(--orbit-focus);
-  box-shadow:0 0 0 2px color-mix(in srgb,var(--orbit-focus) 38%,transparent);
+  outline:2px solid var(--orbit-focus);outline-offset:1px;
+  border-color:var(--a27-border);box-shadow:none;
 }
 .theme-orbit :is(.search-field,.oi-search,.oc-search) input:focus-visible,
 .theme-orbit :is(.search-field,.oi-search,.oc-search) input:focus,
