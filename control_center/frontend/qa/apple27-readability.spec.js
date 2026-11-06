@@ -120,7 +120,7 @@ for(const [width,height] of [[320,770],[393,852],[1440,900],[2048,1152]]){
    expect(smallFont).toBeGreaterThanOrEqual(12);
    expect(await contrast(page,".oi-row-copy small",".oi-queue")).toBeGreaterThanOrEqual(4.5);
    await expect(page.locator(".oi-notice")).toBeVisible();
-   expect(await contrast(page,".oi-notice",".oi-root")).toBeGreaterThanOrEqual(4.5);
+   expect(await contrast(page,".oi-notice",".oi-notice")).toBeGreaterThanOrEqual(4.5);
    const hint=page.locator(".oi-action-hint");
    await expect(hint).toBeVisible();
    const hintSurface=await hint.evaluate(el=>getComputedStyle(el).backgroundColor);
