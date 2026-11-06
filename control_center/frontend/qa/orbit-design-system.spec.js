@@ -46,7 +46,7 @@ test("one Orbit type system across React routes",async({page})=>{
   ["Исследования",".orbit-module-shell",".orbit-module-intro h1"],
   ["QA и CI",".orbit-module-shell",".orbit-module-intro h1"],
   ["AI Agent",".orbit-module-shell",".orbit-module-intro h1"],
-  ["Лимиты AI",".orbit-module-shell",".orbit-module-intro h1"],
+  ["Квоты и инструменты",".orbit-module-shell",".quota-unified-intro h1"],
   ["Hermes Commander",".oc-page","#brc-title"]
  ]){
   await navigate(page,label,1440);
