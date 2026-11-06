@@ -41,10 +41,14 @@ prove that every other owner/transport/audit gate is healthy.
 - The already approved generic transactional cutover operator's old
   `hermes-brc-relay-h454-rollback` checkpoint is occupied, as are
   `hermes-brc-relay-h455-rollback` and
-  `hermes-brc-relay-h455-refresh-rollback`. **Never overwrite them.**
+  `hermes-brc-relay-h455-refresh-rollback` and the *already occupied*
+  `hermes-brc-relay-h454-native3-rollback`. **Never overwrite them.**
+- Read-only check on 2026-11-06 observed the old native3 rollback container
+  STOPPED and the new `hermes-brc-relay-h454-native3-v2-rollback` slot AVAILABLE.
+  Re-verify both states immediately before any authorized cutover.
 - This change supplies `scripts.h454_brc_native_three_tool_cutover`,
   which uses only the new
-  `hermes-brc-relay-h454-native3-rollback` checkpoint. Run its `plan`
+  `hermes-brc-relay-h454-native3-v2-rollback` checkpoint. Run its `plan`
   mode first with verified `--bundle-dir`, `--image`,
   `--archive-sha`, `--hermes-sha`; assert `changed=false`.
 - Prepare the exact, root-owned 0600 owner-approval file defined by
