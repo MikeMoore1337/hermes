@@ -60,21 +60,30 @@ function allowedArgs(input: unknown, read: boolean): input is {project: string; 
 }
 
 function eligibleDevice(hub: DeviceHub, store: SqliteStore, owner: string) {
-  const devices = store.listDevices(owner).filter(d => d.name === DEVICE_NAME);
-  if (devices.length !== 1) return null;
-  const row = devices[0];
-  if (row.paused || row.platform !== 'win32' || !ID.test(row.device_id)) return null;
-  const online = hub.get(row.device_id);
-  const liveTokenHash = online?.socket &&
-    (online.socket as typeof online.socket & {hermesAuthTokenHash?: string}).hermesAuthTokenHash;
-  if (!online || typeof row.token_hash !== 'string' || liveTokenHash !== row.token_hash
-      || online.ownerId !== owner || online.info.platform !== 'win32'
-      || online.info.name !== DEVICE_NAME || online.info.deviceId !== row.device_id
-      || online.tools.length !== 3
-      || NAMES.some(n => !online.tools.some(t => t.name === n))
-      || online.tools.some(t => !NAMES.includes(t.name as typeof NAMES[number]))) return null;
-  return online.info.deviceId;
+  try {
+    const devices = store.listDevices(owner).filter(d => d.name === DEVICE_NAME);
+    if (devices.length !== 1) return null;
+    const row = devices[0];
+    if (row.paused || row.platform !== 'win32' || !ID.test(row.device_id)
+        || typeof row.token_hash !== 'string'
+        || !/^[a-f0-9]{64}$/.test(row.token_hash)) return null;
+    const online = hub.get(row.device_id);
+    const liveTokenHash = online?.socket &&
+      (online.socket as typeof online.socket & {hermesAuthTokenHash?: string}).hermesAuthTokenHash;
+    if (!online || liveTokenHash !== row.token_hash
+        || online.ownerId !== owner || online.info.platform !== 'win32'
+        || online.info.name !== DEVICE_NAME || online.info.deviceId !== row.device_id
+        || online.tools.length !== 3
+        || NAMES.some(n => !online.tools.some(t => t.name === n))
+        || online.tools.some(t => !NAMES.includes(t.name as typeof NAMES[number]))) return null;
+    return online.info.deviceId;
+  } catch {
+    // An unavailable device, grant store or corrupted record is a denial,
+    // including during the post-read and post-audit reauthorization.
+    return null;
+  }
 }
+
 function validatedResult(value: unknown, a: {project: string; relative: string},
                          operation: 'read' | 'stat' | 'list') {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;

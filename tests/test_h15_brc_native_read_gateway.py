@@ -131,7 +131,7 @@ const assert=require('node:assert/strict');
 const crypto=require('node:crypto');
 const {NATIVE_TOOLS,invokeOwnerNativeRead}=require(process.argv[1]);
 const good={device_id:'h15-native-abcdefgh',name:'H15 Windows native read-only',
- platform:'win32',paused:0,token_hash:'synthetic-paired-hash'};
+ platform:'win32',paused:0,token_hash:'a'.repeat(64)};
 const agent={ownerId:'owner-A', socket:{hermesAuthTokenHash:good.token_hash},
  info:{deviceId:good.device_id,name:good.name,platform:'win32'},
  tools:NATIVE_TOOLS.map(t=>({name:t.name}))};
@@ -153,6 +153,15 @@ const ctx={userId:'owner-A',clientId:'chatgpt'};
  assert.deepEqual(NATIVE_TOOLS.map(t=>t.name),['native_file_stat','native_file_read','native_file_list']);
  const ok=await invokeOwnerNativeRead(hub,store,ctx,'native_file_read',{project:'hermes',relative:'README.md'});
  assert.equal(ok.isError,false);assert.equal(calls,1);assert.equal(logs.length,1);
+ // An unavailable grant store must deny before dispatch, without error text.
+ const normalList=store.listDevices;
+ store.listDevices=()=>{throw Error('SYNTHETIC_DB_SECRET');};
+ const storeFailure=await invokeOwnerNativeRead(hub,store,ctx,'native_file_read',
+   {project:'hermes',relative:'README.md'});
+ assert.equal(storeFailure.isError,true);
+ assert.equal(JSON.parse(storeFailure.content[0].text).reason,'native_read_unavailable');
+ assert.equal(calls,1);
+ store.listDevices=normalList;
  const root=await invokeOwnerNativeRead(hub,store,ctx,'native_file_list',{project:'hermes',relative:''});
  assert.equal(root.isError,false);assert.equal(calls,2);assert.equal(logs.length,2);
  assert.equal(JSON.parse(root.content[0].text).entries.length,2);
@@ -189,6 +198,20 @@ const ctx={userId:'owner-A',clientId:'chatgpt'};
  assert.equal(duringRead.isError,true);
  assert.equal(logs.at(-1).ok,0);
  currentRow=good;
+ // The grant DB can fail while the remote file is being read.
+ hub.call=async()=>{calls++;store.listDevices=()=>{throw Error('SYNTHETIC_DB_SECRET');};
+   return {isError:false,content:[{type:'text',text:JSON.stringify(verified)}]}};
+ const inFlightDbFailure=await invokeOwnerNativeRead(hub,store,ctx,'native_file_read',
+   {project:'hermes',relative:'README.md'});
+ assert.equal(inFlightDbFailure.isError,true);
+ assert.equal(JSON.parse(inFlightDbFailure.content[0].text).reason,'native_read_unavailable');
+ assert.equal(logs.at(-1).ok,0);
+ store.listDevices=normalList;
+ currentRow={...good,token_hash:'invalid-hash'};
+ const corruptDigest=await invokeOwnerNativeRead(hub,store,ctx,'native_file_read',
+   {project:'hermes',relative:'README.md'});
+ assert.equal(corruptDigest.isError,true);
+ currentRow=good;
  // A revocation during the audit boundary must also suppress delivery.
  hub.call=async()=>({isError:false,content:[{type:'text',text:JSON.stringify(verified)}]});
  const auditBefore=store.audit;
@@ -198,6 +221,14 @@ const ctx={userId:'owner-A',clientId:'chatgpt'};
  assert.equal(duringAudit.isError,true);
  store.audit=auditBefore;
  currentRow=good;
+ hub.call=async()=>({isError:false,content:[{type:'text',text:JSON.stringify(verified)}]});
+ store.audit=e=>{logs.push(e);store.listDevices=()=>{throw Error('SYNTHETIC_DB_SECRET')}};
+ const dbFailureAfterAudit=await invokeOwnerNativeRead(hub,store,ctx,'native_file_read',
+   {project:'hermes',relative:'README.md'});
+ assert.equal(dbFailureAfterAudit.isError,true);
+ assert.equal(JSON.parse(dbFailureAfterAudit.content[0].text).reason,'native_read_unavailable');
+ store.audit=auditBefore;
+ store.listDevices=normalList;
  hub.call=async()=>({isError:false,content:[{type:'text',text:JSON.stringify({
    ...safeList,entries:[{name:'.env',kind:'file'}]})}]});
  assert.equal((await invokeOwnerNativeRead(hub,store,ctx,'native_file_list',
