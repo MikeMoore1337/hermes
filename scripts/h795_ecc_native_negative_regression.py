@@ -26,6 +26,8 @@ UNINSTALL = ["scripts/uninstall.js", "--target", "hermes", "--json"]
 
 
 def require_runner() -> None:
+    if not __debug__:
+        raise RuntimeError("H795 refuses optimized Python with disabled assertions")
     if (os.environ.get("RUNNER_ENVIRONMENT") != "github-hosted"
             or os.environ.get("RUNNER_OS") != "Linux"
             or os.geteuid() == 0
