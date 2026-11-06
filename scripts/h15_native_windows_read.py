@@ -25,7 +25,8 @@ import os
 import re
 import sys
 
-from control_center.native_windows_policy import READ_ROOTS, classify_native_request
+from control_center.native_windows_policy import (READ_ROOTS, SENSITIVE_STEM,
+                                                  classify_native_request)
 
 MAX_FILE_BYTES = 256 * 1024
 MAX_PATH_LENGTH = 1024
@@ -79,7 +80,7 @@ def build_request(project: str, relative: str, operation: str) -> tuple[str, str
             raise NativeReadRefused("unsafe_relative_path")
         lowered = [p.casefold() for p in pieces]
         if any(p in DENIED_COMPONENTS or p.startswith(".env.")
-               or p in DENIED_NAMES for p in lowered):
+               or p in DENIED_NAMES or SENSITIVE_STEM.match(p) for p in lowered):
             raise NativeReadRefused("protected_project_content")
         if lowered[-1].endswith(DENIED_SUFFIXES):
             raise NativeReadRefused("protected_project_content")

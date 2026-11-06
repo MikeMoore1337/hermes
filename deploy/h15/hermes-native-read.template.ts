@@ -19,6 +19,7 @@ const BUSY_TEXT = '{"status":"refused","reason":"native_file_busy",' +
   '"message":"File is in use; retry after the other program closes it."}';
 const BUSY = { content: [{ type: 'text' as const, text: BUSY_TEXT }], isError: true };
 const ID = /^[A-Za-z0-9_-]{8,128}$/;
+const SENSITIVE_STEM = /^\.?(?:secrets?|credentials?|tokens?|passwords?|api[-_]?keys?|service[-_]?accounts?|private[-_]?keys?|config[._-]local)(?:[._-]|$)/i;
 const EXT = /\.(?:py|js|jsx|ts|tsx|mjs|cjs|md|mdx|txt|json|toml|yaml|yml|html|css|scss|sql|sh|ps1|go|rs|c|h|cpp|cs|xml)$/i;
 
 export const NATIVE_TOOLS = NAMES.map(name => ({
@@ -55,7 +56,8 @@ function allowedArgs(input: unknown, read: boolean): input is {project: string; 
       || ['.git', '.hg', '.svn', '.ssh', '.aws', '.gnupg', '.vault',
           'vault', 'private-vault', 'secrets', '.secrets', 'node_modules',
           '__pycache__', '.terraform', '.next', '.cache'].includes(p.toLowerCase())
-      || p.toLowerCase() === '.env' || p.toLowerCase().startsWith('.env.'))) return false;
+      || p.toLowerCase() === '.env' || p.toLowerCase().startsWith('.env.')
+      || SENSITIVE_STEM.test(p))) return false;
   if (/(?:\.pem|\.key|\.pfx|\.p12|\.kdbx|\.sqlite3?|\.db)$/i.test(path)
       || /^(?:id_rsa|id_ed25519|credentials|config\.local)$/i.test(parts[parts.length - 1])) return false;
   return !read || EXT.test(path);

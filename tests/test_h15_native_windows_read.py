@@ -91,6 +91,9 @@ class NativeWindowsReadTests(unittest.TestCase):
         for file in ("", "foo.exe", "id_ed25519", ".git\\config",
                      "secrets\\foo.md", ".env", ".env.prod",
                      "private-vault\\entry.md", "dump.sqlite",
+                     "credentials.json", "secrets.json", "token.json",
+                     "src\\service-account.json", "src\\.tokens.yaml",
+                     "config.local.json",
                      "node_modules\\foo.js"):
             with self.subTest(file=file), self.assertRaises(broker.NativeReadRefused):
                 broker.build_request("hermes", file, "read")

@@ -108,6 +108,9 @@ try {
   for (const bad of [
     { project: 'hermes', relative: '..\\README.md' },
     { project: 'hermes', relative: 'vault\\secrets.md' },
+    { project: 'hermes', relative: 'credentials.json' },
+    { project: 'hermes', relative: 'src\\secrets.yaml' },
+    { project: 'hermes', relative: '.tokens.json' },
     { project: 'hermes', relative: 'README.md', deviceId: DEVICE_ID },
     { project: 'unknown', relative: 'README.md' },
   ]) {

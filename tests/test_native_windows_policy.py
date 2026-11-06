@@ -73,6 +73,9 @@ class NativeWindowsPolicyTests(unittest.TestCase):
             r"\.ssh\id_rsa", r"\secrets\password.txt",
             r"\config\.env", r"\config\.env.prod",
             r"\config\private.key", r"\archive\backup.kdbx",
+            r"\config\credentials.json", r"\src\secrets.yaml",
+            r"\private_key.json", r"\src\.tokens.json",
+            r"\config.local.json", r"\service-account.json",
         ):
             with self.subTest(path=suffix):
                 for operation in ("read", "write", "execute"):
