@@ -185,3 +185,56 @@ Stage 1 WSS pin/sidecar gate; **do not bypass it**.
 
 If any preflight/identity/CI/backup/checkpoint evidence is absent, do not
 cut over. No default automation or model-provider charges are introduced.
+
+## Stage 2 joint relay/WSS transaction candidate (source-only, NOT RELEASED)
+
+The new `scripts/h454_native3_paired_transaction.py` is a **dormant code
+candidate**. It is not the old `h454_brc_native_three_tool_cutover`, and it
+does not bypass the fail-closed WSS pair gate in the generic relay-only
+operator. The new runner accepts `plan`, `cutover`, `recover`, and `rollback`.
+Only `plan` is allowed without `--execute`; `plan` delegates to the
+previously reviewed read-only pair preflight. Do **not** run the mutating modes
+until exact-code security review, CI, a real owner-host read-only plan, explicit
+owner approval, production release and a rehearsed rollback are complete.
+
+Separate root-only `0600` approval file:
+`/etc/hermes-brc-relay/native3-paired-approval.json`. Its strict schema binds
+the decision `OWNER_APPROVED_H454_NATIVE3_JOINT_RELAY_WSS_CUTOVER`, exact
+installed Hermes release SHA, candidate build SHA, verified OCI config/runtime
+image IDs, archive SHA256, both original container IDs/images, the original
+WSS pin-file digest and **both unique checkpoint names**. Never copy the
+historical single-relay or Stage 1 owner approval, accept missing/extra keys,
+or generate an approval from an MCP parameter. No tool writes this file.
+
+The transaction preserves the original pinned Stage 1 read-only workspace
+registry and `/state`, enforces the installed WSS/TLS identity and Linux
+sandbox security profile, creates two **distinct retained checkpoints** and
+uses the original proxy OCI image with `--network container:<new-relay-ID>`.
+It keeps disposable SQLite backup evidence and checks authorization-state
+regression without replacing the current database with an old copy. The
+success receipt explicitly says
+`SWITCHED_PENDING_CHATGPT_CODEX_LIVE_ACCEPTANCE`, never `DONE`.
+
+On a normal failed cutover it attempts to restore both verified original
+containers. If Docker returned an ambiguous create/rename result or a foreign
+container occupies a name, the runner **fails closed for manual recovery**
+rather than deleting an unidentified container. A root-owned
+`native3-pair.pending` marker records old/new IDs across known phases;
+`recover --execute` uses only that exact receipt and the independently
+pinned artifact/approval. Following a successful switch, the original
+containers are retained; `rollback --execute` revalidates active new IDs
+and original checkpoints before attempting restoration. A failed recovery
+must be treated as an incident and verified by the owner, not retried
+indiscriminately. Subsequent repeat cutovers are intentionally blocked by
+the retained original pin snapshot until a separate reviewed cleanup
+procedure is authorized.
+
+**Mandatory before readiness:** independent code/security review at the exact
+PR HEAD; repository, BRC candidate, Windows native and UI regression checks;
+fault injection for every stop/rename/create/update/pin/health/reconcile
+boundary; a live root-only `plan` with no Docker mutation; WSS reconnect from
+both ChatGPT and Codex, devices+workspaces checks and a real pair rollback
+rehearsal in an authorized maintenance window. Original Windows
+native service, ACL, private SSH, device token/re-pairing and original-folder
+write/execute permissions are still **NOT APPROVED** by this source change.
+No automatic cutover, deployment or background worker is introduced.
