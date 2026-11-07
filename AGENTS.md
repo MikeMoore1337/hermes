@@ -1,5 +1,11 @@
 # Hermes repository instructions
 
+## Agent instruction language
+
+Use **English** for repository-owned agent policies, reusable skills, role definitions and machine-directed prompts. Preserve literal Russian triggers/approval phrases and language-specific editorial examples when their exact wording is functional. Leave pinned third-party skills and original licensed upstream materials unchanged unless a separately approved adaptation is needed.
+
+This rule does **not** change Russian owner communication, human-facing documentation or application localization. Do not translate README, product guides, public copy or user content in an agent-instructions task.
+
 ## Scope and current state
 
 This repository holds **owner-specific configuration, integrations, tests, documentation and future custom code** for a standalone Hermes Agent. It is NOT a fork of NousResearch/hermes-agent. It does NOT currently own or deploy the production YFC news pipeline.
