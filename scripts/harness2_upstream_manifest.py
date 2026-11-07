@@ -81,7 +81,7 @@ def reject_untracked_executable_source(source: Path) -> None:
         raise UpstreamRejected("UPSTREAM_IDENTITY_UNAVAILABLE") from exc
     if found.returncode:
         raise UpstreamRejected("UPSTREAM_IDENTITY_UNAVAILABLE")
-    for raw_path in found.stdout.split(b"\\0"):
+    for raw_path in found.stdout.split(bytes([0])):
         if not raw_path:
             continue
         path = os.fsdecode(raw_path)
