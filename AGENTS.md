@@ -147,9 +147,9 @@ security, CI, release, owner approvals and factual operational evidence.
 
 `control_center/frontend` is a real React/Vite product UI, not a headless-only project. For approved UI tasks, follow [Control Center UI evidence](docs/ux/control-center-ui-evidence.md): verify rendered state, interactions, viewports and synthetic-data provenance with existing Playwright. A manual GitHub workflow `.github/workflows/control-center-visual-evidence.yml` captures synthetic-only screenshot evidence on demand; it is not a required check, not a design approval, and must never call owner OAuth or live monitoring APIs. Other external sources remain optional references. The pinned Impeccable skill is a **development-only Codex UX/UI procedure**, not an executable hook, runtime skill, automatic installer, or permission to redesign Atlas. Keep read-only/API/OAuth boundaries and visual owner gates intact.
 
-## Impeccable для Control Center (разработка, 2026-10-21)
+## Impeccable for Control Center development (2026-10-21)
 
-Для запросов на UX/UI экранов `control_center/frontend` **сначала** подключай project-scoped `$impeccable` из `.agents/skills/impeccable/SKILL.md`, при наличии pinned upstream source `.impeccable/`. Затем применяй браузерные проверки и owner visual gate по `docs/ux/impeccable-control-center.md`. Это не resident Hermes Agent: не копировать в `skills/`, не менять provider/runtime, не запускать внешние hooks/бинарники и не считать выбор эстетики разрешением на release.
+For UX/UI tasks affecting `control_center/frontend`, **first** load the project-scoped `$impeccable` from `.agents/skills/impeccable/SKILL.md` when the pinned upstream source `.impeccable/` is available. Then perform real-browser checks and the owner visual approval gate in `docs/ux/impeccable-control-center.md`. This is not a resident Hermes Agent skill: never copy it into `skills/`, change provider/runtime behavior, invoke external hooks/binaries or treat an aesthetic choice as release authorization.
 
 ## UX/UI Design Orchestra (Control Center only, 2026-10-21)
 
