@@ -80,10 +80,10 @@ class PairedPreflightTests(TestCase):
                           return_value=fake_wss() if wss is None else wss), \
              patch.object(pair.stage1, "locked_pins",
                           return_value=nullcontext(b"synthetic-pins")), \
-             patch.object(pair.stage1.PENDING, "exists", return_value=False), \
-             patch.object(pair.stage1.PENDING, "is_symlink", return_value=False), \
-             patch.object(pair.PAIR_PENDING, "exists", return_value=False), \
-             patch.object(pair.PAIR_PENDING, "is_symlink", return_value=False), \
+             patch.object(pair.stage1, "PENDING", SimpleNamespace(
+                 exists=lambda: False, is_symlink=lambda: False)), \
+             patch.object(pair, "PAIR_PENDING", SimpleNamespace(
+                 exists=lambda: False, is_symlink=lambda: False)), \
              patch.object(pair.candidate, "registry_mount_source",
                           return_value=str(pair.candidate.PINNED_REGISTRY_SOURCE)), \
              patch.object(pair.stage1, "inspect",
@@ -99,7 +99,7 @@ class PairedPreflightTests(TestCase):
                 mutating_legacy_docker.assert_not_called()
                 mutating_stage1_docker.assert_not_called()
                 gate.assert_called_once_with(Path("/verified"), IMAGE, ARCHIVE, SOURCE)
-                if checkpoint is None and (wss is None or wss is not None):
+                if checkpoint is None:
                     # On success both previous checkpoint names are inspected.
                     if inspect.call_count == 2:
                         self.assertEqual(
@@ -187,7 +187,8 @@ class PairedPreflightTests(TestCase):
 
     def test_wss_pending_recovery_refuses_to_continue(self):
         with patch.object(pair.stage1, "protected"), \
-             patch.object(pair.stage1.PENDING, "exists", return_value=True):
+             patch.object(pair.stage1, "PENDING", SimpleNamespace(
+                 exists=lambda: True, is_symlink=lambda: False)):
             with self.assertRaisesRegex(
                     pair.PairDenied, "PENDING_PAIR_RECOVERY_REQUIRED"):
                 pair.verify_pair(fake_wss())
