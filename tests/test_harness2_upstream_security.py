@@ -25,7 +25,8 @@ class Harness2ImportSecurityTests(unittest.TestCase):
     def git_identity(self, *, sha: str = h2.PIN, origin: str = h2.ORIGIN):
         return [subprocess.CompletedProcess([], 0, sha + "\n"),
                 subprocess.CompletedProcess([], 0, origin + "\n"),
-                subprocess.CompletedProcess([], 0)]
+                subprocess.CompletedProcess([], 0),
+                subprocess.CompletedProcess([], 0, stdout=b"")]
 
     def test_corrupt_utf8_install_marker_is_rejected(self):
         with tempfile.TemporaryDirectory() as folder:
