@@ -322,14 +322,47 @@ class TransactionTests(unittest.TestCase):
     def test_synthetic_joint_cutover_orders_proxy_before_relay(self):
         events = self.simulate_cutover()
         stops = [args[-1] for args in events if args and args[0] == "stop"]
-        self.assertEqual(stops, [tx.stage1.PROXY, tx.legacy.NAME])
+        self.assertEqual(stops, [OLD_PROXY_ID, OLD_RELAY_ID])
         self.assertIn(("start", "3" * 64), events)
         self.assertTrue(any(args[:2] == ("run", "-d") for args in events))
 
     def test_failed_first_stop_invokes_pair_rollback(self):
         events = self.simulate_cutover(fail_on_stop=True)
-        self.assertEqual(events[0][-1], tx.stage1.PROXY)
+        self.assertEqual(events[0][-1], OLD_PROXY_ID)
         self.assertFalse(any(args[0] == "rm" for args in events))
+
+    def test_name_takeover_cannot_redirect_mutating_docker_calls(self):
+        # After admission, another Docker admin may reassign the names.
+        # A name-addressed stop/update/rename would hit these foreign IDs.
+        swapped = {
+            tx.stage1.PROXY: "8" * 64,
+            tx.legacy.NAME: "9" * 64,
+        }
+        events = self.simulate_cutover()
+        actions = [x for x in events if x and x[0] in (
+            "stop", "update", "rename")]
+        self.assertTrue(actions)
+        pinned = {OLD_RELAY_ID, OLD_PROXY_ID, "2" * 64, "3" * 64}
+        for action in actions:
+            if action[0] == "stop":
+                target = action[-1]
+            elif action[0] == "update":
+                target = action[-1]
+            else:
+                target = action[1]
+            # This resolves the Docker identifier after hostile name reuse.
+            resolved = swapped.get(target, target)
+            self.assertEqual(target, resolved)
+            self.assertIn(resolved, pinned)
+            self.assertNotIn(resolved, set(swapped.values()))
+
+    def test_rollback_addresses_verified_ids_after_checkpoint_rename(self):
+        source = __import__("inspect").getsource(tx.restore_pair)
+        # Prevent a regression to 'docker rename checkpoint_name ...'
+        # or start/update by a reassigned container name.
+        self.assertIn('docker("rename", original_obj["Id"]', source)
+        self.assertIn('docker("start", current["Id"])', source)
+        self.assertIn('"unless-stopped", current["Id"]', source)
 
     def test_pending_marker_rejects_duplicate_keys_and_untrusted_scope(self):
         valid = {
@@ -390,9 +423,13 @@ class TransactionTests(unittest.TestCase):
                             if v["Id"] == args[-1])
                 del state[item]
             elif args[0] == "rename":
-                state[args[2]] = state.pop(args[1])
+                original_name = next(name for name, item in state.items()
+                                     if item["Id"] == args[1])
+                state[args[2]] = state.pop(original_name)
             elif args[0] == "start":
-                state[args[1]]["State"]["Running"] = True
+                name = next(name for name, item in state.items()
+                            if item["Id"] == args[1])
+                state[name]["State"]["Running"] = True
             return ""
         with tempfile.TemporaryDirectory(prefix="h454-pair-rollback-") as tmp:
             marker = Path(tmp) / "pending"
