@@ -92,6 +92,16 @@ def read_external_summary(relative: str, *, home: Path | None = None) -> dict:
         raise UpstreamRejected("UPSTREAM_IDENTITY_UNAVAILABLE") from exc
     if rev.returncode or rev.stdout.strip() != PIN or origin.returncode or origin.stdout.strip() != ORIGIN:
         raise UpstreamRejected("UPSTREAM_IDENTITY_MISMATCH")
+    # The declared HEAD can stay pinned while tracked upstream code is modified.
+    try:
+        clean = subprocess.run(
+            ["git", "-C", str(source), "diff", "--no-ext-diff", "--quiet", "HEAD", "--"],
+            capture_output=True, text=True, timeout=5, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise UpstreamRejected("UPSTREAM_IDENTITY_UNAVAILABLE") from exc
+    if clean.returncode != 0:
+        raise UpstreamRejected("UPSTREAM_SOURCE_DIRTY")
     if (not isinstance(relative, str) or "\\" in relative or relative.startswith("/")
             or not relative.startswith("runs/")):
         raise UpstreamRejected("UNSAFE_RELATIVE_PATH")

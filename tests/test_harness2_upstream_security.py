@@ -24,7 +24,8 @@ class Harness2ImportSecurityTests(unittest.TestCase):
 
     def git_identity(self, *, sha: str = h2.PIN, origin: str = h2.ORIGIN):
         return [subprocess.CompletedProcess([], 0, sha + "\n"),
-                subprocess.CompletedProcess([], 0, origin + "\n")]
+                subprocess.CompletedProcess([], 0, origin + "\n"),
+                subprocess.CompletedProcess([], 0)]
 
     def test_corrupt_utf8_install_marker_is_rejected(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -56,6 +57,18 @@ class Harness2ImportSecurityTests(unittest.TestCase):
                     h2.subprocess, "run", side_effect=identity
                 ), self.assertRaisesRegex(h2.UpstreamRejected, "UPSTREAM_IDENTITY_MISMATCH"):
                     h2.read_external_summary("runs/ns/task/summary.json", home=home)
+
+    def test_dirty_or_unverifiable_tracked_checkout_is_rejected(self):
+        with tempfile.TemporaryDirectory() as folder:
+            home = Path(folder)
+            self.make_install(home)
+            for git_rc in (1, 128):
+                with self.subTest(returncode=git_rc):
+                    commands = self.git_identity()
+                    commands[-1] = subprocess.CompletedProcess([], git_rc)
+                    with patch.object(h2.subprocess, "run", side_effect=commands):
+                        with self.assertRaisesRegex(h2.UpstreamRejected, "UPSTREAM_SOURCE_DIRTY"):
+                            h2.read_external_summary("runs/ns/task/summary.json", home=home)
 
     @unittest.skipUnless(os.name == "posix", "symlink creation requires POSIX")
     def test_symlinked_runs_root_escape_is_rejected(self):

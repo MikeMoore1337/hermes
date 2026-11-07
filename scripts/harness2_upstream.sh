@@ -35,6 +35,8 @@ readonly BIN="$INSTALL/.venv/bin"
 command -v git >/dev/null 2>&1 || die "git unavailable"
 [[ "$(git -C "$SRC" rev-parse HEAD 2>/dev/null)" == "$UPSTREAM_SHA" ]] || die "upstream revision mismatch"
 [[ "$(git -C "$SRC" remote get-url origin 2>/dev/null)" == "$UPSTREAM_URL" ]] || die "unexpected source origin"
+# HEAD and origin alone cannot detect local edits to original tracked upstream code.
+git -C "$SRC" diff --no-ext-diff --quiet HEAD -- 2>/dev/null || die "upstream tracked checkout differs from pin"
 [[ -x "$BIN/harness2-check" && -x "$BIN/harness2-report" && -x "$BIN/harness2-setup" ]] || die "upstream CLI not installed"
 cd -- "$SRC"
 case "$1" in

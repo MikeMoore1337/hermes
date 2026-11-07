@@ -37,5 +37,56 @@ class Harness2UpstreamContractTests(unittest.TestCase):
             self.assertIn("not installed", fail.stderr)
 
 
+    @unittest.skipUnless(os.name == "posix" and shutil.which("bash"), "POSIX Bash required")
+    def test_pinned_status_rejects_modified_tracked_upstream(self):
+        # Synthetic Git CLI only: no checkout, no benchmark, no model execution.
+        pin = "1cfe254e8d25b15f37048c3730134686abe60335"
+        origin = "https://github.com/google-research/harness2.git"
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            install = home / ".local/share/ai-development-toolkit" / ("harness2-" + pin)
+            source = install / "source"
+            binary = install / ".venv/bin"
+            fake_bin = home / "bin"
+            source.mkdir(parents=True)
+            binary.mkdir(parents=True)
+            fake_bin.mkdir()
+            (install / ".adt-original-harness2").write_text(pin + "\n", encoding="utf-8")
+            for cli in ("harness2-check", "harness2-report", "harness2-setup"):
+                wrapper = binary / cli
+                wrapper.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+                wrapper.chmod(0o755)
+            git = fake_bin / "git"
+            git.write_text(
+                "#!/bin/sh\n"
+                "case \"$*\" in\n"
+                "  *'rev-parse HEAD'*) printf '%s\\n' '" + pin + "' ;;\n"
+                "  *'remote get-url origin'*) printf '%s\\n' '" + origin + "' ;;\n"
+                "  *'diff --no-ext-diff --quiet HEAD --'*) exit \"${H629_FAKE_GIT_DIFF_RC:-0}\" ;;\n"
+                "  *) exit 99 ;;\n"
+                "esac\n",
+                encoding="utf-8",
+            )
+            git.chmod(0o755)
+            for rc, expected in ((0, 0), (1, 2), (128, 2)):
+                with self.subTest(git_diff_return_code=rc):
+                    env = {
+                        **os.environ,
+                        "HOME": str(home),
+                        "PATH": str(fake_bin) + os.pathsep + os.environ.get("PATH", ""),
+                        "H629_FAKE_GIT_DIFF_RC": str(rc),
+                    }
+                    result = subprocess.run(
+                        ["bash", str(SCRIPT), "status"], capture_output=True, text=True,
+                        env=env, timeout=10,
+                    )
+                    self.assertEqual(expected, result.returncode, result.stderr)
+                    if rc == 0:
+                        self.assertIn("HARNESS2_UPSTREAM=PINNED", result.stdout)
+                    else:
+                        self.assertIn("tracked checkout differs", result.stderr)
+                        self.assertNotIn("HARNESS2_UPSTREAM=PINNED", result.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()
