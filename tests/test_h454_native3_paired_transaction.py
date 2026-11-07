@@ -366,5 +366,106 @@ class TransactionTests(unittest.TestCase):
 
 
 
+    def test_pair_rollback_restores_both_original_names_and_pins(self):
+        old_r = relay()
+        old_p = proxy()
+        old_r["State"]["Running"] = False
+        old_p["State"]["Running"] = False
+        new_r = {"Id": "2" * 64, "Image": RUNTIME}
+        new_p = {"Id": "3" * 64, "Image": tx.stage1.LEGACY_IMAGE}
+        original = json.dumps({
+            "relay_image": tx.stage1.FORK_IMAGE,
+            "sidecar_image": tx.stage1.LEGACY_IMAGE,
+            "tls_directory": "/synthetic/tls",
+        }).encode()
+        state = {
+            tx.legacy.NAME: new_r, tx.stage1.PROXY: new_p,
+            tx.PAIR_RELAY: old_r, tx.PAIR_PROXY: old_p,
+        }
+        events = []
+        def docker(*args):
+            events.append(args)
+            if args[0] == "rm":
+                item = next(k for k, v in state.items()
+                            if v["Id"] == args[-1])
+                del state[item]
+            elif args[0] == "rename":
+                state[args[2]] = state.pop(args[1])
+            elif args[0] == "start":
+                state[args[1]]["State"]["Running"] = True
+            return ""
+        with tempfile.TemporaryDirectory(prefix="h454-pair-rollback-") as tmp:
+            marker = Path(tmp) / "pending"
+            marker.write_text("synthetic pending")
+            fake_wss = SimpleNamespace(
+                _pins=lambda _: {"tls_directory": "/synthetic/tls"},
+                _snapshot=lambda *args: (old_r, old_p))
+            with patch.object(tx, "strict_container", side_effect=state.get), \
+                 patch.object(tx, "owned_candidate") as identity_gate, \
+                 patch.object(tx.stage1, "docker", side_effect=docker), \
+                 patch.object(tx.stage1, "PINS",
+                              SimpleNamespace(read_bytes=lambda: b"changed")), \
+                 patch.object(tx.stage1, "replace_pins") as restore_pins, \
+                 patch.object(tx.stage1, "protected"), \
+                 patch.object(tx.stage1, "sync_pin_directory"), \
+                 patch.object(tx, "PENDING", marker), \
+                 patch.object(tx.legacy, "healthy", return_value=True):
+                tx.restore_pair(
+                    relay=old_r, proxy=old_p, original=original,
+                    image=RUNTIME, relay_id=new_r["Id"],
+                    proxy_id=new_p["Id"], baseline=2, wss=fake_wss)
+            self.assertEqual(state[tx.legacy.NAME]["Id"], OLD_RELAY_ID)
+            self.assertEqual(state[tx.stage1.PROXY]["Id"], OLD_PROXY_ID)
+            self.assertNotIn(tx.PAIR_RELAY, state)
+            self.assertNotIn(tx.PAIR_PROXY, state)
+            self.assertEqual(identity_gate.call_count, 2)
+            restore_pins.assert_called_once_with(original)
+            self.assertFalse(marker.exists())
+            self.assertEqual(
+                [args[-1] for args in events if args[0] == "rm"],
+                ["3" * 64, "2" * 64])
+
+    def test_proxy_rollback_identity_rejects_foreign_secret_mount(self):
+        original_labels = {
+            "com.hermes.h454.role": "wss-proxy",
+            "com.hermes.h454.request": "5" * 64,
+        }
+        directory = "/synthetic/tls"
+        mount = [
+            {"Type": "bind", "RW": False,
+             "Source": str(tx.stage1.PIN_ROOT / "proxy.mjs"),
+             "Destination": "/run/h454-wss/proxy.mjs"},
+            {"Type": "bind", "RW": False,
+             "Source": directory + "/relay.key",
+             "Destination": "/run/h454-wss/relay.key"},
+            {"Type": "bind", "RW": False,
+             "Source": directory + "/relay.crt",
+             "Destination": "/run/h454-wss/relay.crt"},
+        ]
+        item = {
+            "Id": "3" * 64, "Image": tx.stage1.LEGACY_IMAGE,
+            "Config": {"User": "65534:65534", "Labels": original_labels},
+            "HostConfig": {
+                "Privileged": False, "ReadonlyRootfs": True,
+                "CapDrop": ["ALL"], "CapAdd": None,
+                "SecurityOpt": ["no-new-privileges:true"],
+                "NetworkMode": "container:" + "2" * 64,
+                "PidsLimit": 32, "Memory": 128 * 1024 * 1024,
+            },
+            "Mounts": mount,
+        }
+        old = {"Config": {"Labels": original_labels}}
+        kwargs = dict(relay_id="2" * 64, old_proxy=old,
+                      old_pins={"tls_directory": directory})
+        tx.owned_candidate(item, item["Id"], item["Image"], "proxy", **kwargs)
+        item["Mounts"] = [dict(m) for m in mount]
+        item["Mounts"][1]["Source"] = "/etc/shadow"
+        with self.assertRaisesRegex(
+                tx.TransactionDenied, "FOREIGN_CANDIDATE_PROXY"):
+            tx.owned_candidate(item, item["Id"], item["Image"], "proxy",
+                               **kwargs)
+
+
+
 if __name__ == "__main__":
     unittest.main()
