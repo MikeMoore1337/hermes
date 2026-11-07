@@ -173,10 +173,12 @@ def owned_candidate(obj, expected_id: str, image: str, kind: str,
             "/run/h454-wss/relay.crt":
                 str(Path(old_pins["tls_directory"]) / "relay.crt"),
         }
-        require(cfg.get("User") == "65534:65534"
+        original_request = original_labels.get("com.hermes.h454.request")
+        require(isinstance(original_request, str) and
+                stage1.HEX.fullmatch(original_request) is not None and
+                cfg.get("User") == "65534:65534"
                 and labels.get("com.hermes.h454.role") == "wss-proxy"
-                and labels.get("com.hermes.h454.request") ==
-                    original_labels.get("com.hermes.h454.request")
+                and labels.get("com.hermes.h454.request") == original_request
                 and host.get("NetworkMode") == "container:" + relay_id
                 and host.get("PidsLimit") == 32
                 and host.get("Memory") == 128 * 1024 * 1024
