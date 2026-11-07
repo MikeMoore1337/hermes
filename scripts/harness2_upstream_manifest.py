@@ -67,6 +67,34 @@ def parse_summary(raw: bytes) -> dict:
     }
 
 
+def reject_untracked_executable_source(source: Path) -> None:
+    # Git diff does not see untracked modules. Do not trust local untracked
+    # executable files, even when the original upstream commit remains pinned.
+    try:
+        found = subprocess.run(
+            ["git", "-C", str(source), "ls-files", "--others", "-z", "--",
+             "harness2/", "sitecustomize.py", "sitecustomize.pyc",
+             "usercustomize.py", "usercustomize.pyc"],
+            capture_output=True, timeout=5, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise UpstreamRejected("UPSTREAM_IDENTITY_UNAVAILABLE") from exc
+    if found.returncode:
+        raise UpstreamRejected("UPSTREAM_IDENTITY_UNAVAILABLE")
+    for raw_path in found.stdout.split(bytes([0])):
+        if not raw_path:
+            continue
+        path = os.fsdecode(raw_path)
+        if path.startswith("harness2/") and "/__pycache__/" in path and path.endswith(".pyc"):
+            # These are not loaded when the official CLI uses its isolated cache.
+            continue
+        if (path in {"sitecustomize.py", "sitecustomize.pyc",
+                     "usercustomize.py", "usercustomize.pyc"}
+                or (path.startswith("harness2/")
+                    and path.endswith((".py", ".pyc", ".pyo", ".so", ".pyd", ".pth")))):
+            raise UpstreamRejected("UPSTREAM_UNTRACKED_EXECUTABLE")
+
+
 def read_external_summary(relative: str, *, home: Path | None = None) -> dict:
     # Never expose an option for an arbitrary project or private-vault root.
     root = (home or Path.home()) / ".local/share/ai-development-toolkit" / ("harness2-" + PIN)
@@ -102,6 +130,7 @@ def read_external_summary(relative: str, *, home: Path | None = None) -> dict:
         raise UpstreamRejected("UPSTREAM_IDENTITY_UNAVAILABLE") from exc
     if clean.returncode != 0:
         raise UpstreamRejected("UPSTREAM_SOURCE_DIRTY")
+    reject_untracked_executable_source(source)
     if (not isinstance(relative, str) or "\\" in relative or relative.startswith("/")
             or not relative.startswith("runs/")):
         raise UpstreamRejected("UNSAFE_RELATIVE_PATH")
@@ -152,6 +181,11 @@ def main() -> int:
         print("usage: python3 scripts/harness2_upstream_manifest.py runs/.../summary.json", file=sys.stderr)
         return 2
     try:
+        if sys.argv[1] == "--verify-untracked-source":
+            source = (Path.home() / ".local/share/ai-development-toolkit" / ("harness2-" + PIN)
+                      / "source")
+            reject_untracked_executable_source(source)
+            return 0
         report = read_external_summary(sys.argv[1])
     except UpstreamRejected as exc:
         print(f"HARNESS2_SUMMARY_REJECTED: {exc}", file=sys.stderr)

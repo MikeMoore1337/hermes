@@ -63,6 +63,7 @@ class Harness2UpstreamContractTests(unittest.TestCase):
                 "  *'rev-parse HEAD'*) printf '%s\\n' '" + pin + "' ;;\n"
                 "  *'remote get-url origin'*) printf '%s\\n' '" + origin + "' ;;\n"
                 "  *'diff --no-ext-diff --quiet HEAD --'*) exit \"${H629_FAKE_GIT_DIFF_RC:-0}\" ;;\n"
+                "  *'ls-files --others -z --'*) exit 0 ;;\n"
                 "  *) exit 99 ;;\n"
                 "esac\n",
                 encoding="utf-8",
@@ -86,6 +87,33 @@ class Harness2UpstreamContractTests(unittest.TestCase):
                     else:
                         self.assertIn("tracked checkout differs", result.stderr)
                         self.assertNotIn("HARNESS2_UPSTREAM=PINNED", result.stdout)
+
+            # A permitted original CLI must never read the checkout's existing
+            # __pycache__ files and must clean its temporary isolated cache.
+            wrapper = binary / "harness2-check"
+            wrapper.write_text(
+                "#!/bin/sh" + chr(10)
+                + 'echo "PYCACHE=$PYTHONPYCACHEPREFIX"' + chr(10)
+                + 'echo "DONTWRITE=$PYTHONDONTWRITEBYTECODE"' + chr(10),
+                encoding="utf-8",
+            )
+            wrapper.chmod(0o755)
+            safe_env = {
+                **os.environ,
+                "HOME": str(home),
+                "PATH": str(fake_bin) + os.pathsep + os.environ.get("PATH", ""),
+                "H629_FAKE_GIT_DIFF_RC": "0",
+            }
+            cli = subprocess.run(
+                ["bash", str(SCRIPT), "check", "--bench", "jb"], capture_output=True,
+                text=True, env=safe_env, timeout=10,
+            )
+            self.assertEqual(0, cli.returncode, cli.stderr)
+            self.assertIn("DONTWRITE=1", cli.stdout)
+            cache = next(line.partition("=")[2] for line in cli.stdout.splitlines()
+                         if line.startswith("PYCACHE="))
+            self.assertTrue(cache.startswith("/tmp/hermes-h2-pycache."), cache)
+            self.assertFalse(Path(cache).exists(), "temporary Python bytecode cache leaked")
 
 
 if __name__ == "__main__":
