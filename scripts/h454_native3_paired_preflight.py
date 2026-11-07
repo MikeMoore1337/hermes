@@ -83,6 +83,21 @@ def verify_pair(wss) -> tuple[dict, dict]:
     return relay, proxy
 
 
+def check_free_checkpoints() -> None:
+    """Verify absence from a *successful* Docker list, never optional inspect.
+
+    The legacy optional Docker inspector conflates daemon/API failures with
+    'not found'. That is unsuitable for selecting rollback checkpoint names.
+    """
+    for checkpoint in (RELAY_CHECKPOINT, PROXY_CHECKPOINT):
+        visible = stage1.docker(
+            "container", "ls", "--all",
+            "--filter", "name=^/" + checkpoint + "$",
+            "--format", "{{.Names}}",
+        )
+        require(visible == "", "ROLLBACK_CHECKPOINT_ALREADY_EXISTS")
+
+
 def plan(*, release_sha: str, bundle: Path, image: str,
          archive_sha: str, candidate_sha: str) -> dict:
     """Fail-closed proof only: safe for the existing active owner pair."""
@@ -102,9 +117,7 @@ def plan(*, release_sha: str, bundle: Path, image: str,
         relay, proxy = verify_pair(wss)
         require(relay.get("Image") == inspected["current_image"],
                 "CANDIDATE_PAIR_IMAGE_DRIFT")
-        for checkpoint in (RELAY_CHECKPOINT, PROXY_CHECKPOINT):
-            require(stage1.inspect("container", checkpoint, optional=True) is None,
-                    "ROLLBACK_CHECKPOINT_ALREADY_EXISTS")
+        check_free_checkpoints()
         devices = legacy.devices()
         require(type(devices) is int and 1 <= devices <= 25,
                 "OWNER_BASELINE_UNAVAILABLE")
