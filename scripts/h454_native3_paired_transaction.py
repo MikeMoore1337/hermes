@@ -218,7 +218,7 @@ def restore_pair(*, relay: dict, proxy: dict, original: bytes,
                     "FOREIGN_ROLLBACK_CHECKPOINT")
             require(strict_container(original_name) is None,
                     "ROLLBACK_NAME_OCCUPIED")
-            stage1.docker("rename", checkpoint_name, original_name)
+            stage1.docker("rename", original_obj["Id"], original_name)
         existing = strict_container(original_name)
         require(existing is not None and
                 existing["Id"] == original_obj["Id"],
@@ -227,8 +227,8 @@ def restore_pair(*, relay: dict, proxy: dict, original: bytes,
     for name in (legacy.NAME, stage1.PROXY):
         current = strict_container(name)
         if (current.get("State") or {}).get("Running") is not True:
-            stage1.docker("start", name)
-        stage1.docker("update", "--restart", "unless-stopped", name)
+            stage1.docker("start", current["Id"])
+        stage1.docker("update", "--restart", "unless-stopped", current["Id"])
     if stage1.PINS.read_bytes() != original:
         stage1.replace_pins(original)
     restored = wss._pins(original)
@@ -297,12 +297,12 @@ def cutover(*, release_sha: str, bundle: Path, image: str,
             pending_write(receipt)
             new_relay_id = new_proxy_id = ""
             try:
-                stage1.docker("stop", "--time", "12", stage1.PROXY)
-                stage1.docker("update", "--restart", "no", stage1.PROXY)
-                stage1.docker("rename", stage1.PROXY, PAIR_PROXY)
-                stage1.docker("stop", "--time", "20", legacy.NAME)
-                stage1.docker("update", "--restart", "no", legacy.NAME)
-                stage1.docker("rename", legacy.NAME, PAIR_RELAY)
+                stage1.docker("stop", "--time", "12", proxy["Id"])
+                stage1.docker("update", "--restart", "no", proxy["Id"])
+                stage1.docker("rename", proxy["Id"], PAIR_PROXY)
+                stage1.docker("stop", "--time", "20", relay["Id"])
+                stage1.docker("update", "--restart", "no", relay["Id"])
+                stage1.docker("rename", relay["Id"], PAIR_RELAY)
                 new_relay_id = stage1.docker(
                     *candidate_relay_args(runtime, relay["Config"]["User"]))
                 require(stage1.HEX.fullmatch(new_relay_id),
@@ -329,9 +329,9 @@ def cutover(*, release_sha: str, bundle: Path, image: str,
                 after = legacy.snapshot()
                 stage1.compare_auth(before, after)
                 stage1.docker("update", "--restart", "unless-stopped",
-                              legacy.NAME)
+                              new_relay_id)
                 stage1.docker("update", "--restart", "unless-stopped",
-                              stage1.PROXY)
+                              new_proxy_id)
                 # Assert the *running compiled* candidate contract, including
                 # the original immutable Stage 1 registry and denied host rights.
                 actual = candidate.inspect(["container", "inspect", legacy.NAME])
