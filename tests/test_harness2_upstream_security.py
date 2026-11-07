@@ -71,6 +71,27 @@ class Harness2ImportSecurityTests(unittest.TestCase):
                         with self.assertRaisesRegex(h2.UpstreamRejected, "UPSTREAM_SOURCE_DIRTY"):
                             h2.read_external_summary("runs/ns/task/summary.json", home=home)
 
+    def test_untracked_executable_source_is_rejected(self):
+        for path in (b"harness2/core/unknown.py", b"harness2/core/injected.pyc",
+                     b"harness2/substrate/native.so", b"sitecustomize.py"):
+            with self.subTest(path=path):
+                result = subprocess.CompletedProcess([], 0, stdout=path + bytes([0]))
+                with patch.object(h2.subprocess, "run", return_value=result):
+                    with self.assertRaisesRegex(h2.UpstreamRejected, "UPSTREAM_UNTRACKED_EXECUTABLE"):
+                        h2.reject_untracked_executable_source(Path("/ignored-source"))
+
+    def test_existing_cache_is_allowed_and_listing_failure_denied(self):
+        cache = b"harness2/core/__pycache__/schedule.cpython-312.pyc" + bytes([0])
+        with patch.object(
+            h2.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, stdout=cache)
+        ):
+            h2.reject_untracked_executable_source(Path("/ignored-source"))
+        with patch.object(
+            h2.subprocess, "run", return_value=subprocess.CompletedProcess([], 128, stdout=b"")
+        ):
+            with self.assertRaisesRegex(h2.UpstreamRejected, "UPSTREAM_IDENTITY_UNAVAILABLE"):
+                h2.reject_untracked_executable_source(Path("/ignored-source"))
+
     @unittest.skipUnless(os.name == "posix", "symlink creation requires POSIX")
     def test_symlinked_runs_root_escape_is_rejected(self):
         with tempfile.TemporaryDirectory() as home_folder, tempfile.TemporaryDirectory() as outside:
