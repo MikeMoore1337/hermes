@@ -342,9 +342,153 @@ def cutover(*, release_sha: str, bundle: Path, image: str,
         }
 
 
+
+def verified_candidate_for_recovery(bundle: Path, image: str,
+                                    archive_sha: str, candidate_sha: str) -> str:
+    """Attest imported OCI independently; the old relay may be stopped."""
+    record = candidate.verify(
+        directory=bundle, expected_archive_sha=archive_sha,
+        expected_image_id=image, expected_hermes_sha=candidate_sha)
+    require(record.get("owner_agents_paired") is False and
+            record.get("production_mcp_enabled") is False,
+            "RECOVERY_BUNDLE_OUT_OF_SCOPE")
+    imported, runtime = candidate.candidate_runtime_image(
+        bundle, image, candidate_sha)
+    candidate.candidate_gate(imported, runtime)
+    return runtime
+
+
+def pending_read() -> dict:
+    """Strict, sanitized recovery marker with original and new identities."""
+    stage1.protected(PENDING, 0o600)
+
+    def unique(items):
+        found = {}
+        for key, value in items:
+            require(key not in found, "PENDING_DUPLICATE_KEY")
+            found[key] = value
+        return found
+
+    require(PENDING.stat().st_size <= 4096, "PENDING_TOO_LARGE")
+    doc = json.loads(PENDING.read_bytes(), object_pairs_hook=unique)
+    require(type(doc) is dict and set(doc) == {
+        "schema", "release_sha", "candidate_sha", "runtime_image",
+        "relay_id", "proxy_id", "pins_sha256", "baseline",
+        "new_relay_id", "new_proxy_id",
+    } and type(doc["schema"]) is int and doc["schema"] == 1
+            and type(doc["baseline"]) is int
+            and 1 <= doc["baseline"] <= 25
+            and stage1.HEX.fullmatch(str(doc["relay_id"]))
+            and stage1.HEX.fullmatch(str(doc["proxy_id"]))
+            and stage1.HEX.fullmatch(str(doc["pins_sha256"]))
+            and candidate.IMAGE.fullmatch(str(doc["runtime_image"]))
+            and all(not value or stage1.HEX.fullmatch(value)
+                    for value in (doc["new_relay_id"], doc["new_proxy_id"])),
+            "PENDING_RECEIPT_INVALID")
+    return doc
+
+
+def restore_authorized(*, release_sha: str, bundle: Path, image: str,
+                       archive_sha: str, candidate_sha: str,
+                       after_success: bool) -> dict:
+    """Recover an interrupted pair or roll back a successful switch.
+
+    A failed or ambiguous identity check refuses to delete *anything*.
+    Unlike first-time cutover, this cannot call admit(): the old relay may
+    legitimately be stopped or renamed during recovery.
+    """
+    require(os.geteuid() == 0, "ROOT_REQUIRED")
+    admission.verify_installed_source(release_sha)
+    with legacy.lock():
+        stage1.protected(legacy.BACKUPS, 0o700, directory=True)
+        legacy.check_files()
+        runtime = verified_candidate_for_recovery(
+            bundle, image, archive_sha, candidate_sha)
+        stage1.protected(stage1.PIN_ROOT, 0o700, directory=True)
+        stage1.protected(ORIGINAL_PINS, 0o600)
+        original = ORIGINAL_PINS.read_bytes()
+        wss = stage1.load_existing_wss()
+        pins = wss._pins(original)
+        require(pins["relay_image"] == stage1.FORK_IMAGE and
+                pins["sidecar_image"] == stage1.LEGACY_IMAGE and
+                pins["relay_name"] == legacy.NAME and
+                pins["sidecar_name"] == stage1.PROXY,
+                "ORIGINAL_PIN_SCOPE_CHANGED")
+        relay = strict_container(PAIR_RELAY) or strict_container(legacy.NAME)
+        proxy = strict_container(PAIR_PROXY) or strict_container(stage1.PROXY)
+        require(relay is not None and proxy is not None and
+                relay["Id"] == pins["relay_id"] and
+                proxy["Id"] == pins["sidecar_id"] and
+                relay["Image"] == stage1.FORK_IMAGE and
+                proxy["Image"] == stage1.LEGACY_IMAGE,
+                "OLD_CHECKPOINT_IDENTITY_CHANGED")
+        approval_record(
+            release_sha=release_sha, candidate_sha=candidate_sha,
+            image=image, archive_sha=archive_sha, runtime=runtime,
+            relay=relay, proxy=proxy, raw_pins=original)
+        with stage1.locked_pins() as active_raw:
+            current = wss._pins(active_raw)
+            if after_success:
+                require(not PENDING.exists() and not PENDING.is_symlink(),
+                        "PENDING_RECOVERY_REQUIRED")
+                require(current["relay_image"] == runtime and
+                        current["sidecar_image"] == stage1.LEGACY_IMAGE
+                        and stage1.HEX.fullmatch(current["relay_id"])
+                        and stage1.HEX.fullmatch(current["sidecar_id"]),
+                        "ACTIVE_CANDIDATE_PAIR_NOT_VERIFIED")
+                require(strict_container(legacy.NAME)["Id"] ==
+                        current["relay_id"] and
+                        strict_container(stage1.PROXY)["Id"] ==
+                        current["sidecar_id"],
+                        "ACTIVE_CANDIDATE_IDS_CHANGED")
+                try:
+                    baseline = legacy.devices()
+                except (OSError, ValueError, legacy.CutoverDenied):
+                    baseline = 1
+                require(type(baseline) is int and 1 <= baseline <= 25,
+                        "ROLLBACK_BASELINE_INVALID")
+                data = {
+                    "schema": 1, "release_sha": release_sha,
+                    "candidate_sha": candidate_sha, "runtime_image": runtime,
+                    "relay_id": relay["Id"], "proxy_id": proxy["Id"],
+                    "pins_sha256": hashlib.sha256(original).hexdigest(),
+                    "baseline": baseline, "new_relay_id": current["relay_id"],
+                    "new_proxy_id": current["sidecar_id"],
+                }
+                pending_write(data)
+            else:
+                require(PENDING.exists() and not PENDING.is_symlink(),
+                        "NO_RECOVERY_MARKER")
+                data = pending_read()
+                require(data["release_sha"] == release_sha
+                        and data["candidate_sha"] == candidate_sha
+                        and data["runtime_image"] == runtime
+                        and data["relay_id"] == relay["Id"]
+                        and data["proxy_id"] == proxy["Id"]
+                        and data["pins_sha256"] ==
+                            hashlib.sha256(original).hexdigest(),
+                        "RECOVERY_MARKER_DRIFT")
+            restore_pair(
+                relay=relay, proxy=proxy, original=original,
+                image=runtime, relay_id=data["new_relay_id"],
+                proxy_id=data["new_proxy_id"],
+                baseline=data["baseline"], wss=wss)
+
+        require(wss.reconcile(str(stage1.PINS)) == "READY",
+                "RESTORED_WSS_NOT_READY")
+        return {
+            "status": "ORIGINAL_PAIR_RESTORED_PENDING_CLIENT_VERIFICATION",
+            "previous_relay_image": stage1.FORK_IMAGE,
+            "previous_proxy_image": stage1.LEGACY_IMAGE,
+            "client_e2e_verified": False,
+            "host_permissions_changed": False,
+            "auth_database_reverted": False,
+        }
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("plan", "cutover"))
+    parser.add_argument("mode", choices=("plan", "cutover", "recover", "rollback"))
     parser.add_argument("--release-sha", required=True)
     parser.add_argument("--bundle-dir", required=True, type=Path)
     parser.add_argument("--image", required=True)
@@ -353,14 +497,16 @@ def main(argv=None) -> int:
     parser.add_argument("--execute", action="store_true")
     args = parser.parse_args(argv)
     try:
-        require((args.mode == "cutover") == args.execute,
+        require((args.mode != "plan") == args.execute,
                 "EXPLICIT_CUTOVER_EXECUTE_REQUIRED")
         kwargs = dict(
             release_sha=args.release_sha, bundle=args.bundle_dir,
             image=args.image, archive_sha=args.archive_sha,
             candidate_sha=args.candidate_sha)
         result = (admission.plan(**kwargs) if args.mode == "plan"
-                  else cutover(**kwargs))
+                  else cutover(**kwargs) if args.mode == "cutover"
+                  else restore_authorized(
+                      **kwargs, after_success=args.mode == "rollback"))
     except Exception as exc:
         reason = str(exc) if isinstance(exc, TransactionDenied) else (
             str(exc) if isinstance(exc, admission.PairDenied)
