@@ -25,6 +25,11 @@ APPROVAL = Path("/etc/hermes-brc-relay/relay-upgrade-approval.json")
 LOCK = Path("/run/lock/hermes-brc-relay-upgrade.lock")
 SECRETS = Path("/etc/hermes-brc-relay/relay.env")
 DB = Path("/var/lib/hermes-brc-relay/relay.sqlite")
+# The Stage 1 WSS proxy shares the *container ID* network namespace of the
+# live relay. Replacing only the relay would orphan the proxy and can strand
+# paired ChatGPT clients. A separate joint-pair operator is mandatory.
+WSS_PAIR_PINS = Path("/var/lib/hermes-h454-wss-sidecar/pins.json")
+WSS_PROXY_NAME = "hermes-h454-wss-proxy"
 BACKUPS = Path("/var/backups/hermes-brc-relay")
 HEX64 = re.compile(r"[a-f0-9]{64}\Z")
 CONTAINER_ID = HEX64
@@ -35,6 +40,25 @@ class CutoverDenied(Exception):
 def demand(ok, reason):
     if not ok:
         raise CutoverDenied(reason)
+
+def require_unpaired_wss() -> None:
+    """Never replace a relay while its Stage 1 WSS proxy is still paired."""
+    if WSS_PAIR_PINS.exists() or WSS_PAIR_PINS.is_symlink():
+        raise CutoverDenied("PAIRED_WSS_REQUIRES_ATOMIC_CUTOVER")
+    try:
+        result = subprocess.run(
+            ["docker", "container", "ls", "-a", "--no-trunc",
+             "--filter", "name=^/" + WSS_PROXY_NAME + "$",
+             "--format", "{{.Names}}"],
+            capture_output=True, text=True, timeout=12,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise CutoverDenied("WSS_PROXY_DISCOVERY_UNAVAILABLE") from exc
+    if result.returncode or len(result.stdout) > 512:
+        raise CutoverDenied("WSS_PROXY_DISCOVERY_UNAVAILABLE")
+    if result.stdout.strip():
+        raise CutoverDenied("PAIRED_WSS_REQUIRES_ATOMIC_CUTOVER")
+
 
 def approve(doc, new, old, archive, commit):
     demand(isinstance(doc, dict) and set(doc) == {
@@ -240,6 +264,9 @@ def main(argv=None):
     try:
         demand(os.geteuid() == 0, "ROOT_REQUIRED")
         demand(a.mode == "plan" or a.execute, "EXPLICIT_EXECUTE_REQUIRED")
+        # Run before the preflight, backup or first Docker stop. The real
+        # owner's WSS sidecar is attached to this relay's exact namespace.
+        require_unpaired_wss()
         with lock():
             v = admit(a.bundle_dir, a.image, a.archive_sha, a.hermes_sha)
             old = v["current_image"]
