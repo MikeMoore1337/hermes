@@ -34,6 +34,42 @@ prove that every other owner/transport/audit gate is healthy.
    verify, and optionally load the **new** candidate (no runtime cutover).
    Never reuse an artifact whose relevant BRC inputs differ from `main`.
 
+## Stage 1 workspace catalog preservation (2026-11-07)
+
+The **real running** owner relay has two Docker bind mounts, not one:
+
+- `/state`, the original read/write SQLite state directory.
+- `/run/h454/workspace-registry.json`, the previously owner-approved
+  **read-only** Stage 1 registry used for four sandbox projects.
+
+The verified candidate's first offline `plan` refused with
+`relay_mounts_not_single`. The isolated OCI bundle and image were independently
+verified; the image can be loaded without starting or switching a container.
+The strict check now accepts the legacy one-mount layout or the exact Stage 1
+two-mount layout **only** if the extra bind is pinned to the original root-owned
+regular single-link `0444` registry file (SHA-256
+`8253e69bf43597e4d76dbba941588c930e1ce3fbb14e7daf5426f3ab8f482e85`)
+under the original source release, with no symlinked or group/world-writable
+ancestors. All three `BRC_WORKSPACE_REGISTRY`, `BRC_DB` and `HOME` env pins
+must appear exactly once.
+
+The transaction must preserve that read-only mount and all three env pins,
+re-check the source and effective mounts immediately before Docker stop and
+after candidate creation, and restore the original container if the registry
+is dropped. Generic host paths, Docker sockets, writable catalogs, extra
+mounts or unexpected owner/permissions fail closed. Do **not** remove the
+registry merely to satisfy a historical single-mount rule.
+
+**Offline operator usage:** Run the owner artifact verifier from the
+**exact released source directory**, e.g.
+`/opt/hermes-agent-owner/releases/main-<verified-main-sha>`, with the
+private staging directory. The active module mirror at
+`/opt/hermes-agent-owner` does not contain the immutable
+`deploy/h15/load-verified-image.sh` loader and `--load` must refuse there.
+An image imported into Docker is **not** a live cutover. The root-owned owner
+approval JSON previously observed on this host pins an unrelated old image,
+archive and source SHA, and must never be reused as new consent.
+
 ## Production gate (separate explicit owner approval required)
 
 - Ensure exactly the expected existing running image and healthy sandbox
