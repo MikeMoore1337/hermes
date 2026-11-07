@@ -361,8 +361,9 @@ class TransactionTests(unittest.TestCase):
         # Prevent a regression to 'docker rename checkpoint_name ...'
         # or start/update by a reassigned container name.
         self.assertIn('docker("rename", original_obj["Id"]', source)
-        self.assertIn('docker("start", current["Id"])', source)
-        self.assertIn('"unless-stopped", current["Id"]', source)
+        self.assertIn('docker("start", original_obj["Id"])', source)
+        self.assertIn('original_obj["Id"])', source)
+        self.assertIn('"RESTORED_CONTAINER_CHANGED"', source)
 
     def test_pending_marker_rejects_duplicate_keys_and_untrusted_scope(self):
         valid = {
@@ -461,6 +462,31 @@ class TransactionTests(unittest.TestCase):
             self.assertEqual(
                 [args[-1] for args in events if args[0] == "rm"],
                 ["3" * 64, "2" * 64])
+
+    def test_late_rollback_name_hijack_never_starts_foreign_container(self):
+        original_relay, original_proxy = relay(), proxy()
+        foreign = {
+            "Id": "9" * 64,
+            "Image": "sha256:" + "8" * 64,
+            "State": {"Running": False},
+        }
+        # First lookups confirm the pinned checkpoint/original identities.
+        # A foreign container takes the relay name just before final start.
+        reads = [
+            original_proxy, original_relay,
+            None, original_relay, None, original_proxy,
+            foreign,
+        ]
+        with patch.object(tx, "strict_container", side_effect=reads), \
+             patch.object(tx.stage1, "docker") as actions:
+            with self.assertRaisesRegex(
+                    tx.TransactionDenied, "RESTORED_CONTAINER_CHANGED"):
+                tx.restore_pair(
+                    relay=original_relay, proxy=original_proxy,
+                    original=PINS, image=RUNTIME,
+                    relay_id="", proxy_id="", baseline=2,
+                    wss=SimpleNamespace())
+        actions.assert_not_called()
 
     def test_proxy_rollback_identity_rejects_foreign_secret_mount(self):
         original_labels = {
