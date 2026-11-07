@@ -1,9 +1,14 @@
 """Offline source and Docker-identity refusal tests for H15 upgrade gate."""
+import hashlib
 import io
 import json
 from pathlib import Path
+import stat
+import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
+from scripts import h15_brc_upgrade_preflight as gate
 from scripts.h15_brc_upgrade_preflight import UpgradeDenied, admit, candidate_gate, current_gate, inspect, candidate_runtime_image
 
 NEW="sha256:"+"2"*64
@@ -108,6 +113,103 @@ class GateTests(unittest.TestCase):
         with self.assertRaisesRegex(UpgradeDenied,"not_running"):current_gate(c,NEW)
     def test_same_image(self):
         with self.assertRaisesRegex(UpgradeDenied,"not_replaceable"):current_gate(current(),OLD)
+    def test_stage1_pinned_registry_matches_owner_approved_source(self):
+        source = Path(__file__).resolve().parents[1] / "deploy/h15/workspace-registry-fork.json"
+        self.assertEqual(hashlib.sha256(source.read_bytes()).hexdigest(),
+                         gate.PINNED_REGISTRY_SHA256)
+        self.assertEqual(gate.REGISTRY_TARGET, "/run/h454/workspace-registry.json")
+
+    def test_pinned_stage1_registry_accepted_regardless_of_mount_order(self):
+        c = current()
+        c["Mounts"].insert(0, {
+            "Type": "bind", "Source": str(gate.PINNED_REGISTRY_SOURCE),
+            "Destination": gate.REGISTRY_TARGET, "RW": False,
+        })
+        c["Config"]["Env"].extend(gate.REGISTRY_ENV)
+        with patch.object(gate, "_verify_pinned_registry_file") as attestation:
+            self.assertEqual(current_gate(c, NEW), OLD)
+        attestation.assert_called_once_with()
+
+    def test_any_unapproved_extra_mount_refused_before_filesystem_read(self):
+        for change in (
+            {"Source": "/var/run/docker.sock"},
+            {"Destination": "/host"},
+            {"RW": True},
+            {"Type": "volume"},
+        ):
+            with self.subTest(change=change):
+                c = current()
+                mount = {"Type": "bind", "Source": str(gate.PINNED_REGISTRY_SOURCE),
+                         "Destination": gate.REGISTRY_TARGET, "RW": False}
+                mount.update(change)
+                c["Mounts"].append(mount)
+                c["Config"]["Env"].extend(gate.REGISTRY_ENV)
+                with patch.object(gate, "_verify_pinned_registry_file") as verifier:
+                    with self.assertRaisesRegex(UpgradeDenied, "relay_mounts_not_single"):
+                        current_gate(c, NEW)
+                verifier.assert_not_called()
+
+    def test_duplicate_missing_or_modified_registry_env_denied(self):
+        for env in (
+            [], list(gate.REGISTRY_ENV[:-1]),
+            list(gate.REGISTRY_ENV) + ["HOME=/etc"],
+            list(gate.REGISTRY_ENV) + ["BRC_DB=/state/other.sqlite"],
+        ):
+            with self.subTest(env=env):
+                c = current()
+                c["Mounts"].append({
+                    "Type": "bind", "Source": str(gate.PINNED_REGISTRY_SOURCE),
+                    "Destination": gate.REGISTRY_TARGET, "RW": False,
+                })
+                c["Config"]["Env"] = env
+                with patch.object(gate, "_verify_pinned_registry_file") as verifier:
+                    with self.assertRaisesRegex(
+                            UpgradeDenied, "relay_registry_environment_mismatch"):
+                        current_gate(c, NEW)
+                verifier.assert_not_called()
+
+    def test_stage1_pinned_content_and_root_permissions_both_required(self):
+        original = (Path(__file__).resolve().parents[1]
+                    / "deploy/h15/workspace-registry-fork.json").read_bytes()
+        with tempfile.TemporaryDirectory() as scratch:
+            path = Path(scratch) / "registry.json"
+            path.write_bytes(original)
+            def root_attested_lstat(p):
+                return SimpleNamespace(
+                    st_mode=(stat.S_IFREG | 0o444) if p == path
+                            else (stat.S_IFDIR | 0o755),
+                    st_uid=0, st_gid=0, st_nlink=1, st_size=path.stat().st_size,
+                )
+            with patch.object(gate, "PINNED_REGISTRY_SOURCE", path), \
+                 patch.object(Path, "lstat", root_attested_lstat):
+                gate._verify_pinned_registry_file()
+                path.write_bytes(b"unapproved-catalog")
+                with self.assertRaisesRegex(UpgradeDenied, "relay_registry_digest_mismatch"):
+                    gate._verify_pinned_registry_file()
+            # Replacing the same bytes with a writable/foreign owner is refused.
+            path.write_bytes(original)
+            def writable_lstat(p):
+                value = root_attested_lstat(p)
+                if p == path:
+                    value.st_mode = stat.S_IFREG | 0o644
+                return value
+            with patch.object(gate, "PINNED_REGISTRY_SOURCE", path), \
+                 patch.object(Path, "lstat", writable_lstat):
+                with self.assertRaisesRegex(UpgradeDenied, "relay_registry_file_untrusted"):
+                    gate._verify_pinned_registry_file()
+
+    def test_pinned_registry_missing_file_fails_closed(self):
+        c = current()
+        c["Mounts"].append({
+            "Type": "bind", "Source": str(gate.PINNED_REGISTRY_SOURCE),
+            "Destination": gate.REGISTRY_TARGET, "RW": False,
+        })
+        c["Config"]["Env"].extend(gate.REGISTRY_ENV)
+        with patch.object(gate, "_verify_pinned_registry_file",
+                          side_effect=UpgradeDenied("relay_registry_file_unavailable")):
+            with self.assertRaisesRegex(UpgradeDenied, "relay_registry_file_unavailable"):
+                current_gate(c, NEW)
+
     def test_extra_mount_denied(self):
         c=current();c["Mounts"].append({"Type":"bind","Source":"/root","Destination":"/host"})
         with self.assertRaisesRegex(UpgradeDenied,"mounts_not_single"):current_gate(c,NEW)
