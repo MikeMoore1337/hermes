@@ -59,6 +59,24 @@ fs.writeFileSync(imagePath, Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC
 const image = await callTool('read_file', {path: imagePath});
 assert(image.isError !== true && image.content.some(item => item.type === 'image' && item.mimeType === 'image/png'),
        'MCP_IMAGE_READ_UNCHANGED');
+const allFailed = await callTool('read_multiple_files', {
+  paths: ['/workspace/h454-missing-first', '/workspace/h454-missing-second'],
+});
+assert(allFailed.isError === true && allFailed.content.some(item =>
+  item.text?.includes('Error -')), 'MCP_MULTIPLE_ALL_FAILED_IS_ERROR');
+const imageWithError = await callTool('read_multiple_files', {
+  paths: [imagePath, '/workspace/h454-missing-third'],
+});
+assert(imageWithError.isError === true &&
+  imageWithError.content.some(item => item.type === 'image' && item.mimeType === 'image/png') &&
+  imageWithError.content.some(item => item.text?.includes('Error -')),
+  'MCP_MULTIPLE_IMAGE_FAILURE_IS_ERROR');
+const emptyBatch = await callTool('read_multiple_files', {paths:[]});
+assert(emptyBatch.isError === true && emptyBatch.content.some(item =>
+  item.text?.includes('HERMES_EMPTY_FILE_BATCH')), 'MCP_MULTIPLE_EMPTY_BATCH_REFUSED');
+assert((await callTool('read_multiple_files', {paths:'invalid'})).isError === true,
+  'MCP_MULTIPLE_INVALID_SCHEMA_REFUSED');
+
 
 // The filesystem may use epoch zero when birthtime is unavailable. Exercise
 // the real dispatcher/formatter with controlled stats, not host metadata.
@@ -420,6 +438,59 @@ setInterval(()=>{},1000);`);
     if (Number.isSafeInteger(session) && session > 1 && terminalManager.sessions.has(session))
       await callTool('force_terminate', {pid:session});
     if (Number.isSafeInteger(escaped) && escaped > 1 && running(escaped)) process.kill(escaped, 'SIGKILL');
+  }
+}
+
+if (usesSupervisor && fs.existsSync('/usr/bin/setsid')) {
+  const stopWorker = '/workspace/h454-stopped-worker.mjs';
+  const stopMarker = '/workspace/h454-stopped-descendant.pid';
+  const child = "require('node:fs').writeFileSync(" + JSON.stringify(stopMarker) +
+    ", String(process.pid), {flag:'wx'});setInterval(()=>{},1000)";
+  fs.writeFileSync(stopWorker, "import {spawn} from 'node:child_process';\n" +
+    "spawn('/usr/bin/setsid',[process.execPath,'-e'," + JSON.stringify(child) +
+    "],{stdio:'ignore'});\nsetInterval(()=>{},1000);");
+  let stoppedPid, detachedPid, otherPid;
+  try {
+    const first = await callTool('start_process', {
+      command:'node '+stopWorker,shell:'/bin/sh',timeout_ms:500,
+    });
+    const second = await callTool('start_process', {
+      command:'sleep 30',shell:'/bin/sh',timeout_ms:500,
+    });
+    stoppedPid = pidFrom(first); otherPid = pidFrom(second);
+    assert(first.isError !== true && second.isError !== true &&
+      Number.isSafeInteger(stoppedPid) && stoppedPid > 1 &&
+      Number.isSafeInteger(otherPid) && otherPid > 1, 'MCP_STOPPED_SESSIONS_STARTED');
+    for (let i=0; i<80 && !fs.existsSync(stopMarker); i++) await pause(50);
+    detachedPid = Number(fs.readFileSync(stopMarker, 'utf8'));
+    assert(Number.isSafeInteger(detachedPid) && detachedPid > 1 &&
+      running(detachedPid), 'MCP_STOPPED_DETACHED_READY');
+    process.kill(stoppedPid, 'SIGSTOP');
+    let stopped = false;
+    for (let i=0; i<30; i++) {
+      const state = fs.readFileSync('/proc/'+stoppedPid+'/stat', 'utf8').split(') ')[1]?.[0];
+      if (state === 'T' || state === 't') { stopped=true; break; }
+      await pause(20);
+    }
+    assert(stopped, 'MCP_STOPPED_SUPERVISOR_STOPPED');
+    const ended = await callTool('force_terminate', {pid:stoppedPid});
+    const message = ended.content.map(item=>item.text||'').join('\n');
+    assert(ended.isError !== true && message.includes('initiated termination') &&
+      !message.includes('all descendants exited'), 'MCP_TERMINATION_IS_INITIATION_ONLY');
+    for (let i=0; i<80 && running(detachedPid); i++) await pause(50);
+    assert(!running(detachedPid) && running(otherPid),
+      'MCP_STOPPED_SUPERVISOR_DETACHED_REAP_AND_ISOLATION');
+  } finally {
+    if (Number.isSafeInteger(stoppedPid) && stoppedPid > 1) {
+      try { process.kill(stoppedPid, 'SIGCONT'); }
+      catch (err) { if (err.code !== 'ESRCH') throw err; }
+      if (terminalManager.sessions.has(stoppedPid))
+        await callTool('force_terminate', {pid:stoppedPid});
+    }
+    if (Number.isSafeInteger(otherPid) && otherPid > 1 && terminalManager.sessions.has(otherPid))
+      await callTool('force_terminate', {pid:otherPid});
+    if (Number.isSafeInteger(detachedPid) && detachedPid > 1 && running(detachedPid))
+      process.kill(detachedPid, 'SIGKILL');
   }
 }
 

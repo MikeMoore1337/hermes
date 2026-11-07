@@ -380,7 +380,7 @@ class BrcHardeningTests(unittest.TestCase):
         self.assertNotIn("content: instructions", actual)
         self.assertIn("async write() { throw new Error('unchanged'); }", actual)
         handlers = self.filesystem_handlers.read_text(encoding="utf-8")
-        self.assertIn("isError: fileResults.some(result => Boolean(result.error))", handlers)
+        self.assertIn("isError: fileResults.some(result => result.error !== undefined)", handlers)
         self.assertIn("content: contentItems", handlers)
 
     def test_changed_binary_reader_refuses_before_any_source_write(self):
@@ -452,7 +452,9 @@ class BrcHardeningTests(unittest.TestCase):
         self.assertIn("['-T', '-e', h454PerlSupervisor", terminal)
         self.assertIn("h454LinuxSessions.get(session.process)", terminal)
         self.assertIn("session.process.pid !== pid", terminal)
-        self.assertIn("session.process.kill('SIGTERM') : process.kill(-pid, 'SIGKILL')", terminal)
+        self.assertIn("session.process.kill('SIGCONT')", terminal)
+        self.assertIn("return session.process.kill('SIGTERM')", terminal)
+        self.assertIn("HERMES_TERMINATION_INCOMPLETE", terminal)
         self.assertIn("descendants may remain.", tools)
 
     def test_unreviewed_spawn_is_refused_before_any_write(self):
@@ -540,6 +542,33 @@ class BrcHardeningTests(unittest.TestCase):
             apply(self.root)
         self.assertEqual(target.read_text(encoding="utf-8"), EDIT)
         self.assertEqual(self.dispatcher.read_text(encoding="utf-8"), ORIGINAL)
+
+
+    def test_mixed_batch_catches_empty_string_error_and_rejects_empty_list(self):
+        from scripts.h15_brc_apply_policy_patch import multiple_read_errors
+
+        source = """export async function handleReadMultipleFiles(args: unknown) {
+    const parsed = ReadMultipleFilesArgsSchema.parse(args);
+    const fileResults = await readMultipleFiles(parsed.paths);
+    const textSummary = fileResults.map(result => {
+        if (result.error) { return result.error; }
+        return 'ok';
+    });
+    const contentItems = [];
+    for (const result of fileResults) {
+        if (!result.error && result.content !== undefined) { contentItems.push(result.content); }
+    }
+    return { content: contentItems };
+}
+export async function handleWriteFile(args) {}
+"""
+        patched = multiple_read_errors(source)
+        self.assertIn("if (parsed.paths.length === 0)", patched)
+        self.assertIn("if (result.error !== undefined)", patched)
+        self.assertIn("if (result.error === undefined &&", patched)
+        self.assertIn("fileResults.some(result => result.error !== undefined)", patched)
+        self.assertNotIn("Boolean(result.error)", patched)
+
 
 
 if __name__ == "__main__":

@@ -111,7 +111,7 @@ def binary_read_errors(raw: str) -> str:
 
 
 def multiple_read_errors(raw: str) -> str:
-    """Keep successful batch contents while reporting any failed file."""
+    """Mark all per-file failures, even when the error string is empty."""
     start = "export async function handleReadMultipleFiles("
     end = "export async function handleWriteFile("
     if raw.count(start) != 1 or raw.count(end) != 1 or raw.index(start) >= raw.index(end):
@@ -121,7 +121,17 @@ def multiple_read_errors(raw: str) -> str:
     old = "    return { content: contentItems };"
     if branch.count(old) != 1 or "isError:" in branch:
         raise AuditError("unreviewed_multiple_read_handler")
-    branch = branch.replace(old, "    return { content: contentItems, isError: fileResults.some(result => Boolean(result.error)) };", 1)
+    parsed = "    const parsed = ReadMultipleFilesArgsSchema.parse(args);"
+    if parsed in branch:
+        branch = branch.replace(parsed,
+            parsed + "\n    if (parsed.paths.length === 0) throw new Error('HERMES_EMPTY_FILE_BATCH');", 1)
+    if "if (result.error)" in branch:
+        if branch.count("if (result.error)") != 1 or branch.count("if (!result.error &&") != 1:
+            raise AuditError("unreviewed_multiple_read_handler")
+        branch = branch.replace("if (result.error)", "if (result.error !== undefined)", 1)
+        branch = branch.replace("if (!result.error &&", "if (result.error === undefined &&", 1)
+    branch = branch.replace(old,
+        "    return { content: contentItems, isError: fileResults.some(result => result.error !== undefined) };", 1)
     return raw[:first] + branch + raw[last:]
 
 
@@ -261,7 +271,11 @@ def safe_termination(manager: str, tools: str) -> tuple[str, str]:
         + indent + "  const mode = h454LinuxSessions.get(session.process);\n"
         + indent + "  if (!mode || session.process.pid !== pid ||\n"
         + indent + "      !Number.isSafeInteger(pid) || pid <= 1) return false;\n"
-        + indent + "  return mode === 'supervisor' ? session.process.kill('SIGTERM') : process.kill(-pid, 'SIGKILL');\n"
+        + indent + "  if (mode === 'supervisor') {\n"
+        + indent + "    if (!session.process.kill('SIGCONT')) return false;\n"
+        + indent + "    return session.process.kill('SIGTERM');\n"
+        + indent + "  }\n"
+        + indent + "  return process.kill(-pid, 'SIGKILL');\n"
         + indent + "}\n" + replacement, 1)
     pattern = r"(?m)^([ ]*)if \(this\.sessions\.has\(pid\)\) \{\n([ ]*)session\.process\.kill\('SIGKILL'\);\n\1\}"
     matches = list(re.finditer(pattern, branch))
@@ -269,9 +283,22 @@ def safe_termination(manager: str, tools: str) -> tuple[str, str]:
         raise AuditError("unreviewed_terminal_termination")
     match = matches[0]
     indent, inner = match.groups()
+    # A stopped or unresponsive subreaper must not be SIGKILLed by the parent:
+    # doing so irreversibly orphans detached children. Resume and re-signal it
+    # instead; if it cannot reap, explicitly report an incomplete termination.
     replacement = (indent + "if (this.sessions.get(pid) === session) {\n"
-                   + inner + "try { if (!session.process.kill('SIGKILL')) console.error('HERMES_TERMINATION_ESCALATION_FAILED'); }\n"
-                   + inner + "catch { console.error('HERMES_TERMINATION_ESCALATION_FAILED'); }\n"
+                   + inner + "const mode = process.platform === 'linux' ? h454LinuxSessions.get(session.process) : null;\n"
+                   + inner + "if (mode === 'supervisor') {\n"
+                   + inner + "  try {\n"
+                   + inner + "    if (!session.process.kill('SIGCONT') || !session.process.kill('SIGTERM')) console.error('HERMES_TERMINATION_ESCALATION_FAILED');\n"
+                   + inner + "  } catch { console.error('HERMES_TERMINATION_ESCALATION_FAILED'); }\n"
+                   + inner + "  setTimeout(() => {\n"
+                   + inner + "    if (this.sessions.get(pid) === session) console.error('HERMES_TERMINATION_INCOMPLETE');\n"
+                   + inner + "  }, 1000);\n"
+                   + inner + "} else {\n"
+                   + inner + "  try { if (!session.process.kill('SIGKILL')) console.error('HERMES_TERMINATION_ESCALATION_FAILED'); }\n"
+                   + inner + "  catch { console.error('HERMES_TERMINATION_ESCALATION_FAILED'); }\n"
+                   + inner + "}\n"
                    + indent + "}")
     branch = branch[:match.start()] + replacement + branch[match.end():]
     manager = manager[:first] + branch + manager[last:]

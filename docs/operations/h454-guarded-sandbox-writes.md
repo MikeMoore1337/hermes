@@ -63,6 +63,13 @@ not file contents.
   created but temporary-file cleanup failed; inspect it before retrying.
   An interruption between link and cleanup can also leave a temporary
   hard link; inspect both files before removing the owned temporary file.
+- Linux file operations are anchored to checked directory file descriptors via
+  `/proc/self/fd`; missing procfs or a moved parent fails closed. A symlink
+  substituted after the path precheck cannot redirect a final file-create link
+  into an unrelated directory. A newly linked file is removed on detected
+  parent movement only when its inode still matches the staged inode. An
+  unsuccessful cleanup reports `created_target_cleanup_uncertain`, never
+  successful creation. This needs actual filesystem/bind-mount verification.
 - Symlink components, hardlinks, directories, nested `.git`,
   `.ssh`, `secrets`, `private-vault`, environment files and
   paths outside the sandbox root are rejected.

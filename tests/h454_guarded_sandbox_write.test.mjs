@@ -274,3 +274,92 @@ test('malformed digest and directory payload rejected', () =>
     }), 'invalid_digest');
   })
 );
+
+
+async function h454AnchoredFixture(fn) {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'h454-fd-regression-'));
+  const foreign = await fs.mkdtemp(path.join(os.tmpdir(), 'h454-fd-foreign-'));
+  try { return await fn(root, foreign); }
+  finally {
+    await fs.rm(root, { recursive: true, force: true });
+    await fs.rm(foreign, { recursive: true, force: true });
+  }
+}
+
+test('an ancestor symlink swapped at link cannot create an escaped target', () =>
+  h454AnchoredFixture(async (root, foreign) => {
+    const parent = path.join(root, 'nested');
+    const relocated = path.join(foreign, 'relocated');
+    const source = path.join(root, 'stage');
+    const target = path.join(parent, 'target');
+    await fs.mkdir(parent);
+    await fs.writeFile(source, 'protected bytes');
+    const originalLink = fs.link;
+    fs.link = async (from, to) => {
+      await fs.rename(parent, relocated);
+      await fs.symlink(relocated, parent);
+      return originalLink(from, to);
+    };
+    syncBuiltinESMExports();
+    try {
+      await rejected(guardedUpdate({ root, source, target, expected: 'absent' }),
+        'parent_changed_during_update');
+      await assert.rejects(fs.lstat(path.join(relocated, 'target')), { code: 'ENOENT' });
+      assert.equal(await fs.readFile(source, 'utf8'), 'protected bytes');
+    } finally {
+      fs.link = originalLink;
+      syncBuiltinESMExports();
+    }
+  })
+);
+
+test('a raced parent symlink cannot redirect the link to unrelated foreign files', () =>
+  h454AnchoredFixture(async (root, foreign) => {
+    const parent = path.join(root, 'nested');
+    const originalDir = path.join(root, 'renamed');
+    const source = path.join(root, 'stage');
+    const target = path.join(parent, 'target');
+    await fs.mkdir(parent);
+    await fs.writeFile(source, 'protected bytes');
+    await fs.writeFile(path.join(foreign, 'keep'), 'untouched');
+    const originalLink = fs.link;
+    fs.link = async (from, to) => {
+      await fs.rename(parent, originalDir);
+      await fs.symlink(foreign, parent);
+      return originalLink(from, to);
+    };
+    syncBuiltinESMExports();
+    try {
+      await rejected(guardedUpdate({ root, source, target, expected: 'absent' }),
+        'parent_changed_during_update');
+      assert.equal(await fs.readFile(path.join(foreign, 'keep'), 'utf8'), 'untouched');
+      await assert.rejects(fs.stat(path.join(foreign, 'target')), { code: 'ENOENT' });
+      await assert.rejects(fs.stat(path.join(originalDir, 'target')), { code: 'ENOENT' });
+    } finally {
+      fs.link = originalLink;
+      syncBuiltinESMExports();
+    }
+  })
+);
+
+test('missing procfs directory descriptor anchoring refuses before mutation', () =>
+  tempFixture(async root => {
+    const source = path.join(root, 'stage'), target = path.join(root, 'target');
+    await fs.writeFile(source, 'valuable');
+    const originalRealpath = fs.realpath;
+    fs.realpath = async (...args) => {
+      if (String(args[0]).startsWith('/proc/self/fd/'))
+        throw Object.assign(new Error('no procfd'), { code: 'EACCES' });
+      return originalRealpath(...args);
+    };
+    syncBuiltinESMExports();
+    try {
+      await rejected(guardedUpdate({ root, source, target, expected: 'absent' }),
+        'directory_anchor_unavailable');
+      await assert.rejects(fs.lstat(target), { code: 'ENOENT' });
+    } finally {
+      fs.realpath = originalRealpath;
+      syncBuiltinESMExports();
+    }
+  })
+);
