@@ -363,3 +363,36 @@ test('missing procfs directory descriptor anchoring refuses before mutation', ()
     }
   })
 );
+
+test('fd-close failure cannot strand the exclusive target lock', () =>
+  tempFixture(async root => {
+    const source = path.join(root, 'source'), target = path.join(root, 'target');
+    await fs.writeFile(source, 'known data');
+    const originalOpen = fs.open;
+    let rootOpens = 0;
+    fs.open = async (...args) => {
+      const handle = await originalOpen(...args);
+      if (args[0] === root && ++rootOpens === 2) {
+        const close = handle.close.bind(handle);
+        handle.close = async () => {
+          await close();
+          throw new Error('synthetic directory close failure');
+        };
+      }
+      return handle;
+    };
+    syncBuiltinESMExports();
+    try {
+      await assert.rejects(guardedUpdate({root,source,target,expected:'absent'}),
+        /synthetic directory close failure/);
+    } finally {
+      fs.open = originalOpen;
+      syncBuiltinESMExports();
+    }
+    assert.equal(await fs.readFile(target,'utf8'), 'known data');
+    const updated = await guardedUpdate({
+      root, source, target, expected: hash(Buffer.from('known data'))
+    });
+    assert.equal(updated.status,'updated');
+  })
+);

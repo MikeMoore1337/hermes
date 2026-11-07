@@ -218,9 +218,13 @@ export async function guardedUpdate({
       compare_and_swap: true, external_writer_atomicity: 'not_guaranteed'
     };
   } finally {
-    if (temp) await fs.unlink(temp).catch(() => {});
-    if (targetAnchor) await targetAnchor.close();
-    await release();
+    try {
+      if (temp) await fs.unlink(temp).catch(() => {});
+      if (targetAnchor) await targetAnchor.close();
+    } finally {
+      // Failed fd close must never strand the per-target exclusive lock.
+      await release();
+    }
   }
 }
 function parseArgs(argv) {
