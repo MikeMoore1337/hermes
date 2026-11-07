@@ -91,21 +91,22 @@ class PairedPreflightTests(TestCase):
              patch.object(pair.stage1, "docker",
                           return_value=checkpoint or "") as docker_listing:
             try:
-                return pair.plan(release_sha=RELEASE, bundle=Path("/verified"),
-                                 image=IMAGE, archive_sha=ARCHIVE,
-                                 candidate_sha=SOURCE)
+                result = pair.plan(release_sha=RELEASE, bundle=Path("/verified"),
+                                   image=IMAGE, archive_sha=ARCHIVE,
+                                   candidate_sha=SOURCE)
+                # Require both successful Docker queries only if plan passes.
+                # Early failure must make no checkpoint-availability claim.
+                self.assertEqual(docker_listing.call_count, 2)
+                self.assertEqual(
+                    [c.args[4] for c in docker_listing.call_args_list],
+                    ["name=^/" + pair.RELAY_CHECKPOINT + "$",
+                     "name=^/" + pair.PROXY_CHECKPOINT + "$"],
+                )
+                return result
             finally:
                 mutating_legacy_docker.assert_not_called()
                 gate.assert_called_once_with(Path("/verified"), IMAGE, ARCHIVE, SOURCE)
-                # The only Docker operations are confirmed-successful, read-only
-                # checkpoint listings. The first command must not be optional.
-                if checkpoint is None:
-                    self.assertEqual(docker_listing.call_count, 2)
-                    self.assertEqual(
-                        [c.args[4] for c in docker_listing.call_args_list],
-                        ["name=^/" + pair.RELAY_CHECKPOINT + "$",
-                         "name=^/" + pair.PROXY_CHECKPOINT + "$"],
-                    )
+
 
     def test_safe_pair_plan_accepts_pinned_live_topology_without_mutation(self):
         result = self.check_plan()
