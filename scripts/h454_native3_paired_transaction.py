@@ -128,34 +128,64 @@ def updated_pins(wss, old: dict, relay_id: str, proxy_id: str,
 
 
 def owned_candidate(obj, expected_id: str, image: str, kind: str,
-                    relay_id: str = "") -> None:
-    """No delete/replace of a container unless its full provenance matches."""
+                    relay_id: str = "", *, old_proxy: dict | None = None,
+                    old_pins: dict | None = None) -> None:
+    """Never delete a container without matching exact ID and sandbox profile."""
     require(obj is not None and obj.get("Id") == expected_id
             and obj.get("Image") == image, "FOREIGN_CANDIDATE_CONTAINER")
     cfg = obj.get("Config") or {}
     host = obj.get("HostConfig") or {}
     mounts = obj.get("Mounts") or []
+    opts = host.get("SecurityOpt") or []
     require(host.get("Privileged") is False and
             host.get("ReadonlyRootfs") is True and
-            "ALL" in (host.get("CapDrop") or []) and
-            "no-new-privileges" in (host.get("SecurityOpt") or []),
+            host.get("CapDrop") == ["ALL"] and
+            isinstance(opts, list) and len(opts) == 1 and
+            opts[0] in ("no-new-privileges", "no-new-privileges:true") and
+            host.get("CapAdd") in (None, []) and
+            host.get("Devices") in (None, []) and
+            host.get("Binds") in (None, []) and
+            host.get("PortBindings") in (None, {}) and
+            host.get("PidMode") not in ("host",) and
+            host.get("UsernsMode") not in ("host",),
             "FOREIGN_CANDIDATE_CONTAINER")
     if kind == "relay":
         require(cfg.get("User") == "979:975" and
                 (cfg.get("Labels") or {}).get("com.hermes.scope")
                 == "h15-brc-owner-relay" and
                 host.get("NetworkMode") == "hermes-brc-internal" and
+                type(host.get("PidsLimit")) is int and
+                1 <= host["PidsLimit"] <= 128 and
+                type(host.get("Memory")) is int and
+                128 * 1024 * 1024 <= host["Memory"] <= 1024 * 1024 * 1024 and
                 candidate.registry_mount_source(obj)
                 == str(candidate.PINNED_REGISTRY_SOURCE) and
                 len(mounts) == 2, "FOREIGN_CANDIDATE_RELAY")
     else:
         labels = cfg.get("Labels") or {}
+        require(old_proxy is not None and old_pins is not None,
+                "FOREIGN_CANDIDATE_PROXY")
+        original_labels = (old_proxy.get("Config") or {}).get("Labels") or {}
+        expected_mounts = {
+            "/run/h454-wss/proxy.mjs": str(stage1.PIN_ROOT / "proxy.mjs"),
+            "/run/h454-wss/relay.key":
+                str(Path(old_pins["tls_directory"]) / "relay.key"),
+            "/run/h454-wss/relay.crt":
+                str(Path(old_pins["tls_directory"]) / "relay.crt"),
+        }
         require(cfg.get("User") == "65534:65534"
                 and labels.get("com.hermes.h454.role") == "wss-proxy"
+                and labels.get("com.hermes.h454.request") ==
+                    original_labels.get("com.hermes.h454.request")
                 and host.get("NetworkMode") == "container:" + relay_id
-                and len(mounts) == 3 and all(
-                    m.get("Type") == "bind" and m.get("RW") is False
-                    for m in mounts), "FOREIGN_CANDIDATE_PROXY")
+                and host.get("PidsLimit") == 32
+                and host.get("Memory") == 128 * 1024 * 1024
+                and len(mounts) == 3 and
+                all(isinstance(m, dict) and m.get("Type") == "bind" and
+                    m.get("RW") is False and
+                    expected_mounts.get(m.get("Destination")) == m.get("Source")
+                    for m in mounts),
+                "FOREIGN_CANDIDATE_PROXY")
 
 
 def restore_pair(*, relay: dict, proxy: dict, original: bytes,
@@ -166,7 +196,8 @@ def restore_pair(*, relay: dict, proxy: dict, original: bytes,
     if current_proxy and current_proxy["Id"] != proxy["Id"]:
         require(bool(proxy_id), "AMBIGUOUS_PROXY_MANUAL_RECOVERY")
         owned_candidate(current_proxy, proxy_id, stage1.LEGACY_IMAGE,
-                        "proxy", relay_id)
+                        "proxy", relay_id, old_proxy=proxy,
+                        old_pins=wss._pins(original))
         stage1.docker("rm", "-f", proxy_id)
     current_relay = strict_container(legacy.NAME)
     if current_relay and current_relay["Id"] != relay["Id"]:
@@ -299,6 +330,11 @@ def cutover(*, release_sha: str, bundle: Path, image: str,
                               legacy.NAME)
                 stage1.docker("update", "--restart", "unless-stopped",
                               stage1.PROXY)
+                # Assert the *running compiled* candidate contract, including
+                # the original immutable Stage 1 registry and denied host rights.
+                actual = candidate.inspect(["container", "inspect", legacy.NAME])
+                require(candidate.current_gate(actual, stage1.FORK_IMAGE)
+                        == runtime, "CANDIDATE_RUNTIME_SECURITY_DRIFT")
                 PENDING.unlink()
                 stage1.sync_pin_directory()
             except Exception as exc:
