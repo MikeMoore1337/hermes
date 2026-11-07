@@ -92,8 +92,9 @@ class Harness2UpstreamContractTests(unittest.TestCase):
             # __pycache__ files and must clean its temporary isolated cache.
             wrapper = binary / "harness2-check"
             wrapper.write_text(
-                '#!/bin/sh\\nprintf "PYCACHE=%s\\\\nDONTWRITE=%s\\\\n" '
-                '"$PYTHONPYCACHEPREFIX" "$PYTHONDONTWRITEBYTECODE"\\n',
+                "#!/bin/sh" + chr(10)
+                + 'echo "PYCACHE=$PYTHONPYCACHEPREFIX"' + chr(10)
+                + 'echo "DONTWRITE=$PYTHONDONTWRITEBYTECODE"' + chr(10),
                 encoding="utf-8",
             )
             wrapper.chmod(0o755)
