@@ -224,11 +224,20 @@ def restore_pair(*, relay: dict, proxy: dict, original: bytes,
                 existing["Id"] == original_obj["Id"],
                 "ORIGINAL_CONTAINER_UNAVAILABLE")
 
-    for name in (legacy.NAME, stage1.PROXY):
+    for name, original_obj in (
+        (legacy.NAME, relay), (stage1.PROXY, proxy),
+    ):
         current = strict_container(name)
+        # A name may be taken over even after the verified checkpoint rename.
+        # Do not start or reconfigure the replacement occupant.
+        require(current is not None and
+                current.get("Id") == original_obj["Id"] and
+                current.get("Image") == original_obj["Image"],
+                "RESTORED_CONTAINER_CHANGED")
         if (current.get("State") or {}).get("Running") is not True:
-            stage1.docker("start", current["Id"])
-        stage1.docker("update", "--restart", "unless-stopped", current["Id"])
+            stage1.docker("start", original_obj["Id"])
+        stage1.docker("update", "--restart", "unless-stopped",
+                      original_obj["Id"])
     if stage1.PINS.read_bytes() != original:
         stage1.replace_pins(original)
     restored = wss._pins(original)
