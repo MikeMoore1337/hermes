@@ -5,16 +5,21 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch
 from scripts import h15_brc_transactional_upgrade as m
+from scripts.h15_brc_upgrade_preflight import PINNED_REGISTRY_SOURCE, REGISTRY_TARGET
 
 NEW="sha256:"+"2"*64
 OLD="sha256:"+"1"*64
 CID="a"*64
 RUNTIME="sha256:"+"3"*64
 def old():
-    return {"Image": OLD, "Config": {"User": "979:975",
+    return {"Mounts": [{"Type":"bind","Source":"/var/lib/hermes-brc-relay",
+                        "Destination":"/state","RW":True}],
+            "Image": OLD, "Config": {"User": "979:975",
             "Labels": {"com.hermes.scope": "h15-brc-owner-relay"}}}
 def new():
-    return {"Image": NEW, "Config": {"User": "979:975",
+    return {"Mounts": [{"Type":"bind","Source":"/var/lib/hermes-brc-relay",
+                        "Destination":"/state","RW":True}],
+            "Image": NEW, "Config": {"User": "979:975",
             "Labels": {"com.hermes.scope": "h15-brc-owner-relay"}}}
 
 class CutoverContracts(unittest.TestCase):
@@ -80,6 +85,59 @@ class CutoverContracts(unittest.TestCase):
         self.assertNotIn("--publish",args)
         self.assertNotIn("/var/run/docker.sock"," ".join(args))
         self.assertNotIn("BRC_ADMIN_PASSWORD="," ".join(args))
+    def test_unpinned_registry_path_is_denied_before_docker(self):
+        with self.assertRaisesRegex(m.CutoverDenied, "UNPINNED_WORKSPACE_REGISTRY_SOURCE"):
+            m.run_args(NEW, "979:975", "/var/run/docker.sock")
+
+    def test_run_args_preserves_readonly_catalog_and_original_env(self):
+        src = str(PINNED_REGISTRY_SOURCE)
+        args = m.run_args(NEW, "979:975", src)
+        self.assertEqual(args.count("--mount"), 2)
+        self.assertIn("type=bind,src=" + src + ",dst=" + REGISTRY_TARGET
+                      + ",readonly", args)
+        for expected in ("BRC_WORKSPACE_REGISTRY=" + REGISTRY_TARGET,
+                         "BRC_DB=/state/relay.sqlite", "HOME=/tmp"):
+            self.assertEqual(args.count(expected), 1)
+        self.assertNotIn("--publish", args)
+        self.assertNotIn("--privileged", args)
+
+    def test_swap_keeps_verified_registry_mount_and_env(self):
+        events = []
+        src = str(PINNED_REGISTRY_SOURCE)
+        def command(*args, **kwargs):
+            events.append(args)
+            return CID if args[0] == "run" else ""
+        with patch.object(m, "inspect", side_effect=[old(),new(),new()]), \
+             patch.object(m, "registry_mount_source", return_value=src) as verified, \
+             patch.object(m, "current_gate", return_value=NEW), \
+             patch.object(m, "exists", return_value=False), \
+             patch.object(m, "healthy", return_value=True), \
+             patch.object(m, "docker", side_effect=command):
+            self.assertEqual(m.swap(NEW, OLD, 2)["status"],
+                             "SWITCHED_PENDING_LIVE_CLIENT_E2E")
+        self.assertEqual(verified.call_count, 2)
+        args = next(args for args in events if args[0] == "run")
+        self.assertEqual(args.count("--mount"), 2)
+        self.assertIn("type=bind,src=" + src + ",dst=" + REGISTRY_TARGET
+                      + ",readonly", args)
+        self.assertIn("BRC_WORKSPACE_REGISTRY=" + REGISTRY_TARGET, args)
+
+    def test_dropped_catalog_rolls_back_old_relay(self):
+        src = str(PINNED_REGISTRY_SOURCE)
+        commands = []
+        def docker(*args, **kwargs):
+            commands.append(args)
+            return CID if args[0] == "run" else ""
+        with patch.object(m, "inspect", side_effect=[old(),new(),new()]), \
+             patch.object(m, "registry_mount_source", side_effect=[src,None]), \
+             patch.object(m, "exists", side_effect=lambda n: n==m.NAME), \
+             patch.object(m, "healthy", return_value=True), \
+             patch.object(m, "docker", side_effect=docker):
+            with self.assertRaisesRegex(m.CutoverDenied, "SWITCH_FAILED_OLD_RELAY_RESTORED"):
+                m.swap(NEW, OLD, 2)
+        self.assertIn(("rename", m.CHECKPOINT, m.NAME), commands)
+        self.assertIn(("start", m.NAME), commands)
+
     def test_collision_never_stops_owner(self):
         with patch.object(m,"inspect",return_value=old()), \
              patch.object(m,"exists",return_value=True), patch.object(m,"docker") as docker:
