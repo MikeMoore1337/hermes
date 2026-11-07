@@ -156,6 +156,8 @@ class FakePairedDocker:
                      "Source": str(tx.candidate.PINNED_REGISTRY_SOURCE),
                      "Destination": tx.candidate.REGISTRY_TARGET}],
             }
+            # Docker may have created a container although its reply was lost.
+            self.trip("ambiguous_run_reply")
             return NEW_RELAY
         elif action == "start":
             ident = args[1]
@@ -199,6 +201,8 @@ class FakePairedDocker:
                  "Destination": "/run/h454-wss/relay.crt"},
             ],
         }
+        # Sidecar creation can also succeed without its Docker ID reaching us.
+        self.trip("ambiguous_sidecar_reply")
         return NEW_PROXY
 
     def update_pins(self, wss, old, relay_id, proxy_id, image):
@@ -357,6 +361,27 @@ class PairedFaultMatrixTests(unittest.TestCase):
                         "ORIGINAL_PAIR_RESTORED_PENDING_CLIENT_VERIFICATION")
                     self.assertFalse(result["auth_database_reverted"])
                     simulation.assert_restored(self)
+
+    def test_lost_docker_create_reply_fails_closed_for_manual_recovery(self):
+        for point in ("ambiguous_run_reply", "ambiguous_sidecar_reply"):
+            with self.subTest(ambiguous_reply=point), tempfile.TemporaryDirectory(
+                    prefix="h454-ambiguous-docker-") as tmp:
+                simulation = FakePairedDocker(Path(tmp), fault=point)
+                with simulation.patched():
+                    with self.assertRaisesRegex(
+                            tx.TransactionDenied,
+                            "PAIR_ROLLBACK_INCOMPLETE_MANUAL_RECOVERY"):
+                        tx.cutover(**KWARGS)
+                    self.assertTrue(simulation.tripped)
+                    self.assertTrue(tx.PENDING.exists())
+                    self.assertTrue(tx.ORIGINAL_PINS.exists())
+                    # Do not silently delete a newly created unknown container.
+                    self.assertTrue(any(obj["Id"] in (NEW_RELAY, NEW_PROXY)
+                                        for obj in simulation.state.values()))
+                    self.assertFalse(any(event[0] == "rm"
+                                         for event in simulation.events))
+                    self.assertIn(tx.PAIR_RELAY, simulation.state)
+                    self.assertIn(tx.PAIR_PROXY, simulation.state)
 
     def test_successful_pair_can_be_rolled_back_using_retained_ids(self):
         with tempfile.TemporaryDirectory(prefix="h454-postsuccess-") as tmp:
