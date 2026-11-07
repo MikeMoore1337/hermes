@@ -66,7 +66,7 @@ class Harness2ImportSecurityTests(unittest.TestCase):
             for git_rc in (1, 128):
                 with self.subTest(returncode=git_rc):
                     commands = self.git_identity()
-                    commands[-1] = subprocess.CompletedProcess([], git_rc)
+                    commands[-2] = subprocess.CompletedProcess([], git_rc)
                     with patch.object(h2.subprocess, "run", side_effect=commands):
                         with self.assertRaisesRegex(h2.UpstreamRejected, "UPSTREAM_SOURCE_DIRTY"):
                             h2.read_external_summary("runs/ns/task/summary.json", home=home)
