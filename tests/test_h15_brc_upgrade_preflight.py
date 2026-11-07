@@ -1,5 +1,6 @@
 """Offline source and Docker-identity refusal tests for H15 upgrade gate."""
 import hashlib
+import hashlib
 import io
 import json
 from pathlib import Path
@@ -8,6 +9,7 @@ import tempfile
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
+from scripts import h15_brc_upgrade_preflight as gate
 from scripts import h15_brc_upgrade_preflight as gate
 from scripts.h15_brc_upgrade_preflight import UpgradeDenied, admit, candidate_gate, current_gate, inspect, candidate_runtime_image
 
@@ -209,6 +211,76 @@ class GateTests(unittest.TestCase):
                           side_effect=UpgradeDenied("relay_registry_file_unavailable")):
             with self.assertRaisesRegex(UpgradeDenied, "relay_registry_file_unavailable"):
                 current_gate(c, NEW)
+
+
+    def test_stage1_registry_content_has_independent_pin(self):
+        source = Path(__file__).resolve().parents[1] / "deploy/h15/workspace-registry-fork.json"
+        self.assertEqual(hashlib.sha256(source.read_bytes()).hexdigest(),
+                         gate.PINNED_REGISTRY_SHA256)
+        self.assertEqual(gate.REGISTRY_TARGET, "/run/h454/workspace-registry.json")
+
+    def test_legacy_one_mount_still_accepted(self):
+        c = current()
+        with patch.object(gate, "_verify_pinned_registry_file") as verify:
+            self.assertEqual(current_gate(c, NEW), OLD)
+        verify.assert_not_called()
+
+    def test_stage1_registry_mount_is_accepted_in_any_order(self):
+        c = current()
+        extra = {"Type": "bind", "Source": str(gate.PINNED_REGISTRY_SOURCE),
+                 "Destination": gate.REGISTRY_TARGET, "RW": False}
+        c["Mounts"].insert(0, extra)
+        c["Config"]["Env"].extend(gate.REGISTRY_ENV)
+        with patch.object(gate, "_verify_pinned_registry_file") as verify:
+            self.assertEqual(current_gate(c, NEW), OLD)
+        verify.assert_called_once_with()
+
+    def test_arbitrary_stage1_extra_mount_is_never_accepted(self):
+        for altered in (
+            {"Source": "/var/run/docker.sock"},
+            {"Destination": "/host"},
+            {"RW": True},
+            {"Type": "volume"},
+        ):
+            with self.subTest(altered=altered):
+                c = current()
+                extra = {"Type": "bind", "Source": str(gate.PINNED_REGISTRY_SOURCE),
+                         "Destination": gate.REGISTRY_TARGET, "RW": False}
+                extra.update(altered)
+                c["Mounts"].append(extra)
+                c["Config"]["Env"].extend(gate.REGISTRY_ENV)
+                with patch.object(gate, "_verify_pinned_registry_file") as verify:
+                    with self.assertRaisesRegex(UpgradeDenied, "relay_mounts_not_single"):
+                        current_gate(c, NEW)
+                verify.assert_not_called()
+
+    def test_registry_environment_is_unique_and_exact(self):
+        c = current()
+        c["Mounts"].append({"Type": "bind", "Source": str(gate.PINNED_REGISTRY_SOURCE),
+                            "Destination": gate.REGISTRY_TARGET, "RW": False})
+        for env in (
+            [], list(gate.REGISTRY_ENV[:-1]),
+            list(gate.REGISTRY_ENV) + ["HOME=/etc"],
+            list(gate.REGISTRY_ENV) + ["BRC_DB=/state/other.sqlite"],
+        ):
+            with self.subTest(env=env):
+                c["Config"]["Env"] = env
+                with patch.object(gate, "_verify_pinned_registry_file") as verify:
+                    with self.assertRaisesRegex(UpgradeDenied, "relay_registry_environment_mismatch"):
+                        current_gate(c, NEW)
+                verify.assert_not_called()
+
+    def test_stage1_registry_integrity_failure_is_fail_closed(self):
+        c = current()
+        c["Mounts"].append({"Type": "bind", "Source": str(gate.PINNED_REGISTRY_SOURCE),
+                            "Destination": gate.REGISTRY_TARGET, "RW": False})
+        c["Config"]["Env"].extend(gate.REGISTRY_ENV)
+        for reason in ("relay_registry_file_unavailable", "relay_registry_digest_mismatch"):
+            with self.subTest(reason=reason), patch.object(
+                gate, "_verify_pinned_registry_file", side_effect=UpgradeDenied(reason)
+            ):
+                with self.assertRaisesRegex(UpgradeDenied, reason):
+                    current_gate(c, NEW)
 
     def test_extra_mount_denied(self):
         c=current();c["Mounts"].append({"Type":"bind","Source":"/root","Destination":"/host"})
