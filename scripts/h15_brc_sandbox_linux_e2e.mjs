@@ -77,6 +77,31 @@ assert(emptyBatch.isError === true && emptyBatch.content.some(item =>
 assert((await callTool('read_multiple_files', {paths:'invalid'})).isError === true,
   'MCP_MULTIPLE_INVALID_SCHEMA_REFUSED');
 
+// Real deny tests must not disclose bytes from outside the allowed workspace.
+// A symlink inside the workspace does not authorize its external destination.
+const h454ReadCanary = '/tmp/h454-read-external-' + process.pid;
+const h454ReadLink = '/workspace/h454-symlink-to-external';
+const h454Secret = 'H454_FAKE_SECRET_CANARY_DO_NOT_ECHO';
+fs.writeFileSync(h454ReadCanary, h454Secret, { flag: 'wx' });
+fs.symlinkSync(h454ReadCanary, h454ReadLink);
+try {
+  const outside = await callTool('read_file', {path:h454ReadCanary});
+  const link = await callTool('read_file', {path:h454ReadLink});
+  const mixed = await callTool('read_multiple_files', {
+    paths:[imagePath,h454ReadCanary,h454ReadLink],
+  });
+  const details = [outside,link,mixed].flatMap(result => result.content)
+    .filter(item => item.type === 'text').map(item => item.text || '').join('\n');
+  assert(outside.isError === true && link.isError === true && mixed.isError === true &&
+    !details.includes(h454Secret) && mixed.content.some(item =>
+      item.type === 'image' && item.mimeType === 'image/png'),
+    'MCP_EXTERNAL_AND_SYMLINK_READ_DENIED_NO_CANARY_ECHO');
+} finally {
+  fs.unlinkSync(h454ReadLink);
+  fs.unlinkSync(h454ReadCanary);
+}
+
+
 
 // The filesystem may use epoch zero when birthtime is unavailable. Exercise
 // the real dispatcher/formatter with controlled stats, not host metadata.
