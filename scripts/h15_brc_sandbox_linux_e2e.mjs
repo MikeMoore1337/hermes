@@ -92,6 +92,13 @@ try {
   });
   const details = [outside,link,mixed].flatMap(result => result.content)
     .filter(item => item.type === 'text').map(item => item.text || '').join('\n');
+  console.log('MCP_EXTERNAL_READ_NEGATIVE_DIAG=' + JSON.stringify({
+    outsideError: outside.isError === true,
+    linkError: link.isError === true,
+    mixedError: mixed.isError === true,
+    contentEchoed: details.includes(h454Secret),
+    imageRetained: mixed.content.some(item => item.type === 'image' && item.mimeType === 'image/png')
+  }));
   assert(outside.isError === true && link.isError === true && mixed.isError === true &&
     !details.includes(h454Secret) && mixed.content.some(item =>
       item.type === 'image' && item.mimeType === 'image/png'),
