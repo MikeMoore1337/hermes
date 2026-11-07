@@ -70,6 +70,32 @@ An image imported into Docker is **not** a live cutover. The root-owned owner
 approval JSON previously observed on this host pins an unrelated old image,
 archive and source SHA, and must never be reused as new consent.
 
+## Stage 1 WSS proxy pair gate (2026-11-07)
+
+**STOP BEFORE CUTOVER:** On the actual owner VPS, the running
+`hermes-h454-wss-proxy` is configured with
+`HostConfig.NetworkMode=container:<current hermes-brc-relay container ID>`.
+The pair is currently healthy and shares the **old relay's specific
+network namespace**, not merely its host/IP. A relay-only `docker stop`,
+rename and fresh `docker run` would strand the sidecar and can break
+client WSS while the internal relay health still passes.
+
+The existing H454 native3 **single-container** wrapper calls the generic
+transactional operator, which does not reconnect or replace the WSS sidecar.
+The generic operator now refuses **both** `plan` and `cutover` if the
+owner Stage 1 pin file exists, or Docker lists the exact paired proxy.
+If Docker discovery cannot be verified, it also refuses. This gate runs
+before OCI preflight, state backup, Docker stop, checkpoint rename or any
+relay mutation. **Never remove the pair's pin file or proxy to bypass it.**
+
+A future owner-reviewed, explicitly authorized **joint** relay + WSS
+proxy operator must verify and retain both original container IDs,
+root-owned WSS/TLS pins, the 2-mount workspace registry, shared
+network namespace, OAuth/device state, a rollback checkpoint for each
+component, and live ChatGPT/Codex reconnect before cutover can be
+considered safe. A green OCI candidate or prior `PLAN_ONLY`
+without the pair gate is **not** cutover approval.
+
 ## Production gate (separate explicit owner approval required)
 
 - Ensure exactly the expected existing running image and healthy sandbox

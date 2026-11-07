@@ -2,6 +2,8 @@
 from contextlib import nullcontext
 import json
 from pathlib import Path
+import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 from scripts import h15_brc_transactional_upgrade as m
@@ -41,6 +43,7 @@ class CutoverContracts(unittest.TestCase):
             admit.assert_not_called()
     def test_plan_is_read_only(self):
         with patch.object(m.os,"geteuid",return_value=0), \
+             patch.object(m,"require_unpaired_wss"), \
              patch.object(m,"lock",return_value=nullcontext()), \
              patch.object(m,"admit",return_value={"current_image":OLD,"candidate_image":RUNTIME}), \
              patch.object(m,"docker") as docker,patch.object(m,"approval_file") as approval:
@@ -50,6 +53,7 @@ class CutoverContracts(unittest.TestCase):
             docker.assert_not_called()
     def test_cutover_uses_attested_runtime_id_but_approves_config_pin(self):
         with patch.object(m.os,"geteuid",return_value=0), \
+             patch.object(m,"require_unpaired_wss"), \
              patch.object(m,"lock",return_value=nullcontext()), \
              patch.object(m,"admit",return_value={"current_image":OLD,"candidate_image":RUNTIME}), \
              patch.object(m,"approval_file") as approval, \
@@ -62,6 +66,57 @@ class CutoverContracts(unittest.TestCase):
                              "--execute"]),0)
         approval.assert_called_once_with(NEW,OLD,"b"*64,"a"*40)
         switched.assert_called_once_with(RUNTIME,OLD,2)
+
+    def test_paired_wss_pins_deny_even_readonly_plan_before_admit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pins = Path(tmp) / "pins.json"
+            pins.write_text("{}", encoding="ascii")
+            with patch.object(m, "WSS_PAIR_PINS", pins), \
+                 patch.object(m.os, "geteuid", return_value=0), \
+                 patch.object(m, "admit") as admit, \
+                 patch.object(m.subprocess, "run") as docker:
+                rc = m.main(["plan", "--bundle-dir", "/x", "--image", NEW,
+                             "--archive-sha", "b"*64, "--hermes-sha", "a"*40])
+            self.assertEqual(rc, 2)
+            admit.assert_not_called()
+            docker.assert_not_called()
+
+    def test_wss_proxy_container_deny_even_if_pin_file_is_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            missing = Path(tmp) / "pins.json"
+            with patch.object(m, "WSS_PAIR_PINS", missing), \
+                 patch.object(m.subprocess, "run", return_value=SimpleNamespace(
+                     returncode=0, stdout="hermes-h454-wss-proxy\n")) as docker:
+                with self.assertRaisesRegex(
+                        m.CutoverDenied, "PAIRED_WSS_REQUIRES_ATOMIC_CUTOVER"):
+                    m.require_unpaired_wss()
+                self.assertIn("name=^/hermes-h454-wss-proxy$",
+                              docker.call_args.args[0])
+
+    def test_unavailable_wss_discovery_does_not_allow_crossover(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(m, "WSS_PAIR_PINS", Path(tmp) / "pins.json"), \
+                 patch.object(m.subprocess, "run", side_effect=OSError("synthetic")):
+                with self.assertRaisesRegex(
+                        m.CutoverDenied, "WSS_PROXY_DISCOVERY_UNAVAILABLE"):
+                    m.require_unpaired_wss()
+
+    def test_malformed_wss_discovery_output_fails_closed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(m, "WSS_PAIR_PINS", Path(tmp) / "pins.json"), \
+                 patch.object(m.subprocess, "run", return_value=SimpleNamespace(
+                     returncode=0, stdout=None)):
+                with self.assertRaisesRegex(
+                        m.CutoverDenied, "WSS_PROXY_DISCOVERY_UNAVAILABLE"):
+                    m.require_unpaired_wss()
+
+    def test_genuinely_unpaired_relay_still_allows_plan(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(m, "WSS_PAIR_PINS", Path(tmp) / "pins.json"), \
+                 patch.object(m.subprocess, "run", return_value=SimpleNamespace(
+                     returncode=0, stdout="")) as docker:
+                m.require_unpaired_wss()
+            docker.assert_called_once()
 
     def test_health_probe_is_direct_not_proxy_routed(self):
         from unittest.mock import MagicMock
