@@ -96,6 +96,45 @@ component, and live ChatGPT/Codex reconnect before cutover can be
 considered safe. A green OCI candidate or prior `PLAN_ONLY`
 without the pair gate is **not** cutover approval.
 
+## Owner WSS-pair read-only admission (source-only tool)
+
+Use `scripts/h454_native3_paired_preflight.py` to prove the currently
+running relay/WSS pair is suitable for a **future** joint transaction, without
+stopping, renaming, creating, or deleting either container:
+
+```bash
+cd /opt/hermes-agent-owner/releases/main-<exact-installed-release-sha>
+python3 -m scripts.h454_native3_paired_preflight plan \
+  --release-sha <exact-installed-release-sha> \
+  --bundle-dir <owner-verified-private-bundle-dir> \
+  --image <pinned-ci-config-image-sha256> \
+  --archive-sha <pinned-verified-archive-sha256> \
+  --candidate-sha <candidate-build-source-commit>
+```
+
+The CLI intentionally exposes `plan` **only**, never `cutover` or `--execute`.
+It requires the exact deployed source directory and current source receipt,
+root authorization, the independently verified OCI bundle and image,
+the original owner-approved relay image, the root-owned pin store and pinned
+reconciler source, the correct WSS proxy attached to the **same relay ID**
+network namespace, TLS certificate provenance, the original immutable
+four-project workspace registry and free, unique rollback checkpoint slots.
+It refuses stale WSS recovery markers or missing baseline devices.
+Rollback checkpoint availability is queried through a non-optional Docker
+`container ls --all` with an exact anchored name filter. Any Docker API
+error or ambiguous discovery is a hard refusal; a failed optional
+`container inspect` must **never** be interpreted as proof that a slot is
+free. This is covered by a regression that models a failing Docker subprocess.
+
+Success returns `PAIR_PREFLIGHT_PASS_NO_MUTATIONS`,
+`changes_performed=false` and `deployment_approved=false`.
+No credentials, WSS pins or certificate contents appear in stdout. A green
+`plan` is **necessary, not sufficient**, for live parity. It does not grant
+permission for a joint WSS/relay switch and does not implement rollback,
+re-pairing, root ACL changes, or native Windows operations. The previous
+single-relay `h454_brc_native_three_tool_cutover` remains blocked by the
+Stage 1 WSS pin/sidecar gate; **do not bypass it**.
+
 ## Production gate (separate explicit owner approval required)
 
 - Ensure exactly the expected existing running image and healthy sandbox
