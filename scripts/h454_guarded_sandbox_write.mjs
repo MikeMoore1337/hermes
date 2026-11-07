@@ -99,9 +99,41 @@ async function acquireLock(root, target) {
     catch { /* preserve fail-closed lock if tampered with */ }
   };
 }
-async function state(root, target) {
+// Linux directory-descriptor anchoring ensures that a symlink swapped into a
+// checked path cannot redirect the eventual link/rename into a different tree.
+// This deliberately fails closed where procfs fd paths are not available.
+const DIRECTORY_FLAGS = constants.constants.O_RDONLY |
+  constants.constants.O_DIRECTORY | constants.constants.O_NOFOLLOW;
+async function anchoredParent(root, parent) {
+  if (process.platform !== 'linux' || !path.isAbsolute(parent) ||
+      (parent !== root && !isIn(root, parent))) refuse('directory_anchor_unavailable');
+  const handles = [];
+  try {
+    let current = await fs.open(root, DIRECTORY_FLAGS);
+    handles.push(current);
+    const parts = path.relative(root, parent).split(path.sep).filter(Boolean);
+    for (const part of parts) {
+      // The fd anchors all prior components to the opened inode, even if
+      // an adversary renames the original component after its lstat check.
+      current = await fs.open(`/proc/self/fd/${current.fd}/${part}`, DIRECTORY_FLAGS);
+      handles.push(current);
+    }
+    const base = `/proc/self/fd/${current.fd}`;
+    if (await fs.realpath(base) !== parent) refuse('parent_changed_during_update');
+    return {
+      base,
+      stable: async () => (await fs.realpath(base).catch(() => null)) === parent,
+      close: async () => { for (const h of handles.reverse()) await h.close(); }
+    };
+  } catch (err) {
+    for (const h of handles.reverse()) await h.close().catch(() => {});
+    if (err instanceof GuardedRefusal) throw err;
+    refuse('directory_anchor_unavailable');
+  }
+}
+async function state(root, target, anchor) {
   await noSymlinkComponents(root, target, { allowMissingLeaf: true });
-  return regularData(target);
+  return regularData(path.join(anchor.base, path.basename(target)));
 }
 export async function guardedUpdate({
   root = '/workspace', source, target, expected, payloadSha256
@@ -114,35 +146,70 @@ export async function guardedUpdate({
   if (source === target) refuse('source_equals_target');
   await noSymlinkComponents(root, source);
   await noSymlinkComponents(root, target, { allowMissingLeaf: true });
-  const payload = await regularData(source);
+  // Read the staged payload through a verified directory fd as well.
+  // A concurrent symlink substitution cannot turn this into an external read.
+  const sourceAnchor = await anchoredParent(root, path.dirname(source));
+  let payload;
+  try {
+    payload = await regularData(path.join(sourceAnchor.base, path.basename(source)));
+    if (!await sourceAnchor.stable()) refuse('parent_changed_during_update');
+  } finally { await sourceAnchor.close(); }
   if (!payload) refuse('source_missing');
   if (payloadSha256 !== undefined && payload.digest !== payloadSha256)
     refuse('payload_digest_mismatch');
   const release = await acquireLock(root, target);
-  let temp = null;
+  let temp = null, targetAnchor = null;
   try {
-    const before = await state(root, target);
+    const parent = path.dirname(target);
+    targetAnchor = await anchoredParent(root, parent);
+    const anchoredTarget = path.join(targetAnchor.base, path.basename(target));
+    const before = await state(root, target, targetAnchor);
     if ((expected === 'absent' && before !== null) ||
         (expected !== 'absent' && (!before || before.digest !== expected)))
       refuse('stale_target');
-    const parent = path.dirname(target);
     const name = '.' + path.basename(target) + '.hermes-' +
       crypto.randomBytes(12).toString('hex') + '.tmp';
-    temp = path.join(parent, name);
+    temp = path.join(targetAnchor.base, name);
     const h = await fs.open(temp, 'wx', before?.mode ?? 0o600);
     try {
       await h.writeFile(payload.body);
       await h.sync();
       if (before) await h.chmod(before.mode);
     } finally { await h.close(); }
-    // Detect edits by non-cooperating writers as close as possible to
-    // replacement. POSIX does not offer portable atomic rename-if-hash.
-    const latest = await state(root, target);
+    // Co-operating updates are serialized by a per-target lock. A writer
+    // bypassing the helper can still change an existing target after this.
+    const latest = await state(root, target, targetAnchor);
     if ((before === null && latest !== null) ||
         (before !== null && (!latest || latest.digest !== before.digest)))
       refuse('target_changed_during_update');
     await noSymlinkComponents(root, parent);
-    await fs.rename(temp, target);
+    if (!await targetAnchor.stable()) refuse('parent_changed_during_update');
+    if (before === null) {
+      // This is a no-replace operation. Anchored fd paths prevent the final
+      // syscall from following a just-inserted symlink in an ancestor.
+      try { await fs.link(temp, anchoredTarget); }
+      catch (err) {
+        if (err.code === 'EEXIST') refuse('target_changed_during_update');
+        refuse('atomic_create_denied');
+      }
+      // If the original directory was moved before commit, unlink only the
+      // hard link that we just created; do not affect a foreign target inode.
+      if (!await targetAnchor.stable()) {
+        try {
+          const [created, staged] = await Promise.all([fs.lstat(anchoredTarget), fs.lstat(temp)]);
+          if (created.dev !== staged.dev || created.ino !== staged.ino)
+            refuse('created_target_cleanup_uncertain');
+          await fs.unlink(anchoredTarget);
+        } catch { refuse('created_target_cleanup_uncertain'); }
+        refuse('parent_changed_during_update');
+      }
+      try { await fs.unlink(temp); }
+      catch { refuse('created_temporary_cleanup_failed'); }
+    } else {
+      await fs.rename(temp, anchoredTarget);
+      if (!await targetAnchor.stable())
+        refuse('updated_target_parent_changed');
+    }
     temp = null;
     return {
       schema: 1, status: before ? 'updated' : 'created',
@@ -151,8 +218,13 @@ export async function guardedUpdate({
       compare_and_swap: true, external_writer_atomicity: 'not_guaranteed'
     };
   } finally {
-    if (temp) await fs.unlink(temp).catch(() => {});
-    await release();
+    try {
+      if (temp) await fs.unlink(temp).catch(() => {});
+      if (targetAnchor) await targetAnchor.close();
+    } finally {
+      // Failed fd close must never strand the per-target exclusive lock.
+      await release();
+    }
   }
 }
 function parseArgs(argv) {
