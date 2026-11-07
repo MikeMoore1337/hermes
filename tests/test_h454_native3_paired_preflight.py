@@ -86,26 +86,26 @@ class PairedPreflightTests(TestCase):
                  exists=lambda: False, is_symlink=lambda: False)), \
              patch.object(pair.candidate, "registry_mount_source",
                           return_value=str(pair.candidate.PINNED_REGISTRY_SOURCE)), \
-             patch.object(pair.stage1, "inspect",
-                          return_value=checkpoint) as inspect, \
              patch.object(pair.legacy, "devices", return_value=2), \
              patch.object(pair.legacy, "docker") as mutating_legacy_docker, \
-             patch.object(pair.stage1, "docker") as mutating_stage1_docker:
+             patch.object(pair.stage1, "docker",
+                          return_value=checkpoint or "") as docker_listing:
             try:
                 return pair.plan(release_sha=RELEASE, bundle=Path("/verified"),
                                  image=IMAGE, archive_sha=ARCHIVE,
                                  candidate_sha=SOURCE)
             finally:
                 mutating_legacy_docker.assert_not_called()
-                mutating_stage1_docker.assert_not_called()
                 gate.assert_called_once_with(Path("/verified"), IMAGE, ARCHIVE, SOURCE)
+                # The only Docker operations are confirmed-successful, read-only
+                # checkpoint listings. The first command must not be optional.
                 if checkpoint is None:
-                    # On success both previous checkpoint names are inspected.
-                    if inspect.call_count == 2:
-                        self.assertEqual(
-                            [c.args[1] for c in inspect.call_args_list],
-                            [pair.RELAY_CHECKPOINT, pair.PROXY_CHECKPOINT],
-                        )
+                    self.assertEqual(docker_listing.call_count, 2)
+                    self.assertEqual(
+                        [c.args[4] for c in docker_listing.call_args_list],
+                        ["name=^/" + pair.RELAY_CHECKPOINT + "$",
+                         "name=^/" + pair.PROXY_CHECKPOINT + "$"],
+                    )
 
     def test_safe_pair_plan_accepts_pinned_live_topology_without_mutation(self):
         result = self.check_plan()
@@ -168,7 +168,24 @@ class PairedPreflightTests(TestCase):
     def test_existing_checkpoint_never_admitted(self):
         with self.assertRaisesRegex(pair.PairDenied,
                                     "ROLLBACK_CHECKPOINT_ALREADY_EXISTS"):
-            self.check_plan(checkpoint={"Id": "a" * 64})
+            self.check_plan(checkpoint="occupied-checkpoint")
+
+    def test_docker_permission_error_does_not_prove_free_checkpoint(self):
+        # Use the actual Stage 1 Docker parser, including nonzero return-code
+        # handling; mocking optional inspect alone would mask this defect.
+        failed = SimpleNamespace(returncode=1, stdout="", stderr="synthetic-private-error")
+        with patch.object(pair.stage1.subprocess, "run", return_value=failed) as cmd:
+            with self.assertRaisesRegex(pair.stage1.Hold, "DOCKER_OPERATION_FAILED"):
+                pair.check_free_checkpoints()
+        cmd.assert_called_once()
+
+    def test_both_successful_empty_listings_prove_free_checkpoint_slots(self):
+        empty = SimpleNamespace(returncode=0, stdout="", stderr="")
+        with patch.object(pair.stage1.subprocess, "run", return_value=empty) as cmd:
+            pair.check_free_checkpoints()
+        self.assertEqual(cmd.call_count, 2)
+        self.assertTrue(all(call.args[0][0] == "/usr/bin/docker"
+                            for call in cmd.call_args_list))
 
     def test_owner_root_and_installed_exact_release_are_required(self):
         with patch.object(pair.os, "geteuid", return_value=1000), \
