@@ -48,6 +48,7 @@ class FakePairedDocker:
             "Image": tx.stage1.FORK_IMAGE, "State": {"Running": True},
             "Config": {"User": "979:975",
                        "Labels": {"com.hermes.scope": "h15-brc-owner-relay"}},
+            "HostConfig": {"RestartPolicy": {"Name": "unless-stopped"}},
         }
         self.original_proxy = {
             "Id": ORIGINAL_PROXY, "Name": "/" + tx.stage1.PROXY,
@@ -55,7 +56,9 @@ class FakePairedDocker:
             "Config": {"User": "65534:65534", "Labels": {
                 "com.hermes.h454.role": "wss-proxy",
                 "com.hermes.h454.request": "5" * 64}},
-            "HostConfig": {"NetworkMode": "container:" + ORIGINAL_RELAY},
+            "HostConfig": {
+                "NetworkMode": "container:" + ORIGINAL_RELAY,
+                "RestartPolicy": {"Name": "unless-stopped"}},
         }
         self.state = {tx.legacy.NAME: self.original_relay,
                       tx.stage1.PROXY: self.original_proxy}
@@ -298,6 +301,10 @@ class FakePairedDocker:
         case.assertEqual(self.state[tx.stage1.PROXY]["Id"], ORIGINAL_PROXY)
         case.assertTrue(self.state[tx.legacy.NAME]["State"]["Running"])
         case.assertTrue(self.state[tx.stage1.PROXY]["State"]["Running"])
+        for name in (tx.legacy.NAME, tx.stage1.PROXY):
+            case.assertEqual(
+                self.state[name]["HostConfig"]["RestartPolicy"]["Name"],
+                "unless-stopped", "restored container has unsafe restart policy")
         case.assertEqual(self.active_pins, self.original_pins)
         case.assertNotIn(tx.PAIR_RELAY, self.state)
         case.assertNotIn(tx.PAIR_PROXY, self.state)
@@ -382,6 +389,16 @@ class PairedFaultMatrixTests(unittest.TestCase):
                                          for event in simulation.events))
                     self.assertIn(tx.PAIR_RELAY, simulation.state)
                     self.assertIn(tx.PAIR_PROXY, simulation.state)
+                    # A separate recover invocation must *also* refuse to
+                    # destroy the identity whose successful creation lacks ID.
+                    reason = ("AMBIGUOUS_RELAY_MANUAL_RECOVERY"
+                              if point == "ambiguous_run_reply"
+                              else "AMBIGUOUS_PROXY_MANUAL_RECOVERY")
+                    with self.assertRaisesRegex(tx.TransactionDenied, reason):
+                        tx.restore_authorized(**KWARGS, after_success=False)
+                    self.assertTrue(tx.PENDING.exists())
+                    self.assertFalse(any(event[0] == "rm"
+                                         for event in simulation.events))
 
     def test_successful_pair_can_be_rolled_back_using_retained_ids(self):
         with tempfile.TemporaryDirectory(prefix="h454-postsuccess-") as tmp:
