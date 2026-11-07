@@ -80,6 +80,9 @@ CODE_MAPPING: dict[str, tuple[str, str, str, str]] = {
     "device_linux_vps_unavailable": ("service_health_failure", "LINUX_PRESENCE_OFFLINE", "unhealthy", "device-linux"),
     "device_tls_expiring": ("service_health_failure", "WSS_CERT_EXPIRING", "degraded", "device-wss"),
     "device_tls_expired": ("service_health_failure", "WSS_CERT_EXPIRED", "unhealthy", "device-wss"),
+    "device_ca_batch_renewal_due": ("service_health_failure", "WSS_CA_REISSUE_DUE", "degraded", "device-wss"),
+    "device_ca_batch_renewal_critical": ("service_health_failure", "WSS_CA_REISSUE_CRITICAL", "unhealthy", "device-wss"),
+    "device_ca_batch_expired": ("service_health_failure", "WSS_CA_BATCH_EXPIRED", "unhealthy", "device-wss"),
 }
 
 # New stable Ops codes must never crash the active H-01 timer during projection.

@@ -14,7 +14,7 @@ Group=root
 WorkingDirectory=/opt/hermes-agent-owner
 StateDirectory=hermes-qa-watch
 StateDirectoryMode=0700
-ExecStart=/usr/bin/python3 -m qa_advisor.watch_once --execute
+ExecStart=/usr/bin/python3 -m qa_advisor.watch_once --execute --engineering-auto
 NoNewPrivileges=yes
 CapabilityBoundingSet=
 AmbientCapabilities=
@@ -38,7 +38,10 @@ InaccessiblePaths=/var/lib/hermes /var/lib/hermes-agent /etc/hermes-agent/ops-wa
 MemoryMax=96M
 CPUQuota=10%
 TasksMax=20
-TimeoutStartSec=22s
+# Existing CI + project observer takes ~17s on Hermes VPS.
+# The additional H809 public-only refresh has a hard 38s SIGALRM budget.
+# Preserve a margin for startup and cleanup; no new service/timer.
+TimeoutStartSec=75s
 UMask=0077
 StandardOutput=journal
 StandardError=journal

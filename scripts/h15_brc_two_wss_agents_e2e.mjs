@@ -50,7 +50,7 @@ try {
 
   const devices = ['sandbox-one', 'sandbox-two'];
   for (const id of devices) {
-    const credential = relay.store.issueDeviceToken(id, owner.id, id, 'linux-test');
+    const credential = relay.store.issueDeviceToken(id, owner.id, id, 'linux/docker');
     const socket = new WS('ws://127.0.0.1:' + addr.port + '/ws', {
       headers: { Authorization: 'Bearer ' + credential }
     });

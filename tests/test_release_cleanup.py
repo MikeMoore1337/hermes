@@ -60,6 +60,33 @@ class ReleaseCleanupContractTests(unittest.TestCase):
         )
         self.assertTrue(all(p.exists() for p in candidates))
 
+    def test_stage1_registry_source_is_never_garbage_collected(self):
+        # The live relay's Docker mount is not visible in host self/mountinfo.
+        pinned = HELPER.H454_STAGE1_REGISTRY_RELEASE_SHA
+        self.assertEqual(pinned, "203c1c45986b4613c30abb83a3399d4415b5b103")
+        old_agent = self.agent / ("main-" + pinned)
+        old_ui = self.ui / ("main-" + pinned)
+        old_agent.mkdir()
+        old_ui.mkdir()
+        old_backup = self.agent / (f".backup-{pinned[:12]}-20261023T160000Z")
+        old_backup.mkdir()
+        os.utime(old_agent, (1, 1))
+        os.utime(old_ui, (1, 1))
+        with patch.object(HELPER, "config_pins", return_value=set()), \
+             patch.object(HELPER, "live_pins", return_value=set()):
+            protected = HELPER.protected_release_shas(
+                self.shas[-1], self.shas[-2]
+            )
+        self.assertIn(pinned, protected)
+        candidates, _ = HELPER.candidates_for(
+            self.agent, self.ui, protected, self.backup, retained=0
+        )
+        self.assertNotIn(old_agent, candidates)
+        self.assertNotIn(old_ui, candidates)
+        self.assertNotIn(old_backup, candidates)
+        # Unrelated ancient releases remain candidates: do not disable GC.
+        self.assertIn(self.agent / ("main-" + self.shas[0]), candidates)
+
     def test_incomplete_release_rejected(self):
         (self.agent / ".incoming-recent").mkdir()
         with self.assertRaisesRegex(RuntimeError, "incomplete"):

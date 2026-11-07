@@ -7,7 +7,8 @@ import unittest
 from unittest.mock import patch
 
 from scripts.h15_brc_native_read_gateway import (
-    apply, MCP, IMPORT, LIST, CALL, NATIVE_IMPORT, NATIVE_CALL
+    apply, MCP, IMPORT, LIST, CALL, NATIVE_IMPORT, NATIVE_CALL,
+    GRANT_PATCH, INVOKE_ANCHOR, NATIVE_GENERIC_GUARD,
 )
 from scripts.h15_remote_commander_candidate_audit import AuditError
 
@@ -23,7 +24,9 @@ class NativeReadGatewayTests(unittest.TestCase):
             IMPORT + "\n" + LIST + "\n" + CALL + "\n", encoding="utf-8")
         for f in ("hermes-workspaces.ts","hermes-policy.ts",
                   "hermes-tool-catalog.ts","invoke.ts"):
-            (self.folder / f).write_text("export {};\n", encoding="utf-8")
+            (self.folder / f).write_text(
+                GRANT_PATCH + "\n" + INVOKE_ANCHOR + "\n" if f == "invoke.ts" else "export {};\n",
+                encoding="utf-8")
         p = patch("scripts.h15_brc_native_read_gateway.evaluate")
         p.start()
         self.addCleanup(p.stop)
@@ -39,15 +42,21 @@ class NativeReadGatewayTests(unittest.TestCase):
         self.assertLess(actual.index(NATIVE_CALL), actual.index(CALL))
         self.assertIn("invokeOwnerNativeRead", (self.folder / "hermes-native-read.ts").read_text())
         self.assertNotIn("deviceId: { type", (self.folder / "hermes-native-read.ts").read_text())
+        invoke = (self.folder / "invoke.ts").read_text()
+        self.assertEqual(invoke.count(NATIVE_GENERIC_GUARD), 1)
+        self.assertLess(invoke.index(GRANT_PATCH), invoke.index(NATIVE_GENERIC_GUARD))
+        self.assertLess(invoke.index(NATIVE_GENERIC_GUARD), invoke.index(INVOKE_ANCHOR))
 
     def test_double_patch_denied_without_further_modifications(self):
         apply(self.root)
         before = self.server.read_bytes()
         target = (self.folder / "hermes-native-read.ts").read_bytes()
+        invoke = (self.folder / "invoke.ts").read_bytes()
         with self.assertRaises(AuditError):
             apply(self.root)
         self.assertEqual(before, self.server.read_bytes())
         self.assertEqual(target, (self.folder / "hermes-native-read.ts").read_bytes())
+        self.assertEqual(invoke, (self.folder / "invoke.ts").read_bytes())
 
     def test_source_drift_rejected_before_any_write(self):
         self.server.write_text(self.server.read_text().replace(CALL, "UNREVIEWED()"))
@@ -62,6 +71,18 @@ class NativeReadGatewayTests(unittest.TestCase):
         with self.assertRaisesRegex(AuditError, "native_relay_source_not_ready"):
             apply(self.root)
         self.assertFalse((self.folder / "hermes-native-read.ts").exists())
+
+    def test_missing_or_misordered_grant_and_dispatch_markers_denied_before_write(self):
+        invoke = self.folder / "invoke.ts"
+        for source in (INVOKE_ANCHOR, GRANT_PATCH, INVOKE_ANCHOR + "\n" + GRANT_PATCH):
+            with self.subTest(source=source):
+                invoke.write_text(source, encoding="utf-8")
+                before = self.server.read_bytes()
+                with self.assertRaisesRegex(AuditError, "native_relay_marker_drift"):
+                    apply(self.root)
+                self.assertEqual(self.server.read_bytes(), before)
+                self.assertEqual(invoke.read_text(), source)
+                self.assertFalse((self.folder / "hermes-native-read.ts").exists())
 
     def test_wrong_upstream_ref_denied(self):
         with self.assertRaisesRegex(AuditError, "unreviewed_upstream_sha"):
@@ -83,7 +104,7 @@ class NativeReadGatewayTests(unittest.TestCase):
         (source_root / "store").mkdir(exist_ok=True)
         (source_root / "device-hub.ts").write_text(
             "export class DeviceHub {\n"
-            " get(id: string): {ownerId:string;info:{deviceId:string;name:string;platform:string};tools:{name:string}[]} | undefined { return undefined; }\n"
+            " get(id: string): {ownerId:string;socket:{hermesAuthTokenHash:string};info:{deviceId:string;name:string;platform:string};tools:{name:string}[]} | undefined { return undefined; }\n"
             " call(id: string, t: string, a: any, o: any): Promise<any> { return Promise.reject(); }\n"
             "}\n")
         (source_root / "store/sqlite.ts").write_text(
@@ -109,9 +130,10 @@ class NativeReadGatewayTests(unittest.TestCase):
 const assert=require('node:assert/strict');
 const crypto=require('node:crypto');
 const {NATIVE_TOOLS,invokeOwnerNativeRead}=require(process.argv[1]);
-const good={device_id:'h15-native-abcdefgh',name:'H15 Windows native read-only',
- platform:'win32',paused:0};
-const agent={ownerId:'owner-A', info:{deviceId:good.device_id,name:good.name,platform:'win32'},
+const good={device_id:'h454-win-01335a1f6e6705b4',name:'H15 Windows native read-only',
+ platform:'win32',paused:0,token_hash:'a'.repeat(64)};
+const agent={ownerId:'owner-A', socket:{hermesAuthTokenHash:good.token_hash},
+ info:{deviceId:good.device_id,name:good.name,platform:'win32'},
  tools:NATIVE_TOOLS.map(t=>({name:t.name}))};
 const raw=Buffer.from('abc');
 const verified={status:'ok',project:'hermes',relative:'README.md',action:'read',
@@ -120,7 +142,8 @@ const verified={status:'ok',project:'hermes',relative:'README.md',action:'read',
 const safeList={status:'ok',project:'hermes',relative:'',action:'list',kind:'directory',
  entries:[{name:'README.md',kind:'file'},{name:'src',kind:'directory'}],truncated:false};
 let calls=0,logs=[];
-let store={listDevices(owner){return owner==='owner-A'?[good]:[]},
+let currentRow=good;
+let store={listDevices(owner){return owner==='owner-A'?[currentRow]:[]},
  audit(e){logs.push(e)}};
 let hub={get(id){return id===good.device_id?agent:undefined},
  async call(id,name,args){calls++;return {isError:false,content:[{type:'text',text:JSON.stringify(
@@ -130,6 +153,15 @@ const ctx={userId:'owner-A',clientId:'chatgpt'};
  assert.deepEqual(NATIVE_TOOLS.map(t=>t.name),['native_file_stat','native_file_read','native_file_list']);
  const ok=await invokeOwnerNativeRead(hub,store,ctx,'native_file_read',{project:'hermes',relative:'README.md'});
  assert.equal(ok.isError,false);assert.equal(calls,1);assert.equal(logs.length,1);
+ // An unavailable grant store must deny before dispatch, without error text.
+ const normalList=store.listDevices;
+ store.listDevices=()=>{throw Error('SYNTHETIC_DB_SECRET');};
+ const storeFailure=await invokeOwnerNativeRead(hub,store,ctx,'native_file_read',
+   {project:'hermes',relative:'README.md'});
+ assert.equal(storeFailure.isError,true);
+ assert.equal(JSON.parse(storeFailure.content[0].text).reason,'native_read_unavailable');
+ assert.equal(calls,1);
+ store.listDevices=normalList;
  const root=await invokeOwnerNativeRead(hub,store,ctx,'native_file_list',{project:'hermes',relative:''});
  assert.equal(root.isError,false);assert.equal(calls,2);assert.equal(logs.length,2);
  assert.equal(JSON.parse(root.content[0].text).entries.length,2);
@@ -145,6 +177,26 @@ const ctx={userId:'owner-A',clientId:'chatgpt'};
  assert.equal(calls,2);
  assert.equal((await invokeOwnerNativeRead(hub,store,{userId:'other',clientId:'codex'},'native_file_read',{project:'hermes',relative:'README.md'})).isError,true);
  assert.equal(calls,2);
+ // A separately paired Win32 device with the same owner/name and a
+ // matching fresh token is NOT the approved original Windows identity.
+ const realGet=hub.get;
+ const impostorId='h454-win-unapproved-other';
+ currentRow={...good,device_id:impostorId};
+ hub.get=id=>id===impostorId
+   ? {...agent,info:{...agent.info,deviceId:impostorId}}
+   : undefined;
+ const wrongNative=await invokeOwnerNativeRead(hub,store,ctx,'native_file_read',
+   {project:'hermes',relative:'README.md'});
+ assert.equal(wrongNative.isError,true);
+ assert.equal(JSON.parse(wrongNative.content[0].text).reason,'native_read_unavailable');
+ assert.equal(calls,2);
+ hub.get=realGet;
+ currentRow=good;
+ currentRow={...good,token_hash:'rotated-token-hash'};
+ assert.equal((await invokeOwnerNativeRead(hub,store,ctx,'native_file_read',
+   {project:'hermes',relative:'README.md'})).isError,true);
+ assert.equal(calls,2);
+ currentRow=good;
  for(const altered of [
  {...agent,ownerId:'other'}, {...agent,tools:[...agent.tools,{name:'start_process'}]},
  {...agent,info:{...agent.info,platform:'linux'}}]){
@@ -153,6 +205,45 @@ const ctx={userId:'owner-A',clientId:'chatgpt'};
  }
  assert.equal(calls,2);
  hub.get=()=>agent;
+ // A rekey between dispatch and delivery must not release host contents.
+ hub.call=async()=>{currentRow={...good,token_hash:'rotated-during-read'};
+   return {isError:false,content:[{type:'text',text:JSON.stringify(verified)}]}};
+ const duringRead=await invokeOwnerNativeRead(hub,store,ctx,'native_file_read',
+   {project:'hermes',relative:'README.md'});
+ assert.equal(duringRead.isError,true);
+ assert.equal(logs.at(-1).ok,0);
+ currentRow=good;
+ // The grant DB can fail while the remote file is being read.
+ hub.call=async()=>{calls++;store.listDevices=()=>{throw Error('SYNTHETIC_DB_SECRET');};
+   return {isError:false,content:[{type:'text',text:JSON.stringify(verified)}]}};
+ const inFlightDbFailure=await invokeOwnerNativeRead(hub,store,ctx,'native_file_read',
+   {project:'hermes',relative:'README.md'});
+ assert.equal(inFlightDbFailure.isError,true);
+ assert.equal(JSON.parse(inFlightDbFailure.content[0].text).reason,'native_read_unavailable');
+ assert.equal(logs.at(-1).ok,0);
+ store.listDevices=normalList;
+ currentRow={...good,token_hash:'invalid-hash'};
+ const corruptDigest=await invokeOwnerNativeRead(hub,store,ctx,'native_file_read',
+   {project:'hermes',relative:'README.md'});
+ assert.equal(corruptDigest.isError,true);
+ currentRow=good;
+ // A revocation during the audit boundary must also suppress delivery.
+ hub.call=async()=>({isError:false,content:[{type:'text',text:JSON.stringify(verified)}]});
+ const auditBefore=store.audit;
+ store.audit=e=>{logs.push(e);currentRow={...good,token_hash:'rotated-during-audit'}};
+ const duringAudit=await invokeOwnerNativeRead(hub,store,ctx,'native_file_read',
+   {project:'hermes',relative:'README.md'});
+ assert.equal(duringAudit.isError,true);
+ store.audit=auditBefore;
+ currentRow=good;
+ hub.call=async()=>({isError:false,content:[{type:'text',text:JSON.stringify(verified)}]});
+ store.audit=e=>{logs.push(e);store.listDevices=()=>{throw Error('SYNTHETIC_DB_SECRET')}};
+ const dbFailureAfterAudit=await invokeOwnerNativeRead(hub,store,ctx,'native_file_read',
+   {project:'hermes',relative:'README.md'});
+ assert.equal(dbFailureAfterAudit.isError,true);
+ assert.equal(JSON.parse(dbFailureAfterAudit.content[0].text).reason,'native_read_unavailable');
+ store.audit=auditBefore;
+ store.listDevices=normalList;
  hub.call=async()=>({isError:false,content:[{type:'text',text:JSON.stringify({
    ...safeList,entries:[{name:'.env',kind:'file'}]})}]});
  assert.equal((await invokeOwnerNativeRead(hub,store,ctx,'native_file_list',
@@ -161,9 +252,23 @@ const ctx={userId:'owner-A',clientId:'chatgpt'};
  assert.equal((await invokeOwnerNativeRead(hub,store,ctx,'native_file_read',{project:'hermes',relative:'README.md'})).isError,true);
  hub.call=async()=>({isError:false,content:[{type:'text',text:JSON.stringify({...verified,path:'C:\\private'})}]});
  assert.equal((await invokeOwnerNativeRead(hub,store,ctx,'native_file_read',{project:'hermes',relative:'README.md'})).isError,true);
+ const busyText='{"status":"refused","reason":"native_file_busy","message":"File is in use; retry after the other program closes it."}';
+ hub.call=async()=>({isError:true,content:[{type:'text',text:busyText}]});
+ const busy=await invokeOwnerNativeRead(hub,store,ctx,'native_file_read',{project:'hermes',relative:'README.md'});
+ assert.equal(busy.isError,true);assert.equal(JSON.parse(busy.content[0].text).reason,'native_file_busy');
+ assert.equal(logs.at(-1).ok,0);
+ const statBusy=await invokeOwnerNativeRead(hub,store,ctx,'native_file_stat',{project:'hermes',relative:'README.md'});
+ assert.equal(JSON.parse(statBusy.content[0].text).reason,'native_read_unavailable');
+ hub.call=async()=>({isError:true,content:[{type:'text',text:busyText+'private'}]});
+ const forged=await invokeOwnerNativeRead(hub,store,ctx,'native_file_read',{project:'hermes',relative:'README.md'});
+ assert.equal(JSON.parse(forged.content[0].text).reason,'native_read_unavailable');
+ assert.equal(forged.content[0].text.includes('private'),false);
  hub.call=async()=>({isError:false,content:[{type:'text',text:JSON.stringify(verified)}]});
  store.audit=()=>{throw Error('AUDIT_DB_OFFLINE_SECRET')};
  assert.equal((await invokeOwnerNativeRead(hub,store,ctx,'native_file_read',{project:'hermes',relative:'README.md'})).isError,true);
+ hub.call=async()=>({isError:true,content:[{type:'text',text:busyText}]});
+ const unaudited=await invokeOwnerNativeRead(hub,store,ctx,'native_file_read',{project:'hermes',relative:'README.md'});
+ assert.equal(JSON.parse(unaudited.content[0].text).reason,'native_read_unavailable');
  console.log('H454_OWNER_NATIVE_RELAY_TS_RUNTIME=PASS');
 })().catch(e=>{console.error(e);process.exitCode=1});
 """
@@ -172,9 +277,9 @@ const ctx={userId:'owner-A',clientId:'chatgpt'};
         self.assertEqual(p.returncode, 0, p.stderr + p.stdout)
         self.assertIn("H454_OWNER_NATIVE_RELAY_TS_RUNTIME=PASS", p.stdout)
 
-    def test_unreviewed_generic_dispatch_never_modified(self):
+    def test_generic_dispatch_keeps_the_existing_allowlist(self):
         apply(self.root)
-        self.assertEqual((self.folder / "invoke.ts").read_text(), "export {};\n")
+        self.assertIn(NATIVE_GENERIC_GUARD, (self.folder / "invoke.ts").read_text())
         self.assertEqual((self.folder / "hermes-policy.ts").read_text(), "export {};\n")
         s = self.server.read_text()
         self.assertIn(CALL, s)

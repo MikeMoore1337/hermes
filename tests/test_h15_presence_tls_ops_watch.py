@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -26,6 +27,12 @@ class RotatedCertificateAlertTests(unittest.TestCase):
             "enabled_at": "2026-10-20T00:00:00+00:00",
         }), encoding="utf-8")
         self.now = datetime(2026, 10, 20, 12, tzinfo=UTC)
+        # Production may have a TLS-only consent marker enabled. Synthetic
+        # tests must resolve only their own explicit fixture, never /etc.
+        self.missing_tls_only = root / "tls-only-absent.json"
+        tls_patch = patch.object(alerts, "TLS_OPT_IN", self.missing_tls_only)
+        tls_patch.start()
+        self.addCleanup(tls_patch.stop)
 
     def sample(self, expiry):
         return subprocess.CompletedProcess(["openssl"], 0,
@@ -56,6 +63,89 @@ class RotatedCertificateAlertTests(unittest.TestCase):
              patch.object(alerts, "ROTATED_CERT", self.rotated), \
              patch.object(alerts.subprocess, "run") as run:
             self.assertEqual(alerts.certificate_status(self.legacy, self.gate, now=self.now), "unknown")
+            run.assert_not_called()
+
+    def test_tls_only_gate_reports_expired_without_enabling_device_monitoring(self):
+        from unittest.mock import patch
+        tls_gate = self.legacy.parent / "tls-opt.json"
+        tls_gate.write_text(json.dumps({
+            "schema": 1, "purpose": "tls-expiry",
+            "enabled_at": "2026-10-20T00:00:00+00:00",
+        }), encoding="utf-8")
+        os.chmod(tls_gate, 0o600)
+        self.gate.unlink()
+        with patch.object(alerts, "TLS_OPT_IN", tls_gate), \
+             patch.object(alerts.subprocess, "run",
+                          return_value=self.sample("Oct 19 12:00:00 2026 GMT")):
+            self.assertEqual(alerts.certificate_status(
+                self.legacy, self.gate, now=self.now), "expired")
+            observed = alerts.observe(self.legacy.parent / "absent-db", self.gate,
+                                      now=self.now)
+            self.assertEqual(
+                [item["status"] for item in observed.values()],
+                ["not_configured", "not_configured"])
+            from ops_watch.core import analyze
+            from datetime import UTC
+            snap = {
+                "schema": "hermes-ops-snapshot-v1",
+                "observed_at": self.now.isoformat(),
+                "news": {
+                    "timer_enabled": True, "timer_active": True,
+                    "last_successful_discovery_at": self.now.isoformat(),
+                    "consecutive_discovery_failures": 0,
+                    "consecutive_drain_failures": 0, "pending_jobs": 0,
+                    "oldest_pending_age_seconds": 0,
+                    "recent_provider_rate_limits": 0,
+                },
+                "device_fabric": observed,
+                "device_fabric_tls": "expired",
+            }
+            findings = {f["code"] for f in analyze(snap, now=self.now)}
+            self.assertEqual(findings, {"device_tls_expired"})
+
+    def test_malformed_tls_gate_does_not_fall_back_to_presence_consent(self):
+        tls_gate = self.legacy.parent / "tls-opt.json"
+        tls_gate.write_text('{"schema":1,"purpose":"untrusted"}', encoding="utf-8")
+        os.chmod(tls_gate, 0o600)
+        with patch.object(alerts, "TLS_OPT_IN", tls_gate), \
+             patch.object(alerts.subprocess, "run") as run:
+            self.assertEqual(alerts.certificate_status(
+                self.legacy, self.gate, now=self.now), "unknown")
+            run.assert_not_called()
+
+    def test_tls_gate_symlink_fails_closed(self):
+        tls_gate = self.legacy.parent / "tls-opt.json"
+        tls_gate.symlink_to(self.gate)
+        with patch.object(alerts, "TLS_OPT_IN", tls_gate), \
+             patch.object(alerts.subprocess, "run") as run:
+            self.assertEqual(alerts.certificate_status(
+                self.legacy, self.gate, now=self.now), "unknown")
+            run.assert_not_called()
+
+    def test_tls_only_future_consent_fails_closed(self):
+        tls_gate = self.legacy.parent / "tls-opt.json"
+        tls_gate.write_text(json.dumps({
+            "schema": 1, "purpose": "tls-expiry",
+            "enabled_at": "2026-10-25T00:00:00+00:00",
+        }), encoding="utf-8")
+        os.chmod(tls_gate, 0o600)
+        with patch.object(alerts, "TLS_OPT_IN", tls_gate), \
+             patch.object(alerts.subprocess, "run") as run:
+            self.assertEqual(alerts.certificate_status(
+                self.legacy, self.gate, now=self.now), "unknown")
+            run.assert_not_called()
+
+    def test_tls_only_gate_requires_private_permissions(self):
+        tls_gate = self.legacy.parent / "tls-opt.json"
+        tls_gate.write_text(json.dumps({
+            "schema": 1, "purpose": "tls-expiry",
+            "enabled_at": "2026-10-20T00:00:00+00:00",
+        }), encoding="utf-8")
+        os.chmod(tls_gate, 0o644)
+        with patch.object(alerts, "TLS_OPT_IN", tls_gate), \
+             patch.object(alerts.subprocess, "run") as run:
+            self.assertEqual(alerts.certificate_status(
+                self.legacy, self.gate, now=self.now), "unknown")
             run.assert_not_called()
 
 

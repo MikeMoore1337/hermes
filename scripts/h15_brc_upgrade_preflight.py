@@ -2,9 +2,11 @@
 """H15 #454. Read-only, fail-closed BRC owner relay OCI upgrade preflight."""
 from __future__ import annotations
 import argparse
+import hashlib
 import json
 from pathlib import Path
 import re
+import stat
 import subprocess
 import tarfile
 from scripts.h15_brc_offline_image_bundle import verify, BundleDenied
@@ -14,6 +16,16 @@ IMAGE = re.compile(r"sha256:[a-f0-9]{64}\Z")
 HEX = re.compile(r"[a-f0-9]{64}\Z")
 COMMIT = re.compile(r"[a-f0-9]{40}\Z")
 UPSTREAM = "cbe511702dd0147650353c29ac6ab1decd8afda1"
+# Pin the exact owner-approved Stage 1 workspace registry, not a generic host
+# mount. The file and its ancestors are verified before any live cutover.
+PINNED_REGISTRY_SOURCE = Path("/opt/hermes-agent-owner/releases/main-203c1c45986b4613c30abb83a3399d4415b5b103/deploy/h15/workspace-registry-fork.json")
+PINNED_REGISTRY_SHA256 = "8253e69bf43597e4d76dbba941588c930e1ce3fbb14e7daf5426f3ab8f482e85"
+REGISTRY_TARGET = "/run/h454/workspace-registry.json"
+REGISTRY_ENV = (
+    "BRC_WORKSPACE_REGISTRY=" + REGISTRY_TARGET,
+    "BRC_DB=/state/relay.sqlite",
+    "HOME=/tmp",
+)
 
 class UpgradeDenied(ValueError):
     pass
@@ -97,12 +109,67 @@ def candidate_gate(image: dict, expected: str):
             or s.split("=", 1)[0].upper() in secrets for s in env):
         deny("candidate_baked_secret_or_env")
 
+def _verify_pinned_registry_file() -> None:
+    """Check immutable Stage 1 content and the root-owned source path."""
+    source = PINNED_REGISTRY_SOURCE
+    try:
+        meta = source.lstat()
+        if (not stat.S_ISREG(meta.st_mode) or meta.st_uid != 0 or meta.st_gid != 0
+                or stat.S_IMODE(meta.st_mode) != 0o444 or meta.st_nlink != 1
+                or not 0 < meta.st_size < 16384):
+            deny("relay_registry_file_untrusted")
+        for parent in tuple(source.parents)[:6]:
+            info = parent.lstat()
+            if (not stat.S_ISDIR(info.st_mode) or info.st_uid != 0
+                    or info.st_gid != 0 or stat.S_IMODE(info.st_mode) & 0o022):
+                deny("relay_registry_parent_untrusted")
+        if hashlib.sha256(source.read_bytes()).hexdigest() != PINNED_REGISTRY_SHA256:
+            deny("relay_registry_digest_mismatch")
+    except UpgradeDenied:
+        raise
+    except (OSError, ValueError) as exc:
+        raise UpgradeDenied("relay_registry_file_unavailable") from exc
+
+
+def registry_mount_source(container: dict) -> str | None:
+    """Permit only /state, optionally plus the exact pinned read-only registry."""
+    mounts = container.get("Mounts")
+    if not isinstance(mounts, list) or not 1 <= len(mounts) <= 2:
+        deny("relay_mounts_not_single")
+    states = [m for m in mounts if isinstance(m, dict)
+              and m.get("Destination") == "/state"]
+    if len(states) != 1:
+        deny("relay_state_mount_mismatch")
+    state = states[0]
+    if (state.get("Type") != "bind"
+            or state.get("Source") != "/var/lib/hermes-brc-relay"
+            or state.get("RW") is not True):
+        deny("relay_state_mount_mismatch")
+    if len(mounts) == 1:
+        return None
+    other = [m for m in mounts if m is not state]
+    if (len(other) != 1 or not isinstance(other[0], dict)
+            or other[0].get("Type") != "bind"
+            or other[0].get("Source") != str(PINNED_REGISTRY_SOURCE)
+            or other[0].get("Destination") != REGISTRY_TARGET
+            or other[0].get("RW") is not False):
+        deny("relay_mounts_not_single")
+    env = (container.get("Config") or {}).get("Env")
+    if not isinstance(env, list) or any(not isinstance(x, str) for x in env):
+        deny("relay_registry_environment_mismatch")
+    for value in REGISTRY_ENV:
+        key = value.split("=", 1)[0] + "="
+        if [x for x in env if x.startswith(key)] != [value]:
+            deny("relay_registry_environment_mismatch")
+    _verify_pinned_registry_file()
+    return str(PINNED_REGISTRY_SOURCE)
+
+
 def current_gate(container: dict, candidate_id: str) -> str:
     cfg = container.get("Config") or {}
     host = container.get("HostConfig") or {}
     nets = (container.get("NetworkSettings") or {}).get("Networks") or {}
     state = container.get("State") or {}
-    mounts = container.get("Mounts")
     old = container.get("Image")
     if (container.get("Name") != "/hermes-brc-relay"
             or (cfg.get("Labels") or {}).get("com.hermes.scope") != "h15-brc-owner-relay"):
@@ -124,12 +191,7 @@ def current_gate(container: dict, candidate_id: str) -> str:
     if (set(nets) != {"hermes-brc-internal"}
             or nets["hermes-brc-internal"].get("IPAddress") != "172.29.251.2"):
         deny("relay_network_mismatch")
-    if not isinstance(mounts, list) or len(mounts) != 1:
-        deny("relay_mounts_not_single")
-    m = mounts[0]
-    if (m.get("Type") != "bind" or m.get("Source") != "/var/lib/hermes-brc-relay"
-            or m.get("Destination") != "/state" or m.get("RW") is not True):
-        deny("relay_state_mount_mismatch")
+    registry_mount_source(container)
     if (not re.fullmatch(r"[1-9][0-9]*:[1-9][0-9]*", str(cfg.get("User", "")))
             or host.get("Devices") not in (None, [])
             or host.get("Binds") not in (None, [])

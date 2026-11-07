@@ -14,7 +14,10 @@ import subprocess
 import tempfile
 import time
 from urllib.request import build_opener, ProxyHandler
-from scripts.h15_brc_upgrade_preflight import admit, inspect, current_gate, UpgradeDenied
+from scripts.h15_brc_upgrade_preflight import (
+    admit, inspect, current_gate, registry_mount_source,
+    PINNED_REGISTRY_SOURCE, REGISTRY_TARGET, UpgradeDenied,
+)
 
 NAME = "hermes-brc-relay"
 CHECKPOINT = "hermes-brc-relay-h454-rollback"
@@ -22,6 +25,11 @@ APPROVAL = Path("/etc/hermes-brc-relay/relay-upgrade-approval.json")
 LOCK = Path("/run/lock/hermes-brc-relay-upgrade.lock")
 SECRETS = Path("/etc/hermes-brc-relay/relay.env")
 DB = Path("/var/lib/hermes-brc-relay/relay.sqlite")
+# The Stage 1 WSS proxy shares the *container ID* network namespace of the
+# live relay. Replacing only the relay would orphan the proxy and can strand
+# paired ChatGPT clients. A separate joint-pair operator is mandatory.
+WSS_PAIR_PINS = Path("/var/lib/hermes-h454-wss-sidecar/pins.json")
+WSS_PROXY_NAME = "hermes-h454-wss-proxy"
 BACKUPS = Path("/var/backups/hermes-brc-relay")
 HEX64 = re.compile(r"[a-f0-9]{64}\Z")
 CONTAINER_ID = HEX64
@@ -32,6 +40,25 @@ class CutoverDenied(Exception):
 def demand(ok, reason):
     if not ok:
         raise CutoverDenied(reason)
+
+def require_unpaired_wss() -> None:
+    """Never replace a relay while its Stage 1 WSS proxy is still paired."""
+    if WSS_PAIR_PINS.exists() or WSS_PAIR_PINS.is_symlink():
+        raise CutoverDenied("PAIRED_WSS_REQUIRES_ATOMIC_CUTOVER")
+    try:
+        result = subprocess.run(
+            ["docker", "container", "ls", "-a", "--no-trunc",
+             "--filter", "name=^/" + WSS_PROXY_NAME + "$",
+             "--format", "{{.Names}}"],
+            capture_output=True, text=True, timeout=12,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise CutoverDenied("WSS_PROXY_DISCOVERY_UNAVAILABLE") from exc
+    if result.returncode or not isinstance(result.stdout, str) or len(result.stdout) > 512:
+        raise CutoverDenied("WSS_PROXY_DISCOVERY_UNAVAILABLE")
+    if result.stdout.strip():
+        raise CutoverDenied("PAIRED_WSS_REQUIRES_ATOMIC_CUTOVER")
+
 
 def approve(doc, new, old, archive, commit):
     demand(isinstance(doc, dict) and set(doc) == {
@@ -130,9 +157,9 @@ def healthy(count, tries=60):
         time.sleep(1)
     return False
 
-def run_args(image, user):
+def run_args(image, user, registry_source=None):
     uid, gid = user.split(":")
-    return ["run", "-d", "--name", NAME,
+    args = ["run", "-d", "--name", NAME,
         "--label", "com.hermes.scope=h15-brc-owner-relay",
         "--network", "hermes-brc-internal", "--ip", "172.29.251.2",
         "--read-only", "--user", user,
@@ -143,12 +170,25 @@ def run_args(image, user):
         "--tmpfs", "/tmp:rw,nosuid,nodev,noexec,uid=" + uid + ",gid=" + gid + ",mode=0700,size=16m",
         "--env-file", str(SECRETS), "-e", "HOST=0.0.0.0", "-e", "PORT=3000",
         "-e", "PUBLIC_URL=https://mcp.mikemoore.top", "-e", "TRUST_PROXY=false", image]
+    if registry_source is not None:
+        demand(registry_source == str(PINNED_REGISTRY_SOURCE),
+               "UNPINNED_WORKSPACE_REGISTRY_SOURCE")
+        args[-1:-1] = [
+            "--mount", "type=bind,src=" + registry_source
+                       + ",dst=" + REGISTRY_TARGET + ",readonly",
+            "-e", "BRC_WORKSPACE_REGISTRY=" + REGISTRY_TARGET,
+            "-e", "BRC_DB=/state/relay.sqlite",
+            "-e", "HOME=/tmp",
+        ]
+    return args
 
 def swap(image, old, baseline):
     before = inspect(["container", "inspect", NAME])
     user = (before.get("Config") or {}).get("User")
     demand(before.get("Image") == old and isinstance(user, str) and
            re.fullmatch(r"[1-9][0-9]*:[1-9][0-9]*", user) is not None, "OLD_RUNTIME_CHANGED")
+    # Revalidate mounted Stage 1 catalog immediately before stopping Docker.
+    registry_source = registry_mount_source(before)
     demand(not exists(CHECKPOINT), "CHECKPOINT_ALREADY_EXISTS")
     demand(healthy(baseline, tries=1), "OLD_RELAY_UNHEALTHY")
     stopped = renamed = False
@@ -158,13 +198,15 @@ def swap(image, old, baseline):
         docker("update", "--restart", "no", NAME)
         docker("rename", NAME, CHECKPOINT)
         renamed = True
-        cid = docker(*run_args(image, user))
+        cid = docker(*run_args(image, user, registry_source))
         demand(bool(CONTAINER_ID.fullmatch(cid)), "CANDIDATE_ID_INVALID")
         new = inspect(["container", "inspect", NAME])
         demand(new.get("Image") == image
                and (new.get("Config") or {}).get("User") == user
                and ((new.get("Config") or {}).get("Labels") or {}).get("com.hermes.scope") == "h15-brc-owner-relay",
                "CANDIDATE_RUNTIME_CHANGED")
+        demand(registry_mount_source(new) == registry_source,
+               "WORKSPACE_REGISTRY_NOT_PRESERVED")
         demand(healthy(baseline), "CANDIDATE_HEALTH_OR_RECONNECT_FAILED")
         docker("update", "--restart", "unless-stopped", NAME)
         demand(current_gate(inspect(["container", "inspect", NAME]), old) == image,
@@ -222,6 +264,9 @@ def main(argv=None):
     try:
         demand(os.geteuid() == 0, "ROOT_REQUIRED")
         demand(a.mode == "plan" or a.execute, "EXPLICIT_EXECUTE_REQUIRED")
+        # Run before the preflight, backup or first Docker stop. The real
+        # owner's WSS sidecar is attached to this relay's exact namespace.
+        require_unpaired_wss()
         with lock():
             v = admit(a.bundle_dir, a.image, a.archive_sha, a.hermes_sha)
             old = v["current_image"]

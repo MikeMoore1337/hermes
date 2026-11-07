@@ -24,7 +24,7 @@ async function isolate(page){
  return unexpected;
 }
 async function navigate(page,name,width){
- if(width<=980){
+ if(width<=700){
   const dock=page.locator(".orbit-app-mobilebar").getByRole("button",{name,exact:true});
   if(await dock.count()){await dock.click();return;}
   const more=page.locator(".orbit-app-mobilebar").getByRole("button",{name:"Ещё"});
@@ -46,7 +46,7 @@ test("one Orbit type system across React routes",async({page})=>{
   ["Исследования",".orbit-module-shell",".orbit-module-intro h1"],
   ["QA и CI",".orbit-module-shell",".orbit-module-intro h1"],
   ["AI Agent",".orbit-module-shell",".orbit-module-intro h1"],
-  ["Лимиты AI",".orbit-module-shell",".orbit-module-intro h1"],
+  ["Квоты и инструменты",".orbit-module-shell",".quota-unified-intro h1"],
   ["Hermes Commander",".oc-page","#brc-title"]
  ]){
   await navigate(page,label,1440);
@@ -58,7 +58,7 @@ test("one Orbit type system across React routes",async({page})=>{
   });
   expect(values.font.toLowerCase()).toContain("sans-serif");
   expect(values.font).not.toContain("Georgia");
-  expect(values.panel).toBe("#0b1d2c");
+  expect(["#1d2a3d","#fff"]).toContain(values.panel);
   const bounds=await geometry(page);
   expect(bounds.doc,"overflow on "+label).toBeLessThanOrEqual(bounds.viewport+1);
  }

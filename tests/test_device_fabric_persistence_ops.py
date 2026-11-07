@@ -161,6 +161,12 @@ class PresencePersistenceTests(unittest.TestCase):
     def test_tls_expiry_warns_before_silent_permanent_disconnect(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
+            # Isolate the global TLS-only owner opt-in from this legacy test.
+            # Its historical fixture date precedes the real production gate.
+            tls_patch = patch("ops_watch.device_fabric_alerts.TLS_OPT_IN",
+                              root / "tls-only-absent.json")
+            tls_patch.start()
+            self.addCleanup(tls_patch.stop)
             _, gate = prepare(root)
             cert = root / "cert.pem"
             cert.write_text("public dummy certificate", encoding="ascii")

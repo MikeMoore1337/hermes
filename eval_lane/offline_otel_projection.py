@@ -106,13 +106,20 @@ def project(payload: Any) -> dict[str, Any]:
     spans: list[dict[str, Any]] = []
     known_points: list[dict[str, Any]] = []
     unknown_durations = 0
+    # Compute error aggregates over the complete validated batch. Otherwise
+    # position-based sampling can systematically erase errors and timeouts.
     error_kinds: dict[str, int] = {}
+    for event in events:
+        error = event["error_kind"]
+        if error not in ("none", "unknown"):
+            error_kinds[error] = error_kinds.get(error, 0) + 1
+    unknown_input_durations = sum(e["duration_ms"] is None for e in events)
+    unknown_input_errors = sum(e["error_kind"] == "unknown" for e in events)
+    incomplete_input_traces = sum(e["trace_completeness"] != "complete" for e in events)
     for index, event in enumerate(events):
         if index % stride:
             continue
         error = event["error_kind"]
-        if error not in ("none", "unknown"):
-            error_kinds[error] = error_kinds.get(error, 0) + 1
         duration = event["duration_ms"]
         if duration is None:
             unknown_durations += 1
@@ -132,12 +139,21 @@ def project(payload: Any) -> dict[str, Any]:
         ]
         if event["output_bytes_bounded"] is not None:
             attrs.append(_int_attr("hermes.output.bytes.bounded", event["output_bytes_bounded"]))
+        if error not in ("none", "unknown"):
+            # OTel semantic conventions: low-cardinality error.type on failed spans.
+            # The value comes only from our fixed allowlist, never remote text.
+            attrs.append(_string_attr("error.type", error))
+        # No error observed is not the same as explicit application-verified OK.
+        status_code = 2 if error not in ("none", "unknown") else 0
         spans.append({
             "traceId": trace_id, "spanId": span_id,
             "name": "hermes.synthetic." + event["kind"],
             "kind": 1, "startTimeUnixNano": str(start),
             "endTimeUnixNano": str(end), "attributes": attrs,
-            "status": {"code": 2 if error not in ("none", "unknown") else 1},
+            # OTLP StatusCode: 0=UNSET, 1=OK, 2=ERROR.
+            # Only observed classified failures are ERROR; unverified successes
+            # and UNKNOWN outcomes are UNSET, never fabricated OK.
+            "status": {"code": status_code},
         })
         known_points.append({
             "attributes": [_string_attr("hermes.event.kind", event["kind"])],
@@ -182,7 +198,13 @@ def project(payload: Any) -> dict[str, Any]:
         "review": {
             "input_events": len(events), "sampled_events": len(range(0, len(events), stride)),
             "sampling_stride": stride, "unknown_duration_events": unknown_durations,
+            "unknown_duration_input_events": unknown_input_durations,
+            "unknown_error_input_events": unknown_input_errors,
+            "incomplete_trace_input_events": incomplete_input_traces,
+            "error_aggregate_scope": "ALL_VALID_INPUT_EVENTS",
             "unknown_cost": True, "unknown_tokens": True,
+            "cost_measurement_state": "NOT_MEASURED",
+            "tokens_measurement_state": "NOT_MEASURED",
             "collector_writes": 0, "network_calls": 0, "files_written": 0,
             "runtime_go": False, "independent_live_evidence": False,
             "retention": "MEMORY_ONLY", "drop_on_overflow": "REFUSE_WHOLE_BATCH",
@@ -191,6 +213,20 @@ def project(payload: Any) -> dict[str, Any]:
     if len(json.dumps(result, separators=(",", ":")).encode("utf-8")) > MAX_OUTPUT_BYTES:
         raise OfflineTelemetryDenied("OUTPUT_SIZE_LIMIT")
     return result
+
+
+def offline_otlp_json_requests(payload: Any) -> dict[str, dict[str, Any]]:
+    """Build two signal-specific OTLP/HTTP JSON bodies from validated fixtures.
+
+    Pure, bounded, synthetic-only transformation: no endpoint, transport,
+    filesystem, exporter, collector or production instrumentor is provided.
+    Never use a caller-supplied prebuilt OTLP mapping as an input.
+    """
+    candidate = project(payload)["otlp_json_candidate"]
+    return {
+        "traces": {"resourceSpans": candidate["resourceSpans"]},
+        "metrics": {"resourceMetrics": candidate["resourceMetrics"]},
+    }
 
 
 def _no_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -220,7 +256,8 @@ def main(argv: list[str] | None = None) -> int:
         )
         result = project(data)
         code = 0
-    except (OfflineTelemetryDenied, ValueError, TypeError, UnicodeError, OverflowError):
+    except (OfflineTelemetryDenied, ValueError, TypeError, UnicodeError,
+            OverflowError, RecursionError):
         result = {"schema": RESULT_SCHEMA, "status": "REFUSED",
                   "reason": "UNTRUSTED_OR_INVALID_SYNTHETIC_INPUT",
                   "collector_writes": 0, "network_calls": 0}

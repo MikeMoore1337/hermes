@@ -70,7 +70,7 @@ async function openInbox(page){
  await page.goto("/");
  // Navigation is part of existing authenticated Atlas app.
  const width=page.viewportSize()?.width||1280;
- if(width<=980)await page.locator(".orbit-app-mobilebar").getByRole("button",{name:"Входящие"}).click();
+ if(width<=700)await page.locator(".orbit-app-mobilebar").getByRole("button",{name:"Входящие"}).click();
  else await page.locator(".atlas-section-nav").getByRole("button",{name:"Operator Inbox"}).click();
  await expect(page.getByRole("heading",{name:"Operator Inbox"})).toBeVisible();
 }
@@ -86,9 +86,18 @@ for(const width of [320,393,768,1440]){
   await openInbox(page);
   await expect(page.getByRole("region",{name:"Общая сводка"})).toBeVisible();
   await expect(page.getByRole("heading",{name:"Источники данных"})).toBeVisible();
+   await page.locator(".oi-sources > summary").click();
   await expect(page.getByRole("button",{name:/Ops Watch/}).last()).toBeVisible();
   await expect(page.getByText("Нет данных",{exact:true}).first()).toBeVisible();
-  await expect(page.getByRole("link",{name:/Открыть исходные сведения/})).toHaveAttribute("href","/api/overview");
+  if(width<=1150){
+    await page.getByRole("button",{name:/Ops Watch/}).last().click();
+    await expect(page.getByRole("dialog",{name:"Сведения об обнаружении"})).toBeVisible();
+    await expect(page.getByRole("link",{name:/Открыть исходные сведения/})).toHaveAttribute("href","/api/overview");
+    await page.getByRole("button",{name:"К событиям"}).click();
+   }else{
+    await expect(page.locator(".oi-detail-drawer")).toBeVisible();
+    await expect(page.getByRole("link",{name:/Открыть исходные сведения/})).toHaveAttribute("href","/api/overview");
+   }
   await page.getByRole("button",{name:"Заблокировано",exact:true}).click();
   await expect(page.getByRole("button",{name:/Заблокированные задания/})).toBeVisible();
   await expect(page.getByRole("button",{name:/Ops Watch/})).toHaveCount(0);
@@ -112,6 +121,7 @@ test("stale/missing coverage does not render a healthy claim",async({page})=>{
  await openInbox(page);
  await expect(page.getByText("Нет подтверждённых сигналов")).toBeVisible();
  await expect(page.getByText(/Нулевая очередь не гарантирует/)).toBeVisible();
+ await page.locator(".oi-sources > summary").click();
  await expect(page.getByText("Устарел",{exact:true})).toBeVisible();
  await page.screenshot({path:resolve(screenshots,"inbox-empty-stale-393.png"),fullPage:true});
  expect(leaks).toEqual([]);
@@ -134,5 +144,41 @@ test("keyboard access and evidence links do not mutate state",async({page})=>{
  await page.getByRole("button",{name:"Заблокировано",exact:true}).focus();
  await page.keyboard.press("Enter");
  await expect(page.getByRole("button",{name:/Заблокированные задания/})).toBeVisible();
+ expect(leaks).toEqual([]);
+});
+
+test("mobile event details are immediately visible and Escape restores row focus",async({page})=>{
+ await page.setViewportSize({width:393,height:844});
+ const leaks=await safeSynthetic(page);
+ await openInbox(page);
+ const row=page.getByRole("button",{name:/QA Advisor/}).last();
+ await row.click();
+ const modal=page.getByRole("dialog",{name:"Сведения об обнаружении"});
+ await expect(modal).toBeVisible();
+ await expect(modal.getByRole("heading",{name:"QA Advisor"})).toBeVisible();
+ await expect(modal.getByText("Что проверить")).toBeVisible();
+ await expect(page.locator(".oi-detail-drawer")).toBeInViewport();
+ await page.keyboard.press("Escape");
+ await expect(modal).toHaveCount(0);
+ await expect(row).toBeFocused();
+ await row.click();
+ await modal.getByRole("button",{name:"К событиям"}).click();
+ await expect(row).toBeFocused();
+ expect(leaks).toEqual([]);
+});
+test("desktop selected event details appear in first viewport beside list",async({page})=>{
+ await page.setViewportSize({width:1440,height:900});
+ const leaks=await safeSynthetic(page);
+ await openInbox(page);
+ const details=page.locator(".oi-detail-drawer"),row=page.getByRole("button",{name:/Ops Watch/}).last();
+ await expect(details).toBeVisible();
+ await expect(details.getByRole("heading",{name:"Ops Watch"})).toBeVisible();
+ const before=await details.boundingBox();
+ expect(before).not.toBeNull();
+ expect(before.y).toBeLessThan(700);
+ const listBox=await page.locator(".oi-queue").boundingBox();
+ expect(before.x).toBeGreaterThan(listBox.x);
+ await page.getByRole("button",{name:/QA Advisor/}).last().click();
+ await expect(details.getByRole("heading",{name:"QA Advisor"})).toBeVisible();
  expect(leaks).toEqual([]);
 });

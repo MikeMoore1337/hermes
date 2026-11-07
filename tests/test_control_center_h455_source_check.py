@@ -100,6 +100,22 @@ class BrcSourceChecks(unittest.TestCase):
         self.assertNotIn(b"host-private", payload)
         self.assertEqual(self.path.read_bytes(), before)
 
+    def test_fork_snapshot_is_owner_only_and_keeps_host_unverified(self):
+        from tests.test_brc_fork_snapshot import snapshot
+
+        value = snapshot()
+        value["observed_at"] = dt.datetime.now(dt.timezone.utc).isoformat()
+        self.path.write_text(json.dumps(value), encoding="utf-8")
+        self.assertEqual(self.get("/api/providers/hermes-brc")[0], 401)
+        code, headers, payload = self.get("/api/providers/hermes-brc", owner=True)
+        self.assertEqual(code, 200)
+        self.assertEqual(headers["Cache-Control"], "no-store")
+        self.assertEqual(json.loads(payload), value)
+        self.assertNotIn(b"deviceId", payload)
+        code, _, payload = self.get("/api/providers/hermes-brc/source-check", owner=True)
+        self.assertEqual(code, 200)
+        self.assertEqual(json.loads(payload)["verification"]["native_host"], "not_probed")
+
     def test_guest_query_wrong_host_and_head(self):
         route = "/api/providers/hermes-brc/source-check"
         self.assertEqual(self.get(route)[0], 401)

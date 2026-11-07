@@ -1,7 +1,7 @@
 import {test,expect} from "@playwright/test";
 
 async function openOrbitWidget(page,label){
- if((page.viewportSize()?.width||1280)<=980){
+ if((page.viewportSize()?.width||1280)<=700){
   const more=page.locator(".orbit-app-mobilebar").getByRole("button",{name:"Ещё"});
   if(await more.getAttribute("aria-expanded")!=="true")await more.click();
  }
@@ -64,20 +64,20 @@ test("Provider quota transition announces named status, not a fabricated availab
  await page.route("**/api/providers/registry",route=>route.fulfill({
   status:200,contentType:"application/json",
   body:JSON.stringify({schema:1,read_only:true,providers:[
-   {id:"codex",status:providerStatus,windows:[],notes:"usage_unavailable"},
-   {id:"desktop_commander",status:"not_connected",windows:[],notes:"not_configured"}]})
+   {id:"cloudflare_workers_ai",status:providerStatus,windows:[],notes:"usage_unavailable"},
+   {id:"github_api",status:"not_connected",windows:[],notes:"not_configured"}]})
  }));
  await page.goto("/");
  await openOrbitWidget(page,"Квоты и инструменты");
  const panel=page.getByRole("region",{name:"Квоты и инструменты Hermes"});
  await expect(panel).toBeVisible();
  const announcement=panel.getByRole("status");
- await expect(announcement).toContainText("Codex / ChatGPT: Нет подтверждённых данных");
- await expect(announcement).toContainText("Desktop Commander: Не подключено");
- providerStatus="auth_required";
- await panel.getByRole("button",{name:"Обновить"}).click();
- await expect(announcement).toContainText("Codex / ChatGPT: Нужна авторизация");
- await expect(panel.locator(".quota295-card[data-provider='codex']")).not.toContainText("Доступно");
+ await expect(announcement).toContainText("Cloudflare Workers AI: Нет подтверждённых данных");
+ await expect(announcement).toContainText("GitHub API: Не подключено");
+ providerStatus="low";
+ await panel.getByRole("button",{name:"Обновить источники"}).click();
+ await expect(announcement).toContainText("Cloudflare Workers AI: Квота на исходе");
+ await expect(panel.locator(".quota295-card[data-provider='cloudflare_workers_ai']")).not.toContainText("Доступно");
 });
 
 test("AI usage status is announced and exposes pending work via aria-busy",async({page})=>{

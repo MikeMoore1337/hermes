@@ -10,11 +10,12 @@ import subprocess
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
 
 from scripts.h15_presence_tls_preflight import check, PreflightError
 from scripts.h15_presence_tls_rotation import (
     RotationError, RotationPaths, _active_name, _exclusive, _file,
-    _pending_name, _probe, _switch, _write, activate, auto, recover, stage,
+    _pending_name, _probe, _probe_tls_context, _switch, _write, activate, auto, recover, stage,
 )
 
 
@@ -161,6 +162,45 @@ class RotationTests(unittest.TestCase):
         self.assertEqual(_active_name(self.paths, gid=self.gid), old)
         self.assertIsNone(_pending_name(self.paths, gid=self.gid))
 
+    def test_interrupted_marker_write_preserves_recoverable_state(self):
+        # Simulate failure after a marker file is created but before its bytes
+        # are written. Only a private temporary file may be incomplete.
+        from unittest.mock import patch
+        old = self.initial()
+        new = self.staged(1)
+        def partial_write(path, data, *, uid, gid, mode):
+            if path.name.startswith(".rollback-target"):
+                path.touch(mode=0o600)
+                raise OSError("INTERRUPTED_WRITE")
+            return _write(path, data, uid=uid, gid=gid, mode=mode)
+
+        with patch("scripts.h15_presence_tls_rotation._write", side_effect=partial_write):
+            with self.assertRaisesRegex(OSError, "INTERRUPTED_WRITE"):
+                activate(self.paths, new, gid=self.gid,
+                         restart=lambda u: True, probe=lambda **kw: True)
+        self.assertEqual(_active_name(self.paths, gid=self.gid), old)
+        self.assertFalse((self.paths.root / ".rollback-target").exists())
+        self.assertEqual(list(self.paths.root.glob(".rollback-target-*")), [])
+        self.assertEqual(recover(self.paths, gid=self.gid), "ROTATION=NO_PENDING_RECOVERY")
+        self.assertEqual(activate(self.paths, new, gid=self.gid,
+                                  restart=lambda u: True, probe=lambda **kw: True),
+                         "ROTATION=PASS")
+
+    def test_interrupted_marker_publication_does_not_block_retry(self):
+        from unittest.mock import patch
+        old = self.initial()
+        new = self.staged(1)
+        with patch("scripts.h15_presence_tls_rotation.os.replace",
+                   side_effect=OSError("SIMULATED_RENAME_FAILURE")):
+            with self.assertRaisesRegex(OSError, "SIMULATED_RENAME_FAILURE"):
+                activate(self.paths, new, gid=self.gid,
+                         restart=lambda u: True, probe=lambda **kw: True)
+        self.assertEqual(_active_name(self.paths, gid=self.gid), old)
+        self.assertFalse((self.paths.root / ".rollback-target").exists())
+        self.assertEqual(activate(self.paths, new, gid=self.gid,
+                                  restart=lambda u: True, probe=lambda **kw: True),
+                         "ROTATION=PASS")
+
     def test_unverified_rollback_is_a_failure(self):
         old = self.initial()
         new = self.staged(1)
@@ -192,6 +232,45 @@ class RotationTests(unittest.TestCase):
                          "ROTATION=PASS")
         self.assertEqual(_active_name(self.paths, gid=self.gid), new)
 
+    def test_auto_recovers_expired_but_trusted_active_with_valid_pending(self):
+        old = self.initial()
+        new = self.staged(1)
+        at = dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=20)
+        self.assertEqual(auto(self.paths, gid=self.gid, now=at,
+                              restart=lambda u: True, probe=lambda **kw: True),
+                         "ROTATION=PASS")
+        self.assertNotEqual(old, new)
+        self.assertEqual(_active_name(self.paths, gid=self.gid), new)
+
+    def test_auto_expired_but_tampered_active_fails_closed(self):
+        old = self.initial()
+        new = self.staged(1)
+        key = self.paths.generations / old / "key.pem"
+        key.write_bytes(self.certificates[1][1].read_bytes())
+        at = dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=20)
+        restarted = []
+        with self.assertRaisesRegex(RotationError, "ACTIVE_CERTIFICATE_INVALID"):
+            auto(self.paths, gid=self.gid, now=at,
+                 restart=lambda u: restarted.append(u) or True,
+                 probe=lambda **kw: True)
+        self.assertEqual(restarted, [])
+        self.assertEqual(_active_name(self.paths, gid=self.gid), old)
+        self.assertEqual(_pending_name(self.paths, gid=self.gid), new)
+
+    def test_auto_expired_leaf_with_failed_restart_keeps_rollback_marker(self):
+        old = self.initial()
+        self.staged(1)
+        at = dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=20)
+        restarts = []
+        def restart(unit):
+            restarts.append(unit)
+            return len(restarts) > 1
+        with self.assertRaisesRegex(RotationError, "ROLLBACK_HEALTH_UNVERIFIED"):
+            auto(self.paths, gid=self.gid, now=at,
+                 restart=restart, probe=lambda **kw: False)
+        self.assertEqual(_active_name(self.paths, gid=self.gid), old)
+        self.assertTrue((self.paths.root / ".rollback-target").exists())
+
     def test_auto_requires_pending_candidate(self):
         self.initial()
         later = dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=13)
@@ -217,6 +296,22 @@ class RotationTests(unittest.TestCase):
         self.assertEqual(_active_name(self.paths, gid=self.gid), old)
         self.assertFalse((self.paths.root / ".rollback-target").exists())
 
+    def test_crash_recovery_quarantines_pending_instead_of_blind_retry(self):
+        old = self.initial()
+        new = self.staged(1)
+        _write(self.paths.root / ".rollback-target", old.encode("ascii"),
+               uid=self.paths.owner_uid, gid=self.gid, mode=0o600)
+        _switch(self.paths, new)
+        self.assertEqual(recover(self.paths, gid=self.gid,
+                                 restart=lambda u: True, probe=lambda **kw: True),
+                         "ROTATION=RECOVERED")
+        self.assertEqual(_active_name(self.paths, gid=self.gid), old)
+        self.assertIsNone(_pending_name(self.paths, gid=self.gid))
+        later = dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=13)
+        with self.assertRaisesRegex(RotationError, "NEED_STAGED_PENDING_CANDIDATE"):
+            auto(self.paths, gid=self.gid, now=later,
+                 restart=lambda u: True, probe=lambda **kw: True)
+
     def test_auto_recovers_crash_before_trying_new_candidate(self):
         old = self.initial()
         new = self.staged(1)
@@ -235,6 +330,81 @@ class RotationTests(unittest.TestCase):
             with self.assertRaisesRegex(RotationError, "ROTATION_ALREADY_RUNNING"):
                 with _exclusive(self.paths):
                     pass
+
+    def test_corrupted_leaf_is_rejected_without_changing_active(self):
+        old = self.initial()
+        bad = Path(self.tmp.name) / "corrupted.pem"
+        bad.write_text("not a certificate", encoding="ascii")
+        with self.assertRaises(PreflightError):
+            stage(self.paths, leaf=bad, key=self.certificates[1][1], gid=self.gid)
+        self.assertEqual(_active_name(self.paths, gid=self.gid), old)
+        self.assertIsNone(_pending_name(self.paths, gid=self.gid))
+
+    def test_path_traversal_active_pointer_is_rejected(self):
+        self.initial()
+        self.paths.active.unlink()
+        self.paths.active.symlink_to("generations/../../../../tmp")
+        with self.assertRaisesRegex(RotationError, "ACTIVE_POINTER_UNTRUSTED"):
+            _active_name(self.paths, gid=self.gid)
+
+    def test_restart_failure_then_recovery_restores_old_generation(self):
+        old = self.initial()
+        new = self.staged(1)
+        restarts = []
+        def restart(unit):
+            restarts.append(unit)
+            return len(restarts) == 2
+        with self.assertRaisesRegex(RotationError, "ROTATION_ROLLED_BACK"):
+            activate(self.paths, new, gid=self.gid,
+                     restart=restart, probe=lambda **kw: True)
+        self.assertEqual(restarts, ["hermes-device-fabric-pilot.service"] * 2)
+        self.assertEqual(_active_name(self.paths, gid=self.gid), old)
+        self.assertFalse((self.paths.root / ".rollback-target").exists())
+
+    def test_one_approved_ca_trusts_old_and_new_leaf_over_real_tls(self):
+        # Identical client trust anchor accepts successive localhost leaves;
+        # a deliberately wrong trust anchor fails closed.
+        client = ssl.create_default_context(cafile=str(self.ca))
+        client.check_hostname = True
+
+        def handshake(cert, key, *, context, should_pass):
+            server_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            server_ctx.load_cert_chain(str(cert), str(key))
+            listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            listener.bind(("127.0.0.1", 0))
+            listener.listen(1)
+            listener.settimeout(5)
+            port = listener.getsockname()[1]
+            def serve():
+                try:
+                    with listener.accept()[0] as conn:
+                        try:
+                            with server_ctx.wrap_socket(conn, server_side=True):
+                                pass
+                        except (OSError, ssl.SSLError):
+                            pass
+                finally:
+                    listener.close()
+            thread = threading.Thread(target=serve, daemon=True)
+            thread.start()
+            try:
+                if should_pass:
+                    with socket.create_connection(("127.0.0.1", port), timeout=3) as sock:
+                        with context.wrap_socket(sock, server_hostname="localhost") as tls:
+                            self.assertIsNotNone(tls.getpeercert(binary_form=True))
+                else:
+                    with self.assertRaises(ssl.SSLError):
+                        with socket.create_connection(("127.0.0.1", port), timeout=3) as sock:
+                            with context.wrap_socket(sock, server_hostname="localhost"):
+                                pass
+            finally:
+                thread.join(timeout=5)
+                self.assertFalse(thread.is_alive())
+
+        handshake(*self.certificates[0], context=client, should_pass=True)
+        handshake(*self.certificates[1], context=client, should_pass=True)
+        wrong_trust = ssl.create_default_context(cafile=str(self.certificates[0][0]))
+        handshake(*self.certificates[1], context=wrong_trust, should_pass=False)
 
     def test_wrong_ca_cannot_stage(self):
         (self.paths.root / "ca-public.pem").write_bytes(self.certificates[0][0].read_bytes())
@@ -349,6 +519,57 @@ class RotationTests(unittest.TestCase):
         self.assertFalse(_probe(ca=self.ca, leaf=wrong_cert, port=port))
         thread.join(timeout=6)
         self.assertFalse(thread.is_alive())
+
+
+    def test_bounded_probe_retry_is_independent_of_os_startup_speed(self):
+        # The production VPS' isolated systemd test namespace may have a
+        # different socket scheduling time than GitHub CI. Test the retry
+        # state machine deterministically; a separate test below proves a
+        # genuine loopback TLS handshake and exact leaf identity.
+        from unittest.mock import MagicMock
+        cert, _ = self.certificates[0]
+        # Synthetic retry semantics do not spawn OpenSSL. The independent
+        # real-loopback test verifies actual DER extraction and CA checks.
+        expected = b"synthetic-leaf-der"
+        fake_sock = MagicMock()
+        fake_ctx = MagicMock()
+        channel = fake_ctx.wrap_socket.return_value.__enter__.return_value
+        channel.getpeercert.return_value = expected
+        channel.version.return_value = "TLSv1.3"
+        failures = [ConnectionRefusedError("startup pending") for _ in range(4)]
+        with patch("scripts.h15_presence_tls_rotation._probe_loopback",
+                   side_effect=failures + [fake_sock]) as connect, patch(
+                   "scripts.h15_presence_tls_rotation._probe_tls_context",
+                   return_value=fake_ctx) as create_context, patch(
+                   "scripts.h15_presence_tls_rotation._probe_expected_der",
+                   return_value=expected) as read_der, patch(
+                   "scripts.h15_presence_tls_rotation._probe_retry_pause") as sleep:
+            self.assertTrue(_probe(ca=self.ca, leaf=cert, port=38177))
+            self.assertEqual(connect.call_count, 5)
+            self.assertEqual(sleep.call_count, 4)
+            create_context.assert_called_once_with(self.ca)
+            read_der.assert_called_once_with(cert)
+            connect.assert_called_with(38177)
+            fake_ctx.wrap_socket.assert_called_once()
+            self.assertEqual(fake_ctx.wrap_socket.call_args.kwargs["server_hostname"],
+                             "localhost")
+            channel.getpeercert.assert_called_once_with(binary_form=True)
+
+    def test_probe_ca_context_requires_hostname_and_certificate_verification(self):
+        # This test actually runs the stdlib SSLContext constructor; unlike
+        # the retry simulation it never replaces the global ssl module.
+        ctx = _probe_tls_context(self.ca)
+        self.assertTrue(ctx.check_hostname)
+        self.assertEqual(ctx.verify_mode, ssl.CERT_REQUIRED)
+
+    def test_probe_times_out_without_weakened_tls_or_unbounded_retries(self):
+        cert, _ = self.certificates[0]
+        with patch("scripts.h15_presence_tls_rotation._probe_loopback",
+                   side_effect=ConnectionRefusedError("synthetic outage")) as connect, patch(
+                   "scripts.h15_presence_tls_rotation._probe_retry_pause") as sleep:
+            self.assertFalse(_probe(ca=self.ca, leaf=cert, port=38177))
+            self.assertEqual(connect.call_count, 8)
+            self.assertEqual(sleep.call_count, 7)
 
 
 if __name__ == "__main__":

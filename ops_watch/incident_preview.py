@@ -58,6 +58,9 @@ TITLES: dict[str, str] = {
     "device_linux_vps_unavailable": "Hermes Device Fabric: VPS YFC долго не подключается",
     "device_tls_expiring": "Hermes Device Fabric: срок TLS-сертификата скоро истечёт",
     "device_tls_expired": "Hermes Device Fabric: TLS-сертификат истёк",
+    "device_ca_batch_renewal_due": "Hermes TLS: запас заранее подписанных сертификатов заканчивается",
+    "device_ca_batch_renewal_critical": "Hermes TLS: менее 30 дней до конца запаса сертификатов",
+    "device_ca_batch_expired": "Hermes TLS: срок действия предварительно подписанной серии истёк",
 }
 CRITICAL = frozenset({
     "timer_disabled", "timer_inactive", "discovery_failures", "drain_failures",
@@ -69,6 +72,7 @@ CRITICAL = frozenset({
     "infra_yfc_unavailable", "infra_yfc_disk_high",
     "quota_desktop_exhausted", "quota_github_exhausted",
     "device_linux_vps_unavailable", "device_tls_expired",
+    "device_ca_batch_renewal_critical", "device_ca_batch_expired",
 })
 ACTIONS: dict[str, str] = {
     "snapshot_stale": "Проверить журнал службы мониторинга вручную",
@@ -118,6 +122,9 @@ ACTIONS: dict[str, str] = {
     "device_linux_vps_unavailable": "Проверить hermes-device-agent.service на VPS YFC и исходящий SSH без вывода секретов",
     "device_tls_expiring": "Согласованно заменить пилотный TLS-сертификат и обновить CA на обоих устройствах до окончания срока",
     "device_tls_expired": "Восстановить сертификат и доверие обоих клиентов без отключения проверки TLS",
+    "device_ca_batch_renewal_due": "Запланировать новый согласованный выпуск CA и перенос доверия Windows/YFC до окончания серии",
+    "device_ca_batch_renewal_critical": "Срочно подготовить отдельный CA и проверить два реальных клиента до окончания доверенной серии",
+    "device_ca_batch_expired": "Не обходить проверку TLS: выполнить утверждённый аварийный выпуск CA и проверенный перенос доверия",
 }
 CODEX_CODES = frozenset({"codex_low", "codex_exhausted", "codex_auth_required", "codex_stale"})
 

@@ -57,7 +57,7 @@ class PublicProjectInboxTests(unittest.TestCase):
         self.assertEqual(report["sources"]["gh_toolkit"]["status"],"PARTIAL")
         self.assertEqual(report["sources"]["gh_yfc"]["status"],"PARTIAL")
         self.assertEqual(report["sources"]["gh_second_brain"]["status"],"NOT_AVAILABLE")
-        self.assertEqual(report["summary"]["source_count"],9)
+        self.assertEqual(report["summary"]["source_count"],10)
         selected=[e for e in report["events"] if e["source"].startswith("gh_")]
         self.assertEqual(len(selected),2)
         self.assertEqual({e["source"] for e in selected},{"gh_toolkit","gh_yfc"})
