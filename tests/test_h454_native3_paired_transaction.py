@@ -226,5 +226,145 @@ class TransactionTests(unittest.TestCase):
         self.assertNotIn("subprocess.Popen", text)
 
 
+    def simulate_cutover(self, *, fail_on_stop=False):
+        """No Docker/host mutation: synthetic transaction with real pin marker IO."""
+        from contextlib import ExitStack
+        from unittest.mock import Mock
+        source_pins = {
+            "relay_name": tx.legacy.NAME,
+            "sidecar_name": tx.stage1.PROXY,
+            "relay_image": tx.stage1.FORK_IMAGE,
+            "sidecar_image": tx.stage1.LEGACY_IMAGE,
+            "relay_id": OLD_RELAY_ID,
+            "sidecar_id": OLD_PROXY_ID,
+            "tls_directory": "/synthetic/tls",
+        }
+        new_relay_id, new_proxy_id = "2" * 64, "3" * 64
+        created = {"Id": new_relay_id, "Image": RUNTIME}
+        record = {
+            "status": "PREFLIGHT_PASS", "bundle_verified": True,
+            "changes_performed": False, "deployment_approved": False,
+            "current_image": tx.stage1.FORK_IMAGE,
+            "candidate_image": RUNTIME,
+        }
+        events = []
+        fake_wss = SimpleNamespace(
+            _pins=lambda _: source_pins,
+            _snapshot=lambda *args: (created, proxy()),
+            _namespace=lambda *args: None,
+            reconcile=lambda *args: "READY",
+        )
+        def fake_docker(*args):
+            events.append(args)
+            if fail_on_stop and args[:2] == ("stop", "--time"):
+                raise tx.stage1.Hold("SYNTHETIC_STOP_FAILED")
+            if args[:2] == ("run", "-d"):
+                return new_relay_id
+            return ""
+        with tempfile.TemporaryDirectory(prefix="h454-simulated-") as scratch:
+            root = Path(scratch)
+            with ExitStack() as stack:
+                def mock(module, name, value):
+                    return stack.enter_context(patch.object(
+                        module, name, value))
+                mock(tx.os, "geteuid", lambda: 0)
+                mock(tx.admission, "verify_installed_source", Mock())
+                mock(tx.legacy, "lock", lambda: nullcontext())
+                mock(tx.stage1, "protected", Mock())
+                mock(tx.legacy, "check_files", Mock())
+                mock(tx.candidate, "admit", Mock(return_value=record))
+                mock(tx.stage1, "load_existing_wss", Mock(return_value=fake_wss))
+                mock(tx.admission, "verify_pair", Mock(return_value=(relay(), proxy())))
+                mock(tx.admission, "check_free_checkpoints", Mock())
+                mock(tx.legacy, "devices", Mock(return_value=2))
+                mock(tx.stage1, "locked_pins", lambda: nullcontext(PINS))
+                mock(tx, "strict_container", Mock(side_effect=[
+                    relay(), proxy(), created]))
+                mock(tx, "approval_record", Mock())
+                mock(tx.legacy, "snapshot", Mock(return_value=root / "db"))
+                mock(tx.stage1, "PIN_ROOT", root)
+                mock(tx, "PENDING", root / "native3-pair.pending")
+                mock(tx, "ORIGINAL_PINS", root / "native3-original-pins.json")
+                mock(tx.stage1, "docker", fake_docker)
+                mock(tx.stage1, "create_sidecar", Mock(return_value=new_proxy_id))
+                mock(tx, "updated_pins", Mock(return_value=b"synthetic-new-pins"))
+                mock(tx.stage1, "replace_pins", Mock())
+                mock(tx.stage1, "PINS",
+                     SimpleNamespace(read_bytes=lambda: b"synthetic-new-pins"))
+                mock(tx.legacy, "healthy", Mock(return_value=True))
+                mock(tx.stage1, "compare_auth", Mock())
+                mock(tx.candidate, "inspect", Mock(return_value=created))
+                mock(tx.candidate, "current_gate", Mock(return_value=RUNTIME))
+                restored = mock(tx, "restore_pair", Mock())
+                if fail_on_stop:
+                    with self.assertRaisesRegex(
+                            tx.TransactionDenied,
+                            "PAIR_CUTOVER_FAILED_ORIGINAL_RESTORED"):
+                        tx.cutover(
+                            release_sha=REL, bundle=root,
+                            image=IMAGE, archive_sha=ARCHIVE,
+                            candidate_sha=SOURCE)
+                    restored.assert_called_once()
+                else:
+                    outcome = tx.cutover(
+                        release_sha=REL, bundle=root,
+                        image=IMAGE, archive_sha=ARCHIVE,
+                        candidate_sha=SOURCE)
+                    self.assertEqual(
+                        outcome["status"],
+                        "SWITCHED_PENDING_CHATGPT_CODEX_LIVE_ACCEPTANCE")
+                    self.assertFalse(outcome["client_e2e_verified"])
+                    restored.assert_not_called()
+                    self.assertFalse(tx.PENDING.exists())
+                    self.assertTrue(tx.ORIGINAL_PINS.exists())
+        return events
+
+    def test_synthetic_joint_cutover_orders_proxy_before_relay(self):
+        events = self.simulate_cutover()
+        stops = [args[-1] for args in events if args and args[0] == "stop"]
+        self.assertEqual(stops, [tx.stage1.PROXY, tx.legacy.NAME])
+        self.assertIn(("start", "3" * 64), events)
+        self.assertTrue(any(args[:2] == ("run", "-d") for args in events))
+
+    def test_failed_first_stop_invokes_pair_rollback(self):
+        events = self.simulate_cutover(fail_on_stop=True)
+        self.assertEqual(events[0][-1], tx.stage1.PROXY)
+        self.assertFalse(any(args[0] == "rm" for args in events))
+
+    def test_pending_marker_rejects_duplicate_keys_and_untrusted_scope(self):
+        valid = {
+            "schema": 1, "release_sha": REL, "candidate_sha": SOURCE,
+            "runtime_image": RUNTIME, "relay_id": OLD_RELAY_ID,
+            "proxy_id": OLD_PROXY_ID, "pins_sha256": "4" * 64,
+            "baseline": 2, "new_relay_id": "", "new_proxy_id": "",
+        }
+        with tempfile.TemporaryDirectory(prefix="h454-pending-test-") as tmp:
+            path = Path(tmp) / "pending"
+            with patch.object(tx, "PENDING", path), \
+                 patch.object(tx.stage1, "protected"):
+                path.write_text(json.dumps(valid))
+                self.assertEqual(tx.pending_read(), valid)
+                path.write_text(json.dumps(dict(valid, baseline=0)))
+                with self.assertRaisesRegex(
+                        tx.TransactionDenied, "PENDING_RECEIPT_INVALID"):
+                    tx.pending_read()
+                path.write_text(json.dumps(valid).replace(
+                    '"schema": 1,', '"schema": 1, "schema": 1,'))
+                with self.assertRaisesRegex(
+                        tx.TransactionDenied, "PENDING_DUPLICATE_KEY"):
+                    tx.pending_read()
+
+    def test_recovery_requires_exact_immutable_candidate_bundle(self):
+        with patch.object(tx.candidate, "verify", return_value={
+            "owner_agents_paired": True, "production_mcp_enabled": False}), \
+             patch.object(tx.candidate, "candidate_runtime_image") as inspected:
+            with self.assertRaisesRegex(
+                    tx.TransactionDenied, "RECOVERY_BUNDLE_OUT_OF_SCOPE"):
+                tx.verified_candidate_for_recovery(
+                    Path("/synthetic"), IMAGE, ARCHIVE, SOURCE)
+            inspected.assert_not_called()
+
+
+
 if __name__ == "__main__":
     unittest.main()
