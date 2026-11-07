@@ -101,6 +101,15 @@ class CutoverContracts(unittest.TestCase):
                         m.CutoverDenied, "WSS_PROXY_DISCOVERY_UNAVAILABLE"):
                     m.require_unpaired_wss()
 
+    def test_malformed_wss_discovery_output_fails_closed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(m, "WSS_PAIR_PINS", Path(tmp) / "pins.json"), \
+                 patch.object(m.subprocess, "run", return_value=SimpleNamespace(
+                     returncode=0, stdout=None)):
+                with self.assertRaisesRegex(
+                        m.CutoverDenied, "WSS_PROXY_DISCOVERY_UNAVAILABLE"):
+                    m.require_unpaired_wss()
+
     def test_genuinely_unpaired_relay_still_allows_plan(self):
         with tempfile.TemporaryDirectory() as tmp:
             with patch.object(m, "WSS_PAIR_PINS", Path(tmp) / "pins.json"), \
