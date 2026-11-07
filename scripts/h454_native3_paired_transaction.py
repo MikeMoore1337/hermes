@@ -420,7 +420,8 @@ def pending_read() -> dict:
             and stage1.HEX.fullmatch(str(doc["proxy_id"]))
             and stage1.HEX.fullmatch(str(doc["pins_sha256"]))
             and candidate.IMAGE.fullmatch(str(doc["runtime_image"]))
-            and all(not value or stage1.HEX.fullmatch(value)
+            and all(type(value) is str and
+                    (not value or stage1.HEX.fullmatch(value))
                     for value in (doc["new_relay_id"], doc["new_proxy_id"])),
             "PENDING_RECEIPT_INVALID")
     return doc
