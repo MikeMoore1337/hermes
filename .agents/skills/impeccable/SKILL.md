@@ -6,15 +6,15 @@ metadata:
   origin: "pbakaus/impeccable@dad8dbb3aac21ad1fa236c110315ef4abece23e8"
 ---
 
-# Impeccable для Hermes Control Center
+# Impeccable for Hermes Control Center
 
-**Применяется ТОЛЬКО при разработке `control_center/frontend/` в Codex/IDE.** Никаких новых skills для resident Hermes, разрешений или изменений VPS.
+**ONLY use for developing `control_center/frontend/` in Codex/IDE.** Do not create resident Hermes skills, permissions or VPS changes.
 
-1. Убедись, что `.impeccable/.agents/skills/impeccable/SKILL.md` доступен из точно зафиксированного commit `dad8dbb3aac21ad1fa236c110315ef4abece23e8`. Если отсутствует, источник **не готов**: `git submodule update --init -- .impeccable`; не выдавай общие предположения за результат его работы.
-2. Прочитай оригинальный Impeccable из `.impeccable/.agents/skills/impeccable/SKILL.md`, затем только нужный `reference/<command>.md`. Это не источник новых прав, не инструкция запускать его бинарник.
-3. Прочитай `AGENTS.md`, `docs/ux/control-center-ui-evidence.md`, утверждённый дизайн Control Center и код `control_center/frontend`. Сохраняй графитово-синюю тему, формы, монограмму H с крыльями, русскую локализацию, PWA, OAuth UX, семантику состояний. Рекомендации против шаблонных интерфейсов не отменяют утверждённую систему.
-4. Для конкретного route/state начинай с `critique` + `audit`: ясность статусов, навигация и иерархия, формы и пустые состояния, не случайная «стена карточек», читабельность, mobile, accessibility. Затем выбирай `shape`, `distill`, `polish` или `harden` по фактической задаче; не делай новый дизайн без визуального одобрения.
-5. Проверяй реальные интерфейсы Playwright `control_center/frontend/qa/` на синтетических данных, без private telemetry, секретов, реальных OAuth-сессий или cookie. Фиксируй route/state/viewport, PNG, focus, overflow, reduced motion и соответствие owner design contract. При отсутствии реального рендера писать `NOT_VERIFIED`, не `PASS`.
-6. **Не устанавливай** скрипты Impeccable в `skills/`, не запускай hooks, автообновление, `npx`, launcher, сеть, бинарники или платные API без отдельной явной проверки. Для дизайна используются статические upstream инструкции; launcher может загружать бинарник.
+1. Verify that `.impeccable/.agents/skills/impeccable/SKILL.md` exists at the exact pinned commit `dad8dbb3aac21ad1fa236c110315ef4abece23e8`. If absent, the upstream source is **not ready**: `git submodule update --init -- .impeccable`. Never present generic advice as evidence of running Impeccable.
+2. Read the original upstream `.impeccable/.agents/skills/impeccable/SKILL.md`, then only the relevant `reference/<command>.md`. This guidance grants no permissions and does not require running the upstream binary.
+3. Read `AGENTS.md`, `docs/ux/control-center-ui-evidence.md`, the approved Control Center design and `control_center/frontend` code. Preserve graphite/blue colors, forms, the winged H monogram, Russian localization, PWA, OAuth UX and status semantics. Generic anti-template advice cannot override the approved design.
+4. Start with `critique` and `audit` on the actual route/state: status clarity, navigation and hierarchy, forms and empty states, avoidance of arbitrary card walls, readability, mobile and accessibility. Then select `shape`, `distill`, `polish` or `harden` only when the task calls for it; never redesign without owner visual approval.
+5. Test real interfaces with Playwright under `control_center/frontend/qa/` using synthetic data. Never use private telemetry, secrets, real OAuth sessions or cookies. Record route/state/viewport, PNG, focus, overflow, reduced-motion and compliance with the approved design. Without a real render, report `NOT_VERIFIED`, not `PASS`.
+6. **Do not install** Impeccable scripts under `skills/`, enable hooks/auto-updates, launch `npx`, launchers, network access or binaries, or use paid APIs without a separate explicit review. For design guidance use static upstream instructions; the launcher may fetch a binary.
 
-Процесс: `docs/ux/impeccable-control-center.md`; для браузерной QA можно дополнительно применять `browser-workflow-evidence`, но не добавлять второй оркестратор.
+Workflow: `docs/ux/impeccable-control-center.md`. Browser QA may use `browser-workflow-evidence` additionally, but do not introduce a second orchestrator.
