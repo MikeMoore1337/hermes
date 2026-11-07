@@ -54,7 +54,7 @@ def require_unpaired_wss() -> None:
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise CutoverDenied("WSS_PROXY_DISCOVERY_UNAVAILABLE") from exc
-    if result.returncode or len(result.stdout) > 512:
+    if result.returncode or not isinstance(result.stdout, str) or len(result.stdout) > 512:
         raise CutoverDenied("WSS_PROXY_DISCOVERY_UNAVAILABLE")
     if result.stdout.strip():
         raise CutoverDenied("PAIRED_WSS_REQUIRES_ATOMIC_CUTOVER")
