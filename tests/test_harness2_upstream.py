@@ -63,6 +63,7 @@ class Harness2UpstreamContractTests(unittest.TestCase):
                 "  *'rev-parse HEAD'*) printf '%s\\n' '" + pin + "' ;;\n"
                 "  *'remote get-url origin'*) printf '%s\\n' '" + origin + "' ;;\n"
                 "  *'diff --no-ext-diff --quiet HEAD --'*) exit \"${H629_FAKE_GIT_DIFF_RC:-0}\" ;;\n"
+                "  *'ls-files --others -z --'*) exit 0 ;;\n"
                 "  *) exit 99 ;;\n"
                 "esac\n",
                 encoding="utf-8",
