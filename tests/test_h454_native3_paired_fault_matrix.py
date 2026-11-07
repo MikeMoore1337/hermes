@@ -42,6 +42,7 @@ class FakePairedDocker:
         self.tripped = False
         self.events = []
         self.snapshot_calls = 0
+        self.real_updated_pins = tx.updated_pins
         self.original_relay = {
             "Id": ORIGINAL_RELAY, "Name": "/" + tx.legacy.NAME,
             "Image": tx.stage1.FORK_IMAGE, "State": {"Running": True},
@@ -202,7 +203,7 @@ class FakePairedDocker:
 
     def update_pins(self, wss, old, relay_id, proxy_id, image):
         self.trip("compose_pins")
-        return tx.updated_pins(wss, old, relay_id, proxy_id, image)
+        return self.real_updated_pins(wss, old, relay_id, proxy_id, image)
 
     def replace_pins(self, raw):
         self.trip("replace_pins")
