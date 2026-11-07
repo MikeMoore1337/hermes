@@ -23,6 +23,10 @@ LOCK = Path("/run/lock/hermes-main-deploy.lock")
 MAIN = re.compile(r"main-([0-9a-f]{40})\Z")
 BACKUP = re.compile(r"\.backup-([0-9a-f]{12})-\d{8}T\d{6}Z\Z")
 REFERENCES = re.compile(r"main-([0-9a-f]{40})")
+# The owner-approved Stage 1 four-project catalog is a *live Docker bind*
+# into the relay. Host /proc/self/mountinfo does not report container mounts,
+# so automatic release-retention counts must never evict the backing source.
+H454_STAGE1_REGISTRY_RELEASE_SHA = "203c1c45986b4613c30abb83a3399d4415b5b103"
 
 
 def config_pins() -> set[str]:
@@ -68,6 +72,12 @@ def live_pins() -> set[str]:
         except (FileNotFoundError, ProcessLookupError):
             pass
     return keep
+
+
+def protected_release_shas(current: str, previous: str) -> set[str]:
+    """Always retain the pinned Stage 1 registry source, even if very old."""
+    return ({current, previous, H454_STAGE1_REGISTRY_RELEASE_SHA}
+            | config_pins() | live_pins())
 
 
 def candidates_for(agent: Path, ui: Path, protected: set[str],
@@ -155,7 +165,7 @@ def main() -> int:
                 or backup.parent != AGENT or not BACKUP.fullmatch(backup.name)
                 or not backup.is_dir()):
             raise RuntimeError("rollback references invalid")
-        protected = {sha, previous.name[5:]} | config_pins() | live_pins()
+        protected = protected_release_shas(sha, previous.name[5:])
         paths, keep_count = candidates_for(AGENT, UI, protected, backup)
         print("PROTECTED_RELEASE_SHAS=", keep_count)
         print("CANDIDATE_DIRECTORIES=", len(paths))
@@ -182,7 +192,7 @@ def main() -> int:
             raise RuntimeError("active release changed")
         if receipt.read_text() != receipt_at_start:
             raise RuntimeError("active release receipt changed")
-        latest_pins = {sha, previous.name[5:]} | config_pins() | live_pins()
+        latest_pins = protected_release_shas(sha, previous.name[5:])
         next_paths, _ = candidates_for(AGENT, UI, latest_pins, backup)
         if paths != next_paths:
             raise RuntimeError("cleanup candidates changed")
