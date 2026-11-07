@@ -123,7 +123,7 @@ class UpstreamSummaryImportTests(unittest.TestCase):
                         subprocess.CompletedProcess(args=[], returncode=0, stdout=h2.PIN + "\n"),
                         subprocess.CompletedProcess(args=[], returncode=0, stdout=h2.ORIGIN + "\n"),
                         subprocess.CompletedProcess(args=[], returncode=0),
-                subprocess.CompletedProcess(args=[], returncode=0, stdout=b""),
+                        subprocess.CompletedProcess(args=[], returncode=0, stdout=b""),
                     ]
                     with patch.object(h2.subprocess, "run", side_effect=verified_git), patch.dict(
                         os.environ, {"HARNESS2_RUNS_DIR": path}
