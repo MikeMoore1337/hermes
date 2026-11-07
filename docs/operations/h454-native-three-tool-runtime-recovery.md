@@ -120,6 +120,11 @@ reconciler source, the correct WSS proxy attached to the **same relay ID**
 network namespace, TLS certificate provenance, the original immutable
 four-project workspace registry and free, unique rollback checkpoint slots.
 It refuses stale WSS recovery markers or missing baseline devices.
+Rollback checkpoint availability is queried through a non-optional Docker
+`container ls --all` with an exact anchored name filter. Any Docker API
+error or ambiguous discovery is a hard refusal; a failed optional
+`container inspect` must **never** be interpreted as proof that a slot is
+free. This is covered by a regression that models a failing Docker subprocess.
 
 Success returns `PAIR_PREFLIGHT_PASS_NO_MUTATIONS`,
 `changes_performed=false` and `deployment_approved=false`.
