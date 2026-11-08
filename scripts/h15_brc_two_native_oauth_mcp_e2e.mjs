@@ -137,7 +137,7 @@ must(tools.has('list_workspaces') && tools.has('resolve_workspace'),
 const workspaceList = await call('list_workspaces', {});
 const workspaceCatalog = JSON.parse(workspaceList.content?.[0]?.text ?? '{}');
 must(workspaceList.isError !== true && workspaceCatalog.status === 'catalog' &&
-     workspaceCatalog.workspaces?.length === 4 &&
+     workspaceCatalog.workspaces?.length === 5 &&
      workspaceCatalog.workspaces.every(w => w.scope === 'sandbox' && w.git_verified === false &&
        w.deviceId === 'ci-native-one' && w.device_status === 'online'),
      'H15_OWNER_SCOPED_WORKSPACE_CATALOG_OVER_OAUTH_MCP');
@@ -146,6 +146,7 @@ for (const [alias, expected] of [
   ['toolkit', 'ai-development-toolkit'],
   ['second brain', 'second-brain'],
   ['hermes', 'hermes'],
+  ['fh', 'financial-horizon'],
 ]) {
   const result = await call('resolve_workspace', { project: alias });
   const resolved = JSON.parse(result.content?.[0]?.text ?? '{}');
