@@ -20,6 +20,9 @@ from scripts import h454_stage1_pair_cutover as stage1
 RELAY_CHECKPOINT = "hermes-brc-relay-h454-native3-v2-rollback"
 PROXY_CHECKPOINT = "hermes-h454-wss-proxy-h454-native3-v2-rollback"
 PAIR_PENDING = stage1.PIN_ROOT / "native3-pair.pending"
+# A retained original-pin snapshot means a prior joint cutover occurred.
+# Its presence is intentional incident/recovery evidence, not a free retry slot.
+ORIGINAL_PINS = stage1.PIN_ROOT / "native3-original-pins.json"
 HEX40 = re.compile(r"[0-9a-f]{40}\Z")
 
 
@@ -83,6 +86,18 @@ def verify_pair(wss) -> tuple[dict, dict]:
     return relay, proxy
 
 
+def require_no_previous_transaction() -> None:
+    """Fail closed while the exact original pin evidence is retained.
+
+    A successful rollback leaves this snapshot in place. Checking only live
+    containers/checkpoint names would incorrectly claim a new cutover is ready.
+    Re-arming is a distinct reviewed, owner-authorized recovery operation;
+    the plan never removes, renames, reads or overwrites the snapshot.
+    """
+    require(not ORIGINAL_PINS.exists() and not ORIGINAL_PINS.is_symlink(),
+            "PREVIOUS_TRANSACTION_NOT_CLEARED")
+
+
 def check_free_checkpoints() -> None:
     """Verify absence from a *successful* Docker list, never optional inspect.
 
@@ -106,6 +121,9 @@ def plan(*, release_sha: str, bundle: Path, image: str,
     with legacy.lock():
         stage1.protected(legacy.BACKUPS, 0o700, directory=True)
         legacy.check_files()
+        # Check persisted cutover evidence *before* expensive OCI attestation.
+        # This is read-only and prevents false PASS after an owner rollback.
+        require_no_previous_transaction()
         inspected = candidate.admit(bundle, image, archive_sha, candidate_sha)
         require(inspected.get("status") == "PREFLIGHT_PASS"
                 and inspected.get("bundle_verified") is True
