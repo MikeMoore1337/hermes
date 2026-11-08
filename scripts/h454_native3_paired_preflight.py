@@ -94,8 +94,15 @@ def require_no_previous_transaction() -> None:
     Re-arming is a distinct reviewed, owner-authorized recovery operation;
     the plan never removes, renames, reads or overwrites the snapshot.
     """
-    require(not ORIGINAL_PINS.exists() and not ORIGINAL_PINS.is_symlink(),
-            "PREVIOUS_TRANSACTION_NOT_CLEARED")
+    # lstat never follows an attacker-controlled symlink into a remote or
+    # otherwise inaccessible target. Only an absent directory entry is clean.
+    try:
+        ORIGINAL_PINS.lstat()
+    except FileNotFoundError:
+        return
+    except OSError as exc:
+        raise PairDenied("ORIGINAL_PIN_STATE_UNVERIFIABLE") from exc
+    raise PairDenied("PREVIOUS_TRANSACTION_NOT_CLEARED")
 
 
 def check_free_checkpoints() -> None:
