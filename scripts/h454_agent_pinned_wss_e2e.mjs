@@ -29,27 +29,6 @@ const until = async predicate => {
   while (!predicate() && Date.now() < deadline) await new Promise(r => setTimeout(r, 50));
   assert.ok(predicate(), 'fixture timeout');
 };
-// A connected socket can appear in the hub before its synthetic tool handshake
-// is ready. Exercise the read-only fixture until it becomes callable. Persistent
-// authorization/policy errors still fail closed after a bounded retry window.
-const invokeFixtureRead = async (relay, owner) => {
-  const deadline = Date.now() + 8000;
-  let answer;
-  do {
-    answer = await invokeTool(relay.hub, relay.store, { userId: owner.id, clientId: 'fixture' }, 'read_file',
-      { deviceId: 'synthetic-wss-device', path: '/workspace/fixture' });
-    if (answer?.ok === true) return answer;
-    if (Date.now() >= deadline) break;
-    await new Promise(r => setTimeout(r, 100));
-  } while (true);
-  // This disposable relay uses synthetic values only. Redact bearer-shaped
-  // substrings and keep the refusal status visible for deterministic triage.
-  const reason = String(answer?.message ?? 'missing response')
-    .replace(/brc_dev_[A-Za-z0-9_-]{20,}/g, '[REDACTED_BEARER]').slice(0, 300);
-  assert.equal(answer?.ok, true,
-    'synthetic read_file unavailable: status=' + String(answer?.status ?? 'unknown') + ' reason=' + reason);
-  return answer;
-};
 dns.setDefaultResultOrder('ipv4first');
 
 for (const url of ['http://host.docker.internal:38184', 'https://example.invalid:38184',
@@ -63,7 +42,9 @@ const relay = buildRelay({ port: 0, host: '127.0.0.1', publicUrl: 'http://127.0.
   adminUser: 'fixture-only', adminPassword: 'fixture-password-0123456789abcdef', relayVersion: 'fixture' }, () => {});
 await new Promise((resolve, reject) => { relay.http.once('error', reject); relay.http.listen(0, '127.0.0.1', resolve); });
 const owner = relay.store.getUserByName('fixture-only');
-const token = relay.store.issueDeviceToken('synthetic-wss-device', owner.id, 'fixture', 'linux');
+// The hardened relay requires stored Linux platform/architecture to match the
+// live agent hello. A generic "linux" grant must remain denied.
+const token = relay.store.issueDeviceToken('synthetic-wss-device', owner.id, 'fixture', `linux/${process.arch}`);
 const proxy = createProxy({ key: read('trusted.key'), cert: read('trusted.crt'),
   upstreamPort: relay.http.address().port, allowedPeer: '127.0.0.1' });
 const proxySockets = new Set();
@@ -109,7 +90,8 @@ try {
   } });
   client.start();
   await until(() => !!relay.hub.get('synthetic-wss-device'));
-  const call = await invokeFixtureRead(relay, owner);
+  const call = await invokeTool(relay.hub, relay.store, { userId: owner.id, clientId: 'fixture' }, 'read_file',
+    { deviceId: 'synthetic-wss-device', path: '/workspace/fixture' });
   assert.equal(call.ok, true);
   assert.equal(call.result.content[0].text, 'synthetic-result');
   const before = connections;
@@ -117,7 +99,8 @@ try {
   for (const socket of proxySockets) socket.destroy();
   await until(() => connections > before && !!relay.hub.get('synthetic-wss-device') &&
     relay.hub.get('synthetic-wss-device').socket !== firstSocket);
-  const again = await invokeFixtureRead(relay, owner);
+  const again = await invokeTool(relay.hub, relay.store, { userId: owner.id, clientId: 'fixture' }, 'read_file',
+    { deviceId: 'synthetic-wss-device', path: '/workspace/fixture' });
   assert.equal(again.ok, true);
   const secondSocket = relay.hub.get('synthetic-wss-device').socket;
   for (const socket of proxySockets) socket.destroy();
@@ -141,7 +124,8 @@ try {
   await listen(proxy);
   await until(() => !!relay.hub.get('synthetic-wss-device') &&
     relay.hub.get('synthetic-wss-device').socket !== secondSocket);
-  const restored = await invokeFixtureRead(relay, owner);
+  const restored = await invokeTool(relay.hub, relay.store, { userId: owner.id, clientId: 'fixture' }, 'read_file',
+    { deviceId: 'synthetic-wss-device', path: '/workspace/fixture' });
   assert.equal(restored.ok, true);
   assert.equal(restored.result.content[0].text, 'synthetic-result');
   let unauthorized = 0;
