@@ -76,6 +76,9 @@ def _syft_image_identity(source: dict) -> bool:
     if source.get("type") != "image":
         raise ScanEvidenceDenied("invalid_syft_target")
     pinned_digest = IMAGE.partition("@")[2]
+    # Never prefer a forged legacy target over conflicting native metadata.
+    if "target" in source and "metadata" in source:
+        raise ScanEvidenceDenied("ambiguous_syft_source_layout")
     target = source.get("target")
     if target is not None:
         if type(target) is not dict or target.get("userInput") != IMAGE:
