@@ -70,6 +70,7 @@ def approved():
 
 class PairedPreflightTests(TestCase):
     def check_plan(self, wss=None, admitted=None, checkpoint=None):
+        # Keep the synthetic plan isolated from real rollback evidence on VPS.
         with patch.object(pair.os, "geteuid", return_value=0), \
              patch.object(pair, "verify_installed_source"), \
              patch.object(pair.legacy, "lock", return_value=nullcontext()), \
@@ -85,8 +86,6 @@ class PairedPreflightTests(TestCase):
                  exists=lambda: False, is_symlink=lambda: False)), \
              patch.object(pair, "PAIR_PENDING", SimpleNamespace(
                  exists=lambda: False, is_symlink=lambda: False)), \
-             # Unit plans must not observe the owner VPS rollback evidence.
-             # Exercise the genuine absent-file guard via a synthetic probe.
              patch.object(pair, "ORIGINAL_PINS", SimpleNamespace(
                  lstat=Mock(side_effect=FileNotFoundError))), \
              patch.object(pair.candidate, "registry_mount_source",
