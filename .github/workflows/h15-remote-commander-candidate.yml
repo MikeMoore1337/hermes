@@ -1262,6 +1262,7 @@ jobs:
           packages/relay/src/mcp/hermes-workspaces.ts
           packages/relay/src/mcp/invoke.ts
           packages/relay/src/mcp/server.ts
+          packages/relay/src/store/sqlite.ts
           pnpm-lock.yaml
           pnpm-workspace.yaml
           scripts/e2e-admin.mjs
