@@ -38,6 +38,7 @@ function Prepare-H454RecoveryBroker(
         Assert-H454RecoveryRouteMembers $network $broker $DockerSha256
     }else{Assert-H454RecoveryRouteMembers $network $old $DockerSha256}
     if(-not $Apply){return [pscustomobject]@{Status='PREFLIGHT';OldRunning=$old.State.Running;BrokerPresent=($null -ne $broker)}}
+    $mutationFence=Open-H454MutationFence $StateDir $Lock 'broker-route' $MarkerSha256
     if($old.State.Running){
         Assert-H454RecoveryRouteSafety $StateDir $Lock $MarkerSha256 $SafetyCheck
         $old=Find-H454RecoveryObject 'container' $oldName $DockerSha256
@@ -141,5 +142,6 @@ function Prepare-H454RecoveryBroker(
     Require-H454 ($members.Count -eq 1 -and $members[0] -ceq $broker.Id -and
         [string]$broker.NetworkSettings.Networks.PSObject.Properties[$networkName].Value.IPAddress -ceq $privateAddress -and
         [string]$broker.NetworkSettings.Networks.bridge.IPAddress -ceq $upstreamAddress) 'H454_BROKER_STATE'
+    Close-H454MutationFence $StateDir $Lock $mutationFence
     return [pscustomobject]@{Status='BROKER_READY';NetworkId=$plan.Id;BrokerId=$broker.Id;OldProxyId=$old.Id}
 }
