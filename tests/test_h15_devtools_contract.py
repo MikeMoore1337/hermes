@@ -8,6 +8,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 DOCKERFILE = ROOT / "deploy" / "h15" / "devtools" / "Dockerfile"
+VPS_DOCKERFILE = ROOT / "deploy" / "h15" / "devtools" / "Dockerfile.vps"
 DOC = ROOT / "deploy" / "h15" / "devtools" / "README.md"
 
 
@@ -25,7 +26,8 @@ class H15DevtoolsContract(unittest.TestCase):
         self.assertIn("64", self.runbook)
 
     def test_static_snapshot_only(self):
-        self.assertEqual(self.source.count("20261020T000000Z"), 4)
+        self.assertEqual(self.source.count("20261102T000000Z"), 4)
+        self.assertIn("2026-11-02", self.runbook)
         self.assertIn("snapshot.debian.org/archive/debian/", self.source)
         self.assertIn("snapshot.debian.org/archive/debian-security/", self.source)
         self.assertIn('test "$ID" = debian', self.source)
@@ -53,6 +55,20 @@ class H15DevtoolsContract(unittest.TestCase):
         self.assertNotIn("npm install", self.source)
         self.assertNotIn("pip install", self.source)
         self.assertNotIn("sudo", self.source)
+
+    def test_vps_recipe_omits_python_without_changing_other_runtime_controls(self):
+        vps = VPS_DOCKERFILE.read_text(encoding="utf-8")
+        self.assertIn("git python3 python3-pip python3-venv ca-certificates;", self.source)
+        self.assertIn("    python3 --version; \\\n", self.source)
+        expected = self.source.replace(
+            "git python3 python3-pip python3-venv ca-certificates;", "git ca-certificates;"
+        ).replace("    python3 --version; \\\n", "")
+
+        def instructions(text):
+            return [line for line in text.splitlines() if line and not line.lstrip().startswith("#")]
+
+        self.assertEqual(instructions(vps), instructions(expected))
+        self.assertNotIn("python3", vps)
 
     def test_no_new_runtime_grants(self):
         active = "\n".join(line for line in self.source.splitlines() if not line.lstrip().startswith("#"))

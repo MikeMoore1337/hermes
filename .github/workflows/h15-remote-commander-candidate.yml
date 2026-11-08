@@ -8,6 +8,12 @@ on:
     branches: [main]
     paths:
       - scripts/h15_brc_apply_policy_patch.py
+      - scripts/h454_terminal_supervisor.py
+      - scripts/h454_terminal_supervisor.pl
+      - tests/test_h454_terminal_supervisor.py
+      - deploy/h15/devtools/Dockerfile
+      - deploy/h15/devtools/Dockerfile.vps
+      - tests/test_h15_devtools_contract.py
       - scripts/h15_brc_sandbox_linux_e2e.mjs
       - tests/test_h15_brc_apply_policy_patch.py
       - scripts/h454_agent_no_auto_pair.py
@@ -42,6 +48,12 @@ on:
     paths:
       - scripts/h15_remote_commander_candidate_audit.py
       - scripts/h15_brc_apply_policy_patch.py
+      - scripts/h454_terminal_supervisor.py
+      - scripts/h454_terminal_supervisor.pl
+      - tests/test_h454_terminal_supervisor.py
+      - deploy/h15/devtools/Dockerfile
+      - deploy/h15/devtools/Dockerfile.vps
+      - tests/test_h15_devtools_contract.py
       - scripts/h454_agent_no_auto_pair.py
       - scripts/h454_agent_no_auto_pair_e2e.mjs
       - tests/test_h454_agent_no_auto_pair.py
@@ -139,7 +151,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m unittest -v tests.test_h15_remote_commander_candidate_audit tests.test_h15_brc_apply_policy_patch tests.test_h15_brc_harden_relay tests.test_h15_brc_harden_gateway tests.test_h15_brc_harden_reconnect tests.test_h15_brc_harden_browser_csrf tests.test_h15_brc_oci_relay_contract tests.test_h15_brc_oci_receipt tests.test_h15_brc_offline_stage tests.test_h15_brc_offline_image_bundle tests.test_h15_brc_owner_deploy tests.test_h15_brc_release_approval
+          python3 -m unittest -v tests.test_h15_remote_commander_candidate_audit tests.test_h15_brc_apply_policy_patch tests.test_h454_terminal_supervisor tests.test_h15_devtools_contract tests.test_h15_brc_harden_relay tests.test_h15_brc_harden_gateway tests.test_h15_brc_harden_reconnect tests.test_h15_brc_harden_browser_csrf tests.test_h15_brc_oci_relay_contract tests.test_h15_brc_oci_receipt tests.test_h15_brc_offline_stage tests.test_h15_brc_offline_image_bundle tests.test_h15_brc_owner_deploy tests.test_h15_brc_release_approval
 
       - name: Workspace resolver and gateway negative contracts (offline)
         shell: bash
@@ -387,7 +399,7 @@ jobs:
             --security-opt no-new-privileges \
             --pids-limit 64 --memory 512m --cpus 1 \
             --tmpfs /tmp:rw,nosuid,nodev,size=16m \
-            -e HOME=/workspace/home -e BRC_HOME=/workspace/home/.brc \
+            -e HOME=/workspace/home -e BRC_HOME=/workspace/home/.brc -e H454_EXPECT_PERL_SUPERVISOR=1 \
             -v "$RUNNER_TEMP/brc-upstream:/opt/brc:ro" \
             -v "$workspace:/workspace:rw" \
             -v "$GITHUB_WORKSPACE/scripts/h15_brc_sandbox_linux_e2e.mjs:/e2e/run.mjs:ro" \
@@ -730,9 +742,37 @@ jobs:
           test "$(docker image inspect --format '{{.Id}}' "$image")" = \
                "$(docker image inspect --format '{{.Id}}' "$scan")"
 
+      # Preserve a real vulnerability scan. Pin the official release archive by
+      # SHA-256 rather than relying on setup-trivy's opaque installer fetch.
+      - name: Install checksum-pinned Trivy 0.70.0 (retry official release)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/trivy_0.70.0_Linux-64bit.tar.gz"
+          if ! curl --fail --location --silent --show-error \
+                 --retry 5 --retry-all-errors --retry-delay 3 \
+                 --connect-timeout 20 --max-time 120 \
+                 "https://github.com/aquasecurity/trivy/releases/download/v0.70.0/trivy_0.70.0_Linux-64bit.tar.gz" \
+                 --output "$archive"; then
+            rm -f "$archive"
+            command -v gh >/dev/null || { echo 'TRIVY_DOWNLOAD_FAILED'; exit 1; }
+            gh release download v0.70.0 --repo aquasecurity/trivy \
+              --pattern 'trivy_0.70.0_Linux-64bit.tar.gz' --dir "$RUNNER_TEMP"
+          fi
+          echo '8b4376d5d6befe5c24d503f10ff136d9e0c49f9127a4279fd110b727929a5aa9  '"$archive" | sha256sum --check -
+          bindir="$RUNNER_TEMP/trivy-pinned-bin"
+          mkdir -p "$bindir"
+          tar -xzf "$archive" -C "$bindir" trivy
+          chmod 0755 "$bindir/trivy"
+          test "$("$bindir/trivy" --version | head -n 1)" = 'Version: 0.70.0'
+          echo "$bindir" >> "$GITHUB_PATH"
+
       - name: Scan actual built BRC OCI image with Trivy (CVE evidence only)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
+          skip-setup-trivy: 'true'
           image-ref: hermes-brc-relay-scan:${{ github.sha }}
           scan-type: image
           scanners: vuln
@@ -875,6 +915,7 @@ jobs:
           git -C "$candidate" diff --binary HEAD > "$bundle/hermes-brc.patch"
           test -s "$bundle/hermes-brc.patch"
           cat > "$bundle/EXPECTED_PATHS.txt" <<'PATHS'
+          packages/agent/src/core/handlers/filesystem-handlers.ts
           packages/agent/src/core/handlers/search-handlers.ts
           packages/agent/src/core/search-manager.ts
           packages/agent/src/core/terminal-manager.ts
@@ -882,6 +923,7 @@ jobs:
           packages/agent/src/core/tools/filesystem.ts
           packages/agent/src/core/tools/improved-process-tools.ts
           packages/agent/src/core/types.ts
+          packages/agent/src/core/utils/files/binary.ts
           packages/agent/src/dispatcher.ts
           packages/relay/src/app.ts
           packages/relay/src/device-hub.ts

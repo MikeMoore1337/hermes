@@ -10,14 +10,20 @@ or a permission grant. The existing BRC image, ENTRYPOINT and CMD are inherited.
 - Build only from an existing owner-approved **64-character sha256:** Docker
   image ID of the H-15 sandbox agent. No floating base tag or auto-pull.
 - Debian 12 Bookworm only. Git, Python 3, pip, venv and CA certificates come
-  from Debian repository snapshots dated 2026-10-20 at **build time**. An installed Debian archive keyring authenticates the initial HTTP APT CA-certificate bootstrap; strict signed index checks remain enabled. Subsequent package installation uses HTTPS after the CA bundle is available.
-  The running agent gets no new network permissions. This **revised repository
-  Dockerfile** has not been rebuilt; a separate, owner-built image is documented
-  below. Live runtime activation remains NOT_RUN.
+  from Debian repository snapshots dated 2026-11-02 at **build time**. An installed Debian archive keyring authenticates the initial HTTP APT CA-certificate bootstrap; strict signed index checks remain enabled. Subsequent package installation uses HTTPS after the CA bundle is available.
+  The running agent gets no new network permissions. Local candidate build and
+  vulnerability scan evidence is recorded in PR #743; runtime activation
+  remains NOT_RUN.
 - No automatic `npm install` or `pip install`, no additional credentials,
   and no change to container mounts, production services or Codex config.
 - Work only in an owner-approved sandbox copy under `/workspace/projects`.
   No production checkout, YFC database, Second Brain vault or host home access.
+
+For the two Debian 12 x86-64 VPS sandboxes, `Dockerfile.vps` is a Git-only
+alternative: it installs Git and CA certificates, and leaves Python as it was
+in the pinned base image. The terminal fix supports the existing Perl runtime
+on this platform. It is still a local build candidate, not a live-device update;
+verify the base image, security findings and rollback independently on each VPS.
 
 ## Preparation (read-only)
 
@@ -38,19 +44,47 @@ Do not print image or container environment variables, tokens or other secrets.
 
 ## Optional manual candidate build - never run by CI or deployment
 
-With separate operator approval, from the repository root:
+With operator approval, from the repository root, use a unique local tag for
+BuildKit: a bare `sha256:<image-id>` in `FROM` can be mistaken for a registry
+name. Verify the tag before and after the build, then check the resulting
+layers and runtime configuration against the exact original image:
 
 ```powershell
+$baseTag = 'hermes-h454-build-base:' + [Guid]::NewGuid().ToString('N')
+$iidPath = Join-Path $env:TEMP ('hermes-h454-image-' + [Guid]::NewGuid().ToString('N') + '.txt')
+if (Test-Path -LiteralPath $iidPath) { throw 'IID_FILE_EXISTS' }
+docker image tag $baseId $baseTag
+if ($LASTEXITCODE -ne 0 -or (docker image inspect --format '{{.Id}}' $baseTag) -cne $baseId) { throw 'BASE_TAG_MISMATCH' }
 docker build --pull=false --network=default `
-  --build-arg "BRC_BASE_IMAGE=$baseId" `
+  --build-arg "BRC_BASE_IMAGE=$baseTag" --iidfile $iidPath `
   -f deploy/h15/devtools/Dockerfile `
-  -t h15-brc-devtools:candidate deploy/h15/devtools
+  deploy/h15/devtools
 if ($LASTEXITCODE -ne 0) { throw 'CANDIDATE_BUILD_FAILED' }
+$candidateId = [IO.File]::ReadAllText($iidPath).Trim()
+if ($candidateId -cnotmatch '^sha256:[a-f0-9]{64}$' -or
+    (docker image inspect --format '{{.Id}}' $baseTag) -cne $baseId) { throw 'IMAGE_IDENTITY' }
+$base = @(docker image inspect $baseId | ConvertFrom-Json)
+$candidate = @(docker image inspect $candidateId | ConvertFrom-Json)
+if ($base.Count -ne 1 -or $candidate.Count -ne 1 -or
+    $base[0].Id -cne $baseId -or $candidate[0].Id -cne $candidateId) { throw 'IMAGE_IDENTITY' }
+$before = @($base[0].RootFS.Layers); $after = @($candidate[0].RootFS.Layers)
+if ($before.Count -eq 0 -or $after.Count -ne $before.Count + 1) { throw 'IMAGE_LAYERS' }
+for ($i = 0; $i -lt $before.Count; $i++) {
+  if ($before[$i] -cne $after[$i]) { throw 'IMAGE_LAYERS' }
+}
+$fields = @('User','Entrypoint','Cmd','WorkingDir','Env','Labels','ExposedPorts','Volumes','Healthcheck','StopSignal')
+$oldConfig = $base[0].Config | Select-Object $fields | ConvertTo-Json -Compress -Depth 30
+$newConfig = $candidate[0].Config | Select-Object $fields | ConvertTo-Json -Compress -Depth 30
+if ($oldConfig -cne $newConfig) { throw 'IMAGE_CONFIG_DRIFT' }
 ```
+
+For the Git-only VPS candidate, use `-f deploy/h15/devtools/Dockerfile.vps`
+instead of the full recipe. This does not install Python, pip or venv.
 
 The Docker build context is deliberately limited to `deploy/h15/devtools`,
 not the project root. The source recipe does not independently enforce
-the approval of the local base image. Snapshot download requires external
+the approval of the local base image. Keep the unique base tag and image ID
+until the original and rollback have been verified. Snapshot download requires external
 network during the **image build only**, not during agent execution.
 
 ## Existing Windows clone: non-destructive Git interoperability
@@ -74,8 +108,19 @@ exception because the bind-mounted owner differs from UID 65534.
 This CRLF exception for the existing clone does **not** change the
 LF policy for newly cloned projects.
 
-## Observed owner candidate evidence (2026-10-21)
+## Observed candidate evidence
 
+- On 2026-11-03, the exact Git-only recipe and a separate layer with the
+  terminal, binary-read and edit-conflict fixes produced local candidate
+  `sha256:83c16120cd6ee05800b085a6510aea0ebdb9d103ced3dee1942ad75751bab2e5`.
+  A disposable non-root dispatcher smoke passed Git, Perl-supervised terminal
+  sessions, binary errors and ambiguous-edit rejection. This does not protect
+  existing-file edits against an external concurrent writer.
+- The same offline scanner/database reported 50 high/critical CVE/package
+  pairs on the original VPS base and 54 on this candidate: 11 added and 7
+  removed. The database reported no fixed version for the 11 added pairs.
+  Independent security triage and each device's actual image/rollback checks
+  remain required before any deployment.
 - Owner-built v3 DevTools candidate: Git 2.39.5, Python 3.11.2,
   Node 24.22.0; pinned OCI image index
   `sha256:8d28b0e1158b01c179ae1e6e1e399acaf3f502675522136d931ce08f2851a5a3`.

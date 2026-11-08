@@ -19,6 +19,8 @@ from scripts.h15_remote_commander_candidate_audit import (
 RELATIVE = Path("packages/agent/src/dispatcher.ts")
 EDIT_RELATIVE = Path("packages/agent/src/core/tools/edit.ts")
 FILESYSTEM_RELATIVE = Path("packages/agent/src/core/tools/filesystem.ts")
+FILESYSTEM_HANDLERS_RELATIVE = Path("packages/agent/src/core/handlers/filesystem-handlers.ts")
+BINARY_RELATIVE = Path("packages/agent/src/core/utils/files/binary.ts")
 TERMINAL_RELATIVE = Path("packages/agent/src/core/terminal-manager.ts")
 TYPES_RELATIVE = Path("packages/agent/src/core/types.ts")
 PROCESS_TOOLS_RELATIVE = Path("packages/agent/src/core/tools/improved-process-tools.ts")
@@ -93,6 +95,46 @@ def edit_conflict_errors(raw: str) -> str:
     return raw[:start] + changed + raw[end:]
 
 
+def binary_read_errors(raw: str) -> str:
+    """Unsupported binary reads must reach the MCP error path."""
+    before = ("        const instructions = this.getBinaryInstructions(filePath);\n\n"
+              "        return {\n"
+              "            content: instructions,\n"
+              "            mimeType: 'text/plain',\n"
+              "            metadata: {\n"
+              "                isBinary: true\n"
+              "            }\n"
+              "        };")
+    if raw.count(before) != 1:
+        raise AuditError("unreviewed_binary_read_handler")
+    return raw.replace(before, "        throw new Error(this.getBinaryInstructions(filePath));", 1)
+
+
+def multiple_read_errors(raw: str) -> str:
+    """Mark all per-file failures, even when the error string is empty."""
+    start = "export async function handleReadMultipleFiles("
+    end = "export async function handleWriteFile("
+    if raw.count(start) != 1 or raw.count(end) != 1 or raw.index(start) >= raw.index(end):
+        raise AuditError("unreviewed_multiple_read_handler")
+    first, last = raw.index(start), raw.index(end)
+    branch = raw[first:last]
+    old = "    return { content: contentItems };"
+    if branch.count(old) != 1 or "isError:" in branch:
+        raise AuditError("unreviewed_multiple_read_handler")
+    parsed = "    const parsed = ReadMultipleFilesArgsSchema.parse(args);"
+    if parsed in branch:
+        branch = branch.replace(parsed,
+            parsed + "\n    if (parsed.paths.length === 0) throw new Error('HERMES_EMPTY_FILE_BATCH');", 1)
+    if "if (result.error)" in branch:
+        if branch.count("if (result.error)") != 1 or branch.count("if (!result.error &&") != 1:
+            raise AuditError("unreviewed_multiple_read_handler")
+        branch = branch.replace("if (result.error)", "if (result.error !== undefined)", 1)
+        branch = branch.replace("if (!result.error &&", "if (result.error === undefined &&", 1)
+    branch = branch.replace(old,
+        "    return { content: contentItems, isError: fileResults.some(result => result.error !== undefined) };", 1)
+    return raw[:first] + branch + raw[last:]
+
+
 def search_timeout_errors(manager: str, handlers: str) -> tuple[str, str]:
     """Preserve partial results without presenting a timed-out search as complete."""
     changes = (
@@ -155,7 +197,59 @@ def unknown_birthtime(raw: str) -> str:
 
 
 def safe_termination(manager: str, tools: str) -> tuple[str, str]:
-    """Keep escalation bound to its session and expose unsuccessful requests."""
+    """Isolate Linux sessions; keep other-platform escalation session-bound."""
+    declaration = "const MAX_WAIT_OUTPUT_CHARS = 2 * 1024 * 1024;"
+    spawn = "    const childProcess = spawn(spawnConfig.executable, spawnConfig.args, spawnOptions);"
+    first_import = "import { spawn } from 'child_process';"
+    if (manager.count(declaration) != 1 or manager.count(spawn) != 1 or
+            manager.count(first_import) != 1 or "h454LinuxSessions" in manager or
+            "spawnOptions.detached" in manager):
+        raise AuditError("unreviewed_terminal_termination")
+    supervisor = Path(__file__).with_name("h454_terminal_supervisor.py")
+    if supervisor.is_symlink() or not supervisor.is_file() or supervisor.stat().st_size > 10000:
+        raise AuditError("unreviewed_terminal_supervisor")
+    source = supervisor.read_text(encoding="utf-8")
+    if "def main()" not in source or "HERMES_TERMINAL_SUPERVISOR_UNAVAILABLE" not in source:
+        raise AuditError("unreviewed_terminal_supervisor")
+    perl_supervisor = Path(__file__).with_name("h454_terminal_supervisor.pl")
+    if perl_supervisor.is_symlink() or not perl_supervisor.is_file() or perl_supervisor.stat().st_size > 10000:
+        raise AuditError("unreviewed_terminal_supervisor")
+    perl_source = perl_supervisor.read_text(encoding="utf-8")
+    if "HERMES_TERMINAL_SUPERVISOR_UNAVAILABLE" not in perl_source or "syscall(157, 36, 1" not in perl_source:
+        raise AuditError("unreviewed_terminal_supervisor")
+    manager = manager.replace(first_import, first_import + "\nimport { existsSync } from 'node:fs';", 1)
+    manager = manager.replace(declaration,
+        "const h454LinuxSessions = new WeakMap<object, 'supervisor' | 'group'>();\n"
+        + "const h454Supervisor = " + json.dumps(source) + ";\n"
+        + "const h454PerlSupervisor = " + json.dumps(perl_source) + ";\n" + declaration, 1)
+    manager = manager.replace(spawn,
+        "    let h454Mode: 'supervisor' | 'group' | null = null;\n"
+        "    if (process.platform === 'linux') {\n"
+        "      spawnOptions.detached = true;\n"
+        "      const hasPython = existsSync('/usr/bin/python3');\n"
+        "      const hasPerl = process.arch === 'x64' && existsSync('/usr/bin/perl');\n"
+        "      if (hasPython || hasPerl) {\n"
+        "        let executable = spawnConfig.executable;\n"
+        "        let args = spawnConfig.args;\n"
+        "        if (spawnOptions.shell) {\n"
+        "          args = ['-c', [executable, ...args].join(' ')];\n"
+        "          executable = typeof spawnOptions.shell === 'string' ? spawnOptions.shell : '/bin/sh';\n"
+        "        }\n"
+        "        delete spawnOptions.shell;\n"
+        "        spawnConfig = hasPython\n"
+        "          ? { executable: '/usr/bin/python3', useShellOption: false,\n"
+        "              args: ['-I', '-B', '-c', h454Supervisor, String(process.pid), executable, ...args] }\n"
+        "          : { executable: '/usr/bin/perl', useShellOption: false,\n"
+        "              args: ['-T', '-e', h454PerlSupervisor, '--', String(process.pid), executable, ...args] };\n"
+        "        h454Mode = 'supervisor';\n"
+        "      } else h454Mode = 'group';\n"
+        "    }\n" + spawn + "\n"
+        "    if (h454Mode) h454LinuxSessions.set(childProcess, h454Mode);", 1)
+    resolved = "        if (resolved) return;\n        resolved = true;"
+    if manager.count(resolved) != 1:
+        raise AuditError("unreviewed_terminal_termination")
+    manager = manager.replace(resolved,
+        resolved + "\n        if (h454Mode === 'group') result.terminationScope = 'process_group';", 1)
     start, end = "forceTerminate(pid", "listActiveSessions()"
     if manager.count(start) != 1 or manager.count(end) != 1:
         raise AuditError("unreviewed_terminal_termination")
@@ -172,15 +266,39 @@ def safe_termination(manager: str, tools: str) -> tuple[str, str]:
     replacement = (indent + "if (!session.process.kill('SIGINT')) {\n"
                    + indent + "  return false;\n" + indent + "}")
     branch = branch[:match.start()] + replacement + branch[match.end():]
+    branch = branch.replace(replacement,
+        indent + "if (process.platform === 'linux') {\n"
+        + indent + "  const mode = h454LinuxSessions.get(session.process);\n"
+        + indent + "  if (!mode || session.process.pid !== pid ||\n"
+        + indent + "      !Number.isSafeInteger(pid) || pid <= 1) return false;\n"
+        + indent + "  if (mode === 'supervisor') {\n"
+        + indent + "    if (!session.process.kill('SIGCONT')) return false;\n"
+        + indent + "    return session.process.kill('SIGTERM');\n"
+        + indent + "  }\n"
+        + indent + "  return process.kill(-pid, 'SIGKILL');\n"
+        + indent + "}\n" + replacement, 1)
     pattern = r"(?m)^([ ]*)if \(this\.sessions\.has\(pid\)\) \{\n([ ]*)session\.process\.kill\('SIGKILL'\);\n\1\}"
     matches = list(re.finditer(pattern, branch))
     if len(matches) != 1:
         raise AuditError("unreviewed_terminal_termination")
     match = matches[0]
     indent, inner = match.groups()
+    # A stopped or unresponsive subreaper must not be SIGKILLed by the parent:
+    # doing so irreversibly orphans detached children. Resume and re-signal it
+    # instead; if it cannot reap, explicitly report an incomplete termination.
     replacement = (indent + "if (this.sessions.get(pid) === session) {\n"
-                   + inner + "try { if (!session.process.kill('SIGKILL')) console.error('HERMES_TERMINATION_ESCALATION_FAILED'); }\n"
-                   + inner + "catch { console.error('HERMES_TERMINATION_ESCALATION_FAILED'); }\n"
+                   + inner + "const mode = process.platform === 'linux' ? h454LinuxSessions.get(session.process) : null;\n"
+                   + inner + "if (mode === 'supervisor') {\n"
+                   + inner + "  try {\n"
+                   + inner + "    if (!session.process.kill('SIGCONT') || !session.process.kill('SIGTERM')) console.error('HERMES_TERMINATION_ESCALATION_FAILED');\n"
+                   + inner + "  } catch { console.error('HERMES_TERMINATION_ESCALATION_FAILED'); }\n"
+                   + inner + "  setTimeout(() => {\n"
+                   + inner + "    if (this.sessions.get(pid) === session) console.error('HERMES_TERMINATION_INCOMPLETE');\n"
+                   + inner + "  }, 1000);\n"
+                   + inner + "} else {\n"
+                   + inner + "  try { if (!session.process.kill('SIGKILL')) console.error('HERMES_TERMINATION_ESCALATION_FAILED'); }\n"
+                   + inner + "  catch { console.error('HERMES_TERMINATION_ESCALATION_FAILED'); }\n"
+                   + inner + "}\n"
                    + indent + "}")
     branch = branch[:match.start()] + replacement + branch[match.end():]
     manager = manager[:first] + branch + manager[last:]
@@ -203,7 +321,9 @@ def safe_termination(manager: str, tools: str) -> tuple[str, str]:
     indent = match.group(1)
     branch = (branch[:match.end()] + indent + indent + "isError: !success,\n" + branch[match.end():])
     branch = branch.replace(old, "No active session or unable to initiate termination for PID ${pid}", 1)
-    branch = branch.replace(success, success + ". Only the tracked process is signaled; descendants may remain.", 1)
+    branch = branch.replace(success, success + ". Linux sessions use a supervisor when available; "
+                            "otherwise their process group is signaled. On other platforms only the "
+                            "tracked process is signaled; descendants may remain.", 1)
     return manager, tools[:first] + branch + tools[last:]
 
 
@@ -260,12 +380,60 @@ def bounded_timing(manager: str, tools: str, types: str) -> tuple[str, str, str]
     return manager, tools, types
 
 
+def terminal_exit_errors(manager: str, tools: str, types: str) -> tuple[str, str, str]:
+    """Report a known failed process, without treating an active process as failed."""
+    event = "      childProcess.on('exit', (code: any) => {"
+    result = ("        exitReason = 'process_exit';\n        resolveOnce({\n"
+              "          pid: childProcess.pid!,\n          output,\n          isBlocked: false\n        });")
+    type_marker = "export interface CommandExecutionResult {\n  pid: number;\n  output: string;\n  isBlocked: boolean;"
+    if (manager.count(event) != 1 or manager.count(result) != 1 or types.count(type_marker) != 1):
+        raise AuditError("unreviewed_terminal_exit_status")
+    manager = manager.replace(event, "      childProcess.on('exit', (code: number | null, signal: string | null) => {", 1)
+    manager = manager.replace(result, result.replace("          isBlocked: false\n", "          isBlocked: false,\n          exitCode: code, exitSignal: signal\n"), 1)
+    types = types.replace(type_marker, type_marker + "\n  exitCode?: number | null;\n  exitSignal?: string | null;"
+                          "\n  terminationScope?: 'process_group';", 1)
+
+    starts = ("export async function startProcess(", "function formatTimingInfo(",
+              "export async function readProcessOutput(", "export async function interactWithProcess(")
+    if any(tools.count(marker) != 1 for marker in starts):
+        raise AuditError("unreviewed_terminal_exit_status")
+    positions = [tools.index(marker) for marker in starts]
+    if positions != sorted(positions):
+        raise AuditError("unreviewed_terminal_exit_status")
+    before, start, between, read, after = (tools[:positions[0]], tools[positions[0]:positions[1]],
+        tools[positions[1]:positions[2]], tools[positions[2]:positions[3]], tools[positions[3]:])
+    text = "${result.output}${statusMessage}${timingMessage}"
+    marker = "  return {\n    content: [{\n      type: \"text\",\n      text: `Process started with PID"
+    if start.count(text) != 1 or start.count(marker) != 1:
+        raise AuditError("unreviewed_terminal_exit_status")
+    status = ("  const exitFailure = result.exitCode !== undefined && result.exitCode !== 0;\n"
+              "  const exitStatus = result.exitCode === undefined ? '' : result.exitCode === null\n"
+              "    ? `\\nProcess terminated by signal ${result.exitSignal || 'unknown'}.`\n"
+              "    : `\\nProcess exited with code ${result.exitCode}.`;\n"
+              "  const groupWarning = result.terminationScope === 'process_group'\n"
+              "    ? '\\nTermination is limited to the process group; detached descendants may remain.' : '';\n")
+    start = start.replace(marker, status + marker.replace("  return {\n", "  return {\n    isError: exitFailure,\n", 1), 1)
+    start = start.replace(text, text + "${exitStatus}${groupWarning}", 1)
+    completed = "    processStateMessage = `\\n✅ Process completed with exit code ${result.exitCode}${runtimeStr}`;"
+    response = "  return {\n    content: [{\n      type: \"text\",\n      text: `${statusMessage}"
+    if read.count(completed) != 1 or read.count(response) != 1:
+        raise AuditError("unreviewed_terminal_exit_status")
+    read = read.replace(completed,
+        "    processStateMessage = result.exitCode === 0\n"
+        "      ? `\\n✅ Process completed with exit code 0${runtimeStr}`\n"
+        "      : `\\n❌ Process failed or was terminated (exit code ${result.exitCode})${runtimeStr}`;", 1)
+    read = read.replace(response, response.replace("  return {\n", "  return {\n    isError: result.isComplete && result.exitCode !== 0,\n", 1), 1)
+    return manager, before + start + between + read + after, types
+
+
 def apply(root: Path, *, sha: str = UPSTREAM_SHA) -> dict[str, object]:
     # Checks immutable source revision, license/NOTICE and all known risks.
     evaluate(root, sha=sha)
     path = root / RELATIVE
     edit_path = root / EDIT_RELATIVE
     filesystem_path = root / FILESYSTEM_RELATIVE
+    filesystem_handlers_path = root / FILESYSTEM_HANDLERS_RELATIVE
+    binary_path = root / BINARY_RELATIVE
     terminal_path = root / TERMINAL_RELATIVE
     types_path = root / TYPES_RELATIVE
     process_tools_path = root / PROCESS_TOOLS_RELATIVE
@@ -277,6 +445,15 @@ def apply(root: Path, *, sha: str = UPSTREAM_SHA) -> dict[str, object]:
         raise AuditError("unsafe_edit_handler")
     if filesystem_path.is_symlink() or not filesystem_path.is_file():
         raise AuditError("unsafe_filesystem_handler")
+    for relative, reason in ((FILESYSTEM_HANDLERS_RELATIVE, "unsafe_filesystem_handler"),
+                             (BINARY_RELATIVE, "unsafe_binary_handler")):
+        current = root
+        for part in relative.parts:
+            current = current / part
+            if current.is_symlink() or (hasattr(current, "is_junction") and current.is_junction()):
+                raise AuditError(reason)
+        if not current.is_file():
+            raise AuditError(reason)
     if any(p.is_symlink() or not p.is_file() for p in (terminal_path, process_tools_path, types_path)):
         raise AuditError("unsafe_terminal_handler")
     if any(p.is_symlink() or not p.is_file() for p in (search_path, search_handlers_path)):
@@ -316,15 +493,21 @@ def apply(root: Path, *, sha: str = UPSTREAM_SHA) -> dict[str, object]:
     updated = guard_file_mutations(updated)
     updated_edit = edit_conflict_errors(edit_path.read_text(encoding="utf-8"))
     updated_filesystem = unknown_birthtime(filesystem_path.read_text(encoding="utf-8"))
+    updated_filesystem_handlers = multiple_read_errors(filesystem_handlers_path.read_text(encoding="utf-8"))
+    updated_binary = binary_read_errors(binary_path.read_text(encoding="utf-8"))
     updated_terminal, updated_process_tools = safe_termination(
         terminal_path.read_text(encoding="utf-8"), process_tools_path.read_text(encoding="utf-8"))
     updated_terminal, updated_process_tools, updated_types = bounded_timing(
         updated_terminal, updated_process_tools, types_path.read_text(encoding="utf-8"))
+    updated_terminal, updated_process_tools, updated_types = terminal_exit_errors(
+        updated_terminal, updated_process_tools, updated_types)
     updated_search, updated_search_handlers = search_timeout_errors(
         search_path.read_text(encoding="utf-8"), search_handlers_path.read_text(encoding="utf-8"))
     path.write_text(updated, encoding="utf-8")
     edit_path.write_text(updated_edit, encoding="utf-8")
     filesystem_path.write_text(updated_filesystem, encoding="utf-8")
+    filesystem_handlers_path.write_text(updated_filesystem_handlers, encoding="utf-8")
+    binary_path.write_text(updated_binary, encoding="utf-8")
     terminal_path.write_text(updated_terminal, encoding="utf-8")
     types_path.write_text(updated_types, encoding="utf-8")
     process_tools_path.write_text(updated_process_tools, encoding="utf-8")

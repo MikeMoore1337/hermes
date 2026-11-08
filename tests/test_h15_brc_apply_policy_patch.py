@@ -59,11 +59,41 @@ FILESYSTEM = """    const info: Record<string, any> = {
     return info;
 """
 
-TERMINAL = """const MAX_WAIT_OUTPUT_CHARS = 2 * 1024 * 1024;
+FILESYSTEM_HANDLERS = """export async function handleReadMultipleFiles(args) {
+    const fileResults = await readMultipleFiles(args.paths);
+    const contentItems = [];
+    return { content: contentItems };
+}
+export async function handleWriteFile(args) { return args; }
+"""
+
+BINARY = """class BinaryFileHandler {
+    async read(filePath: string, options?: ReadOptions): Promise<FileResult> {
+        const instructions = this.getBinaryInstructions(filePath);
+
+        return {
+            content: instructions,
+            mimeType: 'text/plain',
+            metadata: {
+                isBinary: true
+            }
+        };
+    }
+    async write() { throw new Error('unchanged'); }
+}
+"""
+
+TERMINAL = """import { spawn } from 'child_process';
+const MAX_WAIT_OUTPUT_CHARS = 2 * 1024 * 1024;
 class TerminalManager {
   async executeCommand() {
+    const childProcess = spawn(spawnConfig.executable, spawnConfig.args, spawnOptions);
     const outputEvents: OutputEvent[] = [];
     let exitReason = 'timeout';
+    const resolveOnce = (result: CommandExecutionResult) => {
+        if (resolved) return;
+        resolved = true;
+    };
     result.timingInfo = {
       outputEvents: outputEvents.length > 0 ? outputEvents : undefined
     };
@@ -84,6 +114,14 @@ class TerminalManager {
           });
         }
     });
+      childProcess.on('exit', (code: any) => {
+        exitReason = 'process_exit';
+        resolveOnce({
+          pid: childProcess.pid!,
+          output,
+          isBlocked: false
+        });
+      });
   }
   forceTerminate(pid: number): boolean {
     const session = this.sessions.get(pid);
@@ -100,12 +138,29 @@ class TerminalManager {
 """
 
 PROCESS_TOOLS = """import { terminalManager, MAX_BUFFERED_OUTPUT_CHARS } from '../terminal-manager.js';
+export async function startProcess() {
+  return {
+    content: [{
+      type: "text",
+      text: `Process started with PID ${result.pid} (shell: ${shellUsed})\\nInitial output:\\n${result.output}${statusMessage}${timingMessage}`
+    }],
+  };
+}
 function formatTimingInfo(timing: any): string {
   let msg = '';
   if (timing.outputEvents && timing.outputEvents.length > 0) {
     msg += `\\n  Output Events (${timing.outputEvents.length} total):\\n`;
   }
   return msg;
+}
+export async function readProcessOutput() {
+    processStateMessage = `\\n✅ Process completed with exit code ${result.exitCode}${runtimeStr}`;
+  return {
+    content: [{
+      type: "text",
+      text: `${statusMessage}\\n\\n${responseText}${processStateMessage}${timingMessage}`
+    }],
+  };
 }
 export async function interactWithProcess() {
   const outputEvents: any[] = [];
@@ -131,7 +186,12 @@ export async function forceTerminate(args: unknown): Promise<ServerResult> {
 export async function listSessions() { return []; }
 """
 
-TYPES = """export interface TimingInfo {
+TYPES = """export interface CommandExecutionResult {
+  pid: number;
+  output: string;
+  isBlocked: boolean;
+}
+export interface TimingInfo {
   outputEvents?: OutputEvent[];
 }
 """
@@ -170,8 +230,10 @@ class BrcHardeningTests(unittest.TestCase):
                     ".github/workflows/h15-remote-commander-candidate.yml").read_text(encoding="utf-8")
         paths = workflow.split('cat > "$bundle/EXPECTED_PATHS.txt" <<\'PATHS\'\n', 1)[1].split('\n          PATHS', 1)[0]
         for path in ("packages/agent/src/core/tools/edit.ts", "packages/agent/src/core/tools/filesystem.ts",
+                     "packages/agent/src/core/handlers/filesystem-handlers.ts",
                      "packages/agent/src/core/tools/improved-process-tools.ts", "packages/agent/src/core/terminal-manager.ts",
                      "packages/agent/src/core/types.ts",
+                     "packages/agent/src/core/utils/files/binary.ts",
                      "packages/agent/src/core/search-manager.ts",
                      "packages/agent/src/core/handlers/search-handlers.ts"):
             self.assertIn(path, [line.strip() for line in paths.splitlines()])
@@ -188,6 +250,12 @@ class BrcHardeningTests(unittest.TestCase):
         self.edit.write_text(EDIT, encoding="utf-8")
         self.filesystem = self.root / "packages/agent/src/core/tools/filesystem.ts"
         self.filesystem.write_text(FILESYSTEM, encoding="utf-8")
+        self.filesystem_handlers = self.root / "packages/agent/src/core/handlers/filesystem-handlers.ts"
+        self.filesystem_handlers.parent.mkdir(parents=True)
+        self.filesystem_handlers.write_text(FILESYSTEM_HANDLERS, encoding="utf-8")
+        self.binary = self.root / "packages/agent/src/core/utils/files/binary.ts"
+        self.binary.parent.mkdir(parents=True)
+        self.binary.write_text(BINARY, encoding="utf-8")
         self.terminal = self.root / "packages/agent/src/core/terminal-manager.ts"
         self.terminal.write_text(TERMINAL, encoding="utf-8")
         self.types = self.root / "packages/agent/src/core/types.ts"
@@ -197,7 +265,7 @@ class BrcHardeningTests(unittest.TestCase):
         self.search = self.root / "packages/agent/src/core/search-manager.ts"
         self.search.write_text(SEARCH_MANAGER, encoding="utf-8")
         self.search_handlers = self.root / "packages/agent/src/core/handlers/search-handlers.ts"
-        self.search_handlers.parent.mkdir(parents=True)
+        self.search_handlers.parent.mkdir(parents=True, exist_ok=True)
         self.search_handlers.write_text(SEARCH_HANDLERS, encoding="utf-8")
         guard = patch("scripts.h15_brc_apply_policy_patch.evaluate", return_value={
             "status": "SOURCE_PIN_VERIFIED"
@@ -305,6 +373,44 @@ class BrcHardeningTests(unittest.TestCase):
         self.assertIn("info.createdStatus = 'unavailable_or_epoch';", actual)
         self.assertIn("return info;", actual)
 
+    def test_binary_read_is_an_error_and_other_methods_are_unchanged(self):
+        apply(self.root)
+        actual = self.binary.read_text(encoding="utf-8")
+        self.assertIn("throw new Error(this.getBinaryInstructions(filePath));", actual)
+        self.assertNotIn("content: instructions", actual)
+        self.assertIn("async write() { throw new Error('unchanged'); }", actual)
+        handlers = self.filesystem_handlers.read_text(encoding="utf-8")
+        self.assertIn("isError: fileResults.some(result => result.error !== undefined)", handlers)
+        self.assertIn("content: contentItems", handlers)
+
+    def test_changed_binary_reader_refuses_before_any_source_write(self):
+        self.binary.write_text(BINARY.replace("isBinary: true", "isBinary: false"), encoding="utf-8")
+        paths = (self.dispatcher, self.edit, self.filesystem, self.binary, self.terminal, self.types,
+                 self.process_tools, self.search, self.search_handlers)
+        before = {p: p.read_bytes() for p in paths}
+        with self.assertRaisesRegex(AuditError, "unreviewed_binary_read_handler"):
+            apply(self.root)
+        self.assertEqual({p: p.read_bytes() for p in paths}, before)
+
+    def test_changed_multiple_read_handler_refuses_before_any_source_write(self):
+        self.filesystem_handlers.write_text(FILESYSTEM_HANDLERS.replace("contentItems };", "other };"), encoding="utf-8")
+        paths = (self.dispatcher, self.edit, self.filesystem, self.filesystem_handlers, self.binary,
+                 self.terminal, self.types, self.process_tools, self.search, self.search_handlers)
+        before = {p: p.read_bytes() for p in paths}
+        with self.assertRaisesRegex(AuditError, "unreviewed_multiple_read_handler"):
+            apply(self.root)
+        self.assertEqual({p: p.read_bytes() for p in paths}, before)
+
+    def test_symlinked_binary_handler_is_refused_without_writing_target(self):
+        self.binary.unlink()
+        target = self.root / "binary-original.ts"
+        target.write_text(BINARY, encoding="utf-8")
+        self.binary.symlink_to(target)
+        with self.assertRaisesRegex(AuditError, "unsafe_binary_handler"):
+            apply(self.root)
+        self.assertEqual(target.read_text(encoding="utf-8"), BINARY)
+        self.assertEqual(self.dispatcher.read_text(encoding="utf-8"), ORIGINAL)
+
     def test_unreviewed_mutation_dispatcher_refuses_without_writing(self):
         self.dispatcher.write_text(ORIGINAL.replace("  move_file:", "  unexpected_move:"), encoding="utf-8")
         paths = (self.dispatcher, self.edit, self.filesystem, self.terminal, self.process_tools,
@@ -341,7 +447,43 @@ class BrcHardeningTests(unittest.TestCase):
         tools = self.process_tools.read_text(encoding="utf-8")
         self.assertIn("if (!session.process.kill('SIGINT'))", terminal)
         self.assertIn("if (!session.process.kill('SIGKILL'))", terminal)
-        self.assertIn("Only the tracked process is signaled; descendants may remain.", tools)
+        self.assertIn("spawnOptions.detached = true", terminal)
+        self.assertIn("process.arch === 'x64' && existsSync('/usr/bin/perl')", terminal)
+        self.assertIn("['-T', '-e', h454PerlSupervisor", terminal)
+        self.assertIn("h454LinuxSessions.get(session.process)", terminal)
+        self.assertIn("session.process.pid !== pid", terminal)
+        self.assertIn("session.process.kill('SIGCONT')", terminal)
+        self.assertIn("return session.process.kill('SIGTERM')", terminal)
+        self.assertIn("HERMES_TERMINATION_INCOMPLETE", terminal)
+        self.assertIn("descendants may remain.", tools)
+
+    def test_unreviewed_spawn_is_refused_before_any_write(self):
+        self.terminal.write_text(TERMINAL.replace("spawnConfig.args, spawnOptions", "spawnConfig.args, unknown"), encoding="utf-8")
+        paths = (self.dispatcher, self.edit, self.filesystem, self.terminal, self.process_tools,
+                 self.search, self.search_handlers)
+        before = {p: p.read_bytes() for p in paths}
+        with self.assertRaisesRegex(AuditError, "unreviewed_terminal_termination"):
+            apply(self.root)
+        self.assertEqual({p: p.read_bytes() for p in paths}, before)
+
+    def test_process_exit_failure_is_distinct_from_an_active_session(self):
+        apply(self.root)
+        manager = self.terminal.read_text(encoding="utf-8")
+        tools = self.process_tools.read_text(encoding="utf-8")
+        self.assertIn("exitCode: code, exitSignal: signal", manager)
+        self.assertIn("result.exitCode !== undefined && result.exitCode !== 0", tools)
+        self.assertIn("isError: result.isComplete && result.exitCode !== 0", tools)
+        self.assertIn("Process failed or was terminated", tools)
+        self.assertIn("detached descendants may remain", tools)
+
+    def test_unreviewed_process_exit_is_refused_before_any_write(self):
+        self.terminal.write_text(TERMINAL.replace("childProcess.on('exit'", "childProcess.on('close'"), encoding="utf-8")
+        paths = (self.dispatcher, self.edit, self.filesystem, self.terminal, self.process_tools,
+                 self.search, self.search_handlers)
+        before = {p: p.read_bytes() for p in paths}
+        with self.assertRaisesRegex(AuditError, "unreviewed_terminal_exit_status"):
+            apply(self.root)
+        self.assertEqual({p: p.read_bytes() for p in paths}, before)
 
     def test_verbose_timing_is_bounded_and_discloses_truncation(self):
         apply(self.root)
@@ -400,6 +542,33 @@ class BrcHardeningTests(unittest.TestCase):
             apply(self.root)
         self.assertEqual(target.read_text(encoding="utf-8"), EDIT)
         self.assertEqual(self.dispatcher.read_text(encoding="utf-8"), ORIGINAL)
+
+
+    def test_mixed_batch_catches_empty_string_error_and_rejects_empty_list(self):
+        from scripts.h15_brc_apply_policy_patch import multiple_read_errors
+
+        source = """export async function handleReadMultipleFiles(args: unknown) {
+    const parsed = ReadMultipleFilesArgsSchema.parse(args);
+    const fileResults = await readMultipleFiles(parsed.paths);
+    const textSummary = fileResults.map(result => {
+        if (result.error) { return result.error; }
+        return 'ok';
+    });
+    const contentItems = [];
+    for (const result of fileResults) {
+        if (!result.error && result.content !== undefined) { contentItems.push(result.content); }
+    }
+    return { content: contentItems };
+}
+export async function handleWriteFile(args) {}
+"""
+        patched = multiple_read_errors(source)
+        self.assertIn("if (parsed.paths.length === 0)", patched)
+        self.assertIn("if (result.error !== undefined)", patched)
+        self.assertIn("if (result.error === undefined &&", patched)
+        self.assertIn("fileResults.some(result => result.error !== undefined)", patched)
+        self.assertNotIn("Boolean(result.error)", patched)
+
 
 
 if __name__ == "__main__":
