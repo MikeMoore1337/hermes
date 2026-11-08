@@ -30,9 +30,20 @@ $raw=ConvertTo-Json -Compress -InputObject ([ordered]@{relayUrl='http://host.doc
 $credential=Convert-H454BrokerCredential $raw $device
 $script:bridge=$true;$script:private=$false;$script:running=$false;$script:agentStaged=$false;$script:wrongStage=$false
 $script:events=@();$script:failEvent='';$script:failed=$false
+$script:mutationFenceActive=$false;$script:delayedStart=$false;$script:delayedStartPending=$false
+function Open-H454MutationFence([string]$StateDir,[IO.FileStream]$Lock,[string]$Scope,[string]$MarkerSha256) {
+    Require-H454 (-not $script:mutationFenceActive) 'H454_MUTATION_UNSETTLED'
+    $script:mutationFenceActive=$true
+    return [pscustomobject]@{Scope=$Scope}
+}
+function Close-H454MutationFence([string]$StateDir,[IO.FileStream]$Lock,[object]$Fence) {
+    Require-H454 $script:mutationFenceActive 'FIXTURE_FENCE_MISSING'
+    $script:mutationFenceActive=$false
+}
 function Reset-Fixture {
     $script:bridge=$true;$script:private=$false;$script:running=$false;$script:agentStaged=$false;$script:wrongStage=$false
     $script:events=@();$script:failEvent='';$script:failed=$false
+    $script:mutationFenceActive=$false;$script:delayedStart=$false;$script:delayedStartPending=$false
 }
 function Get-H454OriginalRestoreState {
     return [pscustomobject]@{Agent=[pscustomobject]@{State=[pscustomobject]@{Running=$script:running}};
@@ -47,7 +58,13 @@ function Invoke-H454RecoveryDocker {
     $op=$Arguments[0];$sub=if($Arguments.Count -gt 1){$Arguments[1]}else{''};$name='';$code=0;$out=''
     if($op -ceq 'network' -and $sub -ceq 'connect'){$name='connect';$script:private=$true}
     elseif($op -ceq 'network' -and $sub -ceq 'disconnect'){$name='disconnect';$script:bridge=$false}
-    elseif($op -ceq 'start'){$name='start';$script:running=$true}
+    elseif($op -ceq 'start'){
+        $name='start'
+        if($script:delayedStart){
+            $script:delayedStart=$false
+            $script:delayedStartPending=$true
+        }else{$script:running=$true}
+    }
     elseif($op -ceq 'exec' -and $Arguments -ccontains '/usr/local/bin/h15-stage.sh'){
         $name='agent-stage';$data=[Text.Encoding]::UTF8.GetString($InputBytes)
         Require-H454 (-not $data.Contains($token) -and $data.Contains('brc_dev_'+('s'*43))) 'FIXTURE_AGENT_SECRET'
@@ -62,6 +79,7 @@ function Invoke-H454RecoveryDocker {
     }else{throw 'FIXTURE_UNEXPECTED_DOCKER'}
     if($name){
         $script:events+=@($name)
+        if($name -ceq 'start' -and $script:delayedStartPending){throw 'H454_DOCKER_AMBIGUOUS'}
         if($name -ceq $script:failEvent -and -not $script:failed){$script:failed=$true;throw 'H454_DOCKER_AMBIGUOUS'}
     }
     return [pscustomobject]@{Code=$code;Output=$out}
@@ -91,6 +109,15 @@ try{
             try{$null=Restore-H454Original @params -Apply -OwnerApproved}catch{$refused=$_.Exception.Message -ceq 'H454_DOCKER_AMBIGUOUS'}
             Require-H454 $refused 'FIXTURE_AMBIGUOUS'
             $script:failEvent=''
+            if($mode -ceq 'direct'){
+                $before=$script:events.Count
+                $reason=''
+                try{$null=Restore-H454Original @params -Apply -OwnerApproved}catch{$reason=$_.Exception.Message}
+                Require-H454 ($reason -ceq 'H454_MUTATION_UNSETTLED' -and
+                    $script:events.Count -eq $before) 'FIXTURE_DIRECT_REPLAY_REFUSED'
+                # Fixture-only representation of owner-confirmed manual settlement.
+                $script:mutationFenceActive=$false
+            }
             $result=Restore-H454Original @params -Apply -OwnerApproved
             Require-H454 ($result.Status -ceq 'ORIGINAL_STAGED' -and $script:running -and $script:private -and
                 -not $script:bridge -and $script:agentStaged -and $script:events -cnotcontains 'stop') 'FIXTURE_RESUME'
@@ -101,6 +128,24 @@ try{
         }
     }
     $params.Remove('TrialMutation')
+    Reset-Fixture;$script:delayedStart=$true;$reason=''
+    try{$null=Restore-H454Original @params -Apply -OwnerApproved}catch{$reason=$_.Exception.Message}
+    Require-H454 ($reason -ceq 'H454_DOCKER_AMBIGUOUS' -and $script:delayedStartPending -and
+        $script:mutationFenceActive) 'FIXTURE_DELAYED_START_ACCEPTED'
+    $before=$script:events.Count
+    $reason=''
+    try{$null=Restore-H454Original @params -Apply -OwnerApproved}catch{$reason=$_.Exception.Message}
+    Require-H454 ($reason -ceq 'H454_MUTATION_UNSETTLED' -and
+        $script:events.Count -eq $before) 'FIXTURE_DELAYED_START_REPLAY'
+    $script:running=$true;$script:delayedStartPending=$false
+    $reason=''
+    try{$null=Restore-H454Original @params -Apply -OwnerApproved}catch{$reason=$_.Exception.Message}
+    Require-H454 ($reason -ceq 'H454_MUTATION_UNSETTLED') 'FIXTURE_DELAYED_POST_SETTLEMENT_REPLAY'
+    $script:mutationFenceActive=$false
+    $result=Restore-H454Original @params -Apply -OwnerApproved
+    Require-H454 ($result.Status -ceq 'ORIGINAL_STAGED' -and
+        $script:events.Count -eq ($before+2)) 'FIXTURE_DELAYED_MANUAL_RESUME'
+    'PS51_SYNTHETIC_ORIGINAL_RESTORE_DELAYED_DOCKER=PASS'
     Reset-Fixture;$script:bridge=$false;$script:private=$true;$script:running=$true;$script:wrongStage=$true
     $refused=$false;try{$null=Restore-H454Original @params -Apply -OwnerApproved}catch{$refused=$true}
     Require-H454 ($refused -and $script:events -cnotcontains 'agent-stage' -and $script:events -cnotcontains 'broker-stage') 'FIXTURE_STAGED_DRIFT'
