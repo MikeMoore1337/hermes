@@ -34,6 +34,14 @@ const formatTime=value=>{
  return Number.isFinite(date)?new Date(date).toLocaleString("ru-RU"):"Нет проверенного снимка";
 };
 function clientCheckRequest(project){
+ if(project.deviceName)return [
+  "Проверь подключение Hermes Commander к проекту "+project.name+".",
+  "Используй только подключённый Hermes Agent MCP; ничего не изменяй.",
+  "Вызови list_devices, list_workspaces и resolve_workspace для "+project.repo+".",
+  "Убедись, что каталог находится в разрешённом sandbox, затем проверь его на устройстве "+project.deviceName+" через get_file_info и list_directory.",
+  "Покажи только фактически проверенные результаты; Git и права записи не подтверждаются статусом online.",
+  "Не обращайся к production-каталогам или приватным хранилищам и не меняй права."
+ ].join("\n");
  return [
   "Проверь подключение Hermes Commander к проекту "+project.name+".",
   "Используй только подключённый Hermes Agent MCP; ничего не изменяй.",
@@ -65,6 +73,7 @@ export default function HermesCommander(){
  const [selected,setSelected]=useState("hermes");
  const [query,setQuery]=useState("");
  const [observation,setObservation]=useState(null);
+ const [forkSeen,setForkSeen]=useState(false);
  const [fault,setFault]=useState("not_loaded");
  const [busy,setBusy]=useState(false);
  const [sourceBusy,setSourceBusy]=useState(false);
@@ -74,10 +83,17 @@ export default function HermesCommander(){
  const [refreshEpoch,setRefreshEpoch]=useState(0);
  const [now,setNow]=useState(Date.now());
  const codeRef=useRef(null);
- const current=projects.find(p=>p.repo===selected)||projects[0];
- const shown=useMemo(()=>projects.filter(p=>
+ const live=observation?parseBrcObservation(observation,now):null;
+ const forkView=observation?observation.schema===2:forkSeen;
+ const choices=useMemo(()=>forkView?(live?.workspaces??[]).map(w=>({
+   repo:w.name,name:w.name,branch:w.branch,root:w.root,deviceName:w.device_name,
+   caption:"Рабочий каталог из реестра"
+  })):projects,[live,forkView]);
+ const current=choices.find(p=>p.repo===selected)||choices[0]||
+   {repo:"",name:"Нет доступных проектов",branch:"—",caption:"Нет данных о рабочих каталогах"};
+ const shown=useMemo(()=>choices.filter(p=>
    (p.name+" "+p.repo+" "+p.branch).toLocaleLowerCase("ru")
-    .includes(query.trim().toLocaleLowerCase("ru"))),[query]);
+    .includes(query.trim().toLocaleLowerCase("ru"))),[choices,query]);
  const refresh=useCallback(()=>setRefreshEpoch(n=>n+1),[]);
 
  useEffect(()=>{
@@ -105,7 +121,7 @@ export default function HermesCommander(){
     try{data=await response.json();}catch(_){throw Error("invalid");}
     const verified=parseBrcObservation(data);
     if(!verified)throw Error("invalid");
-    if(active){setObservation(verified);setFault("");setNow(Date.now());}
+    if(active){setObservation(verified);setForkSeen(verified.schema===2);setFault("");setNow(Date.now());}
    }catch(error){
     if(active){setObservation(null);
       setFault(Object.hasOwn(errorText,error.message)?error.message:"network");}
@@ -114,14 +130,13 @@ export default function HermesCommander(){
   return()=>{active=false;clearTimeout(timeout);controller.abort();};
  },[refreshEpoch]);
 
- const live=observation&&now-Date.parse(observation.observed_at)<=300000?observation:null;
  const state=live?.status;
  const online=live?.devices.filter(d=>d.status==="online").length;
  const reachable=live?.workspaces.filter(w=>w.state==="reachable_not_git_verified").length;
- const deviceState=live?.devices[0]?.status;
+ const deviceState=live?.schema===2?live.devices.find(d=>d.name===current.deviceName)?.status:live?.devices[0]?.status;
  const selectedState=live?deviceState:undefined;
  const diagnostic=!live?"Диагностика: "+(errorText[fault]||errorText.stale):
-    state==="online"?"Снимок свежий, 3 устройства на связи. Доступность инструментов и Git не проверены.":
+    state==="online"?"Снимок свежий, устройства на связи. Доступность инструментов и Git не проверены.":
     state==="partial"?"Свежий снимок: часть устройств недоступна. Проверьте соединение через Hermes MCP.":
     "Свежий снимок: устройства недоступны. Проверьте состояние relay и агентов.";
 
@@ -143,7 +158,7 @@ export default function HermesCommander(){
    if(!checked)throw Error("Некорректный ответ источника.");
    const number=checked.devices.filter(d=>d.status==="online").length;
    setSourceResult("Источник: проверенный снимок "+checked.snapshot_age_seconds+
-    " с назад; устройств онлайн "+number+"/3. Relay, OAuth, команды и Git не проверялись.");
+    " с назад; устройств онлайн "+number+"/"+checked.devices.length+". Relay, OAuth, команды и Git не проверялись.");
   }catch(error){
    const messages=["Требуется авторизация через GitHub.","Снимок недоступен или устарел.",
     "Некорректный ответ источника."];
@@ -178,8 +193,8 @@ export default function HermesCommander(){
   <header className="oc-intro">
    <div><span className="orbit-section-code">HERMES COMMANDER / WORKSPACE CONTROL</span>
     <h1 id="brc-title">Рабочие пространства</h1>
-    <p>Выберите проект и проверьте его доступность в изолированной среде.
-      Выполнение команд и доступ к Windows не подразумеваются.</p>
+    <p>{forkView?"Выберите проект и проверьте его состояние по снимку. Выполнение команд и доступ к хосту не проверены.":
+      "Выберите проект и проверьте его доступность в изолированной среде. Выполнение команд и доступ к Windows не подразумеваются."}</p>
    </div>
    <div className="oc-intro-symbol" aria-hidden="true">
     <img src="/orbit-brand.svg" width="72" height="72" alt=""/>
@@ -191,9 +206,9 @@ export default function HermesCommander(){
      {state==="online"?"Hermes BRC · подключён":
       state==="partial"?"Hermes BRC · частичное подключение":"Hermes BRC · статус недоступен"}</strong>
      <small id="brc-time">{live?formatTime(live.observed_at):"Нет проверенного снимка"}</small></div>
-   <div><span>УСТРОЙСТВА НА СВЯЗИ</span><strong id="brc-device-count">{live?online+"/3":"—"}</strong>
+   <div><span>УСТРОЙСТВА НА СВЯЗИ</span><strong id="brc-device-count">{live?online+"/"+live.devices.length:"—"}</strong>
     <small>Присутствие не подтверждает работу инструментов</small></div>
-   <div><span>ПРОЕКТЫ В SANDBOX</span><strong id="brc-project-count">{live?reachable+"/4":"—"}</strong>
+   <div><span>{forkView?"ПРОЕКТЫ В РЕЕСТРЕ":"ПРОЕКТЫ В SANDBOX"}</span><strong id="brc-project-count">{live?reachable+"/"+live.workspaces.length:"—"}</strong>
     <small>Git и полномочия не проверены</small></div>
    <div><span>РЕЖИМ ДОСТУПА</span><strong className="oc-readonly">READ / ONLY</strong>
     <small>Запуск команд через браузер недоступен</small></div>
@@ -212,19 +227,19 @@ export default function HermesCommander(){
   </div>}
   <div className="oc-workgrid">
    <section className="oc-panel oc-project-panel" aria-labelledby="oc-project-title">
-    <SectionHead number="01 / КОНТЕКСТ" title="Проекты" sub="Четыре разрешённых sandbox-каталога. Переключение не выдаёт прав."/>
+    <SectionHead number="01 / КОНТЕКСТ" title="Проекты" sub={live?.schema===2?"Каталоги из реестра. Переключение не выдаёт прав.":"Четыре разрешённых sandbox-каталога. Переключение не выдаёт прав."}/>
     <label className="oc-search"><Search size={17} aria-hidden="true"/>
       <span className="sr-only">Поиск проекта</span>
       <input type="search" value={query} onChange={e=>setQuery(e.target.value)}
        placeholder="Найти проект…" autoComplete="off"/></label>
     <div id="brc-projects" className="oc-projects" role="group" aria-label="Рабочие пространства">
      {shown.map(p=><button type="button" key={p.repo} data-project={p.repo}
-      aria-pressed={p.repo===selected} className={"oc-project"+(p.repo===selected?" selected":"")}
+      aria-pressed={p.repo===current.repo} className={"oc-project"+(p.repo===current.repo?" selected":"")}
       onClick={()=>{setSelected(p.repo);setCopied("");setClientStatus("Выберите проект для проверки в своём MCP-клиенте.");}}>
       <span className="oc-project-mark"><FolderGit2 size={20} aria-hidden="true"/></span>
       <span><strong>{p.name}</strong><small>{p.branch} · Git не проверен</small></span>
       <ArrowUpRight size={14} aria-hidden="true"/></button>)}
-     {!shown.length&&<p className="oc-empty">Проекты по запросу не найдены.</p>}
+     {!shown.length&&<p className="oc-empty">{forkView&&!choices.length?"Нет доступных проектов":"Проекты по запросу не найдены."}</p>}
     </div>
     <div className="oc-panel-foot"><GitBranch size={16} aria-hidden="true"/>
      Известный путь не подтверждает Git HEAD, чистоту репозитория или право записи.</div>
@@ -234,21 +249,21 @@ export default function HermesCommander(){
       <h2 id="brc-selected-name">{current.name}</h2><p>{current.caption}</p></div>
       <span id="brc-selected-state" className={"oc-state oc-state-"+(selectedState||"unknown")}>{stateLabel(selectedState)}</span>
     </div>
-    <div className="oc-path-title"><FolderGit2 size={18} aria-hidden="true"/> РАЗРЕШЁННЫЙ ПУТЬ В SANDBOX</div>
+    <div className="oc-path-title"><FolderGit2 size={18} aria-hidden="true"/> {forkView?"КАТАЛОГ ИЗ РЕЕСТРА":"РАЗРЕШЁННЫЙ ПУТЬ В SANDBOX"}</div>
     <div className="oc-path"><code id="brc-path" ref={codeRef}>{projectSandboxRoot(current)}</code>
-     <button id="brc-copy" type="button" onClick={copyPath} aria-label="Скопировать путь sandbox">
+     <button id="brc-copy" type="button" onClick={copyPath} disabled={!current.repo} aria-label="Скопировать путь sandbox">
        {copied==="Скопировано"?<Check size={18}/>:<Clipboard size={18}/>}
        <span>{copied||"Копировать"}</span></button></div>
     <div className="oc-context-facts brc-facts">
-     <div><span>ИЗОЛИРОВАННАЯ СРЕДА</span><strong>Windows sandbox</strong></div>
+     <div><span>{forkView?"УСТРОЙСТВО":"ИЗОЛИРОВАННАЯ СРЕДА"}</span><strong>{forkView?(current.deviceName||"Неизвестно"):"Windows sandbox"}</strong></div>
      <div><span>ВЕТКА (КОНТРАКТ)</span><strong id="brc-branch">{current.branch}</strong></div>
      <div><span>GIT HEAD / CLEAN</span><strong className="oc-unverified">Не проверено</strong></div>
      <div><span>ВЫПОЛНЕНИЕ КОМАНД</span><strong className="oc-unverified">Не подтверждено</strong></div>
     </div>
     <div className="oc-check-guide">
      <div><Workflow size={21} aria-hidden="true"/><div><strong>Безопасный маршрут проверки</strong>
-      <p>Подготовьте запрос для подключённого ChatGPT/Codex. Он ничего не запускает из браузера и не открывает Windows-хост.</p></div></div>
-     <button id="brc-client-check" type="button" className="oc-primary" onClick={copyClientCheck}>
+      <p>{forkView?"Подготовьте запрос для подключённого ChatGPT/Codex. Браузер не обращается к устройствам.":"Подготовьте запрос для подключённого ChatGPT/Codex. Он ничего не запускает из браузера и не открывает Windows-хост."}</p></div></div>
+     <button id="brc-client-check" type="button" className="oc-primary" onClick={copyClientCheck} disabled={!current.repo}>
        <Clipboard size={16} aria-hidden="true"/> Скопировать запрос проверки</button>
      <p id="brc-client-check-status" role="status" aria-live="polite">{clientStatus}</p>
     </div>
@@ -262,7 +277,7 @@ export default function HermesCommander(){
     <ul id="brc-devices" className="oc-devices" aria-label="Статусы устройств">
      {!live?<li className="oc-empty">Свежие данные устройств недоступны</li>:
       live.devices.map((d,i)=>{
-       const Icon=i===0?Monitor:Server;
+       const Icon=live.schema===1&&i===0?Monitor:Server;
        const age=d.last_seen_age_seconds+Math.max(0,Math.floor((now-Date.parse(live.observed_at))/1000));
        return <li key={d.name}><span className="oc-device-icon"><Icon size={18} aria-hidden="true"/></span>
         <div><strong>{d.name}</strong><small>Последний сигнал: ~{age} с назад (по снимку)</small></div>
@@ -275,7 +290,7 @@ export default function HermesCommander(){
     <div className="oc-access-list">
      <div><span><Activity size={16} aria-hidden="true"/> Чтение статусов</span><strong id="brc-read-access">{live?"Разрешено":"Не проверено"}</strong></div>
      <div><span><LockKeyhole size={16} aria-hidden="true"/> Выполнение команд</span><strong className="oc-unverified">Не проверено</strong></div>
-     <div><span><HardDrive size={16} aria-hidden="true"/> Оригинальный Windows</span><strong className="oc-denied">Закрыт</strong></div>
+     <div><span><HardDrive size={16} aria-hidden="true"/> {forkView?"Доступ к хосту":"Оригинальный Windows"}</span><strong className={forkView?"oc-unverified":"oc-denied"}>{forkView?"Не проверено":"Закрыт"}</strong></div>
      <div><span><ShieldCheck size={16} aria-hidden="true"/> Новые проекты</span><strong className="oc-unverified">Не допущено</strong></div>
     </div>
     <p id="brc-diagnostic" className="oc-diagnostic" role="status">{diagnostic}</p>

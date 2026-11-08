@@ -5,8 +5,17 @@ set -Eeuo pipefail
 
 readonly UPSTREAM_SHA="1cfe254e8d25b15f37048c3730134686abe60335"
 readonly UPSTREAM_URL="https://github.com/google-research/harness2.git"
+readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 
 die() { printf 'harness2: %s\n' "$*" >&2; exit 2; }
+run_official_cli() {
+  # Never load untrusted in-tree __pycache__ bytecode from the pinned checkout.
+  local cache_root rc=0
+  cache_root="$(mktemp -d /tmp/hermes-h2-pycache.XXXXXXXX)" || die "cannot isolate Python bytecode cache"
+  PYTHONDONTWRITEBYTECODE=1 PYTHONPYCACHEPREFIX="$cache_root" "$@" || rc=$?
+  rm -rf -- "$cache_root" || die "cannot clean isolated Python bytecode cache"
+  return "$rc"
+}
 help() {
   cat <<'EOF'
 Usage: bash scripts/harness2_upstream.sh status
@@ -35,6 +44,12 @@ readonly BIN="$INSTALL/.venv/bin"
 command -v git >/dev/null 2>&1 || die "git unavailable"
 [[ "$(git -C "$SRC" rev-parse HEAD 2>/dev/null)" == "$UPSTREAM_SHA" ]] || die "upstream revision mismatch"
 [[ "$(git -C "$SRC" remote get-url origin 2>/dev/null)" == "$UPSTREAM_URL" ]] || die "unexpected source origin"
+# HEAD and origin alone cannot detect local edits to original tracked upstream code.
+git -C "$SRC" diff --no-ext-diff --quiet HEAD -- 2>/dev/null || die "upstream tracked checkout differs from pin"
+# New executable source files are not detected by git diff. Allow bytecode cache
+# only because official Python calls below use a fresh, isolated cache prefix.
+python3 -I -B "$SCRIPT_DIR/harness2_upstream_manifest.py" --verify-untracked-source 2>/dev/null ||
+  die "untracked executable upstream source refused"
 [[ -x "$BIN/harness2-check" && -x "$BIN/harness2-report" && -x "$BIN/harness2-setup" ]] || die "upstream CLI not installed"
 cd -- "$SRC"
 case "$1" in
@@ -44,19 +59,19 @@ case "$1" in
     ;;
   check)
     shift
-    exec "$BIN/harness2-check" "$@"
+    run_official_cli "$BIN/harness2-check" "$@"
     ;;
   report)
     shift
-    exec "$BIN/harness2-report" "$@"
+    run_official_cli "$BIN/harness2-report" "$@"
     ;;
   summary)
     [[ $# -eq 2 ]] || die "provide a single original runs/.../summary.json path"
-    exec python3 "$(dirname -- "${BASH_SOURCE[0]}")/harness2_upstream_manifest.py" "$2"
+    exec python3 -I -B "$SCRIPT_DIR/harness2_upstream_manifest.py" "$2"
     ;;
   setup-preview)
     [[ $# -eq 2 ]] || die "specify exactly one supported benchmark"
-    case "$2" in lab|jb|wb) exec "$BIN/harness2-setup" "$2" --dry-run ;; *) die "unsupported benchmark" ;; esac
+    case "$2" in lab|jb|wb) run_official_cli "$BIN/harness2-setup" "$2" --dry-run ;; *) die "unsupported benchmark" ;; esac
     ;;
   *)
     die "unknown command - no benchmark execution permitted"

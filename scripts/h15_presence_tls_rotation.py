@@ -22,7 +22,7 @@ import subprocess
 import time
 from typing import Callable
 
-from scripts.h15_presence_tls_preflight import PreflightError, check
+from scripts.h15_presence_tls_preflight import PreflightError, _openssl, check
 
 TLS_HOME = Path("/var/lib/hermes-device-fabric/tls")
 SERVICE = "hermes-device-fabric-pilot.service"
@@ -180,25 +180,48 @@ def _switch(paths: RotationPaths, name: str, pointer: str = "active") -> None:
             tmp.unlink()
 
 
-def _probe(*, ca: Path, leaf: Path, port: int = PORT, hostname: str = "localhost") -> bool:
+def _probe_tls_context(ca: Path) -> ssl.SSLContext:
+    """Create a strict context. Unit tests patch this wrapper, not global ssl."""
     ctx = ssl.create_default_context(cafile=str(ca))
     ctx.check_hostname = True
-    # systemctl can mark a simple process active before it binds the port.
-    # Retry transport startup briefly, never a mismatched TLS identity.
-    for attempt in range(3):
+    return ctx
+
+
+def _probe_loopback(port: int) -> socket.socket:
+    """Keep the transport bound to loopback and the existing short deadline."""
+    return socket.create_connection(("127.0.0.1", port), timeout=1.5)
+
+
+def _probe_retry_pause() -> None:
+    time.sleep(0.5)
+
+
+def _probe_expected_der(leaf: Path) -> bytes:
+    """Read the exact signed leaf identity; distinct from TLS trust checks."""
+    return subprocess.run(
+        ["openssl", "x509", "-in", str(leaf), "-outform", "DER"],
+        capture_output=True, check=True, timeout=3,
+    ).stdout
+
+
+def _probe(*, ca: Path, leaf: Path, port: int = PORT, hostname: str = "localhost") -> bool:
+    ctx = _probe_tls_context(ca)
+    # systemctl may report active while Python is still binding the WSS
+    # listener. On the owner VPS that race caused both first promotion and
+    # immediate rollback probes to miss a valid certificate, stranding the
+    # durable recovery marker despite a healthy fallback service.
+    # Bound both socket wait and retries; never retry a *wrong* TLS identity.
+    for attempt in range(8):
         try:
-            with socket.create_connection(("127.0.0.1", port), timeout=3) as sock:
+            with _probe_loopback(port) as sock:
                 with ctx.wrap_socket(sock, server_hostname=hostname) as channel:
                     actual = channel.getpeercert(binary_form=True)
-                    expected = subprocess.run(
-                        ["openssl", "x509", "-in", str(leaf), "-outform", "DER"],
-                        capture_output=True, check=True, timeout=3,
-                    ).stdout
+                    expected = _probe_expected_der(leaf)
                     return channel.version() in ("TLSv1.2", "TLSv1.3") and actual == expected
         except (OSError, ssl.SSLError, TimeoutError, subprocess.SubprocessError):
-            if attempt == 2:
+            if attempt == 7:
                 return False
-            time.sleep(0.4)
+            _probe_retry_pause()
     return False
 
 
@@ -282,6 +305,25 @@ def _transaction(paths: RotationPaths, *, gid: int) -> str | None:
     return name
 
 
+def _publish_transaction(paths: RotationPaths, old: str, *, gid: int) -> None:
+    """Durably publish a complete rollback marker before changing TLS identity.
+
+    A crash during file creation may leave a private temporary marker, but it
+    must never leave an empty/partial live .rollback-target that blocks recovery.
+    """
+    marker = paths.root / ".rollback-target"
+    tmp = paths.root / (".rollback-target-" + secrets.token_hex(8))
+    try:
+        _write(tmp, old.encode("ascii"), uid=paths.owner_uid, gid=gid, mode=0o600)
+        if marker.exists() or marker.is_symlink():
+            raise RotationError("RECOVERY_REQUIRED")
+        os.replace(tmp, marker)
+        _sync_dir(paths.root)
+    finally:
+        if tmp.exists() or tmp.is_symlink():
+            tmp.unlink()
+
+
 def _clear_transaction(paths: RotationPaths) -> None:
     (paths.root / ".rollback-target").unlink()
     _sync_dir(paths.root)
@@ -300,6 +342,12 @@ def recover(paths: RotationPaths, *, gid: int, unit: str = SERVICE,
             raise RotationError("RECOVERY_HEALTH_UNVERIFIED")
     except Exception as exc:
         raise RotationError("RECOVERY_HEALTH_UNVERIFIED") from exc
+    # A crash may have happened after promotion began. Quarantine its pending
+    # pointer so tomorrow's auto run cannot silently retry that candidate.
+    pending = _pending_name(paths, gid=gid)
+    if pending is not None and pending != old:
+        (paths.root / "pending").unlink()
+        _sync_dir(paths.root)
     _clear_transaction(paths)
     return "ROTATION=RECOVERED"
 
@@ -339,9 +387,7 @@ def activate(paths: RotationPaths, name: str, *, gid: int, unit: str = SERVICE,
         raise RotationError("INITIAL_MIGRATION_REQUIRED")
     if old == name:
         return "ROTATION=ALREADY_ACTIVE"
-    _write(paths.root / ".rollback-target", old.encode("ascii"),
-           uid=paths.owner_uid, gid=gid, mode=0o600)
-    _sync_dir(paths.root)
+    _publish_transaction(paths, old, gid=gid)
     _switch(paths, name)
     try:
         if restart(unit) and probe(ca=paths.ca, leaf=paths.generations / name / "cert.pem"):
@@ -367,6 +413,32 @@ def activate(paths: RotationPaths, name: str, *, gid: int, unit: str = SERVICE,
     raise RotationError("ROTATION_ROLLED_BACK" if recovered else "ROLLBACK_HEALTH_UNVERIFIED")
 
 
+def _trusted_expired_generation(paths: RotationPaths, name: str, *, at: dt.datetime) -> bool:
+    """Permit recovery from expiry only if the former leaf was trusted.
+
+    OpenSSL rejects expired certificates at the current time. Revalidate the
+    same leaf/key, CA chain, SAN and EKU just before notAfter, then require the
+    replacement leaf to pass the regular present-time preflight in activate().
+    Never turn off hostname or CA verification.
+    """
+    generation = paths.generations / name
+    try:
+        value = _openssl("x509", "-in", str(generation / "cert.pem"),
+                         "-enddate", "-noout").decode("ascii")
+        if not value.startswith("notAfter="):
+            return False
+        end = dt.datetime.strptime(value[9:], "%b %d %H:%M:%S %Y %Z").replace(
+            tzinfo=dt.timezone.utc)
+        if end >= at:
+            return False
+        check(paths.ca, generation / "cert.pem", generation / "key.pem",
+              hostname="localhost", min_valid_days=0,
+              now=end - dt.timedelta(seconds=1), key_group_readable=True)
+        return True
+    except (PreflightError, ValueError, TypeError, UnicodeError):
+        return False
+
+
 def auto(paths: RotationPaths, *, gid: int,
          restart: Callable[[str], bool] = _restart,
          probe: Callable[..., bool] = _probe,
@@ -384,7 +456,14 @@ def auto(paths: RotationPaths, *, gid: int,
               min_valid_days=3, now=at, key_group_readable=True)
         return "ROTATION=NOT_DUE"
     except PreflightError as exc:
-        if str(exc) != "CERTIFICATE_EXPIRING_TOO_SOON":
+        if str(exc) == "CERTIFICATE_EXPIRING_TOO_SOON":
+            pass
+        elif (str(exc) == "CERTIFICATE_OR_KEY_VERIFICATION_FAILED"
+              and _trusted_expired_generation(paths, old, at=at)):
+            # Expired but historically trusted: the new candidate still must
+            # pass all present-time checks and real TLS health verification.
+            pass
+        else:
             raise RotationError("ACTIVE_CERTIFICATE_INVALID") from exc
     pending = _pending_name(paths, gid=gid)
     if pending is None or pending == old:

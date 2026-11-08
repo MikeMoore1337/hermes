@@ -1,7 +1,7 @@
 # ADR: bounded Hermes delegation and Kanban DAG (Issues #474 / #475)
 
 Date: 2026-10-22
-Status: **PROPOSED / SOURCE_REVIEWED / RUNTIME_NOT_AUTHORIZED**.
+Status: **RESEARCH_ACCEPTED / SOURCE_ONLY_VERIFIED / RUNTIME_NOT_AUTHORIZED** (2026-11-05; #474/#475 closed in research scope; no live delegation or DAG activation).
 Owners: [#474](https://github.com/MikeMoore1337/hermes/issues/474), [#475](https://github.com/MikeMoore1337/hermes/issues/475).
 This ADR does **not** enable an agent, add permissions, install an upstream package, change #271, or grant model expenditure.
 

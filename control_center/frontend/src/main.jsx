@@ -3,7 +3,7 @@ import {createRoot} from "react-dom/client";
 import {ShieldCheck,LockKeyhole,Activity,RefreshCw,Search,Github,ArrowRight,
   AlertTriangle,Radio,Server,Clock3,Database,ExternalLink,ChevronsRight,ChevronDown,
   CircleHelp,ShieldAlert,Eye,Signal,Check,LogIn,ArrowUpRight,
-  LayoutDashboard,Inbox,Layers3,BookOpenText,FilePenLine,Bot,Gauge,Menu,X,ChevronRight} from "lucide-react";
+  LayoutDashboard,Inbox,Layers3,BookOpenText,FilePenLine,Bot,Gauge,Menu,X,ChevronRight,Monitor,Sun,Moon,Info,LogOut} from "lucide-react";
 import {groups,statuses,validSnapshot,counts,filterServices} from "./health.js";
 import "./style.css";
 import {registerPwa} from "./register-pwa.js";
@@ -15,11 +15,36 @@ import OrbitOverview from "./OrbitOverview.jsx";
 import HermesCommander from "./HermesCommander.jsx";
 import "./orbit-operator.css";
 import "./orbit-unified.css";
+import "./apple27.css";
+import "./apple27-fidelity.css";
+import "./apple27-wide-login.css";
+import "./apple27-polish.css";
+import "./apple27-readability.css";
+import "./apple27-pwa-safe-area.css";
 
 const ISSUE33="https://github.com/MikeMoore1337/hermes/issues/33";
 const ISSUE163="https://github.com/MikeMoore1337/hermes/issues/163";
 const UI_VERSION="0.3.0";
-const nav=["all","inbox","articles","commander","ops","research","qa","agent","codex"];
+const THEME_KEY="hermes-control-center-ui-theme";
+const themeModes=["dark","light"];
+const themeLabels={dark:"Тёмная",light:"Светлая"};
+function initialTheme(){
+ try{
+  const saved=localStorage.getItem(THEME_KEY);
+  if(themeModes.includes(saved))return saved;
+  // One-time migration: preserve the previously visible system-derived color,
+  // then persist it as an explicit choice. Never keep following OS changes.
+  if(saved==="system")return window.matchMedia?.("(prefers-color-scheme: light)").matches?"light":"dark";
+ }catch{/* storage and media access may be unavailable */}
+ return "dark";
+}
+function ThemeButton({theme,onTheme,className="hcc-theme-toggle"}){
+ const Icon=theme==="dark"?Moon:Sun;
+ return <button type="button" className={className} aria-label={"Тема: "+themeLabels[theme]+". Переключить"} title={"Тема: "+themeLabels[theme]} onClick={onTheme}>
+  <Icon size={16} strokeWidth={1.7} aria-hidden="true"/><span>{themeLabels[theme]}</span>
+ </button>;
+}
+const nav=["all","inbox","articles","commander","ops","research","qa","agent"];
 const navName=key=>key==="commander"?"Hermes Commander":key==="articles"?"Статьи YFC":groups[key].name;
 const icons={news:Radio,ops:Activity,alerts:Signal,qa:ShieldCheck,
   research:Search,network:ShieldCheck,agent_bounded:Activity,agent:LockKeyhole};
@@ -34,29 +59,82 @@ function Brand({large=false}){
 function InfoBadge({children,tone=""}){return <span className={"badge "+tone}>{children}</span>;}
 function State({value}){const p=statuses[value]||statuses.unknown;return <span className={"state state-"+p.tone}><i aria-hidden="true"/>{p.label}</span>;}
 const navIcons={all:LayoutDashboard,inbox:Inbox,articles:FilePenLine,commander:Layers3,ops:Activity,research:BookOpenText,qa:ShieldCheck,agent:Bot,codex:Gauge};
+const sidebarName={all:"Обзор",inbox:"Входящие",commander:"Hermes Commander",ops:"Ops Watch",research:"Research Scout",qa:"QA / CI",agent:"AI Agent",articles:"Статьи YFC"};
+const navSections=[
+ {title:"РАБОЧЕЕ ПРОСТРАНСТВО",keys:["all","inbox","commander"]},
+ {title:"НАБЛЮДЕНИЕ",keys:["ops","research","qa","agent"]},
+ {title:"КОНТЕНТ",keys:["articles"]}
+];
 function Nav({view,onView,mode,activeWidget}){
  return <nav className="nav-list" aria-label="Разделы управления">
- {nav.filter(key=>key!=="articles"||mode==="github").map((key,i)=>{
-  const Icon=navIcons[key]||LayoutDashboard;
-  return <button key={key} type="button" className={"nav-link"+(view===key&&!activeWidget?" is-active":"")} aria-current={view===key&&!activeWidget?"page":undefined}
-   onClick={()=>onView(key)}>
-   <span className="nav-number" aria-hidden="true">{String(i+1).padStart(2,"0")}</span>
-   <span className="orbit-nav-icon"><Icon size={18} strokeWidth={1.65} aria-hidden="true"/></span><span>{navName(key)}</span>
-  </button>;
- })}
+  {navSections.map(group=>{
+   const keys=group.keys.filter(key=>key!=="articles"||mode==="github");
+   if(!keys.length)return null;
+   return <div className="orbit-nav-group" key={group.title}>
+    <div className="orbit-nav-group-title">{group.title}</div>
+    {keys.map(key=>{
+     const Icon=navIcons[key]||LayoutDashboard;
+     return <button key={key} type="button" aria-label={navName(key)}
+      className={"nav-link"+(view===key&&!activeWidget?" is-active":"")}
+      aria-current={view===key&&!activeWidget?"page":undefined} onClick={()=>onView(key)}>
+      <span className="orbit-nav-icon"><Icon size={18} strokeWidth={1.7} aria-hidden="true"/></span>
+      <span>{sidebarName[key]}</span>
+     </button>;
+    })}
+   </div>;
+  })}
  </nav>;
 }
-function Header({view,authMode,onLogout,onMenu,menuOpen,activeWidget}){
+function Header({view,authMode,onLogout,onMenu,menuOpen,activeWidget,theme,onTheme,onView}){
+ const [searchOpen,setSearchOpen]=useState(false),[infoOpen,setInfoOpen]=useState(false),[query,setQuery]=useState("");
+ useEffect(()=>{
+  if(!searchOpen)return;
+  const onEscape=e=>{if(e.key==="Escape")setSearchOpen(false);};
+  window.addEventListener("keydown",onEscape);
+  document.querySelector(".orbit-header-search input")?.focus();
+  return()=>window.removeEventListener("keydown",onEscape);
+ },[searchOpen]);
+ const available=nav.filter(key=>key!=="articles"||authMode==="github")
+  .filter(key=>(sidebarName[key]+" "+navName(key)).toLowerCase().includes(query.toLowerCase().trim()));
  return <header className="orbit-topbar">
-   <button type="button" className="orbit-topbar-menu" onClick={onMenu} aria-expanded={menuOpen} aria-label={menuOpen?"Закрыть меню разделов":"Открыть меню разделов"}>
+   <button type="button" className="orbit-topbar-menu" onClick={onMenu}
+    aria-expanded={menuOpen} aria-label={menuOpen?"Закрыть меню разделов":"Открыть меню разделов"}>
     {menuOpen?<X size={20}/>:<Menu size={20}/>}
    </button>
-   <img className="orbit-topbar-mobile-brand" src="/orbit-brand.svg" alt="" width="31" height="31" aria-hidden="true"/>
-   <div className="orbit-topbar-breadcrumb"><span>HERMES</span><ChevronRight size={15}/><span>COMMAND CENTER</span><ChevronRight size={15}/><strong>{activeWidget||navName(view)}</strong></div>
-   <div className="orbit-topbar-tools">
-    <InfoBadge tone="outline"><LockKeyhole size={13} aria-hidden="true"/> {view==="articles"?"Публикация вручную":"Только чтение"}</InfoBadge>
-    {authMode==="github"&&<button type="button" className="owner-button" onClick={onLogout}><LogIn size={15} aria-hidden="true"/> Выйти</button>}
+   <div className="orbit-topbar-mobile-identity">
+    <img className="orbit-topbar-mobile-brand" src="/orbit-brand.svg" alt="" width="34" height="30" aria-hidden="true"/>
+    <span>Hermes</span>
    </div>
+   <div className="orbit-topbar-breadcrumb"><span>Hermes</span><ChevronRight size={14}/><strong>{activeWidget||sidebarName[view]||navName(view)}</strong></div>
+   <div className="orbit-topbar-tools">
+    <button type="button" className="orbit-tool-button" aria-label="Поиск по разделам" title="Поиск по разделам"
+     aria-expanded={searchOpen} onClick={()=>{setSearchOpen(x=>!x);setInfoOpen(false);}}>
+     <Search size={17} aria-hidden="true"/>
+    </button>
+    <ThemeButton theme={theme} onTheme={onTheme}/>
+    <button type="button" className="orbit-tool-button" aria-label="Информация о центре" title="Информация о центре"
+     aria-expanded={infoOpen} onClick={()=>{setInfoOpen(x=>!x);setSearchOpen(false);}}>
+     <Info size={17} aria-hidden="true"/>
+    </button>
+    {authMode==="github"
+     ?<button type="button" className="orbit-logout-button" onClick={onLogout} aria-label="Выйти" title="Завершить сеанс"><LogOut size={16} aria-hidden="true"/><span>Выйти</span></button>
+     :<span className="orbit-owner-avatar" role="img" aria-label="Интерфейс Hermes"><span>H</span></span>}
+   </div>
+   {searchOpen&&<div className="orbit-header-search" role="dialog" aria-label="Поиск раздела">
+    <label htmlFor="orbit-search-views">Найти раздел</label>
+    <input id="orbit-search-views" value={query} onChange={e=>setQuery(e.target.value)} placeholder="Название раздела…" />
+    <div className="orbit-header-search-results">
+     {available.length?available.map(key=>{const Icon=navIcons[key]||LayoutDashboard;return <button type="button" key={key}
+      onClick={()=>{onView(key);setSearchOpen(false);setQuery("");}}><Icon size={16} aria-hidden="true"/>{sidebarName[key]}</button>;}):
+      <p>Разделы не найдены</p>}
+    </div>
+    <button type="button" className="orbit-search-close" onClick={()=>setSearchOpen(false)}>Закрыть</button>
+   </div>}
+   {infoOpen&&<div className="orbit-header-info" role="status">
+    <strong>Hermes Command Center</strong>
+    <p>Данные служб отображаются по защищённому снимку. Действия в Hermes Commander доступны только в пределах разрешений текущей сессии.</p>
+    <div className="orbit-header-info-actions"><a href={ISSUE33} target="_blank" rel="noopener noreferrer">Политика доступа <ArrowUpRight size={14} aria-hidden="true"/></a><button type="button" onClick={()=>setInfoOpen(false)}>Закрыть</button></div>
+   </div>}
  </header>;
 }
 const moduleCopy={
@@ -94,7 +172,6 @@ function Registry({snapshot,view,search,setSearch,filter,setFilter}){
    <div><span className="eyebrow">СЛУЖБЫ И КОМПОНЕНТЫ / SYSTEMD</span>
     <h2>{view==="all"?"Реестр служб":groups[view].name}</h2>
     <p>Статусы системных единиц, без прав управления.</p></div>
-   <InfoBadge>{services.length} объектов</InfoBadge>
   </div>
   <div className="registry-toolbar">
    <label className="search-field"><Search size={16} aria-hidden="true"/><span className="sr-only">Поиск по службам</span>
@@ -174,7 +251,7 @@ function SignalPanel({snapshot,error}){
  const problems=(snapshot?.services||[]).filter(s=>["failed","unknown","unexpected_active"].includes(s.state));
  return <aside className="side-stack">
   <section className="right-panel">
-   <div className="side-heading"><span className="eyebrow">СИГНАЛЫ И КОНТЕКСТ</span><InfoBadge tone="muted">Из snapshot</InfoBadge></div>
+   <div className="side-heading"><span className="eyebrow">СИГНАЛЫ И КОНТЕКСТ</span></div>
    <div className="signal-list">
     <div className="signal-item"><span className="timeline-point blue"/><div>
      <small>СИСТЕМНЫЙ СНИМОК</small><strong>{snapshot?"Данные получены":"Данные недоступны"}</strong>
@@ -197,7 +274,7 @@ function SignalPanel({snapshot,error}){
   </section>
  </aside>;
 }
-function OperatorApp({authMode,onLogout}){
+function OperatorApp({authMode,onLogout,theme,onTheme}){
  const [view,setView]=useState(()=>window.location.pathname==="/hermes-brc"?"commander":"all");
  const [menuOpen,setMenuOpen]=useState(false);
  const [activeWidget,setActiveWidget]=useState(null);
@@ -247,6 +324,11 @@ function OperatorApp({authMode,onLogout}){
   return()=>window.removeEventListener("popstate",restore);
  },[]);
  const onView=key=>{
+  // Existing dashboard shortcuts still target the unified quota section.
+  if(key==="codex"||key==="quotas"){
+   const tab=document.querySelector(".quota295-nav");
+   if(tab){tab.click();return;}
+  }
   // Close independent monitoring overlays when switching React views,
   // including the mobile navigation that has no .nav-link event target.
   window.dispatchEvent(new Event("hermes:orbit-view-change"));
@@ -257,13 +339,15 @@ function OperatorApp({authMode,onLogout}){
  };
  return <div className="shell theme-orbit">
   <a href="#main-content" className="skip-link">Перейти к основному содержимому</a>
+  
   <div className="orbit-app-layout">
    <aside className={"orbit-rail"+(menuOpen?" is-open":"")} aria-label="Разделы и рабочее пространство">
     <div className="orbit-rail-brand"><Brand/></div>
-    <div className="orbit-rail-label"><span>РАЗДЕЛЫ</span><span>ORBIT / 3.0</span></div>
     <div className="atlas-section-nav" onClickCapture={event=>{
       const widget=event.target.closest(".ai272-nav,.quota295-nav,.infra294-nav");
       if(!widget)return;
+      // Keep a visible React mount for legacy panels after switching from YFC Articles.
+      if(window.location.pathname!=="/")window.history.pushState({view:"widget"},"","/");
       setActiveWidget(widget.matches(".ai272-nav")?"AI Usage Analytics":
        widget.matches(".quota295-nav")?"Квоты и инструменты":"Инфраструктура");
       if(menuOpen)setMenuOpen(false);
@@ -281,17 +365,28 @@ function OperatorApp({authMode,onLogout}){
       <button className="refresh-button" type="button" onClick={reload} disabled={busy}><RefreshCw size={16} className={busy?"spin":""}/> Обновить снимок</button>
      </div>}
     </div>
-    <div className="orbit-rail-bottom"><span>РАБОЧЕЕ ПРОСТРАНСТВО</span>
-     <div className="orbit-workspace-pill"><img src="/orbit-brand.svg" width="38" height="38" alt=""/><div><strong>Hermes</strong><small>Изолированный контур</small></div></div>
+    <div className="orbit-rail-bottom">
+     <div className="orbit-workspace-pill"><span className="orbit-workspace-lock"><LockKeyhole size={22} aria-hidden="true"/></span><div><strong>Контур Hermes</strong><small>Режим только чтения</small></div></div>
      <div className="orbit-rail-foot"><i aria-hidden="true"/> {snapshot?"Снимок получен":"Состояние не проверено"}</div>
     </div>
    </aside>
    <button type="button" aria-label="Закрыть меню" className={"orbit-rail-backdrop"+(menuOpen?" is-open":"")} onClick={()=>setMenuOpen(false)} tabIndex={menuOpen?0:-1}/>
    <div className="orbit-content">
-    <Header view={view} authMode={authMode} onLogout={onLogout} onMenu={()=>setMenuOpen(v=>!v)} menuOpen={menuOpen} activeWidget={activeWidget}/>
+    <Header view={view} authMode={authMode} onLogout={onLogout} onMenu={()=>setMenuOpen(v=>!v)} menuOpen={menuOpen} activeWidget={activeWidget} theme={theme} onTheme={onTheme} onView={onView}/>
     <main id="main-content" className="orbit-main" tabIndex={-1}>
-     {view==="all"?<><OrbitOverview snapshot={snapshot} error={error} onView={onView} onRefresh={reload} busy={busy} Registry={Registry}
-      registryProps={{snapshot,view,search,setSearch,filter,setFilter}}/><div className="center-area orbit-compact-codex" aria-label="Данные Codex и дополнительные панели"><CodexPanel compact/></div></>:
+     {activeWidget?<div className="orbit-module-shell orbit-widget-module" aria-label={activeWidget}>
+      {activeWidget==="Квоты и инструменты"&&<header className="quota-unified-intro">
+       <div><span className="eyebrow">РЕСУРСЫ И НАБЛЮДЕНИЕ</span>
+        <h1>Ресурсы AI и инструменты</h1>
+        <p>Подтверждённые лимиты, история и очередь Codex. Неизвестное потребление не равно нулю.</p>
+       </div>
+      </header>}
+      <div className="center-area orbit-widget-host">
+       {activeWidget==="Квоты и инструменты"&&<CodexPanel/>}
+      </div>
+     </div>:
+      view==="all"?<><OrbitOverview snapshot={snapshot} error={error} onView={onView} onRefresh={reload} busy={busy} Registry={Registry}
+      registryProps={{snapshot,view,search,setSearch,filter,setFilter}}/></>:
       <div className="orbit-module-shell">
        {view!=="inbox"&&view!=="articles"&&view!=="commander"&&<OrbitModuleIntro view={view}/>}
        {view==="commander"?<HermesCommander/>:view==="articles"?<YfcArticles/>:view==="inbox"?<OperatorInbox/>:
@@ -299,11 +394,11 @@ function OperatorApp({authMode,onLogout}){
         {error&&<div className="inline-error" role="alert"><AlertTriangle size={17}/>{error}</div>}
         <div className="operator-grid">
          <div className="center-area">
-          {view==="codex"?<CodexPanel/>:<>
+          {<>
            {view==="research"&&<ResearchPanel research={snapshot?.research}/>}
            <Registry snapshot={snapshot} view={view} search={search} setSearch={setSearch} filter={filter} setFilter={setFilter}/>
           </>}
-          {view!=="codex"&&<section className="context-panel"><div><span className="eyebrow">ИСТОЧНИК</span><strong>systemd · защищённый снимок</strong>
+          {<section className="context-panel"><div><span className="eyebrow">ИСТОЧНИК</span><strong>systemd · защищённый снимок</strong>
             <p>Разрешённый список {snapshot?.services?.length??"—"} компонентов, без журналов и токенов.</p></div>
            <div><span className="eyebrow">РЕЖИМ</span><strong>Только чтение</strong><p>Данные обновляются раз в минуту.</p></div>
            <a href={ISSUE163} target="_blank" rel="noopener noreferrer">Задача разработки <ExternalLink size={14}/></a></section>}
@@ -313,10 +408,10 @@ function OperatorApp({authMode,onLogout}){
        </>}
       </div>}
     </main>
-    <footer className="footer">HERMES COMMAND CENTER <span>·</span> Состояние systemd, не результат выполнения заданий <span>·</span> <a href={ISSUE33} target="_blank" rel="noopener noreferrer">Политика доступа</a></footer>
+    
    </div>
    <nav className="orbit-app-mobilebar" aria-label="Мобильная навигация">
-    {[["all","Обзор",LayoutDashboard],["inbox","Входящие",Inbox],["research","Исследования",BookOpenText],["qa","QA / CI",ShieldCheck]].map(([id,label,Icon])=>
+    {[["all","Обзор",LayoutDashboard],["inbox","Входящие",Inbox],["commander","Commander",Monitor]].map(([id,label,Icon])=>
      <button key={id} type="button" aria-current={view===id?"page":undefined} onClick={()=>onView(id)}><Icon size={19} aria-hidden="true"/>{label}</button>)}
     <button type="button" aria-expanded={menuOpen} onClick={()=>setMenuOpen(v=>!v)}><Menu size={19} aria-hidden="true"/>Ещё</button>
    </nav>
@@ -324,8 +419,10 @@ function OperatorApp({authMode,onLogout}){
  </div>;
 }
 
-function LoginPreview({onBack,active=false,unavailable=false}){
- return <OrbitLogin onBack={onBack} active={active} unavailable={unavailable}/>;
+function LoginPreview({onBack,active=false,unavailable=false,theme,onTheme}){
+ return <div className="hcc-login-host"><OrbitLogin onBack={onBack} active={active} unavailable={unavailable}
+   themeControl={<ThemeButton theme={theme} onTheme={onTheme} className="hcc-login-theme"/>}/>
+ </div>;
 }
 function serverAuthBootstrap(){
  const root=document.getElementById("root");
@@ -337,6 +434,15 @@ function serverAuthBootstrap(){
 function App(){
  const preview=new URLSearchParams(location.search).get("preview")==="login";
  const [auth,setAuth]=useState(serverAuthBootstrap);
+ const [theme,setTheme]=useState(initialTheme);
+ const cycleTheme=useCallback(()=>setTheme(x=>themeModes[(themeModes.indexOf(x)+1)%themeModes.length]),[]);
+ useEffect(()=>{
+  const light=theme==="light";
+  document.documentElement.dataset.hermesTheme=theme;
+  document.documentElement.dataset.hermesResolvedTheme=theme;
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content",light?"#f7f9fc":"#142033");
+  try{localStorage.setItem(THEME_KEY,theme);}catch{/* preference storage may be disabled */}
+ },[theme]);
  useEffect(()=>{
   if(serverAuthBootstrap())return;
   let active=true;
@@ -361,10 +467,10 @@ function App(){
   }catch(_){/* remain on protected screen; expiry will deny future APIs */}
  },[]);
  if(!auth)return <div className="auth-wait" role="status">Проверка доступа к Hermes Control Center…</div>;
- if(auth.mode==="unavailable")return <LoginPreview unavailable/>;
- if(auth.mode==="github"&&!auth.authenticated)return <LoginPreview active/>;
- if(preview)return <LoginPreview onBack={()=>window.location.assign("/")}/>;
- return <OperatorApp authMode={auth.mode} onLogout={logout}/>;
+ if(auth.mode==="unavailable")return <LoginPreview unavailable theme={theme} onTheme={cycleTheme}/>;
+ if(auth.mode==="github"&&!auth.authenticated)return <LoginPreview active theme={theme} onTheme={cycleTheme}/>;
+ if(preview)return <LoginPreview onBack={()=>window.location.assign("/")} theme={theme} onTheme={cycleTheme}/>;
+ return <OperatorApp authMode={auth.mode} onLogout={logout} theme={theme} onTheme={cycleTheme}/>;
 }
 createRoot(document.getElementById("root")).render(<App/>);
 void registerPwa();

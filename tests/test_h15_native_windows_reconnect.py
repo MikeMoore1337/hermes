@@ -13,7 +13,7 @@ from scripts import h15_native_windows_outbound as native
 
 def conf():
     return native.parse_settings(
-        "wss://hermes.mikemoore.top/ws", "h454-win-owner-test", "x" * 48
+        "wss://hermes.mikemoore.top/ws", native.EXPECTED_DEVICE_ID, "x" * 48
     )
 
 

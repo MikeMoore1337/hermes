@@ -45,8 +45,8 @@ done
 
 requirements="$release/deploy/requirements-gsc-readonly.txt"
 grep -Fxq 'google-auth==2.62.0' "$requirements" || fail "google_auth_pin_invalid"
-grep -Fxq 'requests==2.32.5' "$requirements" || fail "requests_pin_invalid"
-[[ "$(grep -Ev '^(#|[[:space:]]*$)' "$requirements")" == $'google-auth==2.62.0\nrequests==2.32.5' ]] ||
+grep -Fxq 'requests==2.33.0' "$requirements" || fail "requests_pin_invalid"
+[[ "$(grep -Ev '^(#|[[:space:]]*$)' "$requirements")" == $'google-auth==2.62.0\nrequests==2.33.0' ]] ||
   fail "requirements_scope_invalid"
 /usr/bin/python3 -c 'import sys; assert sys.version_info >= (3, 10)' ||
   fail "unsupported_python"
@@ -118,10 +118,12 @@ marker=/opt/hermes-gsc/.deps-ready
 [[ ! -L "$marker" ]] || fail "dependency_marker_symlink"
 [[ ! -e "$marker" || -f "$marker" ]] || fail "dependency_marker_unsafe"
 if [[ ! -f "$marker" ]]; then
-  "$venv/bin/python" -m pip --isolated --disable-pip-version-check install \
+  # Root installer has umask 077; wheels must remain importable by the
+  # non-root hermes-gsc service without exposing the private JSON key.
+  (umask 022; "$venv/bin/python" -m pip --isolated --disable-pip-version-check install \
     --no-input --no-cache-dir --only-binary=:all: \
     --index-url https://pypi.org/simple --timeout 8 --retries 0 \
-    -r "$requirements" >/dev/null 2>&1 ||
+    -r "$requirements" >/dev/null 2>&1) ||
     fail "pinned_wheel_install_failed"
 fi
 "$venv/bin/python" -m pip --isolated --disable-pip-version-check check \
@@ -129,6 +131,14 @@ fi
 "$venv/bin/python" -c \
   'from importlib.metadata import version; assert version("google-auth")=="2.62.0"; assert version("requests")=="2.32.5"' ||
   fail "dependency_version_mismatch"
+# Package metadata and pip check are insufficient: a root umask may leave
+# google/auth/ and its files 0700/0600, invisible to the service user.
+# This must pass OFFLINE and without reading the service-account credential.
+runuser -u hermes-gsc -- env -i PATH=/usr/bin:/bin \
+  HOME=/var/lib/hermes-gsc PYTHONDONTWRITEBYTECODE=1 \
+  "$venv/bin/python" -I -B -c \
+  'import requests; from google.auth.transport.requests import Request; from google.oauth2 import service_account' \
+  >/dev/null 2>&1 || fail "unprivileged_auth_import_failed"
 if [[ ! -f "$marker" ]]; then
   printf 'GOOGLE_AUTH=2.62.0\nREQUESTS=2.32.5\n' > "$marker"
   chmod 0400 "$marker"

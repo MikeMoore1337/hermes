@@ -27,6 +27,8 @@ from scripts.h15_native_windows_mcp_stdio import (
 HOST = "hermes.mikemoore.top"
 LOOPBACK = "127.0.0.1"
 DEVICE_NAME = "H15 Windows native read-only"
+# Never let a newly registered device impersonate the owner's original host.
+EXPECTED_DEVICE_ID = "h454-win-01335a1f6e6705b4"
 WIRE_VERSION = 1
 MAX_INCOMING = 8192
 MAX_CALLS = 16
@@ -78,7 +80,8 @@ def parse_settings(relay_url: str, device_id: str, token: str,
                    and uri.path == "/ws")
     if not allowed:
         raise NativeTransportDenied("relay_not_allowlisted")
-    if type(device_id) is not str or not DEVICE_ID.fullmatch(device_id):
+    if (type(device_id) is not str or device_id != EXPECTED_DEVICE_ID
+        or not DEVICE_ID.fullmatch(device_id)):
         raise NativeTransportDenied("invalid_device")
     if type(token) is not str or not TOKEN.fullmatch(token):
         raise NativeTransportDenied("invalid_credentials")

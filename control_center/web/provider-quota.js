@@ -1,7 +1,7 @@
 /* #295: one independent read-only quota card per actually identified service. */
 (() => {
   "use strict";
-  const ids = ["cloudflare_workers_ai", "codex", "desktop_commander", "github_api"];
+  const ids = ["cloudflare_workers_ai", "github_api"];
   const labels = {cloudflare_workers_ai: "Cloudflare Workers AI", codex: "Codex / ChatGPT",
     desktop_commander: "Desktop Commander", github_api: "GitHub API"};
   const stateText = {ok: "Доступно", low: "Квота на исходе",
@@ -268,13 +268,14 @@
   }
   function show(){
     active=true;document.documentElement.classList.add("quota295-active");
-    section.hidden=false;tab.classList.add("is-active");tab.setAttribute("aria-current","page");
-    refresh();
+    if(section&&section.isConnected){section.hidden=false;refresh();}
+    tab.classList.add("is-active");tab.setAttribute("aria-current","page");
   }
   function mount(){
     const nav=document.querySelector(".atlas-section-nav .nav-list");
     const target=document.querySelector(".center-area");
-    if(!nav||!target)return;
+    if(!nav)return;
+
     if(!tab||!tab.isConnected){
       tab=add("button","nav-link quota295-nav",nav);tab.type="button";
       add("span","nav-number",tab,"09");
@@ -282,6 +283,7 @@
       add("span","",tab,"Квоты и инструменты");
       tab.onclick=show;
     }
+    if(!target)return;
     if(!section||!section.isConnected){
       section=add("section","quota295-panel",target);
       section.hidden=!active;section.setAttribute("aria-label","Квоты и инструменты Hermes");
@@ -292,14 +294,15 @@
       const titleIcon=window.HermesOrbitIcons?.make("quota","heading");
       if(titleIcon)titleHeading.prepend(titleIcon);
       add("p","quota295-note",title,
-        "Каждому сервису - отдельная карточка. Неизвестное потребление не равно нулю.");
-      const button=add("button","quota295-reload",head,"Обновить");button.type="button";button.onclick=refresh;
+        "Codex отображается единой карточкой выше. Источники Cloudflare и GitHub показаны отдельно.");
+      const button=add("button","quota295-reload",head,"Обновить источники");button.type="button";button.onclick=refresh;
       grid=add("div","quota295-grid",section);
       announcement=add("p","sr-only",section);
       announcement.setAttribute("role","status");
       announcement.setAttribute("aria-atomic","true");
       lastAnnouncement="";
       render();
+      if(active)refresh();
     }
   }
   window.addEventListener("hermes:orbit-view-change",hide);

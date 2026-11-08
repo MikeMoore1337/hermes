@@ -19,7 +19,7 @@ def source_check(path: Path, *, now: dt.datetime | None = None) -> dict:
     ).astimezone(dt.timezone.utc)
     age = max(0, int((checked - observed).total_seconds()))
     return {
-        "schema": 1,
+        "schema": snapshot["schema"],
         "source": "hermes_brc_validated_snapshot",
         "check": "snapshot_validity_only",
         "checked_at": checked.isoformat().replace("+00:00", "Z"),
@@ -29,7 +29,7 @@ def source_check(path: Path, *, now: dt.datetime | None = None) -> dict:
             {
                 "name": device["name"],
                 "status": device["status"],
-                "last_seen_age_seconds": device["last_seen_age_seconds"] + age,
+                "last_seen_age_seconds": min(86400, device["last_seen_age_seconds"] + age),
                 "command_execution": "not_verified",
             }
             for device in snapshot["devices"]
@@ -41,6 +41,6 @@ def source_check(path: Path, *, now: dt.datetime | None = None) -> dict:
             "tools": "not_probed",
             "git": "not_probed",
             "onboarding": "disabled",
-            "native_host": "disabled",
+            "native_host": "disabled" if snapshot["schema"] == 1 else "not_probed",
         },
     }

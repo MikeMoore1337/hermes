@@ -24,6 +24,8 @@ BLOCKED_PARTS = frozenset({
     "credentials", ".env", ".env.local", ".env.production",
 })
 BLOCKED_SUFFIXES = (".pem", ".key", ".pfx", ".p12", ".kdbx")
+# Deny credential-like basenames even when they use permitted source extensions.
+SENSITIVE_STEM = re.compile(r"^\.?(?:secrets?|credentials?|tokens?|passwords?|api[-_]?keys?|service[-_]?accounts?|private[-_]?keys?|config[._-]local)(?:[._-]|$)", re.I)
 _ROOT = re.compile(r"^[A-Za-z]:\\")
 
 
@@ -74,7 +76,8 @@ def classify_native_request(path: str, action: str) -> PermissionDecision:
     if relative:
         components = tuple(p.casefold() for p in relative.split("\\"))
         last = components[-1]
-        if any(p in BLOCKED_PARTS or p.startswith(".env.") for p in components) or (
+        if any(p in BLOCKED_PARTS or p.startswith(".env.") or SENSITIVE_STEM.match(p)
+               for p in components) or (
                 last.endswith(BLOCKED_SUFFIXES)):
             return PermissionDecision("denied", project, action, "private_path_excluded")
     if action in APPROVAL_ACTIONS:

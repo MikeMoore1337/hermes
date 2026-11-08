@@ -47,8 +47,8 @@ test("mobile More menu keeps remaining destinations accessible",async({page})=>{
  const more=page.getByRole("button",{name:"Ещё"});
  await more.click();
  const navigation=page.getByRole("navigation",{name:"Разделы управления"});
- await expect(navigation.getByRole("button",{name:"Лимиты AI"})).toBeVisible();
- await navigation.getByRole("button",{name:"Лимиты AI"}).click();
+ await expect(navigation.getByRole("button",{name:"Квоты и инструменты"})).toBeVisible();
+ await navigation.getByRole("button",{name:"Квоты и инструменты"}).click();
  await expect(page.getByRole("heading",{name:"Лимиты Codex"})).toBeVisible();
  await expect(more).toHaveAttribute("aria-expanded","false");
 });

@@ -8,7 +8,9 @@ from __future__ import annotations
 
 from scripts import h15_brc_transactional_upgrade as gated
 
-CHECKPOINT = "hermes-brc-relay-h454-native3-rollback"
+# The original native3 checkpoint is occupied by a protected prior attempt.
+# Use a fresh slot; the underlying operator refuses any pre-existing slot.
+CHECKPOINT = "hermes-brc-relay-h454-native3-v2-rollback"
 
 
 def main(argv=None) -> int:

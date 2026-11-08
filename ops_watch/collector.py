@@ -21,6 +21,7 @@ from ops_watch.infrastructure_alerts import ROOT as INFRASTRUCTURE_ROOT
 from ops_watch.device_fabric_alerts import DB as DEVICE_DB, OPT_IN as DEVICE_OPT_IN
 from ops_watch.device_fabric_alerts import observe as device_fabric_observe
 from ops_watch.device_fabric_alerts import certificate_status as device_tls_status
+from ops_watch.device_fabric_alerts import presigned_batch_status as device_ca_batch_status
 from ops_watch.infrastructure_alerts import observe as infrastructure_observe
 from ops_watch.quota_alerts import observe as quota_observe
 from ops_watch.quota_alerts import CODEX as Q_CODEX, DESKTOP as Q_DESKTOP, CLOUDFLARE as Q_CF, GITHUB as Q_GITHUB
@@ -353,6 +354,7 @@ def once(source: Path = SOURCE, target: Path = TARGET, observed: datetime | None
                 db=device_fabric_db, opt_in=device_fabric_opt_in, now=now)
             snapshot["device_fabric_tls"] = device_tls_status(
                 opt_in=device_fabric_opt_in, now=now)
+            snapshot["device_ca_batch"] = device_ca_batch_status(now=now)
         findings = analyze(snapshot, now=now)
         # Separate QA reader never has Telegram credentials or access to the
         # news source. Missing/stale/denied API observations must not falsely
@@ -464,6 +466,20 @@ def once(source: Path = SOURCE, target: Path = TARGET, observed: datetime | None
             if snapshot.get("device_fabric_tls", "unknown") in ("unknown", "not_configured"):
                 findings.append({"code": code,
                                  "severity": "critical" if code == "device_tls_expired" else "warning",
+                                 "fingerprint": item["fingerprint"]})
+        # A missing/unreadable archive or marker cannot prove recovery from
+        # an earlier confirmed finite-CA renewal warning. Keep the incident
+        # until an explicit, trustworthy healthy/new-CA observation exists.
+        for item in previous:
+            code = item["code"]
+            if code not in {"device_ca_batch_renewal_due",
+                            "device_ca_batch_renewal_critical",
+                            "device_ca_batch_expired"} or any(
+                    current["code"] == code for current in findings):
+                continue
+            if snapshot.get("device_ca_batch", "unknown") in ("unknown", "not_configured"):
+                findings.append({"code": code,
+                                 "severity": "warning" if code.endswith("_due") else "critical",
                                  "fingerprint": item["fingerprint"]})
         was_ci_failed = any(item["code"] == "ci_failed" for item in previous)
         if ci == "FAILURE" or (ci is None and was_ci_failed):

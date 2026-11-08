@@ -1,4 +1,4 @@
-"""Offline safety contract for automatic Hermes main-to-production delivery.
+"""Offline safety contract for manually approved Hermes production delivery.
 
 This test is deliberately static: the live VPS isolated systemd checks are validated
 separately, and no network, SSH, secrets or production calls occur in CI.
@@ -34,7 +34,7 @@ class MainDeployContractTests(unittest.TestCase):
             'ProtectSystem=strict',
             'NoNewPrivileges=yes',
             'runtime_max_sec=240',
-            'runtime_max_sec=360',
+            'runtime_max_sec=540',
             '-p "RuntimeMaxSec=$runtime_max_sec"',
             'if [[ "${1:-}" == "--full-unit-suite" ]]',
             'MemoryMax=1G',
@@ -48,8 +48,10 @@ class MainDeployContractTests(unittest.TestCase):
         ):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, script)
-        # The 360s exception is scoped to the full suite; preflight remains 240s.
-        self.assertEqual(script.count('runtime_max_sec=360'), 1)
+        # Only the full suite receives 540s; preflight remains bounded at 240s.
+        self.assertEqual(script.count('runtime_max_sec=240'), 1)
+        self.assertEqual(script.count('runtime_max_sec=540'), 1)
+        self.assertNotIn('runtime_max_sec=360', script)
         self.assertEqual(script.count('--full-unit-suite'), 2)
         self.assertNotIn('runtime_max_sec=0', script)
         self.assertNotIn('RuntimeMaxSec=0', script)
@@ -77,26 +79,34 @@ class MainDeployContractTests(unittest.TestCase):
     def test_ci_gate_and_host_identity(self):
         workflow = (ROOT / ".github/workflows/production-deploy.yml").read_text(encoding="utf-8")
         for fragment in (
-            'workflow_run:',
             'workflow_dispatch:',
-            'workflows: ["Hermes repository checks", "Hermes Control Center UI"]',
-            'Deployment deferred until its workflow_run completion.',
-            "github.event.workflow_run.conclusion == 'success'",
-            "github.event.workflow_run.event == 'push'",
+            "if: github.event_name == 'workflow_dispatch'",
+            'Manual dispatch refused: required SHA-scoped checks not green',
+            '[.workflow_runs[] | select(.name=="Hermes repository checks")]',
+            '[.workflow_runs[] | select(.name=="Hermes Control Center UI")]',
+            '"$quality" == success && "$ui" == success',
             'TARGET_SHA:',
-            'ui_required=',
             'git archive --format=tar.gz',
             'StrictHostKeyChecking=yes',
+            # Secure keepalive avoids premature SSH idle disconnect while the
+            # sandboxed server full test suite is intentionally stdout-quiet.
+            'ServerAliveInterval=15',
+            'ServerAliveCountMax=6',
             'HERMES_DEPLOY_KNOWN_HOSTS',
             'cancel-in-progress: false',
+            'timeout-minutes: 20',
             'contents: read',
             'actions: read',
         ):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, workflow)
         self.assertNotIn('StrictHostKeyChecking=no', workflow)
+        self.assertNotIn('workflow_run:', workflow)
+        self.assertNotIn('github.event.workflow_run', workflow)
         self.assertNotIn('known_hosts=/dev/null', workflow)
         self.assertNotIn('ssh-keyscan', workflow)
+        self.assertNotIn('ServerAliveInterval=0', workflow)
+        self.assertNotIn('ServerAliveCountMax=0', workflow)
 
 
 if __name__ == "__main__":

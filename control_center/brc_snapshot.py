@@ -7,8 +7,10 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import os
 from pathlib import Path
 import re
+import stat
 
 SCHEMA = 1
 SOURCE = "hermes_brc_mcp"
@@ -32,6 +34,9 @@ WINDOWS = DEVICES[0]
 NATIVE_READER_NAME = "H15 Windows native read-only"
 NATIVE_READER_ID = "h454-win-01335a1f6e6705b4"
 DEVICE_ID = re.compile(r"^[A-Za-z0-9_-]{8,128}$")
+LABEL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._-]{0,79}$")
+PROJECT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
+BRANCH = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$")
 
 
 class SnapshotRejected(ValueError):
@@ -40,6 +45,51 @@ class SnapshotRejected(ValueError):
 
 def _reject(code: str) -> None:
     raise SnapshotRejected(code)
+
+
+def _validate_fork_snapshot(value: dict, age_seconds: float) -> dict:
+    records, projects = value["devices"], value["workspaces"]
+    if not isinstance(records, list) or len(records) > 64:
+        _reject("invalid_snapshot_devices")
+    devices = {}
+    for device in records:
+        if (not isinstance(device, dict)
+            or set(device) != {"name", "status", "last_seen_age_seconds", "command_execution"}
+            or not isinstance(device["name"], str) or not LABEL.fullmatch(device["name"])
+            or device["name"] in devices
+            or device["status"] not in ("online", "offline", "paused", "stale")
+            or type(device["last_seen_age_seconds"]) is not int
+            or not 0 <= device["last_seen_age_seconds"] <= 86400
+            or (device["status"] == "online" and device["last_seen_age_seconds"] + age_seconds > 300)
+            or device["command_execution"] != "not_verified"):
+            _reject("invalid_snapshot_device")
+        devices[device["name"]] = device["status"]
+    online = sum(state == "online" for state in devices.values())
+    status = "online" if online and online == len(devices) else "partial" if online else "unavailable"
+    if value["status"] != status:
+        _reject("snapshot_inconsistent_status")
+    if not isinstance(projects, list) or len(projects) > 64:
+        _reject("invalid_snapshot_workspaces")
+    names, roots = set(), set()
+    for entry in projects:
+        if (not isinstance(entry, dict)
+            or set(entry) != {"name", "root", "branch", "device_name", "git_verified", "state"}
+            or not isinstance(entry["name"], str) or not PROJECT.fullmatch(entry["name"])
+            or entry["name"].lower() in names
+            or not isinstance(entry["root"], str) or not entry["root"].startswith("/workspace/projects/")
+            or not PROJECT.fullmatch(entry["root"][len("/workspace/projects/"):])
+            or not isinstance(entry["branch"], str) or not BRANCH.fullmatch(entry["branch"])
+            or ".." in entry["branch"] or "//" in entry["branch"]
+            or entry["branch"].endswith(("/", "."))
+            or any(part.startswith(".") or part.endswith(".lock") for part in entry["branch"].split("/"))
+            or not isinstance(entry["device_name"], str) or entry["device_name"] not in devices
+            or (entry["device_name"], entry["root"]) in roots
+            or entry["git_verified"] is not False
+            or entry["state"] != ("reachable_not_git_verified" if devices[entry["device_name"]] == "online" else "not_ready")):
+            _reject("invalid_snapshot_workspace")
+        names.add(entry["name"].lower())
+        roots.add((entry["device_name"], entry["root"]))
+    return value
 
 
 def normalize(devices: object, catalog: object, *, now_ms: int) -> dict:
@@ -143,9 +193,22 @@ def read_snapshot(path: Path = DEFAULT_OUTPUT, *, now: dt.datetime | None = None
     """
     path = Path(path)
     try:
-        if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_SNAPSHOT_BYTES:
+        before = path.lstat()
+        if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or not before.st_ino
+            or before.st_size > MAX_SNAPSHOT_BYTES):
             _reject("snapshot_unavailable")
-        raw = path.read_bytes()
+        flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+        fd = os.open(path, flags)
+        try:
+            opened = os.fstat(fd)
+            if (not stat.S_ISREG(opened.st_mode) or opened.st_nlink != 1 or not opened.st_ino
+                or (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino)
+                or opened.st_size > MAX_SNAPSHOT_BYTES):
+                _reject("snapshot_unavailable")
+            with os.fdopen(fd, "rb", closefd=False) as stream:
+                raw = stream.read(MAX_SNAPSHOT_BYTES + 1)
+        finally:
+            os.close(fd)
         if len(raw) > MAX_SNAPSHOT_BYTES:
             _reject("snapshot_oversize")
         value = json.loads(raw)
@@ -154,10 +217,11 @@ def read_snapshot(path: Path = DEFAULT_OUTPUT, *, now: dt.datetime | None = None
     fields = {"schema", "source", "observed_at", "status", "execution_verified",
               "native_host_access", "onboarding_enabled", "devices", "workspaces"}
     if (not isinstance(value, dict) or set(value) != fields
-        or type(value["schema"]) is not int or value["schema"] != SCHEMA
-        or value["source"] != SOURCE
-        or any(value[k] is not False for k in
-               ("execution_verified", "native_host_access", "onboarding_enabled"))):
+        or type(value["schema"]) is not int
+        or (value["schema"], value["source"]) not in ((SCHEMA, SOURCE), (2, "hermes_brc_fork"))
+        or value["execution_verified"] is not False or value["onboarding_enabled"] is not False
+        or value["native_host_access"] != (False if value["schema"] == 1 else "not_verified")
+        or (value["schema"] == 1 and value["native_host_access"] is not False)):
         _reject("invalid_snapshot_schema")
     time_text = value["observed_at"]
     if not isinstance(time_text, str) or not 19 <= len(time_text) <= 35:
@@ -172,6 +236,8 @@ def read_snapshot(path: Path = DEFAULT_OUTPUT, *, now: dt.datetime | None = None
     delta = (now_utc - when.astimezone(dt.timezone.utc)).total_seconds()
     if delta > STALE_AFTER_MS / 1000 or delta < -(CLOCK_SKEW_MS / 1000):
         _reject("snapshot_stale_or_future")
+    if value["schema"] == 2:
+        return _validate_fork_snapshot(value, max(0, delta))
     records = value["devices"]
     if not isinstance(records, list) or len(records) != len(DEVICES):
         _reject("invalid_snapshot_devices")

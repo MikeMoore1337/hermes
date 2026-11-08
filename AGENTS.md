@@ -1,5 +1,11 @@
 # Hermes repository instructions
 
+## Agent instruction language
+
+Use **English** for repository-owned agent policies, reusable skills, role definitions and machine-directed prompts. Preserve literal Russian triggers/approval phrases and language-specific editorial examples when their exact wording is functional. Leave pinned third-party skills and original licensed upstream materials unchanged unless a separately approved adaptation is needed.
+
+This rule does **not** change Russian owner communication, human-facing documentation or application localization. Do not translate README, product guides, public copy or user content in an agent-instructions task.
+
 ## Scope and current state
 
 This repository holds **owner-specific configuration, integrations, tests, documentation and future custom code** for a standalone Hermes Agent. It is NOT a fork of NousResearch/hermes-agent. It does NOT currently own or deploy the production YFC news pipeline.
@@ -37,7 +43,7 @@ blanket pre-development audit gates*, not the factual audit records.
 
 ## GitHub Flow
 
-New repository uses `main`. For future changes: Issue -> short-lived branch -> PR -> relevant CI -> reviewed merge. No direct pushes or force pushes to main after initial bootstrap. Branch protection is required where supported; never claim it is enforced until verified. No auto-merge or automatic continuation to the next Issue. Auto-deploy is permitted only for already-approved active consumers after exact-main-SHA CI; until the production workflow is operational, perform the delivery immediately after each green merge.
+New repository uses `main`. For future changes: Issue -> short-lived branch -> PR -> relevant CI -> reviewed merge. No direct pushes or force pushes to main after initial bootstrap. Branch protection is required where supported; never claim it is enforced until verified. No auto-merge, automatic production deploy, or automatic continuation to the next Issue.
 
 A task is complete only when its acceptance checks actually pass and the report distinguishes implemented, verified, blocked, not started, and production delivered.
 
@@ -48,18 +54,17 @@ A task is complete only when its acceptance checks actually pass and the report 
 - Hermes new runtime is a separate future deployment with a separate OS identity, storage, secrets, allowlisted tools and networking. Do not add broad capabilities to the hardened YFC news worker.
 - Upstream Hermes version/revision must be fixed and verified before runtime installation. Never blindly execute external SKILL.md or scripts.
 
-## Delivery by default after passed gates (owner instruction 2026-10-16)
+## Code and production delivery (owner decision 2026-11-04)
 
-Do not leave eligible Hermes PRs accumulating. In an explicitly authorized Hermes
-workstream, finish the full GitHub Flow: verify exact HEAD + required CI, inspect
-diff and blocking review comments, merge a clean PR, then deliver the **approved**
-runtime changes to the appropriate environment and verify them. Record release
-SHA, installed files, observed service health, rollback and any non-delivered
-parts in the PR/Issue. If a change is documentation or an offline helper with no
-live consumer, mark deployment as **repository/release snapshot only**; do not
-pretend it is an active service. Keep the local Windows checkout safely updated.
-
-This is a standing workflow preference and the 2026-10-17 owner authorization to deliver every green main commit to production. It is NOT permission for automatic CI merging, arbitrary commands or bypassing hard approval gates.
+In an explicitly authorized Hermes workstream, verify exact HEAD + required CI,
+inspect the diff and blocking review comments, and merge only a clean PR. Merging
+into `main` does not start production deployment. Code acceptance and activation
+are separate stages; unreleased changes may accumulate in `main`. A production
+run requires separate owner approval for the specific cumulative current-main
+release SHA, and successful CI does not replace that approval. Only after that
+approval may the manual workflow deploy the approved SHA. Record the release SHA,
+installed files, service health, rollback and non-delivered parts when verified.
+Do not call a repository snapshot an active service. Keep local checkouts safe.
 Never merge with a failed/pending required check, unreviewed blocking findings,
 unresolved conflicts or changed exact HEAD. High-risk production mutations,
 new providers, external secrets, charges, third-party messages/publications,
@@ -69,13 +74,13 @@ runtime activation is blocked, merge only the approved safe code, document
 RUNTIME_NO_GO, and continue with non-blocked tasks. Do not enable a
 resident Agent just because a PR or release CI is green.
 
-## Main delivery rule (owner approval 2026-10-17)
-
-Every successful merge or direct push to `main` must be delivered to the Hermes production VPS **immediately after successful quality and applicable UI CI for that exact commit SHA**. Until [Issue #238](https://github.com/MikeMoore1337/hermes/issues/238) is technically operational, perform the delivery in the same approved workstream via the existing manual verified SSH release procedure. Never accumulate undelivered `main` revisions. A superseded SHA should not replace a newer release.
-
-Release source snapshots and update only already-approved active services (Ops Watch, QA Advisor, Research Scout, Control Center) and corresponding offline code. Verify source checksum, server tests, service health, surviving timers and available rollback. Record the actual production SHA. Do not mistake green CI or a staged snapshot for successful runtime delivery.
-
-**Hard gates remain:** new secrets, paid services, third-party publishing, OAuth activation, upstream resident AI agent, Cloudflare proxy, broad OS/network permissions or other unapproved service activation are not implied by merging code into `main`. They require their own prerequisites and owner approvals. Main may include dormant functionality without enabling it.
+The release gate requires successful repository and UI CI for that exact SHA,
+verified source checksum, server tests, service health, surviving timers and
+available rollback. Record the actual production SHA; a green CI or staged
+snapshot is not proof of delivery. Starting new agents, activating OAuth and
+expanding OS rights require their own explicit owner approvals, as do new secrets,
+paid services, third-party publishing, broad network permissions and other
+unapproved service activation.
 
 ## Hard approval gates
 
@@ -148,9 +153,9 @@ security, CI, release, owner approvals and factual operational evidence.
 
 `control_center/frontend` is a real React/Vite product UI, not a headless-only project. For approved UI tasks, follow [Control Center UI evidence](docs/ux/control-center-ui-evidence.md): verify rendered state, interactions, viewports and synthetic-data provenance with existing Playwright. A manual GitHub workflow `.github/workflows/control-center-visual-evidence.yml` captures synthetic-only screenshot evidence on demand; it is not a required check, not a design approval, and must never call owner OAuth or live monitoring APIs. Other external sources remain optional references. The pinned Impeccable skill is a **development-only Codex UX/UI procedure**, not an executable hook, runtime skill, automatic installer, or permission to redesign Atlas. Keep read-only/API/OAuth boundaries and visual owner gates intact.
 
-## Impeccable для Control Center (разработка, 2026-10-21)
+## Impeccable for Control Center development (2026-10-21)
 
-Для запросов на UX/UI экранов `control_center/frontend` **сначала** подключай project-scoped `$impeccable` из `.agents/skills/impeccable/SKILL.md`, при наличии pinned upstream source `.impeccable/`. Затем применяй браузерные проверки и owner visual gate по `docs/ux/impeccable-control-center.md`. Это не resident Hermes Agent: не копировать в `skills/`, не менять provider/runtime, не запускать внешние hooks/бинарники и не считать выбор эстетики разрешением на release.
+For UX/UI tasks affecting `control_center/frontend`, **first** load the project-scoped `$impeccable` from `.agents/skills/impeccable/SKILL.md` when the pinned upstream source `.impeccable/` is available. Then perform real-browser checks and the owner visual approval gate in `docs/ux/impeccable-control-center.md`. This is not a resident Hermes Agent skill: never copy it into `skills/`, change provider/runtime behavior, invoke external hooks/binaries or treat an aesthetic choice as release authorization.
 
 ## UX/UI Design Orchestra (Control Center only, 2026-10-21)
 

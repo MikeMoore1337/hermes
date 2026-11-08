@@ -62,7 +62,7 @@ class InboxTests(unittest.TestCase):
         self.assertEqual(len({e["event_id"] for e in a["events"]}), 5)
         self.assertEqual(a["events"][0]["category"], "failure")
         self.assertTrue(all(e["scope"] == "owner_read_only" for e in a["events"]))
-        self.assertEqual(a["summary"]["source_count"], 9)
+        self.assertEqual(a["summary"]["source_count"], 10)
         self.assertNotIn("secret-id-do-not-echo", json.dumps(a))
         self.assertNotIn("token=never-echo", json.dumps(a))
 

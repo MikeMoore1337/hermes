@@ -1,0 +1,42 @@
+/* #816: iPhone installed PWA safe-area geometry.
+   iOS black-translucent status bar allows content under the system area.
+   Keep the approved Aero 27 visual palette, nav routes and permissions intact. */
+@media(max-width:700px){
+  .theme-orbit{
+    /* Explicit variables permit deterministic Chromium checks with iPhone insets.
+       On real devices these resolve to the browser's safe-area env() values. */
+    --hermes-pwa-safe-top:env(safe-area-inset-top,0px);
+    --hermes-pwa-safe-bottom:env(safe-area-inset-bottom,0px);
+  }
+
+  /* Previously: height:70px, but padding-top included the dynamic-island
+     inset. The controls could spill outside the sticky header and lose hits. */
+  .theme-orbit .orbit-topbar{
+    height:calc(70px + var(--hermes-pwa-safe-top));
+    min-height:calc(70px + var(--hermes-pwa-safe-top));
+    flex:0 0 calc(70px + var(--hermes-pwa-safe-top));
+    padding-top:calc(13px + var(--hermes-pwa-safe-top));
+    padding-bottom:11px;
+    box-sizing:border-box;
+  }
+
+  /* Preserve a centred, symmetrical floating dock. Subtract the redundant
+     +13px while respecting the home-indicator safe area. */
+  .theme-orbit .orbit-app-mobilebar{
+    left:50%;
+    right:auto;
+    width:min(440px,calc(100% - 24px));
+    transform:translateX(-50%);
+    bottom:max(12px,var(--hermes-pwa-safe-bottom));
+  }
+
+  /* The More sheet follows the dock, cannot cover it or cross the topbar. */
+  .theme-orbit .orbit-rail.is-open{
+    bottom:calc(76px + max(12px,var(--hermes-pwa-safe-bottom)));
+    max-height:calc(100dvh - 174px - var(--hermes-pwa-safe-top) - var(--hermes-pwa-safe-bottom));
+  }
+
+  .theme-orbit .orbit-main{
+    padding-bottom:calc(88px + max(12px,var(--hermes-pwa-safe-bottom)));
+  }
+}

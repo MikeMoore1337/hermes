@@ -2,7 +2,7 @@
 from pathlib import Path
 import re
 import unittest
-from scripts.h15_native_windows_outbound import DEVICE_NAME, hello, parse_settings
+from scripts.h15_native_windows_outbound import DEVICE_NAME, EXPECTED_DEVICE_ID, hello, parse_settings
 from scripts.h15_native_windows_mcp_stdio import TOOLS
 
 
@@ -21,9 +21,17 @@ class NativeContractTests(unittest.TestCase):
             self.assertIsNotNone(literal, str(file))
             self.assertEqual(literal.group(1), DEVICE_NAME, str(file))
 
+    def test_native_id_pinned_to_owner_original_windows_device(self):
+        self.assertEqual(EXPECTED_DEVICE_ID, "h454-win-01335a1f6e6705b4")
+        relay = RELAY.read_text(encoding="utf-8")
+        self.assertIn(
+            "const NATIVE_DEVICE_ID = '" + EXPECTED_DEVICE_ID + "';",
+            relay,
+        )
+
     def test_native_hello_exposes_exact_three_operations(self):
         conf = parse_settings("wss://hermes.mikemoore.top/ws",
-                              "h15-native-ci-read-123456", "a" * 48)
+                              EXPECTED_DEVICE_ID, "a" * 48)
         frame = hello(conf)
         self.assertEqual(frame["device"]["name"], DEVICE_NAME)
         self.assertEqual(frame["device"]["platform"], "win32")

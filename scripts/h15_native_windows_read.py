@@ -25,7 +25,8 @@ import os
 import re
 import sys
 
-from control_center.native_windows_policy import READ_ROOTS, classify_native_request
+from control_center.native_windows_policy import (READ_ROOTS, SENSITIVE_STEM,
+                                                  classify_native_request)
 
 MAX_FILE_BYTES = 256 * 1024
 MAX_PATH_LENGTH = 1024
@@ -51,6 +52,7 @@ FILE_ATTRIBUTE_REPARSE_POINT = 0x400
 FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000
 FILE_FLAG_BACKUP_SEMANTICS = 0x02000000
 FILE_READ_ATTRIBUTES = 0x80
+FILE_READ_DATA = 0x1  # FILE_LIST_DIRECTORY for directories
 GENERIC_READ = 0x80000000
 OPEN_EXISTING = 3
 FILE_SHARE_READ = 0x1
@@ -78,7 +80,7 @@ def build_request(project: str, relative: str, operation: str) -> tuple[str, str
             raise NativeReadRefused("unsafe_relative_path")
         lowered = [p.casefold() for p in pieces]
         if any(p in DENIED_COMPONENTS or p.startswith(".env.")
-               or p in DENIED_NAMES for p in lowered):
+               or p in DENIED_NAMES or SENSITIVE_STEM.match(p) for p in lowered):
             raise NativeReadRefused("protected_project_content")
         if lowered[-1].endswith(DENIED_SUFFIXES):
             raise NativeReadRefused("protected_project_content")
@@ -148,12 +150,20 @@ def _winapi():
 def _opened(api, path: str, *, content: bool, lock_rename: bool = False):
     flags = FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS
     access = GENERIC_READ if content else FILE_READ_ATTRIBUTES
-    shares = FILE_SHARE_READ | FILE_SHARE_WRITE
-    if not lock_rename:
+    # Keep a content read stable while another process wants to write or rename.
+    shares = FILE_SHARE_READ
+    if not content:
+        shares |= FILE_SHARE_WRITE
+    if lock_rename:
+        # Attribute-only handles do not enforce the deny-delete share on Windows.
+        access |= FILE_READ_DATA
+    elif not content:
         shares |= FILE_SHARE_DELETE
     h = api.CreateFileW(path, access, shares,
         None, OPEN_EXISTING, flags, None)
     if h == ctypes.c_void_p(-1).value:
+        if content and getattr(ctypes, "get_last_error", lambda: 0)() == 32:
+            raise NativeReadRefused("file_busy")
         raise NativeReadRefused("open_denied")
     return h
 
@@ -199,7 +209,7 @@ def handle_native_request(project: str, relative: str, operation: str) -> dict:
     """Use only verified live handles; no second path-based file open."""
     root, requested = build_request(project, relative, operation)
     api = _winapi()
-    root_handle = _opened(api, root, content=False)
+    root_handle = _opened(api, root, content=False, lock_rename=True)
     try:
         root_info = _metadata(api, root_handle)
         if not root_info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY:

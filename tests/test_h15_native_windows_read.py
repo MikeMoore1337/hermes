@@ -32,11 +32,13 @@ class FakeWin32:
         self.handles = {}
         self.next_handle = 1000
         self.offsets = {}
+        self.opens = []
 
     def CreateFileW(self, path, access, share, security, disposition, flags, template):
         assert disposition == broker.OPEN_EXISTING
         assert flags & broker.FILE_FLAG_OPEN_REPARSE_POINT
         assert flags & broker.FILE_FLAG_BACKUP_SEMANTICS
+        self.opens.append((path, access, share))
         self.next_handle += 1
         self.handles[self.next_handle] = ("root" if
             ntpath.normcase(path) == ntpath.normcase(self.root) else "file")
@@ -89,6 +91,9 @@ class NativeWindowsReadTests(unittest.TestCase):
         for file in ("", "foo.exe", "id_ed25519", ".git\\config",
                      "secrets\\foo.md", ".env", ".env.prod",
                      "private-vault\\entry.md", "dump.sqlite",
+                     "credentials.json", "secrets.json", "token.json",
+                     "src\\service-account.json", "src\\.tokens.yaml",
+                     "config.local.json",
                      "node_modules\\foo.js"):
             with self.subTest(file=file), self.assertRaises(broker.NativeReadRefused):
                 broker.build_request("hermes", file, "read")
@@ -116,6 +121,41 @@ class NativeWindowsReadTests(unittest.TestCase):
         self.assertEqual(result["size_bytes"], 10)
         self.assertEqual(len(mock.closed), 2)
         self.assertEqual(set(mock.closed), set(mock.handles))
+
+    def test_read_and_stat_hold_root_against_rename(self):
+        for operation in ("read", "stat"):
+            with self.subTest(operation=operation):
+                mock = FakeWin32()
+                with patch.object(broker, "_winapi", return_value=mock):
+                    broker.handle_native_request("hermes", "README.md", operation)
+                path, access, shares = mock.opens[0]
+                self.assertEqual(path, mock.root)
+                # FILE_LIST_DIRECTORY activates Windows share-delete enforcement.
+                self.assertTrue(access & 0x1)
+                self.assertFalse(shares & broker.FILE_SHARE_DELETE)
+
+    def test_file_read_denies_concurrent_writers_and_renames(self):
+        for operation in ("read", "stat"):
+            with self.subTest(operation=operation):
+                mock = FakeWin32()
+                with patch.object(broker, "_winapi", return_value=mock):
+                    broker.handle_native_request("hermes", "README.md", operation)
+                _, _, shares = mock.opens[1]
+                if operation == "read":
+                    self.assertEqual(shares, broker.FILE_SHARE_READ)
+                else:
+                    self.assertEqual(shares, broker.FILE_SHARE_READ | broker.FILE_SHARE_WRITE |
+                                     broker.FILE_SHARE_DELETE)
+
+    def test_only_sharing_violation_is_reported_as_busy(self):
+        class Denied:
+            def CreateFileW(self, *_):
+                return ctypes.c_void_p(-1).value
+        for error, reason in ((32, "file_busy"), (5, "open_denied")):
+            with self.subTest(error=error), \
+                 patch.object(ctypes, "get_last_error", return_value=error, create=True), \
+                 self.assertRaisesRegex(broker.NativeReadRefused, "^" + reason + "$"):
+                broker._opened(Denied(), r"D:\synthetic\file.py", content=True)
 
     def test_stat_directory_and_file_never_emit_contents(self):
         file = FakeWin32()
