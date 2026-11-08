@@ -141,3 +141,49 @@ function Repair-H454OfflineControl([string]$StateDir,[string]$RunDir,[IO.FileStr
         (Get-FileHash -LiteralPath $launcher -Algorithm SHA256).Hash -ceq $Pins.GuardOldHash) 'RECOVERY_FINAL_DRIFT'
     return 'RECOVERED_OFFLINE_START_BLOCKED'
 }
+
+# Durable fail-closed fence for non-trial Docker mutations. Never infer that a
+# timed-out Docker operation is settled from a later inspect alone.
+function Assert-H454MutationSettled([string]$StateDir,[IO.FileStream]$Lock) {
+    Assert-H454RecoveryLock $StateDir $Lock
+    Assert-H454PrivateAcl $StateDir
+    $names=@('h454-original-restore.inflight','h454-broker-route.inflight',
+        'h454-recovery-route.inflight','h454-broker-trial.pending','h454-broker-trial.inflight')
+    $count=0
+    foreach($entry in [IO.Directory]::EnumerateFileSystemEntries($StateDir)){
+        $count++
+        Require-H454 ($count -le 512) 'H454_MUTATION_STATE_OVERSIZE'
+        $name=[IO.Path]::GetFileName($entry)
+        Require-H454 (-not ($names -icontains $name)) 'H454_MUTATION_UNSETTLED'
+    }
+}
+
+function Open-H454MutationFence([string]$StateDir,[IO.FileStream]$Lock,
+    [string]$Scope,[string]$MarkerSha256) {
+    Require-H454 ($Scope -cin @('original-restore','broker-route','recovery-route') -and
+        $MarkerSha256 -cmatch '^[A-F0-9]{64}$') 'H454_MUTATION_FENCE_INPUT'
+    Assert-H454MutationSettled $StateDir $Lock
+    $path=Join-Path $StateDir ('h454-'+$Scope+'.inflight')
+    $nonce=[Guid]::NewGuid().ToString('N')
+    $bytes=[Text.UTF8Encoding]::new($false).GetBytes("H454-MUTATION-FENCE-1`n$Scope`n$MarkerSha256`n$nonce`n")
+    $stream=[IO.FileStream]::new($path,[IO.FileMode]::CreateNew,
+        [IO.FileAccess]::Write,[IO.FileShare]::None,4096,[IO.FileOptions]::WriteThrough)
+    try{$stream.Write($bytes,0,$bytes.Length);$stream.Flush($true)}finally{$stream.Dispose()}
+    Assert-H454PrivateAcl $path
+    $hash=Hash-H454Bytes $bytes
+    Require-H454 ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -ceq $hash) 'H454_MUTATION_FENCE_DRIFT'
+    return [pscustomobject]@{Path=$path;Sha256=$hash;Scope=$Scope;MarkerSha256=$MarkerSha256;Nonce=$nonce}
+}
+
+function Close-H454MutationFence([string]$StateDir,[IO.FileStream]$Lock,[object]$Fence) {
+    Assert-H454RecoveryLock $StateDir $Lock
+    Require-H454 ($null -ne $Fence -and $Fence.Scope -cin @('original-restore','broker-route','recovery-route') -and
+        $Fence.MarkerSha256 -cmatch '^[A-F0-9]{64}$' -and $Fence.Nonce -cmatch '^[a-f0-9]{32}$' -and
+        $Fence.Path -ceq (Join-Path $StateDir ('h454-'+$Fence.Scope+'.inflight'))) 'H454_MUTATION_FENCE_IDENTITY'
+    $expected=[Text.UTF8Encoding]::new($false).GetBytes("H454-MUTATION-FENCE-1`n$($Fence.Scope)`n$($Fence.MarkerSha256)`n$($Fence.Nonce)`n")
+    Require-H454 ($Fence.Sha256 -ceq (Hash-H454Bytes $expected)) 'H454_MUTATION_FENCE_IDENTITY'
+    Assert-H454PrivateAcl $Fence.Path
+    Require-H454 ((Get-FileHash -LiteralPath $Fence.Path -Algorithm SHA256).Hash -ceq $Fence.Sha256) 'H454_MUTATION_FENCE_DRIFT'
+    [IO.File]::Delete($Fence.Path)
+    Require-H454 (-not (Test-Path -LiteralPath $Fence.Path)) 'H454_MUTATION_UNSETTLED'
+}

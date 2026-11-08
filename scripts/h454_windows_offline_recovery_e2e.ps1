@@ -85,6 +85,30 @@ try {
         Require-H454 ($reason -cne '' -and $reason -cne 'RECOVERY_LOCK_BUSY') 'LOCK_OTHER_ERROR'
     } finally { [IO.Directory]::Delete($badLock);[IO.Directory]::Delete($badState) }
     $lock=Open-H454RecoveryLock $stateDir
+    # Exercise the actual persistent fence through a lock/process-owner cycle.
+    $fence=Open-H454MutationFence $stateDir $lock 'original-restore' $pins.MarkerHash
+    Require-H454 ([IO.File]::Exists($fence.Path)) 'FENCE_PERSISTENCE'
+    $reason=''
+    try{$null=Open-H454MutationFence $stateDir $lock 'broker-route' $pins.MarkerHash}
+    catch{$reason=$_.Exception.Message}
+    Require-H454 ($reason -ceq 'H454_MUTATION_UNSETTLED') 'FENCE_CROSS_MODE'
+    Close-H454RecoveryLock $lock;$lock=Open-H454RecoveryLock $stateDir
+    $reason=''
+    try{$null=Open-H454MutationFence $stateDir $lock 'recovery-route' $pins.MarkerHash}
+    catch{$reason=$_.Exception.Message}
+    Require-H454 ($reason -ceq 'H454_MUTATION_UNSETTLED') 'FENCE_REOPEN_HOLD'
+    Close-H454MutationFence $stateDir $lock $fence
+    $fence=Open-H454MutationFence $stateDir $lock 'broker-route' $pins.MarkerHash
+    [IO.File]::WriteAllText($fence.Path,'tampered')
+    $reason=''
+    try{Close-H454MutationFence $stateDir $lock $fence}catch{$reason=$_.Exception.Message}
+    Require-H454 ($reason -ceq 'H454_MUTATION_FENCE_DRIFT' -and
+        [IO.File]::Exists($fence.Path)) 'FENCE_TAMPER_HOLD'
+    # The synthetic fixture alone clears its tampered file; the operator has no bypass.
+    [IO.File]::Delete($fence.Path)
+    $fence=Open-H454MutationFence $stateDir $lock 'recovery-route' $pins.MarkerHash
+    Close-H454MutationFence $stateDir $lock $fence
+    'PS51_MUTATION_FENCE_DURABLE=PASS'
     [IO.File]::Delete($marker)
     Require-H454 ((New-H454TransitionMarker $stateDir $markerBytes $lock) -ceq $pins.MarkerHash) 'MARKER_CREATE'
     $refused=$false;try { $null=New-H454TransitionMarker $stateDir $markerBytes $lock } catch { $refused=$true }

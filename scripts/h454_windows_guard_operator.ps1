@@ -223,6 +223,13 @@ try{
     $lockPath=Join-Path $state 'runtime.lock'
     Require-H454 (Test-Path -LiteralPath $lockPath -PathType Leaf) 'H454_GUARD_OPERATOR_LOCK'
     $lock=Open-H454RecoveryLock $state
+    if($Apply){
+        # A prior unknown Docker mutation must never be replayed by another mode.
+        foreach($name in @('h454-original-restore.inflight','h454-broker-route.inflight',
+            'h454-recovery-route.inflight')){
+            Require-H454 (-not (Test-H454WssStateEntry $state $name)) 'H454_MUTATION_UNSETTLED'
+        }
+    }
     if(-not $trial){
         Assert-H454RecoveryLock $state $lock
         foreach($name in @('h454-broker-trial.pending','h454-broker-trial.inflight')){

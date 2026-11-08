@@ -86,6 +86,22 @@ if os.name == 'posix' and os.geteuid() == 0:
                 subject.install(pin)
             self.assertEqual(self.original.read_bytes(), self.original_bytes)
 
+        def test_remote_forwarding_never_passes_policy_gate(self):
+            # permitopen restricts -L but does not restrict SSH -R.
+            for policy in (b'yes', b'remote', b'no'):
+                with self.subTest(policy=policy.decode()):
+                    self.settings = self.settings.replace(
+                        b'allowtcpforwarding local', b'allowtcpforwarding ' + policy
+                    )
+                    self.settings += b'permitlisten any\n'
+                    with self.assertRaisesRegex(subject.Hold, 'SSHD_POLICY'):
+                        self.prepare()
+                    self.assertFalse((self.ssh / 'authorized_keys2').exists())
+                    self.assertFalse(self.registry.exists())
+                    self.settings = self.settings.replace(
+                        b'allowtcpforwarding ' + policy, b'allowtcpforwarding local'
+                    ).replace(b'permitlisten any\n', b'')
+
         def test_changed_relay_or_sshd_policy_refuses_install(self):
             pin = self.prepare()
             self.relay['Id'] = 'd' * 64

@@ -146,6 +146,10 @@ function Restore-H454Original(
     if($RestageOnly){
         Require-H454 ($snapshot.Agent.State.Running -and $snapshot.OnPrivate -and -not $snapshot.OnBridge) 'H454_RESTORE_MONITOR_STATE'
     }
+    $mutationFence=$null
+    if($null -eq $TrialMutation){
+        $mutationFence=Open-H454MutationFence $StateDir $Lock 'original-restore' $MarkerSha256
+    }
     if($snapshot.OnBridge -and -not $snapshot.OnPrivate){
         Require-H454 (-not $snapshot.Agent.State.Running) 'H454_RESTORE_RUNNING_ROUTE'
         $snapshot=Get-H454OriginalRestoreState @stateArgs
@@ -194,5 +198,6 @@ function Restore-H454Original(
     Require-H454 ($staged.Code -eq 0 -and $staged.Output -ceq 'H454_BROKER_TOKEN_STAGED') 'H454_RESTORE_STAGE_BROKER'
     $snapshot=Get-H454OriginalRestoreState @stateArgs
     Assert-H454OriginalLiveRoute $snapshot $AgentId $DockerSha256
+    if($null -ne $mutationFence){Close-H454MutationFence $StateDir $Lock $mutationFence}
     return [pscustomobject]@{Status='ORIGINAL_STAGED';AgentId=$AgentId;BrokerId=$snapshot.Broker.Id}
 }

@@ -130,7 +130,7 @@ def snapshot(account, public_key):
         permit = options.get('permitopen', [])
         demand(options.get('authorizedkeysfile') == ['.ssh/authorized_keys .ssh/authorized_keys2'] and
                options.get('authorizedkeyscommand') == ['none'] and options.get('usedns') == ['no'] and
-               options.get('strictmodes') == ['yes'] and options.get('allowtcpforwarding') in (['yes'], ['local']) and
+               options.get('strictmodes') == ['yes'] and options.get('allowtcpforwarding') == ['local'] and
                len(permit) == 1 and (permit[0] == 'any' or str(address) + ':3001' in permit[0].split()), 'SSHD_POLICY')
         return {'version': 1, 'account': account, 'uid': user.pw_uid, 'gid': user.pw_gid,
                 'home': user.pw_dir, 'public_key': canonical_key, 'original_sha256': original,
