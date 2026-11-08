@@ -110,6 +110,42 @@ class AdminHashStartupPatchTests(unittest.TestCase):
             verify.assert_not_called()
         self.assertEqual(self.target.read_text(encoding="utf-8"), SOURCE)
 
+    def test_candidate_workflow_rebuilds_on_every_admin_hash_input(self):
+        workflow = (
+            Path(__file__).resolve().parents[1]
+            / ".github/workflows/h15-remote-commander-candidate.yml"
+        ).read_text(encoding="utf-8")
+        push = workflow.split("  push:\n", 1)[1].split(
+            "  pull_request:\n", 1
+        )[0]
+        pr = workflow.split("  pull_request:\n", 1)[1].split(
+            "\npermissions:\n", 1
+        )[0]
+        from scripts.h15_brc_owner_artifact_stage import is_brc_input
+
+        for name in (
+            "scripts/h454_brc_admin_hash_startup.py",
+            "scripts/h454_brc_admin_hash_e2e.mjs",
+            "tests/test_h454_brc_admin_hash_startup.py",
+        ):
+            with self.subTest(path=name):
+                entry = "      - " + name + "\n"
+                self.assertIn(entry, push)
+                self.assertIn(entry, pr)
+                self.assertTrue(is_brc_input(name))
+
+    def test_source_patch_is_in_reproducible_owner_bundle_allowlist(self):
+        workflow = (
+            Path(__file__).resolve().parents[1]
+            / ".github/workflows/h15-remote-commander-candidate.yml"
+        ).read_text(encoding="utf-8")
+        paths = workflow.split(
+            'cat > "$bundle/EXPECTED_PATHS.txt" <<', 1
+        )[1].split("\n          PATHS", 1)[0]
+        self.assertIn(
+            "\n          packages/relay/src/store/sqlite.ts\n", paths
+        )
+
     def test_missing_source_is_refused_without_creating_file(self):
         self.target.unlink()
         with self.assertRaisesRegex(AuditError, "candidate_file_missing_or_oversize"):
