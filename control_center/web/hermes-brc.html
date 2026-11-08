@@ -31,7 +31,7 @@
  <div class="brc-statusline" aria-live="polite" aria-atomic="true">
    <div class="brc-health"><span id="brc-health-dot" class="brc-dot muted" aria-hidden="true"></span><div><strong id="brc-health">Hermes BRC · данные недоступны</strong><small>Self-hosted · только проверенный API</small></div></div>
    <div class="brc-smallstat"><b id="brc-device-count">—</b> устройства</div>
-   <div class="brc-smallstat"><b id="brc-project-count">—</b> проекта</div>
+   <div class="brc-smallstat"><b id="brc-project-count">—</b> проектов</div>
    <div class="brc-smallstat"><b class="warning">—</b> E2E команд</div>
    <button id="brc-refresh" class="brc-refresh" type="button">Обновить</button>
    <button id="brc-check-source" class="brc-refresh" type="button">Проверить источник</button>
@@ -40,12 +40,13 @@
  <div class="brc-workgrid">
   <section class="brc-panel" aria-labelledby="brc-projects-head">
    <h2 class="brc-panel-label" id="brc-projects-head">ВЫБРАТЬ ПРОЕКТ</h2>
-   <p class="brc-panel-hint">Четыре изолированных sandbox-каталога. Переключение не выдаёт прав.</p>
+   <p class="brc-panel-hint">Пять разрешённых изолированных каталогов. Переключение не выдаёт прав.</p>
    <div class="brc-projects" id="brc-projects" role="group" aria-label="Рабочие пространства">
       <button class="brc-project selected" type="button" data-project="hermes" aria-pressed="true"><strong>Hermes Agent</strong><small>main · Git не проверен</small></button>
       <button class="brc-project" type="button" data-project="your-fitness-coach" aria-pressed="false"><strong>Your Fitness Coach</strong><small>master · Git не проверен</small></button>
       <button class="brc-project" type="button" data-project="second-brain" aria-pressed="false"><strong>Second Brain</strong><small>main · Git не проверен</small></button>
       <button class="brc-project" type="button" data-project="ai-development-toolkit" aria-pressed="false"><strong>AI Development Toolkit</strong><small>main · Git не проверен</small></button>
+      <button class="brc-project" type="button" data-project="financial-horizon" aria-pressed="false"><strong>Financial Horizon</strong><small>main · Git не проверен</small></button>
    </div>
    <div class="brc-project-foot"><strong>Каталог проектов</strong><p>Наличие пути не подтверждает Git HEAD, чистоту репозитория или права записи.</p></div>
   </section>

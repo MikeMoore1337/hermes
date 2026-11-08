@@ -5,7 +5,8 @@
   {id:"hermes",name:"Hermes Agent",branch:"main",caption:"Рабочее пространство Hermes"},
   {id:"your-fitness-coach",name:"Your Fitness Coach",branch:"master",caption:"Изолированный проект YFC"},
   {id:"second-brain",name:"Second Brain",branch:"main",caption:"Публичный sandbox; приватное хранилище закрыто"},
-  {id:"ai-development-toolkit",name:"AI Development Toolkit",branch:"main",caption:"Инструменты разработки в sandbox"}
+  {id:"ai-development-toolkit",name:"AI Development Toolkit",branch:"main",caption:"Инструменты разработки в sandbox"},
+  {id:"financial-horizon",name:"Financial Horizon",branch:"main",caption:"Изолированный проект финансового учёта"}
  ]);
  const names = Object.freeze(["H15 Windows permanent sandbox","H15 Hermes VPS sandbox","H15 YFC VPS sandbox"]);
  const nodes = {};
@@ -35,7 +36,8 @@
    const when=Date.parse(data.observed_at), lag=Date.now()-when;
    if(!Number.isFinite(when)||lag>300000||lag< -60000)return null;
    if(!Array.isArray(data.devices)||data.devices.length!==3 ||
-      !Array.isArray(data.workspaces)||data.workspaces.length!==4)return null;
+      !Array.isArray(data.workspaces)||
+      ![projects.length-1,projects.length].includes(data.workspaces.length))return null;
    for(let i=0;i<3;i++){
      const d=data.devices[i];
      if(!exact(d,["name","status","last_seen_age_seconds","command_execution"])
@@ -46,7 +48,7 @@
    }
    const online=data.devices.filter(d=>d.status==="online").length;
    if(data.status!==(online===3?"online":online?"partial":"unavailable"))return null;
-   for(let i=0;i<4;i++){
+   for(let i=0;i<data.workspaces.length;i++){
      const w=data.workspaces[i],p=projects[i];
      const ready=data.devices[0].status==="online"?"reachable_not_git_verified":"not_ready";
      if(!exact(w,["name","root","branch","git_verified","state"]) ||
@@ -98,7 +100,7 @@
    nodes["health-dot"].className="brc-dot "+(state==="online"?"":state==="partial"?"warn":"muted");
    nodes.time.textContent=observation?new Date(observation.observed_at).toLocaleString("ru-RU"):"Нет проверенного снимка";
    nodes["device-count"].textContent=observation?observation.devices.filter(d=>d.status==="online").length+"/3":"—";
-   nodes["project-count"].textContent=observation?observation.workspaces.filter(w=>w.state==="reachable_not_git_verified").length+"/4":"—";
+   nodes["project-count"].textContent=observation?observation.workspaces.filter(w=>w.state==="reachable_not_git_verified").length+"/"+observation.workspaces.length:"—";
    nodes["read-access"].textContent=observation?"Разрешено":"Не проверено";
    nodes.error.hidden=Boolean(observation);
    if(!observation)nodes.error.textContent=errorText[failure]||errorText.network;
