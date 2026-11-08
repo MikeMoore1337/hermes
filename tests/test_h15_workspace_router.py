@@ -47,6 +47,13 @@ class WorkspaceRouterTests(unittest.TestCase):
             self.assertEqual(len(r["head"]), 40)
             self.assertEqual(r["tracked_clean"], "not_checked")
 
+    def test_financial_horizon_exact_catalog_without_implicit_checkout(self):
+        entry = next(w for w in self.registry["workspaces"] if w["name"] == "financial-horizon")
+        self.assertEqual(entry["branch"], "main")
+        self.assertEqual(entry["aliases"], ["financial-horizon", "financial horizon", "fh"])
+        with self.assertRaisesRegex(RouteDenied, "workspace_missing_or_unsafe"):
+            self.route("fh")
+
     def test_live_device_resolution_exact_name(self):
         r = self.route(devices=self.devices)
         self.assertEqual(r["device_id"], "h15-win-05be75515428")

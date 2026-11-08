@@ -13,9 +13,9 @@ const clean=()=>({
     branch:p.branch,git_verified:false,state:"reachable_not_git_verified"}))
 });
 const clone=obj=>structuredClone(obj);
-test("approved explorer resolves four exact project contracts",()=>{
- assert.equal(commanderProjects.length,4);
- assert.deepEqual(commanderProjects.map(p=>p.branch),["main","main","main","master"]);
+test("approved explorer resolves five exact project contracts",()=>{
+ assert.equal(commanderProjects.length,5);
+ assert.deepEqual(commanderProjects.map(p=>p.branch),["main","main","main","master","main"]);
  for(const p of commanderProjects){
   assert.equal(projectSandboxRoot(p),"/workspace/projects/"+p.repo);
   assert.equal(projectExpectedOrigin(p),"https://github.com/MikeMoore1337/"+p.repo+".git");
@@ -24,6 +24,14 @@ test("approved explorer resolves four exact project contracts",()=>{
  const brain=commanderProjects.find(p=>p.id==="brain");
  assert.equal(brain.windowsPath,brain.parentWorkspace+"\\second-brain");
  assert.notEqual(brain.parentWorkspace,brain.windowsPath);
+ const finance=commanderProjects.find(p=>p.repo==="financial-horizon");
+ assert.equal(finance.windowsPath,"D:\\Pet-projects\\financial-horizon");
+});
+test("legacy four-project observation remains readable during rollout",()=>{
+ const value=clean();value.workspaces.pop();
+ assert.deepEqual(parseBrcObservation(value),value);
+ const missing=clone(clean());missing.workspaces.splice(0,1);
+ assert.equal(parseBrcObservation(missing),null);
 });
 test("only valid sanitized, fresh owner-scoped observation is rendered",()=>{
  const data=clean();

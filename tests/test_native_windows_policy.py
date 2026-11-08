@@ -8,8 +8,8 @@ from control_center.native_windows_policy import (
 
 
 class NativeWindowsPolicyTests(unittest.TestCase):
-    def test_four_exact_owner_approved_roots_read_policy_not_runtime(self):
-        self.assertEqual(len(READ_ROOTS), 4)
+    def test_five_exact_owner_approved_roots_read_policy_not_runtime(self):
+        self.assertEqual(len(READ_ROOTS), 5)
         for project, root in READ_ROOTS.items():
             with self.subTest(project=project):
                 for operation in READ_ACTIONS:
@@ -20,6 +20,7 @@ class NativeWindowsPolicyTests(unittest.TestCase):
                 child = classify_native_request(root + r"\src\app.py", "read")
                 self.assertEqual(child.status, "read_policy_approved")
                 self.assertEqual(child.project, project)
+        self.assertEqual(READ_ROOTS["financial-horizon"], r"D:\Pet-projects\financial-horizon")
         self.assertFalse(has_native_windows_access())
 
     def test_every_write_or_execution_requires_separate_explicit_approval(self):
@@ -38,6 +39,7 @@ class NativeWindowsPolicyTests(unittest.TestCase):
             r"D:\Pet-projects\second-brain-workspace\vault",
             r"D:\Pet-projects\hermes-tmp\file.txt",
             r"D:\Pet-projects\your-fitness-coach2",
+            r"D:\Pet-projects\financial-horizon-backup\README.md",
             r"D:\Pet-projects\AI-development-toolkit-backup",
             r"D:\Users\Mike\.ssh\id_ed25519",
             r"C:\Windows\System32\drivers\etc\hosts",

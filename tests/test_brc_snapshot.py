@@ -34,7 +34,7 @@ class BrcSnapshotTests(unittest.TestCase):
         result = normalize(devices, catalog, now_ms=NOW)
         self.assertEqual(result["status"], "online")
         self.assertEqual(len(result["devices"]), 3)
-        self.assertEqual(len(result["workspaces"]), 4)
+        self.assertEqual(len(result["workspaces"]), 5)
         self.assertFalse(result["execution_verified"])
         self.assertFalse(result["onboarding_enabled"])
         self.assertFalse(result["native_host_access"])
@@ -45,6 +45,16 @@ class BrcSnapshotTests(unittest.TestCase):
         self.assertNotIn("SECRET_SENTINEL", blob)
         self.assertNotIn("h15-win-", blob)
         self.assertNotIn("oauth_token", blob)
+
+    def test_legacy_four_projects_are_readable_during_relay_rollout(self):
+        devices, catalog = fixtures()
+        catalog["workspaces"].pop()
+        result = normalize(devices, catalog, now_ms=NOW)
+        self.assertEqual(len(result["workspaces"]), 4)
+        self.assertNotIn("financial-horizon", [w["name"] for w in result["workspaces"]])
+        catalog["workspaces"].pop(0)
+        with self.assertRaises(SnapshotRejected):
+            normalize(devices, catalog, now_ms=NOW)
 
     def test_shuffled_device_and_project_order_is_stable(self):
         dev, cat = fixtures()
