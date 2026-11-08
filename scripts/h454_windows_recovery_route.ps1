@@ -204,6 +204,7 @@ function Prepare-H454RecoveryRoute(
             -not $proxy.State.Dead -and (-not $proxy.State.Running -or $connected)) 'H454_ROUTE_PROXY_NETWORK'
     }
     if(-not $Apply){return [pscustomobject]@{Status='PREFLIGHT';NetworkPresent=($null -ne $network);ProxyPresent=($null -ne $proxy);ProbePresent=($null -ne $probe)}}
+    $mutationFence=Open-H454MutationFence $StateDir $Lock 'recovery-route' $MarkerSha256
     if($null -ne $probe){
         Assert-H454RecoveryRouteSafety $StateDir $Lock $MarkerSha256 $SafetyCheck
         $currentProbe=Find-H454RecoveryObject 'container' $probeName $DockerSha256
@@ -284,6 +285,7 @@ function Prepare-H454RecoveryRoute(
     $probeResult=Invoke-H454RecoveryDocker -Arguments @('exec','--user','65534:65534',$proxy.Id,'node','-e',$bootstrap,$unauthorized64,$privateAddress) -DockerSha256 $DockerSha256
     Require-H454 ($probeResult.Code -eq 0 -and $probeResult.Output.Trim() -ceq 'H454_SYNTHETIC_BEARER=REFUSED') 'H454_ROUTE_PROBE'
     Assert-H454RecoveryRouteSafety $StateDir $Lock $MarkerSha256 $SafetyCheck
+    Close-H454MutationFence $StateDir $Lock $mutationFence
     return [pscustomobject]@{Status='ROUTE_READY';NetworkId=$plan.Id;NetworkName=$networkName;Cidr=$plan.Cidr;
         ProxyId=[string]$proxy.Id;ProxyName=$proxyName;BridgeId=[string]$bridge.Id;LabelValue=$labelValue;HostAddress=$hostAddress}
 }
