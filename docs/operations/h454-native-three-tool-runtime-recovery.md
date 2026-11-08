@@ -229,6 +229,17 @@ indiscriminately. Subsequent repeat cutovers are intentionally blocked by
 the retained original pin snapshot until a separate reviewed cleanup
 procedure is authorized.
 
+**Post-rollback read-only admission:** after a failed attempt restores both
+original container IDs and removes its pending marker, the intentionally
+retained `native3-original-pins.json` still blocks another cutover. The
+standalone `plan` must report `REFUSED/PREVIOUS_TRANSACTION_NOT_CLEARED` for
+that condition, even when the old relay/WSS are healthy, both rollback names
+are free, and a candidate OCI archive is valid. A symlink at that pathname,
+including a dangling symlink, also refuses. This check performs no filesystem,
+Docker or credential mutation. Do not delete the retained snapshot to turn a
+failed plan into PASS; a separate reviewed incident-retention/re-arm procedure
+and new owner authorization are required before any second maintenance switch.
+
 **Mandatory before readiness:** independent code/security review at the exact
 PR HEAD; repository, BRC candidate, Windows native and UI regression checks;
 fault injection for every stop/rename/create/update/pin/health/reconcile
