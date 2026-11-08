@@ -23,10 +23,26 @@ jobs:
           set -euo pipefail
           image='nousresearch/hermes-agent@sha256:a11574b7fe8e1631d7d88d556677dac693bc058abf558cdeb899155688c1bf05'
           docker pull --platform linux/amd64 "$image"
-          observed="$(docker image inspect "$image" --format '{{.Id}}|{{.Os}}|{{.Architecture}}')"
-          expected='sha256:a11574b7fe8e1631d7d88d556677dac693bc058abf558cdeb899155688c1bf05|linux|amd64'
-          test "$observed" = "$expected" || { echo H199_IMAGE_IDENTITY_INCONCLUSIVE; exit 2; }
+          os="$(docker image inspect "$image" --format '{{.Os}}')"
+          arch="$(docker image inspect "$image" --format '{{.Architecture}}')"
+          config_id="$(docker image inspect "$image" --format '{{.Id}}')"
+          if [ "$os" != linux ] || [ "$arch" != amd64 ] || ! [[ "$config_id" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+            echo H199_IMAGE_OS_ARCH_OR_CONFIG_INCONCLUSIVE
+            exit 2
+          fi
+          docker image inspect "$image" --format '{{json .RepoDigests}}' > "$RUNNER_TEMP/h199-repodigests.json"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          digests = json.loads((Path(os.environ["RUNNER_TEMP"]) / "h199-repodigests.json").read_text())
+          wanted = "nousresearch/hermes-agent@sha256:a11574b7fe8e1631d7d88d556677dac693bc058abf558cdeb899155688c1bf05"
+          if not isinstance(digests, list) or not ({wanted, "docker.io/" + wanted} & set(digests)):
+              raise SystemExit("H199_REPODIGEST_INCONCLUSIVE")
+          print("H199_IMMUTABLE_MANIFEST_DIGEST=PASS")
+          PY
           echo 'H199_IMAGE=EXACT_IMMUTABLE_LINUX_AMD64' >> "$GITHUB_STEP_SUMMARY"
+          echo "H199_IMAGE_CONFIG_ID=$config_id (separate from manifest digest)" >> "$GITHUB_STEP_SUMMARY"
       - name: Static source parity from stopped container (no agent execution)
         shell: bash
         run: |
