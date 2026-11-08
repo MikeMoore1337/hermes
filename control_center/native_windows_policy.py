@@ -13,6 +13,7 @@ import re
 READ_ROOTS: dict[str, str] = {
     "ai-development-toolkit": r"D:\Pet-projects\ai-development-toolkit",
     "hermes": r"D:\Pet-projects\hermes",
+    "financial-horizon": r"D:\Pet-projects\financial-horizon",
     "second-brain": r"D:\Pet-projects\second-brain-workspace\second-brain",
     "your-fitness-coach": r"D:\Pet-projects\your-fitness-coach",
 }

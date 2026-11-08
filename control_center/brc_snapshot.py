@@ -26,7 +26,9 @@ PROJECTS = {
     "your-fitness-coach": "master",
     "second-brain": "main",
     "ai-development-toolkit": "main",
+    "financial-horizon": "main",
 }
+LEGACY_PROJECT_COUNT = len(PROJECTS) - 1  # Previous exact catalog during coordinated rollout.
 WINDOWS = DEVICES[0]
 # A separately owner-approved, currently disabled original Windows reader is
 # registered alongside the three permanent sandboxes. It is NOT a fourth
@@ -146,7 +148,7 @@ def normalize(devices: object, catalog: object, *, now_ms: int) -> dict:
     if not isinstance(catalog, dict) or catalog.get("schema") != 1 or catalog.get("status") != "catalog":
         _reject("invalid_workspace_catalog")
     entries = catalog.get("workspaces")
-    if not isinstance(entries, list) or len(entries) != len(PROJECTS):
+    if not isinstance(entries, list) or len(entries) not in (LEGACY_PROJECT_COUNT, len(PROJECTS)):
         _reject("invalid_workspace_count")
     result, seen_projects = [], set()
     for entry in entries:
@@ -169,6 +171,8 @@ def normalize(devices: object, catalog: object, *, now_ms: int) -> dict:
                        "root": f"/workspace/projects/{name}",
                        "branch": PROJECTS[name], "git_verified": False,
                        "state": "reachable_not_git_verified" if windows_online else "not_ready"})
+    if seen_projects != set(tuple(PROJECTS)[:len(entries)]):
+        _reject("invalid_workspace_set")
     result.sort(key=lambda row: tuple(PROJECTS).index(row["name"]))
     healthy = sum(row["status"] == "online" for row in output)
     status = "online" if healthy == len(DEVICES) else "partial" if healthy else "unavailable"
@@ -255,7 +259,7 @@ def read_snapshot(path: Path = DEFAULT_OUTPUT, *, now: dt.datetime | None = None
     if value["status"] != aggregate:
         _reject("snapshot_inconsistent_status")
     projects = value["workspaces"]
-    if not isinstance(projects, list) or len(projects) != len(PROJECTS):
+    if not isinstance(projects, list) or len(projects) not in (LEGACY_PROJECT_COUNT, len(PROJECTS)):
         _reject("invalid_snapshot_workspaces")
     ready = records[0]["status"] == "online"
     for entry, (name, branch) in zip(projects, PROJECTS.items()):

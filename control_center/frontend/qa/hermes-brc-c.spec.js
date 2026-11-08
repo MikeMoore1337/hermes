@@ -6,6 +6,7 @@ const projects=[
  ["Your Fitness Coach","your-fitness-coach","master"],
  ["Second Brain","second-brain","main"],
  ["AI Development Toolkit","ai-development-toolkit","main"],
+ ["Financial Horizon","financial-horizon","main"],
 ];
 const devices=["H15 Windows permanent sandbox","H15 Hermes VPS sandbox","H15 YFC VPS sandbox"];
 const snapshot=()=>({
@@ -115,12 +116,12 @@ for(const width of [320,1440]){
   }
  });
 }
-test("concept C reads only sanitized source and switches four projects",async({page})=>{
+test("concept C reads only sanitized source and switches five projects",async({page})=>{
  await page.setViewportSize({width:1440,height:900});await setup(page);
  await expect(page.getByRole("heading",{name:"Рабочие пространства"})).toBeVisible();
  await expect(page.locator("#brc-health")).toHaveText("Hermes BRC · подключён");
  await expect(page.locator("#brc-device-count")).toHaveText("3/3");
- await expect(page.locator("#brc-project-count")).toHaveText("4/4");
+ await expect(page.locator("#brc-project-count")).toHaveText("5/5");
  await expect(page.locator("#brc-devices li")).toHaveCount(3);
  for(const [title,repo,branch] of projects){
   const button=page.locator(`#brc-projects button[data-project="${repo}"]`);

@@ -1,7 +1,10 @@
 # Hermes #454/#455 — owner-approved Windows roots and operation gate
 
-**Owner decision (2026-10-23):** Read-only inspection is approved for the
-**four specific original Windows project directories below**.
+**Owner decision (2026-10-23):** Read-only inspection was approved for
+four exact original Windows project directories. **Owner extension
+(2026-11-08):** `D:\Pet-projects\financial-horizon` is added as a fifth
+exact read root on the same conditions. This does not reactivate a paused
+native Windows agent or constitute a filesystem access test.
 A file modification **or any command execution** requires a **separate
 owner approval**. The assistant must first give a concise action proposal:
 which project, exact changes/commands, why, and expected effects. The
@@ -11,6 +14,7 @@ owner explicitly approves that proposal **before execution**, not after.
 | --- | --- |
 | AI Development Toolkit | `D:\Pet-projects\ai-development-toolkit` |
 | Hermes | `D:\Pet-projects\hermes` |
+| Financial Horizon | `D:\Pet-projects\financial-horizon` |
 | Second Brain code repo | `D:\Pet-projects\second-brain-workspace\second-brain` |
 | Your Fitness Coach | `D:\Pet-projects\your-fitness-coach` |
 
@@ -53,7 +57,7 @@ as proof that any file was opened on a Windows original directory.
 
 1. Discover requested project through native MCP workspace catalog;
    decide whether the desired result can be read from existing sandbox.
-   If the true original file is required, restrict to one of the four
+   If the true original file is required, restrict to one of the five
    roots and an approved read-only native broker with least-privilege
    OS access. Limit paths, sizes, traversal and redaction.
 2. For write or execute, produce a **short proposal** including purpose,

@@ -141,7 +141,8 @@ test("visual evidence: integrated BRC shares Orbit shell with synthetic devices"
   page.on("pageerror",error=>pageErrors.push(error.message));
   const devices=["H15 Windows permanent sandbox","H15 Hermes VPS sandbox","H15 YFC VPS sandbox"];
   const projects=[["hermes","main"],["your-fitness-coach","master"],
-    ["second-brain","main"],["ai-development-toolkit","main"]];
+    ["second-brain","main"],["ai-development-toolkit","main"],
+     ["financial-horizon","main"]];
   await page.route("**/api/providers/hermes-brc",route=>route.fulfill({
     status:200,contentType:"application/json",body:JSON.stringify({
       schema:1,source:"hermes_brc_mcp",status:"online",

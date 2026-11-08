@@ -28,7 +28,7 @@ against the known owner-scoped registration, then discarded from the public
 three-sandbox observation. Unknown fourth devices fail closed. All devices
 require bounded IDs, true boolean presence fields and `lastSeen` integer
 Unix milliseconds; one owner
-catalog of exactly four known public workspace identities with exact
+catalog of four original or five updated known public workspace identities with exact
 origin, branch and `/workspace/projects/<repository>` roots.
 
 Output: `schema=1`, `source=hermes_brc_mcp`,

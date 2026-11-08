@@ -52,6 +52,19 @@
       "origin": "https://github.com/MikeMoore1337/ai-development-toolkit.git",
       "branch": "main",
       "scope": "sandbox"
+    },
+    {
+      "name": "financial-horizon",
+      "aliases": [
+        "financial-horizon",
+        "financial horizon",
+        "fh"
+      ],
+      "deviceId": "h15-win-05be75515428",
+      "root": "/workspace/projects/financial-horizon",
+      "origin": "https://github.com/MikeMoore1337/financial-horizon.git",
+      "branch": "main",
+      "scope": "sandbox"
     }
   ]
 }

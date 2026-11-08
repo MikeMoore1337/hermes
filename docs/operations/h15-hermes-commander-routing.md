@@ -14,7 +14,7 @@ sanctioned roots, per-command Git safe.directory handling and remaining gates.
 
 ## Workspace registry and trust boundaries
 
-`deploy/h15/workspace-registry.json` allowlists four public sandbox clones:
+`deploy/h15/workspace-registry.json` now allowlists five public sandbox clones (fifth added 2026-11-08):
 Hermes (`main`), YFC (`master`), Second Brain (`main`) and
 AI Development Toolkit (`main`). The native relay tools resolve aliases
 using the authenticated user's currently paired device list; the selected
@@ -57,9 +57,11 @@ clients. Other #454 goals remain in progress:
   unapproved UI modification or host permission is implied.
 - Verify device/agent reconnect, safe self-heal and Windows login/reboot
   recovery under an approved maintenance window (#445).
-- Exactly four native original Windows folders were approved for READ-only
-  E2E, and the one-shot read agent is now paused with token revoked. Every
-  future host command, write or re-enrollment requires a separate owner gate.
+- The original four native Windows read roots were approved in October; a fifth
+  (`financial-horizon`) was approved on 2026-11-08 for the same READ-only policy.
+  The earlier read-only E2E covered only the four original folders, not
+  Financial Horizon. The one-shot agent remains paused with its token revoked.
+  Every future host command, write or re-enrollment requires a separate owner gate.
 
 See [#454](https://github.com/MikeMoore1337/hermes/issues/454) for the
 authoritative full acceptance criteria and linked E2E evidence.

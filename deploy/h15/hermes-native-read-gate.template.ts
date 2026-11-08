@@ -7,7 +7,7 @@ declare const process: { env: Record<string, string | undefined> };
 const EXPECTED_NAME = 'H15 Windows native read-only';
 const ID = /^[A-Za-z0-9_-]{8,128}$/;
 const PROJECTS = new Set(['hermes', 'your-fitness-coach', 'second-brain',
-                          'ai-development-toolkit']);
+                          'ai-development-toolkit', 'financial-horizon']);
 const METHODS = new Set(['native_file_stat', 'native_file_read', 'native_file_list']);
 const DENIED = new Set(['.git', 'vault', '.vault', 'private-vault', '.ssh',
                         'secrets', '.secrets', 'credentials', 'node_modules']);

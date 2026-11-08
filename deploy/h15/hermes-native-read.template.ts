@@ -12,7 +12,7 @@ const DEVICE_NAME = 'H15 Windows native read-only';
 // Preserve the single owner-approved original Win32 device identity.
 const NATIVE_DEVICE_ID = 'h454-win-01335a1f6e6705b4';
 const NAMES = ['native_file_stat', 'native_file_read', 'native_file_list'] as const;
-const PROJECTS = ['hermes', 'your-fitness-coach', 'second-brain', 'ai-development-toolkit'];
+const PROJECTS = ['hermes', 'your-fitness-coach', 'second-brain', 'ai-development-toolkit', 'financial-horizon'];
 const DENY = { content: [{ type: 'text' as const,
   text: '{"status":"refused","reason":"native_read_unavailable"}' }], isError: true };
 const BUSY_TEXT = '{"status":"refused","reason":"native_file_busy",' +

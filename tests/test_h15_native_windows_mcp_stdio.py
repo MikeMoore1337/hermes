@@ -244,7 +244,8 @@ class NativeWindowsMcpStdioTests(unittest.TestCase):
 
     def test_only_owner_listed_projects_and_ops_are_exposed(self):
         self.assertEqual(set(mcp.native.READ_ROOTS), {
-            "ai-development-toolkit", "hermes", "second-brain", "your-fitness-coach"})
+            "ai-development-toolkit", "hermes", "second-brain", "your-fitness-coach",
+            "financial-horizon"})
         self.assertEqual(len(mcp.TOOLS), 3)
         self.assertEqual({t["name"] for t in mcp.TOOLS},
                          {"native_file_read", "native_file_stat", "native_file_list"})

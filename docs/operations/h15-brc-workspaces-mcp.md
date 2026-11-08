@@ -16,7 +16,9 @@ Actual **ChatGPT and Codex clients both called** `list_workspaces` and
 [ChatGPT](https://github.com/MikeMoore1337/hermes/issues/454#issuecomment-6349129129)
 and [Codex](https://github.com/MikeMoore1337/hermes/issues/454#issuecomment-6349223554).
 
-The MCP catalog has four public **sandbox** projects:
+The previous live acceptance covered four public **sandbox** projects.
+The source catalog now adds **Financial Horizon** as a fifth. Its live
+availability remains unverified pending controlled deployment and Git checks:
 
 | Workspace | Branch | Approved root |
 | --- | --- | --- |
@@ -24,6 +26,7 @@ The MCP catalog has four public **sandbox** projects:
 | your-fitness-coach (YFC) | master | `/workspace/projects/your-fitness-coach` |
 | second-brain | main | `/workspace/projects/second-brain` |
 | ai-development-toolkit (Toolkit) | main | `/workspace/projects/ai-development-toolkit` |
+| financial-horizon (FH) | main | `/workspace/projects/financial-horizon` |
 
 The authenticated MCP tools select the unique online, unpaused
 `H15 Windows permanent sandbox` from live user-owned device discovery.
@@ -70,7 +73,7 @@ live PASS, partial coverage and untested scenarios by device and tool.
   Hermes VPS and YFC VPS sandboxes: **PASS**, using isolated temporary
   files; all temporary files removed.
 - Independent Codex 3-sandbox write/read/edit/search/move/Node/cleanup
-  E2E: **PASS** on 2026-10-24; exact scoped Git verification PASS for all
+  E2E: **PASS** on 2026-10-24; exact scoped Git verification PASS for the original
   four Windows sandbox clones. See [owner-reported client trace](https://github.com/MikeMoore1337/hermes/issues/454#issuecomment-6388962086).
   Advanced binary/concurrency/reconnect tests remain incomplete.
 - New-project onboarding and Control Center workflow: **OPEN** (#455,

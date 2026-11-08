@@ -39,7 +39,7 @@ class WindowsWorkspaceTests(unittest.TestCase):
         self.assertNotIn('docker.exe run', WORK)
 
     def test_allowlist_explicit_public_repositories(self):
-        for name in ('hermes', 'your-fitness-coach', 'second-brain', 'ai-development-toolkit'):
+        for name in ('hermes', 'your-fitness-coach', 'second-brain', 'ai-development-toolkit', 'financial-horizon'):
             self.assertIn("'" + name + "'", WORK)
         self.assertIn('https://github.com/MikeMoore1337/', WORK)
         self.assertIn('EXISTING_REPOSITORY_ORIGIN_MISMATCH', WORK)

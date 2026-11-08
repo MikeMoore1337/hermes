@@ -475,7 +475,8 @@ jobs:
           import { listApprovedWorkspaces, resolveApprovedWorkspace } from './packages/relay/dist/mcp/hermes-workspaces.js';
           const dev = { name: 'H15 Windows permanent sandbox', deviceId: 'h15-win-05be75515428', online: true, paused: false };
           const assert = (value, name) => { if (!value) throw Error('H454_CI_FAIL:' + name); };
-          assert(listApprovedWorkspaces([dev]).workspaces.length === 4, 'catalog');
+          assert(listApprovedWorkspaces([dev]).workspaces.length === 5, 'catalog');
+          assert(resolveApprovedWorkspace({ project: 'fh' }, [dev]).root === '/workspace/projects/financial-horizon', 'financial_horizon');
           const yfc = resolveApprovedWorkspace({ project: 'YFC' }, [dev]);
           assert(yfc.status === 'resolved' && yfc.root === '/workspace/projects/your-fitness-coach', 'yfc');
           assert(yfc.git_verified === false && yfc.verification_required_before_write, 'no_false_git_verification');
