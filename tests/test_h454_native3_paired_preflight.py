@@ -4,6 +4,7 @@ import json
 import os
 from contextlib import nullcontext, redirect_stdout
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest import TestCase
 from unittest.mock import patch
@@ -119,6 +120,49 @@ class PairedPreflightTests(TestCase):
         self.assertTrue(result["rollback_slots_available"])
         self.assertFalse(result["changes_performed"])
         self.assertFalse(result["deployment_approved"])
+
+    def test_failed_cutover_retained_pins_block_fresh_plan_before_oci(self):
+        # Real owner incident retains this file after a successful rollback.
+        # A misleading PASS would invite a second unsafe cutover attempt.
+        with TemporaryDirectory(prefix="h454-postrollback-") as scratch:
+            retained = Path(scratch) / "native3-original-pins.json"
+            retained.write_bytes(b"synthetic-owner-pin-evidence\n")
+            with patch.object(pair, "ORIGINAL_PINS", retained), \
+                 patch.object(pair.os, "geteuid", return_value=0), \
+                 patch.object(pair, "verify_installed_source"), \
+                 patch.object(pair.legacy, "lock", return_value=nullcontext()), \
+                 patch.object(pair.stage1, "protected"), \
+                 patch.object(pair.legacy, "check_files"), \
+                 patch.object(pair.candidate, "admit") as candidate_image, \
+                 patch.object(pair.stage1, "docker") as docker:
+                with self.assertRaisesRegex(
+                        pair.PairDenied, "^PREVIOUS_TRANSACTION_NOT_CLEARED$"):
+                    pair.plan(release_sha=RELEASE, bundle=Path("/verified"),
+                              image=IMAGE, archive_sha=ARCHIVE,
+                              candidate_sha=SOURCE)
+                candidate_image.assert_not_called()
+                docker.assert_not_called()
+            self.assertEqual(retained.read_bytes(),
+                             b"synthetic-owner-pin-evidence\n")
+
+    def test_dangling_original_pin_symlink_is_an_explicit_hold(self):
+        with TemporaryDirectory(prefix="h454-symlink-") as scratch:
+            retained = Path(scratch) / "native3-original-pins.json"
+            retained.symlink_to(Path(scratch) / "missing-target")
+            with patch.object(pair, "ORIGINAL_PINS", retained):
+                with self.assertRaisesRegex(
+                        pair.PairDenied, "^PREVIOUS_TRANSACTION_NOT_CLEARED$"):
+                    pair.require_no_previous_transaction()
+            self.assertTrue(retained.is_symlink())
+
+    def test_clean_preflight_has_no_retained_snapshot_and_matches_transaction(self):
+        from scripts import h454_native3_paired_transaction as tx
+        self.assertEqual(pair.ORIGINAL_PINS, tx.ORIGINAL_PINS)
+        with TemporaryDirectory(prefix="h454-clean-") as scratch:
+            missing = Path(scratch) / "native3-original-pins.json"
+            with patch.object(pair, "ORIGINAL_PINS", missing):
+                pair.require_no_previous_transaction()
+                self.assertFalse(missing.exists())
 
     def test_untrusted_owner_pair_images_are_denied(self):
         for key,value in (
