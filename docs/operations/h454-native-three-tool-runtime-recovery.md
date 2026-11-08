@@ -242,30 +242,30 @@ No automatic cutover, deployment or background worker is introduced.
 ## 2026-11-08 paired cutover: admin hash startup regression and recovery gate
 
 The first owner-authorized production paired relay/WSS transaction did **not**
-succeed. The operator reported \`PAIR_CUTOVER_FAILED_ORIGINAL_RESTORED\`.
+succeed. The operator reported `PAIR_CUTOVER_FAILED_ORIGINAL_RESTORED`.
 Owner-console verification confirmed both original container IDs/images/running
-states, \`unless-stopped\` policies, original WSS pin digest, healthy BRC with
-two devices and Control Center HTTP 200. The \`native3-original-pins.json\`
+states, `unless-stopped` policies, original WSS pin digest, healthy BRC with
+two devices and Control Center HTTP 200. The `native3-original-pins.json`
 snapshot remains present, so a second cutover is intentionally blocked.
 
 A read-only comparison of two immutable, retained SQLite snapshots identified
-**one changed \`users.password_hash\`**, with no added/deleted users and no
+**one changed `users.password_hash`**, with no added/deleted users and no
 other tracked identity changes. The original and new hashes both matched the
-upstream custom \`<32 lowercase hex salt>:<128 lowercase hex scrypt>\` format
+upstream custom `<32 lowercase hex salt>:<128 lowercase hex scrypt>` format
 and used different salts. Their plaintext equivalence was **not** tested.
-The pinned upstream relay's \`buildRelay()\` invokes \`upsertUser()\` on every
-startup, and upstream \`upsertUser()\` previously regenerated the salted hash
+The pinned upstream relay's `buildRelay()` invokes `upsertUser()` on every
+startup, and upstream `upsertUser()` previously regenerated the salted hash
 even when the configured password was unchanged. This behavior is a strong
-source-level explanation for the \`STALE_SECURITY_STATE\` failure immediately
+source-level explanation for the `STALE_SECURITY_STATE` failure immediately
 after the post-cutover snapshot; a complete original exception stack was not
 retained, so do not claim forensic certainty beyond the evidence.
 
 Hermes Issue #454 introduces a **candidate-only, source-pinned** patch via
-\`scripts/h454_brc_admin_hash_startup.py\`. It first verifies the existing
+`scripts/h454_brc_admin_hash_startup.py`. It first verifies the existing
 password against the stored hash and returns the existing user unchanged when
 valid. When the configured password differs, the original authenticated
 password-rotation path remains, and the strict
-\`scripts/h15_brc_state_rollback_guard.py\` is **not modified**. CI must test
+`scripts/h15_brc_state_rollback_guard.py` is **not modified**. CI must test
 the patched compiled SQLite store across on-disk restarts and a simulated
 password rotation, then test the same code inside the actual isolated OCI.
 
@@ -274,7 +274,7 @@ approved OCI artifact still contains the old startup behavior. A new,
 independently attested candidate artifact and reviewed code/CI are required,
 followed by an owner-authorized source/OCI release strategy. Before another
 attempt, a separately reviewed cleanup/recovery procedure must account for
-retained \`native3-original-pins.json\`, both SQLite snapshots, and the previous
+retained `native3-original-pins.json`, both SQLite snapshots, and the previous
 approval. Do **not** delete the marker, replace password hashes, restore old
-SQLite copies, relax \`STALE_SECURITY_STATE\`, restart the pair, or launch a
-second \`cutover --execute\` to work around the block.
+SQLite copies, relax `STALE_SECURITY_STATE`, restart the pair, or launch a
+second `cutover --execute` to work around the block.
