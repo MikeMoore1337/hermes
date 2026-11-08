@@ -71,6 +71,9 @@ on:
       - scripts/h15_brc_upgrade_preflight.py
       - scripts/h15_brc_transactional_upgrade.py
       - scripts/h15_brc_owner_artifact_stage.py
+      - scripts/h454_brc_admin_hash_startup.py
+      - scripts/h454_brc_admin_hash_e2e.mjs
+      - tests/test_h454_brc_admin_hash_startup.py
       - scripts/h15_brc_owner_handoff.py
       - tests/test_h15_brc_owner_handoff.py
       - tests/test_h15_brc_owner_artifact_stage.py
