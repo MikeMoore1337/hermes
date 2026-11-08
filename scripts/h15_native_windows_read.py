@@ -3,7 +3,7 @@
 NOT deployed or exposed as MCP. Running this on the native Windows host
 requires a separate owner approval for that exact process invocation.
 
-The script takes only one of four owner-approved project identifiers and
+The script takes only one of five owner-approved project identifiers and
 a relative file path. It never writes, deletes, launches a subprocess, or
 opens a network listener. Contents are emitted only on an explicit read.
 Directory listing is bounded to the approved project root; no shell bridge.

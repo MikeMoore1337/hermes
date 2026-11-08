@@ -4,7 +4,7 @@
 [CmdletBinding()]
 param(
     [ValidateSet('Check','Prepare','Status')][string]$Mode = 'Check',
-    [ValidateSet('Hermes','YFC','SecondBrain','Toolkit','All')][string]$Project = 'All'
+    [ValidateSet('Hermes','YFC','SecondBrain','Toolkit','FinancialHorizon','All')][string]$Project = 'All'
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -16,8 +16,9 @@ $Manifest = @{
     YFC = @{ Name = 'your-fitness-coach'; Repo = 'your-fitness-coach'; Branch = 'master' }
     SecondBrain = @{ Name = 'second-brain'; Repo = 'second-brain'; Branch = 'main' }
     Toolkit = @{ Name = 'ai-development-toolkit'; Repo = 'ai-development-toolkit'; Branch = 'main' }
+    FinancialHorizon = @{ Name = 'financial-horizon'; Repo = 'financial-horizon'; Branch = 'main' }
 }
-$Names = if ($Project -eq 'All') { @('Hermes','YFC','SecondBrain','Toolkit') } else { @($Project) }
+$Names = if ($Project -eq 'All') { @('Hermes','YFC','SecondBrain','Toolkit','FinancialHorizon') } else { @($Project) }
 
 function Fail([string]$message) { throw "H15_WORKSPACE_REFUSED=$message" }
 function Assert-PlainDirectory([string]$path) {

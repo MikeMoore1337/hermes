@@ -5,6 +5,7 @@ export const commanderProjects=Object.freeze([
   {id:"hermes",name:"Hermes",short:"Hermes",repo:"hermes",branch:"main",windowsPath:"D:\\Pet-projects\\hermes"},
   {id:"brain",name:"Second Brain",short:"Second Brain",repo:"second-brain",branch:"main",windowsPath:"D:\\Pet-projects\\second-brain-workspace\\second-brain",parentWorkspace:"D:\\Pet-projects\\second-brain-workspace"},
   {id:"yfc",name:"Your Fitness Coach",short:"YFC",repo:"your-fitness-coach",branch:"master",windowsPath:"D:\\Pet-projects\\your-fitness-coach"},
+  {id:"fh",name:"Financial Horizon",short:"FH",repo:"financial-horizon",branch:"main",windowsPath:"D:\\Pet-projects\\financial-horizon"},
 ]);
 
 export const commanderDevices=Object.freeze([
@@ -72,7 +73,8 @@ export function parseBrcObservation(value,now=Date.now()){
     value.onboarding_enabled!==false||
     typeof value.observed_at!=="string"||
     !Array.isArray(value.devices)||value.devices.length!==3||
-    !Array.isArray(value.workspaces)||value.workspaces.length!==4)return null;
+    !Array.isArray(value.workspaces)||
+    ![commanderProjects.length-1,commanderProjects.length].includes(value.workspaces.length))return null;
  const stamp=Date.parse(value.observed_at),lag=now-stamp;
  if(!Number.isFinite(stamp)||lag>300000||lag< -60000)return null;
  if(value.devices.some((d,i)=>!exact(d,deviceFields)||
@@ -87,7 +89,10 @@ export function parseBrcObservation(value,now=Date.now()){
    return !exact(w,workspaceFields)||!p||w.root!==projectSandboxRoot(p)||
      w.branch!==p.branch||w.git_verified!==false||w.state!==expected;
  }))return null;
- if(new Set(value.workspaces.map(w=>w.name)).size!==4)return null;
+ const expectedNames=new Set(commanderProjects.filter(p=>
+   value.workspaces.length===commanderProjects.length||p.repo!=="financial-horizon").map(p=>p.repo));
+ const names=new Set(value.workspaces.map(w=>w.name));
+ if(names.size!==expectedNames.size||[...expectedNames].some(name=>!names.has(name)))return null;
  return value;
 }
 

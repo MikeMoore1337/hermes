@@ -21,6 +21,7 @@ const WORKSPACES = [
   ['your-fitness-coach', 'master'],
   ['second-brain', 'main'],
   ['ai-development-toolkit', 'main'],
+  ['financial-horizon', 'main'],
 ] as const;
 const DEVICE_ID = /^[A-Za-z0-9_-]{8,128}$/;
 

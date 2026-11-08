@@ -20,6 +20,7 @@ PROJECTS = {
     "your-fitness-coach": ("master", "your-fitness-coach"),
     "second-brain": ("main", "second-brain"),
     "ai-development-toolkit": ("main", "ai-development-toolkit"),
+    "financial-horizon": ("main", "financial-horizon"),
 }
 ALIASES = {
     "yfc": "your-fitness-coach",
@@ -27,6 +28,8 @@ ALIASES = {
     "adt": "ai-development-toolkit",
     "second brain": "second-brain",
     "hermes agent": "hermes",
+    "financial horizon": "financial-horizon",
+    "fh": "financial-horizon",
 }
 TASK_ID = re.compile(r"^[1-9][0-9]{0,5}$")
 SLUG = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,22}[a-z0-9])?$")
