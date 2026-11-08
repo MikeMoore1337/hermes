@@ -1,0 +1,203 @@
+name: H-18 #199 offline bounded H-01 derivative parity
+
+# Research only: re-builds a disposable replica on a GitHub runner.
+# NEVER checks the live owner VPS or attests the exact owner image ID.
+on:
+  pull_request:
+    paths:
+      - .github/workflows/h199-h01-derivative-parity.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-derivative:
+    if: github.repository == 'MikeMoore1337/hermes' && (github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact proposed source without persisted credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Verify historical owner recipe and patch by exact Git blob
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/h199-historical.Dockerfile" <<'DOCKERFILE'
+          FROM nousresearch/hermes-agent@sha256:a11574b7fe8e1631d7d88d556677dac693bc058abf558cdeb899155688c1bf05
+          # Label documents patch application, NOT approval to activate a resident agent.
+          LABEL hermes.base.commit="d923a5eb487a17c0a68801bba9ef0f56c81040a8" \
+                hermes.native.tool.policy="bounded-v0222" \
+                hermes.derivative.resident-agent-allowed="false"
+
+          WORKDIR /opt/hermes
+          COPY patches/upstream/hermes-v0.22.1-native-tool-policy.patch /tmp/hermes-v0222-tool-policy-candidate.patch
+          RUN sed -i 's/\r$//' /tmp/hermes-v0222-tool-policy-candidate.patch && git apply --unidiff-zero --check /tmp/hermes-v0222-tool-policy-candidate.patch && git apply --unidiff-zero /tmp/hermes-v0222-tool-policy-candidate.patch && rm /tmp/hermes-v0222-tool-policy-candidate.patch
+          DOCKERFILE
+          dockerfile_blob="$(git hash-object "$RUNNER_TEMP/h199-historical.Dockerfile")"
+          patch_blob="$(git hash-object patches/upstream/hermes-v0.22.1-native-tool-policy.patch)"
+          [ "$dockerfile_blob" = 8a583c73cf6aa120fb5942d37e4e08848b70bc6e ] || { echo H199_HISTORIC_RECIPE_DRIFT; exit 2; }
+          [ "$patch_blob" = b9ea7f2150993de007c174b4b5ddb4fac6499f01 ] || { echo H199_HISTORIC_PATCH_DRIFT; exit 2; }
+          echo 'H199_HISTORIC_DOCKERFILE_AND_PATCH=EXACT_GIT_BLOBS' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Pull only the pinned upstream image and verify RepoDigest
+        shell: bash
+        run: |
+          set -euo pipefail
+          original='nousresearch/hermes-agent@sha256:a11574b7fe8e1631d7d88d556677dac693bc058abf558cdeb899155688c1bf05'
+          docker pull --platform linux/amd64 "$original"
+          [ "$(docker image inspect "$original" --format '{{.Architecture}}')" = amd64 ]
+          [ "$(docker image inspect "$original" --format '{{.Os}}')" = linux ]
+          docker image inspect "$original" --format '{{json .RepoDigests}}' > "$RUNNER_TEMP/h199-repodigests.json"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          values = json.loads((Path(os.environ["RUNNER_TEMP"]) / "h199-repodigests.json").read_text())
+          digest = "nousresearch/hermes-agent@sha256:a11574b7fe8e1631d7d88d556677dac693bc058abf558cdeb899155688c1bf05"
+          if not isinstance(values, list) or not ({digest, "docker.io/" + digest} & set(values)):
+              raise SystemExit("H199_UPSTREAM_REPODIGEST_UNVERIFIED")
+          print("H199_UPSTREAM_REPODIGEST=PASS")
+          PY
+
+      - name: Build one ephemeral candidate from the exact old recipe with no build network
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build --pull=false --network=none --platform linux/amd64 \
+            --file "$RUNNER_TEMP/h199-historical.Dockerfile" \
+            --tag hermes-h199-offline-replica:20261108 .
+          [ "$(docker image inspect hermes-h199-offline-replica:20261108 --format '{{.Architecture}}')" = amd64 ]
+          [ "$(docker image inspect hermes-h199-offline-replica:20261108 --format '{{index .Config.Labels "hermes.base.commit"}}')" = d923a5eb487a17c0a68801bba9ef0f56c81040a8 ]
+          [ "$(docker image inspect hermes-h199-offline-replica:20261108 --format '{{index .Config.Labels "hermes.native.tool.policy"}}')" = bounded-v0222 ]
+          [ "$(docker image inspect hermes-h199-offline-replica:20261108 --format '{{index .Config.Labels "hermes.derivative.resident-agent-allowed"}}')" = false ]
+          docker image inspect 'nousresearch/hermes-agent@sha256:a11574b7fe8e1631d7d88d556677dac693bc058abf558cdeb899155688c1bf05' --format '{{json .RootFS.Layers}}' > "$RUNNER_TEMP/h199-base-layers.json"
+          docker image inspect hermes-h199-offline-replica:20261108 --format '{{json .RootFS.Layers}}' > "$RUNNER_TEMP/h199-replica-layers.json"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"])
+          base = json.loads((root / "h199-base-layers.json").read_text())
+          replica = json.loads((root / "h199-replica-layers.json").read_text())
+          if not isinstance(base, list) or not base or not isinstance(replica, list) or replica[:len(base)] != base or not (len(base) < len(replica) <= len(base) + 4):
+              raise SystemExit("H199_REPLICA_ROOTFS_PREFIX_NOT_MATCHING")
+          print(f"H199_ROOTFS_BASE_PREFIX=PASS base={len(base)} replica={len(replica)}")
+          PY
+          echo 'H199_EPHEMERAL_REPLICA_BUILD=PASS (not original owner Docker config ID)' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Observe and compare package versions without tools or network
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/h199-probe.py" <<'PY'
+          import errno
+          import importlib.metadata as md
+          import json
+          import re
+          import socket
+          from pathlib import Path
+          import pyexpat
+          import sys
+
+          status = Path("/var/lib/dpkg/status").read_text(encoding="utf-8")
+          installed = {}
+          for block in status.split("\n\n"):
+              pkg = re.search(r"^Package: (.+)$", block, flags=re.M)
+              version = re.search(r"^Version: (.+)$", block, flags=re.M)
+              if pkg and version:
+                  installed[pkg.group(1)] = version.group(1)
+          def dist(name):
+              try:
+                  return md.version(name)
+              except md.PackageNotFoundError:
+                  return None
+          sys.path.insert(0, "/opt/hermes")
+          import toolsets
+          sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+          sock.settimeout(0.3)
+          try:
+              err = sock.connect_ex(("192.0.2.1", 22))
+          finally:
+              sock.close()
+          safe_errors = {errno.ENETUNREACH, errno.EHOSTUNREACH, errno.ENETDOWN, errno.EADDRNOTAVAIL}
+          if err not in safe_errors:
+              raise SystemExit("H199_NETWORK_NONE_EGRESS_NOT_PROVEN")
+          print(json.dumps({
+              "schema": "h199-offline-replica-parity-v1",
+              "python": sys.version.split()[0],
+              "PyJWT": dist("PyJWT"),
+              "cryptography": dist("cryptography"),
+              "lxml": dist("lxml"),
+              "Expat": pyexpat.EXPAT_VERSION,
+              "libxml2": installed.get("libxml2"),
+              "openssh-client": installed.get("openssh-client"),
+              "linux-libc-dev": installed.get("linux-libc-dev"),
+              "bot_room_static_tools": toolsets.resolve_toolset("bot_room", include_registry=False),
+              "bot_room_isolated_runtime_tools": toolsets.resolve_toolset("bot_room"),
+              "network_none_os_denial": True,
+              "current_owner_host_image_verified": False,
+              "current_owner_ksmbd_verified": False,
+              "owner_h01_loaded_plugin_registry_verified": False,
+              "full_native_xml_reachability_verified": False,
+          }, sort_keys=True, separators=(",", ":")))
+          PY
+          probe="$(cat "$RUNNER_TEMP/h199-probe.py")"
+          base='nousresearch/hermes-agent@sha256:a11574b7fe8e1631d7d88d556677dac693bc058abf558cdeb899155688c1bf05'
+          for scope in base replica; do
+            image="$base"
+            [ "$scope" = replica ] && image='hermes-h199-offline-replica:20261108'
+            docker run --rm --pull=never --network none --read-only \
+              --user 65534:65534 --cap-drop ALL --security-opt no-new-privileges \
+              --pids-limit 32 --cpus 0.30 --memory 512m --memory-swap 512m \
+              --tmpfs /tmp:rw,nosuid,nodev,noexec,size=8m --entrypoint /opt/hermes/.venv/bin/python \
+              "$image" -B -c "$probe" > "$RUNNER_TEMP/h199-$scope.json"
+          done
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"])
+          base = json.loads((root / "h199-base.json").read_text())
+          replica = json.loads((root / "h199-replica.json").read_text())
+          expected = {
+              "PyJWT": "2.13.0",
+              "libxml2": "2.12.7+dfsg+really2.9.14-2.1+deb13u3",
+              "openssh-client": "1:10.0p1-7+deb13u4",
+              "linux-libc-dev": "6.12.111-1",
+          }
+          keys = ("python", "PyJWT", "cryptography", "lxml", "Expat", "libxml2", "openssh-client", "linux-libc-dev", "bot_room_static_tools", "bot_room_isolated_runtime_tools")
+          if base.get("schema") != "h199-offline-replica-parity-v1":
+              raise SystemExit("H199_BASE_REPORT_INVALID")
+          if any(base.get(key) != replica.get(key) for key in keys):
+              raise SystemExit("H199_REPLICA_PACKAGE_OR_TOOLSET_DRIFT")
+          if any(replica.get(key) != value for key, value in expected.items()):
+              raise SystemExit("H199_EXPECTED_VULNERABLE_PACKAGES_NOT_OBSERVED")
+          if replica.get("bot_room_static_tools") != [] or replica.get("bot_room_isolated_runtime_tools") != []:
+              raise SystemExit("H199_ISOLATED_BOT_ROOM_NOT_EMPTY")
+          for field in ("current_owner_host_image_verified", "current_owner_ksmbd_verified", "owner_h01_loaded_plugin_registry_verified", "full_native_xml_reachability_verified"):
+              if replica.get(field) is not False:
+                  raise SystemExit("H199_FALSE_ASSURANCE")
+          if not base.get("network_none_os_denial") or not replica.get("network_none_os_denial"):
+              raise SystemExit("H199_EGRESS_DENIAL_UNVERIFIED")
+          print("H199_BASE_AND_REPLICA_PACKAGE_PARITY=PASS")
+          print("H199_EGRESS_DENIAL_ISOLATED_PROCESS_ONLY=PASS")
+          print("H199_VPS_KERNEL_AND_DEPLOYED_H01_ATTESTATION=NOT_VERIFIED")
+          PY
+          echo 'H199_PACKAGE_PARITY=PASS vulnerable package versions unchanged in ephemeral rebuilt replica' >> "$GITHUB_STEP_SUMMARY"
+          echo 'H199_OS_EGRESS=PASS only for isolated --network none containers' >> "$GITHUB_STEP_SUMMARY"
+          echo 'H199_RESIDUAL_RISK=NOT_WAIVED, ACTUAL_OWNER_IMAGE_AND_KERNEL=NOT_VERIFIED' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Preserve sanitized base and replica receipts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: hermes-h199-h01-offline-replica
+          path: |
+            ${{ runner.temp }}/h199-base.json
+            ${{ runner.temp }}/h199-replica.json
+          if-no-files-found: warn
+          retention-days: 7
