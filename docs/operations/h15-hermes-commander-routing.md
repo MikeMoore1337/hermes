@@ -59,9 +59,9 @@ clients. Other #454 goals remain in progress:
   recovery under an approved maintenance window (#445).
 - The original four native Windows read roots were approved in October; a fifth
   (`financial-horizon`) was approved on 2026-11-08 for the same READ-only policy.
-  The original Windows reader remains offline and paused. Previously, four folders were approved for READ-only
-  E2E, and the one-shot read agent is now paused with token revoked. Every
-  future host command, write or re-enrollment requires a separate owner gate.
+  The earlier read-only E2E covered only the four original folders, not
+  Financial Horizon. The one-shot agent remains paused with its token revoked.
+  Every future host command, write or re-enrollment requires a separate owner gate.
 
 See [#454](https://github.com/MikeMoore1337/hermes/issues/454) for the
 authoritative full acceptance criteria and linked E2E evidence.

@@ -91,7 +91,8 @@ Read-only public-source research, local tests and documentation within an approv
 ## Original Windows project folders: owner permission (2026-10-23)
 
 **Mandatory for all assistants and clients:** the owner authorized reading only
-the four exact native roots named in
+the four original native roots plus the fifth `D:\Pet-projects\financial-horizon`
+authorized by the owner on 2026-11-08, as recorded in
 [H-15 native Windows approval](docs/operations/h15-native-windows-approval.md).
 For **any** write, create, delete, rename, or command/process execution
 within the original Windows folders, first describe the concrete project,
