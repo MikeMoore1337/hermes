@@ -1,0 +1,154 @@
+name: H-18 #199 immutable CVE applicability (isolated, read-only)
+
+# Diagnostic only. No Hermes Agent launch, production access, image rebuild,
+# new egress permissions, or #185 scanner/provenance work.
+on:
+  pull_request:
+    paths:
+      - .github/workflows/h199-immutable-applicability.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  h199-immutable:
+    if: github.repository == 'MikeMoore1337/hermes' && (github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Pull and verify exact pre-existing Linux AMD64 image
+        shell: bash
+        run: |
+          set -euo pipefail
+          image='nousresearch/hermes-agent@sha256:a11574b7fe8e1631d7d88d556677dac693bc058abf558cdeb899155688c1bf05'
+          docker pull --platform linux/amd64 "$image"
+          observed="$(docker image inspect "$image" --format '{{.Id}}|{{.Os}}|{{.Architecture}}')"
+          expected='sha256:a11574b7fe8e1631d7d88d556677dac693bc058abf558cdeb899155688c1bf05|linux|amd64'
+          test "$observed" = "$expected" || { echo H199_IMAGE_IDENTITY_INCONCLUSIVE; exit 2; }
+          echo 'H199_IMAGE=EXACT_IMMUTABLE_LINUX_AMD64' >> "$GITHUB_STEP_SUMMARY"
+      - name: Static source parity from stopped container (no agent execution)
+        shell: bash
+        run: |
+          set -euo pipefail
+          image='nousresearch/hermes-agent@sha256:a11574b7fe8e1631d7d88d556677dac693bc058abf558cdeb899155688c1bf05'
+          cid=''
+          cleanup() { if [ -n "$cid" ]; then docker rm "$cid" >/dev/null 2>&1 || true; fi; }
+          trap cleanup EXIT
+          cid="$(docker create --pull=never --network none --read-only --user 65534:65534 --cap-drop ALL --security-opt no-new-privileges --pids-limit 16 --memory 256m --entrypoint /bin/true "$image")"
+          mkdir -p "$RUNNER_TEMP/h199-source"
+          while IFS= read -r path; do
+            mkdir -p "$RUNNER_TEMP/h199-source/$(dirname "$path")"
+            docker cp "$cid:/opt/hermes/$path" "$RUNNER_TEMP/h199-source/$path"
+          done <<'FILES'
+          toolsets.py
+          pyproject.toml
+          plugins/cron_providers/chronos/verify.py
+          plugins/dashboard_auth/_shared.py
+          plugins/dashboard_auth/nous/__init__.py
+          plugins/dashboard_auth/self_hosted/__init__.py
+          FILES
+          python3 - <<'PY'
+          import hashlib
+          import os
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"]) / "h199-source"
+          expected = {
+              "toolsets.py": "7572ad12850dde68d70ad0876c10d0a32ff20b16",
+              "pyproject.toml": "5145f275d14a0ab119802821c715a33123b15551",
+              "plugins/cron_providers/chronos/verify.py": "2503f4a1a8cd21ad28bc1717c2f92494186103d6",
+              "plugins/dashboard_auth/_shared.py": "e12fb5896c51096589b25172468d413ce22eef5d",
+              "plugins/dashboard_auth/nous/__init__.py": "66723b5a75e481d6f5936a354245c1beef639915",
+              "plugins/dashboard_auth/self_hosted/__init__.py": "f65a24ec34882687bc6558410f882c2d4479fb3e",
+          }
+          for name, sha in expected.items():
+              content = (root / name).read_bytes()
+              blob = hashlib.sha1(b"blob " + str(len(content)).encode("ascii") + b"\0" + content).hexdigest()
+              if blob != sha:
+                  raise SystemExit("H199_SOURCE_PARITY_INCONCLUSIVE")
+          print("H199_SOURCE_PARITY=6_OF_6_MATCH")
+          PY
+          echo 'H199_SOURCE_PARITY=6/6_MATCH (not signed provenance)' >> "$GITHUB_STEP_SUMMARY"
+      - name: Read installed package versions and actual isolated bot_room resolver
+        shell: bash
+        run: |
+          set -euo pipefail
+          image='nousresearch/hermes-agent@sha256:a11574b7fe8e1631d7d88d556677dac693bc058abf558cdeb899155688c1bf05'
+          probe="$(cat <<'PY'
+          import importlib.metadata as md
+          import json
+          from pathlib import Path
+          import pyexpat
+          import re
+          import sys
+          sys.path.insert(0, "/opt/hermes")
+          import toolsets
+          status = Path("/var/lib/dpkg/status").read_text(encoding="utf-8")
+          packages = {}
+          for block in status.split("\n\n"):
+              name = re.search(r"^Package: (.+)$", block, flags=re.M)
+              version = re.search(r"^Version: (.+)$", block, flags=re.M)
+              if name and version:
+                  packages[name.group(1)] = version.group(1)
+          def dist(name):
+              try:
+                  return md.version(name)
+              except md.PackageNotFoundError:
+                  return None
+          print(json.dumps({
+              "schema": "hermes-h199-pinned-isolated-v1",
+              "python": sys.version.split()[0],
+              "PyJWT": dist("PyJWT"),
+              "cryptography": dist("cryptography"),
+              "lxml": dist("lxml"),
+              "Expat": pyexpat.EXPAT_VERSION,
+              "libxml2": packages.get("libxml2"),
+              "openssh-client": packages.get("openssh-client"),
+              "linux-libc-dev": packages.get("linux-libc-dev"),
+              "bot_room_static": toolsets.resolve_toolset("bot_room", include_registry=False),
+              "bot_room_loaded": toolsets.resolve_toolset("bot_room"),
+              "owner_h01_runtime_inspected": False,
+              "host_ksmbd_inspected": False,
+              "full_libxml2_reachability_inspected": False,
+          }, sort_keys=True))
+          PY
+          )"
+          docker run --rm --pull=never --network none --read-only --user 65534:65534 --cap-drop ALL --security-opt no-new-privileges --pids-limit 32 --cpus 0.30 --memory 512m --memory-swap 512m --tmpfs /tmp:rw,noexec,nosuid,nodev,size=8m --workdir /opt/hermes --entrypoint /opt/hermes/.venv/bin/python "$image" -B -c "$probe" | tee "$RUNNER_TEMP/h199-observed.json"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          raw = Path(os.environ["RUNNER_TEMP"]) / "h199-observed.json"
+          data = json.loads(raw.read_text(encoding="utf-8"))
+          expected = {
+              "PyJWT": "2.13.0",
+              "libxml2": "2.12.7+dfsg+really2.9.14-2.1+deb13u3",
+              "openssh-client": "1:10.0p1-7+deb13u4",
+              "linux-libc-dev": "6.12.111-1",
+          }
+          if data.get("schema") != "hermes-h199-pinned-isolated-v1":
+              raise SystemExit("H199_SCHEMA_INCONCLUSIVE")
+          if any(data.get(name) != version for name, version in expected.items()):
+              raise SystemExit("H199_INSTALLED_VERSIONS_DIFFER_FROM_PINNED_RECEIPT")
+          if data.get("bot_room_static") or data.get("bot_room_loaded"):
+              raise SystemExit("H199_ISOLATED_BOT_ROOM_NONEMPTY")
+          if any(data.get(k) is not False for k in (
+              "owner_h01_runtime_inspected",
+              "host_ksmbd_inspected",
+              "full_libxml2_reachability_inspected",
+          )):
+              raise SystemExit("H199_FALSE_ATTESTATION_DENIED")
+          print("H199_PINNED_INSTALLED_VERSIONS_AND_ISOLATED_BOTROOM=OBSERVED")
+          PY
+          echo 'H199_PACKAGES=ORIGINAL_VULNERABLE_VERSIONS_STILL_INSTALLED' >> "$GITHUB_STEP_SUMMARY"
+          echo 'H199_BOT_ROOM=EMPTY_IN_THIS_EPHEMERAL_PROCESS_ONLY' >> "$GITHUB_STEP_SUMMARY"
+          echo 'H199_H01_HOST_KERNEL_AND_DYNAMIC_XML_OR_SSH=NOT_VERIFIED' >> "$GITHUB_STEP_SUMMARY"
+          echo 'H199_ISSUE=OPEN_DEFERRED (this job is not production evidence)' >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve only sanitized applicability evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: hermes-h199-pinned-applicability
+          path: ${{ runner.temp }}/h199-observed.json
+          if-no-files-found: warn
+          retention-days: 7
