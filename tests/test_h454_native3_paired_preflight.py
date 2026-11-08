@@ -85,6 +85,10 @@ class PairedPreflightTests(TestCase):
                  exists=lambda: False, is_symlink=lambda: False)), \
              patch.object(pair, "PAIR_PENDING", SimpleNamespace(
                  exists=lambda: False, is_symlink=lambda: False)), \
+             # Unit plans must not observe the owner VPS rollback evidence.
+             # Exercise the genuine absent-file guard via a synthetic probe.
+             patch.object(pair, "ORIGINAL_PINS", SimpleNamespace(
+                 lstat=Mock(side_effect=FileNotFoundError))), \
              patch.object(pair.candidate, "registry_mount_source",
                           return_value=str(pair.candidate.PINNED_REGISTRY_SOURCE)), \
              patch.object(pair.legacy, "devices", return_value=2), \
@@ -108,6 +112,15 @@ class PairedPreflightTests(TestCase):
                 mutating_legacy_docker.assert_not_called()
                 gate.assert_called_once_with(Path("/verified"), IMAGE, ARCHIVE, SOURCE)
 
+
+    def test_synthetic_plan_never_reads_real_owner_rollback_pin(self):
+        # Production keeps a retained rollback pin. This shared test helper
+        # must be hermetic even when that entry exists on the host.
+        owner_pin = SimpleNamespace(lstat=Mock(return_value=object()))
+        with patch.object(pair, "ORIGINAL_PINS", owner_pin):
+            result = self.check_plan()
+        self.assertEqual(result["status"], "PAIR_PREFLIGHT_PASS_NO_MUTATIONS")
+        owner_pin.lstat.assert_not_called()
 
     def test_safe_pair_plan_accepts_pinned_live_topology_without_mutation(self):
         result = self.check_plan()
