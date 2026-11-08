@@ -82,12 +82,14 @@ def source_blob(data):
 
 
 def registry_file():
-    return Path(__file__).resolve().parents[1] / "deploy/h15/workspace-registry-fork.json"
+    return Path(__file__).resolve().parents[1] / "deploy/h15/legacy-stage1/workspace-registry-fork.json"
 
 
 def registry_contract():
     """Strictly compare the fork schema-2 registry with the existing schema-1 owner registry."""
     catalog = registry_file()
+    # Historical Stage 1 stays tied to its exact immutable four-project bytes.
+    # The updated five-project registry is handled by the new workflow, not this cutover.
     legacy_file = catalog.with_name("workspace-registry.json")
     for target, blob in ((catalog, REGISTRY_BLOB),
                          (legacy_file, LEGACY_REGISTRY_BLOB)):

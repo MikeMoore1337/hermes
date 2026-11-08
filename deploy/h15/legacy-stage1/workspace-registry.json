@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "workspace_root": "/workspace/projects",
+  "device_name": "H15 Windows permanent sandbox",
+  "workspaces": [
+    {"name":"hermes","aliases":["hermes","hermes agent","hermes-agent"],"repository":"hermes","branch":"main","access":"sandbox"},
+    {"name":"your-fitness-coach","aliases":["yfc","your fitness coach","your-fitness-coach"],"repository":"your-fitness-coach","branch":"master","access":"sandbox"},
+    {"name":"second-brain","aliases":["second brain","second-brain"],"repository":"second-brain","branch":"main","access":"sandbox"},
+    {"name":"ai-development-toolkit","aliases":["toolkit","adt","ai development toolkit","ai-development-toolkit"],"repository":"ai-development-toolkit","branch":"main","access":"sandbox"}
+  ]
+}

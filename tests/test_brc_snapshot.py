@@ -172,7 +172,7 @@ class BrcSnapshotTests(unittest.TestCase):
         a, b = fixtures()
         cases = [
             lambda c: c.update({"status": "resolved"}),
-            lambda c: c["workspaces"].pop(),
+            lambda c: c["workspaces"].pop(0),
             lambda c: c["workspaces"][0].update({"root": "/host-private/hermes"}),
             lambda c: c["workspaces"][0].update({"scope": "host"}),
             lambda c: c["workspaces"][0].update({"git_verified": True}),

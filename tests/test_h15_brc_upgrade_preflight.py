@@ -116,7 +116,7 @@ class GateTests(unittest.TestCase):
     def test_same_image(self):
         with self.assertRaisesRegex(UpgradeDenied,"not_replaceable"):current_gate(current(),OLD)
     def test_stage1_pinned_registry_matches_owner_approved_source(self):
-        source = Path(__file__).resolve().parents[1] / "deploy/h15/workspace-registry-fork.json"
+        source = Path(__file__).resolve().parents[1] / "deploy/h15/legacy-stage1/workspace-registry-fork.json"
         self.assertEqual(hashlib.sha256(source.read_bytes()).hexdigest(),
                          gate.PINNED_REGISTRY_SHA256)
         self.assertEqual(gate.REGISTRY_TARGET, "/run/h454/workspace-registry.json")
@@ -172,7 +172,7 @@ class GateTests(unittest.TestCase):
 
     def test_stage1_pinned_content_and_root_permissions_both_required(self):
         original = (Path(__file__).resolve().parents[1]
-                    / "deploy/h15/workspace-registry-fork.json").read_bytes()
+                    / "deploy/h15/legacy-stage1/workspace-registry-fork.json").read_bytes()
         with tempfile.TemporaryDirectory() as scratch:
             path = Path(scratch) / "registry.json"
             path.write_bytes(original)
@@ -214,7 +214,7 @@ class GateTests(unittest.TestCase):
 
 
     def test_stage1_registry_content_has_independent_pin(self):
-        source = Path(__file__).resolve().parents[1] / "deploy/h15/workspace-registry-fork.json"
+        source = Path(__file__).resolve().parents[1] / "deploy/h15/legacy-stage1/workspace-registry-fork.json"
         self.assertEqual(hashlib.sha256(source.read_bytes()).hexdigest(),
                          gate.PINNED_REGISTRY_SHA256)
         self.assertEqual(gate.REGISTRY_TARGET, "/run/h454/workspace-registry.json")

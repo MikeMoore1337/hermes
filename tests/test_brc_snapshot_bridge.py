@@ -48,7 +48,7 @@ class BrcSnapshotBridgeTests(unittest.TestCase):
     def test_round_trip_no_sensitive_content_and_permissions(self):
         result = self.invoke()
         self.assertEqual(result["status"], "PUBLISHED")
-        self.assertEqual((result["devices"], result["workspaces"]), (3, 4))
+        self.assertEqual((result["devices"], result["workspaces"]), (3, 5))
         self.assertEqual(read_snapshot(self.target, now=self.now), self.good)
         body = self.target.read_text()
         self.assertNotIn("DO_NOT_PUBLISH", body)

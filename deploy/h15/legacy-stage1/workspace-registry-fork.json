@@ -1,0 +1,57 @@
+{
+  "schema": 2,
+  "workspaces": [
+    {
+      "name": "hermes",
+      "aliases": [
+        "hermes",
+        "hermes agent",
+        "hermes-agent"
+      ],
+      "deviceId": "h15-win-05be75515428",
+      "root": "/workspace/projects/hermes",
+      "origin": "https://github.com/MikeMoore1337/hermes.git",
+      "branch": "main",
+      "scope": "sandbox"
+    },
+    {
+      "name": "your-fitness-coach",
+      "aliases": [
+        "yfc",
+        "your fitness coach",
+        "your-fitness-coach"
+      ],
+      "deviceId": "h15-win-05be75515428",
+      "root": "/workspace/projects/your-fitness-coach",
+      "origin": "https://github.com/MikeMoore1337/your-fitness-coach.git",
+      "branch": "master",
+      "scope": "sandbox"
+    },
+    {
+      "name": "second-brain",
+      "aliases": [
+        "second brain",
+        "second-brain"
+      ],
+      "deviceId": "h15-win-05be75515428",
+      "root": "/workspace/projects/second-brain",
+      "origin": "https://github.com/MikeMoore1337/second-brain.git",
+      "branch": "main",
+      "scope": "sandbox"
+    },
+    {
+      "name": "ai-development-toolkit",
+      "aliases": [
+        "toolkit",
+        "adt",
+        "ai development toolkit",
+        "ai-development-toolkit"
+      ],
+      "deviceId": "h15-win-05be75515428",
+      "root": "/workspace/projects/ai-development-toolkit",
+      "origin": "https://github.com/MikeMoore1337/ai-development-toolkit.git",
+      "branch": "main",
+      "scope": "sandbox"
+    }
+  ]
+}
