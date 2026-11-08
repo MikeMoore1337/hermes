@@ -250,6 +250,9 @@ class StagingTests(unittest.TestCase):
         for modified in ("scripts/h15_brc_harden_relay.py",
                          "deploy/h15/Dockerfile.brc-relay",
                          "tests/test_h15_brc_owner_artifact_stage.py",
+                         "scripts/h454_brc_admin_hash_stability.py",
+                         "scripts/h454_brc_admin_hash_stability_e2e.mjs",
+                         "tests/test_h454_brc_admin_hash_stability.py",
                          ".github/workflows/h15-remote-commander-candidate.yml",
                          "pnpm-lock.yaml"):
             with self.subTest(modified=modified):
@@ -263,6 +266,26 @@ class StagingTests(unittest.TestCase):
                                                 "brc_input_modified"):
                         m.discover()
                     download.assert_not_called()
+
+    def test_admin_hash_patch_change_requires_fresh_candidate_and_main_build(self):
+        workflow = (
+            Path(__file__).resolve().parents[1]
+            / ".github/workflows/h15-remote-commander-candidate.yml"
+        ).read_text(encoding="utf-8")
+        push = workflow.split("  push:\n", 1)[1].split("  pull_request:\n", 1)[0]
+        pr = workflow.split("  pull_request:\n", 1)[1].split(
+            "\npermissions:\n", 1
+        )[0]
+        for path in (
+            "scripts/h454_brc_admin_hash_stability.py",
+            "scripts/h454_brc_admin_hash_stability_e2e.mjs",
+            "tests/test_h454_brc_admin_hash_stability.py",
+        ):
+            with self.subTest(path=path):
+                self.assertTrue(m.is_brc_input(path))
+                expected = "      - " + path + "\n"
+                self.assertIn(expected, push)
+                self.assertIn(expected, pr)
 
     def test_rename_from_sensitive_path_denied(self):
         with patch.object(m,"api",return_value={
