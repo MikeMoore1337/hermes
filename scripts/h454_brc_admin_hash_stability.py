@@ -57,7 +57,7 @@ def apply(root: Path, *, sha: str = UPSTREAM_SHA) -> dict[str, object]:
         if cursor.is_symlink():
             raise AuditError("admin_store_symlink_refused")
     path = root / STORE
-    if not path.is_file() or not 1000 <= path.stat().st_size <= 65536:
+    if not path.is_file() or not 100 <= path.stat().st_size <= 65536:
         raise AuditError("admin_store_missing_or_oversize")
     raw = path.read_bytes()
     if git_blob_sha(raw) != UPSTREAM_STORE_BLOB_SHA:
