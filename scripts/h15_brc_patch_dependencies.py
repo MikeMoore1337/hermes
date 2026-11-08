@@ -23,19 +23,21 @@ allowBuilds:
   sharp: true
 """
 PATCHED = ORIGINAL + """overrides:
-  '@modelcontextprotocol/sdk': 1.31.0
+  '@modelcontextprotocol/sdk': 1.32.0
   proxy-addr: 2.0.8
   sharp: 0.35.5
-  markdown-it: 14.3.2
+  markdown-it: 14.3.3
+  body-parser: 2.4.0
   'brace-expansion@^1.0.0': 1.1.21
   'brace-expansion@^2.0.0': 2.1.7
   'brace-expansion@^5.0.0': 5.0.12
 """
 EXPECTED_VERSIONS = {
-    "@modelcontextprotocol/sdk": "1.31.0",
+    "@modelcontextprotocol/sdk": "1.32.0",
     "proxy-addr": "2.0.8",
     "sharp": "0.35.5",
-    "markdown-it": "14.3.2",
+    "markdown-it": "14.3.3",
+    "body-parser": "2.4.0",
 }
 BRACE_FIXED = ("1.1.21", "2.1.7", "5.0.12")
 BRACE_OLD = ("1.1.18", "2.1.4", "5.0.9")
@@ -92,9 +94,12 @@ def validate_lock(root: Path) -> None:
             raise AuditError("fixed_brace_expansion_branch_absent")
     for key, old in (
         ("@modelcontextprotocol/sdk", "1.30.0"),
+        ("@modelcontextprotocol/sdk", "1.31.0"),
         ("proxy-addr", "2.0.7"),
         ("sharp", "0.34.5"),
         ("markdown-it", "14.3.1"),
+        ("markdown-it", "14.3.2"),
+        ("body-parser", "2.3.0"),
         *(("brace-expansion", version) for version in BRACE_OLD),
     ):
         if has_key(key, old):
