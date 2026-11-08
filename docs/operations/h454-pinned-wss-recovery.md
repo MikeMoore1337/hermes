@@ -363,6 +363,33 @@ remove the marker or retry the mutation on that basis. One normal-path trial
 has run against the live containers; it does not establish interrupted live
 recovery or a permanent production promotion.
 
+### Crash-safe HOLD for standalone Windows recovery modes
+
+The guarded operator now rejects **every** `-Apply` mode while any of
+`h454-original-restore.inflight`, `h454-broker-route.inflight` or
+`h454-recovery-route.inflight` exists in its protected state directory.
+These independent preparer/restore paths previously bypassed the trial's
+nonce-bound operation receipt. Each now creates its own durable
+`CreateNew`/`WriteThrough`/`Flush(true)` marker before the first Docker
+mutation and checks the protected file/nonce/hash before clearing it **only**
+after all expected final safety invariants succeed. The trial's existing
+`h454-broker-trial.pending` and `h454-broker-trial.inflight` also block
+starting a standalone mutation.
+
+Any command timeout, process termination, lost Docker response, invalid
+marker or failed final check leaves a conservative `H454_MUTATION_UNSETTLED`
+HOLD. An observed container state alone cannot prove that a delayed request
+will not commit later. Do not replay, clear the marker manually, or restart
+an alternate route on the strength of an `inspect` snapshot. This source
+patch does **not** provide an automatic proof of daemon quiescence, worker
+receipt for these three standalone paths, a safe automatic marker-clear
+operator, or a successful power-loss/reboot test. A separate scoped,
+owner-approved incident recovery with authoritative settlement evidence and
+an independently reviewed clearance procedure is required; until then,
+availability may remain blocked and the existing service must not be
+replaced under an uncertain mutation. These changes are dormant source
+logic, not an approved production Windows update or cutover.
+
 The periodic staging monitor may already hold `runtime.lock`. In that case the
 operator reports `RECOVERY_LOCK_BUSY` before this invocation makes any change.
 Let the current owner finish, then inspect state again. A busy lock does not
