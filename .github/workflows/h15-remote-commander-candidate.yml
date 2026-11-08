@@ -742,9 +742,37 @@ jobs:
           test "$(docker image inspect --format '{{.Id}}' "$image")" = \
                "$(docker image inspect --format '{{.Id}}' "$scan")"
 
+      # Preserve a real vulnerability scan. Pin the official release archive by
+      # SHA-256 rather than relying on setup-trivy's opaque installer fetch.
+      - name: Install checksum-pinned Trivy 0.70.0 (retry official release)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/trivy_0.70.0_Linux-64bit.tar.gz"
+          if ! curl --fail --location --silent --show-error \
+                 --retry 5 --retry-all-errors --retry-delay 3 \
+                 --connect-timeout 20 --max-time 120 \
+                 "https://github.com/aquasecurity/trivy/releases/download/v0.70.0/trivy_0.70.0_Linux-64bit.tar.gz" \
+                 --output "$archive"; then
+            rm -f "$archive"
+            command -v gh >/dev/null || { echo 'TRIVY_DOWNLOAD_FAILED'; exit 1; }
+            gh release download v0.70.0 --repo aquasecurity/trivy \
+              --pattern 'trivy_0.70.0_Linux-64bit.tar.gz' --dir "$RUNNER_TEMP"
+          fi
+          echo '8b4376d5d6befe5c24d503f10ff136d9e0c49f9127a4279fd110b727929a5aa9  '"$archive" | sha256sum --check -
+          bindir="$RUNNER_TEMP/trivy-pinned-bin"
+          mkdir -p "$bindir"
+          tar -xzf "$archive" -C "$bindir" trivy
+          chmod 0755 "$bindir/trivy"
+          test "$("$bindir/trivy" --version | head -n 1)" = 'Version: 0.70.0'
+          echo "$bindir" >> "$GITHUB_PATH"
+
       - name: Scan actual built BRC OCI image with Trivy (CVE evidence only)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
+          skip-setup-trivy: 'true'
           image-ref: hermes-brc-relay-scan:${{ github.sha }}
           scan-type: image
           scanners: vuln
