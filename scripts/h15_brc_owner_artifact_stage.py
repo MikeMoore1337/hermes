@@ -36,6 +36,9 @@ BRC_INPUT_PREFIXES=(
 )
 BRC_INPUT_EXACT={
     ".github/workflows/h15-remote-commander-candidate.yml",
+    "scripts/h454_brc_admin_hash_stability.py",
+    "scripts/h454_brc_admin_hash_stability_e2e.mjs",
+    "tests/test_h454_brc_admin_hash_stability.py",
     "pnpm-lock.yaml", "pnpm-workspace.yaml", "package.json",
     "pyproject.toml", "uv.lock",
 }
