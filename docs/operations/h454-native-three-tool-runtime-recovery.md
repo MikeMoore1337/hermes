@@ -238,3 +238,42 @@ rehearsal in an authorized maintenance window. Original Windows
 native service, ACL, private SSH, device token/re-pairing and original-folder
 write/execute permissions are still **NOT APPROVED** by this source change.
 No automatic cutover, deployment or background worker is introduced.
+
+## Admin password hash stability during a paired cutover
+
+The pinned upstream BRC relay `cbe511702dd0147650353c29ac6ab1decd8afda1`
+calls `SqliteStore.upsertUser(cfg.adminUser, cfg.adminPassword)` at every
+`buildRelay()` startup. Its original `upsertUser` generated a fresh random
+scrypt salt and wrote a new `users.password_hash` even when the configured
+password had not changed. That behavior is consistent with the single
+`users.password_hash` delta observed between the two preserved 2026-11-08
+owner-only SQLite snapshots. This identifies a concrete, reproducible **source
+mechanism**, not definitive attribution to the live incident without inspecting
+the installed candidate's compiled source and startup event trace.
+
+The isolated source patch `scripts/h454_brc_admin_hash_stability.py` is
+restricted to the exact upstream commit and the expected original Git blob.
+When an existing admin password passes the upstream `verifyPassword`, the
+original user ID and password hash are kept **byte-for-byte** across startup.
+An actual password change still produces a fresh salted hash, revokes the old
+password and causes the unchanged strict `compare_disposable_copies` auth
+gate to HOLD. No credentials, token values, SQLite fields, or protected owner
+files are read or changed by the source patch.
+
+Acceptance requires both a pinned-source negative unittest and an **actual
+compiled upstream relay** test with a disposable SQLite database: first
+startup, second startup with the same synthetic password, password rotation,
+and another unchanged-password startup. The original database compatibility
+and credential-regression guard stays unchanged, including its check of
+`users.password_hash`.
+
+**Deployment / recovery boundary:** source merge or isolated CI does not update
+an already installed BRC OCI image or authorize a second owner-host cutover.
+Preserve original container/pin snapshots and the retained before/after SQLite
+files. Obtain fresh, independently reviewed OCI/CVE attestation, exact owner
+source-release approval, read-only paired `plan`, a separate root-only
+authorization record and an agreed maintenance window before any new live
+attempt. Never bypass `STALE_SECURITY_STATE`, delete evidence, write older
+password hashes to live SQLite, or retry an ambiguous Docker operation based
+only on `inspect` state. Real Windows login/reboot and multi-client functional
+acceptance remain separate gates.

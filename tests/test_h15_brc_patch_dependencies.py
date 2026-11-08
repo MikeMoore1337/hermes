@@ -34,12 +34,14 @@ class H15DependencyFixTests(unittest.TestCase):
     def test_pinned_override_applied_once_only(self):
         with self.fake_git():
             result = apply(self.root)
-        self.assertEqual(result["packages"]["@modelcontextprotocol/sdk"], "1.31.0")
+        self.assertEqual(result["packages"]["@modelcontextprotocol/sdk"], "1.32.0")
         self.assertEqual(result["packages"]["proxy-addr"], "2.0.8")
         self.assertEqual(result["packages"]["sharp"], "0.35.5")
-        self.assertEqual(result["packages"]["markdown-it"], "14.3.2")
+        self.assertEqual(result["packages"]["markdown-it"], "14.3.3")
+        self.assertEqual(result["packages"]["body-parser"], "2.4.0")
         self.assertNotIn("undici", result["packages"])
-        self.assertIn("markdown-it: 14.3.2", PATCHED)
+        self.assertIn("markdown-it: 14.3.3", PATCHED)
+        self.assertIn("body-parser: 2.4.0", PATCHED)
         for override in (
             "'brace-expansion@^1.0.0': 1.1.21",
             "'brace-expansion@^2.0.0': 2.1.7",
@@ -98,10 +100,11 @@ class H15DependencyFixTests(unittest.TestCase):
         (self.root / "pnpm-workspace.yaml").write_text(PATCHED)
         path = self.root / "pnpm-lock.yaml"
         path.write_text(
-            "  '@modelcontextprotocol/sdk@1.31.0':\n"
+            "  '@modelcontextprotocol/sdk@1.32.0':\n"
             "  proxy-addr@2.0.8:\n"
             "  sharp@0.35.5:\n"
-            "  markdown-it@14.3.2:\n"
+            "  markdown-it@14.3.3:\n"
+            "  body-parser@2.4.0:\n"
             "  brace-expansion@1.1.21:\n"
             "  brace-expansion@2.1.7:\n"
             "  brace-expansion@5.0.12:\n"
@@ -119,10 +122,11 @@ class H15DependencyFixTests(unittest.TestCase):
         (self.root / "pnpm-workspace.yaml").write_text(PATCHED)
         path = self.root / "pnpm-lock.yaml"
         fixed = (
-            "  '@modelcontextprotocol/sdk@1.31.0':\n"
+            "  '@modelcontextprotocol/sdk@1.32.0':\n"
             "  proxy-addr@2.0.8:\n"
             "  sharp@0.35.5:\n"
-            "  markdown-it@14.3.2:\n"
+            "  markdown-it@14.3.3:\n"
+            "  body-parser@2.4.0:\n"
             "  brace-expansion@1.1.21:\n"
             "  brace-expansion@2.1.7:\n"
             "  brace-expansion@5.0.12:\n"
@@ -131,6 +135,9 @@ class H15DependencyFixTests(unittest.TestCase):
         for package, version in (
             ("sharp", "0.34.5"),
             ("markdown-it", "14.3.1"),
+            ("markdown-it", "14.3.2"),
+            ("body-parser", "2.3.0"),
+            ("@modelcontextprotocol/sdk", "1.31.0"),
             ("brace-expansion", "1.1.18"),
             ("brace-expansion", "2.1.4"),
             ("brace-expansion", "5.0.9"),
