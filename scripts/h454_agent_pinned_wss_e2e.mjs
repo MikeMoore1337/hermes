@@ -42,7 +42,12 @@ const invokeFixtureRead = async (relay, owner) => {
     if (Date.now() >= deadline) break;
     await new Promise(r => setTimeout(r, 100));
   } while (true);
-  assert.equal(answer?.ok, true, 'synthetic read_file unavailable after bounded readiness retry');
+  // This disposable relay uses synthetic values only. Redact bearer-shaped
+  // substrings and keep the refusal status visible for deterministic triage.
+  const reason = String(answer?.message ?? 'missing response')
+    .replace(/brc_dev_[A-Za-z0-9_-]{20,}/g, '[REDACTED_BEARER]').slice(0, 300);
+  assert.equal(answer?.ok, true,
+    'synthetic read_file unavailable: status=' + String(answer?.status ?? 'unknown') + ' reason=' + reason);
   return answer;
 };
 dns.setDefaultResultOrder('ipv4first');
