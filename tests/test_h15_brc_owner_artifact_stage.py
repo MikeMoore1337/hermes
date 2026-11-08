@@ -250,6 +250,9 @@ class StagingTests(unittest.TestCase):
         for modified in ("scripts/h15_brc_harden_relay.py",
                          "deploy/h15/Dockerfile.brc-relay",
                          "tests/test_h15_brc_owner_artifact_stage.py",
+                         "scripts/h454_brc_admin_hash_startup.py",
+                         "scripts/h454_brc_admin_hash_e2e.mjs",
+                         "tests/test_h454_brc_admin_hash_startup.py",
                          ".github/workflows/h15-remote-commander-candidate.yml",
                          "pnpm-lock.yaml"):
             with self.subTest(modified=modified):
