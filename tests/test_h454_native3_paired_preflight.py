@@ -7,7 +7,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest import TestCase
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from scripts import h454_native3_paired_preflight as pair
 
@@ -154,6 +154,35 @@ class PairedPreflightTests(TestCase):
                         pair.PairDenied, "^PREVIOUS_TRANSACTION_NOT_CLEARED$"):
                     pair.require_no_previous_transaction()
             self.assertTrue(retained.is_symlink())
+
+    def test_original_pin_symlink_probe_must_never_follow_target(self):
+        # A remote/malicious symlink target may block a stat() call. The
+        # retained directory entry itself is enough to deny the retry.
+        probe = SimpleNamespace(
+            lstat=Mock(return_value=object()),
+            stat=Mock(side_effect=AssertionError("target was followed")),
+            exists=Mock(side_effect=AssertionError("target was followed")),
+            is_symlink=Mock(side_effect=AssertionError("target was followed")),
+        )
+        with patch.object(pair, "ORIGINAL_PINS", probe):
+            with self.assertRaisesRegex(
+                    pair.PairDenied, "^PREVIOUS_TRANSACTION_NOT_CLEARED$"):
+                pair.require_no_previous_transaction()
+        probe.lstat.assert_called_once_with()
+        probe.stat.assert_not_called()
+        probe.exists.assert_not_called()
+        probe.is_symlink.assert_not_called()
+
+    def test_original_pin_lstat_error_must_refuse_without_leaking_payload(self):
+        secret = "SYNTHETIC_PRIVATE_ERROR_PAYLOAD"
+        probe = SimpleNamespace(lstat=Mock(
+            side_effect=PermissionError(secret)))
+        with patch.object(pair, "ORIGINAL_PINS", probe):
+            with self.assertRaises(pair.PairDenied) as refused:
+                pair.require_no_previous_transaction()
+        self.assertEqual(str(refused.exception),
+                         "ORIGINAL_PIN_STATE_UNVERIFIABLE")
+        self.assertNotIn(secret, str(refused.exception))
 
     def test_clean_preflight_has_no_retained_snapshot_and_matches_transaction(self):
         from scripts import h454_native3_paired_transaction as tx
