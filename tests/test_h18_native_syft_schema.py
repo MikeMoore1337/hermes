@@ -76,6 +76,24 @@ class NativeSchemaTest(unittest.TestCase):
                 with self.assertRaises(review.ScanEvidenceDenied):
                     review.assess(*encoded(info, syft, trivy))
 
+    def test_mixed_syft_layout_cannot_hide_conflicting_metadata(self):
+        # A forged legacy target must not bypass native architecture/digest checks.
+        for mismatch in ("architecture", "repo_digests", "none"):
+            with self.subTest(mismatch=mismatch):
+                info, syft, trivy = modern_fixture()
+                if mismatch == "architecture":
+                    syft["source"]["metadata"]["architecture"] = "arm64"
+                elif mismatch == "repo_digests":
+                    syft["source"]["metadata"]["repoDigests"] = ["untrusted/image"]
+                syft["source"]["target"] = {
+                    "userInput": review.IMAGE,
+                    "manifestDigest": review.IMAGE.partition("@")[2],
+                }
+                with self.assertRaisesRegex(
+                    review.ScanEvidenceDenied, "ambiguous_syft_source_layout"
+                ):
+                    review.assess(*encoded(info, syft, trivy))
+
     def test_trivy_identity_mutations_are_rejected(self):
         cases = (
             lambda t: t["Trivy"].update(Version="0.1.0"),
