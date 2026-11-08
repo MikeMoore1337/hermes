@@ -29,6 +29,22 @@ const until = async predicate => {
   while (!predicate() && Date.now() < deadline) await new Promise(r => setTimeout(r, 50));
   assert.ok(predicate(), 'fixture timeout');
 };
+// A connected socket can appear in the hub before its synthetic tool handshake
+// is ready. Exercise the read-only fixture until it becomes callable. Persistent
+// authorization/policy errors still fail closed after a bounded retry window.
+const invokeFixtureRead = async (relay, owner) => {
+  const deadline = Date.now() + 8000;
+  let answer;
+  do {
+    answer = await invokeTool(relay.hub, relay.store, { userId: owner.id, clientId: 'fixture' }, 'read_file',
+      { deviceId: 'synthetic-wss-device', path: '/workspace/fixture' });
+    if (answer?.ok === true) return answer;
+    if (Date.now() >= deadline) break;
+    await new Promise(r => setTimeout(r, 100));
+  } while (true);
+  assert.equal(answer?.ok, true, 'synthetic read_file unavailable after bounded readiness retry');
+  return answer;
+};
 dns.setDefaultResultOrder('ipv4first');
 
 for (const url of ['http://host.docker.internal:38184', 'https://example.invalid:38184',
@@ -88,8 +104,7 @@ try {
   } });
   client.start();
   await until(() => !!relay.hub.get('synthetic-wss-device'));
-  const call = await invokeTool(relay.hub, relay.store, { userId: owner.id, clientId: 'fixture' }, 'read_file',
-    { deviceId: 'synthetic-wss-device', path: '/workspace/fixture' });
+  const call = await invokeFixtureRead(relay, owner);
   assert.equal(call.ok, true);
   assert.equal(call.result.content[0].text, 'synthetic-result');
   const before = connections;
@@ -97,8 +112,7 @@ try {
   for (const socket of proxySockets) socket.destroy();
   await until(() => connections > before && !!relay.hub.get('synthetic-wss-device') &&
     relay.hub.get('synthetic-wss-device').socket !== firstSocket);
-  const again = await invokeTool(relay.hub, relay.store, { userId: owner.id, clientId: 'fixture' }, 'read_file',
-    { deviceId: 'synthetic-wss-device', path: '/workspace/fixture' });
+  const again = await invokeFixtureRead(relay, owner);
   assert.equal(again.ok, true);
   const secondSocket = relay.hub.get('synthetic-wss-device').socket;
   for (const socket of proxySockets) socket.destroy();
@@ -122,8 +136,7 @@ try {
   await listen(proxy);
   await until(() => !!relay.hub.get('synthetic-wss-device') &&
     relay.hub.get('synthetic-wss-device').socket !== secondSocket);
-  const restored = await invokeTool(relay.hub, relay.store, { userId: owner.id, clientId: 'fixture' }, 'read_file',
-    { deviceId: 'synthetic-wss-device', path: '/workspace/fixture' });
+  const restored = await invokeFixtureRead(relay, owner);
   assert.equal(restored.ok, true);
   assert.equal(restored.result.content[0].text, 'synthetic-result');
   let unauthorized = 0;
