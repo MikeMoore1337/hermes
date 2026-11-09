@@ -137,7 +137,7 @@ def _check_result(out: object, *, project: str,
             if (type(entry) is not dict or set(entry) != {"name", "kind"}
                 or type(entry["name"]) is not str
                 or entry["kind"] not in {"directory", "file"}
-                or entry["name"].casefold() in names):
+                or entry["name"] in names):
                 raise NativeLinuxReadDenied("native_linux_read_denied")
             full = args["relative"] + "/" + entry["name"] if args["relative"] else entry["name"]
             try:
@@ -148,7 +148,9 @@ def _check_result(out: object, *, project: str,
                 from pathlib import PurePosixPath
                 if PurePosixPath(entry["name"]).suffix.lower() not in READ_EXTENSIONS:
                     raise NativeLinuxReadDenied("native_linux_read_denied")
-            names.add(entry["name"].casefold())
+            # Linux source filesystems are case sensitive. README.md and
+            # readme.md are two legitimate distinct entries.
+            names.add(entry["name"])
     else:
         if (set(out) != {"status", "project", "relative_root", "mode",
                          "matches", "truncated", "entries_scanned",
