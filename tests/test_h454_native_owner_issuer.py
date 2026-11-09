@@ -15,6 +15,7 @@ import platform
 import sqlite3
 import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -118,14 +119,22 @@ class OwnerGrantIssuerContracts(unittest.TestCase):
 
     def test_sixteen_concurrent_issuers_consume_ticket_once(self):
         wire = self.ticket()
+        actual_clock = time.time
+
         def attempt(_):
             try:
-                self.issue(wire)
+                # Do not patch global time inside parallel threads:
+                # overlapping patch exits can corrupt the process clock.
+                self.issuer.issue(wire, PAYLOAD)
                 return "issued"
             except OwnerIssuerDenied:
                 return "denied"
-        with ThreadPoolExecutor(max_workers=8) as pool:
-            outcomes = list(pool.map(attempt, range(16)))
+
+        with patch("device_fabric.native_owner_issuer.time.time",
+                   return_value=NOW):
+            with ThreadPoolExecutor(max_workers=8) as pool:
+                outcomes = list(pool.map(attempt, range(16)))
+        self.assertIs(time.time, actual_clock)
         self.assertEqual(outcomes.count("issued"), 1)
         self.assertEqual(outcomes.count("denied"), 15)
         self.assertEqual(ledger.inspect(self.state, OPID), "completed")
