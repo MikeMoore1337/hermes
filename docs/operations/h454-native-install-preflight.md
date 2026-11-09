@@ -85,8 +85,13 @@ python3 -B -m scripts.h454_native_install_preflight \
 This is documentation of a proposed invocation, **not** an instruction
 to execute it on a production VPS now. The `--verify-local-roots` option
 must **never** be invoked from the existing Docker sandbox against
-guessed host roots. If the manifest is absent, symlinked, world-readable,
-oversized or its metadata changes during read, the preflight denies.
+guessed host roots. If the manifest is absent, symlinked (including ancestor
+symlink/junction redirects), world-readable, owned by a different
+Linux UID, oversized, or its metadata/mode changes before or during
+the pinned handle read, the preflight denies. These checks reduce
+configuration substitution risk but do not atomically lock an entire
+untrusted ancestor hierarchy: the real operator must run with
+host-enforced owner/ACL protections.
 
 A successful response contains `CANDIDATE_SYNTAX_VALID`,
 `LOCAL_DIRECTORY_HANDLES_PASS` only when explicitly checked on Linux,
