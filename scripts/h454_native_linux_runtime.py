@@ -191,8 +191,9 @@ def load_local_runtime(*, target: str, expected_release: str,
             expected_target=target)
         device = _parse_config(_private_manifest(config_path), candidate)
         return PreparedRuntime(device, candidate.roots, candidate)
-    except (RuntimeDenied, InstallPlanDenied, LinuxOutboundDenied,
-            OSError, ValueError, TypeError):
+    except Exception:
+        # Filesystem / parsing / account providers can include the private
+        # paths or credentials in error arguments. Never surface them.
         raise RuntimeDenied("native_linux_runtime_denied") from None
 
 
@@ -252,8 +253,9 @@ def run_once(prepared: PreparedRuntime, *, connector: Connector,
                 device_id=prepared.device.device_id, local_roots=roots,
                 is_device_revoked=is_device_revoked)
             return run_session(prepared.device, dispatcher, connector)
-    except (RuntimeDenied, NativeLinuxDenied, NativeLinuxReadDenied,
-            LinuxOutboundDenied, OSError, TypeError, ValueError):
+    except Exception:
+        # A failing trusted revocation or OS-isolation callback may contain
+        # private server names/paths in its exception. Deny without leaking.
         raise RuntimeDenied("native_linux_runtime_denied") from None
 
 
@@ -298,7 +300,8 @@ def main(argv: list[str] | None = None) -> int:
             report["local_roots"] = "NOT_RUN"
         print(json.dumps(report, sort_keys=True, separators=(",", ":")))
         return 0
-    except RuntimeDenied:
+    except Exception:
+        # The CLI never emits tracebacks, source paths or owner bearers.
         print(json.dumps({
             "status": "HOLD", "reason": "NATIVE_LINUX_RUNTIME_DENIED",
             "connected": False, "changes_applied": False,
