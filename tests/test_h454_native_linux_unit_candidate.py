@@ -59,7 +59,9 @@ class LinuxUnitSourceOnlyTests(unittest.TestCase):
         out = self.render()
         self.assertIn("[Unit]", out)
         self.assertIn("[Service]", out)
-        self.assertNotIn("[Install]", out)
+        # Reject a real section heading, not a harmless comment that
+        # happens to mention the syntax by name.
+        self.assertNotIn("[Install]", out.splitlines())
         self.assertNotIn("WantedBy=", out)
         self.assertIn("Type=oneshot", out)
         self.assertIn("Restart=no", out)
@@ -223,7 +225,7 @@ class LinuxUnitPureCliTests(unittest.TestCase):
             self.assertEqual(exit_code, 0)
             unit = output.call_args.args[0]
             self.assertIn("Type=oneshot", unit)
-            self.assertNotIn("[Install]", unit)
+            self.assertNotIn("[Install]", unit.splitlines())
             self.assertNotIn(str(file), unit)
 
     def test_untrusted_manifest_is_denied_before_rendering(self):
