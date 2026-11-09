@@ -38,16 +38,21 @@ def _private_manifest(path: Path) -> bytes:
         opened = os.fstat(fd)
         if (not stat.S_ISREG(opened.st_mode) or opened.st_nlink != 1
             or (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino)
-            or opened.st_size != before.st_size):
+            or opened.st_size != before.st_size
+            or opened.st_ctime_ns != before.st_ctime_ns
+            or (os.name == "posix"
+                and (opened.st_mode & 0o077
+                     or opened.st_uid != os.geteuid()))):
             raise InstallPlanDenied("native_install_plan_denied")
         data = os.read(fd, MAX_MANIFEST_BYTES + 1)
         after = os.fstat(fd)
         if (not data or len(data) > MAX_MANIFEST_BYTES
             or len(data) != before.st_size
             or (opened.st_dev, opened.st_ino, opened.st_mtime_ns,
-                opened.st_ctime_ns) !=
+                opened.st_ctime_ns, opened.st_mode) !=
                (after.st_dev, after.st_ino, after.st_mtime_ns,
-                after.st_ctime_ns)):
+                after.st_ctime_ns, after.st_mode)
+            or (os.name == "posix" and after.st_mode & 0o077)):
             raise InstallPlanDenied("native_install_plan_denied")
         return data
     except (OSError, ValueError, TypeError):
