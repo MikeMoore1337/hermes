@@ -207,6 +207,7 @@ class LinuxNativeOneShotProcess:
         except AdmissionDenied:
             raise NativeProcessDenied("native_process_denied") from None
         proc = None
+        completed = False
         try:
             if (effect.action != "process_run" or effect.relative != ""
                 or effect.project != self._files.project):
@@ -250,6 +251,7 @@ class LinuxNativeOneShotProcess:
                 raise NativeProcessDenied("native_process_denied") from None
             if self._admission.complete(identity, success=True) != "RECORDED":
                 raise NativeProcessDenied("native_process_denied")
+            completed = True
             return {
                 "status": "finished", "project": self._files.project,
                 "exit_code": returncode, "stdout": output,
@@ -266,7 +268,10 @@ class LinuxNativeOneShotProcess:
         finally:
             if proc is not None:
                 try:
-                    if proc.poll() is None:
+                    # On failure, kill the whole session even if the direct
+                    # child exited: inherited-pipe descendants may still
+                    # be running under the old process group.
+                    if not completed or proc.poll() is None:
                         self._terminate_group(proc)
                 finally:
                     if proc.stdout is not None:
