@@ -39,6 +39,46 @@ def retarget_receipt(receipt: bytes, new_bundle: bytes) -> bytes:
     return bundle._json(value)
 
 
+class SourceBundleWorkflowPolicy(unittest.TestCase):
+    def test_workflow_is_dispatch_only_no_privileged_transport(self):
+        workflow = (
+            Path(__file__).resolve().parents[1]
+            / ".github/workflows/h454-native-linux-source-bundle.yml"
+        ).read_text(encoding="utf-8")
+        self.assertIn("workflow_dispatch:", workflow)
+        self.assertNotIn("pull_request:", workflow)
+        self.assertNotIn("\n  push:", workflow)
+        self.assertIn("contents: read", workflow)
+        self.assertIn("actions: read", workflow)
+        self.assertIn("persist-credentials: false", workflow)
+        self.assertIn("refs/heads/main", workflow)
+        self.assertIn('"$APPROVED_SHA" == "$EXACT_SHA"', workflow)
+        self.assertIn('name=="Hermes repository checks"', workflow)
+        self.assertIn('name=="Hermes Control Center UI"', workflow)
+        self.assertIn("if-no-files-found: error", workflow)
+        for dangerous in (
+            "systemctl", "sudo ", "useradd", "ssh -",
+            "ssh-keygen", "docker ", "curl ", "scp ",
+            "HERMES_DEPLOY_KEY", "HERMES_DEPLOY_TARGET",
+            "secrets.", "Authorization: Bearer",
+            "--install", "--apply", "service start",
+        ):
+            with self.subTest(pattern=dangerous):
+                self.assertNotIn(dangerous, workflow)
+
+    def test_workflow_uploads_only_two_verified_source_artifacts(self):
+        text = (
+            Path(__file__).resolve().parents[1]
+            / ".github/workflows/h454-native-linux-source-bundle.yml"
+        ).read_text(encoding="utf-8")
+        self.assertIn("scripts.h454_native_readonly_bundle build", text)
+        self.assertIn("scripts.h454_native_readonly_bundle verify", text)
+        self.assertIn(bundle.ARCHIVE_NAME, text)
+        self.assertIn(bundle.RECEIPT_NAME, text)
+        self.assertIn("NATIVE_AGENT_INSTALLED=NO", text)
+        self.assertIn("OWNER_HOST_CHANGED=NO", text)
+
+
 class NativeSourceArchivePure(unittest.TestCase):
     def test_exact_allowlist_excludes_write_process_grant_and_host_secrets(self):
         self.assertEqual(len(bundle.SOURCE_FILES), 10)
