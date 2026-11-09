@@ -299,6 +299,18 @@ class NativeLinuxRuntimeIntegration(unittest.TestCase):
                 is_device_revoked=unavailable,
                 is_os_isolation_verified=lambda: True)
 
+    def test_runtime_error_from_trusted_isolation_callback_is_redacted(self):
+        prepared = self.load()
+        def broken():
+            raise RuntimeError("SYNTHETIC_PRIVATE_EXCEPTION_DETAIL")
+        with self.assertRaisesRegex(
+                runtime.RuntimeDenied, "^native_linux_runtime_denied$") as denied:
+            runtime.run_once(
+                prepared, connector=lambda *_a, **_kw: None,
+                is_device_revoked=lambda: False,
+                is_os_isolation_verified=broken)
+        self.assertNotIn("SYNTHETIC_PRIVATE", str(denied.exception))
+
     def test_full_injected_existing_brc_wire_reads_original_fixture(self):
         prepared = self.load()
         messages = [
