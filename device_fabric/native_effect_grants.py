@@ -28,7 +28,7 @@ HEX64 = re.compile(r"[0-9a-f]{64}\Z")
 WINDOWS_DEVICE = re.compile(r"(?:con|prn|aux|nul|conin\$|conout\$|com[1-9¹²³]|lpt[1-9¹²³])\Z", re.I)
 
 
-def _windows_reserved(part: str) -> bool:
+def windows_reserved_component(part: str) -> bool:
     """Fail closed on Windows DOS device basenames, including extension tricks.
 
     The native agent must still enforce no-follow handles and OS ACLs.
@@ -91,7 +91,7 @@ def _validate_relative(relative: str, *, action: str) -> None:
         low = part.casefold()
         if (not part or part in {".", ".."} or part.endswith((" ", "."))
             or any(c in '<>:"|?*' or unicodedata.category(c).startswith("C") for c in part)
-            or _windows_reserved(part) or low in BLOCKED_NAMES
+            or windows_reserved_component(part) or low in BLOCKED_NAMES
             or low.startswith(".env.") or SENSITIVE_STEM.match(part)
             or low.endswith(BLOCKED_SUFFIXES)):
             raise GrantDenied("native_grant_denied")

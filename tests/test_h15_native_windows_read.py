@@ -102,6 +102,8 @@ class NativeWindowsReadTests(unittest.TestCase):
         invalid = ("..\\private.md", ".\\README.md", "\\\\server\\share.md",
                    "C:\\Windows\\system.md", r"file.txt:secret",
                    "CON", "COM1.txt", "LPT9.md", "name.\\read.md",
+                    "CONIN$", "CONOUT$", "COM¹.txt", "LPT².log",
+                    "NUL .txt", "folder\\PRN  .md", "folder\\COM³.txt",
                    "name \\README.md", "folder\\\\README.md",
                    "README.md\n", "a/README.md", "e" * 1025,
                    "D:README.md", "first\\..\\README.md",
@@ -110,6 +112,14 @@ class NativeWindowsReadTests(unittest.TestCase):
             with self.subTest(relative=relative):
                 with self.assertRaises(broker.NativeReadRefused):
                     broker.build_request("hermes", relative, "read")
+
+    def test_reserved_windows_device_names_denied_for_stat_and_read(self):
+        for relative in ("CONIN$", "CONOUT$", "NUL .txt", "COM¹.txt",
+                         "LPT².log", "folder\\PRN  .md", "sub\\COM³.txt"):
+            for operation in ("stat", "read"):
+                with self.subTest(relative=relative, operation=operation):
+                    with self.assertRaises(broker.NativeReadRefused):
+                        broker.build_request("hermes", relative, operation)
 
     def test_handle_verified_read_hash_and_exact_cleanup(self):
         mock = FakeWin32(data=b"test-body\n")

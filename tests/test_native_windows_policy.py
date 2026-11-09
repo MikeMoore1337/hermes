@@ -61,6 +61,13 @@ class NativeWindowsPolicyTests(unittest.TestCase):
             "D:\\Pet-projects\\hermes\\file. ",
             "D:\\Pet-projects\\hermes\\file\x00.txt",
             "D:\\Pet-projects\\hermes\\CON",
+            r"D:\Pet-projects\hermes\CONIN$",
+            r"D:\Pet-projects\hermes\CONOUT$",
+            r"D:\Pet-projects\hermes\COM¹.txt",
+            r"D:\Pet-projects\hermes\LPT².log",
+            r"D:\Pet-projects\hermes\NUL .txt",
+            r"D:\Pet-projects\hermes\sub\PRN  .md",
+            r"D:\Pet-projects\hermes\sub\LPT³.txt",
             "D:\\Pet-projects\\hermes\\file\n.txt",
             "D:\\Pet-projects\\hermes\\" + "a" * 1100,
         ]

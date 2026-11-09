@@ -25,6 +25,7 @@ import os
 import re
 import sys
 
+from device_fabric.native_effect_grants import windows_reserved_component
 from control_center.native_windows_policy import (READ_ROOTS, SENSITIVE_STEM,
                                                   classify_native_request)
 
@@ -45,7 +46,6 @@ DENIED_COMPONENTS = frozenset({
 })
 DENIED_NAMES = frozenset({"id_rsa", "id_ed25519", "credentials", "config.local"})
 DENIED_SUFFIXES = (".pem", ".key", ".p12", ".pfx", ".kdbx", ".sqlite", ".sqlite3", ".db")
-DOS_RESERVED = re.compile(r"^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\..*)?$", re.I)
 
 FILE_ATTRIBUTE_DIRECTORY = 0x10
 FILE_ATTRIBUTE_REPARSE_POINT = 0x400
@@ -76,7 +76,7 @@ def build_request(project: str, relative: str, operation: str) -> tuple[str, str
         pieces = relative.split("\\")
         if any(not part or part in {".", ".."} or part.endswith((" ", "."))
                or ":" in part or any(ord(c) < 32 for c in part)
-               or DOS_RESERVED.fullmatch(part) for part in pieces):
+               or windows_reserved_component(part) for part in pieces):
             raise NativeReadRefused("unsafe_relative_path")
         lowered = [p.casefold() for p in pieces]
         if any(p in DENIED_COMPONENTS or p.startswith(".env.")
