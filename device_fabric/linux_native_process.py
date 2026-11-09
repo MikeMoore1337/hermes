@@ -148,14 +148,17 @@ class LinuxNativeOneShotProcess:
             raise NativeProcessDenied("native_process_denied") from None
 
     def _authorize_child(self, channel: socket.socket, effect, *,
-                         timeout_seconds: float) -> None:
+                         deadline: float) -> None:
         """Recheck trusted device revocation after child resource setup.
 
         A private AF_UNIX gate is held only by this parent and the
         inspected child launcher. Fail closed if the child never reaches
         the final exec boundary; do not trust arbitrary MCP arguments.
         """
-        channel.settimeout(min(1.0, timeout_seconds))
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise NativeProcessDenied("native_process_denied")
+        channel.settimeout(min(1.0, remaining))
         ready = bytearray()
         while len(ready) < 5:
             part = channel.recv(5 - len(ready))
@@ -165,7 +168,12 @@ class LinuxNativeOneShotProcess:
         if bytes(ready) != b"READY":
             raise NativeProcessDenied("native_process_denied")
         self._admission.check_active()
-        if time.time() > effect.expires_at:
+        # Checking only the owner-grant expiry is insufficient: the signed
+        # per-command wall budget may elapse while the child boots or the
+        # trusted revocation callback blocks. The child rechecks the SAME
+        # CLOCK_MONOTONIC deadline immediately before execve.
+        if (time.time() > effect.expires_at
+            or time.monotonic() >= deadline):
             raise NativeProcessDenied("native_process_denied")
         channel.sendall(b"G")
 
@@ -184,10 +192,10 @@ class LinuxNativeOneShotProcess:
         except (OSError, subprocess.TimeoutExpired):
             raise NativeProcessDenied("native_process_denied") from None
 
-    def _capture(self, proc: subprocess.Popen[bytes], timeout_seconds: int) -> tuple[int, bytes]:
+    def _capture(self, proc: subprocess.Popen[bytes], deadline: float) -> tuple[int, bytes]:
+        """Drain child pipes within the ORIGINAL signed monotonic deadline."""
         stdout = bytearray()
         stderr_bytes = 0
-        deadline = time.monotonic() + timeout_seconds
         with selectors.DefaultSelector() as selector:
             if proc.stdout is None or proc.stderr is None:
                 raise NativeProcessDenied("native_process_denied")
@@ -212,6 +220,8 @@ class LinuxNativeOneShotProcess:
                         stderr_bytes += len(chunk)
                         if stderr_bytes > MAX_STDERR_BYTES:
                             raise NativeProcessDenied("native_process_denied")
+        if time.monotonic() >= deadline:
+            raise NativeProcessDenied("native_process_denied")
         return proc.wait(timeout=1), bytes(stdout)
 
     def run(self, frame: bytes, payload: bytes, *,
@@ -261,12 +271,12 @@ class LinuxNativeOneShotProcess:
             # /proc/self/fd binds cwd to the reviewed original root FD,
             # not a raceable path string or a Docker workspace clone.
             root_fd = self._files._root_fd
-            started = time.monotonic()
+            deadline = time.monotonic() + timeout_seconds
             parent_gate, child_gate = socket.socketpair()
             proc = subprocess.Popen(
                 [sys.executable, "-I", "-B", str(launcher),
                  str(os.getpid()), str(effect.expires_at),
-                 str(child_gate.fileno()), *argv],
+                 str(child_gate.fileno()), repr(deadline), *argv],
                 cwd=f"/proc/self/fd/{root_fd}",
                 pass_fds=(root_fd, child_gate.fileno()),
                 env=safe_env, stdin=subprocess.DEVNULL,
@@ -276,13 +286,12 @@ class LinuxNativeOneShotProcess:
             child_gate.close()
             child_gate = None
             self._authorize_child(
-                parent_gate, effect, timeout_seconds=timeout_seconds)
+                parent_gate, effect, deadline=deadline)
             parent_gate.close()
             parent_gate = None
-            remaining = timeout_seconds - (time.monotonic() - started)
-            if remaining <= 0:
+            if time.monotonic() >= deadline:
                 raise NativeProcessDenied("native_process_denied")
-            returncode, out = self._capture(proc, remaining)
+            returncode, out = self._capture(proc, deadline)
             # A successful leader may leave descendants in the SAME group
             # with all pipes redirected away. Kill that group before
             # reporting one-shot completion or writing the receipt.
