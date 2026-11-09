@@ -109,7 +109,11 @@ class NativeProcessOneShotTests(unittest.TestCase):
         from device_fabric import linux_native_child as child
         fake_libc = MagicMock()
         fake_libc.prctl.return_value = 0
-        with socket.socketpair() as (parent_gate, child_gate):
+        parent_gate, child_gate = socket.socketpair()
+        with parent_gate, child_gate:
+            # The child's own socket wrapper closes this DUPLICATE FD.
+            # Keep the test's socketpair endpoints independently owned.
+            gate_fd = os.dup(child_gate.fileno())
             # The local parent confirms readiness, but expiry crosses
             # while child applies resource limits.
             parent_gate.sendall(b"G")
@@ -122,7 +126,7 @@ class NativeProcessOneShotTests(unittest.TestCase):
                  patch.object(child.resource, "setrlimit") as setrlimit, \
                  patch.object(child.os, "execve") as execve:
                 self.assertEqual(child.main(
-                    ["3456", str(NOW + 90), str(child_gate.fileno()),
+                    ["3456", str(NOW + 90), str(gate_fd),
                      self.program, "-c", "print('unsafe')"]),
                     125)
                 self.assertEqual(setrlimit.call_count, 5)
