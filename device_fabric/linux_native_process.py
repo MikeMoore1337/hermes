@@ -14,6 +14,7 @@ import json
 import os
 from pathlib import Path
 import selectors
+import socket
 import signal
 import stat
 import subprocess
@@ -146,6 +147,27 @@ class LinuxNativeOneShotProcess:
         except Exception:
             raise NativeProcessDenied("native_process_denied") from None
 
+    def _authorize_child(self, channel: socket.socket, effect) -> None:
+        """Recheck trusted device revocation after child resource setup.
+
+        A private AF_UNIX gate is held only by this parent and the
+        inspected child launcher. Fail closed if the child never reaches
+        the final exec boundary; do not trust arbitrary MCP arguments.
+        """
+        channel.settimeout(3.0)
+        ready = bytearray()
+        while len(ready) < 5:
+            part = channel.recv(5 - len(ready))
+            if not part:
+                raise NativeProcessDenied("native_process_denied")
+            ready.extend(part)
+        if bytes(ready) != b"READY":
+            raise NativeProcessDenied("native_process_denied")
+        self._admission.check_active()
+        if time.time() > effect.expires_at:
+            raise NativeProcessDenied("native_process_denied")
+        channel.sendall(b"G")
+
     @staticmethod
     def _terminate_group(proc: subprocess.Popen[bytes]) -> None:
         try:
@@ -207,6 +229,8 @@ class LinuxNativeOneShotProcess:
         except AdmissionDenied:
             raise NativeProcessDenied("native_process_denied") from None
         proc = None
+        parent_gate = None
+        child_gate = None
         completed = False
         terminated = False
         try:
@@ -236,16 +260,28 @@ class LinuxNativeOneShotProcess:
             # /proc/self/fd binds cwd to the reviewed original root FD,
             # not a raceable path string or a Docker workspace clone.
             root_fd = self._files._root_fd
+            parent_gate, child_gate = socket.socketpair()
             proc = subprocess.Popen(
                 [sys.executable, "-I", "-B", str(launcher),
-                 str(os.getpid()), str(effect.expires_at), *argv],
+                 str(os.getpid()), str(effect.expires_at),
+                 str(child_gate.fileno()), *argv],
                 cwd=f"/proc/self/fd/{root_fd}",
-                pass_fds=(root_fd,),
+                pass_fds=(root_fd, child_gate.fileno()),
                 env=safe_env, stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 shell=False, close_fds=True, start_new_session=True,
             )
+            child_gate.close()
+            child_gate = None
+            self._authorize_child(parent_gate, effect)
+            parent_gate.close()
+            parent_gate = None
             returncode, out = self._capture(proc, timeout_seconds)
+            # A successful leader may leave descendants in the SAME group
+            # with all pipes redirected away. Kill that group before
+            # reporting one-shot completion or writing the receipt.
+            self._terminate_group(proc)
+            terminated = True
             try:
                 output = out.decode("utf-8", "strict")
             except UnicodeError:
@@ -276,6 +312,10 @@ class LinuxNativeOneShotProcess:
                 pass
             raise NativeProcessDenied("native_process_denied") from None
         finally:
+            if parent_gate is not None:
+                parent_gate.close()
+            if child_gate is not None:
+                child_gate.close()
             if proc is not None:
                 try:
                     # On BaseException or incomplete termination, still kill
