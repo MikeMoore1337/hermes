@@ -408,6 +408,61 @@ class NativeProcessOneShotTests(unittest.TestCase):
         self.assertFalse(marker.exists())
         self.assertEqual(ledger.inspect(self.state, OPID), "failed")
 
+    def test_watchdog_stops_child_while_revocation_callback_is_blocked(self):
+        # Reproduce P2: the fifth revocation call happens in _capture,
+        # AFTER the child was allowed to exec. It blocks longer than the
+        # signed wall timeout while the child attempts a delayed write.
+        # A separate monotonic watchdog must kill the group on deadline.
+        marker = self.project / "late-write-while-revocation-blocked"
+        script = ("import time;from pathlib import Path;"
+                  "time.sleep(1.35);"
+                  f"Path({str(marker)!r}).write_text('escaped')")
+        frame, payload = self.signed(
+            [self.program, "-I", "-B", "-c", script], timeout=1)
+        checks = []
+
+        def revoked():
+            checks.append(len(checks) + 1)
+            if len(checks) == 5:
+                time.sleep(1.7)
+            return False
+
+        admission = NativeEffectAdmission(self.config, is_revoked=revoked)
+        runner = LinuxNativeOneShotProcess(self.files, admission, self.policy)
+        with self.assertRaisesRegex(NativeProcessDenied, "^native_process_denied$"):
+            runner.run(frame, payload, now=NOW)
+        self.assertGreaterEqual(len(checks), 5)
+        self.assertFalse(marker.exists(),
+                         "deadline watcher failed during blocked revocation")
+        self.assertEqual(ledger.inspect(self.state, OPID), "failed")
+
+    def test_watchdog_kills_group_if_parent_leader_already_exited(self):
+        # The leader may leave a child which keeps pipes alive. A revocation
+        # callback may block before _capture notices inherited-pipe timeout.
+        marker = self.project / "escaped-with-exited-leader"
+        desc = ("import time;from pathlib import Path;"
+                "time.sleep(1.35);"
+                f"Path({str(marker)!r}).write_text('escaped')")
+        parent = ("import subprocess,sys;"
+                  f"subprocess.Popen([sys.executable,'-I','-B','-c',{desc!r}])")
+        frame, payload = self.signed(
+            [self.program, "-I", "-B", "-c", parent], timeout=1)
+        checks = []
+
+        def revoked():
+            checks.append(len(checks) + 1)
+            if len(checks) == 5:
+                time.sleep(1.7)
+            return False
+
+        admission = NativeEffectAdmission(self.config, is_revoked=revoked)
+        runner = LinuxNativeOneShotProcess(self.files, admission, self.policy)
+        with self.assertRaises(NativeProcessDenied):
+            runner.run(frame, payload, now=NOW)
+        self.assertGreaterEqual(len(checks), 5)
+        self.assertFalse(marker.exists())
+        self.assertEqual(ledger.inspect(self.state, OPID), "failed")
+
     def test_grant_expires_between_reservation_and_spawn(self):
         frame, payload = self.signed(ttl=1)
         with patch("device_fabric.linux_native_process.time.time",
