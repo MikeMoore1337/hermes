@@ -35,9 +35,10 @@ The process starts with a **kernel-verified pinned project-root fd** as
 `device_fabric/linux_native_child.py` applies `PR_SET_NO_NEW_PRIVS`,
 parent-death SIGKILL, private umask and per-process Linux resource limits
 before `execve` on the approved executable. The child independently
-rechecks the grant's signed expiry immediately before the actual exec,
-so startup latency cannot resurrect an expired operation. No `shell=True`
-or `preexec_fn` is used.
+checks the signed grant's expiry both at child entry **and after**
+`prctl` and `setrlimit`, at the final instruction before actual `execve`.
+Scheduling/resource-setup latency cannot resurrect an expired operation.
+No `shell=True` or `preexec_fn` is used.
 
 ## Hard resource ceilings
 
