@@ -37,11 +37,12 @@ internal static class Program
         return pinned.Success ? pinned.Groups[1].Value : "NOT_PINNED";
     }
 
-    private static int SelfTest()
+    private static int SelfTest(string expectedSourceSha)
     {
         // A smoke contract, not an OS isolation or graphical acceptance test.
         string sha = Revision();
-        if (sha == "NOT_PINNED" || CanInstall ||
+        if (!Regex.IsMatch(expectedSourceSha, @"\A[0-9a-f]{40}\z", RegexOptions.CultureInvariant) ||
+            sha != expectedSourceSha || CanInstall ||
             ServiceKey != "HermesCommanderNative" ||
             ServiceIdentity != @"NT SERVICE\HermesCommanderNative" ||
             InitialState != "DISABLED" || AccessMode != "READ_ONLY" ||
@@ -66,8 +67,8 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
-        if (args.Length == 1 && args[0] == "--self-test")
-            return SelfTest();
+        if (args.Length == 2 && args[0] == "--self-test")
+            return SelfTest(args[1]);
         if (args.Length != 0 || Revision() == "NOT_PINNED")
             return 2;
 
