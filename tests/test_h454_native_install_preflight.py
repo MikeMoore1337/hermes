@@ -267,6 +267,43 @@ class LinuxReadOnlyHostPreflight(unittest.TestCase):
             _private_manifest(link)
         self.assertTrue(self.manifest_path.exists())
 
+    def test_manifest_chmod_race_between_lstat_and_open_denied(self):
+        # A private manifest may become world-readable after path lstat.
+        # Its mode must be verified on the actual OPEN file handle as well.
+        manifest_path = self.write_manifest()
+        raw_open = os.open
+        races = []
+
+        def race(path, flags, *args, **kwargs):
+            races.append(True)
+            manifest_path.chmod(0o644)
+            return raw_open(path, flags, *args, **kwargs)
+
+        with patch("scripts.h454_native_install_preflight.os.open",
+                   side_effect=race):
+            with self.assertRaisesRegex(
+                    InstallPlanDenied, "^native_install_plan_denied$"):
+                _private_manifest(manifest_path)
+        self.assertEqual(len(races), 1)
+        self.assertEqual(stat.S_IMODE(manifest_path.stat().st_mode), 0o644)
+        manifest_path.chmod(0o600)
+
+    def test_manifest_chmod_race_after_open_denied(self):
+        manifest_path = self.write_manifest()
+        original_read = os.read
+
+        def race(fd, limit):
+            data = original_read(fd, limit)
+            manifest_path.chmod(0o644)
+            return data
+
+        with patch("scripts.h454_native_install_preflight.os.read",
+                   side_effect=race):
+            with self.assertRaisesRegex(
+                    InstallPlanDenied, "^native_install_plan_denied$"):
+                _private_manifest(manifest_path)
+        manifest_path.chmod(0o600)
+
     def test_cli_reports_hold_without_paths_on_mismatch(self):
         p = self.write_manifest()
         with patch("builtins.print") as output:
