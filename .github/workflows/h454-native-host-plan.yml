@@ -1,0 +1,136 @@
+name: H454 native host plan (read-only manual SSH)
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Original Linux VPS, not Docker workspace'
+        required: true
+        type: choice
+        options:
+          - hermes-vps
+          - yfc-vps
+      release_sha:
+        description: 'Exact current main SHA separately accepted by owner'
+        required: true
+        type: string
+      manifest_sha256:
+        description: 'SHA256 of private on-host install candidate'
+        required: true
+        type: string
+      artifact_sha256:
+        description: 'Verified future installer artifact digest (no install)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: h454-native-plan-${{ inputs.target }}
+  cancel-in-progress: false
+
+jobs:
+  verify-readonly-forced-ssh-plan:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    environment: ${{ inputs.target == 'hermes-vps' && 'h454-native-plan-hermes-vps' || 'h454-native-plan-yfc-vps' }}
+    steps:
+      - name: Require current main and both SHA-scoped quality gates
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ inputs.release_sha }}
+          MANIFEST_SHA: ${{ inputs.manifest_sha256 }}
+          ARTIFACT_SHA: ${{ inputs.artifact_sha256 }}
+          TARGET: ${{ inputs.target }}
+        run: |
+          set -euo pipefail
+          [[ "$TARGET" == hermes-vps || "$TARGET" == yfc-vps ]] || exit 2
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ && "$SHA" == "$GITHUB_SHA" ]] || exit 2
+          [[ "$MANIFEST_SHA" =~ ^[0-9a-f]{64}$ && "$ARTIFACT_SHA" =~ ^[0-9a-f]{64}$ ]] || exit 2
+          [[ "$MANIFEST_SHA" != "$(printf '0%.0s' {1..64})" &&
+             "$ARTIFACT_SHA" != "$(printf '0%.0s' {1..64})" ]] || exit 2
+          current="$(gh api "repos/$GITHUB_REPOSITORY/branches/main" --jq .commit.sha)"
+          [[ "$current" == "$SHA" ]] || { echo 'NATIVE_PLAN=STALE_SHA'; exit 2; }
+          runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$SHA&branch=main&event=push&per_page=100")"
+          quality="$(jq -r '[.workflow_runs[] | select(.name=="Hermes repository checks")] | first | .conclusion // "pending"' <<< "$runs")"
+          ui="$(jq -r '[.workflow_runs[] | select(.name=="Hermes Control Center UI")] | first | .conclusion // "pending"' <<< "$runs")"
+          [[ "$quality" == success && "$ui" == success ]] || {
+            echo 'NATIVE_PLAN=SOURCE_CI_NOT_VERIFIED'; exit 2;
+          }
+          echo 'H454_NATIVE_SOURCE_GATE=PASS_READONLY'
+
+      - name: Prove restricted SSH command then verify private host plan
+        shell: bash
+        env:
+          TARGET: ${{ inputs.target }}
+          SHA: ${{ inputs.release_sha }}
+          MANIFEST_SHA: ${{ inputs.manifest_sha256 }}
+          ARTIFACT_SHA: ${{ inputs.artifact_sha256 }}
+          PLAN_SSH_KEY: ${{ secrets.H454_NATIVE_PLAN_SSH_KEY }}
+          PLAN_SSH_TARGET: ${{ secrets.H454_NATIVE_PLAN_SSH_TARGET }}
+          PLAN_SSH_PORT: ${{ secrets.H454_NATIVE_PLAN_SSH_PORT }}
+          PLAN_KNOWN_HOSTS: ${{ secrets.H454_NATIVE_PLAN_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          umask 077
+          key="$RUNNER_TEMP/h454-native-plan-key"
+          known="$RUNNER_TEMP/h454-native-plan-hosts"
+          trap 'rm -f -- "$key" "$known"' EXIT
+          [[ -n "$PLAN_SSH_KEY" && -n "$PLAN_SSH_TARGET" &&
+             -n "$PLAN_SSH_PORT" && -n "$PLAN_KNOWN_HOSTS" ]] || {
+            echo 'H454_NATIVE_PLAN=SSH_NOT_PROVISIONED'; exit 2;
+          }
+          [[ "$PLAN_SSH_PORT" =~ ^[1-9][0-9]{0,4}$ ]] || exit 2
+          (( PLAN_SSH_PORT <= 65535 )) || exit 2
+          [[ "$PLAN_SSH_TARGET" =~ ^[a-z][a-z0-9_-]{0,31}@[A-Za-z0-9.-]+$ ]] || exit 2
+          printf '%s\n' "$PLAN_SSH_KEY" > "$key"
+          printf '%s\n' "$PLAN_KNOWN_HOSTS" > "$known"
+          opts=(
+            -T -n -i "$key" -p "$PLAN_SSH_PORT"
+            -o BatchMode=yes -o IdentitiesOnly=yes
+            -o ConnectTimeout=10 -o StrictHostKeyChecking=yes
+            -o HostKeyAlgorithms=ssh-ed25519
+            -o ClearAllForwardings=yes -o PermitLocalCommand=no
+            -o UserKnownHostsFile="$known"
+          )
+          # First command proves a restricted forced-command identity. An
+          # unrestricted shell cannot produce this fixed JSON response.
+          proof="$(timeout --kill-after=3 35 ssh "${opts[@]}" \
+            "$PLAN_SSH_TARGET" h454-native-proof-v1 2>/dev/null)"
+          jq -e '
+            type=="object" and
+            (keys|sort)==["changes_applied","install_authorized","schema","status"] and
+            .schema==1 and .status=="FORCED_COMMAND_PROOF_READONLY" and
+            .changes_applied==false and .install_authorized==false
+          ' <<< "$proof" >/dev/null || {
+            echo 'H454_NATIVE_PLAN=FORCED_COMMAND_UNPROVEN'; exit 2;
+          }
+          echo 'H454_NATIVE_FORCED_COMMAND=PROVEN_READONLY'
+          [[ "$TARGET" == hermes-vps || "$TARGET" == yfc-vps ]] || exit 2
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ && "$MANIFEST_SHA" =~ ^[0-9a-f]{64}$ ]] || exit 2
+          report="$(timeout --kill-after=3 40 ssh "${opts[@]}" \
+            "$PLAN_SSH_TARGET" "h454-native-plan-v1 $TARGET $SHA $MANIFEST_SHA" \
+            2>/dev/null)"
+          jq -e --arg target "$TARGET" --arg sha "$SHA" \
+                --arg manifest "$MANIFEST_SHA" --arg artifact "$ARTIFACT_SHA" '
+            type=="object" and
+            (keys|sort)==[
+              "artifact_sha256","changes_applied","host_service_installed",
+              "install_authorized","manifest_sha256","native_device_activated",
+              "owner_approved","release_sha","roots_checked","schema","status","target"
+            ] and
+            .schema==1 and .status=="READONLY_NATIVE_HOST_PLAN_VERIFIED" and
+            .target==$target and .release_sha==$sha and
+            .manifest_sha256==$manifest and .artifact_sha256==$artifact and
+            (.roots_checked|type)=="number" and
+            .roots_checked>=1 and .roots_checked<=5 and
+            .changes_applied==false and .install_authorized==false and
+            .owner_approved==false and .host_service_installed==false and
+            .native_device_activated==false
+          ' <<< "$report" >/dev/null || {
+            echo 'H454_NATIVE_PLAN=HOST_PREFLIGHT_REFUSED'; exit 2;
+          }
+          echo 'H454_NATIVE_HOST_PLAN=PASS_READONLY_NO_MUTATIONS'
