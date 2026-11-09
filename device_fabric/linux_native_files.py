@@ -52,13 +52,22 @@ class _OpenHow(ctypes.Structure):
                 ("resolve", ctypes.c_uint64)]
 
 
-def _kernel_openat2(root_fd: int, relative: str, flags: int) -> int:
-    """Enforce kernel relative-to-fd resolution; NO userspace fallback."""
+def _kernel_openat2(root_fd: int, relative: str, flags: int, *,
+                    mode: int = 0) -> int:
+    """Kernel-enforced relative path lookup; optional exclusive-create mode.
+
+    The only permitted creation mode is 0600, with O_CREAT | O_EXCL; this
+    helper does not grant filesystem rights or bypass any Linux policy.
+    """
     if sys.platform != "linux" or platform.machine().lower() not in ("x86_64", "aarch64"):
         raise NativeLinuxDenied("native_linux_unavailable")
+    if (type(mode) is not int or mode not in (0, 0o600)
+        or (bool(flags & os.O_CREAT) != bool(mode))
+        or (bool(flags & os.O_CREAT) and not flags & os.O_EXCL)):
+        raise NativeLinuxDenied("native_linux_denied")
     # The path has already passed a conservative shared lexical validator.
     # No TOCTOU path checks or os.path.realpath() are security boundaries.
-    how = _OpenHow(flags | os.O_CLOEXEC | os.O_NOFOLLOW, 0, RESOLVE_FLAGS)
+    how = _OpenHow(flags | os.O_CLOEXEC | os.O_NOFOLLOW, mode, RESOLVE_FLAGS)
     libc = ctypes.CDLL(None, use_errno=True)
     libc.syscall.restype = ctypes.c_long
     result = libc.syscall(ctypes.c_long(OPENAT2_SYSCALL),
