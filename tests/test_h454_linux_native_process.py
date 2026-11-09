@@ -95,7 +95,8 @@ class NativeProcessOneShotTests(unittest.TestCase):
                    f"Path({str(marker)!r}).write_text('unexpected')")
         result = subprocess.run(
             [sys.executable, "-I", "-B", child, str(os.getpid()),
-             "1", "9", self.program, "-I", "-B", "-c", command],
+             "1", "9", repr(time.monotonic() + 10),
+             self.program, "-I", "-B", "-c", command],
             cwd=self.project, capture_output=True, timeout=5,
             check=False)
         self.assertEqual(result.returncode, 125)
@@ -127,11 +128,50 @@ class NativeProcessOneShotTests(unittest.TestCase):
                  patch.object(child.os, "execve") as execve:
                 self.assertEqual(child.main(
                     ["3456", str(NOW + 90), str(gate_fd),
+                     repr(time.monotonic() + 10),
                      self.program, "-c", "print('unsafe')"]),
                     125)
                 self.assertEqual(setrlimit.call_count, 5)
                 execve.assert_not_called()
             self.assertEqual(parent_gate.recv(5), b"READY")
+
+    def test_child_rechecks_monotonic_deadline_after_parent_go(self):
+        # The child received G before its clock passed the signed wall
+        # deadline, but was paused before execve. Expiry must still deny.
+        from device_fabric import linux_native_child as child
+        libc = MagicMock()
+        libc.prctl.return_value = 0
+        parent_gate, child_gate = socket.socketpair()
+        with parent_gate, child_gate:
+            gate_fd = os.dup(child_gate.fileno())
+            parent_gate.sendall(b"G")
+            with patch.object(child.os, "getppid", return_value=3456), \
+                 patch.object(child.os, "geteuid", return_value=1001), \
+                 patch.object(child.time, "time", return_value=NOW + 1), \
+                 patch.object(child.time, "monotonic",
+                              side_effect=[100.0, 102.0]), \
+                 patch.object(child.ctypes, "CDLL", return_value=libc), \
+                 patch.object(child.os, "umask"), \
+                 patch.object(child.resource, "setrlimit"), \
+                 patch.object(child.os, "execve") as execve:
+                result = child.main([
+                    "3456", str(NOW + 90), str(gate_fd),
+                    "101.0", self.program, "-c", "print('unsafe')"])
+            self.assertEqual(result, 125)
+            execve.assert_not_called()
+            self.assertEqual(parent_gate.recv(5), b"READY")
+
+    def test_child_refuses_nan_infinite_and_expired_monotonic_deadlines(self):
+        from device_fabric import linux_native_child as child
+        for bad in ("nan", "inf", "-inf", "0"):
+            with self.subTest(deadline=bad), \
+                 patch.object(child.os, "getppid", return_value=3456), \
+                 patch.object(child.os, "geteuid", return_value=1001), \
+                 patch.object(child.os, "execve") as execve:
+                result = child.main([
+                    "3456", str(NOW + 90), "9", bad, self.program])
+                self.assertEqual(result, 125)
+                execve.assert_not_called()
 
     def test_child_enforces_no_new_privileges(self):
         script = ("import ctypes;"
@@ -339,6 +379,32 @@ class NativeProcessOneShotTests(unittest.TestCase):
         with self.assertRaisesRegex(NativeProcessDenied, "^native_process_denied$"):
             runner.run(frame, payload, now=NOW)
         self.assertEqual(calls, [False, False, False, True])
+        self.assertFalse(marker.exists())
+        self.assertEqual(ledger.inspect(self.state, OPID), "failed")
+
+    def test_signed_wall_budget_expires_during_final_revocation_check(self):
+        # User permission TTL is longer than command's signed wall budget.
+        # Simulate a blocked local revocation lookup *after* READY and
+        # verify the parent refuses GO, with no file written by the child.
+        marker = self.project / "must-not-run-after-slow-revocation"
+        code = ("from pathlib import Path;"
+                f"Path({str(marker)!r}).write_text('escaped')")
+        frame, payload = self.signed(
+            [self.program, "-I", "-B", "-c", code],
+            timeout=1, ttl=90)
+        checks = []
+
+        def revoked():
+            checks.append(len(checks) + 1)
+            if len(checks) == 4:
+                time.sleep(1.15)
+            return False
+
+        admission = NativeEffectAdmission(self.config, is_revoked=revoked)
+        runner = LinuxNativeOneShotProcess(self.files, admission, self.policy)
+        with self.assertRaisesRegex(NativeProcessDenied, "^native_process_denied$"):
+            runner.run(frame, payload, now=NOW)
+        self.assertGreaterEqual(len(checks), 4)
         self.assertFalse(marker.exists())
         self.assertEqual(ledger.inspect(self.state, OPID), "failed")
 
