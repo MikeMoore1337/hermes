@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import math
+import platform
 import re
 import time
 from typing import Any, Callable, Protocol
@@ -123,7 +124,15 @@ def advertised_tools() -> list[dict[str, Any]]:
 
 def hello(config: LocalLinuxDeviceConfig) -> dict[str, Any]:
     if (type(config) is not LocalLinuxDeviceConfig
-        or NATIVE_IDS[config.target].fullmatch(config.device_id) is None):
+        or config.target not in NATIVE_IDS
+        or NATIVE_IDS[config.target].fullmatch(config.device_id) is None
+        or config.url != ENDPOINT
+        or TOKEN.fullmatch(config.token) is None):
+        raise LinuxOutboundDenied("native_linux_transport_denied")
+    arch = {
+        "x86_64": "x64", "amd64": "x64", "aarch64": "arm64",
+    }.get(platform.machine().lower())
+    if arch is None:
         raise LinuxOutboundDenied("native_linux_transport_denied")
     return {
         "type": "hello", "protocol": WIRE_PROTOCOL,
@@ -131,7 +140,7 @@ def hello(config: LocalLinuxDeviceConfig) -> dict[str, Any]:
             "deviceId": config.device_id,
             "name": NAMES[config.target],
             "platform": "linux",
-            "arch": "x64",  # Native Linux source currently only x86_64/aarch64.
+            "arch": arch,
             "hostname": "hermes-native-readonly",
             "agentVersion": "0.1.0",
             "coreVersion": "h454-native-linux-read-v1",
@@ -150,10 +159,10 @@ def _unique(pairs: list[tuple[str, object]]) -> dict[str, object]:
 
 
 def decode_message(raw: str | bytes) -> dict[str, Any]:
-    if (type(raw) not in (str, bytes) or
-        len(raw if type(raw) is bytes else raw.encode("utf-8")) > MAX_INBOUND):
-        raise LinuxOutboundDenied("native_linux_transport_denied")
     try:
+        if (type(raw) not in (str, bytes) or
+            len(raw if type(raw) is bytes else raw.encode("utf-8")) > MAX_INBOUND):
+            raise LinuxOutboundDenied("native_linux_transport_denied")
         frame = json.loads(raw, object_pairs_hook=_unique,
                            parse_constant=lambda _: (_ for _ in ()).throw(ValueError()))
     except (ValueError, TypeError, UnicodeError, RecursionError):
