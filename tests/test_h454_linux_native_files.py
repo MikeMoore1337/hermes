@@ -157,6 +157,32 @@ class OriginalLinuxHandleContracts(unittest.TestCase):
         with self.assertRaises(NativeLinuxDenied):
             LinuxNativeFiles(root=self.root, project=42)
 
+    def test_root_fd_closes_if_post_open_verification_fails(self):
+        from device_fabric import linux_native_files as module
+        original_open = os.open
+        opened = []
+
+        def record_open(*args, **kwargs):
+            fd = original_open(*args, **kwargs)
+            opened.append(fd)
+            return fd
+
+        with patch.object(module.os, "open", side_effect=record_open):
+            with patch.object(module.os, "fstat", side_effect=OSError("private-data")):
+                with self.assertRaisesRegex(NativeLinuxDenied, "^native_linux_denied$"):
+                    self.open()
+        self.assertEqual(len(opened), 1)
+        with self.assertRaises(OSError):
+            os.fstat(opened[0])
+
+    def test_unknown_cpu_abi_refuses_before_opening_source_root(self):
+        from device_fabric import linux_native_files as module
+        with patch.object(module.platform, "machine", return_value="unsupported-abi"):
+            with patch.object(module.os, "open") as opened:
+                with self.assertRaisesRegex(NativeLinuxDenied, "^native_linux_unavailable$"):
+                    self.open()
+                opened.assert_not_called()
+
     def test_fd_is_closed_and_future_calls_refused(self):
         adapter = self.open()
         fd = adapter._root_fd
