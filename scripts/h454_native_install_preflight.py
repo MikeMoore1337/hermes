@@ -24,8 +24,16 @@ def _private_manifest(path: Path) -> bytes:
     """Pin one regular private manifest inode to avoid symlink redirects."""
     fd: int | None = None
     try:
-        if not path.is_absolute():
+        if not isinstance(path, Path) or not path.is_absolute():
             raise InstallPlanDenied("native_install_plan_denied")
+        # Reject manifest redirects through symlinked parent directories.
+        # The real host still needs a protected parent hierarchy and OS ACL.
+        for ancestor in path.parents:
+            meta = ancestor.lstat()
+            if (stat.S_ISLNK(meta.st_mode)
+                or (hasattr(ancestor, "is_junction")
+                    and ancestor.is_junction())):
+                raise InstallPlanDenied("native_install_plan_denied")
         before = path.lstat()
         if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
             or not 0 < before.st_size <= MAX_MANIFEST_BYTES
