@@ -14,6 +14,7 @@ import hashlib
 import os
 from pathlib import PurePosixPath
 import stat
+import time
 
 from device_fabric.linux_native_files import (
     LinuxNativeFiles, NativeLinuxDenied, READ_EXTENSIONS, MAX_READ_BYTES,
@@ -72,6 +73,11 @@ class LinuxNativeExclusiveCreate:
                 if not stat.S_ISDIR(parent_before.st_mode):
                     raise NativeLinuxDenied("native_linux_denied")
                 self._admission.check_active()
+                # Admission may consume the UUID before filesystem setup.
+                # An expired owner grant must NEVER authorize a later create,
+                # even if the initial signature/TTL check succeeded.
+                if time.time() > effect.expires_at:
+                    raise NativeLinuxDenied("native_linux_denied")
                 fd = _kernel_openat2(self._files._root_fd, effect.relative,
                                      _CREATE_FLAGS, mode=0o600)
                 try:
