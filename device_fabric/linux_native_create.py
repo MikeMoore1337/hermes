@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+from pathlib import PurePosixPath
 import stat
 
 from device_fabric.linux_native_files import (
@@ -58,8 +59,7 @@ class LinuxNativeExclusiveCreate:
                 or self._files._root_fd < 0):
                 raise NativeLinuxDenied("native_linux_denied")
             _relative(effect.relative)
-            if effect.relative.rsplit("/", 1)[-1].lower().rsplit(".", 1)[-1] not in {
-                    extension.lstrip(".") for extension in READ_EXTENSIONS}:
+            if PurePosixPath(effect.relative).suffix.lower() not in READ_EXTENSIONS:
                 raise NativeLinuxDenied("native_linux_denied")
 
             parent, _, filename = effect.relative.rpartition("/")
@@ -78,7 +78,7 @@ class LinuxNativeExclusiveCreate:
                     info = os.fstat(fd)
                     if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
                         or info.st_dev != parent_before.st_dev
-                        or info.st_mode & 0o777 & ~0o600):
+                        or stat.S_IMODE(info.st_mode) & ~0o600):
                         raise NativeLinuxDenied("native_linux_denied")
                     offset = 0
                     view = memoryview(content)
