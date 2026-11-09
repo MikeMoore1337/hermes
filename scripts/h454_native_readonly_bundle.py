@@ -34,6 +34,7 @@ MANIFEST_NAME: Final = "h454-native-bundle-manifest.json"
 MAX_FILE_SIZE = 256 * 1024
 MAX_TOTAL_FILE_SIZE = 2 * 1024 * 1024
 MAX_ARCHIVE_SIZE = 2 * 1024 * 1024
+MAX_UNCOMPRESSED_SIZE = 3 * 1024 * 1024
 MAX_RECEIPT_SIZE = 4096
 SOURCE_FILES: Final = tuple(sorted((
     "device_fabric/__init__.py",
@@ -106,9 +107,10 @@ def _git(repository: Path, *argv: str) -> bytes:
             "LC_ALL": "C", "GIT_CONFIG_GLOBAL": os.devnull,
             "GIT_CONFIG_NOSYSTEM": "1", "GIT_TERMINAL_PROMPT": "0",
             "GIT_NO_LAZY_FETCH": "1",
+            "GIT_NO_REPLACE_OBJECTS": "1",
         }
         run = subprocess.run(
-            ["git", "-C", str(repository), *argv],
+            ["git", "--no-replace-objects", "-C", str(repository), *argv],
             stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL, timeout=10,
             env=env, check=True,
@@ -227,6 +229,52 @@ def build_bytes(*, target: str, release_sha: str,
     return payload, receipt
 
 
+def _bounded_ustar(bundle: bytes) -> bytes:
+    """Reject decompression bombs and non-USTAR extensions BEFORE tarfile.
+
+    Python tarfile transparently consumes PAX/GNU header objects before
+    yielding TarInfo. A post-TarInfo member count cannot guard memory.
+    Require one finite gzip stream, bounded decompression and only fixed
+    regular USTAR headers at exact 512-byte record offsets.
+    """
+    try:
+        decoder = zlib.decompressobj(wbits=16 + zlib.MAX_WBITS)
+        raw = decoder.decompress(bundle, MAX_UNCOMPRESSED_SIZE + 1)
+        if (len(raw) > MAX_UNCOMPRESSED_SIZE
+            or not decoder.eof or decoder.unused_data
+            or decoder.unconsumed_tail):
+            _deny()
+    except (zlib.error, ValueError, OverflowError):
+        _deny()
+    offset = 0
+    count = 0
+    expected = set(SOURCE_FILES) | {MANIFEST_NAME}
+    while offset + 512 <= len(raw):
+        head = raw[offset:offset + 512]
+        if head == b"\x00" * 512:
+            if (count != len(expected) or len(raw) - offset < 1024
+                or any(byte != 0 for byte in raw[offset:])):
+                _deny()
+            return raw
+        count += 1
+        if (count > len(expected) or head[156:157] != b"0"
+            or head[257:265] != b"ustar\x0000"
+            or head[345:500].strip(b"\x00") != b""):
+            _deny()
+        try:
+            name = head[:100].split(b"\x00", 1)[0].decode("ascii")
+            encoded_size = head[124:136].split(b"\x00", 1)[0].strip()
+            size = int(encoded_size, 8)
+        except (ValueError, UnicodeError):
+            _deny()
+        if name not in expected or not 0 <= size <= MAX_FILE_SIZE:
+            _deny()
+        offset += 512 + ((size + 511) // 512) * 512
+        if offset > len(raw):
+            _deny()
+    _deny()
+
+
 def verify_bytes(bundle: bytes, receipt: bytes, *,
                  target: str, release_sha: str) -> dict[str, object]:
     """Verify every selected member and receipt; NEVER extract or execute."""
@@ -249,8 +297,11 @@ def verify_bytes(bundle: bytes, receipt: bytes, *,
         or record["install_authorized"] is not False
         or record["provenance_signature"] != "NOT_PRESENT"):
         _deny()
+    # Decompression and tar extension processing are deliberately bounded
+    # before entering tarfile's transparent PAX/GNU record logic.
+    raw_tar = _bounded_ustar(bundle)
     try:
-        with tarfile.open(fileobj=io.BytesIO(bundle), mode="r:gz") as tar:
+        with tarfile.open(fileobj=io.BytesIO(raw_tar), mode="r:") as tar:
             # Scan at most the fixed allowlist cardinality plus one header.
             # A tiny highly compressed archive with arbitrary TAR entries
             # must not cause unbounded getmembers() allocations.
