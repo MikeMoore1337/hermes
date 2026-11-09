@@ -175,6 +175,23 @@ class LinuxExclusiveCreateContracts(unittest.TestCase):
         self.assertEqual(ledger.inspect(self.state, UUID), "failed")
         self.assertFalse((self.root / "src" / "new.py").exists())
 
+    def test_expired_after_reservation_before_syscall_refused(self):
+        # The signed grant was valid when SQLite reserved its UUID, but the
+        # actual owner-host clock crossed expiration before kernel openat2.
+        with patch.object(native.time, "time", return_value=NOW + 91):
+            with self.assertRaisesRegex(NativeLinuxDenied, "^native_linux_denied$"):
+                self.create.create(self.frame(expires=NOW + 90),
+                                   b"hello\n", now=NOW)
+        self.assertEqual(ledger.inspect(self.state, UUID), "failed")
+        self.assertFalse((self.root / "src" / "new.py").exists())
+
+    def test_grant_valid_just_before_expiration_can_create(self):
+        with patch.object(native.time, "time", return_value=NOW + 89):
+            result = self.create.create(self.frame(expires=NOW + 90),
+                                        b"hello\n", now=NOW)
+        self.assertEqual(result["status"], "created")
+        self.assertEqual((self.root / "src" / "new.py").read_bytes(), b"hello\n")
+
     def test_no_parent_directory_may_be_created_implicitly(self):
         with self.assertRaises(NativeLinuxDenied):
             self.create.create(self.frame(path="missing/file.py"),
