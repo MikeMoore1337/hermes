@@ -49,7 +49,7 @@ class LinuxOutboundDenied(ValueError):
     """Generic transport error without token, host paths or source contents."""
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, repr=False)
 class LocalLinuxDeviceConfig:
     """Locally protected, owner-paired device; NOT a remote MCP argument."""
 
@@ -57,6 +57,11 @@ class LocalLinuxDeviceConfig:
     device_id: str
     token: str
     url: str
+
+    def __repr__(self) -> str:
+        # A default dataclass repr would disclose the live bearer in trace
+        # logs. Even the local runtime must never stringify credentials.
+        return "LocalLinuxDeviceConfig([REDACTED])"
 
 
 class WebSocket(Protocol):
