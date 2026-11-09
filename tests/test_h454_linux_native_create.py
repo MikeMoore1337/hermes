@@ -122,7 +122,7 @@ class LinuxExclusiveCreateContracts(unittest.TestCase):
     def test_unsafe_secret_path_and_traversal_denied_pre_effect(self):
         for path in (".env", "src/../.env", "../outside/private.py",
                      "src/.git/config", "src/CONIN$.py", "/etc/shadow",
-                     "src/service-account.json", "src/folder\file.py"):
+                     "src/service-account.json", r"src/folder\file.py"):
             with self.subTest(path=path), self.assertRaises(GrantDenied):
                 self.frame(path=path)
         self.assertEqual(list(self.root.glob("src/*.py")), [])
