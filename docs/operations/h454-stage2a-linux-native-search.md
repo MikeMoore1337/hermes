@@ -23,8 +23,11 @@ supplied through an MCP tool invocation.
   Invalid UTF-8 and binary files containing NUL are skipped.
 - Limits: up to 96 UTF-8 query bytes, 512 directory entries inspected,
   4 levels below the selected root, 64 results, 256 KiB per file and 2 MiB
-  aggregate decoded source bytes. Entries or matches exceeding budgets
-  are marked `truncated=true`; the function does not silently claim
+  aggregate bytes actually read **including binary and invalid UTF-8**.
+  The remaining byte allowance is enforced by the reader on the opened
+  file descriptor, not just a raceable prior stat. Unstable reads stop
+  the search with `truncated=true`. Entries or matches exceeding budgets
+  are likewise marked truncated; the function does not silently claim
   exhaustive coverage.
 - Unknown modes, malformed input, protected names, symlink/junction-style
   redirects, hardlinks, device files, alternate VCS metadata (such as .hg/.svn), generated trees (node_modules/__pycache__/.next), parent traversal, absolute paths
