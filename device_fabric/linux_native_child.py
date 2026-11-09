@@ -63,6 +63,10 @@ def main(argv: list[str] | None = None) -> int:
         resource.setrlimit(resource.RLIMIT_FSIZE, (FILE_BYTES, FILE_BYTES))
         resource.setrlimit(resource.RLIMIT_NOFILE, (OPEN_FILES, OPEN_FILES))
         resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+        # Grant may expire while applying prctl/rlimits or waiting to be
+        # scheduled. This is the last safety check before kernel execve.
+        if time.time() > expiry:
+            raise ValueError("grant_expired_before_exec")
         os.execve(program, args[2:], os.environ.copy())
     except (OSError, ValueError, OverflowError):
         # Do not emit untrusted argv, environment, paths, or exception details.
