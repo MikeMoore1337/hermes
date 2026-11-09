@@ -34,8 +34,10 @@ The process starts with a **kernel-verified pinned project-root fd** as
 `cwd=/proc/self/fd/<fd>`, inherited only by the supervised child.
 `device_fabric/linux_native_child.py` applies `PR_SET_NO_NEW_PRIVS`,
 parent-death SIGKILL, private umask and per-process Linux resource limits
-before `execve` on the approved executable. No `shell=True` or
-`preexec_fn` is used.
+before `execve` on the approved executable. The child independently
+rechecks the grant's signed expiry immediately before the actual exec,
+so startup latency cannot resurrect an expired operation. No `shell=True`
+or `preexec_fn` is used.
 
 ## Hard resource ceilings
 
