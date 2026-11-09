@@ -15,8 +15,13 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import pwd
 import re
+import stat
+
+try:
+    import pwd
+except ImportError:  # Windows CI may import contracts, never run SSH operator.
+    pwd = None
 
 from device_fabric.native_install_preview import (
     InstallPlanDenied, inspect_linux_roots, parse_candidate,
@@ -43,6 +48,8 @@ class NativeHostPlanDenied(ValueError):
 def _uid_ready() -> None:
     """Reject root or an unrelated host identity before reading manifests."""
     try:
+        if pwd is None or not hasattr(os, "geteuid"):
+            raise NativeHostPlanDenied("native_host_plan_denied")
         uid = os.geteuid()
         identity = pwd.getpwuid(uid)
         if (uid <= 0 or identity.pw_name != OPERATOR_USER
@@ -64,7 +71,7 @@ def _read_fixed_line(path: Path, *, max_bytes: int = 80) -> str:
         flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
         fd = os.open(path, flags)
         st = os.fstat(fd)
-        if (not (st.st_mode & 0o170000) == 0o100000
+        if (not stat.S_ISREG(st.st_mode)
             or st.st_uid != 0 or st.st_nlink != 1
             or st.st_mode & 0o022
             or not 0 < st.st_size <= max_bytes):
