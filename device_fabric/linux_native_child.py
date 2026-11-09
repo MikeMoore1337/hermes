@@ -12,6 +12,7 @@ from pathlib import Path
 import signal
 import stat
 import sys
+import time
 
 try:
     import resource
@@ -32,11 +33,15 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if (sys.platform != "linux" or resource is None
             or not hasattr(os, "geteuid") or os.geteuid() == 0
-            or len(args) < 2):
+            or len(args) < 3):
             raise ValueError("unavailable")
         parent_pid = int(args[0])
-        program = args[1]
+        expiry = int(args[1])
+        program = args[2]
+        # A valid grant at parent admission may expire during child startup.
+        # The child must also refuse execution AFTER its actual expiry.
         if (parent_pid < 2 or os.getppid() != parent_pid
+            or expiry < time.time()
             or type(program) is not str or not program.startswith("/")):
             raise ValueError("invalid_parent_or_program")
         info = Path(program).lstat()
@@ -58,7 +63,7 @@ def main(argv: list[str] | None = None) -> int:
         resource.setrlimit(resource.RLIMIT_FSIZE, (FILE_BYTES, FILE_BYTES))
         resource.setrlimit(resource.RLIMIT_NOFILE, (OPEN_FILES, OPEN_FILES))
         resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
-        os.execve(program, args[1:], os.environ.copy())
+        os.execve(program, args[2:], os.environ.copy())
     except (OSError, ValueError, OverflowError):
         # Do not emit untrusted argv, environment, paths, or exception details.
         print("H454_NATIVE_PROCESS_CHILD_REFUSED", file=sys.stderr, flush=True)
