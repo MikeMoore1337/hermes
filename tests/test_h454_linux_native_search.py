@@ -37,6 +37,10 @@ class LinuxNativeSearchContracts(unittest.TestCase):
         (self.root / ".env").write_text("DONT_DISCLOSE=SECRET", encoding="utf-8")
         (self.root / ".git").mkdir()
         (self.root / ".git" / "config").write_text("SECRET", encoding="utf-8")
+        (self.root / ".hg").mkdir()
+        (self.root / ".hg" / "hgrc").write_text("SECRET", encoding="utf-8")
+        (self.root / "node_modules").mkdir()
+        (self.root / "node_modules" / "leaky.js").write_text("SECRET", encoding="utf-8")
         self.outside = Path(temp.name) / "outside"
         self.outside.mkdir()
         (self.outside / "private.md").write_text("SECRET CONTENT", encoding="utf-8")
@@ -60,6 +64,8 @@ class LinuxNativeSearchContracts(unittest.TestCase):
         out = self.search.search("docs")
         self.assertEqual(out["matches"], [{"path":"docs", "kind":"directory"}])
         self.assertNotIn(".git", str(out))
+        self.assertNotIn(".hg", str(out))
+        self.assertNotIn("node_modules", str(out))
         self.assertNotIn("SECRET", str(out))
 
     def test_content_search_returns_lines_only_not_source_snippets(self):
@@ -97,6 +103,8 @@ class LinuxNativeSearchContracts(unittest.TestCase):
         out = self.search.search("SECRET CONTENT", mode="content")
         self.assertEqual(out["matches"], [])
         self.assertEqual((self.outside / "private.md").read_text(), "SECRET CONTENT")
+        self.assertEqual(self.search.search("leaky", mode="names")["matches"], [])
+        self.assertEqual(self.search.search("SECRET", mode="content")["matches"], [])
 
     def test_binary_source_extension_never_searches_raw_binary(self):
         (self.root / "binary.txt").write_bytes(b"TODO\x00private")
