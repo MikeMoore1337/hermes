@@ -267,6 +267,16 @@ class LinuxReadOnlyHostPreflight(unittest.TestCase):
             _private_manifest(link)
         self.assertTrue(self.manifest_path.exists())
 
+    def test_manifest_symlink_parent_refused_without_private_contents(self):
+        manifest_path = self.write_manifest()
+        redirect = self.dir / "linked-parent"
+        redirect.symlink_to(self.dir, target_is_directory=True)
+        with self.assertRaisesRegex(
+                InstallPlanDenied, "^native_install_plan_denied$"):
+            _private_manifest(redirect / manifest_path.name)
+        self.assertEqual(_private_manifest(manifest_path),
+                         manifest_path.read_bytes())
+
     def test_manifest_chmod_race_between_lstat_and_open_denied(self):
         # A private manifest may become world-readable after path lstat.
         # Its mode must be verified on the actual OPEN file handle as well.
