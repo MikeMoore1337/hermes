@@ -10,6 +10,7 @@ import hashlib
 import io
 import json
 import os
+import socket
 from pathlib import Path
 import platform
 import sys
@@ -94,7 +95,7 @@ class NativeProcessOneShotTests(unittest.TestCase):
                    f"Path({str(marker)!r}).write_text('unexpected')")
         result = subprocess.run(
             [sys.executable, "-I", "-B", child, str(os.getpid()),
-             "1", self.program, "-I", "-B", "-c", command],
+             "1", "9", self.program, "-I", "-B", "-c", command],
             cwd=self.project, capture_output=True, timeout=5,
             check=False)
         self.assertEqual(result.returncode, 125)
@@ -108,19 +109,25 @@ class NativeProcessOneShotTests(unittest.TestCase):
         from device_fabric import linux_native_child as child
         fake_libc = MagicMock()
         fake_libc.prctl.return_value = 0
-        with patch.object(child.os, "getppid", return_value=3456), \
-             patch.object(child.os, "geteuid", return_value=1001), \
-             patch.object(child.time, "time",
-                          side_effect=[NOW + 89, NOW + 91]), \
-             patch.object(child.ctypes, "CDLL", return_value=fake_libc), \
-             patch.object(child.os, "umask"), \
-             patch.object(child.resource, "setrlimit") as setrlimit, \
-             patch.object(child.os, "execve") as execve:
-            self.assertEqual(child.main(
-                ["3456", str(NOW + 90), self.program, "-c", "print('unsafe')"]),
-                125)
-            self.assertEqual(setrlimit.call_count, 5)
-            execve.assert_not_called()
+        with socket.socketpair() as (parent_gate, child_gate):
+            # The local parent confirms readiness, but expiry crosses
+            # while child applies resource limits.
+            parent_gate.sendall(b"G")
+            with patch.object(child.os, "getppid", return_value=3456), \
+                 patch.object(child.os, "geteuid", return_value=1001), \
+                 patch.object(child.time, "time",
+                              side_effect=[NOW + 89, NOW + 91]), \
+                 patch.object(child.ctypes, "CDLL", return_value=fake_libc), \
+                 patch.object(child.os, "umask"), \
+                 patch.object(child.resource, "setrlimit") as setrlimit, \
+                 patch.object(child.os, "execve") as execve:
+                self.assertEqual(child.main(
+                    ["3456", str(NOW + 90), str(child_gate.fileno()),
+                     self.program, "-c", "print('unsafe')"]),
+                    125)
+                self.assertEqual(setrlimit.call_count, 5)
+                execve.assert_not_called()
+            self.assertEqual(parent_gate.recv(5), b"READY")
 
     def test_child_enforces_no_new_privileges(self):
         script = ("import ctypes;"
@@ -214,6 +221,7 @@ class NativeProcessOneShotTests(unittest.TestCase):
         frame, payload = self.signed()
         with patch("device_fabric.linux_native_process.subprocess.Popen",
                    return_value=fake), \
+             patch.object(self.runner, "_authorize_child"), \
              patch.object(self.runner, "_capture",
                           side_effect=NativeProcessDenied("native_process_denied")), \
              patch.object(self.runner, "_terminate_group",
