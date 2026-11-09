@@ -36,7 +36,7 @@ def windows_reserved_component(part: str) -> bool:
     so keep the rejection identical on Windows and Linux hosts.
     """
     return WINDOWS_DEVICE.fullmatch(part.split(".", 1)[0].rstrip(" ")) is not None
-BLOCKED_NAMES = frozenset({".git", ".ssh", ".aws", ".gnupg", ".kube", "vault", ".vault", "private-vault", "secrets", ".secrets", "credentials", ".env", ".env.local", ".env.production"})
+BLOCKED_NAMES = frozenset({".git", ".hg", ".svn", ".ssh", ".aws", ".gnupg", ".kube", ".terraform", ".next", ".cache", "node_modules", "__pycache__", "vault", ".vault", "private-vault", "secrets", ".secrets", "credentials", ".env", ".env.local", ".env.production"})
 BLOCKED_SUFFIXES = (".pem", ".key", ".pfx", ".p12", ".kdbx")
 SENSITIVE_STEM = re.compile(r"^\.?(?:secrets?|credentials?|tokens?|passwords?|api[-_]?keys?|service[-_]?accounts?|private[-_]?keys?|config[._-]local)(?:[._-]|$)", re.I)
 FIELDS = frozenset({"schema", "device_id", "project", "operation_id", "action", "relative", "payload_sha256", "expires_at"})

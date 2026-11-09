@@ -92,7 +92,10 @@ class NativeEffectGrantContract(unittest.TestCase):
     def test_rejects_traversal_symlink_like_and_secret_names_syntactically(self):
         effect, _ = sample()
         forbidden = ["../hello", "a/../b", "a//b", "./x", "/tmp/x", r"a\\b", "C:/vault",
-                     "a:file", "a/.git/config", ".env", "a/.env.prod", "vault/notes",
+                     "a:file", "a/.git/config", "a/.hg/hgrc", "a/.svn/entries",
+                     "a/node_modules/lib.js", "a/__pycache__/cache.py",
+                     "a/.terraform/vars.json", "a/.next/config.json",
+                     ".env", "a/.env.prod", "vault/notes",
                      "secret.key", "a/passwords.json", "NUL.txt", "a/COM1", "a/.. ", "CONIN$", "CONOUT$",
                      "COM¹.txt", "LPT².log", "COM³", "LPT¹.txt",
                      "NUL .txt", "a/PRN  .md", "a/CONIN$.txt",

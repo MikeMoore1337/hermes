@@ -181,9 +181,18 @@ class LinuxNativeFiles:
         except (OSError, ValueError, UnicodeError) as exc:
             raise NativeLinuxDenied("native_linux_denied") from None
 
-    def read_file(self, relative: str) -> dict[str, object]:
-        """Binary-safe bounded read, verified against the pinned file handle."""
+    def read_file(self, relative: str, *,
+                  max_bytes: int | None = None) -> dict[str, object]:
+        """Bound read by both per-file policy and caller's remaining byte budget.
+
+        Enforce the limit on the opened file descriptor, not on a previous
+        stat path: a concurrent size change cannot inflate a search budget.
+        """
         _relative(relative)
+        if (max_bytes is not None
+            and (type(max_bytes) is not int or not 0 <= max_bytes <= MAX_READ_BYTES)):
+            raise NativeLinuxDenied("native_linux_denied")
+        ceiling = MAX_READ_BYTES if max_bytes is None else max_bytes
         if Path(relative).suffix.lower() not in READ_EXTENSIONS:
             raise NativeLinuxDenied("native_linux_denied")
         try:
@@ -191,12 +200,15 @@ class LinuxNativeFiles:
             try:
                 before = os.fstat(fd)
                 if (self._kind(before) != "file" or before.st_size < 0
-                    or before.st_size > MAX_READ_BYTES):
+                    or before.st_size > ceiling):
                     raise NativeLinuxDenied("native_linux_denied")
-                # Allow one byte beyond reported size to catch growing files.
-                data = os.read(fd, MAX_READ_BYTES + 1)
+                # A search caller's strict byte budget is a hard cap:
+                # do not physically read a sentinel byte beyond remaining.
+                # Size, inode and timestamps are checked again after read.
+                data = os.read(fd, ceiling if max_bytes is not None
+                               else ceiling + 1)
                 after = os.fstat(fd)
-                if (len(data) != before.st_size or len(data) > MAX_READ_BYTES
+                if (len(data) != before.st_size or len(data) > ceiling
                     or (before.st_dev, before.st_ino, before.st_size,
                         before.st_mtime_ns, before.st_ctime_ns)
                        != (after.st_dev, after.st_ino, after.st_size,
