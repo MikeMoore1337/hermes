@@ -236,15 +236,22 @@ class NativeProcessOneShotTests(unittest.TestCase):
         self.assertEqual(ledger.inspect(self.state, OPID), "failed")
 
     def test_different_signed_action_or_project_denied(self):
-        for action, project in (("file_write","hermes"),
-                                ("process_run","financial-horizon")):
+        # file_write needs a nonempty relative path by signed-grant schema;
+        # each negative scenario has its OWN UUID to test the actual scope
+        # guard rather than a replay denial from the previous case.
+        cases = (("file_write", "hermes", "src/new.py"),
+                 ("process_run", "financial-horizon", ""))
+        for index, (action, project, relative) in enumerate(cases):
+            opid = OPID[:-1] + str(index)
             with self.subTest(action=action, project=project):
-                frame, payload = self.signed(action=action, project=project)
+                frame, payload = self.signed(
+                    action=action, project=project, relative=relative,
+                    opid=opid)
                 with patch("device_fabric.linux_native_process.subprocess.Popen") as popen:
                     with self.assertRaises(NativeProcessDenied):
                         self.runner.run(frame, payload, now=NOW)
                     popen.assert_not_called()
-        self.assertEqual(ledger.inspect(self.state, OPID), "failed")
+                self.assertEqual(ledger.inspect(self.state, opid), "failed")
 
     def test_malformed_requests_refused_before_reservation(self):
         frame, _ = self.signed()
