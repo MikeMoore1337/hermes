@@ -15,6 +15,7 @@ from unittest.mock import patch
 from device_fabric.linux_native_files import LinuxNativeFiles, NativeLinuxDenied, MAX_READ_BYTES
 from device_fabric.linux_native_search import (
     LinuxNativeSearch, MAX_ENTRIES, MAX_DEPTH, MAX_MATCHES,
+    MAX_CONTENT_BYTES,
 )
 
 
@@ -142,6 +143,57 @@ class LinuxNativeSearchContracts(unittest.TestCase):
         out = self.search.search("T",mode="content")
         self.assertNotIn("huge.txt", str(out["matches"]))
         self.assertTrue(out["truncated"])
+
+    def test_binary_source_reads_are_charged_to_aggregate_budget(self):
+        for index in range(10):
+            (self.root / ("binary%03d.txt" % index)).write_bytes(
+                b"\x00" + b"B" * (MAX_READ_BYTES - 1))
+        out = self.search.search("B", mode="content")
+        self.assertTrue(out["truncated"])
+        self.assertEqual(out["bytes_scanned"], MAX_CONTENT_BYTES)
+        self.assertEqual(out["matches"], [])
+
+    def test_invalid_utf8_source_reads_are_also_charged(self):
+        for index in range(10):
+            (self.root / ("invalid%03d.txt" % index)).write_bytes(
+                b"\xff" * MAX_READ_BYTES)
+        out = self.search.search("needle", mode="content")
+        self.assertTrue(out["truncated"])
+        self.assertEqual(out["bytes_scanned"], MAX_CONTENT_BYTES)
+        self.assertEqual(out["matches"], [])
+
+    def test_growth_between_stat_and_opened_file_read_cannot_exceed_budget(self):
+        for index in range(7):
+            (self.root / ("a%03d.txt" % index)).write_bytes(
+                b"x" * MAX_READ_BYTES)
+        (self.root / "b-partial.txt").write_bytes(
+            b"x" * (MAX_READ_BYTES // 2))
+        last = self.root / "z-last.txt"
+        last.write_bytes(b"")
+        original_read = self.files.read_file
+        grow_calls = []
+
+        def grow(relative, *, max_bytes=None):
+            if relative == "z-last.txt":
+                grow_calls.append(max_bytes)
+                last.write_bytes(b"Z" * MAX_READ_BYTES)
+            return original_read(relative, max_bytes=max_bytes)
+
+        with patch.object(self.files, "read_file", side_effect=grow):
+            out = self.search.search("needle", mode="content")
+        self.assertEqual(grow_calls, [MAX_READ_BYTES // 2])
+        self.assertTrue(out["truncated"])
+        self.assertLessEqual(out["bytes_scanned"], MAX_CONTENT_BYTES)
+        self.assertEqual(out["matches"], [])
+
+    def test_reader_validates_caller_budget_on_opened_fd(self):
+        with self.assertRaises(NativeLinuxDenied):
+            self.files.read_file("src/app.py", max_bytes=1)
+        for invalid in (True, -1, MAX_READ_BYTES + 1, "10"):
+            with self.subTest(max_bytes=invalid), self.assertRaises(NativeLinuxDenied):
+                self.files.read_file("src/app.py", max_bytes=invalid)
+        self.assertEqual(self.files.read_file("src/app.py", max_bytes=100)["status"],
+                         "ok")
 
     def test_invalid_patterns_modes_and_root_types_fail_closed(self):
         cases = [
