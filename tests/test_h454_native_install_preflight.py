@@ -151,7 +151,7 @@ class CandidateParsingContracts(unittest.TestCase):
             "/var/lib/private", "/dev/shm/project",
             "/srv/credentials", "/srv/.git",
             "/srv/.env", "/srv/vault", "/srv/foo\\bar",
-            "/srv/foo\x00bar", "/srv/space.\u0301",
+            "/srv/foo\x00bar", "/srv/cafe\u0301",
         )
         for path in badpaths:
             with self.subTest(path=path), self.assertRaises(InstallPlanDenied):
