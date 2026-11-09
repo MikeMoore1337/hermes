@@ -158,8 +158,13 @@ def parse_candidate(raw: bytes, *, expected_release: str,
         else:
             if any(not _linux_root(path) for _, path in roots):
                 raise InstallPlanDenied("native_install_plan_denied")
-            normalized = tuple(sorted(path for _, path in roots))
-            if any(b.startswith(a + "/") for a, b in zip(normalized, normalized[1:])):
+            normalized = tuple(path for _, path in roots)
+            # Lexical sorting does not guarantee that an ancestor and its
+            # descendant are ADJACENT: /srv/base-other sorts in between
+            # /srv/base and /srv/base/sub. Check all ordered pairs (<=5).
+            if any(descendant.startswith(ancestor + "/")
+                   for ancestor in normalized for descendant in normalized
+                   if ancestor != descendant):
                 raise InstallPlanDenied("native_install_plan_denied")
         canonical = json.dumps(data, sort_keys=True, ensure_ascii=True,
                                separators=(",", ":"), allow_nan=False).encode("ascii")
