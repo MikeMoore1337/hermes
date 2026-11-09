@@ -43,10 +43,21 @@ revocation callback and signed TTL **after child startup**, replying `G`
 only while both remain valid. The child also checks expiry immediately
 after `G` and just before `execve`; EOF, timeout, or any other reply
 rejects execution. No remote/MCP caller can open the parent-only socket.
-The handshake is part of the *same signed wall-time budget* as execution.
-It narrows the startup revocation race but cannot make revocation and
-`execve` one atomic kernel operation; cgroup kill/OS controls and
-short-lived grants remain mandatory. No `shell=True` or
+The parent computes a single absolute `CLOCK_MONOTONIC` deadline
+when process startup begins, based on the **signed**
+`timeout_seconds`. It checks remaining time before `READY` processing,
+again **after** the trusted revocation lookup and **before** sending `G`.
+The child receives the same deadline over its private startup argv,
+validates it is finite and within 30 seconds, and rechecks it
+immediately before `execve` along with owner-grant expiry. Pipe capture
+uses that original deadline rather than restarting the clock. Therefore
+child initialization and a stalled revocation check also consume the
+signed time budget; when it expires, the UUID stays consumed and no
+late command is authorized.
+
+The handshake narrows the startup revocation race but cannot make
+revocation and `execve` one atomic kernel operation; cgroup kill/OS
+controls and short-lived grants remain mandatory. No `shell=True` or
 `preexec_fn` is used.
 
 ## Hard resource ceilings
@@ -98,7 +109,9 @@ disposable fixture roots. Positive tests: signed execution, pinned
 cwd, private HOME, 16 KiB output, nonzero code. Negative tests:
 bad/mutated HMAC payload, forged project/action, unknown executable,
 disabled isolation, root identity, secret inheritance, revoked device,
-expiry before spawn, stdout/stderr overflow, timeout and replay,
+expiry before spawn, signed monotonic deadline exhausted during
+revocation checking, child scheduling after `G`, NaN/infinite/expired
+deadlines, stdout/stderr overflow, timeout and replay,
 malformed/duplicate JSON and invalid UTF-8 output.
 
 Windows runners only import or skip these Linux-only tests. A green
