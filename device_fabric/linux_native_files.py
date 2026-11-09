@@ -90,6 +90,7 @@ class LinuxNativeFiles:
 
     def __init__(self, *, root: Path, project: str):
         if (sys.platform != "linux"
+            or platform.machine().lower() not in ("x86_64", "aarch64")
             or type(project) is not str or PROJECT_ID.fullmatch(project) is None):
             raise NativeLinuxDenied("native_linux_unavailable")
         if (type(root) is not Path and not isinstance(root, Path)):
@@ -99,6 +100,7 @@ class LinuxNativeFiles:
         # Root path is a trusted local config value, not an MCP argument.
         # Refuse redirects in ALL directory ancestors during setup. Its parent
         # hierarchy must additionally be OS-protected from hostile rename.
+        fd: int | None = None
         try:
             for ancestor in (root, *root.parents):
                 node = ancestor.lstat()
@@ -113,11 +115,10 @@ class LinuxNativeFiles:
             latest = root.lstat()
             if ((before.st_dev, before.st_ino) != (after.st_dev, after.st_ino)
                 or (after.st_dev, after.st_ino) != (latest.st_dev, latest.st_ino)):
-                os.close(fd)
                 raise NativeLinuxDenied("native_linux_denied")
-        except NativeLinuxDenied:
-            raise
-        except (OSError, ValueError) as exc:
+        except (OSError, ValueError):
+            if fd is not None:
+                os.close(fd)
             raise NativeLinuxDenied("native_linux_denied") from None
         self._root_fd = fd
         self.project = project
