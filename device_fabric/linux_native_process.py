@@ -236,7 +236,7 @@ class LinuxNativeOneShotProcess:
             root_fd = self._files._root_fd
             proc = subprocess.Popen(
                 [sys.executable, "-I", "-B", str(launcher),
-                 str(os.getpid()), *argv],
+                 str(os.getpid()), str(effect.expires_at), *argv],
                 cwd=f"/proc/self/fd/{root_fd}",
                 pass_fds=(root_fd,),
                 env=safe_env, stdin=subprocess.DEVNULL,
