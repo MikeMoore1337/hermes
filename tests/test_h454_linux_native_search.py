@@ -192,8 +192,15 @@ class LinuxNativeSearchContracts(unittest.TestCase):
         for invalid in (True, -1, MAX_READ_BYTES + 1, "10"):
             with self.subTest(max_bytes=invalid), self.assertRaises(NativeLinuxDenied):
                 self.files.read_file("src/app.py", max_bytes=invalid)
-        self.assertEqual(self.files.read_file("src/app.py", max_bytes=100)["status"],
-                         "ok")
+        original_read = os.read
+        with patch("device_fabric.linux_native_files.os.read",
+                   wraps=original_read) as reading:
+            self.assertEqual(
+                self.files.read_file("src/app.py", max_bytes=100)["status"],
+                "ok")
+        reading.assert_called_once()
+        # Strict caller budgets never read one byte beyond allowance.
+        self.assertEqual(reading.call_args.args[1], 100)
 
     def test_invalid_patterns_modes_and_root_types_fail_closed(self):
         cases = [
