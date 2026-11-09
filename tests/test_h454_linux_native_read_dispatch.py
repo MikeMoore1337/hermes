@@ -128,6 +128,17 @@ class OriginalLinuxReadDispatcherContracts(unittest.TestCase):
         self.assertEqual(nested["result"]["entries"],
                          [{"name":"notes.md", "kind":"file"}])
 
+    def test_linux_case_distinct_files_are_not_false_duplicates(self):
+        # Unlike Windows NTFS default rules, Linux can contain two distinct
+        # approved source names with the same casefold value.
+        (self.root / "readme.md").write_bytes(b"case distinct\n")
+        result = self.dispatcher.call(frame(
+            LIST, uid="case-distinct", relative=""))
+        names = [entry["name"] for entry in result["result"]["entries"]]
+        self.assertEqual(names.count("README.md"), 1)
+        self.assertEqual(names.count("readme.md"), 1)
+        self.assertEqual(len(names), len(set(names)))
+
     def test_name_and_content_search_not_snippets(self):
         names = self.dispatcher.call(frame(
             SEARCH, uid="search-name", query="README", mode="names"))
