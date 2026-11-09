@@ -93,7 +93,9 @@ class NativeEffectGrantContract(unittest.TestCase):
         effect, _ = sample()
         forbidden = ["../hello", "a/../b", "a//b", "./x", "/tmp/x", r"a\\b", "C:/vault",
                      "a:file", "a/.git/config", ".env", "a/.env.prod", "vault/notes",
-                     "secret.key", "a/passwords.json", "NUL.txt", "a/COM1", "a/.. ",
+                     "secret.key", "a/passwords.json", "NUL.txt", "a/COM1", "a/.. ", "CONIN$", "CONOUT$",
+                     "COM¹.txt", "LPT².log", "COM³", "LPT¹.txt",
+                     "NUL .txt", "a/PRN  .md", "a/CONIN$.txt",
                      "a/trailing.", "a/control\x00.txt", "a/\u202efile", "te\u0301st.txt"]
         for relative in forbidden:
             with self.subTest(path=repr(relative)), self.assertRaises(GrantDenied):
