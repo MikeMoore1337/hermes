@@ -125,7 +125,7 @@ def _private_directory(directory: Path) -> None:
     OS ACL/mount sandbox must independently protect the ancestor hierarchy.
     """
     try:
-        if type(directory) is not Path or not directory.is_absolute():
+        if not isinstance(directory, Path) or not directory.is_absolute():
             raise RuntimeDenied("native_linux_runtime_denied")
         info = directory.lstat()
         if (not stat.S_ISDIR(info.st_mode)
@@ -174,7 +174,8 @@ def load_local_runtime(*, target: str, expected_release: str,
     """
     try:
         _service_identity(target)
-        if (type(manifest_path) is not Path or type(config_path) is not Path
+        if (not isinstance(manifest_path, Path)
+            or not isinstance(config_path, Path)
             or manifest_path == config_path
             or manifest_path.parent != config_path.parent
             or type(expected_manifest_sha256) is not str
