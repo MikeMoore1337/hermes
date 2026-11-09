@@ -29,7 +29,9 @@ issuer with an independently recorded one-operation consent may sign it.
 2. Validate the original filename and source-file extension. Resolve the
    parent via Linux `openat2` with `RESOLVE_BENEATH`,
    `RESOLVE_NO_SYMLINKS`, `RESOLVE_NO_MAGICLINKS`, `RESOLVE_NO_XDEV`.
-   Check revocation again **immediately before** the kernel create.
+   Check revocation and the signed grant's **expiry against the actual host
+   clock immediately before** the kernel create. An expiry during SQLite
+   reservation or parent lookup consumes the UUID but never creates the file.
 3. Invoke `openat2` for the **entire relative file path** with the same
    kernel resolution guarantees and `O_CREAT|O_EXCL|O_NOFOLLOW`, mode
    `0600`. Refuse an existing file, symlink, hardlink alias, outside path
