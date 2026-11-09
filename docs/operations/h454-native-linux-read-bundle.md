@@ -48,7 +48,14 @@ Python interpreter, no `websockets` installation, no signed keys, no
 `systemd` installed unit and no running service.
 
 The generated tar members are regular files, mode 0444, uid/gid 0,
-mtime 0 and are sorted deterministically. The archive contains
+mtime 0 and are sorted deterministically. Verification bounds the
+**decompressed** TAR stream to 3 MiB before calling `tarfile`, rejects
+PAX/GNU extension headers and concatenated gzip streams, and checks
+the fixed USTAR file records before reading member content. Git reads
+the exact pinned HEAD blobs with replacement refs disabled
+(`GIT_NO_REPLACE_OBJECTS=1` and `--no-replace-objects`), preventing
+a local `refs/replace` from silently changing source bytes.
+The archive contains
 `h454-native-bundle-manifest.json` with target, exact source SHA,
 individual SHA-256/byte sizes, `activation=DISABLED` and
 `install_authorized=false`. Output files are placed exclusively
@@ -104,12 +111,14 @@ python3 -B -m unittest -v tests.test_h454_native_readonly_bundle
 ```
 
 Git test fixtures use a temporary repository, synthetic author,
-untracked fake secret, regular files and intentionally malicious
-symlink/executable Git objects. The validator compares the exact
-Git commit, ignores uncommitted files, rejects archive changes even
-if their untrusted receipt hash is recomputed, and refuses extra
-members/symlinks/duplicates, wrong target, forged install flags,
-group/world-visible output and existing file overwrite.
+untracked fake secret, regular files, Git blob replacement refs
+and intentionally malicious symlink/executable Git objects. The validator
+compares the exact Git commit, ignores uncommitted files, refuses
+`refs/replace` injection, rejects archive changes even if an untrusted
+receipt hash is recomputed, blocks extra members/symlinks/duplicates,
+PAX headers and a highly compressed 16 MiB expansion bomb, wrong
+target, forged install flags, group/world-visible output and
+existing file overwrite.
 
 No live Windows original root, Hermes VPS original checkout or
 YFC VPS original checkout was accessed to build or test this module.
