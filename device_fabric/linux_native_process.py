@@ -19,6 +19,7 @@ import signal
 import stat
 import subprocess
 import sys
+import threading
 import time
 from typing import Callable
 
@@ -192,6 +193,33 @@ class LinuxNativeOneShotProcess:
         except (OSError, subprocess.TimeoutExpired):
             raise NativeProcessDenied("native_process_denied") from None
 
+    @staticmethod
+    def _deadline_watchdog(
+        proc: subprocess.Popen[bytes], deadline: float,
+        stop: threading.Event, expired: threading.Event,
+    ) -> None:
+        """Kill the process group on the signed deadline independently.
+
+        Device-revocation callbacks may block inside the foreground capture
+        loop. This thread never calls the callback or waits for SQLite, and
+        therefore can terminate the group even if the callback hangs.
+        """
+        remaining = max(0.0, deadline - time.monotonic())
+        if stop.wait(remaining):
+            return
+        expired.set()
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except (ProcessLookupError, OSError):
+            pass
+        # Process-group kill also covers a leader that already exited.
+        # A direct child might still be alive if the group was unavailable.
+        try:
+            if proc.poll() is None:
+                proc.kill()
+        except (OSError, ProcessLookupError):
+            pass
+
     def _capture(self, proc: subprocess.Popen[bytes], deadline: float) -> tuple[int, bytes]:
         """Drain child pipes within the ORIGINAL signed monotonic deadline."""
         stdout = bytearray()
@@ -242,6 +270,9 @@ class LinuxNativeOneShotProcess:
         proc = None
         parent_gate = None
         child_gate = None
+        watchdog_stop = threading.Event()
+        watchdog_expired = threading.Event()
+        watchdog_thread: threading.Thread | None = None
         completed = False
         terminated = False
         try:
@@ -285,6 +316,14 @@ class LinuxNativeOneShotProcess:
             )
             child_gate.close()
             child_gate = None
+            # Start BEFORE any post-spawn revocation callback or I/O wait:
+            # those can block while the already started child executes.
+            watchdog_thread = threading.Thread(
+                target=self._deadline_watchdog,
+                args=(proc, deadline, watchdog_stop, watchdog_expired),
+                daemon=True, name="h454-native-deadline",
+            )
+            watchdog_thread.start()
             self._authorize_child(
                 parent_gate, effect, deadline=deadline)
             parent_gate.close()
@@ -297,6 +336,9 @@ class LinuxNativeOneShotProcess:
             # reporting one-shot completion or writing the receipt.
             self._terminate_group(proc)
             terminated = True
+            watchdog_stop.set()
+            if watchdog_expired.is_set() or time.monotonic() >= deadline:
+                raise NativeProcessDenied("native_process_denied")
             try:
                 output = out.decode("utf-8", "strict")
             except UnicodeError:
@@ -320,6 +362,7 @@ class LinuxNativeOneShotProcess:
                     terminated = True
                 except Exception:
                     pass
+            watchdog_stop.set()
             # Errors and stderr may contain secrets. Never disclose them.
             try:
                 self._admission.complete(identity, success=False)
@@ -327,6 +370,9 @@ class LinuxNativeOneShotProcess:
                 pass
             raise NativeProcessDenied("native_process_denied") from None
         finally:
+            watchdog_stop.set()
+            if watchdog_thread is not None:
+                watchdog_thread.join(timeout=0.5)
             if parent_gate is not None:
                 parent_gate.close()
             if child_gate is not None:
