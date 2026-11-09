@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import platform
 import sys
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -82,6 +83,32 @@ class NativeProcessOneShotTests(unittest.TestCase):
         self.assertEqual(outcome["stdout"].splitlines(),
                          [str(self.project), str(self.home)])
         self.assertEqual(ledger.inspect(self.state, OPID), "completed")
+
+    def test_child_launcher_fails_closed_for_expired_signed_time(self):
+        from device_fabric import linux_native_child
+        marker = self.project / "must-not-exist"
+        child = str(Path(linux_native_child.__file__).resolve(strict=True))
+        command = ("from pathlib import Path;"
+                   f"Path({str(marker)!r}).write_text('unexpected')")
+        result = subprocess.run(
+            [sys.executable, "-I", "-B", child, str(os.getpid()),
+             "1", self.program, "-I", "-B", "-c", command],
+            cwd=self.project, capture_output=True, timeout=5,
+            check=False)
+        self.assertEqual(result.returncode, 125)
+        self.assertFalse(marker.exists())
+        self.assertNotIn(b"unexpected", result.stderr)
+        self.assertIn(b"H454_NATIVE_PROCESS_CHILD_REFUSED", result.stderr)
+
+    def test_child_enforces_no_new_privileges(self):
+        script = ("import ctypes;"
+                  "api=ctypes.CDLL(None);"
+                  "print(api.prctl(39,0,0,0,0))")
+        frame, payload = self.signed(
+            [self.program, "-I", "-B", "-c", script])
+        result = self.runner.run(frame, payload, now=NOW)
+        self.assertEqual(result["exit_code"], 0)
+        self.assertEqual(result["stdout"].strip(), "1")
 
     def test_real_process_does_not_inherit_secret_environment(self):
         frame, payload = self.signed(
