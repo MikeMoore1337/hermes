@@ -7,6 +7,7 @@ already OS-confined unprivileged identity. No shell and no network setup.
 from __future__ import annotations
 
 import ctypes
+import math
 import os
 from pathlib import Path
 import signal
@@ -34,16 +35,20 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if (sys.platform != "linux" or resource is None
             or not hasattr(os, "geteuid") or os.geteuid() == 0
-            or len(args) < 4):
+            or len(args) < 5):
             raise ValueError("unavailable")
         parent_pid = int(args[0])
         expiry = int(args[1])
         gate_fd = int(args[2])
-        program = args[3]
+        deadline = float(args[3])
+        program = args[4]
+        monotonic_now = time.monotonic()
         # A valid grant at parent admission may expire during child startup.
         # The child must also refuse execution AFTER its actual expiry.
         if (parent_pid < 2 or os.getppid() != parent_pid
             or expiry < time.time() or not 3 <= gate_fd < OPEN_FILES
+            or not math.isfinite(deadline)
+            or not monotonic_now < deadline <= monotonic_now + 30
             or type(program) is not str or not program.startswith("/")):
             raise ValueError("invalid_parent_or_program")
         info = Path(program).lstat()
@@ -74,11 +79,13 @@ def main(argv: list[str] | None = None) -> int:
             gate.sendall(b"READY")
             if gate.recv(1) != b"G":
                 raise ValueError("native_parent_authorization_absent")
-        # Grant may expire while applying prctl/rlimits or waiting for GO.
-        # A final time check follows the parent revocation check.
-        if time.time() > expiry:
-            raise ValueError("grant_expired_before_exec")
-        os.execve(program, args[3:], os.environ.copy())
+        # Grant and signed wall budget may expire during prctl, rlimits,
+        # revocation handshake or scheduling. The parent verifies the same
+        # monotonic deadline before GO; the child checks it again at the
+        # final instruction before execve.
+        if time.time() > expiry or time.monotonic() >= deadline:
+            raise ValueError("grant_or_deadline_expired_before_exec")
+        os.execve(program, args[4:], os.environ.copy())
     except (OSError, ValueError, OverflowError):
         # Do not emit untrusted argv, environment, paths, or exception details.
         print("H454_NATIVE_PROCESS_CHILD_REFUSED", file=sys.stderr, flush=True)
