@@ -162,6 +162,11 @@ class CandidateParsingContracts(unittest.TestCase):
     def test_linux_overlapping_roots_and_duplicate_projects_denied(self):
         cases = (
             [("hermes", "/srv/base"), ("financial-horizon", "/srv/base/sub")],
+            # Intermediate lexicographic name can hide nested roots from
+            # sorted-neighbor-only overlap checks.
+            [("hermes", "/srv/base"),
+             ("ai-development-toolkit", "/srv/base-other"),
+             ("financial-horizon", "/srv/base/sub")],
             [("hermes", "/srv/base"), ("hermes", "/srv/other")],
             [("hermes", "/srv/base"), ("financial-horizon", "/srv/base")],
         )
