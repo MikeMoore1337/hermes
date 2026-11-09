@@ -1,0 +1,122 @@
+name: H454 native Windows GUI scope preview (NO INSTALL)
+
+on:
+  pull_request:
+    paths:
+      - deploy/h454/native-windows-preview/**
+      - docs/operations/h454-native-windows-gui-preview.md
+      - .github/workflows/h454-native-windows-preview.yml
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact current main commit to BUILD unsigned preview only
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: h454-win32-scope-preview
+  cancel-in-progress: false
+
+jobs:
+  windows-preview:
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - name: Enforce exact SHA + checks for manual unsigned artifact
+        if: github.event_name == 'workflow_dispatch'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_SHA: ${{ inputs.source_sha }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:GITHUB_REF -ne 'refs/heads/main' -or
+              $env:REQUESTED_SHA -cnotmatch '^[0-9a-f]{40}$' -or
+              $env:REQUESTED_SHA -cne $env:GITHUB_SHA) {
+            throw 'H454_WIN32_PREVIEW=HOLD_EXACT_SOURCE'
+          }
+          $live = gh api "repos/$env:GITHUB_REPOSITORY/branches/main" --jq .commit.sha
+          if ($LASTEXITCODE -ne 0 -or $live -cne $env:GITHUB_SHA) {
+            throw 'H454_WIN32_PREVIEW=HOLD_MAIN_MOVED'
+          }
+          $history = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs?head_sha=$env:GITHUB_SHA&branch=main&event=push&per_page=100" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'H454_WIN32_PREVIEW=HOLD_CI_LOOKUP' }
+          foreach ($checkName in @('Hermes repository checks', 'Hermes Control Center UI')) {
+            $check = @($history.workflow_runs | Where-Object { $_.name -eq $checkName } |
+                Sort-Object -Property created_at -Descending | Select-Object -First 1)
+            if ($check.Count -ne 1 -or $check[0].conclusion -ne 'success') {
+              throw 'H454_WIN32_PREVIEW=HOLD_REQUIRED_CHECK'
+            }
+          }
+          Write-Output 'H454_WIN32_PREVIEW_MAIN_GATE=PASS'
+      - name: Checkout exact GitHub revision (no credentials persisted)
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Set up free .NET 10 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Inspect preview source for prohibited OS effect APIs
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $source = Get-Content 'deploy/h454/native-windows-preview/Program.cs' -Raw
+          foreach ($pattern in @('Process.Start','ServiceController','Registry\.','DllImport','File\.Write','Directory\.Create','ProcessStartInfo','HttpClient','TcpClient','sc\.exe','PowerShell')) {
+            if ($source -match $pattern) {
+              throw 'H454_WIN32_PREVIEW=HOLD_PROHIBITED_API'
+            }
+          }
+          if ($source -notmatch 'internal const bool CanInstall = false' -or
+              $source -notmatch 'SignatureStatus = "NOT_SIGNED"' -or
+              $source -notmatch 'InitialState = "DISABLED"') {
+            throw 'H454_WIN32_PREVIEW=HOLD_INSTALL_BOUNDARY'
+          }
+      - name: Build stand-alone unsigned preview EXE (does not install anything)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $output = Join-Path $env:RUNNER_TEMP 'h454-windows-preview'
+          dotnet publish 'deploy/h454/native-windows-preview/HermesCommanderNativePreview.csproj' --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:DebugType=None -p:DebugSymbols=false "-p:SourceRevisionId=$env:GITHUB_SHA" -o $output
+          if ($LASTEXITCODE -ne 0) { throw 'H454_WIN32_PREVIEW=HOLD_BUILD' }
+          $exe = Join-Path $output 'HermesCommanderNativePreview.exe'
+          if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
+            throw 'H454_WIN32_PREVIEW=HOLD_MISSING_EXECUTABLE'
+          }
+          $probe = Start-Process -FilePath $exe -ArgumentList @('--self-test', $env:GITHUB_SHA) -Wait -PassThru
+          if ($probe.ExitCode -ne 0) { throw 'H454_WIN32_PREVIEW=HOLD_SMOKE' }
+          $bad = Start-Process -FilePath $exe -ArgumentList @('--self-test', ('0' * 40)) -Wait -PassThru
+          if ($bad.ExitCode -eq 0) { throw 'H454_WIN32_PREVIEW=HOLD_NEGATIVE_SHA' }
+          $sig = Get-AuthenticodeSignature -LiteralPath $exe
+          if ($sig.Status.ToString() -ne 'NotSigned') {
+            throw 'H454_WIN32_PREVIEW=HOLD_SIGNATURE_STATUS_CHANGED'
+          }
+          $sha = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          $receipt = [ordered]@{
+            schema = 'h454-native-win32-scope-preview-v1'
+            source_sha = $env:GITHUB_SHA
+            artifact_sha256 = $sha
+            publisher_signature = 'NOT_PRESENT'
+            installer = 'NOT_INCLUDED'
+            native_agent = 'NOT_INCLUDED'
+            service_installed = $false
+            original_host_changed = $false
+          } | ConvertTo-Json -Compress
+          Set-Content -LiteralPath (Join-Path $output 'receipt.json') -Value $receipt -Encoding utf8 -NoNewline
+          Write-Output 'H454_WIN32_PREVIEW_SMOKE=PASS'
+          Write-Output 'H454_WIN32_NATIVE_HOST_PASS=NOT_RUN'
+          Write-Output 'H454_WIN32_INSTALL_AVAILABLE=NO'
+      - name: Retain unsigned scope preview only when manually requested
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: h454-native-win32-unsigned-scope-preview
+          path: |
+            ${{ runner.temp }}/h454-windows-preview/HermesCommanderNativePreview.exe
+            ${{ runner.temp }}/h454-windows-preview/receipt.json
+          if-no-files-found: error
+          retention-days: 2
