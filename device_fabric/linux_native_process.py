@@ -208,6 +208,7 @@ class LinuxNativeOneShotProcess:
             raise NativeProcessDenied("native_process_denied") from None
         proc = None
         completed = False
+        terminated = False
         try:
             if (effect.action != "process_run" or effect.relative != ""
                 or effect.project != self._files.project):
@@ -259,6 +260,15 @@ class LinuxNativeOneShotProcess:
                 "operation_id": effect.operation_id,
             }
         except Exception:
+            # Terminate the process GROUP before any potentially blocking
+            # SQLite outcome write. A revoked/timed-out child must not keep
+            # running while the replay ledger acquires its lock.
+            if proc is not None:
+                try:
+                    self._terminate_group(proc)
+                    terminated = True
+                except Exception:
+                    pass
             # Errors and stderr may contain secrets. Never disclose them.
             try:
                 self._admission.complete(identity, success=False)
@@ -268,10 +278,9 @@ class LinuxNativeOneShotProcess:
         finally:
             if proc is not None:
                 try:
-                    # On failure, kill the whole session even if the direct
-                    # child exited: inherited-pipe descendants may still
-                    # be running under the old process group.
-                    if not completed or proc.poll() is None:
+                    # On BaseException or incomplete termination, still kill
+                    # the group even if the direct child already exited.
+                    if (not completed and not terminated) or proc.poll() is None:
                         self._terminate_group(proc)
                 finally:
                     if proc.stdout is not None:
