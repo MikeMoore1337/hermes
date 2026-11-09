@@ -97,6 +97,11 @@ def _validate_relative(relative: str, *, action: str) -> None:
             raise GrantDenied("native_grant_denied")
 
 
+def validate_native_file_relative(relative: str) -> None:
+    """Validate an OS-neutral source path; OS handle checks remain mandatory."""
+    _validate_relative(relative, action="file_write")
+
+
 def _validate(effect: NativeEffect, now: int) -> None:
     if (type(effect) is not NativeEffect or type(now) is not int
         or effect.schema != SCHEMA
