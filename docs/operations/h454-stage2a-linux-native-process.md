@@ -75,8 +75,15 @@ controls and short-lived grants remain mandatory. No `shell=True` or
 | Command argv | 16 strings, 8 KiB aggregate |
 | Reconnect/replay | no retries; UUID permanently consumed |
 
-Output is drained with nonblocking selectors. **On both successful
-completion and failure**, the entire supervised process group is killed,
+Output is drained with nonblocking selectors. An **independent
+monotonic watchdog thread** starts immediately after `Popen` and kills
+the process group at the original signed deadline even if a trusted
+revocation callback blocks inside the output-supervision loop. The
+foreground may still await that callback's return; an independently
+bounded callback/runtime and kernel-enforced service cgroup are
+necessary before real-host installation.
+
+**On both successful completion and failure**, the entire supervised process group is killed,
 including background children whose stdout/stderr have been redirected to
 `/dev/null`. Timeouts, overflow, invalid UTF-8 and active-device
 revocations deny the call and permanently consume the UUID. On failure,
@@ -110,8 +117,10 @@ cwd, private HOME, 16 KiB output, nonzero code. Negative tests:
 bad/mutated HMAC payload, forged project/action, unknown executable,
 disabled isolation, root identity, secret inheritance, revoked device,
 expiry before spawn, signed monotonic deadline exhausted during
-revocation checking, child scheduling after `G`, NaN/infinite/expired
-deadlines, stdout/stderr overflow, timeout and replay,
+revocation checking, child scheduling after `G`, a stalled
+post-`G` revocation check while the kernel child is already running,
+a parent leader exiting while a descendant holds pipes, NaN/infinite
+or expired deadlines, stdout/stderr overflow, timeout and replay,
 malformed/duplicate JSON and invalid UTF-8 output.
 
 Windows runners only import or skip these Linux-only tests. A green
