@@ -9,6 +9,8 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -177,6 +179,24 @@ class LinuxUnitSourceOnlyTests(unittest.TestCase):
         for payload in cases:
             with self.subTest(payload=payload[:24]), self.assertRaises(units.NativeUnitDenied):
                 self.render(payload)
+
+    @unittest.skipUnless(
+        sys.platform == "linux" and shutil.which("systemd-analyze"),
+        "requires systemd-analyze on a disposable Linux test runner")
+    def test_real_systemd_analyze_accepts_inert_unit_syntax(self):
+        # systemd-analyze checks syntax only; it never executes the unit.
+        # This is NOT real production host kernel isolation proof.
+        with tempfile.TemporaryDirectory(prefix="h454-systemd-verify-") as tmp:
+            path = Path(tmp) / units.SERVICE_NAME
+            path.write_text(self.render(), encoding="utf-8")
+            proc = subprocess.run(
+                ["systemd-analyze", "verify", str(path)],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                timeout=10, check=False,
+            )
+        self.assertEqual(
+            proc.returncode, 0,
+            "INERT_SYSTEMD_UNIT_SYNTAX_INVALID")
 
     def test_render_does_not_run_host_commands_or_write_any_files(self):
         with patch("subprocess.run", side_effect=AssertionError("Host command forbidden")), \
