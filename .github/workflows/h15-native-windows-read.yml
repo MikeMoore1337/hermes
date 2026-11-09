@@ -23,6 +23,9 @@ on:
       - scripts/h15_native_effect_receipts.py
       - device_fabric/native_effect_admission.py
       - tests/test_h454_native_effect_admission.py
+      - device_fabric/native_install_preview.py
+      - scripts/h454_native_install_preflight.py
+      - tests/test_h454_native_install_preflight.py
       - tests/test_h15_native_effect_receipts.py
       - .github/workflows/h15-native-windows-read.yml
   workflow_dispatch:
@@ -111,6 +114,13 @@ jobs:
           python -B -m unittest -v tests.test_h454_native_effect_admission
           if ($LASTEXITCODE -ne 0) { throw 'H454_NATIVE_ADMISSION_WIN32_FAILED' }
           Write-Output 'H454_NATIVE_ADMISSION_WIN32=PASS'
+      - name: Verify original-host install manifest is read-only and Windows root-pinned
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -B -m unittest -v tests.test_h454_native_install_preflight
+          if ($LASTEXITCODE -ne 0) { throw 'H454_NATIVE_INSTALL_PREVIEW_WIN32_FAILED' }
+          Write-Output 'H454_NATIVE_INSTALL_PREVIEW_WIN32=PASS'
       - name: Compile native relay gate and verify owner/device fail closed
         shell: pwsh
         run: |
