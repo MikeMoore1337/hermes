@@ -10,6 +10,7 @@ import ctypes
 import os
 from pathlib import Path
 import signal
+import socket
 import stat
 import sys
 import time
@@ -33,15 +34,16 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if (sys.platform != "linux" or resource is None
             or not hasattr(os, "geteuid") or os.geteuid() == 0
-            or len(args) < 3):
+            or len(args) < 4):
             raise ValueError("unavailable")
         parent_pid = int(args[0])
         expiry = int(args[1])
-        program = args[2]
+        gate_fd = int(args[2])
+        program = args[3]
         # A valid grant at parent admission may expire during child startup.
         # The child must also refuse execution AFTER its actual expiry.
         if (parent_pid < 2 or os.getppid() != parent_pid
-            or expiry < time.time()
+            or expiry < time.time() or not 3 <= gate_fd < OPEN_FILES
             or type(program) is not str or not program.startswith("/")):
             raise ValueError("invalid_parent_or_program")
         info = Path(program).lstat()
@@ -63,11 +65,20 @@ def main(argv: list[str] | None = None) -> int:
         resource.setrlimit(resource.RLIMIT_FSIZE, (FILE_BYTES, FILE_BYTES))
         resource.setrlimit(resource.RLIMIT_NOFILE, (OPEN_FILES, OPEN_FILES))
         resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
-        # Grant may expire while applying prctl/rlimits or waiting to be
-        # scheduled. This is the last safety check before kernel execve.
+        # The trusted parent rechecks revocation AFTER child setup, as close
+        # as possible to execve. No remote request can send GO on this
+        # private AF_UNIX socketpair; only the authenticated local parent
+        # holds the peer. EOF, timeout, or anything except exact G is denial.
+        with socket.socket(fileno=gate_fd) as gate:
+            gate.settimeout(3.0)
+            gate.sendall(b"READY")
+            if gate.recv(1) != b"G":
+                raise ValueError("native_parent_authorization_absent")
+        # Grant may expire while applying prctl/rlimits or waiting for GO.
+        # A final time check follows the parent revocation check.
         if time.time() > expiry:
             raise ValueError("grant_expired_before_exec")
-        os.execve(program, args[2:], os.environ.copy())
+        os.execve(program, args[3:], os.environ.copy())
     except (OSError, ValueError, OverflowError):
         # Do not emit untrusted argv, environment, paths, or exception details.
         print("H454_NATIVE_PROCESS_CHILD_REFUSED", file=sys.stderr, flush=True)
