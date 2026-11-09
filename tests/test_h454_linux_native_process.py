@@ -16,7 +16,7 @@ import subprocess
 import tempfile
 import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from device_fabric.linux_native_files import LinuxNativeFiles
 from device_fabric.linux_native_process import (
@@ -100,6 +100,26 @@ class NativeProcessOneShotTests(unittest.TestCase):
         self.assertFalse(marker.exists())
         self.assertNotIn(b"unexpected", result.stderr)
         self.assertIn(b"H454_NATIVE_PROCESS_CHILD_REFUSED", result.stderr)
+
+    def test_child_denies_grant_expired_during_resource_setup(self):
+        # Reproduce a scheduler/rlimit delay after the early expiry gate
+        # and before kernel execve. Do not change real test-process limits.
+        from device_fabric import linux_native_child as child
+        fake_libc = MagicMock()
+        fake_libc.prctl.return_value = 0
+        with patch.object(child.os, "getppid", return_value=3456), \
+             patch.object(child.os, "geteuid", return_value=1001), \
+             patch.object(child.time, "time",
+                          side_effect=[NOW + 89, NOW + 91]), \
+             patch.object(child.ctypes, "CDLL", return_value=fake_libc), \
+             patch.object(child.os, "umask"), \
+             patch.object(child.resource, "setrlimit") as setrlimit, \
+             patch.object(child.os, "execve") as execve:
+            self.assertEqual(child.main(
+                ["3456", str(NOW + 90), self.program, "-c", "print('unsafe')"]),
+                125)
+            self.assertEqual(setrlimit.call_count, 5)
+            execve.assert_not_called()
 
     def test_child_enforces_no_new_privileges(self):
         script = ("import ctypes;"
