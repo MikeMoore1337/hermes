@@ -250,11 +250,15 @@ def verify_bytes(bundle: bytes, receipt: bytes, *,
         _deny()
     try:
         with tarfile.open(fileobj=io.BytesIO(bundle), mode="r:gz") as tar:
-            members = tar.getmembers()
-            if len(members) != len(SOURCE_FILES) + 1:
-                _deny()
+            # Scan at most the fixed allowlist cardinality plus one header.
+            # A tiny highly compressed archive with arbitrary TAR entries
+            # must not cause unbounded getmembers() allocations.
             contents: dict[str, bytes] = {}
-            for member in members:
+            count = 0
+            for member in tar:
+                count += 1
+                if count > len(SOURCE_FILES) + 1:
+                    _deny()
                 if (member.name not in set(SOURCE_FILES) | {MANIFEST_NAME}
                     or not member.isfile()
                     or member.mode != 0o444 or member.uid != 0 or member.gid != 0
@@ -270,7 +274,7 @@ def verify_bytes(bundle: bytes, receipt: bytes, *,
                     _deny()
     except (tarfile.TarError, OSError, EOFError, ValueError, OverflowError):
         _deny()
-    if set(contents) != set(SOURCE_FILES) | {MANIFEST_NAME}:
+    if count != len(SOURCE_FILES) + 1 or set(contents) != set(SOURCE_FILES) | {MANIFEST_NAME}:
         _deny()
     manifest_bytes = contents.pop(MANIFEST_NAME)
     if record["manifest_sha256"] != _sha256(manifest_bytes):
@@ -288,18 +292,54 @@ def verify_bytes(bundle: bytes, receipt: bytes, *,
     }
 
 
-def _private_output(out_dir: Path) -> None:
+def _private_output(out_dir: Path, *, require_empty: bool = True) -> None:
+    """Only use a private, non-symlinked CI output directory."""
     try:
         if type(out_dir) is not Path or not out_dir.is_absolute():
             _deny()
+        for ancestor in (out_dir, *out_dir.parents):
+            if stat.S_ISLNK(ancestor.lstat().st_mode):
+                _deny()
         info = out_dir.lstat()
         if (not stat.S_ISDIR(info.st_mode)
             or stat.S_IMODE(info.st_mode) != 0o700
-            or out_dir.is_symlink()
-            or list(out_dir.iterdir())):
+            or (os.name == "posix" and info.st_uid != os.geteuid())
+            or (require_empty and list(out_dir.iterdir()))):
             _deny()
     except (OSError, ValueError, TypeError):
         _deny()
+
+
+def _read_private_artifact(path: Path, limit: int) -> bytes:
+    """Read a single inode-bound private regular artifact, never follow links."""
+    fd = None
+    try:
+        before = path.lstat()
+        if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
+            or before.st_size <= 0 or before.st_size > limit
+            or (os.name == "posix"
+                and (before.st_uid != os.geteuid() or before.st_mode & 0o077))):
+            _deny()
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        opened = os.fstat(fd)
+        if (not stat.S_ISREG(opened.st_mode) or opened.st_nlink != 1
+            or opened.st_size != before.st_size
+            or (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino)
+            or (os.name == "posix"
+                and (opened.st_uid != os.geteuid() or opened.st_mode & 0o077))):
+            _deny()
+        data = os.read(fd, limit + 1)
+        after = os.fstat(fd)
+        if (len(data) != before.st_size or after.st_mode != opened.st_mode
+            or (after.st_dev, after.st_ino, after.st_mtime_ns, after.st_ctime_ns)
+                != (opened.st_dev, opened.st_ino, opened.st_mtime_ns, opened.st_ctime_ns)):
+            _deny()
+        return data
+    except (OSError, ValueError, TypeError):
+        _deny()
+    finally:
+        if fd is not None:
+            os.close(fd)
 
 
 def _exclusive_write(path: Path, data: bytes) -> None:
@@ -334,11 +374,11 @@ def build_from_git(*, repo: Path, target: str,
 def verify_local(*, out_dir: Path, target: str,
                  release_sha: str) -> dict[str, object]:
     try:
-        if (type(out_dir) is not Path or not out_dir.is_absolute()
-            or out_dir.is_symlink()):
+        _private_output(out_dir, require_empty=False)
+        if {item.name for item in out_dir.iterdir()} != {ARCHIVE_NAME, RECEIPT_NAME}:
             _deny()
-        bundle = (out_dir / ARCHIVE_NAME).read_bytes()
-        receipt = (out_dir / RECEIPT_NAME).read_bytes()
+        bundle = _read_private_artifact(out_dir / ARCHIVE_NAME, MAX_ARCHIVE_SIZE)
+        receipt = _read_private_artifact(out_dir / RECEIPT_NAME, MAX_RECEIPT_SIZE)
         return verify_bytes(bundle, receipt, target=target, release_sha=release_sha)
     except (OSError, ValueError, TypeError):
         _deny()
