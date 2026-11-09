@@ -25,7 +25,17 @@ DEVICE = re.compile(r"[a-z][a-z0-9_-]{1,39}\Z")
 PROJECT = re.compile(r"[a-z][a-z0-9_-]{1,63}\Z")
 UUID4 = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\Z")
 HEX64 = re.compile(r"[0-9a-f]{64}\Z")
-WINDOWS_DEVICE = re.compile(r"(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?\Z", re.I)
+WINDOWS_DEVICE = re.compile(r"(?:con|prn|aux|nul|conin\$|conout\$|com[1-9¹²³]|lpt[1-9¹²³])\Z", re.I)
+
+
+def _windows_reserved(part: str) -> bool:
+    """Fail closed on Windows DOS device basenames, including extension tricks.
+
+    The native agent must still enforce no-follow handles and OS ACLs.
+    Python's ntpath.isreserved is not available in every supported runner,
+    so keep the rejection identical on Windows and Linux hosts.
+    """
+    return WINDOWS_DEVICE.fullmatch(part.split(".", 1)[0].rstrip(" ")) is not None
 BLOCKED_NAMES = frozenset({".git", ".ssh", ".aws", ".gnupg", ".kube", "vault", ".vault", "private-vault", "secrets", ".secrets", "credentials", ".env", ".env.local", ".env.production"})
 BLOCKED_SUFFIXES = (".pem", ".key", ".pfx", ".p12", ".kdbx")
 SENSITIVE_STEM = re.compile(r"^\.?(?:secrets?|credentials?|tokens?|passwords?|api[-_]?keys?|service[-_]?accounts?|private[-_]?keys?|config[._-]local)(?:[._-]|$)", re.I)
@@ -81,7 +91,7 @@ def _validate_relative(relative: str, *, action: str) -> None:
         low = part.casefold()
         if (not part or part in {".", ".."} or part.endswith((" ", "."))
             or any(c in '<>:"|?*' or unicodedata.category(c).startswith("C") for c in part)
-            or WINDOWS_DEVICE.fullmatch(part) or low in BLOCKED_NAMES
+            or _windows_reserved(part) or low in BLOCKED_NAMES
             or low.startswith(".env.") or SENSITIVE_STEM.match(part)
             or low.endswith(BLOCKED_SUFFIXES)):
             raise GrantDenied("native_grant_denied")
