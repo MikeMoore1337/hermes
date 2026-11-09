@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -202,6 +203,28 @@ class NativeProcessOneShotTests(unittest.TestCase):
         # stdout/stderr pipes. SIGKILL must reach the whole process group.
         time.sleep(2.2)
         self.assertFalse(marker.exists(), "descendant escaped process group termination")
+
+    def test_failure_kills_process_group_before_recording_receipt(self):
+        # Slow/locked SQLite must not keep a revoked or timed-out child alive.
+        events = []
+        fake = MagicMock()
+        fake.poll.return_value = 0  # leader exited; descendants may remain
+        fake.stdout = io.BytesIO()
+        fake.stderr = io.BytesIO()
+        frame, payload = self.signed()
+        with patch("device_fabric.linux_native_process.subprocess.Popen",
+                   return_value=fake), \
+             patch.object(self.runner, "_capture",
+                          side_effect=NativeProcessDenied("native_process_denied")), \
+             patch.object(self.runner, "_terminate_group",
+                          side_effect=lambda _proc: events.append("kill")), \
+             patch.object(self.admission, "complete",
+                          side_effect=lambda _id, *, success: events.append("receipt")):
+            with self.assertRaisesRegex(NativeProcessDenied, "^native_process_denied$"):
+                self.runner.run(frame, payload, now=NOW)
+        self.assertEqual(events, ["kill", "receipt"])
+        self.assertTrue(fake.stdout.closed)
+        self.assertTrue(fake.stderr.closed)
 
     def test_binary_stdout_is_denied(self):
         frame, payload = self.signed(
