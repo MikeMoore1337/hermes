@@ -185,9 +185,16 @@ def _rpc_payload(msg: dict[str, Any]) -> tuple[str, bytes] | None:
     if "timeoutMs" in msg and (type(msg["timeoutMs"]) is not int
                                or not 1 <= msg["timeoutMs"] <= 30_000):
         return None
-    if "client" in msg and (type(msg["client"]) is not str or
-                            not 1 <= len(msg["client"]) <= 80):
-        return None
+    if "client" in msg:
+        # Existing reviewed BRC relay sends {client:{name:ctx.clientId},
+        # timeoutMs:8000}; a bare client string would discard valid calls.
+        client = msg["client"]
+        if (type(client) is not dict or set(client) != {"name"}
+            or type(client["name"]) is not str
+            or not 1 <= len(client["name"]) <= 128
+            or any(ord(ch) < 32 or ord(ch) == 127
+                   for ch in client["name"])):
+            return None
     try:
         raw = json.dumps(
             {"type": "call", "id": msg["id"],
