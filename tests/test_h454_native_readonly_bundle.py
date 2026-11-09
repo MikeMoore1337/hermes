@@ -198,6 +198,41 @@ class NativeSourceArchivePure(unittest.TestCase):
             bundle.verify_bytes(changed, retarget_receipt(receipt, changed),
                                 target=TARGET, release_sha=SHA)
 
+    def test_recomputed_receipt_cannot_hide_pax_header_or_16mb_bomb(self):
+        original, receipt = bundle.build_bytes(
+            target=TARGET, release_sha=SHA, sources=fixture_sources())
+        for size in (256, 16 * 1024 * 1024):
+            with self.subTest(pax_bytes=size):
+                result = io.BytesIO()
+                with gzip.GzipFile(fileobj=result, mode="wb", filename="",
+                                   mtime=0) as compressed:
+                    with tarfile.open(fileobj=compressed, mode="w",
+                                      format=tarfile.USTAR_FORMAT) as tar:
+                        header = tarfile.TarInfo("pax-header")
+                        header.type = tarfile.XGLTYPE
+                        header.size = size
+                        header.mode = 0o444
+                        tar.addfile(header, io.BytesIO(b"0" * size))
+                        with tarfile.open(fileobj=io.BytesIO(original),
+                                          mode="r:gz") as valid:
+                            for member in valid.getmembers():
+                                tar.addfile(member, valid.extractfile(member))
+                tampered = result.getvalue()
+                self.assertLess(len(tampered), bundle.MAX_ARCHIVE_SIZE)
+                with self.assertRaisesRegex(
+                        bundle.SourceBundleDenied, "^native_source_bundle_denied$"):
+                    bundle.verify_bytes(
+                        tampered, retarget_receipt(receipt, tampered),
+                        target=TARGET, release_sha=SHA)
+
+    def test_recomputed_receipt_cannot_hide_concatenated_gzip_streams(self):
+        original, receipt = bundle.build_bytes(
+            target=TARGET, release_sha=SHA, sources=fixture_sources())
+        changed = original + gzip.compress(b"second forbidden stream")
+        with self.assertRaises(bundle.SourceBundleDenied):
+            bundle.verify_bytes(changed, retarget_receipt(receipt, changed),
+                                target=TARGET, release_sha=SHA)
+
     def test_fake_approval_and_receipt_json_malleability_denied(self):
         data, receipt = bundle.build_bytes(
             target=TARGET, release_sha=SHA, sources=fixture_sources())
@@ -356,6 +391,24 @@ class GitNativeBundleIntegration(unittest.TestCase):
         with self.assertRaises(bundle.SourceBundleDenied):
             bundle.verify_local(out_dir=self.out, target=TARGET,
                                 release_sha=self.head)
+
+    def test_git_replace_refs_cannot_swap_pinned_release_blob(self):
+        name = bundle.SOURCE_FILES[0]
+        original = fixture_sources()[name]
+        blob = self.git("rev-parse", self.head + ":" + name).strip()
+        injected = self.base / "replacement-source"
+        injected.write_bytes(b"SYNTHETIC_REPLACEMENT_BLOB_NOT_RELEASE_SOURCE")
+        replacement_oid = self.git("hash-object", "-w", str(injected)).strip()
+        self.git("replace", blob, replacement_oid)
+        actual = bundle.collect_git_sources(self.repo, release_sha=self.head)
+        self.assertEqual(actual[name], original)
+        self.assertNotEqual(actual[name], injected.read_bytes())
+        payload, receipt = bundle.build_bytes(
+            target=TARGET, release_sha=self.head, sources=actual)
+        self.assertEqual(
+            bundle.verify_bytes(payload, receipt,
+                                target=TARGET, release_sha=self.head)["status"],
+            "BUNDLE_SOURCE_VERIFIED")
 
     def test_git_mode_symlink_or_executable_is_not_regular_selected_blob(self):
         for change in ("symlink", "executable"):
