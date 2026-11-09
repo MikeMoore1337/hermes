@@ -40,7 +40,8 @@ def call(tool="native_file_read", ident="call-one", *,
         else {"project": project, "query": query,
               "mode": mode, "relative_root": relative_root}
     )
-    return {"type": "call", "id": ident, "tool": tool, "args": args}
+    return {"type": "call", "id": ident, "tool": tool, "args": args,
+            "client": {"name": "codex-desktop"}, "timeoutMs": 8000}
 
 
 class FakeSocket:
@@ -131,6 +132,26 @@ class NativeLinuxOutboundPureTests(unittest.TestCase):
                 native.local_config(target="hermes-vps",
                                     device_id=DEVICE, token=TOKEN,
                                     url=url)
+
+    def test_existing_relay_client_object_and_signed_timeout_contract(self):
+        wire = call()
+        parsed = native._rpc_payload(wire)
+        self.assertIsNotNone(parsed)
+        self.assertEqual(parsed[0], "call-one")
+        self.assertEqual(json.loads(parsed[1])["args"]["project"], "hermes")
+        invalid = [
+            {"client": "codex-desktop"},
+            {"client": {"name": ""}},
+            {"client": {"name": "bad\nclient"}},
+            {"client": {"name": "ok", "owner_approved": True}},
+            {"client": {"name": 1}},
+            {"timeoutMs": True},
+            {"timeoutMs": 0},
+            {"timeoutMs": 30001},
+        ]
+        for fields in invalid:
+            with self.subTest(fields=fields):
+                self.assertIsNone(native._rpc_payload({**wire, **fields}))
 
     def test_bad_credentials_and_noncanonical_identity_denied(self):
         for token in ("", "too-short", "x" * 39, "a" * 257,
