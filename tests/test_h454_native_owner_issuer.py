@@ -181,7 +181,7 @@ class OwnerGrantIssuerContracts(unittest.TestCase):
         self.assertFalse((self.state / "native-effects.sqlite3").exists())
 
     def test_expired_owner_decision_and_effect_denied(self):
-        expired_effect = self.effect(expiry=NOW - 1)
+        expired_effect = self.effect(expiry=NOW - 4)
         older = self.ticket(expired_effect, approved_at=NOW - 602)
         with self.assertRaises(OwnerIssuerDenied):
             self.issue(older)
