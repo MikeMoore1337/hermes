@@ -12,6 +12,8 @@ The state directory must already be owner-provisioned with restricted OS ACLs.
 from __future__ import annotations
 
 from dataclasses import dataclass
+
+from device_fabric.native_effect_grants import DEVICE as DEVICE_PATTERN, PROJECT as PROJECT_PATTERN
 import os
 from pathlib import Path
 import re
@@ -47,12 +49,42 @@ class EffectIdentity:
     expires_at: int
 
 
-def validate(identity: EffectIdentity, *, now: int) -> None:
-    if (type(identity) is not EffectIdentity
+@dataclass(frozen=True, slots=True)
+class LocalLedgerScope:
+    """Trusted LOCAL device/project profile; never accept from MCP arguments."""
+
+    device_id: str
+    projects: frozenset[str]
+
+
+LEGACY_WINDOWS_SCOPE = LocalLedgerScope(DEVICE, PROJECTS)
+
+
+def validate(identity: EffectIdentity, *, now: int,
+             scope: LocalLedgerScope | None = None) -> None:
+    """Default remains pinned to old Win32; optional profiles support Linux.
+
+    This only validates a replay receipt, never grants any operation.
+    Callers must load non-default scope from protected, owner-verified OS
+    configuration and independently verify the signed owner authorization.
+    """
+    local = LEGACY_WINDOWS_SCOPE if scope is None else scope
+    if (type(local) is not LocalLedgerScope
+        or type(local.device_id) is not str
+        or DEVICE_PATTERN.fullmatch(local.device_id) is None
+        or type(local.projects) is not frozenset
+        or not 1 <= len(local.projects) <= 12
+        or any(type(project) is not str or
+               PROJECT_PATTERN.fullmatch(project) is None
+               for project in local.projects)
+        or type(identity) is not EffectIdentity
         or type(identity.operation_id) is not str
         or ID.fullmatch(identity.operation_id) is None
-        or identity.device_id != DEVICE
-        or identity.project not in PROJECTS
+        or type(identity.device_id) is not str
+        or identity.device_id != local.device_id
+        or type(identity.project) is not str
+        or identity.project not in local.projects
+        or type(identity.operation) is not str
         or identity.operation not in OPERATIONS
         or type(identity.scope_sha256) is not str
         or HASH.fullmatch(identity.scope_sha256) is None
@@ -135,7 +167,8 @@ def _connect(directory: Path) -> sqlite3.Connection:
     raise LedgerDenied("ledger_unavailable")
 
 def claim(directory: Path, identity: EffectIdentity, *,
-          now: int | None = None) -> str:
+          now: int | None = None,
+          scope: LocalLedgerScope | None = None) -> str:
     """Durably reserve once *before* any possible effect, or refuse.
 
     Return RESERVED_ONCE only on the first successful atomic reservation.
@@ -145,7 +178,7 @@ def claim(directory: Path, identity: EffectIdentity, *,
     verify its signed/owner-issued grant AND OS ACLs, not trust this method.
     """
     timestamp = int(time.time()) if now is None else now
-    validate(identity, now=timestamp)
+    validate(identity, now=timestamp, scope=scope)
     connection = _connect(directory)
     try:
         connection.execute("BEGIN IMMEDIATE")
@@ -180,7 +213,8 @@ def claim(directory: Path, identity: EffectIdentity, *,
 
 
 def complete(directory: Path, identity: EffectIdentity,
-             *, success: bool) -> str:
+             *, success: bool,
+             scope: LocalLedgerScope | None = None) -> str:
     """Mark result without ever enabling re-execution.
 
     A failed operation remains consumed; a transaction ambiguity may have
@@ -191,7 +225,7 @@ def complete(directory: Path, identity: EffectIdentity,
         raise LedgerDenied("invalid_completion")
     # A completed operation may be older than the original grant TTL, but
     # its canonical identity fields must still be fully validated.
-    validate(identity, now=identity.expires_at - 600)
+    validate(identity, now=identity.expires_at - 600, scope=scope)
     connection = _connect(directory)
     try:
         connection.execute("BEGIN IMMEDIATE")
