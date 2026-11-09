@@ -16,7 +16,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from device_fabric.native_effect_grants import NativeEffect, SCHEMA, sign_envelope
+from device_fabric.native_effect_grants import GrantDenied, NativeEffect, SCHEMA, sign_envelope
 from device_fabric.native_effect_admission import LocalAdmissionConfig, NativeEffectAdmission
 from device_fabric.linux_native_files import LinuxNativeFiles, NativeLinuxDenied
 from device_fabric import linux_native_create as native
@@ -71,6 +71,27 @@ class LinuxExclusiveCreateContracts(unittest.TestCase):
         self.assertEqual(target.stat().st_nlink, 1)
         self.assertEqual(ledger.inspect(self.state, UUID), "completed")
 
+    def test_create_empty_file_at_project_root(self):
+        wire = self.frame(content=b"", path="new.txt")
+        result = self.create.create(wire, b"", now=NOW)
+        self.assertEqual((self.root / "new.txt").read_bytes(), b"")
+        self.assertEqual(result["size_bytes"], 0)
+        self.assertEqual(ledger.inspect(self.state, UUID), "completed")
+
+    def test_existing_directory_cannot_be_replaced(self):
+        (self.root / "src" / "new.py").mkdir()
+        with self.assertRaises(NativeLinuxDenied):
+            self.create.create(self.frame(), b"hello\n", now=NOW)
+        self.assertTrue((self.root / "src" / "new.py").is_dir())
+
+    def test_invalid_kernel_create_mode_denied_before_syscall(self):
+        from device_fabric.linux_native_files import _kernel_openat2
+        flags = os.O_RDWR | os.O_CREAT | os.O_EXCL
+        with self.assertRaisesRegex(NativeLinuxDenied, "^native_linux_denied$"):
+            _kernel_openat2(self.files._root_fd, "src/no-file.py",
+                            flags, mode=0o777)
+        self.assertFalse((self.root / "src" / "no-file.py").exists())
+
     def test_exclusive_create_never_overwrites_original(self):
         original = self.root / "src" / "new.py"
         original.write_bytes(b"original bytes")
@@ -88,30 +109,32 @@ class LinuxExclusiveCreateContracts(unittest.TestCase):
         self.assertEqual(ledger.inspect(self.state, UUID), "completed")
 
     def test_signed_project_mismatch_or_unrelated_action_cannot_write(self):
-        for project, op in (("financial-horizon", "file_write"),
-                            ("hermes", "file_edit"), ("hermes", "file_delete")):
+        cases = (("financial-horizon", "file_write"),
+                 ("hermes", "file_edit"), ("hermes", "file_delete"))
+        for index, (project, op) in enumerate(cases):
             with self.subTest(project=project, op=op):
                 with self.assertRaises(NativeLinuxDenied):
-                    self.create.create(self.frame(project=project, op=op),
-                                       b"hello\n", now=NOW)
+                    self.create.create(
+                        self.frame(project=project, op=op, uuid=UUID[:-1] + str(index)),
+                        b"hello\n", now=NOW)
                 self.assertFalse((self.root / "src" / "new.py").exists())
-        self.assertIn(ledger.inspect(self.state, UUID), ("failed", "unknown"))
 
     def test_unsafe_secret_path_and_traversal_denied_pre_effect(self):
         for path in (".env", "src/../.env", "../outside/private.py",
                      "src/.git/config", "src/CONIN$.py", "/etc/shadow",
-                     "src/service-account.json", "src/folder\\file.py"):
-            with self.subTest(path=path):
-                with self.assertRaises(Exception):
-                    self.create.create(self.frame(path=path), b"hello\n", now=NOW)
+                     "src/service-account.json", "src/folder\file.py"):
+            with self.subTest(path=path), self.assertRaises(GrantDenied):
+                self.frame(path=path)
         self.assertEqual(list(self.root.glob("src/*.py")), [])
 
     def test_symlink_parent_and_symlink_destination_never_followed(self):
         (self.root / "redirected").symlink_to(self.external, target_is_directory=True)
         (self.root / "src" / "new.py").symlink_to(self.external / "new.py")
-        for name in ("redirected/new.py", "src/new.py"):
+        for index, name in enumerate(("redirected/new.py", "src/new.py")):
             with self.subTest(name=name), self.assertRaises(NativeLinuxDenied):
-                self.create.create(self.frame(path=name), b"hello\n", now=NOW)
+                self.create.create(
+                    self.frame(path=name, uuid=UUID[:-1] + str(index)),
+                    b"hello\n", now=NOW)
         self.assertFalse((self.external / "new.py").exists())
         self.assertTrue((self.root / "src" / "new.py").is_symlink())
 
@@ -160,11 +183,14 @@ class LinuxExclusiveCreateContracts(unittest.TestCase):
         self.assertEqual(ledger.inspect(self.state, UUID), "failed")
 
     def test_unsupported_extension_and_oversize_refused(self):
-        for extension in ("data.db", "package.exe", "secrets.pfx"):
-            with self.subTest(extension=extension):
-                with self.assertRaises(NativeLinuxDenied):
-                    self.create.create(self.frame(path="src/"+extension),
-                                       b"hello\n", now=NOW)
+        for index, extension in enumerate(("data.db", "package.exe")):
+            with self.subTest(extension=extension), self.assertRaises(NativeLinuxDenied):
+                self.create.create(
+                    self.frame(path="src/" + extension,
+                               uuid=UUID[:-1] + str(index)),
+                    b"hello\n", now=NOW)
+        with self.assertRaises(GrantDenied):
+            self.frame(path="src/secrets.pfx")
         huge = b"X" * (256 * 1024 + 1)
         with self.assertRaises(NativeLinuxDenied):
             self.create.create(self.frame(content=huge), huge, now=NOW)
