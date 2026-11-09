@@ -13,7 +13,7 @@ import time
 from typing import Callable
 
 from device_fabric.native_effect_grants import (
-    GrantDenied, verify_envelope,
+    GrantDenied, NativeEffect, verify_envelope,
 )
 from scripts import h15_native_effect_receipts as ledger
 
@@ -71,9 +71,23 @@ class NativeEffectAdmission:
         if type(state) is not bool or state:
             raise AdmissionDenied("native_admission_denied")
 
+    def check_active(self) -> None:
+        """Check a trusted device revocation source immediately before effect."""
+        self._active()
+
     def reserve(self, signed_frame: bytes, payload: bytes, *,
                 now: int | None = None) -> ledger.EffectIdentity:
-        """Verify then reserve exactly once, with no automatic retry.
+        """Backwards-compatible UUID reservation (no executable capability)."""
+        identity, _effect = self.reserve_effect(signed_frame, payload, now=now)
+        return identity
+
+    def reserve_effect(self, signed_frame: bytes, payload: bytes, *,
+                       now: int | None = None) -> tuple[ledger.EffectIdentity, NativeEffect]:
+        """Verify then reserve a signed effect, returning its immutable scope.
+
+        The operation UUID is durably consumed before the effect is returned.
+        No subprocess or file effects are performed by this library.
+        
 
         On reconnect, timeout or crash, any duplicate operation_id is refused
         even if the earlier operation might not have executed. An atomic
@@ -100,7 +114,7 @@ class NativeEffectAdmission:
         self._active()
         if status != "RESERVED_ONCE":
             raise AdmissionDenied("native_admission_denied")
-        return identity
+        return identity, effect
 
     def complete(self, identity: ledger.EffectIdentity, *, success: bool) -> str:
         """Record outcome without re-enabling or retrying any effect."""
