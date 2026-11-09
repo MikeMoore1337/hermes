@@ -21,6 +21,7 @@ import stat
 import subprocess
 import tarfile
 from typing import Final
+import zlib
 
 SCHEMA: Final = "h454-native-linux-read-bundle-v1"
 RECEIPT_SCHEMA: Final = "h454-native-linux-read-receipt-v1"
@@ -272,7 +273,7 @@ def verify_bytes(bundle: bytes, receipt: bytes, *,
                 contents[member.name] = stream.read(MAX_FILE_SIZE + 1)
                 if len(contents[member.name]) != member.size:
                     _deny()
-    except (tarfile.TarError, OSError, EOFError, ValueError, OverflowError):
+    except (tarfile.TarError, OSError, EOFError, ValueError, OverflowError, zlib.error):
         _deny()
     if count != len(SOURCE_FILES) + 1 or set(contents) != set(SOURCE_FILES) | {MANIFEST_NAME}:
         _deny()
