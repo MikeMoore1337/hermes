@@ -16,7 +16,7 @@ import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from device_fabric.native_install_preview import SERVICE, SCHEMA as INSTALL_SCHEMA
 from device_fabric.linux_native_outbound import ENDPOINT
@@ -271,44 +271,53 @@ class NativeLinuxRuntimeIntegration(unittest.TestCase):
 
     def test_isolation_or_revocation_failure_refuses_before_network(self):
         prepared = self.load()
-        def not_invoked(*args, **kwargs):
-            raise AssertionError("network must not be reached")
         for isolation, revoked in (
             (False, False), (None, False), ("true", False),
             (True, True), (True, None),
         ):
             with self.subTest(isolation=isolation, revoked=revoked):
+                connector = Mock()
                 with self.assertRaises(runtime.RuntimeDenied):
                     runtime.run_once(
-                        prepared, connector=not_invoked,
+                        prepared, connector=connector,
                         is_device_revoked=lambda: revoked,
                         is_os_isolation_verified=lambda: isolation)
+                # The runtime intentionally redacts *all* exceptions, so
+                # checking only RuntimeDenied would miss a forbidden
+                # connector invocation followed by a caught failure.
+                connector.assert_not_called()
+        connector = Mock()
         with self.assertRaises(runtime.RuntimeDenied):
-            runtime.run_once(prepared, connector=not_invoked,
+            runtime.run_once(prepared, connector=connector,
                              is_device_revoked=None,
                              is_os_isolation_verified=lambda: True)
+        connector.assert_not_called()
 
     def test_injected_failing_revocation_probe_is_sanitized(self):
         prepared = self.load()
         def unavailable():
             raise OSError("SYNTHETIC_PRIVATE_REASON")
+        connector = Mock()
         with self.assertRaisesRegex(runtime.RuntimeDenied,
                                     "^native_linux_runtime_denied$"):
             runtime.run_once(
-                prepared, connector=lambda *_a, **_kw: None,
+                prepared, connector=connector,
                 is_device_revoked=unavailable,
                 is_os_isolation_verified=lambda: True)
+        connector.assert_not_called()
 
     def test_runtime_error_from_trusted_isolation_callback_is_redacted(self):
         prepared = self.load()
         def broken():
             raise RuntimeError("SYNTHETIC_PRIVATE_EXCEPTION_DETAIL")
+        connector = Mock()
         with self.assertRaisesRegex(
                 runtime.RuntimeDenied, "^native_linux_runtime_denied$") as denied:
             runtime.run_once(
-                prepared, connector=lambda *_a, **_kw: None,
+                prepared, connector=connector,
                 is_device_revoked=lambda: False,
                 is_os_isolation_verified=broken)
+        connector.assert_not_called()
         self.assertNotIn("SYNTHETIC_PRIVATE", str(denied.exception))
 
     def test_full_injected_existing_brc_wire_reads_original_fixture(self):
