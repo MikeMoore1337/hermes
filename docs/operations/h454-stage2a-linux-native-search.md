@@ -27,7 +27,7 @@ supplied through an MCP tool invocation.
   are marked `truncated=true`; the function does not silently claim
   exhaustive coverage.
 - Unknown modes, malformed input, protected names, symlink/junction-style
-  redirects, hardlinks, device files, parent traversal, absolute paths
+  redirects, hardlinks, device files, alternate VCS metadata (such as .hg/.svn), generated trees (node_modules/__pycache__/.next), parent traversal, absolute paths
   and OS errors fail closed or are excluded from results. No arbitrary
   regular expressions, shell, subprocess, file writes, API calls or network.
 - No service-configured timeouts are provided by this code. Native host
