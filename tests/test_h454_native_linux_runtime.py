@@ -344,11 +344,11 @@ class NativeLinuxRuntimeIntegration(unittest.TestCase):
         foreign = self.base / "foreign.md"
         foreign.write_text("SYNTHETIC_PRIVATE_REASON", encoding="utf-8")
         (self.root / "redirect.md").symlink_to(foreign)
-        from device_fabric.linux_native_files import LinuxNativeDenied
+        from device_fabric.linux_native_files import NativeLinuxDenied
         with runtime.ExitStack() as stack:
             root_handle = stack.enter_context(runtime.LinuxNativeFiles(
                 root=self.root, project="hermes"))
-            with self.assertRaises(LinuxNativeDenied):
+            with self.assertRaises(NativeLinuxDenied):
                 root_handle.read_file("redirect.md")
         self.assertEqual(foreign.read_text(), "SYNTHETIC_PRIVATE_REASON")
 
