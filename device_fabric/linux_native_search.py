@@ -121,14 +121,29 @@ class LinuxNativeSearch:
                             truncated = True
                             continue
                         try:
-                            payload = self._files.read_file(relative)
+                            # A prior path stat can become stale. The reader
+                            # enforces remaining bytes on the OPEN file fd.
+                            remaining = MAX_CONTENT_BYTES - bytes_scanned
+                            payload = self._files.read_file(
+                                relative, max_bytes=min(MAX_READ_BYTES, remaining))
                             data = base64.b64decode(payload["data"], validate=True)
-                            if b"\x00" in data:
-                                continue
-                            text = data.decode("utf-8")
-                        except (NativeLinuxDenied, UnicodeError, ValueError):
-                            continue
+                            if len(data) > remaining:
+                                raise NativeLinuxDenied("native_linux_denied")
+                        except (NativeLinuxDenied, UnicodeError, ValueError, binascii.Error):
+                            # A read can have occurred before a concurrent
+                            # growth/IO error. Stop rather than repeatedly
+                            # reading unaccounted bytes from unstable files.
+                            truncated = True
+                            break
+                        # EVERY successful read counts, including binary and
+                        # invalid UTF-8 that will not produce a match.
                         bytes_scanned += len(data)
+                        if b"\x00" in data:
+                            continue
+                        try:
+                            text = data.decode("utf-8")
+                        except UnicodeError:
+                            continue
                         for line_number, line in enumerate(text.splitlines(), 1):
                             if wanted in line.casefold():
                                 found.append({"path": relative, "line": line_number})
