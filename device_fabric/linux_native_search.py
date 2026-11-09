@@ -9,6 +9,7 @@ contents, credentials, absolute host paths, subprocesses or terminal output.
 from __future__ import annotations
 
 import base64
+import binascii
 from collections import deque
 import itertools
 from pathlib import PurePosixPath
@@ -38,6 +39,14 @@ class LinuxNativeSearch:
 
     def search(self, query: str, *, mode: str = "names",
                relative_root: str = "") -> dict[str, object]:
+        """Sanitize all source-filesystem errors before returning to MCP."""
+        try:
+            return self._search(query, mode=mode, relative_root=relative_root)
+        except (OSError, UnicodeError, ValueError, binascii.Error):
+            raise NativeLinuxDenied("native_linux_denied") from None
+
+    def _search(self, query: str, *, mode: str,
+                relative_root: str) -> dict[str, object]:
         """Search bounded literal text, case-insensitive, no regex or snippets.
 
         names: returns only safe file/directory names containing the query.
