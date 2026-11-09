@@ -56,7 +56,9 @@ or `preexec_fn` is used.
 
 Output is drained with nonblocking selectors. Timeouts, overflow,
 invalid UTF-8 and active-device revocations deny the call, kill the
-supervised process group and permanently consume the UUID. A nonzero
+supervised process group **even if the direct child already exited but
+its descendants still hold inherited output pipes**, and permanently
+consume the UUID. A nonzero
 exit code is a **completed execution with a nonzero status**, not a
 permission failure: it is returned with a bounded stdout. stderr is
 discarded to prevent credential and private-path leakage.
