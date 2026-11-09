@@ -112,7 +112,12 @@ python3 -B -m unittest -v tests.test_h454_native_readonly_bundle
 
 Git test fixtures use a temporary repository, synthetic author,
 untracked fake secret, regular files, Git blob replacement refs
-and intentionally malicious symlink/executable Git objects. The validator
+and intentionally malicious symlink/executable Git objects. In addition,
+a GitHub-Actions-only test packages the **actual checked-out HEAD** on
+isolated Linux CI for both target labels, verifies both target receipts
+and ensures the archives differ by target. It writes artifacts only to
+a private temporary CI directory and does not upload or install them.
+The validator
 compares the exact Git commit, ignores uncommitted files, refuses
 `refs/replace` injection, rejects archive changes even if an untrusted
 receipt hash is recomputed, blocks extra members/symlinks/duplicates,
