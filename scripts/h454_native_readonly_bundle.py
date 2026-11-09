@@ -152,7 +152,7 @@ def collect_git_sources(repository: Path, *, release_sha: str) -> dict[str, byte
     """Return EXACT vetted Git HEAD blobs without running Python source."""
     _validate_ids("hermes-vps", release_sha)
     try:
-        if type(repository) is not Path or not repository.is_absolute() or repository.is_symlink():
+        if not isinstance(repository, Path) or not repository.is_absolute() or repository.is_symlink():
             _deny()
         top = _git(repository, "rev-parse", "--show-toplevel").decode("utf-8").strip()
         actual = _git(repository, "rev-parse", "HEAD").decode("ascii").strip()
@@ -296,7 +296,7 @@ def verify_bytes(bundle: bytes, receipt: bytes, *,
 def _private_output(out_dir: Path, *, require_empty: bool = True) -> None:
     """Only use a private, non-symlinked CI output directory."""
     try:
-        if type(out_dir) is not Path or not out_dir.is_absolute():
+        if not isinstance(out_dir, Path) or not out_dir.is_absolute():
             _deny()
         for ancestor in (out_dir, *out_dir.parents):
             if stat.S_ISLNK(ancestor.lstat().st_mode):
