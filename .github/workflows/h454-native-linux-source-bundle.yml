@@ -1,0 +1,109 @@
+name: H454 native Linux READ source candidate (manual, no deploy)
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_sha:
+        description: Exact current main SHA for SOURCE-ONLY candidate
+        required: true
+        type: string
+      target:
+        description: Target label for the offline bundle (does not contact host)
+        required: true
+        type: choice
+        options:
+          - hermes-vps
+          - yfc-vps
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: h454-native-linux-source-bundle
+  cancel-in-progress: false
+
+jobs:
+  source-only:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Require exact current main SHA and successful Quality/UI checks
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APPROVED_SHA: ${{ inputs.release_sha }}
+          TARGET: ${{ inputs.target }}
+          EXACT_SHA: ${{ github.sha }}
+          CURRENT_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          [[ "$CURRENT_REF" == 'refs/heads/main' ]] || {
+            echo 'NATIVE_SOURCE_BUNDLE=HOLD_BRANCH_NOT_MAIN' >&2
+            exit 1
+          }
+          [[ "$APPROVED_SHA" =~ ^[0-9a-f]{40}$ &&
+             "$APPROVED_SHA" == "$EXACT_SHA" ]] || {
+            echo 'NATIVE_SOURCE_BUNDLE=HOLD_EXACT_RELEASE_SHA' >&2
+            exit 1
+          }
+          [[ "$TARGET" == 'hermes-vps' || "$TARGET" == 'yfc-vps' ]] || {
+            echo 'NATIVE_SOURCE_BUNDLE=HOLD_TARGET' >&2
+            exit 1
+          }
+          latest="$(gh api "repos/$GITHUB_REPOSITORY/branches/main" --jq .commit.sha)"
+          [[ "$latest" == "$EXACT_SHA" ]] || {
+            echo 'NATIVE_SOURCE_BUNDLE=HOLD_MAIN_CHANGED' >&2
+            exit 1
+          }
+          runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$EXACT_SHA&branch=main&event=push&per_page=100")"
+          quality="$(jq -r '[.workflow_runs[] | select(.name=="Hermes repository checks")] | first | .conclusion // "pending"' <<< "$runs")"
+          ui="$(jq -r '[.workflow_runs[] | select(.name=="Hermes Control Center UI")] | first | .conclusion // "pending"' <<< "$runs")"
+          [[ "$quality" == success && "$ui" == success ]] || {
+            echo 'NATIVE_SOURCE_BUNDLE=HOLD_CI_NOT_GREEN' >&2
+            exit 1
+          }
+          echo 'NATIVE_SOURCE_BUNDLE=SHA_SCOPED_GATE_PASS'
+
+      - name: Checkout exact SHA without persisted credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Build and independently verify the restricted offline archive
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXACT_SHA: ${{ github.sha }}
+          TARGET: ${{ inputs.target }}
+        run: |
+          set -euo pipefail
+          latest="$(gh api "repos/$GITHUB_REPOSITORY/branches/main" --jq .commit.sha)"
+          [[ "$latest" == "$EXACT_SHA" && "$(git rev-parse HEAD)" == "$EXACT_SHA" ]] || {
+            echo 'NATIVE_SOURCE_BUNDLE=HOLD_SHA_CHANGED' >&2
+            exit 1
+          }
+          umask 077
+          private="$RUNNER_TEMP/h454-native-linux-offline"
+          install -d -m 0700 "$private"
+          python3 -B -m scripts.h454_native_readonly_bundle build \
+            --repo "$GITHUB_WORKSPACE" --out-dir "$private" \
+            --release-sha "$EXACT_SHA" --target "$TARGET"
+          python3 -B -m scripts.h454_native_readonly_bundle verify \
+            --out-dir "$private" --release-sha "$EXACT_SHA" --target "$TARGET"
+          echo 'NATIVE_SOURCE_BUNDLE=VERIFIED_SOURCE_ONLY'
+          echo 'NATIVE_AGENT_INSTALLED=NO'
+          echo 'NATIVE_DEVICE_ACTIVATED=NO'
+          echo 'OWNER_HOST_CHANGED=NO'
+
+      - name: Upload only the immutable source archive and digest receipt
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: h454-native-${{ inputs.target }}-${{ inputs.release_sha }}
+          path: |
+            ${{ runner.temp }}/h454-native-linux-offline/h454-native-linux-readonly.tar.gz
+            ${{ runner.temp }}/h454-native-linux-offline/h454-native-bundle-receipt.json
+          if-no-files-found: error
+          retention-days: 7
