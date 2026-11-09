@@ -43,7 +43,7 @@ SERVICE = {
 }
 BLOCKED_LINUX_ANCESTORS = frozenset({
     "/etc", "/root", "/proc", "/sys", "/dev", "/run",
-    "/boot", "/usr", "/bin", "/sbin", "/lib", "/lib64",
+    "/boot", "/usr", "/bin", "/sbin", "/lib", "/lib64", "/var/lib",
 })
 BLOCKED_COMPONENTS = frozenset({
     ".git", ".ssh", ".aws", ".gnupg", "node_modules",
