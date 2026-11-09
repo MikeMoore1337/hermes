@@ -9,6 +9,8 @@ from dataclasses import dataclass
 import ntpath
 import re
 
+from device_fabric.native_effect_grants import windows_reserved_component
+
 # Exact owner-approved directories; no D: drive or parent workspace grant.
 READ_ROOTS: dict[str, str] = {
     "ai-development-toolkit": r"D:\Pet-projects\ai-development-toolkit",
@@ -48,7 +50,7 @@ def _valid_path(text: str) -> bool:
     components = text[3:].split("\\")
     if not components or any(
         not c or c in {".", ".."} or c.endswith((" ", "."))
-        or ":" in c or c.lower() in {"con", "prn", "aux", "nul"}
+        or ":" in c or windows_reserved_component(c)
         for c in components
     ):
         return False
