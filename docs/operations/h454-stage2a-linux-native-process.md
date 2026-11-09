@@ -34,11 +34,20 @@ The process starts with a **kernel-verified pinned project-root fd** as
 `cwd=/proc/self/fd/<fd>`, inherited only by the supervised child.
 `device_fabric/linux_native_child.py` applies `PR_SET_NO_NEW_PRIVS`,
 parent-death SIGKILL, private umask and per-process Linux resource limits
-before `execve` on the approved executable. The child independently
-checks the signed grant's expiry both at child entry **and after**
-`prctl` and `setrlimit`, at the final instruction before actual `execve`.
-Scheduling/resource-setup latency cannot resurrect an expired operation.
-No `shell=True` or `preexec_fn` is used.
+before `execve` on the approved executable.
+
+**Final owner-revocation fence:** after applying `prctl`/rlimits, the child
+sends exactly `READY` to the trusted parent over a private inherited
+`AF_UNIX` socketpair, then waits. The parent rechecks its trusted local
+revocation callback and signed TTL **after child startup**, replying `G`
+only while both remain valid. The child also checks expiry immediately
+after `G` and just before `execve`; EOF, timeout, or any other reply
+rejects execution. No remote/MCP caller can open the parent-only socket.
+The handshake is part of the *same signed wall-time budget* as execution.
+It narrows the startup revocation race but cannot make revocation and
+`execve` one atomic kernel operation; cgroup kill/OS controls and
+short-lived grants remain mandatory. No `shell=True` or
+`preexec_fn` is used.
 
 ## Hard resource ceilings
 
@@ -55,13 +64,15 @@ No `shell=True` or `preexec_fn` is used.
 | Command argv | 16 strings, 8 KiB aggregate |
 | Reconnect/replay | no retries; UUID permanently consumed |
 
-Output is drained with nonblocking selectors. Timeouts, overflow,
-invalid UTF-8 and active-device revocations deny the call, kill the
-supervised process group **even if the direct child already exited but
-its descendants still hold inherited output pipes**, and permanently
-consume the UUID. On any failure, process-group termination
-precedes potentially blocking SQLite completion bookkeeping; a delayed
-ledger write must not leave revoked children running. A nonzero exit
+Output is drained with nonblocking selectors. **On both successful
+completion and failure**, the entire supervised process group is killed,
+including background children whose stdout/stderr have been redirected to
+`/dev/null`. Timeouts, overflow, invalid UTF-8 and active-device
+revocations deny the call and permanently consume the UUID. On failure,
+group termination precedes potentially blocking SQLite bookkeeping.
+This cannot kill descendants that escape to a new session; a real host
+service must enforce an operation-scoped cgroup or equivalent OS
+containment before activation. A nonzero exit
 code is a **completed execution with a nonzero status**, not a
 permission failure: it is returned with a bounded stdout. stderr is
 discarded to prevent credential and private-path leakage.
