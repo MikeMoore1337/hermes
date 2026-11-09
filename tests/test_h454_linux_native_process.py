@@ -14,6 +14,7 @@ import platform
 import sys
 import subprocess
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -164,6 +165,23 @@ class NativeProcessOneShotTests(unittest.TestCase):
         self.assertEqual(ledger.inspect(self.state, OPID), "failed")
         with self.assertRaises(NativeProcessDenied):
             self.runner.run(frame, payload, now=NOW + 1)
+
+    def test_exited_parent_with_inherited_pipe_child_is_killed_on_timeout(self):
+        marker = self.project / "escaped-child"
+        grandchild = ("import time;from pathlib import Path;"
+                      "time.sleep(2);"
+                      f"Path({str(marker)!r}).write_text('escaped')")
+        parent = ("import subprocess,sys;"
+                  f"subprocess.Popen([sys.executable,'-I','-B','-c',{grandchild!r}])")
+        frame, payload = self.signed(
+            [self.program, "-I", "-B", "-c", parent], timeout=1)
+        with self.assertRaisesRegex(NativeProcessDenied, "^native_process_denied$"):
+            self.runner.run(frame, payload, now=NOW)
+        self.assertEqual(ledger.inspect(self.state, OPID), "failed")
+        # Original leader exited before timeout, but its child retained
+        # stdout/stderr pipes. SIGKILL must reach the whole process group.
+        time.sleep(2.2)
+        self.assertFalse(marker.exists(), "descendant escaped process group termination")
 
     def test_binary_stdout_is_denied(self):
         frame, payload = self.signed(
