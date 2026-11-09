@@ -425,3 +425,65 @@ class GitNativeBundleIntegration(unittest.TestCase):
                 changed_head = self.git("rev-parse", "HEAD").strip()
                 with self.assertRaises(bundle.SourceBundleDenied):
                     bundle.collect_git_sources(self.repo, release_sha=changed_head)
+
+
+@unittest.skipUnless(
+    sys.platform == "linux"
+    and os.environ.get("GITHUB_ACTIONS") == "true"
+    and os.environ.get("RUNNER_OS") == "Linux",
+    "exact-source packaging exercised only on isolated GitHub Linux CI",
+)
+class GitHubRealCheckoutBundleSmoke(unittest.TestCase):
+    """Prove the ACTUAL repo tree is packageable, not only synthetic Git blobs.
+
+    The test never uses owner original paths, native host credentials, SSH
+    or production. It verifies two target-specific bundles in RUNNER_TEMP.
+    """
+
+    def test_actual_checkout_exact_sha_build_and_verify_both_target_bundles(self):
+        root = Path(os.environ["GITHUB_WORKSPACE"])
+        expected_sha = os.environ["GITHUB_SHA"]
+        actual_sha = subprocess.run(
+            ["git", "--no-replace-objects", "-C", str(root),
+             "rev-parse", "HEAD"],
+            check=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            timeout=10,
+        ).stdout.decode("ascii").strip()
+        self.assertEqual(actual_sha, expected_sha)
+        self.assertEqual(len(expected_sha), 40)
+
+        source_hashes = set()
+        with tempfile.TemporaryDirectory(
+            prefix="h454-real-checkout-readonly-",
+            dir=os.environ["RUNNER_TEMP"],
+        ) as location:
+            parent = Path(location)
+            for target in ("hermes-vps", "yfc-vps"):
+                with self.subTest(target=target):
+                    output = parent / target
+                    output.mkdir(mode=0o700)
+                    report = bundle.build_from_git(
+                        repo=root, target=target,
+                        release_sha=expected_sha, out_dir=output)
+                    verified = bundle.verify_local(
+                        out_dir=output, target=target,
+                        release_sha=expected_sha)
+                    self.assertEqual(report, verified)
+                    self.assertEqual(report["status"],
+                                     "BUNDLE_SOURCE_VERIFIED")
+                    self.assertEqual(report["release_sha"], expected_sha)
+                    self.assertFalse(report["install_authorized"])
+                    self.assertFalse(report["connected"])
+                    self.assertFalse(report["service_installed"])
+                    self.assertFalse(report["changes_on_owner_host"])
+                    self.assertEqual(report["source_count"], len(bundle.SOURCE_FILES))
+                    source_hashes.add(report["bundle_sha256"])
+                    with tarfile.open(output / bundle.ARCHIVE_NAME, "r:gz") as tar:
+                        self.assertEqual(
+                            {item.name for item in tar.getmembers()},
+                            set(bundle.SOURCE_FILES) | {bundle.MANIFEST_NAME})
+                    self.assertEqual(
+                        (output / bundle.ARCHIVE_NAME).stat().st_mode & 0o777,
+                        0o600)
+        # Different owner-host targets cannot accidentally share one candidate.
+        self.assertEqual(len(source_hashes), 2)
