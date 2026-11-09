@@ -108,6 +108,34 @@ class SSHForcedCommandPureContracts(unittest.TestCase):
                 hostplan.run_forced_command("h454-native-install-v1")
 
 
+class ManualNativeWorkflowContract(unittest.TestCase):
+    def test_manual_readonly_workflow_has_no_implicit_deployment(self):
+        workflow = (Path(__file__).resolve().parents[1] /
+                    ".github/workflows/h454-native-host-plan.yml").read_text()
+        self.assertIn("workflow_dispatch:", workflow)
+        self.assertNotIn("\n  push:", workflow)
+        self.assertNotIn("\n  pull_request:", workflow)
+        self.assertIn("  contents: read", workflow)
+        self.assertIn("github.ref == 'refs/heads/main'", workflow)
+        self.assertIn("Hermes repository checks", workflow)
+        self.assertIn("Hermes Control Center UI", workflow)
+        self.assertIn("H454_NATIVE_PLAN_SSH_KEY", workflow)
+        self.assertNotIn("HERMES_DEPLOY_KEY", workflow)
+        self.assertNotIn("BRC_SESSION_SECRET", workflow)
+        self.assertIn("h454-native-proof-v1", workflow)
+        self.assertIn("h454-native-plan-v1 $TARGET $SHA $MANIFEST_SHA", workflow)
+        self.assertIn("FORCED_COMMAND_UNPROVEN", workflow)
+        self.assertIn("install_authorized==false", workflow)
+        self.assertIn("changes_applied==false", workflow)
+        self.assertNotIn("systemctl", workflow)
+        self.assertNotIn("sudo ", workflow)
+        self.assertNotIn("useradd", workflow)
+        self.assertNotIn("docker ", workflow)
+        self.assertNotIn("h454-native-install-v1", workflow)
+        self.assertLess(workflow.index("h454-native-proof-v1"),
+                        workflow.index("h454-native-plan-v1 $TARGET"))
+
+
 @unittest.skipUnless(sys.platform == "linux" and
                      platform.machine().lower() in ("x86_64", "aarch64")
                      and hasattr(os, "geteuid") and os.geteuid() != 0,
