@@ -163,7 +163,7 @@ def parse_candidate(raw: bytes, *, expected_release: str,
                 raise InstallPlanDenied("native_install_plan_denied")
         canonical = json.dumps(data, sort_keys=True, ensure_ascii=True,
                                separators=(",", ":"), allow_nan=False).encode("ascii")
-        if not hashlib.sha256(canonical).digest() or raw != canonical:
+        if raw != canonical:
             raise InstallPlanDenied("native_install_plan_denied")
     except (ValueError, TypeError, KeyError, RecursionError,
             UnicodeError, OverflowError):
