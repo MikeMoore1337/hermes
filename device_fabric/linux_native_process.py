@@ -147,14 +147,15 @@ class LinuxNativeOneShotProcess:
         except Exception:
             raise NativeProcessDenied("native_process_denied") from None
 
-    def _authorize_child(self, channel: socket.socket, effect) -> None:
+    def _authorize_child(self, channel: socket.socket, effect, *,
+                         timeout_seconds: float) -> None:
         """Recheck trusted device revocation after child resource setup.
 
         A private AF_UNIX gate is held only by this parent and the
         inspected child launcher. Fail closed if the child never reaches
         the final exec boundary; do not trust arbitrary MCP arguments.
         """
-        channel.settimeout(3.0)
+        channel.settimeout(min(1.0, timeout_seconds))
         ready = bytearray()
         while len(ready) < 5:
             part = channel.recv(5 - len(ready))
@@ -260,6 +261,7 @@ class LinuxNativeOneShotProcess:
             # /proc/self/fd binds cwd to the reviewed original root FD,
             # not a raceable path string or a Docker workspace clone.
             root_fd = self._files._root_fd
+            started = time.monotonic()
             parent_gate, child_gate = socket.socketpair()
             proc = subprocess.Popen(
                 [sys.executable, "-I", "-B", str(launcher),
@@ -273,10 +275,14 @@ class LinuxNativeOneShotProcess:
             )
             child_gate.close()
             child_gate = None
-            self._authorize_child(parent_gate, effect)
+            self._authorize_child(
+                parent_gate, effect, timeout_seconds=timeout_seconds)
             parent_gate.close()
             parent_gate = None
-            returncode, out = self._capture(proc, timeout_seconds)
+            remaining = timeout_seconds - (time.monotonic() - started)
+            if remaining <= 0:
+                raise NativeProcessDenied("native_process_denied")
+            returncode, out = self._capture(proc, remaining)
             # A successful leader may leave descendants in the SAME group
             # with all pipes redirected away. Kill that group before
             # reporting one-shot completion or writing the receipt.
