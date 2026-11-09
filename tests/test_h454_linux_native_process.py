@@ -211,6 +211,26 @@ class NativeProcessOneShotTests(unittest.TestCase):
         time.sleep(2.2)
         self.assertFalse(marker.exists(), "descendant escaped process group termination")
 
+    def test_successful_leader_cannot_leave_background_child_alive(self):
+        # A launcher may exit 0 while its child redirects output to
+        # DEVNULL. The one-shot operation must still reap its group.
+        marker = self.project / "escaped-success"
+        background = ("import time;from pathlib import Path;"
+                      "time.sleep(2);"
+                      f"Path({str(marker)!r}).write_text('escaped')")
+        lead = ("import subprocess,sys;"
+                f"subprocess.Popen([sys.executable,'-I','-B','-c',{background!r}],"
+                "stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,"
+                "stderr=subprocess.DEVNULL)")
+        frame, payload = self.signed(
+            [self.program, "-I", "-B", "-c", lead], timeout=4)
+        result = self.runner.run(frame, payload, now=NOW)
+        self.assertEqual(result["status"], "finished")
+        self.assertEqual(result["exit_code"], 0)
+        self.assertEqual(ledger.inspect(self.state, OPID), "completed")
+        time.sleep(2.2)
+        self.assertFalse(marker.exists(), "background child survived successful command")
+
     def test_failure_kills_process_group_before_recording_receipt(self):
         # Slow/locked SQLite must not keep a revoked or timed-out child alive.
         events = []
@@ -292,6 +312,30 @@ class NativeProcessOneShotTests(unittest.TestCase):
             with self.assertRaises(NativeProcessDenied):
                 runner.run(frame, payload, now=NOW)
             popen.assert_not_called()
+        self.assertEqual(ledger.inspect(self.state, OPID), "failed")
+
+    def test_revoked_during_child_setup_refuses_exec_at_final_gate(self):
+        # Native child sends READY only AFTER prctl and rlimits. The
+        # locally trusted parent checks revocation at that exact point.
+        marker = self.project / "must-not-execute-after-revoke"
+        cmd = ("from pathlib import Path;"
+               f"Path({str(marker)!r}).write_text('escaped')")
+        frame, payload = self.signed(
+            [self.program, "-I", "-B", "-c", cmd])
+        decisions = iter([False, False, False, True])
+        calls = []
+
+        def revoked():
+            value = next(decisions, True)
+            calls.append(value)
+            return value
+
+        guard = NativeEffectAdmission(self.config, is_revoked=revoked)
+        runner = LinuxNativeOneShotProcess(self.files, guard, self.policy)
+        with self.assertRaisesRegex(NativeProcessDenied, "^native_process_denied$"):
+            runner.run(frame, payload, now=NOW)
+        self.assertEqual(calls, [False, False, False, True])
+        self.assertFalse(marker.exists())
         self.assertEqual(ledger.inspect(self.state, OPID), "failed")
 
     def test_grant_expires_between_reservation_and_spawn(self):
