@@ -68,7 +68,7 @@ class WindowsScmSourceContracts(unittest.TestCase):
                 self.assertIn(required, yml)
         self.assertIn("runs-on: windows-2025", yml)
         self.assertIn("$actual.ServiceSpecificExitCode -ne 454", yml)
-        self.assertIn("sc.exe config $name \"start= disabled\"", yml)
+        self.assertIn("sc.exe config $name start= disabled", yml)
         for forbidden in (
             "workflow_dispatch", "upload-artifact", "HERMES_DEPLOY_KEY",
             "secrets.", "ssh ", "scp ", "docker ",

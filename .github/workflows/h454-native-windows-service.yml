@@ -63,7 +63,7 @@ jobs:
           $created = $false
           try {
             $binary = '"' + $exe + '" --service'
-            & sc.exe create $name "binPath= $binary" "start= disabled" "type= own" "obj= NT AUTHORITY\LocalService"
+            & sc.exe create $name binPath= $binary start= disabled type= own obj= "NT AUTHORITY\LocalService"
             if ($LASTEXITCODE -ne 0) { throw 'H454_WIN32_SCM_CREATE_DENIED' }
             $created = $true
             $service = Get-CimInstance -ClassName Win32_Service -Filter "Name='$name'"
@@ -76,7 +76,7 @@ jobs:
             # This SCM start is only on a disposable GitHub Windows runner.
             # The service must report its deliberate NOT_PROVISIONED refusal
             # and must never reach RUNNING, open a socket or read host files.
-            & sc.exe config $name "start= demand" | Out-Null
+            & sc.exe config $name start= demand | Out-Null
             if ($LASTEXITCODE -ne 0) { throw 'H454_SCM_CI_DEMAND_DENIED' }
             try {
               $PSNativeCommandUseErrorActionPreference = $false
@@ -95,7 +95,7 @@ jobs:
               }
               Write-Output 'H454_WIN32_SCM_NOT_PROVISIONED=PASS'
             } finally {
-              & sc.exe config $name "start= disabled" | Out-Null
+              & sc.exe config $name start= disabled | Out-Null
               if ($LASTEXITCODE -ne 0) { throw 'H454_SCM_CI_RESET_DENIED' }
             }
             Write-Output 'H454_OWNER_WINDOWS_HOST=NOT_RUN'
