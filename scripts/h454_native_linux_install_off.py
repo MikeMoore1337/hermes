@@ -189,6 +189,7 @@ def _write_new(path: Path, data: bytes, mode: int) -> None:
             fd = None
             stream.write(data)
             stream.flush()
+            os.fchmod(stream.fileno(), mode)
             os.fsync(stream.fileno())
     except (OSError, ValueError):
         _deny()
@@ -198,8 +199,8 @@ def _write_new(path: Path, data: bytes, mode: int) -> None:
 
 
 def _source_tree(plan: DisabledPlan, release: Path) -> None:
-    # release parent is already verified root-owned, and mkdir is exclusive.
-    release.mkdir(mode=0o755)
+    # The caller exclusively created the release directory before invoking
+    # this writer; a losing concurrent call must never remove another tree.
     for item, content in plan.source:
         if (item not in SOURCE_FILES or item.startswith("/")
             or ".." in item.split("/")):
@@ -283,8 +284,9 @@ def _install_off(plan: DisabledPlan, *, paths: InstallPaths,
     created_unit = False
     created_receipt = False
     try:
-        _source_tree(plan, release)
+        release.mkdir(mode=0o755)
         created_release = True
+        _source_tree(plan, release)
         _write_new(unit, plan.unit, 0o644)
         created_unit = True
         _write_new(receipt, _expected_receipt(plan), 0o600)
@@ -303,7 +305,7 @@ def _install_off(plan: DisabledPlan, *, paths: InstallPaths,
             unit.unlink(missing_ok=True)
         if created_receipt:
             receipt.unlink(missing_ok=True)
-        if release.exists() and not release.is_symlink():
+        if created_release and release.exists() and not release.is_symlink():
             shutil.rmtree(release)
         if created_unit:
             try:
@@ -379,7 +381,8 @@ def _require_interactive_root(plan: DisabledPlan, action: str) -> None:
         "H454 " + action + " OFF " + plan.target + " " +
         plan.release_sha + " " + plan.bundle_sha256
     )
-    print("Confirm exact OFFLINE action at root console (no token):", file=sys.stderr)
+    print("Confirm this exact OFFLINE action (no token):", file=sys.stderr)
+    print(challenge, file=sys.stderr)
     try:
         given = input()
     except (EOFError, OSError, ValueError):
