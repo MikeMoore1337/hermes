@@ -74,8 +74,8 @@ jobs:
             }
             Write-Output 'H454_WIN32_SCM_DISABLED=PASS'
             # This SCM start is only on a disposable GitHub Windows runner.
-            # The service must report its deliberate NOT_PROVISIONED refusal
-            # and must never reach RUNNING, open a socket or read host files.
+            # The LocalService fixture must be rejected by the NEW service-SID
+            # gate before any private state/root inspection or network call.
             & sc.exe config $name start= demand | Out-Null
             if ($LASTEXITCODE -ne 0) { throw 'H454_SCM_CI_DEMAND_DENIED' }
             try {
@@ -86,14 +86,14 @@ jobs:
                 Start-Sleep -Milliseconds 500
                 $actual = Get-CimInstance -ClassName Win32_Service -Filter "Name='$name'"
                 if ($actual.State -eq 'Stopped' -and $actual.ExitCode -eq 1066 -and
-                    $actual.ServiceSpecificExitCode -eq 454) { break }
+                    $actual.ServiceSpecificExitCode -eq 455) { break }
               }
               if ($null -eq $actual -or $actual.State -ne 'Stopped' -or
                   $actual.ExitCode -ne 1066 -or
-                  $actual.ServiceSpecificExitCode -ne 454) {
+                  $actual.ServiceSpecificExitCode -ne 455) {
                 throw 'H454_SCM_CI_FAIL_CLOSED_RUNTIME_NOT_PROVEN'
               }
-              Write-Output 'H454_WIN32_SCM_NOT_PROVISIONED=PASS'
+              Write-Output 'H454_WIN32_SCM_WRONG_SID=DENIED'
             } finally {
               & sc.exe config $name start= disabled | Out-Null
               if ($LASTEXITCODE -ne 0) { throw 'H454_SCM_CI_RESET_DENIED' }
