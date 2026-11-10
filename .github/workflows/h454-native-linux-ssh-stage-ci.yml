@@ -1,0 +1,32 @@
+name: H454 restricted Linux SSH source staging and cleanup (NO HOST)
+
+on:
+  pull_request:
+    paths:
+      - scripts/h454_native_linux_ssh_stage.py
+      - scripts/h454_native_linux_ssh_stage_frame.py
+      - tests/test_h454_native_linux_ssh_stage.py
+      - docs/operations/h454-native-linux-ssh-stage.md
+      - .github/workflows/h454-native-linux-ssh-stage.yml
+      - .github/workflows/h454-native-linux-ssh-stage-ci.yml
+
+permissions:
+  contents: read
+
+jobs:
+  restricted-stage-synthetic:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Checkout without persisted credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Real local no-host stage and cleanup with bounded archives
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -m unittest -v tests.test_h454_native_linux_ssh_stage
+          echo 'H454_RESTRICTED_SSH_STAGE_CI=PASS'
+          echo 'H454_OWNER_SSH_HOSTS=NOT_CONTACTED'
+          echo 'H454_OWNER_NATIVE_SERVICE=NOT_INSTALLED'
