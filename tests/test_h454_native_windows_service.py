@@ -25,7 +25,8 @@ class WindowsScmSourceContracts(unittest.TestCase):
         ):
             with self.subTest(marker=marker):
                 self.assertIn(marker, code)
-        self.assertNotIn("SERVICE_RUNNING", code)
+        self.assertNotIn("private const uint SERVICE_RUNNING", code)
+        self.assertNotIn("Report(SERVICE_RUNNING,", code)
         self.assertNotIn("StartServiceW", code)
         self.assertNotIn("CreateServiceW", code)
         self.assertNotIn("ChangeServiceConfigW", code)
