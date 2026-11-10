@@ -277,7 +277,9 @@ class NewWindowsIdentityRunTests(unittest.TestCase):
             def __exit__(self, *_args):
                 self.closed = True
         connection = Entered()
-        checks = iter((None, None, Exception("revoked")))
+        # _GuardedSocket.__enter__ checks once before and once after
+        # underlying __enter__; revoke during the second check.
+        checks = iter((None, Exception("revoked")))
         def gate():
             result = next(checks)
             if result is not None:
