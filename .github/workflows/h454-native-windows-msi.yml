@@ -51,7 +51,7 @@ jobs:
           & $wix --version
           if ($LASTEXITCODE -ne 0) { throw 'H454_WIX_VERSION_DENIED' }
           $msi = Join-Path $dir 'HermesCommanderNative-Disabled-CI.msi'
-          & $wix build 'deploy/h454/native-windows-msi/Package.wxs' -arch x64 "-dServiceExe=$exe" -out $msi
+          & $wix build 'deploy/h454/native-windows-msi/Package.wxs' -arch x64 -d "ServiceExe=$exe" -out $msi
           if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $msi -PathType Leaf)) {
             throw 'H454_WINDOWS_MSI_BUILD_DENIED'
           }
