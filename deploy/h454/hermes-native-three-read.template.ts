@@ -37,7 +37,8 @@ const SECRET = /(?:^|[._-])(?:secret|credential|token|password|private[-_]?key|a
 
 function schema(name:Tool) {
   const search = name === 'native_file_search';
-  const host = {type:'string',enum:Object.keys(HOSTS)};
+  const host = {type:'string',enum:name==='native_file_search'
+    ? ['hermes-vps','yfc-vps'] : Object.keys(HOSTS)};
   const project = {type:'string',enum:PROJECTS};
   const fields:Record<string,object> = search
     ? {host,project,query:{type:'string',minLength:1,maxLength:96},
@@ -103,7 +104,7 @@ function ownerDevice(hub:DeviceHub, store:SqliteStore, owner:string, host:Host):
     if (!p.id.test(d.device_id)||d.name!==p.name||d.platform!==p.platform||d.paused
         ||typeof d.token_hash!=='string'||!HEX.test(d.token_hash))return null;
     const live=hub.get(d.device_id);
-    const socket=live?.socket as (typeof live.socket & {hermesAuthTokenHash?:string})|undefined;
+    const socket=live?.socket as {hermesAuthTokenHash?:string}|undefined;
     if (!live||!socket||socket.hermesAuthTokenHash!==d.token_hash
         ||live.ownerId!==owner||live.info.deviceId!==d.device_id
         ||live.info.name!==p.name||live.info.platform!==p.platform
@@ -113,10 +114,24 @@ function ownerDevice(hub:DeviceHub, store:SqliteStore, owner:string, host:Host):
     return d.device_id;
   }catch{return null;}
 }
+function exactKeys(value:Record<string,unknown>,names:string[]):boolean {
+  return Object.keys(value).sort().join(',')===names.slice().sort().join(',');
+}
 function validResult(value:unknown, method:Tool, args:SafeArgs, host:Host):boolean {
   if(!value||typeof value!=='object'||Array.isArray(value))return false;
   const v=value as Record<string,unknown>;
   if(v.status!=='ok'||v.project!==args.project)return false;
+  const common=['status','project'];
+  if(method==='native_file_search'&&!exactKeys(v,[
+    ...common,'relative_root','mode','matches','truncated',
+    'entries_scanned','bytes_scanned']))return false;
+  if(method==='native_file_list'&&!exactKeys(v,[
+    ...common,'relative','action','kind','entries','truncated']))return false;
+  if(method==='native_file_stat'&&!exactKeys(v,[
+    ...common,'relative','action','kind','size_bytes']))return false;
+  if(method==='native_file_read'&&!exactKeys(v,[
+    ...common,'relative','action','kind','size_bytes',
+    'encoding','sha256','data']))return false;
   if(method==='native_file_search'){
     const a=args as {relative_root:string;mode:string};
     if(v.relative_root!==a.relative_root||v.mode!==a.mode
@@ -194,8 +209,11 @@ export async function invokeOwnerNativeThreeRead(
        && response.content[0].text.length<=370000){
       const raw=JSON.parse(response.content[0].text);
       const wrapped=checked.host==='windows' ? raw :
-        raw && raw.status==='ok' && raw.tool===tool
-        && typeof raw.id==='string' && raw.id.length>0 ? raw.result : null;
+        raw && typeof raw==='object' && !Array.isArray(raw)
+        && exactKeys(raw,['status','tool','id','result'])
+        && raw.status==='ok' && raw.tool===tool
+        && typeof raw.id==='string' && /^[A-Za-z0-9_-]{1,128}$/.test(raw.id)
+        ? raw.result : null;
       if(validResult(wrapped,tool,checked.args,checked.host))
         result=wrapped as Record<string,unknown>;
     }
