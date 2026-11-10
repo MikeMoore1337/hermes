@@ -63,6 +63,10 @@ on:
       - scripts/h15_brc_workspace_gateway.py
       - scripts/h15_brc_native_read_gateway.py
       - scripts/h454_native_pair_relay_patch.py
+      - scripts/h454_native_three_read_route_patch.py
+      - deploy/h454/hermes-native-three-read.template.ts
+      - tests/test_h454_native_three_read_route_patch.py
+      - scripts/h454_native_three_read_route_e2e.mjs
       - scripts/h454_native_pair_relay_e2e.mjs
       - device_fabric/native_brc_enrollment.py
       - scripts/h454_native_owner_pair.py
@@ -151,6 +155,10 @@ on:
       - scripts/h15_brc_workspace_gateway.py
       - scripts/h15_brc_native_read_gateway.py
       - scripts/h454_native_pair_relay_patch.py
+      - scripts/h454_native_three_read_route_patch.py
+      - deploy/h454/hermes-native-three-read.template.ts
+      - tests/test_h454_native_three_read_route_patch.py
+      - scripts/h454_native_three_read_route_e2e.mjs
       - scripts/h454_native_pair_relay_e2e.mjs
       - device_fabric/native_brc_enrollment.py
       - scripts/h454_native_owner_pair.py
@@ -253,7 +261,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m unittest -v tests.test_h15_workspace_router tests.test_h15_brc_workspace_gateway tests.test_h15_brc_upgrade_preflight tests.test_h15_brc_transactional_upgrade tests.test_h15_brc_owner_artifact_stage tests.test_h15_brc_owner_handoff tests.test_h15_brc_native_read_gateway tests.test_h15_native_windows_relay_contract tests.test_h454_brc_native_three_tool_cutover tests.test_h454_native_brc_enrollment tests.test_h454_native_owner_pair tests.test_h454_native_pair_relay_patch
+          python3 -m unittest -v tests.test_h15_workspace_router tests.test_h15_brc_workspace_gateway tests.test_h15_brc_upgrade_preflight tests.test_h15_brc_transactional_upgrade tests.test_h15_brc_owner_artifact_stage tests.test_h15_brc_owner_handoff tests.test_h15_brc_native_read_gateway tests.test_h15_native_windows_relay_contract tests.test_h454_brc_native_three_tool_cutover tests.test_h454_native_brc_enrollment tests.test_h454_native_owner_pair tests.test_h454_native_pair_relay_patch tests.test_h454_native_three_read_route_patch
 
       - name: WSS relay watchdog failure and recovery contract
         run: node scripts/h454_wss_relay_watchdog_e2e.mjs
@@ -427,6 +435,15 @@ jobs:
           test "$(git -C "$RUNNER_TEMP/brc-upstream" rev-parse HEAD)" = cbe511702dd0147650353c29ac6ab1decd8afda1
           echo "H454_THREE_NATIVE_OWNER_PAIR_BINDING=SOURCE_ONLY" >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Route approved Windows/Hermes/YFC native READ through one existing OAuth MCP
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m scripts.h454_native_three_read_route_patch \
+            --source-dir "$RUNNER_TEMP/brc-upstream"
+          grep -q "invokeOwnerNativeThreeRead" "$RUNNER_TEMP/brc-upstream/packages/relay/src/mcp/server.ts"
+          echo "H454_THREE_NATIVE_MCP_ROUTE=SOURCE_ONLY" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Patch owner-only relay local observation (disabled without private marker)
         shell: bash
         run: |
@@ -514,6 +531,7 @@ jobs:
           JS
           node "$GITHUB_WORKSPACE/scripts/h15_brc_relay_ws_e2e.mjs"
           node "$GITHUB_WORKSPACE/scripts/h454_native_pair_relay_e2e.mjs"
+          node "$GITHUB_WORKSPACE/scripts/h454_native_three_read_route_e2e.mjs"
           node "$GITHUB_WORKSPACE/scripts/h15_brc_two_wss_agents_e2e.mjs"
           node "$GITHUB_WORKSPACE/scripts/h15_brc_native_read_socket_e2e.mjs"
           node "$GITHUB_WORKSPACE/scripts/h15_brc_gateway_policy_e2e.mjs"
