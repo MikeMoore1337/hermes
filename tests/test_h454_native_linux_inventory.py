@@ -1,6 +1,7 @@
 """H454 SSH inventory is strictly read only, canonical and nonprivileged."""
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 import unittest
@@ -11,6 +12,7 @@ from scripts import h454_native_linux_inventory as inv
 def fixture(target="hermes-vps"):
     return {
         "schema": inv.SCHEMA, "target": target, "arch": "x64",
+        "operator_sha256": hashlib.sha256(Path(inv.__file__).read_bytes()).hexdigest(),
         "systemd": "PRESENT", "service_user": "ABSENT",
         "service_unit": "ABSENT", "release_directory": "ABSENT",
         "owner_roots": "UNVERIFIED", "native_host_pass": False,
@@ -41,6 +43,7 @@ class InventoryContracts(unittest.TestCase):
             encoded({**baseline, "target": "yfc-vps"}),
             encoded({**baseline, "native_host_pass": True}),
             encoded({**baseline, "owner_roots": "/root"}),
+            encoded({**baseline, "operator_sha256": "0"*64}),
             encoded({**baseline, "service_unit": "/etc/secret"}),
             encoded({**baseline, "owner_approved": True}),
             encoded(baseline).replace(
