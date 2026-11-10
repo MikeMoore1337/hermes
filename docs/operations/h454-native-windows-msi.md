@@ -57,3 +57,16 @@ exit code 1603 and the explicit LaunchCondition diagnostic, leave the
 existing service registration unchanged and avoid installing Hermes
 files. The fixture deletes only its own foreign SCM record in a
 finally block. No collision test is executed on owner devices.
+
+## Disposable virtual-service startup refusal
+
+On the GitHub-hosted Windows 2025 runner, after installing the disabled
+MSI, CI temporarily changes only that disposable service to manual start
+and requests one SCM start. The actual MSI-installed
+`NT SERVICE\\HermesCommanderNative` identity must reach
+`STOPPED` with Win32 exit `1066` and service-specific code `454`.
+The fixture resets `Disabled` and uninstalls the MSI in `finally`.
+This proves the unprovisioned Windows service **does not become RUNNING**
+under its intended account on disposable CI. It does **not** prove that
+NTFS ACLs, service SID type, DPAPI user context or native access on the
+owner's real PC are configured or safe.
