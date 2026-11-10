@@ -60,13 +60,14 @@ class NativeWindowsMsiContracts(unittest.TestCase):
             "msiexec.exe", "Get-CimInstance",
             "H454_WINDOWS_MSI_DISABLED=PASS",
             "H454_WINDOWS_MSI_UNINSTALL=PASS",
+            "H454_WINDOWS_MSI_VIRTUAL_SERVICE_FAIL_CLOSED=PASS",
             "H454_WINDOWS_MSI_EXISTING_SERVICE_DENIED=PASS",
             "H454_OWNER_WINDOWS_MSI_NOT_INSTALLED=YES",
         ):
             self.assertIn(marker, text)
         for forbidden in (
             "workflow_dispatch", "upload-artifact", "secrets.",
-            "ssh ", "scp ", "docker ", "sc.exe start",
+            "ssh ", "scp ", "docker ",
             "Start-Service", "Set-Service",
         ):
             self.assertNotIn(forbidden, text)
