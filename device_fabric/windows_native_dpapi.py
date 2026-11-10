@@ -107,12 +107,18 @@ def _crypt(data: bytes, entropy: bytes, *, decrypt: bool) -> bytes:
                 raise NativeDpapiDenied("native_dpapi_denied")
             return ctypes.string_at(out.pbData, out.cbData)
         finally:
-            if out.pbData:
-                try:
-                    if decrypt and out.cbData:
-                        ctypes.memset(out.pbData, 0, out.cbData)
-                finally:
-                    kernel.LocalFree(ctypes.cast(out.pbData, ctypes.c_void_p))
+            try:
+                if out.pbData:
+                    try:
+                        if decrypt and out.cbData:
+                            ctypes.memset(out.pbData, 0, out.cbData)
+                    finally:
+                        kernel.LocalFree(ctypes.cast(out.pbData, ctypes.c_void_p))
+            finally:
+                # Limit the lifetime of the extra unmanaged plaintext copy
+                # used to marshal a bearer into CryptProtectData.
+                if not decrypt:
+                    ctypes.memset(ctypes.addressof(keep_original), 0, len(data))
     except Exception:
         raise NativeDpapiDenied("native_dpapi_denied") from None
 
