@@ -14,7 +14,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import re
+import ssl
 import time
+from urllib.error import HTTPError
+from urllib.parse import urlsplit
+from urllib.request import Request, build_opener, HTTPSHandler, ProxyHandler, HTTPRedirectHandler
 from typing import Callable, Any
 
 NAME = {
@@ -36,6 +40,7 @@ MAX_BODY = 2048
 MAX_POLLS = 90
 MAX_INTERVAL = 20
 MAX_TTL = 900
+PRIVATE_HTTP = re.compile(r"http://127\.0\.0\.1:([0-9]{4,5})\Z")
 
 
 class EnrollmentDenied(ValueError):
@@ -119,6 +124,23 @@ def start(target: str, *, post: Callable[[str, bytes], tuple[int, bytes]]) -> Pe
         raise EnrollmentDenied("native_enrollment_denied") from None
 
 
+def _verified_ws_uri(value: str) -> bool:
+    if type(value) is not str or len(value) > 256:
+        return False
+    try:
+        parsed = urlsplit(value)
+        if parsed.path != "/ws" or parsed.query or parsed.fragment or parsed.username:
+            return False
+        if parsed.scheme == "wss":
+            return parsed.netloc == "hermes.mikemoore.top" and parsed.port is None
+        if parsed.scheme == "ws" and parsed.hostname == "127.0.0.1":
+            return parsed.port is not None and 1024 <= parsed.port <= 65535 and (
+                parsed.netloc == "127.0.0.1:" + str(parsed.port))
+        return False
+    except (TypeError, ValueError):
+        return False
+
+
 def poll(
     pending: Pending,
     *,
@@ -140,11 +162,7 @@ def poll(
             or not 30 <= pending.expires_in <= MAX_TTL
             or not callable(post) or not callable(sleep)
             or not callable(monotonic)
-            or type(expected_ws_url) is not str
-            or expected_ws_url not in (
-                "wss://hermes.mikemoore.top/ws",
-                "ws://127.0.0.1:38183/ws",
-            )):
+            or not _verified_ws_uri(expected_ws_url)):
             raise EnrollmentDenied("native_enrollment_denied")
         deadline = monotonic() + pending.expires_in
         for _ in range(MAX_POLLS):
@@ -184,5 +202,63 @@ def poll(
             return Paired(pending.target, data["device_id"],
                           data["device_token"], data["ws_url"])
         raise EnrollmentDenied("native_enrollment_denied")
+    except Exception:
+        raise EnrollmentDenied("native_enrollment_denied") from None
+
+class _NoRedirect(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def verified_http_post(
+    base_url: str, *,
+    private_ssh_verified: Callable[[], bool] | None = None,
+    timeout: float = 8.0,
+) -> Callable[[str, bytes], tuple[int, bytes]]:
+    """Real BRC HTTP transport with no proxy, redirect or foreign URL.
+
+    Loopback is permitted ONLY with an independently trusted, continuously
+    verified SSH local-forward provider. This callback is a precondition, not
+    owner device approval or an OS security boundary.
+    """
+    try:
+        if type(base_url) is not str or not 0 < len(base_url) <= 128:
+            raise EnrollmentDenied("native_enrollment_denied")
+        private_match = PRIVATE_HTTP.fullmatch(base_url)
+        allowed_public = base_url == "https://hermes.mikemoore.top"
+        if not (allowed_public or (
+            private_match is not None
+            and 1024 <= int(private_match.group(1)) <= 65535
+            and callable(private_ssh_verified)
+            and private_ssh_verified() is True
+        )):
+            raise EnrollmentDenied("native_enrollment_denied")
+        if type(timeout) not in (int, float) or not 1 <= timeout <= 15:
+            raise EnrollmentDenied("native_enrollment_denied")
+        opener = build_opener(ProxyHandler({}), _NoRedirect(),
+                              HTTPSHandler(context=ssl.create_default_context()))
+
+        def post(path: str, data: bytes) -> tuple[int, bytes]:
+            if path not in ("/device/start", "/device/poll") or (
+                type(data) is not bytes or len(data) > MAX_BODY
+            ):
+                raise EnrollmentDenied("native_enrollment_denied")
+            if private_match is not None and private_ssh_verified() is not True:
+                raise EnrollmentDenied("native_enrollment_denied")
+            req = Request(
+                base_url + path,
+                data=data,
+                headers={"Content-Type": "application/json", "Accept": "application/json"},
+                method="POST",
+            )
+            try:
+                with opener.open(req, timeout=timeout) as res:
+                    return res.status, res.read(MAX_BODY + 1)
+            except HTTPError as exc:
+                if exc.code != 400:
+                    raise EnrollmentDenied("native_enrollment_denied") from None
+                return exc.code, exc.read(MAX_BODY + 1)
+
+        return post
     except Exception:
         raise EnrollmentDenied("native_enrollment_denied") from None
