@@ -183,8 +183,10 @@ def _fixed_paths(plan: DisabledPlan, paths: InstallPaths) -> tuple[Path, Path, P
 
 def _write_new(path: Path, data: bytes, mode: int) -> None:
     fd = None
+    created = False
     try:
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, mode)
+        created = True
         with os.fdopen(fd, "wb") as stream:
             fd = None
             stream.write(data)
@@ -192,6 +194,13 @@ def _write_new(path: Path, data: bytes, mode: int) -> None:
             os.fchmod(stream.fileno(), mode)
             os.fsync(stream.fileno())
     except (OSError, ValueError):
+        # A partial write is ours only if O_EXCL succeeded. Never unlink an
+        # occupied path that another actor created first.
+        if created:
+            try:
+                path.unlink()
+            except OSError:
+                pass
         _deny()
     finally:
         if fd is not None:
