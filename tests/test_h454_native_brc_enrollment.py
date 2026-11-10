@@ -59,7 +59,8 @@ class NativePairingProtocol(unittest.TestCase):
                 delays = []
                 paired = pairing.poll(one, post=poll_request,
                                       sleep=lambda t: delays.append(t),
-                                      monotonic=lambda: 0)
+                                      monotonic=lambda: 0,
+                                      expected_ws_url="ws://127.0.0.1:38183/ws")
                 self.assertEqual(delays, [3])
                 self.assertEqual(len(requests), 2)
                 for path, args in requests:
@@ -81,7 +82,8 @@ class NativePairingProtocol(unittest.TestCase):
             return 400, enc({"error": "authorization_pending", "interval": 3})
         with self.assertRaises(pairing.EnrollmentDenied):
             pairing.poll(one, post=pending_forever,
-                         sleep=lambda *_: None, monotonic=lambda: 0)
+                         sleep=lambda *_: None, monotonic=lambda: 0,
+                         expected_ws_url="ws://127.0.0.1:38183/ws")
         self.assertEqual(len(count), pairing.MAX_POLLS)
 
     def test_missing_owner_approval_invalid_server_reply_and_bad_identity(self):
@@ -103,7 +105,8 @@ class NativePairingProtocol(unittest.TestCase):
             with self.subTest(case=str(value)[:65]), \
                  self.assertRaises(pairing.EnrollmentDenied):
                 pairing.poll(one, post=lambda *_: (200, enc(value)),
-                             sleep=lambda _: None, monotonic=lambda: 0)
+                             sleep=lambda _: None, monotonic=lambda: 0,
+                             expected_ws_url="ws://127.0.0.1:38183/ws")
 
     def test_untrusted_start_shape_duplicate_keys_and_unexpected_code_denied(self):
         data = pending()
