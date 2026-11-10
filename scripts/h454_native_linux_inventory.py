@@ -106,7 +106,12 @@ def verify_report(raw: bytes, *, expected_target: str) -> dict[str, object]:
         for name in ("systemd", "service_user", "service_unit", "release_directory"):
             if type(data[name]) is not str or data[name] not in STATE:
                 raise InventoryDenied("h454_inventory_denied")
-        if json.dumps(data, sort_keys=True, separators=(",", ":")).encode("ascii") != raw:
+        canonical = json.dumps(
+            data, sort_keys=True, separators=(",", ":")
+        ).encode("ascii")
+        # The forced inventory CLI emits one trailing LF via print().
+        # Reject multiple lines, spaces, or any other noncanonical payload.
+        if raw not in (canonical, canonical + b"\n"):
             raise InventoryDenied("h454_inventory_denied")
         return data
     except Exception:
