@@ -44,11 +44,15 @@ class NativeTransportDenied(Exception):
     """Bounded error without auth token, file contents or original paths."""
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, repr=False)
 class Settings:
     websocket_url: str
     device_id: str
     device_token: str
+
+    def __repr__(self) -> str:
+        # Never disclose the owner-paired bearer via an incidental log.
+        return "Settings([REDACTED])"
 
 
 def parse_settings(relay_url: str, device_id: str, token: str,
