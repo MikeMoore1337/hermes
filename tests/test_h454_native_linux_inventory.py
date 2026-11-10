@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 import unittest
 from unittest.mock import patch
 from scripts import h454_native_linux_inventory as inv
@@ -73,6 +74,33 @@ class InventoryContracts(unittest.TestCase):
              patch.dict(inv.os.environ, {"SSH_ORIGINAL_COMMAND": "inventory"}):
             with self.assertRaises(inv.InventoryDenied):
                 inv.inventory("hermes-vps")
+
+    def test_manual_workflow_keys_are_scoped_to_one_host_environment(self):
+        flow = (Path(__file__).resolve().parents[1] /
+                ".github/workflows/h454-native-linux-inventory.yml").read_text(
+                    encoding="utf-8"
+                )
+        for expected in (
+            "workflow_dispatch:", "contents: read", "actions: read",
+            "environment:", "h454-hermes-native-inventory",
+            "h454-yfc-native-inventory",
+            "secrets.H454_NATIVE_INVENTORY_KEY",
+            "secrets.H454_NATIVE_INVENTORY_HOST",
+            "secrets.H454_NATIVE_INVENTORY_KNOWN_HOSTS",
+            "StrictHostKeyChecking=yes", "ClearAllForwardings=yes",
+            "persist-credentials: false", "inventory",
+        ):
+            with self.subTest(expected=expected):
+                self.assertIn(expected, flow)
+        for forbidden in (
+            "secrets.H454_NATIVE_HERMES_INVENTORY_KEY",
+            "secrets.H454_NATIVE_YFC_INVENTORY_KEY",
+            "secrets.HERMES_DEPLOY_KEY",
+            "ssh-keyscan", "sudo ", "systemctl ",
+            "pull_request:", "push:", "sshpass",
+        ):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, flow)
 
     def test_bad_service_identity_is_blocked(self):
         from types import SimpleNamespace
