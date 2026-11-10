@@ -35,3 +35,8 @@ Never paste private keys, passwords, known_hosts trust material or tokens
 into ChatGPT. Do not touch BRC/WSS or reuse its deploy key.
 
 Passing CI is not a live host-inventory proof. Issue #454 remains OPEN.
+
+The fixed inventory report includes a SHA-256 digest of its own source,
+validated against the exact version checked out by the GitHub workflow.
+A stale or altered forced-command script is refused before publishing any
+host status. This comparison does not substitute for verified SSH host keys.
