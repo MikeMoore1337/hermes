@@ -1,0 +1,155 @@
+name: H454 signed Windows MSI release via SignPath Foundation (OWNER APPROVAL)
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact current main commit, approved for signing only
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: h454-signpath-locked-release
+  cancel-in-progress: false
+
+jobs:
+  signed-windows-msi:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: windows-2025
+    environment:
+      name: h454-signpath-release
+    timeout-minutes: 75
+    steps:
+      - name: Fail closed without exact SHA, license, owner and SignPath authorization
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_SHA: ${{ inputs.source_sha }}
+          OSS_APPROVED: ${{ vars.H454_SIGNPATH_OSS_APPROVED }}
+          ORGANIZATION: ${{ vars.H454_SIGNPATH_ORGANIZATION_ID }}
+          PROJECT: ${{ vars.H454_SIGNPATH_PROJECT_SLUG }}
+          SIGNING_POLICY: ${{ vars.H454_SIGNPATH_POLICY_SLUG }}
+          ARTIFACT_CONFIG: ${{ vars.H454_SIGNPATH_ARTIFACT_CONFIG }}
+          HAS_SIGNING_TOKEN: ${{ secrets.H454_SIGNPATH_API_TOKEN != '' }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:GITHUB_REF -ne 'refs/heads/main' -or
+              $env:EXPECTED_SHA -cnotmatch '^[a-f0-9]{40}$' -or
+              $env:EXPECTED_SHA -cne $env:GITHUB_SHA) {
+            throw 'H454_SIGNPATH=HOLD_SOURCE_SHA'
+          }
+          $actual = gh api "repos/$env:GITHUB_REPOSITORY/branches/main" --jq .commit.sha
+          if ($LASTEXITCODE -ne 0 -or $actual -cne $env:EXPECTED_SHA) {
+            throw 'H454_SIGNPATH=HOLD_MAIN_MOVED'
+          }
+          if ($env:OSS_APPROVED -cne 'true' -or
+              $env:ORGANIZATION -cnotmatch '^[A-Za-z0-9_-]{3,128}$' -or
+              $env:PROJECT -cnotmatch '^[A-Za-z0-9_-]{3,128}$' -or
+              $env:SIGNING_POLICY -cnotmatch '^[A-Za-z0-9_-]{3,128}$' -or
+              $env:ARTIFACT_CONFIG -cnotmatch '^[A-Za-z0-9_-]{3,128}$' -or
+              $env:HAS_SIGNING_TOKEN -cne 'true') {
+            throw 'H454_SIGNPATH=HOLD_ELIGIBILITY_OR_KEYS'
+          }
+          $runs = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs?head_sha=$env:EXPECTED_SHA&branch=main&event=push&per_page=100" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'H454_SIGNPATH=HOLD_CI_UNAVAILABLE' }
+          foreach ($workflow in @('Hermes repository checks','Hermes Control Center UI')) {
+            $matches = @($runs.workflow_runs | Where-Object {
+              $_.name -ceq $workflow -and $_.head_sha -ceq $env:EXPECTED_SHA -and
+              $_.status -eq 'completed' -and $_.conclusion -eq 'success'
+            })
+            if ($matches.Count -lt 1) { throw 'H454_SIGNPATH=HOLD_CI_NOT_GREEN' }
+          }
+          Write-Output 'H454_SIGNPATH_EXACT_RELEASE_PREFLIGHT=PASS'
+      - name: Checkout immutable source without stored credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify source license exists and signing tests pass
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not (Test-Path -LiteralPath 'LICENSE' -PathType Leaf)) {
+            throw 'H454_SIGNPATH=HOLD_OSI_LICENSE_UNDECLARED'
+          }
+          python -B -m unittest -v tests.test_h454_signpath_release
+          if ($LASTEXITCODE -ne 0) { throw 'H454_SIGNPATH=HOLD_TESTS' }
+      - name: Set up free .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Build only unsigned MSI candidate from approved main
+        id: build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $folder = Join-Path $env:RUNNER_TEMP 'h454-signpath-build'
+          New-Item -ItemType Directory -Path $folder -ErrorAction Stop | Out-Null
+          dotnet publish 'deploy/h454/native-windows-service/HermesCommanderNativeService.csproj' --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:DebugType=None -p:DebugSymbols=false "-p:SourceRevisionId=$env:GITHUB_SHA" -o $folder
+          if ($LASTEXITCODE -ne 0) { throw 'H454_SIGNPATH=HOLD_SERVICE_BUILD' }
+          $exe = Join-Path $folder 'HermesCommanderNativeService.exe'
+          if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
+            throw 'H454_SIGNPATH=HOLD_SERVICE_ABSENT'
+          }
+          $probe = Start-Process -FilePath $exe -ArgumentList @('--self-test', $env:GITHUB_SHA) -Wait -PassThru
+          if ($probe.ExitCode -ne 0) { throw 'H454_SIGNPATH=HOLD_SOURCE_DRIFT' }
+          $tools = Join-Path $env:RUNNER_TEMP 'h454-signpath-wix'
+          dotnet tool install wix --version 6.0.0 --tool-path $tools
+          if ($LASTEXITCODE -ne 0) { throw 'H454_SIGNPATH=HOLD_WIX' }
+          $msi = Join-Path $folder 'HermesCommanderNative-Disabled.msi'
+          & (Join-Path $tools 'wix.exe') build 'deploy/h454/native-windows-msi/Package.wxs' -arch x64 -d "ServiceExe=$exe" -out $msi
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $msi -PathType Leaf)) {
+            throw 'H454_SIGNPATH=HOLD_MSI_BUILD'
+          }
+          if ((Get-AuthenticodeSignature -LiteralPath $msi).Status -ne 'NotSigned') {
+            throw 'H454_SIGNPATH=HOLD_UNEXPECTED_PUBLISHER'
+          }
+          Write-Output 'H454_SIGNPATH_UNSIGNED_CANDIDATE_READY=YES'
+      - name: Stage temporary unsigned MSI only for verified SignPath request
+        id: unsigned
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: h454-signpath-request-UNSIGNED-never-install
+          path: ${{ runner.temp }}/h454-signpath-build/HermesCommanderNative-Disabled.msi
+          retention-days: 1
+          if-no-files-found: error
+      - name: Submit SignPath deep-sign request after protected owner environment approval
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # pinned v3
+        with:
+          api-token: ${{ secrets.H454_SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.H454_SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.H454_SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.H454_SIGNPATH_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ vars.H454_SIGNPATH_ARTIFACT_CONFIG }}
+          github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: ${{ format('{0}/h454-signpath-signed', runner.temp) }}
+      - name: Validate trusted signatures on BOTH signed MSI and embedded EXE
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $signedRoot = Join-Path $env:RUNNER_TEMP 'h454-signpath-signed'
+          $candidate = @(Get-ChildItem -LiteralPath $signedRoot -Recurse -File |
+            Where-Object { $_.Name -ceq 'HermesCommanderNative-Disabled.msi' })
+          if ($candidate.Count -ne 1) { throw 'H454_SIGNPATH=HOLD_SIGNED_MSI_MISSING' }
+          $verifyDir = Join-Path $env:RUNNER_TEMP 'h454-signpath-verified-tree'
+          & ./scripts/h454_verify_signed_windows_msi.ps1 -MsiPath $candidate[0].FullName -ExpectedSha $env:GITHUB_SHA -OutputDir $verifyDir
+          if ($LASTEXITCODE -ne 0) { throw 'H454_SIGNPATH=HOLD_SIGNATURE_VERIFICATION' }
+          $published = Join-Path $env:RUNNER_TEMP 'h454-signpath-verified'
+          New-Item -ItemType Directory -Path $published -ErrorAction Stop | Out-Null
+          Copy-Item -LiteralPath $candidate[0].FullName -Destination (Join-Path $published 'HermesCommanderNative-Disabled.msi')
+          Copy-Item -LiteralPath (Join-Path $env:RUNNER_TEMP 'h454-signed-msi-receipt.json') -Destination $published
+          Write-Output 'H454_SIGNPATH_VERIFIED_FOR_OWNER_REVIEW=PASS'
+          Write-Output 'H454_OWNER_WINDOWS_HOST_INSTALL=NOT_RUN'
+      - name: Upload VERIFIED signed MSI and checksum receipt only
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: h454-signpath-VERIFIED-signed-msi
+          path: ${{ runner.temp }}/h454-signpath-verified/
+          retention-days: 7
+          if-no-files-found: error
