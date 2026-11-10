@@ -124,7 +124,7 @@ def encode(*, target: str, release_sha: str,
 
 def _trusted_dir(directory: Path, *, owner: int,
                  check_ancestors: bool = True) -> None:
-    if type(directory) is not Path or not directory.is_absolute():
+    if not isinstance(directory, Path) or not directory.is_absolute():
         _deny()
     checks = (directory, *directory.parents) if check_ancestors else (directory,)
     for index, current in enumerate(checks):
