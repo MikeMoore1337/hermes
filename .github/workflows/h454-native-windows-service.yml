@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - deploy/h454/native-windows-service/**
+      - tests/h454_native_windows_acl/**
       - docs/operations/h454-native-windows-service.md
       - tests/test_h454_native_windows_service.py
       - .github/workflows/h454-native-windows-service.yml
@@ -31,6 +32,13 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
+      - name: Prove private-state NTFS ACL rights under actual Windows APIs
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet run --project 'tests/h454_native_windows_acl/NativeAclFixture.csproj' --configuration Release
+          if ($LASTEXITCODE -ne 0) { throw 'H454_WIN32_PRIVATE_ACL_DENIED' }
+          Write-Output 'H454_WIN32_PRIVATE_ACL_FIXTURE=PASS'
       - name: Build isolated Windows service and verify exact SHA / fail closed
         shell: pwsh
         run: |

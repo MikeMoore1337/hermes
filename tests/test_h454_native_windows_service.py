@@ -68,6 +68,9 @@ class WindowsScmSourceContracts(unittest.TestCase):
             "FILE_ADD_FILE", "forbiddenWrite.IsInvalid",
             "manifest.json", "device.json",
             "OriginalRootsAreKernelReadOnly",
+            "RestrictedDaclForIdentity", "unsafeRights",
+            "FILE_ADD_SUBDIRECTORY", "FILE_WRITE_ATTRIBUTES",
+            "DELETE_RIGHT", "WRITE_DAC", "WRITE_OWNER",
         ):
             with self.subTest(marker=required):
                 self.assertIn(required, gate)
@@ -89,6 +92,7 @@ class WindowsScmSourceContracts(unittest.TestCase):
             "StartMode", "Disabled", "sc.exe create",
             "sc.exe delete", "finally", "H454_WIN32_SCM_DISABLED=PASS",
             "H454_WIN32_SCM_WRONG_SID=DENIED",
+            "H454_WIN32_PRIVATE_ACL_FIXTURE=PASS",
             "H454_OWNER_WINDOWS_HOST=NOT_RUN",
         ):
             with self.subTest(required=required):
