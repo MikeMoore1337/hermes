@@ -6,6 +6,7 @@ service mutations. Not a native agent, install permit or root discovery.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -17,7 +18,7 @@ import sys
 SCHEMA = "h454-linux-native-inventory-v1"
 TARGETS = frozenset(("hermes-vps", "yfc-vps"))
 STATE = frozenset(("PRESENT", "ABSENT", "BLOCKED", "UNVERIFIED"))
-FIELDS = frozenset(("schema", "target", "arch", "systemd", "service_user",
+FIELDS = frozenset(("schema", "target", "operator_sha256", "arch", "systemd", "service_user",
                     "service_unit", "release_directory", "owner_roots",
                     "native_host_pass", "host_changes"))
 MAX_BYTES = 4096
@@ -75,6 +76,7 @@ def inventory(target: str) -> dict[str, object]:
         raise InventoryDenied("h454_inventory_denied")
     return {
         "schema": SCHEMA, "target": target, "arch": arch,
+        "operator_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
         "systemd": "PRESENT" if Path("/run/systemd/system").is_dir() else "ABSENT",
         "service_user": _identity(),
         "service_unit": _path_status(
@@ -99,6 +101,9 @@ def verify_report(raw: bytes, *, expected_target: str) -> dict[str, object]:
         if (type(data) is not dict or set(data) != FIELDS
             or data["schema"] != SCHEMA or data["target"] != expected_target
             or data["arch"] not in ("x64", "arm64")
+            or type(data["operator_sha256"]) is not str
+            or data["operator_sha256"] != hashlib.sha256(
+                Path(__file__).read_bytes()).hexdigest()
             or data["owner_roots"] != "UNVERIFIED"
             or data["native_host_pass"] is not False
             or data["host_changes"] is not False):
