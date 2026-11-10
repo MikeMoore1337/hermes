@@ -121,6 +121,32 @@ class StageSyntheticContracts(unittest.TestCase):
             self.do_stage()
         self.assertEqual(marker.read_text(), "other device bytes")
 
+    def test_separate_owner_approved_host_ssh_environments_and_no_deploy_key(self):
+        root = Path(__file__).resolve().parents[1]
+        workflow = (root / ".github/workflows/h454-native-linux-ssh-stage.yml").read_text()
+        for marker in (
+            "workflow_dispatch:", "release_sha:", "stage", "cleanup",
+            "h454-hermes-native-stage", "h454-yfc-native-stage",
+            "H454_NATIVE_STAGE_OWNER_APPROVED",
+            "H454_NATIVE_STAGE_HOST", "H454_NATIVE_STAGE_KEY",
+            "H454_NATIVE_STAGE_KNOWN_HOSTS",
+            "refs/heads/main", "Hermes repository checks",
+            "Hermes Control Center UI", "StrictHostKeyChecking=yes",
+            "IdentitiesOnly=yes", "ForwardAgent=no",
+            "RequestTTY=no", "ClearAllForwardings=yes",
+            "h454-native-stage@$HOST",
+            "H454_NATIVE_LINUX_SYSTEMD_INSTALLED=NO",
+            "H454_NATIVE_DEVICE_PAIRED=NO",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, workflow)
+        for forbidden in (
+            "HERMES_DEPLOY_KEY", "sudo ", "useradd ", "systemctl ",
+            "docker ", "ssh-keyscan ", "curl ", "scp ",
+            "workflow_dispatch: push", "pull_request:",
+        ):
+            self.assertNotIn(forbidden, workflow)
+
     def test_owner_account_and_forced_ssh_command_are_mandatory(self):
         with patch.dict(os.environ, {"SSH_ORIGINAL_COMMAND": "stage"}):
             with patch.object(stage.os, "geteuid", return_value=0):
