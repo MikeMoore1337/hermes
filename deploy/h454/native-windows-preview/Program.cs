@@ -83,8 +83,8 @@ internal static class Program
         {
             Text = "Hermes Commander Native - предварительный просмотр";
             StartPosition = FormStartPosition.CenterScreen;
-            Size = new Size(800, 590);
-            MinimumSize = new Size(720, 510);
+            Size = new Size(820, 680);
+            MinimumSize = new Size(740, 580);
             Font = new Font("Segoe UI", 10);
             FormBorderStyle = FormBorderStyle.Sizable;
             AutoScaleMode = AutoScaleMode.Dpi;
@@ -129,10 +129,10 @@ internal static class Program
             {
                 Text = "Служба: " + ServiceKey + Environment.NewLine +
                        "Учётная запись: " + ServiceIdentity + Environment.NewLine +
-                       "Начальное состояние: " + InitialState + Environment.NewLine +
-                       "Права: " + AccessMode + Environment.NewLine +
+                       "Начальное состояние: отключена (" + InitialState + ")" + Environment.NewLine +
+                       "Доступ: только чтение (" + AccessMode + ")" + Environment.NewLine +
                        "Исходный коммит: " + sourceSha + Environment.NewLine +
-                       "Подпись: " + SignatureStatus + Environment.NewLine +
+                       "Подпись издателя: отсутствует (" + SignatureStatus + ")" + Environment.NewLine +
                        Environment.NewLine +
                        "Пять утверждённых корней только для чтения:" +
                        Environment.NewLine + roots,

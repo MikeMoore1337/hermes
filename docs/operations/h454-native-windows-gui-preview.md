@@ -42,7 +42,7 @@ native original-host access, OS mutations or resident service startup.
 ## PNG preview for owner visual review (PR only)
 
 The pull-request Windows CI also builds a *separate test-only executable*
-from the same WinForms source and renders the actual window to an 800x590
+from the same WinForms source and renders the actual window to an 820x680
 PNG on a disposable GitHub-hosted Windows runner. Its exclusive-new file
 output is limited to `RUNNER_TEMP/h454-native-win32-preview.png`.
 The screenshot harness lives only under `tests/` and is **not**
@@ -52,7 +52,12 @@ When the PR run passes, open that Actions run and its
 `h454-native-win32-gui-review-png` artifact (retained for 3 days).
 The artifact contains **only a PNG** - no runnable installer or binary.
 This is a way to inspect the proposed UI without executing unsigned
-software on the owner's Windows computer. CI rendering is still **not**
+software on the owner's Windows computer. The larger default window
+shows all five approved source roots without scrolling at CI scaling.
+For pull-request workflows, the SHA printed inside the PNG is the
+GitHub-generated merge-checkout revision (`github.sha`), not the PR
+branch HEAD; the artifact metadata separately identifies the branch
+HEAD. Neither SHA proves approval of a future signed installer. CI rendering is still **not**
 owner visual acceptance, security review or real-host acceptance. No
 owner UAC dialog, credential pairing, service, ACL or filesystem access
 is exercised.
