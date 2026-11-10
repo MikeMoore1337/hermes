@@ -20,6 +20,10 @@ class WindowsScmSourceContracts(unittest.TestCase):
             'StartMode = "DISABLED"', 'AccessMode = "READ_ONLY"',
             "CanActivate = false", "CanInstall = false",
             "NATIVE_NOT_PROVISIONED = 454",
+            "NATIVE_OS_IDENTITY_DENIED = 455",
+            "NativeHostAdmission.MatchesServiceUser()",
+            "NativeHostAdmission.PrivateStateIsConfined()",
+            "NativeHostAdmission.OriginalRootsAreKernelReadOnly()",
             "Report(SERVICE_STOPPED, ERROR_SERVICE_SPECIFIC_ERROR",
             'args[0] == "--self-test"', 'args[0] != "--service"',
         ):
@@ -54,6 +58,29 @@ class WindowsScmSourceContracts(unittest.TestCase):
         self.assertNotIn("PackageReference", project)
         self.assertNotIn("PostBuildEvent", project)
 
+    def test_real_os_security_code_does_not_grant_privileges(self):
+        gate = (ROOT / "deploy/h454/native-windows-service/NativeHostAdmission.cs").read_text(encoding="utf-8")
+        for required in (
+            "WindowsIdentity.GetCurrent()", "NT SERVICE",
+            "SecurityIdentifier", "AreAccessRulesProtected",
+            "FileSystemAclExtensions.GetAccessControl",
+            "CreateFileW", "FILE_FLAG_OPEN_REPARSE_POINT",
+            "FILE_ADD_FILE", "forbiddenWrite.IsInvalid",
+            "manifest.json", "device.json",
+            "OriginalRootsAreKernelReadOnly",
+        ):
+            with self.subTest(marker=required):
+                self.assertIn(required, gate)
+        for forbidden in (
+            "Process.Start", "File.WriteAll", "File.Create",
+            "Directory.CreateDirectory", "Registry.",
+            "Socket(", "HttpClient", "Net.WebSockets",
+            "sc.exe", "icacls", "SetAccessControl",
+            "SetNamedSecurityInfo", "CryptUnprotectData",
+        ):
+            self.assertNotIn(forbidden, gate)
+        self.assertIn(r'@"D:\Pet-projects\hermes"', gate)
+
     def test_ci_is_disposable_and_never_publishes_unsigned_service(self):
         yml = CI.read_text(encoding="utf-8")
         for required in (
@@ -61,13 +88,13 @@ class WindowsScmSourceContracts(unittest.TestCase):
             "persist-credentials: false", "--self-test",
             "StartMode", "Disabled", "sc.exe create",
             "sc.exe delete", "finally", "H454_WIN32_SCM_DISABLED=PASS",
-            "H454_WIN32_SCM_NOT_PROVISIONED=PASS",
+            "H454_WIN32_SCM_WRONG_SID=DENIED",
             "H454_OWNER_WINDOWS_HOST=NOT_RUN",
         ):
             with self.subTest(required=required):
                 self.assertIn(required, yml)
         self.assertIn("runs-on: windows-2025", yml)
-        self.assertIn("$actual.ServiceSpecificExitCode -ne 454", yml)
+        self.assertIn("$actual.ServiceSpecificExitCode -ne 455", yml)
         self.assertIn("sc.exe config $name start= disabled", yml)
         for forbidden in (
             "workflow_dispatch", "upload-artifact", "HERMES_DEPLOY_KEY",

@@ -27,6 +27,8 @@ internal static class Program
     private const uint ERROR_CALL_NOT_IMPLEMENTED = 120;
     private const uint ERROR_SERVICE_SPECIFIC_ERROR = 1066;
     private const uint NATIVE_NOT_PROVISIONED = 454;
+    private const uint NATIVE_OS_IDENTITY_DENIED = 455;
+    private const uint NATIVE_RUNTIME_NOT_READY = 456;
 
     [UnmanagedFunctionPointer(CallingConvention.Winapi)]
     private delegate void ServiceMainCallback(uint argc, IntPtr argv);
@@ -127,12 +129,28 @@ internal static class Program
             return;
 
         Report(SERVICE_START_PENDING, NO_ERROR, 0, 1000);
-        // There is intentionally no SERVICE_RUNNING branch. Installing this
-        // candidate cannot grant filesystem, network or process capabilities.
-        // On a future approved build replace only after verified Win32 SID,
-        // private state, DPAPI, owner pairing, revocation and transport gates.
+        // Actual Win32 token check: LocalService/SYSTEM or an impersonated
+        // owner process is not an authorized native service identity.
+        if (!NativeHostAdmission.MatchesServiceUser())
+        {
+            Report(SERVICE_STOPPED, ERROR_SERVICE_SPECIFIC_ERROR,
+                NATIVE_OS_IDENTITY_DENIED, 0);
+            return;
+        }
+        // Kernel file-handle and protected NTFS ACL preflight, not a grant.
+        // Missing state or broad original project ACL always fail closed.
+        if (!NativeHostAdmission.PrivateStateIsConfined() ||
+            !NativeHostAdmission.OriginalRootsAreKernelReadOnly())
+        {
+            Report(SERVICE_STOPPED, ERROR_SERVICE_SPECIFIC_ERROR,
+                NATIVE_NOT_PROVISIONED, 0);
+            return;
+        }
+        // There is deliberately STILL NO SERVICE_RUNNING branch: DPAPI
+        // unseal, fresh BRC pairing and live revocation/network worker must
+        // be verified independently before this gate may become active.
         Report(SERVICE_STOPPED, ERROR_SERVICE_SPECIFIC_ERROR,
-            NATIVE_NOT_PROVISIONED, 0);
+            NATIVE_RUNTIME_NOT_READY, 0);
     }
 
     private static uint OnControl(

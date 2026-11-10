@@ -52,3 +52,25 @@ installation APIs, owner-directory access, or MCP registration.
 This source can merge without granting any new host access. On all three
 owner machines: `NATIVE_HOST_PASS=NOT_RUN`,
 `PRODUCTION_NATIVE_DEPLOY=NOT_RUN`, `RUNTIME_NO_GO`. Keep #454 OPEN.
+
+## Real OS service admission (source, still disabled)
+
+The Windows SCM binary now calls NativeHostAdmission before it can
+ever proceed beyond START_PENDING. The actual Windows logon token user
+SID must match NT SERVICE\\HermesCommanderNative. A LocalService or SYSTEM
+process running under the same service key is refused with 1066/455.
+The owner and protected ACL of the private ProgramData/HermesCommanderNative
+directory and two private manifest/device files are inspected through
+Windows FileSystemAclExtensions. Broad/inherited rules and junction or
+reparse targets are refused. Each of the five owner-approved original
+project root DIRECTORY handles must be kernel-readable but not openable
+with FILE_ADD_FILE. No content reads, account changes or write operations
+are performed by these checks.
+
+Even if all these OS checks succeed, the service reports 1066/456
+(NATIVE_RUNTIME_NOT_READY) because a full authenticated BRC device
+worker, DPAPI service identity and live revocation integration still
+must pass separate gates. No source-only check activates a service.
+On disposable Windows CI the LocalService fixture proves refusal 455;
+the actual virtual-account MSI CI must still refuse 454 when no private
+state exists. Real original PC and VPS checks remain NOT_RUN.
