@@ -181,6 +181,41 @@ class TemporaryDisabledInstallation(unittest.TestCase):
                 )
         self.assertTrue(unit.exists())
 
+    def test_partial_write_cleanup_and_occupied_release_survive(self):
+        release, unit, receipt = off._fixed_paths(self.plan, self.paths)
+        # The exclusive writer must remove only the file it created.
+        target = self.paths.units / "partial-created.tmp"
+        with patch.object(off.os, "fchmod", side_effect=OSError("synthetic failure")):
+            with self.assertRaises(off.DisabledInstallDenied):
+                off._write_new(target, b"synthetic", 0o600)
+        self.assertFalse(target.exists())
+        release.mkdir()
+        marker = release / "preexisting.txt"
+        marker.write_text("another actor's original data", encoding="utf-8")
+        with self.assertRaises(off.DisabledInstallDenied):
+            self.install()
+        self.assertEqual(marker.read_text(encoding="utf-8"),
+                         "another actor's original data")
+        self.assertFalse(unit.exists())
+        self.assertFalse(receipt.exists())
+
+    def test_rollback_denies_modified_source_content(self):
+        self.install()
+        release, unit, receipt = off._fixed_paths(self.plan, self.paths)
+        file = release / self.plan.source[0][0]
+        file.chmod(0o644)
+        file.write_text("tampered source", encoding="utf-8")
+        with patch.object(off.sys, "platform", "linux"):
+            with self.assertRaises(off.DisabledInstallDenied):
+                off._rollback_off(
+                    self.plan, paths=self.paths, reload_daemon=self.daemon,
+                    inactive=lambda _unit: True, owner_uid=os.geteuid(),
+                    check_ancestors=False,
+                )
+        self.assertTrue(unit.exists())
+        self.assertTrue(receipt.exists())
+        self.assertEqual(self.daemon.call_count, 1)
+
     def test_symlink_parent_and_present_other_unit_are_denied(self):
         release, unit, receipt = off._fixed_paths(self.plan, self.paths)
         unit.symlink_to(self.paths.receipts)
