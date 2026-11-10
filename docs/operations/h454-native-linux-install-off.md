@@ -13,7 +13,7 @@ or automatic deployment from GitHub Actions.
    Linux bundle SHA-256, protected local install manifest and GitHub archive
    plus checksum receipt from the previously merged source bundle builder.
    Revalidate source TAR with the existing bounded USTAR verifier and
-   exact ten immutable source files, without using tar.extractall.
+   exact 13 immutable source files, without using tar.extractall.
 2. Render the existing hardened `PrivateNetwork=yes`, `Type=oneshot`
    **offline preflight** unit, with **no [Install] section** and no start,
    login, device registration, original-file content access or WSS connection.
@@ -68,3 +68,10 @@ Until the owner has separately authorized and completed installation,
 the statuses are `NATIVE_LINUX_HOST_INSTALL=NOT_RUN`,
 `NATIVE_DEVICE_PAIRED=NO`, `ORIGINAL_HOST_E2E=NOT_RUN`.
 **Issue #454 remains OPEN.**
+
+
+H454 Stage 2A amendment (2026-11-10): the immutable source-bundle allowlist
+now contains 13 Python files, including the existing owner-bound BRC
+pairing/status helpers and the new systemd one-session READ worker. Source
+packaging does not install or activate the native service. Actual owner
+VPS installation and trusted signed/provenance approval remain separate.

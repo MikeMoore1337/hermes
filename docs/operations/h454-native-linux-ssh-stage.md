@@ -22,7 +22,7 @@ a second MCP server. Host deployment is separately owner authorized.
 - One canonical bounded JSON frame contains only existing exact SHA,
   target label, SHA-256, bundle and verifier receipt. Archive content
   is rechecked by the already reviewed strict bounded USTAR verifier
-  against the exact ten source files. No tar extraction is performed.
+  against the exact 13 source files. No tar extraction is performed.
 - The nonroot stage command exclusively creates two private 0600 files
   in an exact release subdirectory. It cannot call sudo, systemctl,
   useradd, deploy, Docker, network listeners, shell, or read original
@@ -80,3 +80,10 @@ upload any owner tokens, or change existing BRC/WSS.
 Until the above host actions: VPS_NATIVE_STAGE=NOT_RUN,
 VPS_NATIVE_INSTALL=NOT_RUN, OWNER_HOST_E2E=NOT_RUN, RUNTIME_NO_GO.
 Issue #454 remains OPEN.
+
+
+H454 Stage 2A amendment (2026-11-10): the immutable source-bundle allowlist
+now contains 13 Python files, including the existing owner-bound BRC
+pairing/status helpers and the new systemd one-session READ worker. Source
+packaging does not install or activate the native service. Actual owner
+VPS installation and trusted signed/provenance approval remain separate.

@@ -147,3 +147,10 @@ stays paused.
 See [native host install plan](h454-native-host-install-approval-plan.md),
 [offline systemd preflight unit](h454-linux-native-systemd-preflight.md)
 and [protected local runtime preflight](h454-native-linux-runtime-preflight.md).
+
+
+H454 Stage 2A amendment (2026-11-10): the immutable source-bundle allowlist
+now contains 13 Python files, including the existing owner-bound BRC
+pairing/status helpers and the new systemd one-session READ worker. Source
+packaging does not install or activate the native service. Actual owner
+VPS installation and trusted signed/provenance approval remain separate.
