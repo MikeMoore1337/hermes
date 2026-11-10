@@ -79,7 +79,7 @@ class WindowsScmSourceContracts(unittest.TestCase):
             "SetNamedSecurityInfo", "CryptUnprotectData",
         ):
             self.assertNotIn(forbidden, gate)
-        self.assertIn("D:\\\\Pet-projects\\\\hermes", gate)
+        self.assertIn(r'@"D:\Pet-projects\hermes"', gate)
 
     def test_ci_is_disposable_and_never_publishes_unsigned_service(self):
         yml = CI.read_text(encoding="utf-8")
