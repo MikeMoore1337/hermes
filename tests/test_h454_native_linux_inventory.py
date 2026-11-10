@@ -26,15 +26,17 @@ class InventoryContracts(unittest.TestCase):
     def test_strict_report_for_both_native_targets(self):
         for target in inv.TARGETS:
             with self.subTest(target=target):
-                got = inv.verify_report(encoded(fixture(target)),
-                                        expected_target=target)
-                self.assertFalse(got["native_host_pass"])
-                self.assertEqual(got["owner_roots"], "UNVERIFIED")
+                for raw in (encoded(fixture(target)),
+                            encoded(fixture(target)) + b"\n"):
+                    got = inv.verify_report(raw, expected_target=target)
+                    self.assertFalse(got["native_host_pass"])
+                    self.assertEqual(got["owner_roots"], "UNVERIFIED")
 
     def test_forged_or_private_output_denied(self):
         baseline = fixture()
         cases = (
-            b"{}", b"\xff", encoded(baseline)+b"\n",
+            b"{}", b"\xff", b" " + encoded(baseline),
+            encoded(baseline) + b"\n\n",
             encoded({**baseline, "target": "yfc-vps"}),
             encoded({**baseline, "native_host_pass": True}),
             encoded({**baseline, "owner_roots": "/root"}),
