@@ -69,15 +69,17 @@ jobs:
           printf '%s\n' "$key" > "$private/id"
           printf '%s\n' "$known" > "$private/known_hosts"
           chmod 0600 "$private/id" "$private/known_hosts"
-          ssh -F /dev/null -i "$private/id" \
+          # Enforce a total remote read deadline and hard response-size cap
+          # before JSON parsing: a compromised host cannot stream forever.
+          timeout 25s ssh -F /dev/null -i "$private/id" \
             -o IdentitiesOnly=yes -o BatchMode=yes \
             -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile="$private/known_hosts" \
             -o ConnectTimeout=8 -o ConnectionAttempts=1 \
             -o RequestTTY=no -o ForwardAgent=no \
             -o ForwardX11=no -o ClearAllForwardings=yes \
-            "h454-native-inventory@$host" inventory \
-            > "$private/raw.json" 2>/dev/null || {
+            "h454-native-inventory@$host" inventory 2>/dev/null \
+            | head -c 4097 > "$private/raw.json" || {
               echo 'H454_INVENTORY=HOLD_REMOTE' >&2; exit 2
             }
           python3 -B -m scripts.h454_native_linux_inventory \
