@@ -15,9 +15,12 @@ No agent installation or production deployment is performed.
   shell, forwarding, PTY or write permissions to original projects.
   Its `SSH_ORIGINAL_COMMAND` must be exactly `inventory`.
 - GitHub Actions manual workflow uses the existing `main` SHA gate and
-  **six new, separate** GitHub secrets for the two targets: host address,
-  dedicated private key and trusted pinned `known_hosts` record.
-  None are supplied today; `HERMES_DEPLOY_KEY` is not used.
+  **two separate GitHub Environments**: `h454-hermes-native-inventory`
+  and `h454-yfc-native-inventory`. Each environment holds only its own
+  `H454_NATIVE_INVENTORY_HOST`, `H454_NATIVE_INVENTORY_KEY` and
+  `H454_NATIVE_INVENTORY_KNOWN_HOSTS` secrets. A job for one host never
+  loads the other host's key. None are supplied today; `HERMES_DEPLOY_KEY`
+  is not used.
 - The workflow runs one read-only SSH request, checks the bounded report
   against an exact fixed schema and uploads it for two days. No host paths,
   source file contents, tokens or raw errors are included. Original Linux
