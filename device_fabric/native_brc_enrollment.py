@@ -33,7 +33,7 @@ TOKEN = re.compile(r"brc_dev_[A-Za-z0-9_-]{40,256}\Z")
 DEVICE_CODE = re.compile(r"[A-Za-z0-9_-]{24,256}\Z")
 USER_CODE = re.compile(r"[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}\Z")
 MAX_BODY = 2048
-MAX_POLLS = 10
+MAX_POLLS = 90
 MAX_INTERVAL = 20
 MAX_TTL = 900
 
@@ -125,6 +125,7 @@ def poll(
     post: Callable[[str, bytes], tuple[int, bytes]],
     sleep: Callable[[float], object] = time.sleep,
     monotonic: Callable[[], float] = time.monotonic,
+    expected_ws_url: str,
 ) -> Paired:
     """Return owner-bound fresh ID/token in process memory. Never log them.
 
@@ -138,7 +139,12 @@ def poll(
             or not 1 <= pending.interval <= MAX_INTERVAL
             or not 30 <= pending.expires_in <= MAX_TTL
             or not callable(post) or not callable(sleep)
-            or not callable(monotonic)):
+            or not callable(monotonic)
+            or type(expected_ws_url) is not str
+            or expected_ws_url not in (
+                "wss://hermes.mikemoore.top/ws",
+                "ws://127.0.0.1:38183/ws",
+            )):
             raise EnrollmentDenied("native_enrollment_denied")
         deadline = monotonic() + pending.expires_in
         for _ in range(MAX_POLLS):
@@ -172,7 +178,8 @@ def poll(
                 or type(data["device_token"]) is not str
                 or TOKEN.fullmatch(data["device_token"]) is None
                 or data["token_type"] != "bearer"
-                or type(data["ws_url"]) is not str):
+                or type(data["ws_url"]) is not str
+                or data["ws_url"] != expected_ws_url):
                 raise EnrollmentDenied("native_enrollment_denied")
             return Paired(pending.target, data["device_id"],
                           data["device_token"], data["ws_url"])
