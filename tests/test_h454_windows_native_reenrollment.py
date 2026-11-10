@@ -251,6 +251,42 @@ class NewWindowsIdentityRunTests(unittest.TestCase):
         self.assertTrue(socket.closed)
         self.assertEqual([x["type"] for x in socket.sent], ["hello"])
 
+    def test_handmade_candidate_cannot_bypass_validated_identity(self):
+        from dataclasses import replace
+        forged = (
+            replace(self.prepared, device_id=native.REVOKED_LEGACY_ID),
+            replace(self.prepared, relay_url="ws://127.0.0.1/ws"),
+            replace(self.prepared, sealed_bearer=b"short"),
+            replace(self.prepared, release_sha="BAD"),
+            replace(self.prepared, expires_at=True),
+        )
+        with patch.object(native.outbound, "run_session") as run:
+            with patch.object(native.sys, "platform", "win32"):
+                for item in forged:
+                    with self.subTest(item=repr(item)), self.assertRaises(
+                        native.WindowsNativeIdentityDenied
+                    ):
+                        native.run_once(item, **self.kwargs)
+            run.assert_not_called()
+
+    def test_late_denial_on_socket_enter_closes_underlying_connection(self):
+        class Entered:
+            closed = False
+            def __enter__(self):
+                return self
+            def __exit__(self, *_args):
+                self.closed = True
+        connection = Entered()
+        checks = iter((None, None, Exception("revoked")))
+        def gate():
+            result = next(checks)
+            if result is not None:
+                raise result
+        guarded = native._GuardedSocket(connection, gate)
+        with self.assertRaisesRegex(Exception, "revoked"):
+            guarded.__enter__()
+        self.assertTrue(connection.closed)
+
     def test_fail_closed_when_trusted_callback_crashes_no_secret_in_exception(self):
         secret = BEARER + " C:\\private"
         def bad(_blob):

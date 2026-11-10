@@ -99,7 +99,7 @@ def parse_local_session(
             manifest, expected_release=expected_release,
             expected_target="windows",
         )
-        if (candidate.service_name, candidate.service_identity) != SERVICE["windows"]
+        if ((candidate.service_name, candidate.service_identity) != SERVICE["windows"]
             or candidate.roots != tuple(sorted(WINDOWS_ROOTS.items()))):
             raise WindowsNativeIdentityDenied("native_win32_identity_denied")
 
@@ -153,6 +153,18 @@ def _strict_gate(
         now = utcnow()
         if (type(candidate) is not PrivateWindowsSession
             or sys.platform != "win32"
+            or type(candidate.release_sha) is not str
+            or SHA40.fullmatch(candidate.release_sha) is None
+            or type(candidate.manifest_sha256) is not str
+            or SHA64.fullmatch(candidate.manifest_sha256) is None
+            or type(candidate.device_id) is not str
+            or NEW_ID.fullmatch(candidate.device_id) is None
+            or candidate.device_id == REVOKED_LEGACY_ID
+            or type(candidate.relay_url) is not str
+            or candidate.relay_url != RELAY
+            or type(candidate.sealed_bearer) is not bytes
+            or not 32 <= len(candidate.sealed_bearer) <= MAX_SEALED_BYTES
+            or type(candidate.expires_at) is not int
             or type(now) not in (int, float) or not math.isfinite(now)
             or not 0 < candidate.expires_at - now <= MAX_BEARER_LIFETIME_SECONDS
             or service_os_verified() is not True
@@ -174,7 +186,13 @@ class _GuardedSocket:
     def __enter__(self) -> "_GuardedSocket":
         self._gate()
         self._active = self._socket.__enter__()
-        self._gate()
+        try:
+            # Revocation or OS-policy change can occur while opening.
+            # Release underlying resources on a late gate denial.
+            self._gate()
+        except BaseException:
+            self._socket.__exit__(*sys.exc_info())
+            raise
         return self
 
     def __exit__(self, *args: Any) -> object:
