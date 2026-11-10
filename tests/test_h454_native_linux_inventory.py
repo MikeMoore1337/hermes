@@ -91,6 +91,7 @@ class InventoryContracts(unittest.TestCase):
             "secrets.H454_NATIVE_INVENTORY_HOST",
             "secrets.H454_NATIVE_INVENTORY_KNOWN_HOSTS",
             "StrictHostKeyChecking=yes", "ClearAllForwardings=yes",
+            "timeout 25s ssh", "head -c 4097",
             "persist-credentials: false", "inventory",
         ):
             with self.subTest(expected=expected):
