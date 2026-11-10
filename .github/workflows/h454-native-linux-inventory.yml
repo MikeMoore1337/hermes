@@ -22,6 +22,8 @@ permissions:
 jobs:
   inventory:
     if: github.event_name == 'workflow_dispatch'
+    environment:
+      name: ${{ inputs.target == 'hermes-vps' && 'h454-hermes-native-inventory' || 'h454-yfc-native-inventory' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -50,22 +52,14 @@ jobs:
         shell: bash
         env:
           TARGET: ${{ inputs.target }}
-          HERMES_HOST: ${{ secrets.H454_NATIVE_HERMES_INVENTORY_HOST }}
-          HERMES_KEY: ${{ secrets.H454_NATIVE_HERMES_INVENTORY_KEY }}
-          HERMES_KNOWN_HOSTS: ${{ secrets.H454_NATIVE_HERMES_KNOWN_HOSTS }}
-          YFC_HOST: ${{ secrets.H454_NATIVE_YFC_INVENTORY_HOST }}
-          YFC_KEY: ${{ secrets.H454_NATIVE_YFC_INVENTORY_KEY }}
-          YFC_KNOWN_HOSTS: ${{ secrets.H454_NATIVE_YFC_KNOWN_HOSTS }}
+          HOST: ${{ secrets.H454_NATIVE_INVENTORY_HOST }}
+          KEY: ${{ secrets.H454_NATIVE_INVENTORY_KEY }}
+          KNOWN_HOSTS: ${{ secrets.H454_NATIVE_INVENTORY_KNOWN_HOSTS }}
         run: |
           set -euo pipefail
           umask 077
-          if [[ "$TARGET" == hermes-vps ]]; then
-            host="$HERMES_HOST"; key="$HERMES_KEY"; known="$HERMES_KNOWN_HOSTS"
-          elif [[ "$TARGET" == yfc-vps ]]; then
-            host="$YFC_HOST"; key="$YFC_KEY"; known="$YFC_KNOWN_HOSTS"
-          else
-            echo 'H454_INVENTORY=HOLD_TARGET' >&2; exit 2
-          fi
+          [[ "$TARGET" == hermes-vps || "$TARGET" == yfc-vps ]] || exit 2
+          host="$HOST"; key="$KEY"; known="$KNOWN_HOSTS"
           [[ "$host" =~ ^[A-Za-z0-9.-]{3,253}$ &&
              -n "$key" && -n "$known" ]] || {
             echo 'H454_INVENTORY=HOLD_UNPROVISIONED' >&2; exit 2
@@ -81,6 +75,7 @@ jobs:
             -o UserKnownHostsFile="$private/known_hosts" \
             -o ConnectTimeout=8 -o ConnectionAttempts=1 \
             -o RequestTTY=no -o ForwardAgent=no \
+            -o ForwardX11=no -o ClearAllForwardings=yes \
             "h454-native-inventory@$host" inventory \
             > "$private/raw.json" 2>/dev/null || {
               echo 'H454_INVENTORY=HOLD_REMOTE' >&2; exit 2
