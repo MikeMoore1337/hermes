@@ -20,8 +20,12 @@ installation APIs, owner-directory access, or MCP registration.
 - Windows Actions compiles the real EXE, validates correct/wrong SHA and
   direct-service refusal, then creates a **disabled** disposable SCM service
   under LocalService only on Microsoft's temporary hosted Windows runner,
-  verifies Disabled/Stopped and removes that CI service. It never starts it.
-  LocalService on a CI fixture is not the proposed owner-PC service SID.
+  verifies Disabled/Stopped, changes **only this disposable CI fixture** to
+  manual start, starts it once and requires a real SCM refusal with
+  `ERROR_SERVICE_SPECIFIC_ERROR=1066` and `NATIVE_NOT_PROVISIONED=454`.
+  It then resets Disabled and deletes the service in a finally block.
+  No owner Windows system is contacted. LocalService on a CI fixture is
+  not the proposed owner-PC service SID.
 - The workflow deliberately publishes no unsigned service EXE artifact.
   No Windows runner permission can change the user's original PC.
 

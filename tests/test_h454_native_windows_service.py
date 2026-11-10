@@ -61,14 +61,18 @@ class WindowsScmSourceContracts(unittest.TestCase):
             "persist-credentials: false", "--self-test",
             "StartMode", "Disabled", "sc.exe create",
             "sc.exe delete", "finally", "H454_WIN32_SCM_DISABLED=PASS",
+            "H454_WIN32_SCM_NOT_PROVISIONED=PASS",
             "H454_OWNER_WINDOWS_HOST=NOT_RUN",
         ):
             with self.subTest(required=required):
                 self.assertIn(required, yml)
+        self.assertIn("runs-on: windows-2025", yml)
+        self.assertIn("$actual.ServiceSpecificExitCode -ne 454", yml)
+        self.assertIn("sc.exe config $name \"start= disabled\"", yml)
         for forbidden in (
             "workflow_dispatch", "upload-artifact", "HERMES_DEPLOY_KEY",
             "secrets.", "ssh ", "scp ", "docker ",
-            "sc.exe start", "Start-Service", "Set-Service",
+            "Start-Service", "Set-Service",
             "service start", "sudo ", "pwsh -EncodedCommand",
         ):
             with self.subTest(forbidden=forbidden):
