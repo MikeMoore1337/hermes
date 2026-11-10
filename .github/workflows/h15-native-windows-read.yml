@@ -20,6 +20,8 @@ on:
       - tests/test_h15_native_windows_read.py
       - tests/test_h15_native_windows_read_on_win.py
       - device_fabric/windows_native_reenrollment.py
+      - device_fabric/windows_native_dpapi.py
+      - tests/test_h454_windows_native_dpapi.py
       - tests/test_h454_windows_native_reenrollment.py
       - tests/test_h15_native_windows_list.py
       - scripts/h15_native_effect_receipts.py
@@ -131,6 +133,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'H454_WIN32_NEW_IDENTITY_DENIED' }
           Write-Output 'H454_WIN32_FRESH_READ_IDENTITY=PASS'
           Write-Output 'H454_WINDOWS_ORIGINAL_HOST=NOT_RUN'
+      - name: Prove real Windows DPAPI CurrentUser isolation with synthetic bearer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -B -m unittest -v tests.test_h454_windows_native_dpapi
+          if ($LASTEXITCODE -ne 0) { throw 'H454_WIN32_DPAPI_CURRENT_USER_DENIED' }
+          Write-Output 'H454_WIN32_DPAPI_CURRENT_USER=PASS'
+          Write-Output 'H454_WINDOWS_OWNER_DEVICE_ACCESS=NOT_RUN'
       - name: Compile native relay gate and verify owner/device fail closed
         shell: pwsh
         run: |
