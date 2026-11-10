@@ -1,0 +1,152 @@
+name: H454 original Linux source staging via distinct SSH (OWNER-GATED)
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_sha:
+        description: Exact current main SHA
+        required: true
+        type: string
+      target:
+        description: Original VPS target (NOT a Docker sandbox)
+        required: true
+        type: choice
+        options:
+          - hermes-vps
+          - yfc-vps
+      action:
+        description: Stage verified source or clean EXACT staged bytes
+        required: true
+        type: choice
+        options:
+          - stage
+          - cleanup
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: h454-native-linux-stage-OWNER
+  cancel-in-progress: false
+
+jobs:
+  original-host-staging:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    environment:
+      name: ${{ inputs.target == 'hermes-vps' && 'h454-hermes-native-stage' || 'h454-yfc-native-stage' }}
+    timeout-minutes: 10
+    steps:
+      - name: Require exact main SHA, owner-reviewed environment and successful main checks
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_SHA: ${{ inputs.release_sha }}
+          OWNER_APPROVED: ${{ vars.H454_NATIVE_STAGE_OWNER_APPROVED }}
+          TARGET: ${{ inputs.target }}
+          ACTION: ${{ inputs.action }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == 'refs/heads/main' &&
+             "$EXPECTED_SHA" =~ ^[a-f0-9]{40}$ &&
+             "$EXPECTED_SHA" == "$GITHUB_SHA" &&
+             "$OWNER_APPROVED" == 'true' ]] || {
+            echo 'H454_NATIVE_STAGE=HOLD_OWNER_OR_SHA'; exit 2;
+          }
+          [[ "$TARGET" == hermes-vps || "$TARGET" == yfc-vps ]] || exit 2
+          [[ "$ACTION" == stage || "$ACTION" == cleanup ]] || exit 2
+          latest="$(gh api "repos/$GITHUB_REPOSITORY/branches/main" --jq .commit.sha)"
+          [[ "$latest" == "$GITHUB_SHA" ]] || exit 2
+          runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$GITHUB_SHA&branch=main&event=push&per_page=100")"
+          quality="$(jq -r '[.workflow_runs[]|select(.name=="Hermes repository checks")]|first|.conclusion//"pending"' <<< "$runs")"
+          ui="$(jq -r '[.workflow_runs[]|select(.name=="Hermes Control Center UI")]|first|.conclusion//"pending"' <<< "$runs")"
+          [[ "$quality" == success && "$ui" == success ]] || {
+            echo 'H454_NATIVE_STAGE=HOLD_CI';exit 2;
+          }
+          echo 'H454_NATIVE_STAGE_OWNER_AND_CI=PASS'
+      - name: Checkout exact approved source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Build, verify and frame exact Linux source bundle
+        shell: bash
+        env:
+          TARGET: ${{ inputs.target }}
+          EXACT_SHA: ${{ github.sha }}
+          ACTION: ${{ inputs.action }}
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$EXACT_SHA" ]] || exit 2
+          umask 077
+          private="$RUNNER_TEMP/h454-ssh-stage-sources"
+          install -d -m 0700 "$private"
+          python3 -B -m scripts.h454_native_readonly_bundle build \
+            --repo "$GITHUB_WORKSPACE" --out-dir "$private" \
+            --target "$TARGET" --release-sha "$EXACT_SHA"
+          python3 -B -m scripts.h454_native_readonly_bundle verify \
+            --out-dir "$private" --target "$TARGET" --release-sha "$EXACT_SHA"
+          python3 -B -m scripts.h454_native_linux_ssh_stage_frame encode \
+            --target "$TARGET" --release-sha "$EXACT_SHA" \
+            --bundle-dir "$private" --mode "$ACTION" > "$RUNNER_TEMP/h454-ssh-stage-request"
+          test -s "$RUNNER_TEMP/h454-ssh-stage-request"
+          echo 'H454_NATIVE_STAGE_BUNDLE_VERIFIED=YES'
+      - name: SSH forced command only (distinct nonroot host key per environment)
+        shell: bash
+        env:
+          TARGET: ${{ inputs.target }}
+          ACTION: ${{ inputs.action }}
+          HOST: ${{ secrets.H454_NATIVE_STAGE_HOST }}
+          SSH_KEY: ${{ secrets.H454_NATIVE_STAGE_KEY }}
+          KNOWN_HOSTS: ${{ secrets.H454_NATIVE_STAGE_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          umask 077
+          [[ "$TARGET" == hermes-vps || "$TARGET" == yfc-vps ]] || exit 2
+          [[ "$ACTION" == stage || "$ACTION" == cleanup ]] || exit 2
+          [[ "$HOST" =~ ^[A-Za-z0-9.-]{3,253}$ && -n "$SSH_KEY" &&
+             -n "$KNOWN_HOSTS" ]] || {
+            echo 'H454_NATIVE_STAGE=HOLD_SSH_UNPROVISIONED'; exit 2;
+          }
+          temp="$(mktemp -d)"
+          trap 'rm -rf "$temp"' EXIT
+          printf '%s\n' "$SSH_KEY" > "$temp/id"
+          printf '%s\n' "$KNOWN_HOSTS" > "$temp/known_hosts"
+          chmod 0600 "$temp/id" "$temp/known_hosts"
+          timeout 35s ssh -F /dev/null -i "$temp/id" \
+            -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$temp/known_hosts" \
+            -o ConnectTimeout=8 -o ConnectionAttempts=1 \
+            -o RequestTTY=no -o ForwardAgent=no -o ForwardX11=no \
+            -o ClearAllForwardings=yes \
+            "h454-native-stage@$HOST" "$ACTION" \
+            < "$RUNNER_TEMP/h454-ssh-stage-request" \
+            2>/dev/null | head -c 2049 > "$RUNNER_TEMP/h454-ssh-stage-response" || {
+              echo 'H454_NATIVE_STAGE=HOLD_SSH';exit 2;
+            }
+          echo 'H454_NATIVE_STAGE_RESTRICTED_SSH=RESPONSE_RECEIVED'
+      - name: Verify bounded exact receipt, never native install
+        shell: bash
+        env:
+          EXACT_SHA: ${{ github.sha }}
+          TARGET: ${{ inputs.target }}
+          ACTION: ${{ inputs.action }}
+        run: |
+          set -euo pipefail
+          python3 -B -m scripts.h454_native_linux_ssh_stage_frame verify \
+            --target "$TARGET" --release-sha "$EXACT_SHA" \
+            --bundle-dir "$RUNNER_TEMP/h454-ssh-stage-sources" --mode "$ACTION" \
+            < "$RUNNER_TEMP/h454-ssh-stage-response" \
+            > "$RUNNER_TEMP/h454-native-ssh-stage-proof.json"
+          echo 'H454_NATIVE_STAGE=SOURCE_ONLY'
+          echo 'H454_NATIVE_LINUX_SYSTEMD_INSTALLED=NO'
+          echo 'H454_NATIVE_DEVICE_PAIRED=NO'
+          echo 'H454_OWNER_ORIGINAL_PROJECT_FILES=UNCHANGED'
+      - name: Upload only sanitized verification receipt
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: h454-ssh-stage-proof-${{ inputs.target }}-${{ inputs.action }}
+          path: ${{ runner.temp }}/h454-native-ssh-stage-proof.json
+          if-no-files-found: error
+          retention-days: 2
