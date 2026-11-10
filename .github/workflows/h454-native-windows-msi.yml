@@ -88,6 +88,34 @@ jobs:
               throw 'H454_WINDOWS_MSI_DISABLED_SCOPE_DENIED'
             }
             Write-Output 'H454_WINDOWS_MSI_DISABLED=PASS'
+            # Disposable runner only: a temporary demand-start proves that
+            # the actual MSI-installed virtual service account can launch
+            # and that the unprovisioned binary refuses SCM RUNNING.
+            & sc.exe config $name start= demand | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw 'H454_WINDOWS_MSI_CI_DEMAND_DENIED' }
+            try {
+              $PSNativeCommandUseErrorActionPreference = $false
+              & sc.exe start $name *> $null
+              $observed = $null
+              for ($attempt = 0; $attempt -lt 20; $attempt++) {
+                Start-Sleep -Milliseconds 500
+                $observed = Get-CimInstance Win32_Service -Filter "Name='$name'"
+                if ($observed.State -eq 'Stopped' -and
+                    $observed.ExitCode -eq 1066 -and
+                    $observed.ServiceSpecificExitCode -eq 454) { break }
+              }
+              if ($null -eq $observed -or $observed.State -ne 'Stopped' -or
+                  $observed.ExitCode -ne 1066 -or
+                  $observed.ServiceSpecificExitCode -ne 454) {
+                throw 'H454_WINDOWS_MSI_VIRTUAL_SERVICE_RUNTIME_DENIED'
+              }
+              Write-Output 'H454_WINDOWS_MSI_VIRTUAL_SERVICE_FAIL_CLOSED=PASS'
+            } finally {
+              & sc.exe config $name start= disabled | Out-Null
+              if ($LASTEXITCODE -ne 0) {
+                throw 'H454_WINDOWS_MSI_CI_RESET_DISABLED_DENIED'
+              }
+            }
           } finally {
             if ($installed -or (Get-Service -Name $name -ErrorAction SilentlyContinue)) {
               $undo = Start-Process -FilePath $msiexec -ArgumentList @('/x', $msi, '/qn', '/norestart', 'REBOOT=ReallySuppress') -Wait -PassThru -NoNewWindow
