@@ -1,0 +1,41 @@
+name: H454 Linux native ACTIVE unit root-console registration (NO HOST)
+
+on:
+  pull_request:
+    paths:
+      - scripts/h454_native_linux_active_install.py
+      - scripts/h454_native_linux_active_unit.py
+      - tests/test_h454_native_linux_active_install.py
+      - docs/operations/h454-native-linux-active-install.md
+      - .github/workflows/h454-native-linux-active-install.yml
+
+permissions:
+  contents: read
+
+jobs:
+  native-unit-disabled-and-rollback:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout source with no retained GitHub token
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Real temporary Linux unit filesystem installation + rollback
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -m unittest -v tests.test_h454_native_linux_active_install
+          echo 'H454_ACTIVE_UNIT_TEMP_INSTALL_ROLLBACK=PASS'
+          echo 'H454_ORIGINAL_OWNER_HOSTS=NOT_CONTACTED'
+      - name: Validate all existing pinned source/offline installer and real unit syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -m unittest -v \
+            tests.test_h454_native_linux_install_off \
+            tests.test_h454_native_linux_service
+          echo 'H454_LINUX_NATIVE_ACTIVE_UNIT_SOURCE=PASS'
+          echo 'H454_SYSTEMD_SERVICE_INSTALLED=NO'
+          echo 'H454_NATIVE_DEVICE_PAIRED=NO'
