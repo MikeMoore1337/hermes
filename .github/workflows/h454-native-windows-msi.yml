@@ -1,0 +1,103 @@
+name: H454 Windows MSI disabled native install (disposable CI only)
+
+on:
+  pull_request:
+    paths:
+      - deploy/h454/native-windows-msi/**
+      - deploy/h454/native-windows-service/**
+      - docs/operations/h454-native-windows-msi.md
+      - tests/test_h454_native_windows_msi.py
+      - .github/workflows/h454-native-windows-msi.yml
+
+permissions:
+  contents: read
+
+jobs:
+  msi-offline-smoke:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: windows-2025
+    timeout-minutes: 18
+    steps:
+      - name: Checkout without persisted credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Verify disabled MSI policy
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -B -m unittest -v tests.test_h454_native_windows_msi
+          if ($LASTEXITCODE -ne 0) { throw 'H454_WINDOWS_MSI_POLICY_DENIED' }
+      - name: Set up free .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Build unsigned MSI with pinned WiX 6.0.0, no upload
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dir = Join-Path $env:RUNNER_TEMP 'h454-native-msi'
+          New-Item -ItemType Directory -Path $dir -ErrorAction Stop | Out-Null
+          dotnet publish 'deploy/h454/native-windows-service/HermesCommanderNativeService.csproj' --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:DebugType=None -p:DebugSymbols=false "-p:SourceRevisionId=$env:GITHUB_SHA" -o $dir
+          if ($LASTEXITCODE -ne 0) { throw 'H454_WIN32_SERVICE_BUILD_DENIED' }
+          $exe = Join-Path $dir 'HermesCommanderNativeService.exe'
+          if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw 'H454_WIN32_SERVICE_MISSING' }
+          $probe = Start-Process -FilePath $exe -ArgumentList @('--self-test', $env:GITHUB_SHA) -PassThru -Wait
+          if ($probe.ExitCode -ne 0) { throw 'H454_WIN32_SERVICE_SHA_DENIED' }
+          $tools = Join-Path $env:RUNNER_TEMP 'h454-wix'
+          dotnet tool install wix --version 6.0.0 --tool-path $tools
+          if ($LASTEXITCODE -ne 0) { throw 'H454_WIX_INSTALL_DENIED' }
+          $wix = Join-Path $tools 'wix.exe'
+          & $wix --version
+          if ($LASTEXITCODE -ne 0) { throw 'H454_WIX_VERSION_DENIED' }
+          $msi = Join-Path $dir 'HermesCommanderNative-Disabled-CI.msi'
+          & $wix build 'deploy/h454/native-windows-msi/Package.wxs' -arch x64 "-dServiceExe=$exe" -out $msi
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $msi -PathType Leaf)) {
+            throw 'H454_WINDOWS_MSI_BUILD_DENIED'
+          }
+          if ((Get-AuthenticodeSignature -LiteralPath $msi).Status.ToString() -ne 'NotSigned') {
+            throw 'H454_WINDOWS_MSI_UNEXPECTED_SIGNATURE'
+          }
+          Write-Output 'H454_WINDOWS_MSI_BUILD=PASS'
+          Write-Output 'H454_OWNER_WINDOWS_MSI_NOT_INSTALLED=YES'
+      - name: Verify real disabled MSI install then rollback on disposable runner
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $name = 'HermesCommanderNative'
+          $dir = Join-Path $env:RUNNER_TEMP 'h454-native-msi'
+          $msi = Join-Path $dir 'HermesCommanderNative-Disabled-CI.msi'
+          $installedExe = Join-Path $env:ProgramFiles 'Hermes Commander Native/HermesCommanderNativeService.exe'
+          $msiexec = Join-Path $env:WINDIR 'System32/msiexec.exe'
+          if ($msi -match '\s') { throw 'H454_RUNNER_MSI_PATH_UNSUPPORTED' }
+          if ((Get-Service -Name $name -ErrorAction SilentlyContinue) -or
+              (Test-Path -LiteralPath $installedExe)) {
+            throw 'H454_WINDOWS_MSI_PREEXISTING_SERVICE'
+          }
+          $installed = $false
+          try {
+            $proc = Start-Process -FilePath $msiexec -ArgumentList @('/i', $msi, '/qn', '/norestart', 'REBOOT=ReallySuppress') -Wait -PassThru -NoNewWindow
+            if ($proc.ExitCode -ne 0) { throw "H454_WINDOWS_MSI_INSTALL_DENIED:$($proc.ExitCode)" }
+            $installed = $true
+            $svc = Get-CimInstance -ClassName Win32_Service -Filter "Name='$name'"
+            if ($null -eq $svc -or $svc.StartMode -ne 'Disabled' -or
+                $svc.State -ne 'Stopped' -or
+                $svc.StartName -cne 'NT SERVICE\HermesCommanderNative' -or
+                $svc.PathName -notmatch '--service' -or
+                -not (Test-Path -LiteralPath $installedExe -PathType Leaf)) {
+              throw 'H454_WINDOWS_MSI_DISABLED_SCOPE_DENIED'
+            }
+            Write-Output 'H454_WINDOWS_MSI_DISABLED=PASS'
+          } finally {
+            if ($installed -or (Get-Service -Name $name -ErrorAction SilentlyContinue)) {
+              $undo = Start-Process -FilePath $msiexec -ArgumentList @('/x', $msi, '/qn', '/norestart', 'REBOOT=ReallySuppress') -Wait -PassThru -NoNewWindow
+              if ($undo.ExitCode -ne 0) { throw 'H454_WINDOWS_MSI_ROLLBACK_DENIED' }
+            }
+            if ((Get-Service -Name $name -ErrorAction SilentlyContinue) -or
+                (Test-Path -LiteralPath $installedExe -PathType Leaf)) {
+              throw 'H454_WINDOWS_MSI_ORPHANED_SERVICE'
+            }
+          }
+          Write-Output 'H454_WINDOWS_MSI_UNINSTALL=PASS'
+          Write-Output 'H454_OWNER_WINDOWS_MSI_NOT_INSTALLED=YES'
+          Write-Output 'H454_NATIVE_HOST_PASS=NOT_RUN'
