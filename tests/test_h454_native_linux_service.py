@@ -160,10 +160,10 @@ class OSIsolationKernelTests(unittest.TestCase):
 
     def test_unprivileged_host_without_real_systemd_is_denied(self):
         with patch.object(service,"_service_identity"), \
-             patch.object(service.STATUS,"read_text",
-                          return_value=kernel_status()), \
-             patch.object(service.CGROUP,"read_text",
-                          return_value="0::/user.slice/session-3.scope"), \
+             patch.object(service,"STATUS",SimpleNamespace(
+                 read_text=lambda **_: kernel_status())), \
+             patch.object(service,"CGROUP",SimpleNamespace(
+                 read_text=lambda **_: "0::/user.slice/session-3.scope")), \
              patch.dict(service.os.environ,{"INVOCATION_ID":"e"*32}):
             self.assertFalse(service.real_os_isolation_verified())
 
