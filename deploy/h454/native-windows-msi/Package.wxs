@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- H454: first-time OFF installation only, never start native agent. -->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Id="MikeMoore1337.HermesCommander.Native.Disabled"
+           Name="Hermes Commander Native (disabled)"
+           Manufacturer="Hermes Agent"
+           Version="0.1.0"
+           UpgradeCode="A1F3E0C7-EC54-4450-BE28-8F01BDE32A50"
+           Language="1033"
+           Compressed="yes"
+           InstallerVersion="500"
+           Scope="perMachine">
+    <MediaTemplate EmbedCab="yes" />
+    <!-- No adoption or modification of a pre-existing service. -->
+    <Property Id="H454_EXISTING_NATIVE_SERVICE">
+      <RegistrySearch Id="H454ExistingService"
+                      Root="HKLM"
+                      Key="SYSTEM\CurrentControlSet\Services\HermesCommanderNative"
+                      Name="ImagePath" Type="raw" />
+    </Property>
+    <Launch Condition="Installed OR NOT H454_EXISTING_NATIVE_SERVICE"
+            Message="HermesCommanderNative already exists. Refusing replacement." />
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Hermes Commander Native" />
+    </StandardDirectory>
+    <DirectoryRef Id="INSTALLFOLDER">
+      <Component Id="NativeServiceComponent" Bitness="always64" Guid="*">
+        <File Id="HermesCommanderNativeServiceExe" Source="$(var.ServiceExe)"
+              KeyPath="yes" />
+        <ServiceInstall Id="NativeService"
+                        Name="HermesCommanderNative"
+                        DisplayName="Hermes Commander Native (disabled)"
+                        Description="Hermes original-host READ broker, not provisioned"
+                        Type="ownProcess" Start="disabled"
+                        ErrorControl="normal" Account="NT SERVICE\HermesCommanderNative"
+                        Arguments="--service" Vital="yes" />
+        <ServiceControl Id="RemoveNativeService" Name="HermesCommanderNative"
+                        Stop="uninstall" Remove="uninstall" Wait="yes" />
+      </Component>
+    </DirectoryRef>
+    <Feature Id="NativeDisabled" Title="Hermes Commander Native (disabled)"
+             Level="1">
+      <ComponentRef Id="NativeServiceComponent" />
+    </Feature>
+  </Package>
+</Wix>
