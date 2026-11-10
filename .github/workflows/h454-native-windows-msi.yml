@@ -101,3 +101,47 @@ jobs:
           Write-Output 'H454_WINDOWS_MSI_UNINSTALL=PASS'
           Write-Output 'H454_OWNER_WINDOWS_MSI_NOT_INSTALLED=YES'
           Write-Output 'H454_NATIVE_HOST_PASS=NOT_RUN'
+      - name: Refuse pre-existing foreign SCM service without takeover
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $name = 'HermesCommanderNative'
+          $msi = Join-Path $env:RUNNER_TEMP 'h454-native-msi/HermesCommanderNative-Disabled-CI.msi'
+          $msiexec = Join-Path $env:WINDIR 'System32/msiexec.exe'
+          $log = Join-Path $env:RUNNER_TEMP 'h454-msi-existing-service-rejection.log'
+          $foreignBinary = Join-Path $env:WINDIR 'System32/notepad.exe'
+          $installedExe = Join-Path $env:ProgramFiles 'Hermes Commander Native/HermesCommanderNativeService.exe'
+          if ((Get-Service -Name $name -ErrorAction SilentlyContinue) -or
+              (Test-Path -LiteralPath $installedExe -PathType Leaf)) {
+            throw 'H454_WINDOWS_MSI_FOREIGN_COLLISION_PRECONDITION'
+          }
+          $created = $false
+          try {
+            & sc.exe create $name binPath= $foreignBinary start= disabled type= own obj= "NT AUTHORITY\LocalService" | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw 'H454_FOREIGN_SCM_FIXTURE_CREATE_DENIED' }
+            $created = $true
+            $before = Get-CimInstance Win32_Service -Filter "Name='$name'"
+            if ($null -eq $before -or $before.State -ne 'Stopped' -or
+                $before.StartMode -ne 'Disabled') {
+              throw 'H454_FOREIGN_SCM_FIXTURE_INVALID'
+            }
+            $PSNativeCommandUseErrorActionPreference = $false
+            $result = Start-Process -FilePath $msiexec -ArgumentList @('/i', $msi, '/qn', '/norestart', '/l*v', $log, 'REBOOT=ReallySuppress') -Wait -PassThru -NoNewWindow
+            $after = Get-CimInstance Win32_Service -Filter "Name='$name'"
+            if ($result.ExitCode -ne 1603 -or $null -eq $after -or
+                $after.State -ne 'Stopped' -or $after.StartMode -ne 'Disabled' -or
+                $after.PathName -cne $before.PathName -or
+                (Test-Path -LiteralPath $installedExe -PathType Leaf)) {
+              throw 'H454_WINDOWS_MSI_FOREIGN_SERVICE_TAKEOVER'
+            }
+            if (-not (Test-Path -LiteralPath $log -PathType Leaf) -or
+                -not ([IO.File]::ReadAllText($log).Contains('HermesCommanderNative already exists. Refusing replacement.'))) {
+              throw 'H454_WINDOWS_MSI_FOREIGN_GUARD_NOT_PROVEN'
+            }
+            Write-Output 'H454_WINDOWS_MSI_EXISTING_SERVICE_DENIED=PASS'
+          } finally {
+            if ($created) {
+              & sc.exe delete $name | Out-Null
+              if ($LASTEXITCODE -ne 0) { throw 'H454_FOREIGN_SCM_FIXTURE_REMOVE_DENIED' }
+            }
+          }
