@@ -47,3 +47,13 @@ No license or external SignPath account is changed by this PR.
 
 Status: SOURCE_ONLY, NATIVE_HOST_PASS=NOT_RUN,
 PRODUCTION_NATIVE_DEPLOY=NOT_RUN, RUNTIME_NO_GO. Issue #454 OPEN.
+
+## Existing service collision negative test
+
+After a successful install/uninstall smoke on a **disposable runner**,
+CI registers a synthetic, disabled SCM service under the same key but
+pointing to a foreign Windows inbox executable. MSI must fail with
+exit code 1603 and the explicit LaunchCondition diagnostic, leave the
+existing service registration unchanged and avoid installing Hermes
+files. The fixture deletes only its own foreign SCM record in a
+finally block. No collision test is executed on owner devices.
