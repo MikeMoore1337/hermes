@@ -79,6 +79,30 @@ class WindowsNativePreviewPolicy(unittest.TestCase):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, workflow)
 
+    def test_ci_only_real_form_capture_is_reviewable_without_unsigned_owner_exe(self):
+        capture = BASE / "tests/h454_native_windows_screenshot/Capture.cs"
+        screenshot_project = BASE / "tests/h454_native_windows_screenshot/HermesCommanderNativePreviewScreenshot.csproj"
+        source = CS.read_text(encoding="utf-8")
+        capture_source = capture.read_text(encoding="utf-8")
+        screenshot_xml = screenshot_project.read_text(encoding="utf-8")
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("internal sealed class ScopePreviewForm : Form", source)
+        self.assertIn("internal static int SelfTest(", source)
+        self.assertIn("Program.SelfTest(args[0])", capture_source)
+        self.assertIn("new Program.ScopePreviewForm(args[0])", capture_source)
+        self.assertIn("form.DrawToBitmap(", capture_source)
+        self.assertIn("FileMode.CreateNew", capture_source)
+        self.assertIn('Environment.GetEnvironmentVariable("RUNNER_TEMP")', capture_source)
+        self.assertNotIn("CiScreenshot", source)
+        self.assertNotIn("Capture.cs", PROJECT.read_text(encoding="utf-8"))
+        self.assertIn("<StartupObject>HermesCommander.NativePreview.CiScreenshot</StartupObject>",
+                      screenshot_xml)
+        self.assertIn('Link="NativePreviewProgram.cs"', screenshot_xml)
+        self.assertIn("H454_WIN32_GUI_SCREENSHOT=CI_ONLY", workflow)
+        self.assertIn("h454-native-win32-gui-review-png", workflow)
+        self.assertIn("if: github.event_name == 'pull_request'", workflow)
+        self.assertIn("H454_WIN32_NATIVE_HOST_PASS=NOT_RUN", workflow)
+
 
 if __name__ == "__main__":
     unittest.main()

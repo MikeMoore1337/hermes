@@ -39,6 +39,24 @@ short-lived review. A checksum is **not a signature, provenance
 attestation, consent, or install permit**. No SSH/deploy, secrets,
 native original-host access, OS mutations or resident service startup.
 
+## PNG preview for owner visual review (PR only)
+
+The pull-request Windows CI also builds a *separate test-only executable*
+from the same WinForms source and renders the actual window to an 800x590
+PNG on a disposable GitHub-hosted Windows runner. Its exclusive-new file
+output is limited to `RUNNER_TEMP/h454-native-win32-preview.png`.
+The screenshot harness lives only under `tests/` and is **not**
+compiled into the distributed unsigned preview EXE.
+
+When the PR run passes, open that Actions run and its
+`h454-native-win32-gui-review-png` artifact (retained for 3 days).
+The artifact contains **only a PNG** - no runnable installer or binary.
+This is a way to inspect the proposed UI without executing unsigned
+software on the owner's Windows computer. CI rendering is still **not**
+owner visual acceptance, security review or real-host acceptance. No
+owner UAC dialog, credential pairing, service, ACL or filesystem access
+is exercised.
+
 ## Still needed before Stage 2A Windows install
 
 1. Replace this preview with a reviewed, reproducible, actually

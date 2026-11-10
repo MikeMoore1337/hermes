@@ -37,7 +37,7 @@ internal static class Program
         return pinned.Success ? pinned.Groups[1].Value : "NOT_PINNED";
     }
 
-    private static int SelfTest(string expectedSourceSha)
+    internal static int SelfTest(string expectedSourceSha)
     {
         // A smoke contract, not an OS isolation or graphical acceptance test.
         string sha = Revision();
@@ -77,7 +77,7 @@ internal static class Program
         return 0;
     }
 
-    private sealed class ScopePreviewForm : Form
+    internal sealed class ScopePreviewForm : Form
     {
         internal ScopePreviewForm(string sourceSha)
         {
