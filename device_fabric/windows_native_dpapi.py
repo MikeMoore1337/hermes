@@ -82,11 +82,12 @@ def _winapi():
 
 
 def _crypt(data: bytes, entropy: bytes, *, decrypt: bool) -> bytes:
+    keep_original = None
     try:
         original, keep_original = _input_blob(data)
         supplementary, keep_entropy = _input_blob(entropy)
         # Pointers remain valid throughout this Win32 call.
-        _ = (keep_original, keep_entropy)
+        _ = keep_entropy
         crypt, kernel = _winapi()
         out = _Blob()
         try:
@@ -107,20 +108,19 @@ def _crypt(data: bytes, entropy: bytes, *, decrypt: bool) -> bytes:
                 raise NativeDpapiDenied("native_dpapi_denied")
             return ctypes.string_at(out.pbData, out.cbData)
         finally:
-            try:
-                if out.pbData:
-                    try:
-                        if decrypt and out.cbData:
-                            ctypes.memset(out.pbData, 0, out.cbData)
-                    finally:
-                        kernel.LocalFree(ctypes.cast(out.pbData, ctypes.c_void_p))
-            finally:
-                # Limit the lifetime of the extra unmanaged plaintext copy
-                # used to marshal a bearer into CryptProtectData.
-                if not decrypt:
-                    ctypes.memset(ctypes.addressof(keep_original), 0, len(data))
+            if out.pbData:
+                try:
+                    if decrypt and out.cbData:
+                        ctypes.memset(out.pbData, 0, out.cbData)
+                finally:
+                    kernel.LocalFree(ctypes.cast(out.pbData, ctypes.c_void_p))
     except Exception:
         raise NativeDpapiDenied("native_dpapi_denied") from None
+    finally:
+        # Even an API initialization error must wipe the extra unmanaged
+        # plaintext copy produced for CryptProtectData.
+        if not decrypt and keep_original is not None:
+            ctypes.memset(ctypes.addressof(keep_original), 0, len(data))
 
 
 def seal_for_current_user(
