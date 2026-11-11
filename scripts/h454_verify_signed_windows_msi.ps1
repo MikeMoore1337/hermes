@@ -47,20 +47,33 @@ try {
     if ($exeThumbprint -cne $msiThumbprint) { Deny 'PUBLISHER_MISMATCH' }
     $selftest = Start-Process -FilePath $exe -ArgumentList @('--self-test', $ExpectedSha) -PassThru -Wait
     if ($selftest.ExitCode -ne 0) { Deny 'SOURCE_SHA_MISMATCH' }
+    $workers = @(Get-ChildItem -LiteralPath $output -Recurse -File |
+        Where-Object { $_.Name -ceq 'HermesCommanderNativeWorker.exe' })
+    if ($workers.Count -ne 1) { Deny 'EXACT_WORKER_MISSING' }
+    $worker = $workers[0].FullName
+    $workerThumbprint = VerifyAuthenticode $worker
+    if ($workerThumbprint -cne $msiThumbprint) { Deny 'WORKER_PUBLISHER_MISMATCH' }
+    # The host runner is not the owner virtual service identity.
+    # This worker must refuse before any original-file/token access.
+    $workerRun = Start-Process -FilePath $worker -ArgumentList @('--run-once', '--release-sha', $ExpectedSha) -PassThru -Wait -NoNewWindow
+    if ($workerRun.ExitCode -ne 2) { Deny 'WORKER_WRONG_SID_GATE_MISSING' }
     $receipt = @{
         schema = 'h454-signed-msi-receipt-v1'
         source_sha = $ExpectedSha
         msi_sha256 = (Get-FileHash -LiteralPath $msi -Algorithm SHA256).Hash.ToLowerInvariant()
         exe_sha256 = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+        worker_sha256 = (Get-FileHash -LiteralPath $worker -Algorithm SHA256).Hash.ToLowerInvariant()
         signer_thumbprint = $msiThumbprint
         msi_valid = $true
         exe_valid = $true
+        worker_valid = $true
         installed_on_owner_host = $false
     } | ConvertTo-Json -Compress
     $receiptFile = Join-Path $temp 'h454-signed-msi-receipt.json'
     if (Test-Path -LiteralPath $receiptFile) { Deny 'RECEIPT_COLLISION' }
     [IO.File]::WriteAllText($receiptFile, $receipt, [Text.Encoding]::ASCII)
     Write-Output 'H454_SIGNPATH_MSI_AND_EXE_VALID=PASS'
+    Write-Output 'H454_SIGNPATH_MSI_SERVICE_WORKER_VALID=PASS'
     Write-Output 'H454_SIGNPATH_OWNER_HOST_NOT_INSTALLED=YES'
 } catch {
     Write-Error -Message 'H454_SIGNPATH_RELEASE_HOLD' -ErrorAction Continue

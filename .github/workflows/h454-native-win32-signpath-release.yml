@@ -100,8 +100,13 @@ jobs:
           $tools = Join-Path $env:RUNNER_TEMP 'h454-signpath-wix'
           dotnet tool install wix --version 6.0.0 --tool-path $tools
           if ($LASTEXITCODE -ne 0) { throw 'H454_SIGNPATH=HOLD_WIX' }
+          $workerDir = Join-Path $env:RUNNER_TEMP 'h454-signpath-worker-dist'
+          & ./scripts/h454_package_win32_worker.ps1 -ExpectedSha $env:GITHUB_SHA -Destination $workerDir
+          if ($LASTEXITCODE -ne 0) { throw 'H454_SIGNPATH=HOLD_WORKER_PACKAGE' }
+          $workerExe = Join-Path $workerDir 'HermesCommanderNativeWorker.exe'
+          if (-not (Test-Path -LiteralPath $workerExe -PathType Leaf)) { throw 'H454_SIGNPATH=HOLD_WORKER_MISSING' }
           $msi = Join-Path $folder 'HermesCommanderNative-Disabled.msi'
-          & (Join-Path $tools 'wix.exe') build 'deploy/h454/native-windows-msi/Package.wxs' -arch x64 -d "ServiceExe=$exe" -out $msi
+          & (Join-Path $tools 'wix.exe') build 'deploy/h454/native-windows-msi/Package.wxs' -arch x64 -d "ServiceExe=$exe" -d "WorkerExe=$workerExe" -out $msi
           if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $msi -PathType Leaf)) {
             throw 'H454_SIGNPATH=HOLD_MSI_BUILD'
           }
@@ -129,7 +134,7 @@ jobs:
           wait-for-completion: true
           wait-for-completion-timeout-in-seconds: 3600
           output-artifact-directory: ${{ format('{0}/h454-signpath-signed', runner.temp) }}
-      - name: Validate trusted signatures on BOTH signed MSI and embedded EXE
+      - name: Validate trusted signatures on signed MSI, service EXE and worker EXE
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'

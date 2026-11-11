@@ -42,7 +42,7 @@ class SignPathReleaseSourceTests(unittest.TestCase):
         ):
             self.assertIn(required, content)
         self.assertLess(
-            content.index("Validate trusted signatures on BOTH"),
+            content.index("Validate trusted signatures on signed MSI, service EXE and worker EXE"),
             content.index("Upload VERIFIED signed MSI"),
         )
         for required in (
@@ -51,6 +51,9 @@ class SignPathReleaseSourceTests(unittest.TestCase):
             "signer_thumbprint", "PUBLISHER_MISMATCH", "SOURCE_SHA_MISMATCH",
             "msiexec.exe", "/a", "VerifyAuthenticode $exe",
             "H454_SIGNPATH_MSI_AND_EXE_VALID=PASS",
+            "H454_SIGNPATH_MSI_SERVICE_WORKER_VALID=PASS",
+            "WORKER_PUBLISHER_MISMATCH",
+            "worker_sha256",
             "H454_SIGNPATH_OWNER_HOST_NOT_INSTALLED=YES",
         ):
             self.assertIn(required, verify)
@@ -58,6 +61,25 @@ class SignPathReleaseSourceTests(unittest.TestCase):
         self.assertNotIn("Start-Service", verify)
         self.assertNotIn("New-Service", verify)
         self.assertNotIn("http://", verify)
+
+    def test_worker_is_built_only_in_windows_ci_and_refuses_foreign_sid(self):
+        script = (ROOT / "scripts/h454_package_win32_worker.ps1").read_text(
+            encoding="utf-8")
+        for marker in (
+            "RUNNER_OS", "GITHUB_WORKSPACE", "git rev-parse HEAD",
+            "pyinstaller==6.22.3", "websockets==17.2",
+            "H454_WIN32_WORKER_PACKAGED_SYNTHETIC=PASS",
+            "H454_OWNER_WINDOWS_ORIGINAL_HOST=NOT_RUN",
+            "--hidden-import websockets.sync.client",
+            "H454_WIN32_WORKER_BUILD_HOLD_WRONG_SID_NOT_DENIED",
+        ):
+            self.assertIn(marker, script)
+        for forbidden in (
+            "HERMES_DEPLOY_KEY", "ssh ", "scp ", "New-Service",
+            "Start-Service", "Set-Service", "Invoke-Expression",
+            "powershell -EncodedCommand",
+        ):
+            self.assertNotIn(forbidden, script)
 
     def test_release_artifact_and_signing_secrets_never_in_repository(self):
         content = WORKFLOW.read_text(encoding="utf-8")

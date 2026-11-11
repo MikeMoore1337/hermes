@@ -70,3 +70,20 @@ This proves the unprovisioned Windows service **does not become RUNNING**
 under its intended account on disposable CI. It does **not** prove that
 NTFS ACLs, service SID type, DPAPI user context or native access on the
 owner's real PC are configured or safe.
+
+
+## Bundled original Windows read-only worker
+
+The disabled MSI now installs exactly TWO binaries under the same
+Program Files component: the existing .NET SCM service EXE and a
+`HermesCommanderNativeWorker.exe` frozen from the source-reviewed one-shot
+Python/Win32 read-only worker (PyInstaller 6.22.3, websockets 17.2).
+The hosted Windows CI builds the worker, verifies that it refuses
+execution under the disposable non-service Windows SID, checks both
+files are installed and uninstalled with the MSI, and verifies no
+pre-existing service registration is overwritten.
+
+**The current SCM stub does not yet start the worker**, and this MSI remains
+unsigned, not uploaded to owner machines and disabled by default. A separate
+reviewed service-to-worker lifecycle, protected signed publisher and owner
+token/ACL provisioning are required before any live original-host activity.
