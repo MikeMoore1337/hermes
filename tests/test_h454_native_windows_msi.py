@@ -32,6 +32,11 @@ class NativeWindowsMsiContracts(unittest.TestCase):
         file = root.find(".//" + NS + "File")
         self.assertEqual(file.attrib["Source"], "$(var.ServiceExe)")
         self.assertEqual(file.attrib["KeyPath"], "yes")
+        all_files = root.findall(".//" + NS + "File")
+        self.assertEqual({item.attrib["Id"] for item in all_files}, {
+            "HermesCommanderNativeServiceExe", "HermesCommanderNativeWorkerExe"})
+        self.assertEqual({item.attrib["Source"] for item in all_files}, {
+            "$(var.ServiceExe)", "$(var.WorkerExe)"})
         self.assertEqual(len(root.findall(".//" + NS + "ServiceInstall")), 1)
         self.assertNotIn("LocalSystem", WXS.read_text(encoding="utf-8"))
 
@@ -59,6 +64,8 @@ class NativeWindowsMsiContracts(unittest.TestCase):
             "Get-AuthenticodeSignature", "NotSigned",
             "msiexec.exe", "Get-CimInstance",
             "H454_WINDOWS_MSI_DISABLED=PASS",
+            "H454_WIN32_WORKER_IN_MSI=PASS",
+            "h454_package_win32_worker.ps1",
             "H454_WINDOWS_MSI_UNINSTALL=PASS",
             "H454_WINDOWS_MSI_VIRTUAL_SERVICE_FAIL_CLOSED=PASS",
             "H454_WINDOWS_MSI_EXISTING_SERVICE_DENIED=PASS",
