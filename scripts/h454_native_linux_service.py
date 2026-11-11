@@ -108,12 +108,18 @@ def _properties_are_hardened(text: str) -> bool:
         if values.get("IPAddressDeny") != "any":
             return False
         ip_words = values.get("IPAddressAllow", "").split()
-        if len(ip_words) != 2 or len(set(ip_words)) != 2:
+        if len(ip_words) not in (2, 3) or len(set(ip_words)) != len(ip_words):
             return False
+        stub = ipaddress.IPv4Address("127.0.0.53")
         for word in ip_words:
             network = ipaddress.ip_network(word, strict=True)
-            if (network.version != 4 or network.prefixlen != 32
-                or network.network_address.is_loopback
+            if network.version != 4 or network.prefixlen != 32:
+                return False
+            if network.network_address == stub:
+                # This single exact loopback destination is the host DNS
+                # stub; no generic localhost or private egress is allowed.
+                continue
+            if (network.network_address.is_loopback
                 or network.network_address.is_private
                 or network.network_address.is_link_local
                 or network.network_address.is_multicast
