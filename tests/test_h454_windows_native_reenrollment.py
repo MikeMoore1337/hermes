@@ -20,7 +20,7 @@ RELEASE = "a" * 40
 ARTIFACT = "b" * 64
 DEVICE = "h454-win-native-" + "c" * 32
 SEALED = b"mock-encrypted-not-a-real-token-" + b"z" * 64
-BEARER = "synthetic-not-real-paired-bearer-" + "z" * 50
+BEARER = "brc_dev_" + "z" * 64
 NOW = 1794300000
 
 
@@ -180,6 +180,79 @@ class NewWindowsIdentityRunTests(unittest.TestCase):
         self.assertIs(callback, run.call_args.args[1])
         self.assertEqual(self.unseal.call_args.args, (SEALED,))
         self.assertGreaterEqual(self.check_revoked.call_count, 2)
+
+    def test_actual_fresh_wss_hello_matches_owner_bound_brc_identity(self):
+        class Socket:
+            def __init__(self):
+                self.sent = []
+                self.closed = False
+            def __enter__(self):
+                return self
+            def __exit__(self, *_args):
+                self.closed = True
+            def send(self, frame):
+                self.sent.append(json.loads(frame))
+            def recv(self, timeout=None):
+                return json.dumps({
+                    "type":"welcome","protocol":1,
+                    "relayVersion":"test","serverTime":NOW,
+                }) if len(self.sent) == 1 else ""
+
+        socket = Socket()
+        # One HELLO, then force a clean idle timeout. This tests actual
+        # run_session() serialization rather than mocking the HELLO result.
+        class OneGreetingSocket(Socket):
+            def __init__(self):
+                super().__init__()
+                self.reads = 0
+            def recv(self, timeout=None):
+                self.reads += 1
+                if self.reads == 1:
+                    return json.dumps({
+                        "type":"welcome","protocol":1,
+                        "relayVersion":"test","serverTime":NOW,
+                    })
+                raise TimeoutError()
+        socket = OneGreetingSocket()
+        with patch.object(native.sys, "platform", "win32"):
+            result = native.run_once(
+                self.prepared, connector=lambda *_a, **_k:socket,
+                **{k:v for k,v in self.kwargs.items() if k != "connector"})
+        self.assertEqual(result, "idle_timeout")
+        self.assertTrue(socket.closed)
+        self.assertEqual(len(socket.sent), 1)
+        hello = socket.sent[0]
+        self.assertEqual(hello["device"]["name"], "H454 Windows native read-only")
+        self.assertEqual(hello["device"]["deviceId"], DEVICE)
+        self.assertEqual(hello["device"]["platform"], "win32")
+        self.assertEqual([t["name"] for t in hello["tools"]],
+                         ["native_file_stat", "native_file_read", "native_file_list"])
+        self.assertNotIn("start_process", json.dumps(hello))
+        self.assertNotIn("write_file", json.dumps(hello))
+        self.assertNotIn(BEARER, json.dumps(hello))
+
+    def test_new_hello_cannot_reuse_revoked_id_or_forge_caller_profile(self):
+        for device, token, url in (
+            (native.REVOKED_LEGACY_ID, BEARER, native.RELAY),
+            ("h454-win-native-" + "f" * 16, BEARER, native.RELAY),
+            (DEVICE, "a" * 48, native.RELAY),
+            (DEVICE, BEARER, "ws://127.0.0.1/ws"),
+        ):
+            with self.subTest(device=device), self.assertRaises(
+                outbound.NativeTransportDenied
+            ):
+                outbound.fresh_native_hello(
+                    outbound.Settings(url, device, token))
+        # The legacy hello API still advertises exactly its old device:
+        legacy = outbound.parse_settings(
+            native.RELAY, outbound.EXPECTED_DEVICE_ID, "a" * 48)
+        self.assertEqual(outbound.hello(legacy)["device"]["name"],
+                         outbound.DEVICE_NAME)
+        with self.assertRaises(outbound.NativeTransportDenied):
+            outbound.run_session(
+                outbound.Settings(native.RELAY, DEVICE, BEARER),
+                self.connect, fresh_native=False)
+        self.connect.assert_not_called()
 
     def test_preconnect_gates_deny_before_unsealing_or_network(self):
         for gate in ("service_os_verified", "owner_pair_verified", "is_device_revoked"):

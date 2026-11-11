@@ -20,6 +20,8 @@ on:
       - tests/test_h15_native_windows_read.py
       - tests/test_h15_native_windows_read_on_win.py
       - device_fabric/windows_native_reenrollment.py
+      - scripts/h454_native_win32_worker.py
+      - tests/test_h454_native_win32_worker.py
       - device_fabric/windows_native_dpapi.py
       - tests/test_h454_windows_native_dpapi.py
       - tests/test_h454_windows_native_reenrollment.py
@@ -133,6 +135,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'H454_WIN32_NEW_IDENTITY_DENIED' }
           Write-Output 'H454_WIN32_FRESH_READ_IDENTITY=PASS'
           Write-Output 'H454_WINDOWS_ORIGINAL_HOST=NOT_RUN'
+      - name: Verify original Windows live READ worker WSS and real SID negative gate
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -B -m unittest -v tests.test_h454_native_win32_worker
+          if ($LASTEXITCODE -ne 0) { throw 'H454_NATIVE_WIN32_WORKER_CI_DENIED' }
+          Write-Output 'H454_NATIVE_WIN32_WSS_WORKER=SOURCE_TEST_PASS'
+          Write-Output 'H454_OWNER_WINDOWS_ORIGINAL_HOST=NOT_RUN'
       - name: Prove real Windows DPAPI CurrentUser isolation with synthetic bearer
         shell: pwsh
         run: |
