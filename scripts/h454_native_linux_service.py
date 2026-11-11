@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import argparse
 import ipaddress
+import importlib
 import os
+import stat
 from pathlib import Path
 import re
 import subprocess
@@ -125,6 +127,42 @@ def _properties_are_hardened(text: str) -> bool:
         return False
 
 
+
+def _pinned_websocket_dependency(release_sha: str) -> bool:
+    """Deny the global/pip/user-installed websockets module at live startup.
+
+    A PATH or PYTHONPATH override must not select an unpinned implementation.
+    Owner root must have staged the exact hashed pure-Python wheel under the
+    fixed release-scoped immutable directory before activating systemd.
+    """
+    try:
+        if type(release_sha) is not str or EXPECTED_SHA.fullmatch(release_sha) is None:
+            return False
+        expected = Path("/opt/hermes-commander-native/deps") / ("main-" + release_sha)
+        info = expected.lstat()
+        if (not stat.S_ISDIR(info.st_mode) or info.st_uid != 0
+            or info.st_mode & 0o022):
+            return False
+        package = importlib.import_module("websockets")
+        client = importlib.import_module("websockets.sync.client")
+        if getattr(package, "__version__", None) != "17.2":
+            return False
+        for loaded, name in (
+            (package, "websockets/__init__.py"),
+            (client, "websockets/sync/client.py"),
+        ):
+            file = Path(loaded.__file__)
+            if (file.is_symlink() or not file.is_file()
+                or file.resolve(strict=True) != expected / name):
+                return False
+            st = file.stat()
+            if st.st_uid != 0 or st.st_mode & 0o022:
+                return False
+        return True
+    except Exception:
+        return False
+
+
 def real_os_isolation_verified() -> bool:
     """Every call rechecks actual process capabilities and manager policy."""
     try:
@@ -196,7 +234,11 @@ def run_trusted_once(*, target: str, release_sha: str,
         if not callable(revoked) or revoked() is not False:
             _deny()
         if connector is None:
-            # Deferred optional dependency; no import/network on source read.
+            # Never inherit an arbitrary system pip package. This fixed
+            # release's dependency must be the exact offline-hash-staged
+            # universal wheel, root-owned and unmodifiable by the service.
+            if not _pinned_websocket_dependency(release_sha):
+                _deny()
             from websockets.sync.client import connect
             connector = connect
         if os_gate() is not True:

@@ -61,6 +61,7 @@ def render_active_unit(
                for ip in (relay, dns)) or relay == dns:
             raise LinuxActiveUnitDenied("native_linux_active_unit_denied")
         source = "/opt/hermes-commander-native/releases/main-" + release_sha
+        deps = "/opt/hermes-commander-native/deps/main-" + release_sha
         exec_start = (
             "/usr/bin/python3 -B -m scripts.h454_native_linux_service"
             + " --run-once"
@@ -77,6 +78,7 @@ def render_active_unit(
             "After=network-online.target local-fs.target",
             "AssertPathExists=" + MANIFEST_PATH,
             "AssertPathExists=" + CONFIG_PATH,
+            "AssertPathExists=" + deps + "/websockets/sync/client.py",
             "StartLimitIntervalSec=300",
             "StartLimitBurst=3",
             "",
@@ -86,7 +88,8 @@ def render_active_unit(
             "Group=" + SERVICE_USER,
             "WorkingDirectory=" + source,
             "ExecStart=" + exec_start,
-            "Environment=PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1",
+            "Environment=PYTHONPATH=" + deps
+            + " PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1",
             "UMask=0077",
             "Restart=on-success",
             "RestartSec=90s",
@@ -124,6 +127,7 @@ def render_active_unit(
             "CPUQuota=25%",
             "TasksMax=24",
             "ReadOnlyPaths=" + source,
+            "ReadOnlyPaths=" + deps,
             "ReadOnlyPaths=/var/lib/hermes-commander-native",
         ]
         lines.extend("ReadOnlyPaths=" + root for _, root in candidate.roots)
