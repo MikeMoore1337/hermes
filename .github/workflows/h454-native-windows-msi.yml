@@ -6,6 +6,8 @@ on:
       - deploy/h454/native-windows-msi/**
       - deploy/h454/native-windows-service/**
       - docs/operations/h454-native-windows-msi.md
+      - scripts/h454_package_win32_worker.ps1
+      - scripts/h454_native_win32_worker.py
       - tests/test_h454_native_windows_msi.py
       - .github/workflows/h454-native-windows-msi.yml
 
@@ -50,8 +52,13 @@ jobs:
           $wix = Join-Path $tools 'wix.exe'
           & $wix --version
           if ($LASTEXITCODE -ne 0) { throw 'H454_WIX_VERSION_DENIED' }
+          $workerOutput = Join-Path $env:RUNNER_TEMP 'h454-worker-dist'
+          & ./scripts/h454_package_win32_worker.ps1 -ExpectedSha $env:GITHUB_SHA -Destination $workerOutput
+          if ($LASTEXITCODE -ne 0) { throw 'H454_WIN32_WORKER_PACKAGE_DENIED' }
+          $workerExe = Join-Path $workerOutput 'HermesCommanderNativeWorker.exe'
+          if (-not (Test-Path -LiteralPath $workerExe -PathType Leaf)) { throw 'H454_WIN32_WORKER_MISSING' }
           $msi = Join-Path $dir 'HermesCommanderNative-Disabled-CI.msi'
-          & $wix build 'deploy/h454/native-windows-msi/Package.wxs' -arch x64 -d "ServiceExe=$exe" -out $msi
+          & $wix build 'deploy/h454/native-windows-msi/Package.wxs' -arch x64 -d "ServiceExe=$exe" -d "WorkerExe=$workerExe" -out $msi
           if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $msi -PathType Leaf)) {
             throw 'H454_WINDOWS_MSI_BUILD_DENIED'
           }
@@ -68,6 +75,7 @@ jobs:
           $dir = Join-Path $env:RUNNER_TEMP 'h454-native-msi'
           $msi = Join-Path $dir 'HermesCommanderNative-Disabled-CI.msi'
           $installedExe = Join-Path $env:ProgramFiles 'Hermes Commander Native/HermesCommanderNativeService.exe'
+          $installedWorker = Join-Path $env:ProgramFiles 'Hermes Commander Native/HermesCommanderNativeWorker.exe'
           $msiexec = Join-Path $env:WINDIR 'System32/msiexec.exe'
           if ($msi -match '\s') { throw 'H454_RUNNER_MSI_PATH_UNSUPPORTED' }
           if ((Get-Service -Name $name -ErrorAction SilentlyContinue) -or
@@ -84,10 +92,12 @@ jobs:
                 $svc.State -ne 'Stopped' -or
                 $svc.StartName -cne 'NT SERVICE\HermesCommanderNative' -or
                 $svc.PathName -notmatch '--service' -or
-                -not (Test-Path -LiteralPath $installedExe -PathType Leaf)) {
+                -not (Test-Path -LiteralPath $installedExe -PathType Leaf) -or
+                -not (Test-Path -LiteralPath $installedWorker -PathType Leaf)) {
               throw 'H454_WINDOWS_MSI_DISABLED_SCOPE_DENIED'
             }
             Write-Output 'H454_WINDOWS_MSI_DISABLED=PASS'
+            Write-Output 'H454_WIN32_WORKER_IN_MSI=PASS'
             # Disposable runner only: a temporary demand-start proves that
             # the actual MSI-installed virtual service account can launch
             # and that the unprovisioned binary refuses SCM RUNNING.
@@ -122,7 +132,8 @@ jobs:
               if ($undo.ExitCode -ne 0) { throw 'H454_WINDOWS_MSI_ROLLBACK_DENIED' }
             }
             if ((Get-Service -Name $name -ErrorAction SilentlyContinue) -or
-                (Test-Path -LiteralPath $installedExe -PathType Leaf)) {
+                (Test-Path -LiteralPath $installedExe -PathType Leaf) -or
+                (Test-Path -LiteralPath $installedWorker -PathType Leaf)) {
               throw 'H454_WINDOWS_MSI_ORPHANED_SERVICE'
             }
           }
@@ -139,6 +150,7 @@ jobs:
           $log = Join-Path $env:RUNNER_TEMP 'h454-msi-existing-service-rejection.log'
           $foreignBinary = Join-Path $env:WINDIR 'System32/notepad.exe'
           $installedExe = Join-Path $env:ProgramFiles 'Hermes Commander Native/HermesCommanderNativeService.exe'
+          $installedWorker = Join-Path $env:ProgramFiles 'Hermes Commander Native/HermesCommanderNativeWorker.exe'
           if ((Get-Service -Name $name -ErrorAction SilentlyContinue) -or
               (Test-Path -LiteralPath $installedExe -PathType Leaf)) {
             throw 'H454_WINDOWS_MSI_FOREIGN_COLLISION_PRECONDITION'
@@ -159,7 +171,8 @@ jobs:
             if ($result.ExitCode -ne 1603 -or $null -eq $after -or
                 $after.State -ne 'Stopped' -or $after.StartMode -ne 'Disabled' -or
                 $after.PathName -cne $before.PathName -or
-                (Test-Path -LiteralPath $installedExe -PathType Leaf)) {
+                (Test-Path -LiteralPath $installedExe -PathType Leaf) -or
+                (Test-Path -LiteralPath $installedWorker -PathType Leaf)) {
               throw 'H454_WINDOWS_MSI_FOREIGN_SERVICE_TAKEOVER'
             }
             if (-not (Test-Path -LiteralPath $log -PathType Leaf) -or
