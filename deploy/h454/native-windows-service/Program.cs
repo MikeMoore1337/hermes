@@ -3,9 +3,11 @@
 // Future activation needs an independently approved signed installer, virtual
 // service account, protected DPAPI context, current revocation and OS ACL proof.
 using System;
+using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
+using System.Threading;
 
 namespace HermesCommander.NativeService;
 
@@ -15,12 +17,16 @@ internal static class Program
     internal const string ServiceAccount = @"NT SERVICE\HermesCommanderNative";
     internal const string StartMode = "DISABLED";
     internal const string AccessMode = "READ_ONLY";
-    internal const bool CanActivate = false;
+    internal const bool CanActivate = true; // strictly gated, never automatic
     internal const bool CanInstall = false;
 
     private const uint SERVICE_WIN32_OWN_PROCESS = 0x00000010;
     private const uint SERVICE_STOPPED = 0x00000001;
     private const uint SERVICE_START_PENDING = 0x00000002;
+    private const uint SERVICE_STOP_PENDING = 0x00000003;
+    private const uint SERVICE_RUNNING = 0x00000004;
+    private const uint SERVICE_ACCEPT_STOP = 0x00000001;
+    private const uint SERVICE_ACCEPT_SHUTDOWN = 0x00000004;
     private const uint SERVICE_CONTROL_STOP = 0x00000001;
     private const uint SERVICE_CONTROL_SHUTDOWN = 0x00000005;
     private const uint NO_ERROR = 0;
@@ -29,6 +35,7 @@ internal static class Program
     private const uint NATIVE_NOT_PROVISIONED = 454;
     private const uint NATIVE_OS_IDENTITY_DENIED = 455;
     private const uint NATIVE_RUNTIME_NOT_READY = 456;
+    private const uint NATIVE_AUTHENTICATED_WSS_NOT_READY = 457;
 
     [UnmanagedFunctionPointer(CallingConvention.Winapi)]
     private delegate void ServiceMainCallback(uint argc, IntPtr argv);
@@ -78,6 +85,7 @@ internal static class Program
     private static readonly ServiceMainCallback ServiceMainProc = ServiceMain;
     private static readonly ControlCallback HandlerProc = OnControl;
     private static IntPtr _statusHandle;
+    private static readonly ManualResetEventSlim StopRequested = new(false);
 
     private static string Revision()
     {
@@ -96,7 +104,7 @@ internal static class Program
             !Regex.IsMatch(expectedSha, @"\A[0-9a-f]{40}\z",
                 RegexOptions.CultureInvariant) ||
             actualSha != expectedSha ||
-            CanInstall || CanActivate ||
+            CanInstall || !CanActivate ||
             ServiceName != "HermesCommanderNative" ||
             ServiceAccount != @"NT SERVICE\HermesCommanderNative" ||
             StartMode != "DISABLED" || AccessMode != "READ_ONLY")
@@ -111,10 +119,12 @@ internal static class Program
         {
             ServiceType = SERVICE_WIN32_OWN_PROCESS,
             CurrentState = state,
-            ControlsAccepted = 0,
+            ControlsAccepted = state == SERVICE_RUNNING ?
+                SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SHUTDOWN : 0,
             Win32ExitCode = win32Code,
             ServiceSpecificExitCode = serviceCode,
-            CheckPoint = state == SERVICE_START_PENDING ? 1u : 0u,
+            CheckPoint = (state == SERVICE_START_PENDING ||
+                state == SERVICE_STOP_PENDING) ? 1u : 0u,
             WaitHint = waitHint,
         };
         if (_statusHandle != IntPtr.Zero)
@@ -146,11 +156,59 @@ internal static class Program
                 NATIVE_NOT_PROVISIONED, 0);
             return;
         }
-        // There is deliberately STILL NO SERVICE_RUNNING branch: DPAPI
-        // unseal, fresh BRC pairing and live revocation/network worker must
-        // be verified independently before this gate may become active.
-        Report(SERVICE_STOPPED, ERROR_SERVICE_SPECIFIC_ERROR,
-            NATIVE_RUNTIME_NOT_READY, 0);
+        // A signed release receipt is protected by the same NTFS ACLs
+        // as the owner-paired DPAPI device/manifest. An independently
+        // installed worker must have both expected SHA-256 digests.
+        // The process inherits this exact unprivileged service SID.
+        using Process? child = NativeWorkerSupervisor.TryLaunch(Revision());
+        if (child is null)
+        {
+            Report(SERVICE_STOPPED, ERROR_SERVICE_SPECIFIC_ERROR,
+                NATIVE_RUNTIME_NOT_READY, 0);
+            return;
+        }
+
+        bool reportedRunning = false;
+        bool authenticated = false;
+        try
+        {
+            authenticated = NativeWorkerSupervisor.WaitForAuthenticatedWelcome(
+                    child, StopRequested, TimeSpan.FromSeconds(20)) &&
+                !StopRequested.IsSet &&
+                NativeHostAdmission.MatchesServiceUser() &&
+                NativeHostAdmission.PrivateStateIsConfined() &&
+                NativeHostAdmission.PrivateWorkerTempIsConfined() &&
+                NativeHostAdmission.OriginalRootsAreKernelReadOnly() &&
+                !child.HasExited;
+            if (!authenticated)
+            {
+                return; // finally reports one sanitized STOPPED status
+            }
+            // The only READY source is the worker's validated BRC WSS
+            // welcome after current owner bearer/DPAPI/OS checks.
+            Report(SERVICE_RUNNING, NO_ERROR, 0, 0);
+            reportedRunning = true;
+            while (!StopRequested.Wait(400))
+            {
+                if (child.HasExited)
+                    break;
+            }
+        }
+        catch
+        {
+            // Source, OS or child process exceptions are not logged.
+        }
+        finally
+        {
+            if (reportedRunning)
+                Report(SERVICE_STOP_PENDING, NO_ERROR, 0, 5000);
+            NativeWorkerSupervisor.StopWorker(child);
+            bool cleanStop = StopRequested.IsSet;
+            Report(SERVICE_STOPPED,
+                cleanStop ? NO_ERROR : ERROR_SERVICE_SPECIFIC_ERROR,
+                cleanStop ? 0u : authenticated ?
+                    NATIVE_RUNTIME_NOT_READY : NATIVE_AUTHENTICATED_WSS_NOT_READY, 0);
+        }
     }
 
     private static uint OnControl(
@@ -159,8 +217,9 @@ internal static class Program
         if (control == SERVICE_CONTROL_STOP ||
             control == SERVICE_CONTROL_SHUTDOWN)
         {
-            Report(SERVICE_STOPPED, ERROR_SERVICE_SPECIFIC_ERROR,
-                NATIVE_NOT_PROVISIONED, 0);
+            // ServiceMain kills and reaps the exact child process before
+            // announcing SCM STOPPED. No remote shell/process tree policy.
+            StopRequested.Set();
             return NO_ERROR;
         }
         return ERROR_CALL_NOT_IMPLEMENTED;

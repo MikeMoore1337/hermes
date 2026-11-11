@@ -72,6 +72,60 @@ internal static class NativeAclFixture
             foreignOwner.SetOwner(sid);
             Require(!NativeHostAdmission.RestrictedDaclForIdentity(
                 foreignOwner, sid), "FOREIGN_OWNER_ALLOWED");
+            // PyInstaller's private Temp is the ONLY writable service
+            // folder. Validate protected DACL, owner and exact principals.
+            var privateTemp = SafeAcl(sid);
+            privateTemp.AddAccessRule(new FileSystemAccessRule(
+                sid, FileSystemRights.Write, AccessControlType.Allow));
+            Require(NativeHostAdmission.WritableWorkerTempDaclForIdentity(
+                privateTemp, sid), "SAFE_TEMP_WRITE_REFUSED");
+            Require(!NativeHostAdmission.WritableWorkerTempDaclForIdentity(
+                SafeAcl(sid), sid), "TEMP_MISSING_WRITE_ALLOWED");
+            var writeOnlyTemp = new DirectorySecurity();
+            writeOnlyTemp.SetAccessRuleProtection(
+                isProtected:true,preserveInheritance:false);
+            writeOnlyTemp.SetOwner(new SecurityIdentifier(
+                WellKnownSidType.LocalSystemSid,null));
+            writeOnlyTemp.AddAccessRule(new FileSystemAccessRule(
+                sid,FileSystemRights.WriteData,AccessControlType.Allow));
+            writeOnlyTemp.AddAccessRule(new FileSystemAccessRule(
+                new SecurityIdentifier(WellKnownSidType.LocalSystemSid,null),
+                FileSystemRights.FullControl,AccessControlType.Allow));
+            Require(!NativeHostAdmission.WritableWorkerTempDaclForIdentity(
+                writeOnlyTemp,sid),"TEMP_MISSING_READ_ALLOWED");
+
+            foreach (FileSystemRights forbidden in new[]
+            {
+                FileSystemRights.ChangePermissions,
+                FileSystemRights.TakeOwnership,
+            })
+            {
+                var escalated = SafeAcl(sid);
+                escalated.AddAccessRule(new FileSystemAccessRule(
+                    sid, FileSystemRights.Write | forbidden, AccessControlType.Allow));
+                Require(!NativeHostAdmission.WritableWorkerTempDaclForIdentity(
+                    escalated, sid), "TEMP_PRIVILEGE_ESCALATION_" + forbidden);
+            }
+            var worldTemp = SafeAcl(sid);
+            worldTemp.AddAccessRule(new FileSystemAccessRule(
+                sid, FileSystemRights.Write, AccessControlType.Allow));
+            worldTemp.AddAccessRule(new FileSystemAccessRule(
+                new SecurityIdentifier(WellKnownSidType.WorldSid, null),
+                FileSystemRights.Read, AccessControlType.Allow));
+            Require(!NativeHostAdmission.WritableWorkerTempDaclForIdentity(
+                worldTemp, sid), "WORLD_TEMP_ACCESS_ALLOWED");
+            var inheritedTemp = SafeAcl(sid);
+            inheritedTemp.SetAccessRuleProtection(
+                isProtected:false, preserveInheritance:false);
+            Require(!NativeHostAdmission.WritableWorkerTempDaclForIdentity(
+                inheritedTemp, sid), "INHERITED_TEMP_ALLOWED");
+            var foreignOwnerTemp = SafeAcl(sid);
+            foreignOwnerTemp.AddAccessRule(new FileSystemAccessRule(
+                sid, FileSystemRights.Write, AccessControlType.Allow));
+            foreignOwnerTemp.SetOwner(sid);
+            Require(!NativeHostAdmission.WritableWorkerTempDaclForIdentity(
+                foreignOwnerTemp, sid), "FOREIGN_OWNER_TEMP_ALLOWED");
+            Console.WriteLine("H454_WIN32_PRIVATE_TEMP_ACL=PASS");
             Console.WriteLine("H454_WIN32_PRIVATE_DACL_WRITE_DENIAL=PASS");
             Console.WriteLine("H454_OWNER_WINDOWS_HOST=NOT_RUN");
             return 0;

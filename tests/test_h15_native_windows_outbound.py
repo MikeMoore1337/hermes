@@ -216,6 +216,30 @@ class OutboundReadOnlyTests(unittest.TestCase):
         self.assertEqual(run.call_count, 4)
         self.assertNotIn("secret.md", json.dumps(answers))
 
+    def test_supervised_ready_only_after_valid_authenticated_welcome(self):
+        for messages, expected in (
+            ([welcome()], 1),
+            ([{"type": "welcome", "protocol": True, "relayVersion": "x",
+               "serverTime": 100}], 0),
+            ([{"type": "welcome", "protocol": 1, "relayVersion": 7,
+               "serverTime": 100}], 0),
+            ([call()], 0),
+        ):
+            with self.subTest(messages=messages):
+                ready = []
+                connector = FakeConnector(messages)
+                if expected:
+                    self.assertEqual(outbound.run_session(
+                        settings(), connector,
+                        on_verified_welcome=lambda: ready.append("ready")),
+                        "idle_timeout")
+                else:
+                    with self.assertRaises(outbound.NativeTransportDenied):
+                        outbound.run_session(settings(), connector,
+                            on_verified_welcome=lambda: ready.append("ready"))
+                self.assertEqual(ready, ["ready"] if expected else [])
+                self.assertTrue(connector.ws.closed)
+
     def test_requires_welcome_before_read(self):
         connector = FakeConnector([call()])
         with patch.object(mcp.native, "handle_native_request") as run:

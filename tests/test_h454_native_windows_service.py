@@ -18,7 +18,7 @@ class WindowsScmSourceContracts(unittest.TestCase):
             "SetServiceStatus", 'ServiceName = "HermesCommanderNative"',
             r'ServiceAccount = @"NT SERVICE\HermesCommanderNative"',
             'StartMode = "DISABLED"', 'AccessMode = "READ_ONLY"',
-            "CanActivate = false", "CanInstall = false",
+            "CanActivate = true", "CanInstall = false",
             "NATIVE_NOT_PROVISIONED = 454",
             "NATIVE_OS_IDENTITY_DENIED = 455",
             "NativeHostAdmission.MatchesServiceUser()",
@@ -29,8 +29,13 @@ class WindowsScmSourceContracts(unittest.TestCase):
         ):
             with self.subTest(marker=marker):
                 self.assertIn(marker, code)
-        self.assertNotIn("private const uint SERVICE_RUNNING", code)
-        self.assertNotIn("Report(SERVICE_RUNNING,", code)
+        self.assertIn("private const uint SERVICE_RUNNING", code)
+        self.assertIn("Report(SERVICE_RUNNING, NO_ERROR, 0, 0)", code)
+        self.assertIn("WaitForAuthenticatedWelcome(", code)
+        self.assertIn("NativeWorkerSupervisor.TryLaunch(Revision())", code)
+        self.assertLess(code.index("WaitForAuthenticatedWelcome("),
+                        code.index("Report(SERVICE_RUNNING, NO_ERROR, 0, 0)"))
+        self.assertIn("StopRequested.Set();", code)
         self.assertNotIn("StartServiceW", code)
         self.assertNotIn("CreateServiceW", code)
         self.assertNotIn("ChangeServiceConfigW", code)
@@ -57,6 +62,24 @@ class WindowsScmSourceContracts(unittest.TestCase):
             self.assertIn(required, project)
         self.assertNotIn("PackageReference", project)
         self.assertNotIn("PostBuildEvent", project)
+        supervisor = (ROOT / "deploy/h454/native-windows-service/NativeWorkerSupervisor.cs").read_text()
+        for marker in (
+            "signed-release.json", "ReceiptMatches(", "HashPinnedFile(",
+            "NativeHostAdmission.InstallBinaryIsReadOnly(",
+            "NativeHostAdmission.PrivateWorkerTempIsConfined(",
+            "ProcessStartInfo settings = new(workerPath)",
+            "UseShellExecute = false", "CreateNoWindow = true",
+            'settings.ArgumentList.Add("--run-once")',
+            'settings.ArgumentList.Add("--service-supervised")',
+            "settings.Environment.Clear()", "RedirectStandardOutput = true",
+            'internal const string Ready = "H454_NATIVE_BRC_SESSION_READY=YES"',
+            "WaitForAuthenticatedWelcome(", "StopWorker(",
+        ):
+            self.assertIn(marker, supervisor)
+        self.assertNotIn("cmd.exe", supervisor)
+        self.assertNotIn("powershell.exe", supervisor)
+        self.assertNotIn("ShellExecute(", supervisor)
+        self.assertNotIn("http://", supervisor)
 
     def test_real_os_security_code_does_not_grant_privileges(self):
         gate = (ROOT / "deploy/h454/native-windows-service/NativeHostAdmission.cs").read_text(encoding="utf-8")
@@ -83,6 +106,14 @@ class WindowsScmSourceContracts(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, gate)
         self.assertIn(r'@"D:\Pet-projects\hermes"', gate)
+        self.assertIn("signed-release.json", gate)
+        self.assertIn("ProtectedStateFile(", gate)
+        self.assertIn("InstallBinaryIsReadOnly(", gate)
+        self.assertIn("PrivateWorkerTempIsConfined(", gate)
+        self.assertIn("WritableWorkerTempDaclForIdentity(", gate)
+        self.assertIn("H454_WIN32_PRIVATE_TEMP_ACL=PASS",
+                      (ROOT / "tests/h454_native_windows_acl/Program.cs").read_text())
+        self.assertIn('"Temp"', gate)
 
     def test_ci_is_disposable_and_never_publishes_unsigned_service(self):
         yml = CI.read_text(encoding="utf-8")
@@ -93,6 +124,7 @@ class WindowsScmSourceContracts(unittest.TestCase):
             "sc.exe delete", "finally", "H454_WIN32_SCM_DISABLED=PASS",
             "H454_WIN32_SCM_WRONG_SID=DENIED",
             "H454_WIN32_PRIVATE_ACL_FIXTURE=PASS",
+            "H454_WIN32_SIGNED_RELEASE_RECEIPT=PASS",
             "H454_OWNER_WINDOWS_HOST=NOT_RUN",
         ):
             with self.subTest(required=required):

@@ -184,7 +184,8 @@ def safe_call(session: McpSession, message: dict[str, Any],
 
 def run_session(config: Settings, connector: Callable[..., Any],
                 *, seen_ids: set[str] | None = None,
-                fresh_native: bool = False) -> str:
+                fresh_native: bool = False,
+                on_verified_welcome: Callable[[], None] | None = None) -> str:
     """One authenticated outbound TLS socket, one bounded local tool session.
 
     The connector is injected for offline tests. Production uses the
@@ -192,7 +193,8 @@ def run_session(config: Settings, connector: Callable[..., Any],
     """
     # Validate the HELLO profile before opening a socket. This is not a
     # generic caller-supplied device name or tool catalog.
-    if type(fresh_native) is not bool or type(config) is not Settings:
+    if (type(fresh_native) is not bool or type(config) is not Settings
+        or (on_verified_welcome is not None and not callable(on_verified_welcome))):
         raise NativeTransportDenied("invalid_native_profile")
     if fresh_native:
         greeting = fresh_native_hello(config)
@@ -238,10 +240,20 @@ def run_session(config: Settings, connector: Callable[..., Any],
                 msg = decode_frame(raw)
                 kind = msg["type"]
                 if kind == "welcome":
-                    if welcome or set(msg) != {"type", "protocol", "relayVersion",
-                                               "serverTime"} or msg["protocol"] != WIRE_VERSION:
+                    if (welcome or set(msg) != {"type", "protocol", "relayVersion",
+                                               "serverTime"}
+                        or type(msg["protocol"]) is not int
+                        or msg["protocol"] != WIRE_VERSION
+                        or type(msg["relayVersion"]) is not str
+                        or not 1 <= len(msg["relayVersion"]) <= 80
+                        or type(msg["serverTime"]) is not int
+                        or msg["serverTime"] < 0):
                         raise NativeTransportDenied("invalid_welcome")
                     welcome = True
+                    # Windows SCM accepts readiness only after an authenticated
+                    # BRC WSS welcome has been validated by this protocol.
+                    if on_verified_welcome is not None:
+                        on_verified_welcome()
                 elif kind == "ping":
                     if type(msg.get("ts")) not in (int, float):
                         raise NativeTransportDenied("invalid_ping")

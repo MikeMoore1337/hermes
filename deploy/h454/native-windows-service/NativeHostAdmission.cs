@@ -127,6 +127,9 @@ internal static class NativeHostAdmission
         catch { return false; }
     }
 
+    internal static bool ProtectedStateFile(FileInfo file) =>
+        MatchesServiceUser() && IsOrdinaryFile(file);
+
     internal static bool PrivateStateIsConfined()
     {
         try
@@ -143,7 +146,8 @@ internal static class NativeHostAdmission
                 state, AccessControlSections.Access | AccessControlSections.Owner);
             if (!RestrictedDacl(sec)) return false;
             return IsOrdinaryFile(new FileInfo(Path.Combine(state.FullName, "manifest.json")))
-                && IsOrdinaryFile(new FileInfo(Path.Combine(state.FullName, "device.json")));
+                && IsOrdinaryFile(new FileInfo(Path.Combine(state.FullName, "device.json")))
+                && IsOrdinaryFile(new FileInfo(Path.Combine(state.FullName, "signed-release.json")));
         }
         catch { return false; }
     }
@@ -181,5 +185,101 @@ internal static class NativeHostAdmission
     internal static bool OriginalRootsAreKernelReadOnly()
     {
         return MatchesServiceUser() && Roots.All(ReadWithoutWrite);
+    }
+
+    // In-memory DACL policy is separately exercised by real Windows ACL
+    // APIs on disposable hosted CI before any owner-machine provisioning.
+    internal static bool WritableWorkerTempDaclForIdentity(
+        DirectorySecurity sec, SecurityIdentifier serviceSid)
+    {
+        try
+        {
+            if (!sec.AreAccessRulesProtected) return false;
+            string service = serviceSid.Value;
+            string system = new SecurityIdentifier(
+                WellKnownSidType.LocalSystemSid, null).Value;
+            string admins = new SecurityIdentifier(
+                WellKnownSidType.BuiltinAdministratorsSid, null).Value;
+            string owner = ((SecurityIdentifier)sec.GetOwner(
+                typeof(SecurityIdentifier))).Value;
+            if (owner != system && owner != admins) return false;
+            bool serviceCanWrite = false;
+            bool serviceCanRead = false;
+            foreach (FileSystemAccessRule rule in sec.GetAccessRules(
+                true, true, typeof(SecurityIdentifier)))
+            {
+                string sid = ((SecurityIdentifier)rule.IdentityReference).Value;
+                if (rule.IsInherited || rule.AccessControlType != AccessControlType.Allow
+                    || (sid != system && sid != admins && sid != service))
+                    return false;
+                if (sid == service)
+                {
+                    if ((rule.FileSystemRights &
+                        (FileSystemRights.ChangePermissions |
+                         FileSystemRights.TakeOwnership)) != 0)
+                        return false;
+                    if ((rule.FileSystemRights & FileSystemRights.WriteData) != 0)
+                        serviceCanWrite = true;
+                    if ((rule.FileSystemRights & FileSystemRights.ReadData) != 0)
+                        serviceCanRead = true;
+                }
+            }
+            return serviceCanWrite && serviceCanRead;
+        }
+        catch { return false; }
+    }
+
+    internal static bool PrivateWorkerTempIsConfined()
+    {
+        // One-file PyInstaller extraction must never use global TEMP.
+        // The unprivileged service can write ONLY to the dedicated
+        // owner-provisioned Temp leaf, not to signed-release state.
+        try
+        {
+            if (!MatchesServiceUser()) return false;
+            string basePath = Path.Combine(Environment.GetFolderPath(
+                Environment.SpecialFolder.CommonApplicationData),
+                "HermesCommanderNative");
+            DirectoryInfo temp = new(Path.Combine(basePath, "Temp"));
+            temp.Refresh();
+            if (!temp.Exists || (temp.Attributes & FileAttributes.ReparsePoint) != 0)
+                return false;
+            DirectorySecurity sec = FileSystemAclExtensions.GetAccessControl(
+                temp, AccessControlSections.Access | AccessControlSections.Owner);
+            return WritableWorkerTempDaclForIdentity(sec, ExpectedSid());
+        }
+        catch { return false; }
+    }
+
+    internal static bool InstallBinaryIsReadOnly(string path)
+    {
+        // The virtual service account must not be able to replace the
+        // source-pinned worker or create a new executable in Program Files.
+        try
+        {
+            if (!MatchesServiceUser()) return false;
+            FileInfo file = new(path);
+            file.Refresh();
+            if (!file.Exists ||
+                (file.Attributes & FileAttributes.ReparsePoint) != 0)
+                return false;
+            string? parent = file.DirectoryName;
+            if (parent is null || !ReadWithoutWrite(parent)) return false;
+            using SafeFileHandle read = OpenRoot(path, FILE_READ_ATTRIBUTES,
+                SHARE_READ_WRITE_DELETE, IntPtr.Zero, OPEN_EXISTING,
+                FILE_FLAG_OPEN_REPARSE_POINT, IntPtr.Zero);
+            if (read.IsInvalid) return false;
+            foreach (uint right in new uint[]
+                { FILE_ADD_FILE, FILE_ADD_SUBDIRECTORY,
+                  FILE_WRITE_ATTRIBUTES, DELETE_RIGHT, WRITE_DAC, WRITE_OWNER })
+            {
+                using SafeFileHandle writable = OpenRoot(path, right,
+                    SHARE_READ_WRITE_DELETE, IntPtr.Zero, OPEN_EXISTING,
+                    FILE_FLAG_OPEN_REPARSE_POINT, IntPtr.Zero);
+                if (!writable.IsInvalid) return false;
+            }
+            return true;
+        }
+        catch { return false; }
     }
 }
