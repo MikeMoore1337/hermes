@@ -89,6 +89,22 @@ class NativeActiveInstallTests(unittest.TestCase):
         self.assertTrue(source_receipt.is_file())
         self.assertEqual(self.daemon.call_count,2)
 
+    def test_dual_relay_stub_unit_installs_disabled_only(self):
+        relay = "104.21.57.247,172.67.167.145"
+        dns = "127.0.0.53"
+        rendered = render_active_unit(
+            self.manifest, target=TARGET, release_sha=RELEASE,
+            manifest_sha256=hashlib.sha256(self.manifest).hexdigest(),
+            relay_ipv4=relay, dns_ipv4=dns,
+        )
+        with patch.object(active.sys, "platform", "linux"):
+            report = active.install_disabled(**self.args(
+                unit_text=rendered, relay_ipv4=relay, dns_ipv4=dns))
+        self.assertEqual(report["status"], "NATIVE_ACTIVE_UNIT_INSTALLED_DISABLED")
+        self.assertFalse(report["started"])
+        self.assertFalse(report["enabled"])
+        self.assertEqual(rendered.count("IPAddressAllow="), 3)
+
     def test_forged_unit_cannot_change_exec_or_widen_permissions(self):
         originals=(
             self.unit.replace("IPAddressDeny=any","IPAddressDeny="),
