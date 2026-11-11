@@ -42,7 +42,7 @@ class SignPathReleaseSourceTests(unittest.TestCase):
         ):
             self.assertIn(required, content)
         self.assertLess(
-            content.index("Validate trusted signatures on BOTH"),
+            content.index("Validate trusted signatures on signed MSI, service EXE and worker EXE"),
             content.index("Upload VERIFIED signed MSI"),
         )
         for required in (
