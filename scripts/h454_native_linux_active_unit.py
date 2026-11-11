@@ -51,14 +51,28 @@ def render_active_unit(
             or not 1 <= len(candidate.roots) <= 5
             or any(SAFE_UNIT_PATH.fullmatch(root) is None for _, root in candidate.roots)):
             raise LinuxActiveUnitDenied("native_linux_active_unit_denied")
-        relay = ipaddress.IPv4Address(relay_ipv4)
+        # Accept one or two separately verified A-records for the same
+        # owner-pinned WSS hostname. Preserve existing one-IP call sites.
+        # Reject whitespace, empty entries and more than two relay routes.
+        relay_parts = relay_ipv4.split(",")
+        if (not 1 <= len(relay_parts) <= MAX_EGRESS_IPS - 1
+            or any(not part or part.strip() != part for part in relay_parts)):
+            raise LinuxActiveUnitDenied("native_linux_active_unit_denied")
+        relays = tuple(ipaddress.IPv4Address(part) for part in relay_parts)
         dns = ipaddress.IPv4Address(dns_ipv4)
-        # No attacker-controlled loopback/local/cloud metadata endpoint in
-        # installer-supplied EGRESS addresses. Real owner must independently
-        # verify target public TLS A-record and DNS resolver identity.
-        if any(ip.is_loopback or ip.is_link_local or ip.is_multicast
-               or ip.is_reserved or ip.is_unspecified or ip.is_private
-               for ip in (relay, dns)) or relay == dns:
+        if len(set(relays)) != len(relays) or dns in relays:
+            raise LinuxActiveUnitDenied("native_linux_active_unit_denied")
+        # The exact systemd-resolved stub is the ONLY permitted loopback DNS.
+        # The owner must separately verify that the host actually uses it.
+        # All relay addresses, and every non-stub resolver, remain public /32.
+        def public(value: ipaddress.IPv4Address) -> bool:
+            return not (
+                value.is_loopback or value.is_link_local or value.is_multicast
+                or value.is_reserved or value.is_unspecified or value.is_private
+            )
+        if (not all(public(addr) for addr in relays)
+            or (dns != ipaddress.IPv4Address("127.0.0.53")
+                and not public(dns))):
             raise LinuxActiveUnitDenied("native_linux_active_unit_denied")
         source = "/opt/hermes-commander-native/releases/main-" + release_sha
         deps = "/opt/hermes-commander-native/deps/main-" + release_sha
@@ -120,8 +134,8 @@ def render_active_unit(
             "SystemCallFilter=~@mount @reboot @swap",
             "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6",
             "IPAddressDeny=any",
-            "IPAddressAllow=" + str(relay) + "/32",
-            "IPAddressAllow=" + str(dns) + "/32",
+            *("IPAddressAllow=" + str(addr) + "/32"
+              for addr in (*relays, dns)),
             "IPAccounting=yes",
             "MemoryMax=256M",
             "CPUQuota=25%",

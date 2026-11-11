@@ -93,12 +93,50 @@ class RealLinuxUnitRenderTests(unittest.TestCase):
                 self.assertNotIn("ReadWritePaths=", text)
                 self.assertNotIn("ExecStart=/bin/bash", text)
 
+    def test_dual_relay_and_host_local_dns_stub_are_exactly_bounded(self):
+        text = render(
+            relay="104.21.57.247,172.67.167.145",
+            dns="127.0.0.53",
+        )
+        for address in (
+            "104.21.57.247", "172.67.167.145", "127.0.0.53",
+        ):
+            self.assertIn("IPAddressAllow=" + address + "/32", text)
+        self.assertEqual(text.count("IPAddressAllow="), 3)
+        self.assertIn("IPAddressDeny=any", text)
+        self.assertTrue(service._properties_are_hardened(
+            hardening_properties().replace(
+                "IPAddressAllow=8.8.4.4/32 1.1.1.1/32",
+                "IPAddressAllow=104.21.57.247/32 "
+                "172.67.167.145/32 127.0.0.53/32",
+            )
+        ))
+        self.assertFalse(service._properties_are_hardened(
+            hardening_properties().replace(
+                "IPAddressAllow=8.8.4.4/32 1.1.1.1/32",
+                "IPAddressAllow=104.21.57.247/32 "
+                "172.67.167.145/32 127.0.0.1/32",
+            )
+        ))
+        self.assertFalse(service._properties_are_hardened(
+            hardening_properties().replace(
+                "IPAddressAllow=8.8.4.4/32 1.1.1.1/32",
+                "IPAddressAllow=104.21.57.247/32 "
+                "172.67.167.145/32 10.0.0.1/32",
+            )
+        ))
+
     def test_untrusted_ipv4_broad_or_widened_paths_fail_closed(self):
         cases=[
             {"relay":"127.0.0.1"},
+            {"relay":"8.8.4.4,8.8.4.4"},
+            {"relay":"8.8.4.4, 9.9.9.9"},
+            {"relay":"8.8.4.4,9.9.9.9,1.1.1.1"},
+            {"relay":"8.8.4.4,127.0.0.53"},
             {"relay":"10.0.0.1"},
             {"relay":"169.254.169.254"},
             {"dns":"192.168.0.1"},
+            {"dns":"127.0.0.1"},
             {"dns":"8.8.4.4"},
             {"relay":"8.8.4.4/0"},
             {"relay":"evil.example"},
