@@ -66,6 +66,7 @@ class WindowsScmSourceContracts(unittest.TestCase):
         for marker in (
             "signed-release.json", "ReceiptMatches(", "HashPinnedFile(",
             "NativeHostAdmission.InstallBinaryIsReadOnly(",
+            "NativeHostAdmission.PrivateWorkerTempIsConfined(",
             "ProcessStartInfo settings = new(workerPath)",
             "UseShellExecute = false", "CreateNoWindow = true",
             'settings.ArgumentList.Add("--run-once")',
@@ -108,6 +109,8 @@ class WindowsScmSourceContracts(unittest.TestCase):
         self.assertIn("signed-release.json", gate)
         self.assertIn("ProtectedStateFile(", gate)
         self.assertIn("InstallBinaryIsReadOnly(", gate)
+        self.assertIn("PrivateWorkerTempIsConfined(", gate)
+        self.assertIn('"Temp"', gate)
 
     def test_ci_is_disposable_and_never_publishes_unsigned_service(self):
         yml = CI.read_text(encoding="utf-8")

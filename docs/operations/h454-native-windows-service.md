@@ -138,3 +138,23 @@ signed-release receipt rejection harness. The MSI remains disabled and
 unsigned until owner-approved signing. No owner-original host acceptance
 has been performed. A positive real native READY requires protected
 owner credentials and a functioning relay, never a synthetic CI PASS.
+
+
+## PyInstaller private extraction directory
+
+The worker is a frozen one-file PyInstaller binary. It requires a
+temporary extraction directory. Before any child start, SCM now checks
+an owner-provisioned `C:\ProgramData\HermesCommanderNative\Temp`
+directory: no reparse point, protected DACL, SYSTEM/Administrators
+owner, no foreign principals, only the service SID allowed to write.
+The protected parent `ProgramData\HermesCommanderNative` and
+the exact three signed-release/device/manifest files remain
+read-only for the service. SCM sets only `TEMP` and `TMP` to
+this private directory and refuses to fall back to a shared
+Windows temporary directory. The service account cannot create the
+directory or change its ACL; owner provisioning must do so and verify
+it before any native host launch.
+
+PyInstaller may leave extraction files after abrupt forced termination.
+No automatic recursive cleanup runs on owner state; cleanup requires
+a separate reviewed owner host operation with symlink/inode checks.

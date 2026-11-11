@@ -177,6 +177,7 @@ internal static class Program
                 !StopRequested.IsSet &&
                 NativeHostAdmission.MatchesServiceUser() &&
                 NativeHostAdmission.PrivateStateIsConfined() &&
+                NativeHostAdmission.PrivateWorkerTempIsConfined() &&
                 NativeHostAdmission.OriginalRootsAreKernelReadOnly() &&
                 !child.HasExited;
             if (!authenticated)

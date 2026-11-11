@@ -187,6 +187,57 @@ internal static class NativeHostAdmission
         return MatchesServiceUser() && Roots.All(ReadWithoutWrite);
     }
 
+    internal static bool PrivateWorkerTempIsConfined()
+    {
+        // The PyInstaller one-file worker must NEVER extract into a shared
+        // user-writable Windows temp. Owner provisioning creates a distinct
+        // private Temp directory and grants the service SID write rights
+        // ONLY inside that directory, not in protected manifest/device state.
+        try
+        {
+            if (!MatchesServiceUser()) return false;
+            string basePath = Path.Combine(Environment.GetFolderPath(
+                Environment.SpecialFolder.CommonApplicationData),
+                "HermesCommanderNative");
+            DirectoryInfo temp = new(Path.Combine(basePath, "Temp"));
+            temp.Refresh();
+            if (!temp.Exists || (temp.Attributes & FileAttributes.ReparsePoint) != 0)
+                return false;
+            DirectorySecurity sec = FileSystemAclExtensions.GetAccessControl(
+                temp, AccessControlSections.Access | AccessControlSections.Owner);
+            if (!sec.AreAccessRulesProtected) return false;
+            string service = ExpectedSid().Value;
+            string system = new SecurityIdentifier(
+                WellKnownSidType.LocalSystemSid, null).Value;
+            string admins = new SecurityIdentifier(
+                WellKnownSidType.BuiltinAdministratorsSid, null).Value;
+            string owner = ((SecurityIdentifier)sec.GetOwner(
+                typeof(SecurityIdentifier))).Value;
+            if (owner != system && owner != admins) return false;
+            bool serviceCanWrite = false;
+            foreach (FileSystemAccessRule rule in sec.GetAccessRules(
+                true, true, typeof(SecurityIdentifier)))
+            {
+                string sid = ((SecurityIdentifier)rule.IdentityReference).Value;
+                if (rule.IsInherited || rule.AccessControlType != AccessControlType.Allow
+                    || (sid != system && sid != admins && sid != service))
+                    return false;
+                if (sid == service)
+                {
+                    if ((rule.FileSystemRights &
+                        (FileSystemRights.ChangePermissions |
+                         FileSystemRights.TakeOwnership)) != 0)
+                        return false;
+                    if ((rule.FileSystemRights &
+                        FileSystemRights.WriteData) != 0)
+                        serviceCanWrite = true;
+                }
+            }
+            return serviceCanWrite;
+        }
+        catch { return false; }
+    }
+
     internal static bool InstallBinaryIsReadOnly(string path)
     {
         // The virtual service account must not be able to replace the

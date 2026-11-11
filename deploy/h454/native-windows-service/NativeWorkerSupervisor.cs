@@ -81,6 +81,7 @@ internal static class NativeWorkerSupervisor
             if (!OperatingSystem.IsWindows() ||
                 !NativeHostAdmission.MatchesServiceUser() ||
                 !NativeHostAdmission.PrivateStateIsConfined() ||
+                !NativeHostAdmission.PrivateWorkerTempIsConfined() ||
                 !NativeHostAdmission.OriginalRootsAreKernelReadOnly() ||
                 !Sha40.IsMatch(revision))
                 return null;
@@ -139,6 +140,14 @@ internal static class NativeWorkerSupervisor
                 return null;
             settings.Environment["SystemRoot"] = root;
             settings.Environment["WINDIR"] = root;
+            // PyInstaller must unpack ONLY under this owner-provisioned
+            // service-specific directory with protected NTFS ACL; NEVER
+            // fall back to shared %WINDIR%\Temp or the interactive user.
+            string privateTemp = Path.Combine(Environment.GetFolderPath(
+                Environment.SpecialFolder.CommonApplicationData),
+                "HermesCommanderNative", "Temp");
+            settings.Environment["TEMP"] = privateTemp;
+            settings.Environment["TMP"] = privateTemp;
             settings.Environment["PYTHONNOUSERSITE"] = "1";
             settings.Environment["PYTHONDONTWRITEBYTECODE"] = "1";
 
