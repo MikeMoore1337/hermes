@@ -117,7 +117,7 @@ class NativeOfflineWheel(unittest.TestCase):
                           root=self.root, owner_uid=os.geteuid(),
                           check_ancestors=False)
         parent = self.root / ("main-" + RELEASE)
-        other = self.root / "main-" + "b"*40
+        other = self.root / ("main-" + "b"*40)
         other.mkdir(mode=0o700)
         marker = other / "keep.txt"
         marker.write_text("unrelated")
