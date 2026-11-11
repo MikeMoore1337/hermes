@@ -28,8 +28,8 @@ HOST = "hermes.mikemoore.top"
 LOOPBACK = "127.0.0.1"
 DEVICE_NAME = "H15 Windows native read-only"
 FRESH_DEVICE_NAME = "H454 Windows native read-only"
-FRESH_DEVICE_ID = re.compile(r"h454-win-native-[0-9a-f]{32}\\Z")
-FRESH_BEARER = re.compile(r"brc_dev_[A-Za-z0-9_-]{40,256}\\Z")
+FRESH_DEVICE_ID = re.compile(r"h454-win-native-[0-9a-f]{32}\Z")
+FRESH_BEARER = re.compile(r"brc_dev_[A-Za-z0-9_-]{40,256}\Z")
 # Never let a newly registered device impersonate the owner's original host.
 EXPECTED_DEVICE_ID = "h454-win-01335a1f6e6705b4"
 WIRE_VERSION = 1
