@@ -205,6 +205,39 @@ class NoHostWorkerSecurity(unittest.TestCase):
             original_read.assert_not_called()
         self.assertTrue(socket.closed)
 
+    def test_supervised_worker_emits_ready_only_after_verified_brc_welcome(self):
+        class FakeSocket:
+            def __init__(self):
+                self.received = 0
+                self.closed = False
+            def __enter__(self): return self
+            def __exit__(self, *_args): self.closed = True
+            def send(self, _message): pass
+            def recv(self, timeout=None):
+                self.received += 1
+                if self.received == 1:
+                    return json.dumps({"type":"welcome","protocol":1,
+                        "relayVersion":"synthetic","serverTime":NOW})
+                raise TimeoutError()
+        socket = FakeSocket()
+        self.transport.side_effect = lambda *_args, **_kwargs: socket
+        ready = []
+        result = self.call(on_verified_welcome=lambda: ready.append("yes"))
+        self.assertEqual(result, "idle_timeout")
+        self.assertEqual(ready, ["yes"])
+        self.assertEqual(socket.received, 2)
+        self.assertTrue(socket.closed)
+
+    def test_supervised_cli_never_signals_ready_with_wrong_os_sid(self):
+        import io
+        with patch.object(worker, "service_sid_verified", return_value=False):
+            with patch.object(worker.sys, "platform", "win32"):
+                with patch.object(worker.sys, "stdout", io.StringIO()) as output:
+                    code = worker.main(["--run-once", "--service-supervised",
+                                        "--release-sha", RELEASE])
+        self.assertEqual(code, 2)
+        self.assertNotIn("H454_NATIVE_BRC_SESSION_READY=YES", output.getvalue())
+
     def test_public_cli_rejects_unapproved_windows_host_launcher(self):
         with patch.object(worker, "service_sid_verified", return_value=False), \
              patch.object(worker.sys, "platform", "win32"), \

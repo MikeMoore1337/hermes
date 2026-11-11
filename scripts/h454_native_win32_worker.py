@@ -167,6 +167,7 @@ def run_trusted_once(
     source_reader: Callable[[Path, int], bytes] = _private_file,
     unseal: Callable[..., str] = unseal_for_current_user,
     owner_status: Callable[..., Callable[[], bool]] = status_provider,
+    on_verified_welcome: Callable[[], None] | None = None,
 ) -> str:
     """Execute bounded Win32 read via actual service ID + owner status.
 
@@ -177,7 +178,8 @@ def run_trusted_once(
         or SHA40.fullmatch(expected_release) is None
         or not all(callable(x) for x in
             (sid_gate, source_reader, unseal, owner_status))
-        or (connector is not None and not callable(connector))):
+        or (connector is not None and not callable(connector))
+        or (on_verified_welcome is not None and not callable(on_verified_welcome))):
         raise Win32WorkerDenied("native_win32_worker_denied")
     try:
         if sys.platform != "win32" or sid_gate() is not True:
@@ -221,14 +223,17 @@ def run_trusted_once(
         def revoke() -> bool:
             return active() is not True
 
-        return read_session(
-            candidate, connector=connector,
+        options = dict(
+            connector=connector,
             service_os_verified=sid_gate,
             owner_pair_verified=active,
             is_device_revoked=revoke,
             unseal_bearer=lambda sealed: bearer
             if sealed == candidate.sealed_bearer else "",
         )
+        if on_verified_welcome is not None:
+            options["on_verified_welcome"] = on_verified_welcome
+        return read_session(candidate, **options)
     except Exception:
         raise Win32WorkerDenied("native_win32_worker_denied") from None
 
@@ -244,12 +249,19 @@ def main(argv: list[str] | None = None) -> int:
     parser = _SafeParser(
         description="Hermes original Windows native owner-paired READ worker")
     parser.add_argument("--run-once", action="store_true")
+    parser.add_argument("--service-supervised", action="store_true")
     parser.add_argument("--release-sha", required=True)
     try:
         opts = parser.parse_args(argv)
         if not opts.run_once:
             raise Win32WorkerDenied("native_win32_worker_denied")
-        run_trusted_once(expected_release=opts.release_sha)
+        options = {}
+        if opts.service_supervised:
+            # Only a service-SID process may reach this marker after
+            # owner status and an authenticated WSS welcome both pass.
+            options["on_verified_welcome"] = lambda: print(
+                "H454_NATIVE_BRC_SESSION_READY=YES", flush=True)
+        run_trusted_once(expected_release=opts.release_sha, **options)
         return 0
     except Win32WorkerDenied:
         print("H454_NATIVE_WIN32_WORKER=DENIED", file=sys.stderr)
