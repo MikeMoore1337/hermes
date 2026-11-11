@@ -61,10 +61,20 @@ The future owner must explicitly approve, for each VPS:
 - The actual source SHA, private manifest SHA, source archive SHA-256 and
   separately verified provenance.
 - The original Linux project roots (real host directories, not sandbox).
-- A verified public relay IPv4 /32 and externally verified DNS resolver
-  IPv4 /32. The systemd renderer denies private/loopback/multicast and
-  broad CIDRs for these two entries. IPAddressDeny=any rejects all
-  unapproved destination IPs.
+- One or two separately verified public relay IPv4 /32 addresses for
+  the single pinned WSS hostname. The owner must review both when DNS
+  returns two Cloudflare A-records; there is no wildcard egress.
+- Exactly one DNS IPv4 /32: a public resolver, or **only** 127.0.0.53
+  when the owner has verified the original host uses systemd-resolved's
+  local stub (as on Hermes VPS). Other loopback, private, multicast and
+  link-local addresses are denied. IPAddressDeny=any remains enforced.
+  For a stub, the upstream servers run in the separate resolved service,
+  not inside the native agent's restricted cgroup.
+- Resolve the hostname and confirm the actual WSS protocol through the
+  installed restricted service before enabling boot start. Cloudflare A
+  records can change; fail closed and approve a fresh release or unit if
+  these pinned /32 entries no longer match. TLS-over-TCP alone is not
+  proof of authenticated BRC pairing.
 - Dedicated service UID/GID and root-owned systemd unit/command path.
 - TLS certificate verification, owner-authenticated new-device pairing,
   live revocation route, no access to another user's original projects.
