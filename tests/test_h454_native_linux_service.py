@@ -80,6 +80,10 @@ class RealLinuxUnitRenderTests(unittest.TestCase):
                 self.assertIn("IPAddressAllow=1.1.1.1/32", text)
                 self.assertIn("ReadOnlyPaths=/srv/hermes/source", text)
                 self.assertIn("ReadOnlyPaths=/var/lib/hermes-commander-native", text)
+                pinned="/opt/hermes-commander-native/deps/main-"+RELEASE
+                self.assertIn("Environment=PYTHONPATH="+pinned, text)
+                self.assertIn("AssertPathExists="+pinned+"/websockets/sync/client.py", text)
+                self.assertIn("ReadOnlyPaths="+pinned, text)
                 self.assertIn("--run-once --target "+target, text)
                 self.assertIn("--manifest-sha256 ", text)
                 self.assertIn("Restart=on-success", text)
@@ -157,6 +161,12 @@ class OSIsolationKernelTests(unittest.TestCase):
         ):
             with self.subTest(policy=bad[:100]):
                 self.assertFalse(service._properties_are_hardened(bad))
+
+    def test_python_system_package_does_not_satisfy_pinned_wheel(self):
+        # Hosted CI is not an original VPS, and system/global pip is never
+        # a release-scoped dependency proof.
+        self.assertFalse(service._pinned_websocket_dependency(RELEASE))
+        self.assertFalse(service._pinned_websocket_dependency("invalid"))
 
     def test_unprivileged_host_without_real_systemd_is_denied(self):
         with patch.object(service,"_service_identity"), \

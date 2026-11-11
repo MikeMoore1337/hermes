@@ -91,3 +91,23 @@ No BRC/WSS production route, native service identity, private keys,
 owner VPS original folders or files are touched by this PR. The
 Win32 native SCM + MSI still requires separate signed/owner host
 activation. Hermes Issue #454 stays OPEN / RUNTIME_NO_GO.
+
+## Release-scoped offline websockets 17.2 dependency (2026-11-11)
+
+The real native Linux WSS worker imports websockets.sync.client. To avoid
+accidentally trusting a mutable system/global pip package, the unit now pins
+PYTHONPATH to /opt/hermes-commander-native/deps/main-<exact source SHA>
+and requires the installed sync/client.py to exist before a start. The
+worker checks that websockets 17.2 and both its __init__.py and sync client
+load from the identical root-owned release dependency path, with no
+group/other writable bits. A mismatch refuses BEFORE BRC WSS access.
+
+scripts/h454_native_linux_wheel.py stages the SHA-256-pinned upstream
+pure-Python universal wheel into that separate immutable folder without
+pip/global site changes on the owner VPS. The operator is owner-root-TTY
+gated and requires exact per-host release approval. Its rollback removes
+only verified, unchanged staged bytes and never affects original source.
+The wheel originates from PyPI; its source-code license is BSD-3-Clause.
+The specific pinned archive is NOT a signature on the user's native host.
+
+This does not imply installation, enablement, owner pairing or real WSS.
