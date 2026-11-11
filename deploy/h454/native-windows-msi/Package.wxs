@@ -27,6 +27,7 @@
       <Component Id="NativeServiceComponent" Bitness="always64" Guid="*">
         <File Id="HermesCommanderNativeServiceExe" Source="$(var.ServiceExe)"
               KeyPath="yes" />
+        <File Id="HermesCommanderNativeWorkerExe" Source="$(var.WorkerExe)" />
         <ServiceInstall Id="NativeService"
                         Name="HermesCommanderNative"
                         DisplayName="Hermes Commander Native (disabled)"
