@@ -110,6 +110,9 @@ class WindowsScmSourceContracts(unittest.TestCase):
         self.assertIn("ProtectedStateFile(", gate)
         self.assertIn("InstallBinaryIsReadOnly(", gate)
         self.assertIn("PrivateWorkerTempIsConfined(", gate)
+        self.assertIn("WritableWorkerTempDaclForIdentity(", gate)
+        self.assertIn("H454_WIN32_PRIVATE_TEMP_ACL=PASS",
+                      (ROOT / "tests/h454_native_windows_acl/Program.cs").read_text())
         self.assertIn('"Temp"', gate)
 
     def test_ci_is_disposable_and_never_publishes_unsigned_service(self):
