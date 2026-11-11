@@ -23,6 +23,7 @@ from pathlib import Path
 import re
 import stat
 import sys
+import time
 from typing import Any, Callable
 
 from device_fabric.native_brc_status import PUBLIC, status_provider
@@ -191,6 +192,11 @@ def run_trusted_once(
             expected_release=expected_release,
             expected_manifest_sha256=digest,
         )
+        # Reject an expired/far-future credential before even unsealing
+        # DPAPI or contacting the owner relay; also rechecked per WSS IO.
+        remaining = candidate.expires_at - time.time()
+        if not 0 < remaining <= 3600:
+            raise Win32WorkerDenied("native_win32_worker_denied")
         if sid_gate() is not True:
             raise Win32WorkerDenied("native_win32_worker_denied")
         bearer = unseal(
@@ -227,15 +233,22 @@ def run_trusted_once(
         raise Win32WorkerDenied("native_win32_worker_denied") from None
 
 
+class _SafeParser(argparse.ArgumentParser):
+    def error(self, message: str) -> None:
+        # argparse's default error includes unknown values, which could
+        # disclose a mistaken --token argument into a service journal.
+        raise Win32WorkerDenied("native_win32_worker_denied")
+
+
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
+    parser = _SafeParser(
         description="Hermes original Windows native owner-paired READ worker")
     parser.add_argument("--run-once", action="store_true")
     parser.add_argument("--release-sha", required=True)
-    opts = parser.parse_args(argv)
-    if not opts.run_once:
-        return 2
     try:
+        opts = parser.parse_args(argv)
+        if not opts.run_once:
+            raise Win32WorkerDenied("native_win32_worker_denied")
         run_trusted_once(expected_release=opts.release_sha)
         return 0
     except Win32WorkerDenied:
