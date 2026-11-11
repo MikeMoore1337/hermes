@@ -24,6 +24,11 @@ internal static class NativeHostAdmission
     ];
     private const uint FILE_READ_ATTRIBUTES = 0x00000080;
     private const uint FILE_ADD_FILE = 0x00000002;
+    private const uint FILE_ADD_SUBDIRECTORY = 0x00000004;
+    private const uint FILE_WRITE_ATTRIBUTES = 0x00000100;
+    private const uint DELETE_RIGHT = 0x00010000;
+    private const uint WRITE_DAC = 0x00040000;
+    private const uint WRITE_OWNER = 0x00080000;
     private const uint SHARE_READ_WRITE_DELETE = 0x00000007;
     private const uint OPEN_EXISTING = 3;
     private const uint FILE_FLAG_BACKUP_SEMANTICS = 0x02000000;
@@ -55,12 +60,26 @@ internal static class NativeHostAdmission
         catch { return false; }
     }
 
-    private static bool RestrictedDacl(FileSystemSecurity sec)
+    // Explicitly deny ALL service-account write, execute and discretionary
+    // access-control rights, even when ReadData is also granted in one ACE.
+    // This is for the PRIVATE device/manifest state, not owner projects.
+    internal static bool RestrictedDaclForIdentity(
+        FileSystemSecurity sec, SecurityIdentifier serviceSid)
     {
         try
         {
             if (!sec.AreAccessRulesProtected) return false;
-            string service = ExpectedSid().Value;
+            string service = serviceSid.Value;
+            FileSystemRights unsafeRights =
+                FileSystemRights.WriteData |
+                FileSystemRights.AppendData |
+                FileSystemRights.WriteExtendedAttributes |
+                FileSystemRights.WriteAttributes |
+                FileSystemRights.Delete |
+                FileSystemRights.DeleteSubdirectoriesAndFiles |
+                FileSystemRights.ChangePermissions |
+                FileSystemRights.TakeOwnership |
+                FileSystemRights.ExecuteFile;
             string system = new SecurityIdentifier(
                 WellKnownSidType.LocalSystemSid, null).Value;
             string admins = new SecurityIdentifier(
@@ -76,14 +95,21 @@ internal static class NativeHostAdmission
                 if (rule.IsInherited || rule.AccessControlType != AccessControlType.Allow
                     || (id != system && id != admins && id != service))
                     return false;
-                if (id == service &&
-                    (rule.FileSystemRights & FileSystemRights.ReadData) != 0)
-                    serviceRead = true;
+                if (id == service)
+                {
+                    if ((rule.FileSystemRights & unsafeRights) != 0)
+                        return false;
+                    if ((rule.FileSystemRights & FileSystemRights.ReadData) != 0)
+                        serviceRead = true;
+                }
             }
             return serviceRead;
         }
         catch { return false; }
     }
+
+    private static bool RestrictedDacl(FileSystemSecurity sec) =>
+        RestrictedDaclForIdentity(sec, ExpectedSid());
 
     private static bool IsOrdinaryFile(FileInfo file)
     {
@@ -133,11 +159,21 @@ internal static class NativeHostAdmission
             using SafeFileHandle read = OpenRoot(root, FILE_READ_ATTRIBUTES,
                 SHARE_READ_WRITE_DELETE, IntPtr.Zero, OPEN_EXISTING, FLAGS, IntPtr.Zero);
             if (read.IsInvalid) return false;
-            // Merely request FILE_ADD_FILE on the existing directory handle;
-            // never create, write or read project content.
-            using SafeFileHandle forbiddenWrite = OpenRoot(root, FILE_ADD_FILE,
-                SHARE_READ_WRITE_DELETE, IntPtr.Zero, OPEN_EXISTING, FLAGS, IntPtr.Zero);
-            return forbiddenWrite.IsInvalid;
+            // Probe all directory-modification rights, not just FILE_ADD_FILE.
+            // These OPEN_EXISTING probes never modify original project data.
+            uint[] writes =
+            [
+                FILE_ADD_FILE, FILE_ADD_SUBDIRECTORY,
+                FILE_WRITE_ATTRIBUTES, DELETE_RIGHT, WRITE_DAC, WRITE_OWNER,
+            ];
+            foreach (uint requested in writes)
+            {
+                using SafeFileHandle forbiddenWrite = OpenRoot(root, requested,
+                    SHARE_READ_WRITE_DELETE, IntPtr.Zero, OPEN_EXISTING, FLAGS, IntPtr.Zero);
+                if (!forbiddenWrite.IsInvalid)
+                    return false;
+            }
+            return true;
         }
         catch { return false; }
     }

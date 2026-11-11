@@ -74,3 +74,28 @@ must pass separate gates. No source-only check activates a service.
 On disposable Windows CI the LocalService fixture proves refusal 455;
 the actual virtual-account MSI CI must still refuse 454 when no private
 state exists. Real original PC and VPS checks remain NOT_RUN.
+
+
+## Corrected private NTFS DACL admission (2026-11-10)
+
+Security audit identified a critical missing negative condition: an explicit
+private state service ACE containing ReadData AND WriteData could previously
+satisfy the weaker ReadData-only test. NativeHostAdmission now refuses
+any service SID ACE granting write, append, create, delete, ownership,
+permissions changes or execute rights, even if the same ACE also contains
+ReadData. SYSTEM and Administrators remain trusted for maintenance only.
+The DACL must be protected from inheritance, allowlisted exactly by SID and
+owned by SYSTEM/Administrators.
+
+The existing Win32 original-root preflight also checks denial of
+FILE_ADD_FILE, FILE_ADD_SUBDIRECTORY, FILE_WRITE_ATTRIBUTES, DELETE,
+WRITE_DAC and WRITE_OWNER kernel access-open requests, rather than
+testing only creating a file in the directory. All are OPEN_EXISTING
+metadata-rights probes, never file writes or content reads.
+
+A dedicated C# fixture on an ephemeral GitHub Windows runner constructs
+actual in-memory Windows DirectorySecurity/NTAccount descriptors and
+asserts Read-only ALLOW plus write/create/execute/ACL/owner/inherited/world
+DENY cases. This is genuine Windows ACL API behavior, but still not real
+owner-PC service/children permissions acceptance. No host installation,
+PowerShell ACL modification, BRC/WSS activation or signer release occurs.
