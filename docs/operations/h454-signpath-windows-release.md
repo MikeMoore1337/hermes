@@ -74,3 +74,22 @@ SHA-256 receipt become a seven-day signed CI artifact.
 
 No unsigned distribution, self-signed fake trusted publisher, payment
 or production BRC/WSS cutover by this PR. RUNTIME_NO_GO; Issue #454 OPEN.
+
+
+## Required signature chain now includes the native read worker
+
+The MSI contains `HermesCommanderNativeService.exe` and
+`HermesCommanderNativeWorker.exe` built at the same source SHA.
+The signing configuration must deep-sign both embedded executables and
+the MSI. The SignPath release verifier now requires VALID Authenticode
+and matching publisher certificate thumbprints on ALL THREE binaries,
+checks the service source SHA and verifies that the worker rejects
+execution under the non-service CI account. The receipt includes the
+worker's SHA-256 and `worker_valid=true`. Missing/unsigned worker
+prevents a release.
+
+PyInstaller 6.22.3 and websockets 17.2 are exact build version pins, NOT
+full wheel hash/provenance locks. A real signed release still requires
+an approved dependency provenance review, eligible OSS license and
+SignPath Foundation project, protected owner Environment and explicit
+distributable provenance/host installation approvals.
