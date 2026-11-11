@@ -213,11 +213,16 @@ class NoHostWorkerSecurity(unittest.TestCase):
             self.assertEqual(worker.main([
                 "--run-once", "--release-sha", RELEASE
             ]), 2)
-        with self.assertRaises(SystemExit):
-            worker.main([
+        import io
+        with patch.object(worker.sys, "stderr", io.StringIO()) as err:
+            code = worker.main([
                 "--run-once", "--release-sha", RELEASE,
                 "--token", BEARER,
             ])
+            self.assertEqual(code, 2)
+            self.assertNotIn(BEARER, err.getvalue())
+            self.assertEqual(
+                err.getvalue().strip(), "H454_NATIVE_WIN32_WORKER=DENIED")
 
 
 class Win32KernelIdentityNegative(unittest.TestCase):
