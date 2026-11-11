@@ -252,7 +252,8 @@ def run_once(
             gate()
             return _GuardedSocket(connector(*args, **kwargs), gate)
 
-        return outbound.run_session(settings, restricted_connector)
+        return outbound.run_session(
+            settings, restricted_connector, fresh_native=True)
     except Exception:
         # A DPAPI, transport or kernel exception might contain token/path data.
         raise WindowsNativeIdentityDenied("native_win32_identity_denied") from None

@@ -27,6 +27,9 @@ from scripts.h15_native_windows_mcp_stdio import (
 HOST = "hermes.mikemoore.top"
 LOOPBACK = "127.0.0.1"
 DEVICE_NAME = "H15 Windows native read-only"
+FRESH_DEVICE_NAME = "H454 Windows native read-only"
+FRESH_DEVICE_ID = re.compile(r"h454-win-native-[0-9a-f]{32}\\Z")
+FRESH_BEARER = re.compile(r"brc_dev_[A-Za-z0-9_-]{40,256}\\Z")
 # Never let a newly registered device impersonate the owner's original host.
 EXPECTED_DEVICE_ID = "h454-win-01335a1f6e6705b4"
 WIRE_VERSION = 1
@@ -109,6 +112,25 @@ def hello(config: Settings) -> dict[str, Any]:
     }, "tools": tools_advertised()}
 
 
+def fresh_native_hello(config: Settings) -> dict[str, Any]:
+    """Use the owner-bound H454 identity, never the revoked H15 name.
+
+    The original parse_settings()/hello() contract stays unchanged for the
+    legacy device. The new source must opt in explicitly and pass the exact
+    fresh device ID, protocol token and pinned encrypted relay.
+    """
+    if (type(config) is not Settings
+        or type(config.device_id) is not str
+        or FRESH_DEVICE_ID.fullmatch(config.device_id) is None
+        or type(config.device_token) is not str
+        or FRESH_BEARER.fullmatch(config.device_token) is None
+        or config.websocket_url != "wss://hermes.mikemoore.top/ws"):
+        raise NativeTransportDenied("fresh_native_hello_denied")
+    frame = hello(config)
+    frame["device"]["name"] = FRESH_DEVICE_NAME
+    return frame
+
+
 def decode_frame(raw: str | bytes) -> dict[str, Any]:
     if not isinstance(raw, (bytes, str)) or len(raw) > MAX_INCOMING:
         raise NativeTransportDenied("frame_size_invalid")
@@ -161,12 +183,23 @@ def safe_call(session: McpSession, message: dict[str, Any],
 
 
 def run_session(config: Settings, connector: Callable[..., Any],
-                *, seen_ids: set[str] | None = None) -> str:
+                *, seen_ids: set[str] | None = None,
+                fresh_native: bool = False) -> str:
     """One authenticated outbound TLS socket, one bounded local tool session.
 
     The connector is injected for offline tests. Production uses the
     documented websockets.sync.client.connect; it does not auto-install.
     """
+    # Validate the HELLO profile before opening a socket. This is not a
+    # generic caller-supplied device name or tool catalog.
+    if type(fresh_native) is not bool or type(config) is not Settings:
+        raise NativeTransportDenied("invalid_native_profile")
+    if fresh_native:
+        greeting = fresh_native_hello(config)
+    else:
+        if config.device_id != EXPECTED_DEVICE_ID:
+            raise NativeTransportDenied("legacy_device_id_denied")
+        greeting = hello(config)
     session = McpSession()
     init = session.handle({
         "jsonrpc": "2.0", "id": 0, "method": "initialize",
@@ -193,7 +226,7 @@ def run_session(config: Settings, connector: Callable[..., Any],
             ping_timeout=20,
         )
         with connection as ws:
-            ws.send(json.dumps(hello(config), separators=(",", ":")))
+            ws.send(json.dumps(greeting, separators=(",", ":")))
             welcome = False
             # No unbounded reconnect/daemon behavior. Explicit owner action
             # required to launch a future new host process.
