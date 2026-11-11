@@ -7,6 +7,10 @@ on:
       - tests/h454_native_windows_acl/**
       - docs/operations/h454-native-windows-service.md
       - tests/test_h454_native_windows_service.py
+      - tests/h454_native_windows_scm_worker_auth/**
+      - scripts/h454_native_win32_worker.py
+      - scripts/h15_native_windows_outbound.py
+      - device_fabric/windows_native_reenrollment.py
       - .github/workflows/h454-native-windows-service.yml
 
 permissions:
@@ -39,6 +43,14 @@ jobs:
           dotnet run --project 'tests/h454_native_windows_acl/NativeAclFixture.csproj' --configuration Release
           if ($LASTEXITCODE -ne 0) { throw 'H454_WIN32_PRIVATE_ACL_DENIED' }
           Write-Output 'H454_WIN32_PRIVATE_ACL_FIXTURE=PASS'
+      - name: Verify signed release receipt refuses wrong binaries (disposable CI)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet run --project 'tests/h454_native_windows_scm_worker_auth/HermesNativeWorkerReceiptTests.csproj' --configuration Release
+          if ($LASTEXITCODE -ne 0) { throw 'H454_WIN32_RECEIPT_POLICY_DENIED' }
+          Write-Output 'H454_WIN32_SIGNED_RELEASE_RECEIPT=PASS'
+          Write-Output 'H454_WINDOWS_NATIVE_AGENT_STARTED=NO'
       - name: Build isolated Windows service and verify exact SHA / fail closed
         shell: pwsh
         run: |

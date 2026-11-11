@@ -99,3 +99,42 @@ asserts Read-only ALLOW plus write/create/execute/ACL/owner/inherited/world
 DENY cases. This is genuine Windows ACL API behavior, but still not real
 owner-PC service/children permissions acceptance. No host installation,
 PowerShell ACL modification, BRC/WSS activation or signer release occurs.
+
+
+## SCM launches the owner-paired worker only after real OS and signed receipt gates
+
+The SCM service contains a supervised Windows worker lifecycle. It does not
+enable, start, pair or install itself. A separately approved manual start
+must pass all of these checks BEFORE it launches the bundled worker:
+
+1. Actual Windows service process user SID matches
+   `NT SERVICE\HermesCommanderNative`. ProgramData/HermesCommanderNative
+   must have protected non-inherited ACL and three read-only state files:
+   `manifest.json`, `device.json`, `signed-release.json`.
+2. Kernel OPEN_EXISTING checks deny write/create/delete/owner rights on
+   all five explicitly approved original project root directories, on
+   the installed worker binary and on the Program Files install folder.
+3. The protected signed-release receipt, originally emitted only after
+   SignPath triple-Authenticode verification, pins the exact running
+   service SHA-256 and frozen worker SHA-256 to the source commit.
+   Its signature-valid flags are NOT live PKI checks. A trusted owner
+   install must independently validate actual signatures and install
+   the receipt with the correct service read-only ACL. The service cannot
+   create or modify it.
+4. SCM launches one fixed `HermesCommanderNativeWorker.exe` from Program
+   Files via ProcessStartInfo (no shell, custom executable path or caller
+   supplied token/URL/argv), with a minimal environment. The worker
+   inherits the nonadministrator service identity, checks DPAPI
+   CurrentUser and current owner-bound BRC revocation and uses existing
+   Win32 handle-bound native READ only.
+5. Only a validated authenticated BRC WSS `welcome` triggers the
+   exact `H454_NATIVE_BRC_SESSION_READY=YES` child stdout marker.
+   SCM reports SERVICE_RUNNING only after that marker and rechecking
+   SID, ACL and root access. STOP/SHUTDOWN terminate and reap the child.
+   No unpaired/offline/revoked/fake reply can imply RUNNING.
+
+Hosted Windows CI compiles the real service and a standalone C#
+signed-release receipt rejection harness. The MSI remains disabled and
+unsigned until owner-approved signing. No owner-original host acceptance
+has been performed. A positive real native READY requires protected
+owner credentials and a functioning relay, never a synthetic CI PASS.

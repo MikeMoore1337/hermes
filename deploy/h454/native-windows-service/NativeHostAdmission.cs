@@ -127,6 +127,9 @@ internal static class NativeHostAdmission
         catch { return false; }
     }
 
+    internal static bool ProtectedStateFile(FileInfo file) =>
+        MatchesServiceUser() && IsOrdinaryFile(file);
+
     internal static bool PrivateStateIsConfined()
     {
         try
@@ -143,7 +146,8 @@ internal static class NativeHostAdmission
                 state, AccessControlSections.Access | AccessControlSections.Owner);
             if (!RestrictedDacl(sec)) return false;
             return IsOrdinaryFile(new FileInfo(Path.Combine(state.FullName, "manifest.json")))
-                && IsOrdinaryFile(new FileInfo(Path.Combine(state.FullName, "device.json")));
+                && IsOrdinaryFile(new FileInfo(Path.Combine(state.FullName, "device.json")))
+                && IsOrdinaryFile(new FileInfo(Path.Combine(state.FullName, "signed-release.json")));
         }
         catch { return false; }
     }
@@ -181,5 +185,37 @@ internal static class NativeHostAdmission
     internal static bool OriginalRootsAreKernelReadOnly()
     {
         return MatchesServiceUser() && Roots.All(ReadWithoutWrite);
+    }
+
+    internal static bool InstallBinaryIsReadOnly(string path)
+    {
+        // The virtual service account must not be able to replace the
+        // source-pinned worker or create a new executable in Program Files.
+        try
+        {
+            if (!MatchesServiceUser()) return false;
+            FileInfo file = new(path);
+            file.Refresh();
+            if (!file.Exists ||
+                (file.Attributes & FileAttributes.ReparsePoint) != 0)
+                return false;
+            string? parent = file.DirectoryName;
+            if (parent is null || !ReadWithoutWrite(parent)) return false;
+            using SafeFileHandle read = OpenRoot(path, FILE_READ_ATTRIBUTES,
+                SHARE_READ_WRITE_DELETE, IntPtr.Zero, OPEN_EXISTING,
+                FILE_FLAG_OPEN_REPARSE_POINT, IntPtr.Zero);
+            if (read.IsInvalid) return false;
+            foreach (uint right in new uint[]
+                { FILE_ADD_FILE, FILE_ADD_SUBDIRECTORY,
+                  FILE_WRITE_ATTRIBUTES, DELETE_RIGHT, WRITE_DAC, WRITE_OWNER })
+            {
+                using SafeFileHandle writable = OpenRoot(path, right,
+                    SHARE_READ_WRITE_DELETE, IntPtr.Zero, OPEN_EXISTING,
+                    FILE_FLAG_OPEN_REPARSE_POINT, IntPtr.Zero);
+                if (!writable.IsInvalid) return false;
+            }
+            return true;
+        }
+        catch { return false; }
     }
 }
