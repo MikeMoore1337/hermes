@@ -11,7 +11,7 @@ Merge в `main` и завершение CI не запускают production. �
 - Доставляются только уже существующие разрешённые активные Hermes Ops Watch, QA Advisor, Research Scout, Control Center и офлайн-модули.
 - Не включать resident AI, Cloudflare proxy, OAuth broker, новые интеграции, публикации или платные запросы. Изменения служб/systemd/Caddy также требуют отдельного решения.
 - Сервер получает архив по стандартному вводу SSH, сверяет SHA-256 и embedded git commit SHA, отвергает нестандартные tar entries и попытки перехода из каталога.
-- Все Python-проверки свежеполученного архива выполняются через временный systemd unit с `DynamicUser=yes`, `PrivateNetwork=yes`, `ProtectSystem=strict`, `NoNewPrivileges=yes`, бюджетом памяти и времени. **Не выполнять код архива от root.**
+- Все Python-проверки свежеполученного архива выполняются через временные непривилегированные systemd-юниты с `PrivateNetwork=yes`, `ProtectSystem=strict`, `ProtectHome=yes`, `PrivateTmp=yes`, `PrivateDevices=yes`, `NoNewPrivileges=yes`, ограничениями памяти и времени. Быстрые предварительные проверки используют `DynamicUser=yes`; **полный** набор Python-тестов с реальными проверками ядра `openat2` использует статические UID/GID `65534:65534` (nobody), `CapabilityBoundingSet=` и `RestrictSUIDSGID=no`: systemd при `DynamicUser=yes` принудительно включает seccomp-правило `RestrictSUIDSGID=yes`, которое возвращает `ENOSYS` для `openat2`. Никакого отключения тестов или выполнения кода архива от root.
 - Только после зелёного полного unittest серверная доверенная команда обновляет разрешённые каталоги, сохраняет резервные копии и атомарно переключает Control Center. Ошибки до фиксации релиза вызывают rollback.
 - Не полагаться на содержимое PR или зелёный GitHub CI как на доказательство deployed; успех - строка `PRODUCTION_DEPLOYED=<sha>`, receipt, проверка localhost `/healthz` и активности таймеров.
 
@@ -116,3 +116,18 @@ source deploy. Слияние PR само по себе **не** меняет л
 `--rollback-handler <current-sha256> <previous-sha256>` с теми же
 проверками. Не выполнять root-установку через обычный GitHub deploy;
 новый source SHA также требует отдельного утверждения.
+
+## 2026-11-12: H454 openat2 в изолированном production-тесте
+
+На оригинальном Hermes VPS при проверке релиза `14779540c69d6e1fad8b37046577b985dae6f44c` полный набор тестов завершился `FAILED (failures=19, errors=37, skipped=4)`; исходники не установлены, фактический `last-success.sha` остался `94d888acb3ac2a29ca248614bfc63669e77402ca`. Независимое воспроизведение в том же `systemd-run` подтвердило: `PATH_SYSCALL=ENOSYS`, `READ_SYSCALL=ENOSYS`, `STAT=DENIED`, `LIST_ENTRIES=0`. Это не достаточное основание отключать `openat2`: именно он обеспечивает `RESOLVE_BENEATH | RESOLVE_NO_SYMLINKS | RESOLVE_NO_XDEV` без TOCTOU.
+
+Причина: `DynamicUser=yes` неотключаемо включает `RestrictSUIDSGID=yes`; для `openat2` системная политика seccomp отвергает системный вызов целиком. Источник: [systemd.exec(5)](https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html) (раздел `RestrictSUIDSGID`), [systemd #38711](https://github.com/systemd/systemd/issues/38711).
+
+Доверенный серверный обработчик `deploy/hermes-main-deploy.sh` теперь выбирает:
+- `DynamicUser=yes` для трёх быстрых проверок архива.
+- Статический непривилегированный `User=65534`, `Group=65534`, `DynamicUser=no`, `RestrictSUIDSGID=no` только для полной группы unit-тестов, **с неизменёнными** `PrivateNetwork=yes`, `NoNewPrivileges=yes`, `ProtectSystem=strict`, `ProtectHome=yes`, `PrivateTmp=yes`, `PrivateDevices=yes`, `MemoryMax=1G`, `TasksMax=128` и `RuntimeMaxSec=540`. Дополнительно `CapabilityBoundingSet=` удаляет все Linux capabilities, а проверка `id nobody` требует точные UID/GID `65534:65534`.
+- Если оригинальная система не поддерживает `openat2` и без этого фильтра, проверки по-прежнему **FAIL CLOSED**; нет подмены `openat2` на `openat`, `skip`, отключения unittest или искусственного PASS.
+
+**Порядок выпуска:** source-only PR/merge/CI сами по себе не устанавливают новый обработчик `/usr/local/sbin/hermes-main-deploy`. Старый обработчик работает отдельно от исходного релиза и при очередном обычном workflow снова вызовет `DynamicUser=yes`. Поэтому требуется отдельный точный SHA-256 файла `deploy/hermes-main-deploy.sh`, целевое разрешение владельца на **привилегированную установку обработчика**, штатное `deploy/provision-main-deploy.sh --install-handler ...` с сохранением предыдущей версии и проверкой отката. Источник обработчика может быть взят только из независимо сверенного Git checkout точного approved source SHA, не из последнего НЕ установленного release. Только после реального теста в изоляции с `User=65534`, проверки нового обработчика и нового **одобренного** SHA релиза допустим повторный production-deploy workflow.
+
+Исходные BRC/WSS, native agent и сохранённый маркер предыдущего переключения не меняются.
