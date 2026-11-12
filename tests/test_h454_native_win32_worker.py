@@ -19,13 +19,11 @@ from tests.test_h454_windows_native_reenrollment import (
     BEARER, DEVICE, RELEASE, SEALED, manifest, config,
 )
 
-NOW = int(time.time())
-
-
 class NoHostWorkerSecurity(unittest.TestCase):
     def setUp(self):
+        self.now = int(time.time())
         self.manifest = manifest()
-        self.config = config(expiry=NOW + 200)
+        self.config = config(expiry=self.now + 200)
         self.source = Mock(side_effect=lambda path, limit: (
             self.manifest if path == worker.MANIFEST else self.config
             if path == worker.CONFIG else (_ for _ in ()).throw(
@@ -48,6 +46,13 @@ class NoHostWorkerSecurity(unittest.TestCase):
         }
         with patch.object(worker.sys, "platform", "win32"):
             return worker.run_trusted_once(**{**kwargs, **override})
+
+    def test_bearer_expiry_refreshes_at_each_test_setup(self):
+        # The full owner-host suite takes over five minutes. A fixture
+        # constructed at module import would expire before this class runs.
+        expiry = json.loads(self.config)["expires_at"]
+        self.assertEqual(expiry, self.now + 200)
+        self.assertGreater(expiry - int(time.time()), 150)
 
     def test_binds_live_owner_status_and_dpapi_to_actual_read_session(self):
         with patch.object(worker, "read_session", return_value="idle_timeout") as read:
@@ -85,9 +90,9 @@ class NoHostWorkerSecurity(unittest.TestCase):
         for changed in (
             b'{}', self.config + b'\n',
             self.config.replace(b'"release_sha":', b'"release_sha":"f","release_sha":', 1),
-            config(device=admission.REVOKED_LEGACY_ID, expiry=NOW+200),
-            config(expiry=NOW - 1),
-            config(expiry=NOW + 4000),
+            config(device=admission.REVOKED_LEGACY_ID, expiry=self.now+200),
+            config(expiry=self.now - 1),
+            config(expiry=self.now + 4000),
         ):
             with self.subTest(config=changed[:70]):
                 self.source.side_effect = lambda path, size: (
@@ -128,6 +133,7 @@ class NoHostWorkerSecurity(unittest.TestCase):
             self.assertNotIn(BEARER, str(exc.exception))
 
     def test_actual_brc_wss_hello_is_fresh_and_bounded_under_worker(self):
+        now = self.now
         class Socket:
             def __init__(self):
                 self.sent = []
@@ -148,7 +154,7 @@ class NoHostWorkerSecurity(unittest.TestCase):
                 if self.reads == 1:
                     return json.dumps({
                         "type": "welcome", "protocol": 1,
-                        "relayVersion": "test", "serverTime": NOW,
+                        "relayVersion": "test", "serverTime": now,
                     })
                 raise TimeoutError()
 
@@ -168,6 +174,7 @@ class NoHostWorkerSecurity(unittest.TestCase):
         self.assertNotIn(BEARER, json.dumps(socket.sent))
 
     def test_read_after_brc_revocation_never_reaches_native_file_handler(self):
+        now = self.now
         class Socket:
             def __init__(self):
                 self.sent = []
@@ -187,7 +194,7 @@ class NoHostWorkerSecurity(unittest.TestCase):
                 self.reads += 1
                 if self.reads == 1:
                     return json.dumps({"type":"welcome","protocol":1,
-                        "relayVersion":"test","serverTime":NOW})
+                        "relayVersion":"test","serverTime":now})
                 return json.dumps({"type":"call","id":"sensitive-read",
                                    "tool":"native_file_read",
                                    "args":{"project":"hermes","relative":"README.md"}})
@@ -206,6 +213,7 @@ class NoHostWorkerSecurity(unittest.TestCase):
         self.assertTrue(socket.closed)
 
     def test_supervised_worker_emits_ready_only_after_verified_brc_welcome(self):
+        now = self.now
         class FakeSocket:
             def __init__(self):
                 self.received = 0
@@ -217,7 +225,7 @@ class NoHostWorkerSecurity(unittest.TestCase):
                 self.received += 1
                 if self.received == 1:
                     return json.dumps({"type":"welcome","protocol":1,
-                        "relayVersion":"synthetic","serverTime":NOW})
+                        "relayVersion":"synthetic","serverTime":now})
                 raise TimeoutError()
         socket = FakeSocket()
         self.transport.side_effect = lambda *_args, **_kwargs: socket

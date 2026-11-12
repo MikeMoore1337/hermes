@@ -189,6 +189,12 @@ if "unittest" in sys.argv:
         self.assertIn("RestrictSUIDSGID=no", full)
         self.assertIn("CapabilityBoundingSet=", full)
         self.assertIn("RuntimeMaxSec=540", full)
+        self.assertIn("RuntimeDirectory=hermes-main-deploy-tests", full)
+        self.assertIn("RuntimeDirectoryMode=0700", full)
+        self.assertIn("HOME=/run/hermes-main-deploy-tests", full)
+        for args in calls[:3]:
+            self.assertNotIn("RuntimeDirectory=hermes-main-deploy-tests", args)
+            self.assertNotIn("HOME=/run/hermes-main-deploy-tests", args)
     def test_immediate_ready_and_exact_receipt(self):
         r = self.deploy()
         self.assertEqual(r.returncode, 0, r.stderr.decode())
