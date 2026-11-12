@@ -142,13 +142,21 @@ isolated_python() {
   # retaining all other isolation. Untrusted source Python never runs as root.
   local runtime_max_sec=240
   local sandbox_identity=(-p DynamicUser=yes)
+  local sandbox_environment=()
   if [[ "${1:-}" == "--full-unit-suite" ]]; then
     runtime_max_sec=540
     [[ "$(id -u nobody 2>/dev/null)" == 65534 &&
        "$(id -g nobody 2>/dev/null)" == 65534 ]] ||
       die "non-root unit-test identity unavailable"
+    # The nobody account has /nonexistent as its home. Kernel-backed
+    # native runtime fixtures need a real private HOME whose ancestors are
+    # root protected. Let systemd create it for this transient service:
+    # this grants no writable host source/workspace directory.
     sandbox_identity=(-p DynamicUser=no -p User=65534 -p Group=65534
-                      -p RestrictSUIDSGID=no -p CapabilityBoundingSet=)
+                      -p RestrictSUIDSGID=no -p CapabilityBoundingSet=
+                      -p RuntimeDirectory=hermes-main-deploy-tests
+                      -p RuntimeDirectoryMode=0700)
+    sandbox_environment=(-E HOME=/run/hermes-main-deploy-tests)
     shift
   fi
   systemd-run --wait --collect --pipe --quiet \
@@ -157,7 +165,7 @@ isolated_python() {
     -p ProtectSystem=strict -p ProtectHome=yes -p PrivateTmp=yes \
     -p PrivateDevices=yes -p MemoryMax=1G -p TasksMax=128 \
     -p "RuntimeMaxSec=$runtime_max_sec" -E PYTHONDONTWRITEBYTECODE=1 \
-    /usr/bin/python3 "$@"
+    "${sandbox_environment[@]}" /usr/bin/python3 "$@"
 }
 isolated_python scripts/validate_repo.py || die "repo validation failed"
 isolated_python scripts/check_policy_index.py || die "policy check failed"
