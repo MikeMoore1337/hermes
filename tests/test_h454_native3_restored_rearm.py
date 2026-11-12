@@ -84,7 +84,7 @@ class RestoreEvidenceTests(unittest.TestCase):
                          self.root / "reconcile.pending"),
             patch.object(rearm.pair, "PAIR_PENDING",
                          self.root / "native3-pair.pending"),
-            patch.object(rearm.os, "geteuid", return_value=0),
+            patch.object(rearm, "_root_required", return_value=True),
         )
 
     def with_all_contexts(self, action, *, mocks=()):
@@ -230,7 +230,7 @@ class RestoreEvidenceTests(unittest.TestCase):
         with redirect_stdout(io.StringIO()) as out:
             self.assertEqual(rearm.main(args), 2)
         self.assertIn("RECOVERY_EXPLICIT_EXECUTE_REQUIRED", out.getvalue())
-        with patch.object(rearm.os, "geteuid", return_value=0), \
+        with patch.object(rearm, "_root_required", return_value=True), \
              patch.object(rearm.sys.stdin, "isatty", return_value=False):
             with self.assertRaisesRegex(
                 rearm.RearmDenied, "RECOVERY_INTERACTIVE_ROOT_TTY_REQUIRED"
