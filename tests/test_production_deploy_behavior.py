@@ -122,7 +122,9 @@ if a == ["restart", "hermes-control-center.service"]:
 sys.exit(9)
 """)
         executable(self.bin / "systemd-run", """#!/usr/bin/env python3
-import sys
+import json, os, sys
+with open(os.environ["MOCK_SYSTEMD_ARGS"], "a", encoding="utf-8") as calls:
+    calls.write(json.dumps(sys.argv[1:]) + "\\n")
 if "unittest" in sys.argv:
     print("Ran 1 tests in 0.001s\\n\\nOK", file=sys.stderr)
 """)
@@ -151,7 +153,8 @@ if "unittest" in sys.argv:
                    MOCK_HTTP=http, MOCK_HTTP_COUNT=str(self.dir / "curl-count"),
                    MOCK_SYSTEM_COUNT=str(self.dir / "system-count"),
                    MOCK_RESTART_COUNT=str(self.dir / "restart-count"),
-                   MOCK_STOP_AT=str(stop_at), MOCK_CLOCK=str(self.clock))
+                   MOCK_STOP_AT=str(stop_at), MOCK_CLOCK=str(self.clock),
+                   MOCK_SYSTEMD_ARGS=str(self.dir / "systemd-args.jsonl"))
         return subprocess.run(["bash", str(self.script)], input=self.data if data is None else data,
                               capture_output=True, env=env, timeout=30)
 
@@ -162,6 +165,30 @@ if "unittest" in sys.argv:
         self.assertFalse(self.state.exists(), "false successful state after rollback")
         self.assertFalse((self.base / "releases" / ("main-" + self.sha)).exists())
 
+    def test_full_suite_keeps_nonroot_and_openat2_isolation(self):
+        import json
+        result = self.deploy()
+        self.assertEqual(result.returncode, 0, result.stderr.decode())
+        calls = [json.loads(line) for line in
+                 (self.dir / "systemd-args.jsonl").read_text().splitlines()]
+        self.assertEqual(len(calls), 4)
+        for args in calls:
+            for flag in ("PrivateNetwork=yes", "NoNewPrivileges=yes",
+                         "ProtectSystem=strict", "ProtectHome=yes",
+                         "PrivateTmp=yes", "PrivateDevices=yes",
+                         "MemoryMax=1G", "TasksMax=128"):
+                self.assertIn(flag, args)
+            self.assertNotIn("User=root", args)
+        for args in calls[:3]:
+            self.assertIn("DynamicUser=yes", args)
+            self.assertNotIn("User=65534", args)
+        full = calls[3]
+        self.assertIn("DynamicUser=no", full)
+        self.assertIn("User=65534", full)
+        self.assertIn("Group=65534", full)
+        self.assertIn("RestrictSUIDSGID=no", full)
+        self.assertIn("CapabilityBoundingSet=", full)
+        self.assertIn("RuntimeMaxSec=540", full)
     def test_immediate_ready_and_exact_receipt(self):
         r = self.deploy()
         self.assertEqual(r.returncode, 0, r.stderr.decode())
