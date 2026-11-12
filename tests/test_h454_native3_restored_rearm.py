@@ -7,6 +7,7 @@ import io
 import json
 import os
 from pathlib import Path
+from types import SimpleNamespace
 import tempfile
 import unittest
 from unittest.mock import patch, Mock
@@ -65,7 +66,14 @@ class RestoreEvidenceTests(unittest.TestCase):
                              "candidate_image": RUNTIME,
                          }),
             patch.object(rearm.pair.stage1, "load_existing_wss",
-                         return_value=Mock()),
+                         return_value=SimpleNamespace(
+                             _pins=lambda raw: {
+                                 "relay_id": RELAY_ID,
+                                 "sidecar_id": PROXY_ID,
+                                 "relay_image": rearm.pair.stage1.FORK_IMAGE,
+                                 "sidecar_image": rearm.pair.stage1.LEGACY_IMAGE,
+                             }
+                         )),
             patch.object(rearm.pair, "verify_pair",
                          return_value=(
                              {"Id": RELAY_ID,
@@ -231,7 +239,7 @@ class RestoreEvidenceTests(unittest.TestCase):
             self.assertEqual(rearm.main(args), 2)
         self.assertIn("RECOVERY_EXPLICIT_EXECUTE_REQUIRED", out.getvalue())
         with patch.object(rearm, "_root_required", return_value=True), \
-             patch.object(rearm.sys.stdin, "isatty", return_value=False):
+             patch.object(rearm.sys, "stdin", SimpleNamespace(isatty=lambda: False)):
             with self.assertRaisesRegex(
                 rearm.RearmDenied, "RECOVERY_INTERACTIVE_ROOT_TTY_REQUIRED"
             ):
