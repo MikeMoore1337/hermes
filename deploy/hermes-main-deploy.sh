@@ -139,7 +139,7 @@ isolated_python() {
   # kernel openat2 confinement. On systemd, DynamicUser implies
   # RestrictSUIDSGID=yes, whose seccomp filter returns ENOSYS for openat2.
   # Run ONLY that suite as the standard unprivileged nobody identity, while
-  # retaining all other isolation. No deployment code executes as root.
+  # retaining all other isolation. Untrusted source Python never runs as root.
   local runtime_max_sec=240
   local sandbox_identity=(-p DynamicUser=yes)
   if [[ "${1:-}" == "--full-unit-suite" ]]; then
