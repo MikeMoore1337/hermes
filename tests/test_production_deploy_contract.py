@@ -63,6 +63,29 @@ class MainDeployContractTests(unittest.TestCase):
         self.assertNotIn('systemctl enable', script)
         self.assertNotIn('hermes-agent-sandbox.service start', script)
 
+    def test_openat2_full_suite_is_static_nonroot_without_disabling_sandbox(self):
+        script = (ROOT / "deploy/hermes-main-deploy.sh").read_text(encoding="utf-8")
+        # DynamicUser implicitly installs RestrictSUIDSGID which blocks
+        # openat2 with ENOSYS on systemd. Keep DynamicUser for fast checks;
+        # the full kernel-backed suite runs as unprivileged uid/gid 65534.
+        self.assertIn("local sandbox_identity=(-p DynamicUser=yes)", script)
+        self.assertIn('if [[ "${1:-}" == "--full-unit-suite" ]]; then', script)
+        self.assertIn('id -u nobody 2>/dev/null)', script)
+        self.assertIn('id -g nobody 2>/dev/null)', script)
+        self.assertIn("sandbox_identity=(-p DynamicUser=no -p User=65534 -p Group=65534", script)
+        self.assertIn("-p RestrictSUIDSGID=no -p CapabilityBoundingSet=)", script)
+        self.assertIn('"${sandbox_identity[@]}" -p "WorkingDirectory=$work/src"', script)
+        for protection in (
+            "PrivateNetwork=yes", "NoNewPrivileges=yes", "ProtectSystem=strict",
+            "ProtectHome=yes", "PrivateTmp=yes", "PrivateDevices=yes",
+            "MemoryMax=1G", "TasksMax=128",
+        ):
+            self.assertIn(protection, script)
+        self.assertIn("OFFLINE_UNIT_SUITE_FAILED_OR_TIMED_OUT", script)
+        self.assertNotIn("SystemCallFilter=~openat2", script)
+        self.assertNotIn("skipUnless(os.environ", script)
+        self.assertNotIn("RunAs=root", script)
+
     def test_unittest_status_allows_only_clean_ok_or_ok_with_skips(self):
         script = (ROOT / "deploy/hermes-main-deploy.sh").read_text(encoding="utf-8")
         expression = r"^OK( \(skipped=[0-9]+\))?$"
