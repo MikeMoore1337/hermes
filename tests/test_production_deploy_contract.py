@@ -73,7 +73,7 @@ class MainDeployContractTests(unittest.TestCase):
         self.assertIn('id -u nobody 2>/dev/null)', script)
         self.assertIn('id -g nobody 2>/dev/null)', script)
         self.assertIn("sandbox_identity=(-p DynamicUser=no -p User=65534 -p Group=65534", script)
-        self.assertIn("-p RestrictSUIDSGID=no -p CapabilityBoundingSet=)", script)
+        self.assertIn("-p RestrictSUIDSGID=no -p CapabilityBoundingSet=", script)
         self.assertIn('"${sandbox_identity[@]}" -p "WorkingDirectory=$work/src"', script)
         for protection in (
             "PrivateNetwork=yes", "NoNewPrivileges=yes", "ProtectSystem=strict",
