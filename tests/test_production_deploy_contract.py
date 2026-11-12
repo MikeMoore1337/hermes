@@ -81,6 +81,10 @@ class MainDeployContractTests(unittest.TestCase):
             "MemoryMax=1G", "TasksMax=128",
         ):
             self.assertIn(protection, script)
+        self.assertIn("-p RuntimeDirectory=hermes-main-deploy-tests", script)
+        self.assertIn("-p RuntimeDirectoryMode=0700", script)
+        self.assertIn('sandbox_environment=(-E HOME=/run/hermes-main-deploy-tests)', script)
+        self.assertIn('"${sandbox_environment[@]}" /usr/bin/python3 "$@"', script)
         self.assertIn("OFFLINE_UNIT_SUITE_FAILED_OR_TIMED_OUT", script)
         self.assertNotIn("SystemCallFilter=~openat2", script)
         self.assertNotIn("skipUnless(os.environ", script)
