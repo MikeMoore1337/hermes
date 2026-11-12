@@ -135,15 +135,24 @@ done
 chmod 0755 "$work" "$work/src"
 chmod -R a+rX,go-w "$work/src"
 isolated_python() {
-  # Fast prechecks retain 240s; only the growing full unit suite gets a
-  # separately bounded 540s budget. Never disable DynamicUser or isolation.
+  # Short prechecks still use DynamicUser=yes. The full suite tests the real
+  # kernel openat2 confinement. On systemd, DynamicUser implies
+  # RestrictSUIDSGID=yes, whose seccomp filter returns ENOSYS for openat2.
+  # Run ONLY that suite as the standard unprivileged nobody identity, while
+  # retaining all other isolation. No deployment code executes as root.
   local runtime_max_sec=240
+  local sandbox_identity=(-p DynamicUser=yes)
   if [[ "${1:-}" == "--full-unit-suite" ]]; then
     runtime_max_sec=540
+    [[ "$(id -u nobody 2>/dev/null)" == 65534 &&
+       "$(id -g nobody 2>/dev/null)" == 65534 ]] ||
+      die "non-root unit-test identity unavailable"
+    sandbox_identity=(-p DynamicUser=no -p User=65534 -p Group=65534
+                      -p RestrictSUIDSGID=no -p CapabilityBoundingSet=)
     shift
   fi
   systemd-run --wait --collect --pipe --quiet \
-    -p DynamicUser=yes -p "WorkingDirectory=$work/src" \
+    "${sandbox_identity[@]}" -p "WorkingDirectory=$work/src" \
     -p PrivateNetwork=yes -p NoNewPrivileges=yes \
     -p ProtectSystem=strict -p ProtectHome=yes -p PrivateTmp=yes \
     -p PrivateDevices=yes -p MemoryMax=1G -p TasksMax=128 \
