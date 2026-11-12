@@ -240,6 +240,58 @@ Docker or credential mutation. Do not delete the retained snapshot to turn a
 failed plan into PASS; a separate reviewed incident-retention/re-arm procedure
 and new owner authorization are required before any second maintenance switch.
 
+### Verified restored pair: evidence-preserving re-arm (new source-only operator)
+
+A previously failed joint cutover can leave `native3-original-pins.json`
+intentionally retained after both original containers are restored. The normal
+`scripts.h454_native3_paired_preflight plan` **must continue refusing**
+`PREVIOUS_TRANSACTION_NOT_CLEARED` as long as that file exists. A restored
+pair is not itself permission to remove evidence or repeat a production switch.
+
+`scripts.h454_native3_restored_rearm` is a separate original-owner-host,
+exact-release-pinned recovery operator with two explicit actions:
+
+- `plan` requires the installed source SHA, exact verified OCI bundle/image
+  pins, original root identity, matching *byte-for-byte* retained/current
+  protected pin files, validated WSS/TLS pair and owner-state registry,
+  both original running container IDs/images, no pending operations, both
+  v2 checkpoint names absent and a valid baseline device count. It never
+  deletes/moves the marker, loads an image, enables native services or
+  modifies BRC/WSS. The existing relay lock may create its own lock file.
+- `rearm --execute` repeats the full plan, then requires an independent
+  root-interactive TTY confirmation containing exact installed SHA and the
+  previous pin SHA-256. After confirmation it **re-checks the live pair**
+  under the original lock and writes both original pin bytes and a root-only
+  receipt using exclusive (no-overwrite), fsynced files in
+  `/var/lib/hermes-h454-wss-sidecar/native3-rearm-evidence`. Only after
+  archived bytes + receipt are verified does it remove the single retained
+  *gate entry*. No Docker/container, OAuth, token, registry or WSS mutation.
+  Any existing archive entry or partial attempt refuses, retaining original
+  evidence and requiring a distinct recovery review. Never remove partial
+  archives merely to make a retry succeed.
+
+Run the operator only from the **new explicitly approved and deployed owner
+source release**, not a detached checkout or the old release. For example:
+
+```sh
+cd /opt/hermes-agent-owner/releases/main-<deployed-exact-owner-sha>
+python3 -B -m scripts.h454_native3_restored_rearm plan \
+  --release-sha <deployed-exact-owner-sha> \
+  --bundle-dir <owner-private-verified-oci-directory> \
+  --image <independent-ci-config-image-sha256> \
+  --archive-sha <independent-ci-archive-sha256> \
+  --candidate-sha <approved-ci-build-sha>
+```
+
+After `plan` succeeds, the separate, owner-approved incident-closure
+operation can run `rearm --execute` with the same exact pins at a trusted
+interactive root console. Do **not** request execute by chat text or a GitHub
+workflow. The operator reports `RESTORED_EVIDENCE_ARCHIVED_REARMED_NO_CUTOVER`,
+not a release GO. Independently rerun the normal joint `plan`, complete
+CVE assessment, obtain fresh exact owner production approval, and rehearse
+rollback before any new paired cutover. This source does not authorize
+production deploy, network/host permissions, or native device activation.
+
 **Mandatory before readiness:** independent code/security review at the exact
 PR HEAD; repository, BRC candidate, Windows native and UI regression checks;
 fault injection for every stop/rename/create/update/pin/health/reconcile
