@@ -48,6 +48,10 @@ class Verified:
     baseline_devices: int
 
 
+def _root_required() -> bool:
+    return os.geteuid() == 0
+
+
 def _absent(path: Path) -> bool:
     try:
         path.lstat()
@@ -171,7 +175,7 @@ def _attest_locked(*, source_sha: str, candidate_sha: str, bundle: Path,
 
 def plan(*, source_sha: str, candidate_sha: str, bundle: Path,
          image: str, archive_sha: str) -> Verified:
-    if os.geteuid() != 0:
+    if not _root_required():
         deny("RECOVERY_ROOT_REQUIRED")
     pair.verify_installed_source(source_sha)
     with pair.legacy.lock():
@@ -182,7 +186,7 @@ def plan(*, source_sha: str, candidate_sha: str, bundle: Path,
 
 
 def _owner_confirmation(proof: Verified) -> None:
-    if (os.geteuid() != 0 or not sys.stdin.isatty()
+    if (not _root_required() or not sys.stdin.isatty()
         or not sys.stdout.isatty()):
         deny("RECOVERY_INTERACTIVE_ROOT_TTY_REQUIRED")
     exact = ("H454 REARM RESTORED PAIR " + proof.source_sha
