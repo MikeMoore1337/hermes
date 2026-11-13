@@ -86,6 +86,7 @@ class LinuxUnitSourceOnlyTests(unittest.TestCase):
             "User=hermes-commander-native",
             "Group=hermes-commander-native",
             "NoNewPrivileges=yes",
+            "RestrictSUIDSGID=no",
             "CapabilityBoundingSet=",
             "AmbientCapabilities=",
             "ProtectSystem=strict",
@@ -110,9 +111,36 @@ class LinuxUnitSourceOnlyTests(unittest.TestCase):
         for item in required:
             with self.subTest(item=item):
                 self.assertIn(item+"\n", out)
+        # Preflight READ opens original root handles via openat2(2).
+        # The old yes value blocked this syscall (ENOSYS) on the owner VPS.
+        self.assertNotIn("RestrictSUIDSGID=yes", out)
+        self.assertNotIn("DynamicUser=yes", out)
         self.assertNotIn("ReadWritePaths=", out)
         self.assertNotIn("BindPaths=", out)
         self.assertNotIn("EnvironmentFile=", out)
+
+    def test_offline_root_handle_preflight_keeps_openat2_and_isolation(self):
+        for target in ("hermes-vps", "yfc-vps"):
+            with self.subTest(target=target):
+                out = self.render(candidate(target=target), target=target)
+                self.assertIn("--inspect-root-handles", out)
+                self.assertIn("RestrictSUIDSGID=no\n", out)
+                self.assertNotIn("RestrictSUIDSGID=yes", out)
+                for rule in (
+                    "User=hermes-commander-native",
+                    "Group=hermes-commander-native",
+                    "NoNewPrivileges=yes",
+                    "CapabilityBoundingSet=\n",
+                    "AmbientCapabilities=\n",
+                    "PrivateNetwork=yes",
+                    "ProtectSystem=strict",
+                    "ProtectHome=yes",
+                    "PrivateDevices=yes",
+                    "PrivateTmp=yes",
+                    "SystemCallFilter=~@mount @reboot @swap",
+                    "IPAddressDeny=any",
+                ):
+                    self.assertIn(rule, out)
 
     def test_exact_package_and_manifest_digest_are_visible_only_as_hash(self):
         payload = candidate()
