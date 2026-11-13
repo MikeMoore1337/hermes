@@ -39,7 +39,31 @@ read-only configuration/root-FD preflight using
   `PrivateNetwork=yes`, `IPAddressDeny=any`,
   `RestrictAddressFamilies=AF_UNIX`,
   `KillMode=control-group`, CPU/memory/PID/time limits,
-  namespace, kernel, SUID and filesystem protections.
+  namespace, kernel and filesystem protections.
+
+### Kernel openat2 compatibility
+
+The preflight command uses `--inspect-root-handles`, which opens
+original-root directory handles through Linux `openat2(2)` with
+strict no-follow confinement. The original Hermes VPS has shown that
+`RestrictSUIDSGID=yes` blocks `openat2` at the systemd seccomp layer,
+returning `ENOSYS` even for read-only `O_PATH` operations.
+
+The rendered preflight unit now explicitly sets
+`RestrictSUIDSGID=no` for its fixed non-root/no-login service identity,
+matching the separately corrected live worker unit. This does **not**
+grant elevated privileges or permit writes: `NoNewPrivileges=yes`,
+empty capability sets, strict read-only system mounts, no networking,
+private devices/tmp, the kernel handle-bound path policy and resource
+limits remain required. Never replace `openat2` with a permissive
+`open` fallback.
+
+This is source-only: a pre-existing `hermes-commander-native-preflight.service`
+is **not** replaced by a GitHub merge or by the normal Hermes source-only
+deployment. The owner must separately approve a reviewed, exact-release
+versioned update of the existing disabled unit, manifest and immutable
+native source files. Do not overwrite legacy receipts or start a native
+agent to test this fix.
 
 **This is an intentionally offline preflight.** The generated unit
 disallows all network egress and cannot act as an outbound WSS
