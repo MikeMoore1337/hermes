@@ -125,7 +125,14 @@ def render_active_unit(
             "ProtectKernelModules=yes",
             "ProtectHostname=yes",
             "ProtectClock=yes",
-            "RestrictSUIDSGID=yes",
+            # The native READ adapter requires openat2 with RESOLVE_BENEATH,
+            # RESOLVE_NO_SYMLINKS and RESOLVE_NO_XDEV. systemd implements
+            # RestrictSUIDSGID=yes using seccomp and denies openat2 entirely
+            # (ENOSYS), even for read-only O_PATH. Unlike DynamicUser, this
+            # service has an explicitly provisioned fixed nonroot identity.
+            # NoNewPrivileges + empty capabilities + ProtectSystem=strict
+            # remain enforced; never weaken the kernel FD confinement.
+            "RestrictSUIDSGID=no",
             "RestrictNamespaces=yes",
             "RestrictRealtime=yes",
             "MemoryDenyWriteExecute=yes",

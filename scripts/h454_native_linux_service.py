@@ -42,7 +42,11 @@ EXPECTED_HARDENING = {
     "PrivateTmp": "yes",
     "PrivateDevices": "yes",
     "PrivateNetwork": "no",
-    "RestrictSUIDSGID": "yes",
+    # RestrictSUIDSGID=yes blocks openat2 at the seccomp layer (ENOSYS).
+    # Keep NoNewPrivileges=yes, no capabilities, fixed nonroot UID/GID,
+    # and read-only filesystem; native original-file handlers require
+    # openat2 to enforce no-follow kernel path confinement.
+    "RestrictSUIDSGID": "no",
     "RestrictNamespaces": "yes",
     "MemoryDenyWriteExecute": "yes",
 }

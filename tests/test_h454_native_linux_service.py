@@ -93,6 +93,36 @@ class RealLinuxUnitRenderTests(unittest.TestCase):
                 self.assertNotIn("ReadWritePaths=", text)
                 self.assertNotIn("ExecStart=/bin/bash", text)
 
+    def test_openat2_requires_seccomp_compatible_fixed_service_identity(self):
+        # systemd's RestrictSUIDSGID=yes blocks openat2 even for O_PATH.
+        # Do not replace the native FD adapter with an unsafe openat fallback.
+        text = render()
+        self.assertIn("RestrictSUIDSGID=no\n", text)
+        self.assertNotIn("RestrictSUIDSGID=yes", text)
+        for protection in (
+            "User=hermes-commander-native",
+            "Group=hermes-commander-native",
+            "NoNewPrivileges=yes",
+            "CapabilityBoundingSet=\n",
+            "AmbientCapabilities=\n",
+            "ProtectSystem=strict",
+            "ProtectHome=yes",
+            "PrivateDevices=yes",
+            "PrivateTmp=yes",
+            "RestrictNamespaces=yes",
+            "MemoryDenyWriteExecute=yes",
+            "SystemCallFilter=~@mount @reboot @swap",
+            "IPAddressDeny=any",
+        ):
+            self.assertIn(protection, text)
+        self.assertEqual(service.EXPECTED_HARDENING["RestrictSUIDSGID"], "no")
+        self.assertTrue(service._properties_are_hardened(hardening_properties()))
+        for invalid in ("yes", "", "unknown"):
+            with self.subTest(invalid=invalid):
+                wrong = hardening_properties().replace(
+                    "RestrictSUIDSGID=no", "RestrictSUIDSGID=" + invalid)
+                self.assertFalse(service._properties_are_hardened(wrong))
+
     def test_dual_relay_and_host_local_dns_stub_are_exactly_bounded(self):
         text = render(
             relay="104.21.57.247,172.67.167.145",
