@@ -167,3 +167,34 @@ source deploy. Слияние PR само по себе **не** меняет л
 временной изоляции на оригинальном VPS, отдельное разрешение владельца,
 сохранение предыдущей версии и новый exact-SHA выпуск. Никаких BRC/WSS,
 OAuth, реальных токенов или нативных служб это не активирует.
+
+### 2026-11-13: исправление тестового HOME после повторной диагностики
+
+Повторная оригинальная VPS-проверка подтвердила `HOME_ENV_MATCH=True`,
+`PATH_HOME_MATCH=True`, `RUNTIME_DIR_MATCH=True`, `HOME_OWNER_MATCH=True`,
+`HOME_MODE=0o700`, `HOME_TEMP_WRITE=PASS`, однако два позитивных Linux native
+runtime-теста завершились `RuntimeDenied(native_linux_runtime_denied)`.
+Проблема была не в правах. Фикстура ставит `roots` равным вложенному пути
+`Path.home()`, а `device_fabric/native_install_preview._linux_root` правильно
+запрещает весь префикс `/run` через `BLOCKED_LINUX_ANCESTORS`.
+
+Запрет `/run` НЕ снимается. Для полной непривилегированной группы тестов
+`systemd-run` теперь создаёт только пустую служебную директорию
+`CacheDirectory=hermes-main-deploy-tests` (режим `0700`) в
+`/var/cache` и монтирует поверх неё ограниченную частную `tmpfs`:
+`TemporaryFileSystem=/var/cache/hermes-main-deploy-tests:rw,nosuid,nodev,size=64M,mode=0700,uid=65534,gid=65534`.
+При запуске выставляется `HOME=/var/cache/hermes-main-deploy-tests`.
+`/var/cache` не входит в заблокированные root-префиксы; вложенные тестовые
+папки обеспечивают атомарные проверки прав и реальный kernel `openat2`.
+Содержимое HOME не записывается на постоянный диск, монтирование завершается
+вместе с transient unit; на диске остаётся только пустая служебная директория
+режима `0700`. `PrivateNetwork`, `ProtectHome`, `PrivateTmp`,
+`ProtectSystem=strict`, `NoNewPrivileges`, `CapabilityBoundingSet=`,
+лимиты и запрет обхода тестов остаются.
+
+**Важное условие:** прежде чем устанавливать обновлённый root-owned handler,
+проверить реальные `CacheDirectory` + `TemporaryFileSystem` на исходном VPS
+в отдельной временной systemd-службе с теми же ограничениями. Установка
+обработчика - отдельная авторизуемая операция с SHA-256 и штатным откатом.
+Новый source-only релиз - отдельное разрешение, CI и приёмка. Изменение
+не даёт прав на BRC/WSS cutover, сопряжение или активацию Linux/Windows agents.
