@@ -54,6 +54,44 @@ scripts/h454_native_linux_active_unit.py uses Restart=on-success with
 unit has a real [Install] section for later owner-approved boot enable,
 but it is NEVER installed/enabled by code merge or GitHub CI.
 
+## Original VPS kernel openat2 compatibility (2026-11-13)
+
+The existing native READ/search dispatcher relies on the kernel
+`openat2(2)` syscall with `RESOLVE_BENEATH | RESOLVE_NO_SYMLINKS |
+RESOLVE_NO_XDEV`. The original Hermes VPS source-deployer sandbox
+previously failed native tests when `RestrictSUIDSGID=yes` was implicitly
+set through `DynamicUser=yes`: the kernel returned `ENOSYS` for
+`openat2` on that system. A fixed unprivileged `nobody` user with
+`RestrictSUIDSGID=no`, no capabilities, `NoNewPrivileges=yes` and the
+remaining sandbox restrictions passed real kernel-backed tests.
+
+The separate native service renderer previously set
+`RestrictSUIDSGID=yes` **explicitly**, which would reproduce that failure
+once installed even though the tested source deploy succeeded. The native
+service now requires **`RestrictSUIDSGID=no`** both in its generated
+systemd unit and in its independently checked effective manager properties.
+This does **not** turn off the service's restricted system call groups,
+`NoNewPrivileges=yes`, empty bounding/ambient capabilities, fixed
+non-root/no-login UID/GID, read-only host mounts, network IP deny-by-default,
+nor the openat2 no-follow kernel path protection. `DynamicUser` is not used
+for the native service because it unconditionally implies the incompatible
+seccomp restriction.
+
+**Original-host activation remains blocked** until a separately approved
+native service installation and exact owner/device pairing. Source and
+GitHub CI checks do not prove the installed unit's effective properties.
+Before enabling this service on the original Hermes or YFC VPS, a dedicated
+non-mutating `systemd-run` canary with its **actual service UID/GID**,
+`RestrictSUIDSGID=no`, and all intended filesystem restrictions must
+pass both a synthetic allowed-file `openat2` read and negative
+symlink/traversal tests. The real manager's
+`systemctl show hermes-commander-native.service` value must then match
+`RestrictSUIDSGID=no`; any mismatch must refuse the network session.
+Current production BRC/WSS and the retained rollback markers are
+not changed by these source edits.
+
+Reference: [systemd.exec(5), RestrictSUIDSGID](https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html).
+
 ## Exact egress configuration
 
 The future owner must explicitly approve, for each VPS:
