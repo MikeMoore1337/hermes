@@ -148,15 +148,18 @@ isolated_python() {
     [[ "$(id -u nobody 2>/dev/null)" == 65534 &&
        "$(id -g nobody 2>/dev/null)" == 65534 ]] ||
       die "non-root unit-test identity unavailable"
-    # The nobody account has /nonexistent as its home. Kernel-backed
-    # native runtime fixtures need a real private HOME whose ancestors are
-    # root protected. Let systemd create it for this transient service:
-    # this grants no writable host source/workspace directory.
+    # The nobody account's /nonexistent home is unavailable. Synthetic
+    # native manifest roots must also avoid forbidden /run and /var/lib.
+    # Create a protected /var/cache mountpoint under systemd management,
+    # then overlay it with a *private, bounded tmpfs* for this one process.
+    # Neither the fixture files nor the synthetic bearer persist on the host.
+    # The empty systemd-managed cache directory is the only retained inode.
     sandbox_identity=(-p DynamicUser=no -p User=65534 -p Group=65534
                       -p RestrictSUIDSGID=no -p CapabilityBoundingSet=
-                      -p RuntimeDirectory=hermes-main-deploy-tests
-                      -p RuntimeDirectoryMode=0700)
-    sandbox_environment=(-E HOME=/run/hermes-main-deploy-tests)
+                      -p CacheDirectory=hermes-main-deploy-tests
+                      -p CacheDirectoryMode=0700
+                      -p TemporaryFileSystem=/var/cache/hermes-main-deploy-tests:rw,nosuid,nodev,size=64M,mode=0700,uid=65534,gid=65534)
+    sandbox_environment=(-E HOME=/var/cache/hermes-main-deploy-tests)
     shift
   fi
   systemd-run --wait --collect --pipe --quiet \
