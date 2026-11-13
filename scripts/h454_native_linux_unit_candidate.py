@@ -100,7 +100,12 @@ def render_preflight_unit(manifest: bytes, *, target: str,
             "ProtectProc=invisible",
             "ProcSubset=pid",
             "RestrictAddressFamilies=AF_UNIX",
-            "RestrictSUIDSGID=yes",
+            # The READ-only --inspect-root-handles path calls openat2(2).
+            # On the original Hermes VPS, RestrictSUIDSGID=yes installs a
+            # seccomp filter returning ENOSYS for openat2, even for O_PATH.
+            # Fixed unprivileged identity, NoNewPrivileges, empty capabilities
+            # and all other offline isolation remain mandatory.
+            "RestrictSUIDSGID=no",
             "RestrictRealtime=yes",
             "RestrictNamespaces=yes",
             "LockPersonality=yes",
