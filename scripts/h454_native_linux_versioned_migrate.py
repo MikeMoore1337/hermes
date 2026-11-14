@@ -400,8 +400,8 @@ def stage_source(paths: Paths, c: Candidate) -> None:
             folder.chmod(0o755)
         new_file(entry, content, 0o444)
     for name, content in c.source.items():
-        require(bounded_read(root / name, 262144, owners={0}, private=False) == content,
-                "SOURCE_READBACK_FAILED")
+        require(bounded_read(root / name, 262144, owners={os.geteuid()},
+                             private=False) == content, "SOURCE_READBACK_FAILED")
     require(len([p for p in root.rglob("*") if p.is_file()]) == len(SOURCE_FILES),
             "SOURCE_FILE_COUNT_INVALID")
 
