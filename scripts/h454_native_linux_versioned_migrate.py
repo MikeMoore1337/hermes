@@ -396,7 +396,7 @@ def stage_source(paths: Paths, c: Candidate) -> None:
                 break
             require(root in folder.parents, "SOURCE_PATH_ESCAPE")
             require(folder.is_dir() and not folder.is_symlink()
-                    and folder.lstat().st_uid == 0, "SOURCE_DIR_UNSAFE")
+                    and folder.lstat().st_uid == os.geteuid(), "SOURCE_DIR_UNSAFE")
             folder.chmod(0o755)
         new_file(entry, content, 0o444)
     for name, content in c.source.items():
