@@ -44,6 +44,7 @@ SOURCE_FILES: Final = tuple(sorted((
     "device_fabric/linux_native_search.py",
     "device_fabric/native_brc_enrollment.py",
     "device_fabric/native_brc_status.py",
+    "device_fabric/native_private_tls.py",
     "device_fabric/native_effect_grants.py",
     "device_fabric/native_install_preview.py",
     "scripts/h454_native_install_preflight.py",

@@ -11,6 +11,7 @@ import ipaddress
 import re
 
 from device_fabric.native_install_preview import parse_candidate, InstallPlanDenied
+from device_fabric.native_private_tls import TRUST, CONFIG, CA, _private_ip
 from scripts.h454_native_linux_unit_candidate import (
     SERVICE_USER, MANIFEST_PATH, CONFIG_PATH,
 )
@@ -29,7 +30,7 @@ class LinuxActiveUnitDenied(ValueError):
 def render_active_unit(
     manifest: bytes, *,
     target: str, release_sha: str, manifest_sha256: str,
-    relay_ipv4: str, dns_ipv4: str,
+    relay_ipv4: str, dns_ipv4: str, private_relay: bool = False,
 ) -> str:
     """Render an OS-constrained service, but never install/enable it."""
     try:
@@ -40,7 +41,8 @@ def render_active_unit(
             or type(release_sha) is not str
             or SHA40.fullmatch(release_sha) is None
             or type(relay_ipv4) is not str
-            or type(dns_ipv4) is not str):
+            or type(dns_ipv4) is not str
+            or type(private_relay) is not bool):
             raise LinuxActiveUnitDenied("native_linux_active_unit_denied")
         candidate = parse_candidate(
             manifest, expected_release=release_sha, expected_target=target)
@@ -59,9 +61,15 @@ def render_active_unit(
             or any(not part or part.strip() != part for part in relay_parts)):
             raise LinuxActiveUnitDenied("native_linux_active_unit_denied")
         relays = tuple(ipaddress.IPv4Address(part) for part in relay_parts)
-        dns = ipaddress.IPv4Address(dns_ipv4)
-        if len(set(relays)) != len(relays) or dns in relays:
-            raise LinuxActiveUnitDenied("native_linux_active_unit_denied")
+        if private_relay:
+            # Private bridge never needs public Cloudflare or DNS egress.
+            if len(relays) != 1 or dns_ipv4 != "" or not _private_ip(relay_ipv4):
+                raise LinuxActiveUnitDenied("native_linux_active_unit_denied")
+            dns = None
+        else:
+            dns = ipaddress.IPv4Address(dns_ipv4)
+            if len(set(relays)) != len(relays) or dns in relays:
+                raise LinuxActiveUnitDenied("native_linux_active_unit_denied")
         # The exact systemd-resolved stub is the ONLY permitted loopback DNS.
         # The owner must separately verify that the host actually uses it.
         # All relay addresses, and every non-stub resolver, remain public /32.
@@ -70,9 +78,10 @@ def render_active_unit(
                 value.is_loopback or value.is_link_local or value.is_multicast
                 or value.is_reserved or value.is_unspecified or value.is_private
             )
-        if (not all(public(addr) for addr in relays)
-            or (dns != ipaddress.IPv4Address("127.0.0.53")
-                and not public(dns))):
+        if (not private_relay and
+            (not all(public(addr) for addr in relays)
+             or (dns != ipaddress.IPv4Address("127.0.0.53")
+                 and not public(dns)))):
             raise LinuxActiveUnitDenied("native_linux_active_unit_denied")
         source = "/opt/hermes-commander-native/releases/main-" + release_sha
         deps = "/opt/hermes-commander-native/deps/main-" + release_sha
@@ -93,6 +102,7 @@ def render_active_unit(
             "AssertPathExists=" + MANIFEST_PATH,
             "AssertPathExists=" + CONFIG_PATH,
             "AssertPathExists=" + deps + "/websockets/sync/client.py",
+            *(("AssertPathExists=" + str(TRUST / name) for name in (CONFIG, CA)) if private_relay else ()),
             "StartLimitIntervalSec=300",
             "StartLimitBurst=3",
             "",
@@ -142,7 +152,7 @@ def render_active_unit(
             "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6",
             "IPAddressDeny=any",
             *("IPAddressAllow=" + str(addr) + "/32"
-              for addr in (*relays, dns)),
+              for addr in (relays if private_relay else (*relays, dns))),
             "IPAccounting=yes",
             "MemoryMax=256M",
             "CPUQuota=25%",
@@ -150,6 +160,7 @@ def render_active_unit(
             "ReadOnlyPaths=" + source,
             "ReadOnlyPaths=" + deps,
             "ReadOnlyPaths=/var/lib/hermes-commander-native",
+            *((("ReadOnlyPaths=" + str(TRUST),)) if private_relay else ()),
         ]
         lines.extend("ReadOnlyPaths=" + root for _, root in candidate.roots)
         lines.extend([
