@@ -15,6 +15,8 @@ from unittest.mock import patch
 
 from device_fabric import native_private_tls as direct
 from scripts import h454_native_linux_service as service
+from scripts import h454_native_linux_active_unit as unit
+from device_fabric.native_install_preview import SCHEMA, SERVICE
 
 RELEASE = 'a' * 40
 IDENTITY = 'h454-linux-hermes-' + 'a' * 32
@@ -93,6 +95,47 @@ class TrustLoading(unittest.TestCase):
             with self.assertRaises(direct.PrivateTLSDenied):
                 ws(direct.ENDPOINT,**dict(options,additional_headers={'Authorization':'Bearer '+TOKEN}))
             connection.assert_called_once()
+
+
+    def test_render_private_hermes_unit_blocks_all_public_egress(self):
+        manifest = json.dumps({
+            "schema": SCHEMA,
+            "target": "hermes-vps",
+            "release_sha": RELEASE,
+            "artifact_sha256": "c" * 64,
+            "service_name": SERVICE["hermes-vps"][0],
+            "service_identity": SERVICE["hermes-vps"][1],
+            "start_state": "DISABLED",
+            "access_mode": "READ_ONLY",
+            "roots": [{"project": "hermes", "path": "/srv/hermes/source"}],
+        }, sort_keys=True, separators=(",", ":")).encode("ascii")
+        params = {
+            "manifest": manifest, "target": "hermes-vps",
+            "release_sha": RELEASE,
+            "manifest_sha256": hashlib.sha256(manifest).hexdigest(),
+            "relay_ipv4": "172.29.251.2", "dns_ipv4": "",
+            "private_relay": True,
+        }
+        rendered = unit.render_active_unit(**params)
+        self.assertIn("IPAddressDeny=any\n", rendered)
+        self.assertEqual(
+            [line for line in rendered.splitlines() if line.startswith("IPAddressAllow=")],
+            ["IPAddressAllow=172.29.251.2/32"],
+        )
+        self.assertIn("AssertPathExists=" + str(direct.TRUST / direct.CA), rendered)
+        self.assertIn("AssertPathExists=" + str(direct.TRUST / direct.CONFIG), rendered)
+        self.assertIn("ReadOnlyPaths=" + str(direct.TRUST), rendered)
+        self.assertIn("NoNewPrivileges=yes", rendered)
+        self.assertIn("RestrictSUIDSGID=no", rendered)
+        for ip, dns in (
+            ("8.8.8.8", ""), ("127.0.0.1", ""),
+            ("172.29.251.2,172.29.251.3", ""),
+            ("172.29.251.2", "127.0.0.53"),
+        ):
+            with self.subTest(ip=ip, dns=dns), self.assertRaises(
+                unit.LinuxActiveUnitDenied
+            ):
+                unit.render_active_unit(**dict(params, relay_ipv4=ip, dns_ipv4=dns))
 
 
 class LocalCertificateE2E(unittest.TestCase):
