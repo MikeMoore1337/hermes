@@ -1,4 +1,4 @@
-// Private TLS front end for the existing relay's agent WebSocket only.
+// Private TLS front end for the existing relay's WebSocket and native bearer status.
 import { readFileSync } from 'node:fs';
 import http from 'node:http';
 import https from 'node:https';
@@ -38,13 +38,89 @@ export function relayWatchdog(probe, onLost) {
   };
 }
 
+// Exact owner-bearer status over the already restricted private TLS sidecar.
+// No device enrollment, generic HTTP forwarding, or public route is enabled.
+export function nativeStatusResponse(req, res, upstreamPort, allowedPeer) {
+  if (req.url !== '/device/native-status') {
+    res.writeHead(404, { Connection: 'close' }); res.end(); return;
+  }
+  const names = req.rawHeaders.filter((_, i) => i % 2 === 0).map(v => v.toLowerCase());
+  const token = req.headers.authorization;
+  if (req.method !== 'GET' || req.httpVersion !== '1.1' ||
+      req.socket.remoteAddress !== allowedPeer ||
+      names.filter(v => v === 'authorization').length !== 1 ||
+      names.some(v => ['transfer-encoding', 'content-length', 'cookie'].includes(v)) ||
+      typeof token !== 'string' ||
+      !/^Bearer brc_dev_[A-Za-z0-9_-]{40,256}$/.test(token)) {
+    res.writeHead(403, { 'Cache-Control': 'no-store',
+      Connection: 'close', 'Content-Length': '0' });
+    res.end(); return;
+  }
+  let done = false;
+  let upstream;
+  const finish = (code, body = '') => {
+    if (done) return;
+    done = true;
+    if (!res.destroyed) {
+      res.writeHead(code, {
+        'Cache-Control': 'no-store', Connection: 'close',
+        'Content-Type': code === 200 ? 'application/json' : 'text/plain',
+        'Content-Length': String(Buffer.byteLength(body)),
+      });
+      res.end(body);
+    }
+    upstream?.destroy();
+  };
+  upstream = http.request({
+    host: '127.0.0.1', port: upstreamPort,
+    path: '/device/native-status', method: 'GET', agent: false,
+    headers: { Authorization: token, Accept: 'application/json',
+      'Cache-Control': 'no-store' },
+  }, reply => {
+    if (reply.statusCode !== 200) {
+      finish(reply.statusCode === 403 ? 403 : 502);
+      reply.resume(); return;
+    }
+    const chunks = [];
+    let total = 0;
+    reply.on('data', chunk => {
+      total += chunk.length;
+      if (total > 512) { finish(502); reply.destroy(); }
+      else if (!done) chunks.push(chunk);
+    });
+    reply.on('end', () => {
+      if (done) return;
+      try {
+        const data = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+        if (!data || typeof data !== 'object' || Array.isArray(data) ||
+            Object.keys(data).sort().join(',') !== 'active,device_id,owner_bound,schema' ||
+            data.schema !== 'h454-native-device-status-v1' ||
+            data.active !== true || data.owner_bound !== true ||
+            typeof data.device_id !== 'string' ||
+            !/^h454-(?:linux-hermes|linux-yfc|win-native)-[a-f0-9]{32}$/.test(data.device_id))
+          throw new Error('INVALID_NATIVE_STATUS');
+        finish(200, JSON.stringify({
+          schema: data.schema, device_id: data.device_id,
+          active: true, owner_bound: true,
+        }));
+      } catch { finish(502); }
+    });
+    reply.on('error', () => finish(502));
+    reply.on('aborted', () => finish(502));
+  });
+  upstream.setTimeout(4000, () => upstream.destroy());
+  upstream.on('error', () => finish(502));
+  res.once('close', () => upstream.destroy());
+  upstream.end();
+}
+
 export function createProxy({ key, cert, upstreamPort, allowedPeer }) {
   if (!Number.isInteger(upstreamPort) || upstreamPort < 1 || upstreamPort > 65535 ||
       typeof allowedPeer !== 'string' || net.isIP(allowedPeer) !== 4 || allowedPeer === '0.0.0.0')
     throw new Error('H454_PROXY_CONFIGURATION');
   const server = https.createServer({ key, cert, minVersion: 'TLSv1.2', maxHeaderSize: 8192,
     handshakeTimeout: 10000 },
-    (_req, res) => { res.writeHead(404, { Connection: 'close' }); res.end(); });
+    (req, res) => nativeStatusResponse(req, res, upstreamPort, allowedPeer));
   server.maxConnections = 8;
   server.prependListener('connection', socket => { if (socket.remoteAddress !== allowedPeer) socket.destroy(); });
   server.headersTimeout = 10000;
