@@ -1,0 +1,158 @@
+"""H454 native WSS/status private TLS, no original host or real bearer."""
+from __future__ import annotations
+
+import hashlib
+from http.server import BaseHTTPRequestHandler, HTTPServer
+import json
+from pathlib import Path
+import socket
+import ssl
+import subprocess
+import tempfile
+import threading
+import unittest
+from unittest.mock import patch
+
+from device_fabric import native_private_tls as direct
+from scripts import h454_native_linux_service as service
+
+RELEASE = 'a' * 40
+IDENTITY = 'h454-linux-hermes-' + 'a' * 32
+TOKEN = 'brc_dev_' + 'x' * 64
+WRONG = 'brc_dev_' + 'y' * 64
+
+
+class TrustLoading(unittest.TestCase):
+    def _manifest(self, ca: bytes, **overrides):
+        doc = {'schema':'h454-private-relay-v1','target':'hermes-vps',
+               'release_sha':RELEASE,'relay_ipv4':'172.29.251.2',
+               'ca_sha256':hashlib.sha256(ca).hexdigest(),
+               'server_name':'brc-agent.internal','port':3001}
+        doc.update(overrides)
+        return json.dumps(doc,sort_keys=True,separators=(',',':')).encode()
+
+    def test_exact_pinned_config_and_ca_only(self):
+        # The separate TLS fixture validates the actual cert, here the
+        # filesystem adapter is mocked to test canonical schema and SHA.
+        ca=b'-----BEGIN CERTIFICATE-----\nsynthetic\n-----END CERTIFICATE-----\n'
+        with patch.object(direct,'_guard_dir'), patch.object(direct,'_context'):
+            with patch.object(direct,'_read',side_effect=[self._manifest(ca),ca]):
+                r=direct.load_private_relay('hermes-vps',RELEASE)
+                self.assertEqual(r.relay_ipv4,'172.29.251.2')
+                self.assertNotIn('synthetic',repr(r))
+            for corrupted in (self._manifest(ca,relay_ipv4='8.8.8.8'),
+                              self._manifest(ca,relay_ipv4='127.0.0.1'),
+                              self._manifest(ca,server_name='evil.invalid'),
+                              self._manifest(ca,port=443),
+                              self._manifest(ca,ca_sha256='0'*64),
+                              self._manifest(ca)+b'\n'):
+                with patch.object(direct,'_read',side_effect=[corrupted,ca]),self.assertRaises(direct.PrivateTLSDenied):
+                    direct.load_private_relay('hermes-vps',RELEASE)
+
+    def test_private_ip_and_exact_mode(self):
+        for text in ('172.29.251.2','10.20.0.2','192.168.0.2'):
+            self.assertTrue(direct._private_ip(text))
+        for text in ('0.0.0.0','127.0.0.1','169.254.10.2','8.8.8.8',
+                     '172.32.0.1','1.2.3.4','172.29.251.2/32'):
+            self.assertFalse(direct._private_ip(text))
+        lines = '\n'.join([f'{k}={v}' for k,v in service.EXPECTED_HARDENING.items()]+[
+            'IPAddressDeny=any','IPAddressAllow=172.29.251.2/32',
+            'CapabilityBoundingSet='])
+        self.assertTrue(service._properties_are_hardened(lines,
+                       private_relay_ip='172.29.251.2'))
+        self.assertFalse(service._properties_are_hardened(lines))
+        self.assertFalse(service._properties_are_hardened(lines.replace('IPAddressAllow=172.29.251.2/32',
+            'IPAddressAllow=172.29.251.2/32 8.8.8.8/32'),
+            private_relay_ip='172.29.251.2'))
+        self.assertFalse(service._properties_are_hardened(lines.replace('IPAddressDeny=any','IPAddressDeny='),
+            private_relay_ip='172.29.251.2'))
+
+    def test_websocket_never_uses_public_ip_for_network(self):
+        config=direct.PrivateRelay('hermes-vps',RELEASE,'172.29.251.2',b'fake-ca')
+        recorded=[]
+        fake=type('S',(),{'close':lambda self:None})()
+        def underlying(uri,**kw):
+            recorded.append((uri,kw))
+            return 'synthetic-only'
+        with (patch.object(direct.socket,'create_connection',return_value=fake) as connection,
+              patch.object(direct,'_context',return_value=object())):
+            ws=direct.private_websocket_connector(config,underlying)
+            headers={'Authorization':'Bearer '+TOKEN,'X-BRC-Protocol':'1'}
+            options={'additional_headers':headers,'open_timeout':10,'close_timeout':3,
+                     'compression':None,'proxy':None,'max_size':8192,
+                     'ping_interval':20,'ping_timeout':20}
+            self.assertEqual(ws(direct.ENDPOINT,**options),'synthetic-only')
+            connection.assert_called_once_with(('172.29.251.2',3001),timeout=8)
+            self.assertEqual(recorded[0][0],direct.WS_URI)
+            self.assertEqual(recorded[0][1]['server_hostname'],'brc-agent.internal')
+            self.assertIs(recorded[0][1]['sock'],fake)
+            with self.assertRaises(direct.PrivateTLSDenied):
+                ws('wss://evil.invalid/ws',**options)
+            with self.assertRaises(direct.PrivateTLSDenied):
+                ws(direct.ENDPOINT,**dict(options,proxy=True))
+            with self.assertRaises(direct.PrivateTLSDenied):
+                ws(direct.ENDPOINT,**dict(options,additional_headers={'Authorization':'Bearer '+TOKEN}))
+            connection.assert_called_once()
+
+
+class LocalCertificateE2E(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp=tempfile.TemporaryDirectory()
+        folder=Path(cls.tmp.name)
+        cls.ca=folder/'ca.crt';cakey=folder/'ca.key'
+        cert=folder/'relay.crt';key=folder/'relay.key'
+        csr=folder/'relay.csr';ext=folder/'ext.conf'
+        ext.write_text('subjectAltName=DNS:brc-agent.internal\nextendedKeyUsage=serverAuth\n')
+        def openssl(*args):
+            subprocess.run(['openssl',*map(str,args)],capture_output=True,check=True,timeout=15)
+        openssl('req','-x509','-newkey','rsa:2048','-nodes','-keyout',cakey,
+                '-out',cls.ca,'-days','1','-subj','/CN=synthetic-ca',
+                '-addext','basicConstraints=critical,CA:TRUE',
+                '-addext','keyUsage=critical,keyCertSign,cRLSign')
+        openssl('req','-newkey','rsa:2048','-nodes','-keyout',key,'-out',csr,
+                '-subj','/CN=brc-agent.internal')
+        openssl('x509','-req','-in',csr,'-CA',cls.ca,'-CAkey',cakey,
+                '-CAcreateserial','-out',cert,'-days','1','-extfile',ext)
+        context=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(str(cert),str(key))
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                if self.path != '/device/native-status' or self.headers.get('Authorization')!='Bearer '+TOKEN:
+                    self.send_response(403);self.send_header('Content-Length','0');self.end_headers();return
+                content=json.dumps({'schema':'h454-native-device-status-v1',
+                    'device_id':IDENTITY,'active':True,'owner_bound':True},
+                    separators=(',',':')).encode('ascii')
+                self.send_response(200)
+                self.send_header('Content-Type','application/json')
+                self.send_header('Content-Length',str(len(content)))
+                self.end_headers();self.wfile.write(content)
+            def log_message(self,*args):pass
+        cls.server=HTTPServer(('127.0.0.1',0),Handler)
+        cls.server.socket=context.wrap_socket(cls.server.socket,server_side=True)
+        cls.thread=threading.Thread(target=cls.server.serve_forever,daemon=True)
+        cls.thread.start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.shutdown();cls.server.server_close();cls.thread.join(timeout=3)
+        cls.tmp.cleanup()
+
+    def test_authenticated_status_and_revocation_over_real_pinned_tls(self):
+        ca=self.ca.read_bytes()
+        pinned=direct.PrivateRelay('hermes-vps',RELEASE,'127.0.0.1',ca)
+        with patch.object(direct,'PORT',self.server.server_address[1]):
+            self.assertTrue(direct.current_bearer(pinned,target='hermes-vps',device_id=IDENTITY,bearer=TOKEN))
+            self.assertFalse(direct.current_bearer(pinned,target='hermes-vps',device_id=IDENTITY,bearer=WRONG))
+            self.assertTrue(direct.private_revoked_provider(pinned,target='hermes-vps',device_id=IDENTITY,bearer=WRONG,
+                base_url=direct.PUBLIC)())
+            self.assertFalse(direct.private_revoked_provider(pinned,target='hermes-vps',device_id=IDENTITY,bearer=TOKEN,
+                base_url=direct.PUBLIC)())
+            with self.assertRaises(direct.PrivateTLSDenied):
+                direct.private_revoked_provider(pinned,target='hermes-vps',device_id=IDENTITY,bearer=TOKEN,
+                    base_url='http://localhost:3000')
+
+    def test_wrong_ca_cannot_send_bearer(self):
+        pinned=direct.PrivateRelay('hermes-vps',RELEASE,'127.0.0.1',b'bad ca data')
+        with patch.object(direct,'PORT',self.server.server_address[1]):
+            self.assertFalse(direct.current_bearer(pinned,target='hermes-vps',device_id=IDENTITY,bearer=TOKEN))
