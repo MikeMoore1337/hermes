@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import https from 'node:https';
+import { readFileSync } from 'node:fs';
+
 import { EventEmitter } from 'node:events';
-import { nativeStatusResponse, privateIPv4 } from './h454_wss_relay_proxy.mjs';
+import { createProxy, nativeStatusResponse, privateIPv4 } from './h454_wss_relay_proxy.mjs';
 
 const ID = 'h454-linux-hermes-' + 'a'.repeat(32);
 const key = letter => 'Bearer brc_dev_' + letter.repeat(64);
@@ -93,6 +96,55 @@ try {
   assert.equal((await probe({auth: ERROR})).status, 502);
   assert.equal(forwarded, 6);
   assert.deepEqual(forwardedTokens, [GOOD, BAD, REDIRECT, LARGE, FORGED, ERROR]);
+  // Real TLS handshake against a disposable certificate with a pinned CA
+  // and hostname. No owner bearer or external endpoint is ever contacted.
+  const fixtures = process.argv[2];
+  if (fixtures) {
+    const read = name => readFileSync(fixtures + '/' + name);
+    const proxy = createProxy({
+      key: read('trusted.key'), cert: read('trusted.crt'),
+      upstreamPort: port, allowedPeer: '127.0.0.1',
+    });
+    await new Promise((resolve, reject) => {
+      proxy.once('error', reject);
+      proxy.listen(0, '127.0.0.1', resolve);
+    });
+    const tlsPort = proxy.address().port;
+    function tlsCall(auth, ca, servername = 'brc-agent.internal',
+                     path = '/device/native-status') {
+      return new Promise((resolve, reject) => {
+        const req = https.request({
+          host: '127.0.0.1', port: tlsPort, path, method: 'GET',
+          servername, ca, rejectUnauthorized: true, agent: false,
+          headers: auth ? { Authorization: auth } : {},
+          timeout: 4000,
+        }, response => {
+          let body = '';
+          response.on('data', chunk => { body += chunk; });
+          response.on('end', () =>
+            resolve({ status: response.statusCode, body, headers: response.headers }));
+        });
+        req.on('timeout', () => req.destroy(new Error('TLS_STATUS_TIMEOUT')));
+        req.on('error', reject);
+        req.end();
+      });
+    }
+    try {
+      const trusted = read('ca.crt');
+      const ok = await tlsCall(GOOD, trusted);
+      assert.equal(ok.status, 200);
+      assert.deepEqual(JSON.parse(ok.body), JSON.parse(raw()));
+      assert.equal(ok.headers['cache-control'], 'no-store');
+      assert.equal((await tlsCall(null, trusted)).status, 403);
+      assert.equal((await tlsCall(BAD, trusted)).status, 403);
+      assert.equal((await tlsCall(GOOD, trusted, 'brc-agent.internal', '/admin')).status, 404);
+      await assert.rejects(tlsCall(GOOD, read('fake.crt')));
+      await assert.rejects(tlsCall(GOOD, trusted, 'wrong.invalid'));
+      console.log('H454_PRIVATE_TLS_REAL_SOCKET_PINNED_CA_SNI=PASS');
+    } finally {
+      await new Promise(resolve => proxy.close(resolve));
+    }
+  }
   console.log('H454_PRIVATE_TLS_STATUS_PROXY_SYNTHETIC_E2E=PASS');
   console.log('H454_STATUS_INVALID_REQUESTS_AND_ADMIN_ROUTES=DENIED');
   console.log('H454_ORIGINAL_HOST_OR_TOKEN_USED=NO');
