@@ -20,6 +20,10 @@ import sys
 from typing import Callable
 
 from device_fabric.native_brc_status import revoked_provider, PUBLIC, StatusDenied
+from device_fabric.native_private_tls import (
+    _private_ip, load_private_relay, private_revoked_provider,
+    private_websocket_connector,
+)
 from scripts.h454_native_linux_runtime import (
     load_local_runtime, run_once, RuntimeDenied, _service_identity,
 )
@@ -97,7 +101,7 @@ def _kernel_evidence(status: str, cgroup: str, invocation: str,
         return False
 
 
-def _properties_are_hardened(text: str) -> bool:
+def _properties_are_hardened(text: str, *, private_relay_ip: str | None = None) -> bool:
     try:
         if type(text) is not str or not 0 < len(text) <= 16384:
             return False
@@ -112,6 +116,10 @@ def _properties_are_hardened(text: str) -> bool:
         if values.get("IPAddressDeny") != "any":
             return False
         ip_words = values.get("IPAddressAllow", "").split()
+        if private_relay_ip is not None:
+            return (_private_ip(private_relay_ip) and
+                    ip_words == [private_relay_ip + "/32"] and
+                    values.get("CapabilityBoundingSet") in ("", "~"))
         if len(ip_words) not in (2, 3) or len(set(ip_words)) != len(ip_words):
             return False
         stub = ipaddress.IPv4Address("127.0.0.53")
@@ -173,7 +181,7 @@ def _pinned_websocket_dependency(release_sha: str) -> bool:
         return False
 
 
-def real_os_isolation_verified() -> bool:
+def real_os_isolation_verified(*, private_relay_ip: str | None = None) -> bool:
     """Every call rechecks actual process capabilities and manager policy."""
     try:
         if sys.platform != "linux" or os.name != "posix":
@@ -200,7 +208,8 @@ def real_os_isolation_verified() -> bool:
         )
         if proc.returncode != 0 or len(proc.stdout) > 16384:
             return False
-        return _properties_are_hardened(proc.stdout.decode("ascii"))
+        return _properties_are_hardened(proc.stdout.decode("ascii"),
+                                        private_relay_ip=private_relay_ip)
     except Exception:
         return False
 
@@ -215,8 +224,6 @@ def run_trusted_once(*, target: str, release_sha: str,
     Dependency injection exists only for disposable offline unit tests.
     Production CLI always uses real_os_isolation_verified/revoked_provider.
     """
-    if os_gate is None:
-        os_gate = real_os_isolation_verified
     if (target not in {"hermes-vps", "yfc-vps"}
         or type(release_sha) is not str
         or EXPECTED_SHA.fullmatch(release_sha) is None
@@ -226,6 +233,20 @@ def run_trusted_once(*, target: str, release_sha: str,
         or (connector is not None and not callable(connector))):
         _deny()
     try:
+        private = None
+        if connector is None:
+            # CLI production path is always private, even if the public
+            # BRC endpoint appears to work. Never allow an implicit fallback.
+            private = load_private_relay(target, release_sha)
+            if os_gate is None:
+                os_gate = lambda: real_os_isolation_verified(
+                    private_relay_ip=private.relay_ipv4)
+            if status_factory is not revoked_provider:
+                _deny()
+            status_factory = lambda **kwargs: private_revoked_provider(
+                private, **kwargs)
+        elif os_gate is None:
+            os_gate = real_os_isolation_verified
         _service_identity(target)
         if os_gate() is not True:
             _deny()
@@ -250,7 +271,7 @@ def run_trusted_once(*, target: str, release_sha: str,
             if not _pinned_websocket_dependency(release_sha):
                 _deny()
             from websockets.sync.client import connect
-            connector = connect
+            connector = private_websocket_connector(private, connect)
         if os_gate() is not True:
             _deny()
         return run_once(
