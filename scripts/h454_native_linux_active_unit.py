@@ -102,7 +102,7 @@ def render_active_unit(
             "AssertPathExists=" + MANIFEST_PATH,
             "AssertPathExists=" + CONFIG_PATH,
             "AssertPathExists=" + deps + "/websockets/sync/client.py",
-            *(("AssertPathExists=" + str(TRUST / name)) for name in (CONFIG, CA)) if private_relay else (),
+            *(("AssertPathExists=" + str(TRUST / name) for name in (CONFIG, CA)) if private_relay else ()),
             "StartLimitIntervalSec=300",
             "StartLimitBurst=3",
             "",
@@ -160,7 +160,7 @@ def render_active_unit(
             "ReadOnlyPaths=" + source,
             "ReadOnlyPaths=" + deps,
             "ReadOnlyPaths=/var/lib/hermes-commander-native",
-            *("ReadOnlyPaths=" + str(TRUST),) if private_relay else (),
+            *((("ReadOnlyPaths=" + str(TRUST),)) if private_relay else ()),
         ]
         lines.extend("ReadOnlyPaths=" + root for _, root in candidate.roots)
         lines.extend([
