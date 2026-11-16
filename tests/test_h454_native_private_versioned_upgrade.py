@@ -1,12 +1,14 @@
 """Hermes #454: dormant private-only e888 -> 30db upgrade contracts."""
 from __future__ import annotations
 
+import gzip
 import hashlib
 import io
 import json
 import os
 from pathlib import Path
 import tempfile
+import tarfile
 import unittest
 from unittest.mock import patch
 
@@ -37,6 +39,50 @@ class PrivateVersionedSourceContracts(unittest.TestCase):
             changed["activation"] = "ENABLED"
             with self.assertRaises(m.UpgradeHold):
                 m.verified_source(binary, bundle._json(changed))
+
+    def test_private_upgrade_rejects_legacy_13_file_parser_without_weakening_it(self):
+        files = {name: ("# source " + name + "\n").encode()
+                 for name in m.SOURCE_FILES}
+        files["device_fabric/native_private_tls.py"] += b"def load_private_relay(): pass\n"
+        files["scripts/h454_native_linux_service.py"] += b"private_websocket_connector\n"
+        archive, receipt = bundle.build_bytes(
+            target=m.TARGET, release_sha=m.CURRENT, sources=files)
+        manifest = bundle._manifest(
+            target=m.TARGET, release_sha=m.CURRENT, sources=files)
+        old_13_paths = tuple(name for name in bundle.SOURCE_FILES
+                             if name != "device_fabric/native_private_tls.py")
+        self.assertEqual(len(old_13_paths), 13)
+        # Reproduce original VPS behavior: old owner-source decoder is pinned
+        # to 13 members, and correctly rejects the 14-member release.
+        with patch.object(bundle, "SOURCE_FILES", old_13_paths):
+            with self.assertRaises(bundle.SourceBundleDenied):
+                bundle._bounded_ustar(archive)
+            with patch.object(m, "BUNDLE_SHA", hashlib.sha256(archive).hexdigest()), \
+                 patch.object(m, "MANIFEST_SOURCE_SHA", hashlib.sha256(manifest).hexdigest()):
+                self.assertEqual(m.verified_source(archive, receipt), files)
+
+    def test_strict_new_14_ustar_denies_extras_and_malformed_gzip(self):
+        files = {name: ("# fixture " + name + "\n").encode()
+                 for name in m.SOURCE_FILES}
+        archive, _ = bundle.build_bytes(
+            target=m.TARGET, release_sha=m.CURRENT, sources=files)
+        self.assertEqual(len(m._bounded_14_ustar(archive)),
+                         len(bundle._bounded_ustar(archive)))
+        for changed in (archive + b"EXTRA", archive[:-10]):
+            with self.subTest(kind="gzip"), self.assertRaises(m.UpgradeHold):
+                m._bounded_14_ustar(changed)
+        container = io.BytesIO()
+        with gzip.GzipFile(fileobj=container, mode="wb", filename="", mtime=0) as gz:
+            with tarfile.open(fileobj=gz, mode="w", format=tarfile.USTAR_FORMAT) as extended:
+                with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as valid:
+                    for item in valid:
+                        extended.addfile(item, valid.extractfile(item))
+                unexpected = tarfile.TarInfo("scripts/malicious_extra.py")
+                payload = b"do_not_execute\n"
+                unexpected.size = len(payload)
+                extended.addfile(unexpected, io.BytesIO(payload))
+        with self.assertRaises(m.UpgradeHold):
+            m._bounded_14_ustar(container.getvalue())
 
     def test_exact_release_and_expected_real_sha_pins(self):
         self.assertEqual(m.PREVIOUS, "e8887bfb7a04aaff9cbb91a1c46003fcd8d5347a")
