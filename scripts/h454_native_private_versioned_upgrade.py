@@ -24,9 +24,9 @@ import stat
 import subprocess
 import sys
 import tarfile
+import zlib
 
 from device_fabric.native_install_preview import parse_candidate
-from scripts.h454_native_readonly_bundle import _bounded_ustar
 from scripts.h454_native_linux_wheel import stage_wheel, verify_bytes as verify_wheel
 from scripts.h454_native_linux_unit_candidate import render_preflight_unit
 from scripts.h454_native_linux_active_unit import render_active_unit
@@ -217,6 +217,53 @@ def canonical(record: dict) -> bytes:
                       ensure_ascii=True, allow_nan=False).encode("ascii")
 
 
+def _bounded_14_ustar(bundle: bytes) -> bytes:
+    """Bound the NEW 14-source USTAR without trusting the OLD 13-source parser.
+
+    The on-host trusted owner-source (82a51...) intentionally knows only 13
+    source paths. Its _bounded_ustar rejects the verified 30db native release
+    with SourceBundleDenied. Validate the exact new 14-file allowlist here,
+    before Python tarfile can process any PAX/GNU extension.
+    """
+    guard(type(bundle) is bytes and 0 < len(bundle) <= 2_097_152,
+          "NEW_BUNDLE_SIZE_INVALID")
+    try:
+        decoder = zlib.decompressobj(wbits=16 + zlib.MAX_WBITS)
+        raw = decoder.decompress(bundle, 3 * 1024 * 1024 + 1)
+    except zlib.error:
+        raise UpgradeHold("NEW_BUNDLE_GZIP_INVALID") from None
+    guard(len(raw) <= 3 * 1024 * 1024 and decoder.eof
+          and not decoder.unused_data and not decoder.unconsumed_tail,
+          "NEW_BUNDLE_GZIP_INVALID")
+    expected = set(SOURCE_FILES) | {"h454-native-bundle-manifest.json"}
+    offset = 0
+    seen: set[str] = set()
+    while offset + 512 <= len(raw):
+        head = raw[offset:offset + 512]
+        if head == b"\x00" * 512:
+            guard(seen == expected and len(raw) - offset >= 1024
+                  and not any(raw[offset:]), "NEW_BUNDLE_TERMINATOR_INVALID")
+            return raw
+        guard(head[156:157] == b"0"
+              and head[257:265] == b"ustar\x0000"
+              and not head[345:500].strip(b"\x00"),
+              "NEW_BUNDLE_HEADER_INVALID")
+        try:
+            name = head[:100].split(b"\x00", 1)[0].decode("ascii")
+            octal = head[124:136].split(b"\x00", 1)[0].strip()
+            guard(re.fullmatch(rb"[0-7]{1,11}", octal) is not None,
+                  "NEW_BUNDLE_SIZE_FIELD_INVALID")
+            size = int(octal, 8)
+        except (ValueError, UnicodeError):
+            raise UpgradeHold("NEW_BUNDLE_SIZE_FIELD_INVALID") from None
+        guard(name in expected and name not in seen and 0 <= size <= 262144,
+              "NEW_BUNDLE_MEMBER_INVALID")
+        seen.add(name)
+        offset += 512 + ((size + 511) // 512) * 512
+        guard(offset <= len(raw), "NEW_BUNDLE_MEMBER_OVERFLOW")
+    raise UpgradeHold("NEW_BUNDLE_MISSING_TERMINATOR")
+
+
 def verified_source(bundle: bytes, receipt: bytes) -> dict[str, bytes]:
     """Only exact known 30db source TAR with verified 14-file canonical manifest."""
     guard(digest(bundle) == BUNDLE_SHA and len(bundle) <= 2_097_152, "NEW_BUNDLE_CHANGED")
@@ -229,7 +276,7 @@ def verified_source(bundle: bytes, receipt: bytes) -> dict[str, bytes]:
         "install_authorized": False, "provenance_signature": "NOT_PRESENT",
     }, "RECEIPT_DRIFT")
     out = {}
-    with tarfile.open(fileobj=io.BytesIO(_bounded_ustar(bundle)), mode="r:") as opened:
+    with tarfile.open(fileobj=io.BytesIO(_bounded_14_ustar(bundle)), mode="r:") as opened:
         for member in opened:
             guard(member.name in (*SOURCE_FILES, "h454-native-bundle-manifest.json")
                   and member.name not in out
