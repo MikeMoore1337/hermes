@@ -26,6 +26,7 @@ BACKUP = ROOT / "native-status-upgrade-evidence"
 ORIGINAL = ROOT / "native-status-original-pins.json"
 PENDING = ROOT / "native-status-upgrade.pending"
 CHECKPOINT = "hermes-h454-wss-proxy-native-status-rollback"
+CHECKPOINT_NEW = CHECKPOINT + "-new"
 PREFLIGHT = Path("/root/h454_wss_native_status_preflight.py")
 PREFLIGHT_BLOB = "6caf8ffc488dd5dc399fef40f02db8109f6facf5"
 SOURCE_BLOB = "014c3ec08d2b532f710b52601efcb2a3dae4c633"
@@ -200,7 +201,7 @@ def verify_live(wss, pins: dict, original_relay_id: str, *, status=False) -> Non
 
 
 def current_name(name: str) -> dict | None:
-    gate(name in (stage1.PROXY, CHECKPOINT), "UNKNOWN_PROXY_NAME")
+    gate(name in (stage1.PROXY, CHECKPOINT, CHECKPOINT_NEW), "UNKNOWN_PROXY_NAME")
     found = stage1.docker(
         "container", "ls", "--all", "--no-trunc",
         "--filter", "name=^/" + name + "$", "--format", "{{.Names}}")
@@ -261,7 +262,8 @@ def cutover(candidate: Path) -> dict:
                  current_name(stage1.PROXY)["Id"] == pins["sidecar_id"],
                  "ROLLBACK_CHECKPOINT_OR_PROXY_CHANGED")
             gate(not BACKUP.exists() and not BACKUP.is_symlink() and
-                 not PENDING.exists() and not PENDING.is_symlink(),
+                 not PENDING.exists() and not PENDING.is_symlink() and
+                 current_name(CHECKPOINT_NEW) is None,
                  "UPGRADE_ALREADY_PREPARED")
             # Independent retained source/pins before any Docker mutation.
             backup(raw, old_bytes, new_bytes, pins["relay_id"], pins["sidecar_id"])
