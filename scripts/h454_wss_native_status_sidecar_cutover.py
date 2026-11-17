@@ -281,13 +281,23 @@ def pending_record(saved: dict[str, bytes]) -> dict:
 
 
 def valid_new_proxy(proxy: dict, known_id: str, relay_id: str,
-                    original_proxy: dict, tls_dir: str) -> None:
+                    original_proxy: dict, tls_dir: str,
+                    gateway_ipv4: str) -> None:
     """Never stop/remove a container based on name or image alone."""
     host = proxy.get("HostConfig") or {}
     config = proxy.get("Config") or {}
     mounts = proxy.get("Mounts") or []
     old_labels = (original_proxy.get("Config") or {}).get("Labels") or {}
     labels = config.get("Labels") or {}
+    env = config.get("Env") or []
+    restart = host.get("RestartPolicy") or {}
+    gate(isinstance(env, list) and isinstance(gateway_ipv4, str) and
+         [item for item in env if item.startswith("H454_SSH_SOURCE_IPV4=")] ==
+         ["H454_SSH_SOURCE_IPV4=" + gateway_ipv4] and
+         not any(item.startswith(("NODE_OPTIONS=", "NODE_PATH=",
+                    "NODE_EXTRA_CA_CERTS=", "NODE_TLS_REJECT_UNAUTHORIZED=",
+                    "LD_PRELOAD=", "LD_LIBRARY_PATH=")) for item in env),
+         "FOREIGN_NEW_PROXY_ENV_REFUSED")
     expected = {
         "/run/h454-wss/proxy.mjs": str(ROOT / "proxy.mjs"),
         "/run/h454-wss/relay.key": str(Path(tls_dir) / "relay.key"),
@@ -306,6 +316,11 @@ def valid_new_proxy(proxy: dict, known_id: str, relay_id: str,
          host.get("ReadonlyRootfs") is True and host.get("Privileged") is False and
          host.get("CapDrop") == ["ALL"] and host.get("PidsLimit") == 32 and
          host.get("Memory") == 128 * 1024 * 1024 and
+         restart.get("Name") in ("unless-stopped", "no") and
+         host.get("PublishAllPorts") is False and
+         host.get("OomKillDisable") in (None, False) and
+         host.get("IpcMode") not in ("host",) and
+         host.get("UsernsMode") not in ("host",) and
          host.get("PortBindings") in ({}, None) and
          host.get("CapAdd") in ([], None) and
          host.get("Devices") in ([], None) and
@@ -364,7 +379,8 @@ def restore_known(wss, saved: dict[str, bytes],
              "ORIGINAL_CHECKPOINT_CHANGED")
         if current is not None:
             valid_new_proxy(current, known_new_id, relay_id,
-                            checkpoint, original["tls_directory"])
+                            checkpoint, original["tls_directory"],
+                            original["gateway_ipv4"])
             stage1.docker("stop", "--time", "12", known_new_id)
             stage1.docker("update", "--restart", "no", known_new_id)
             stage1.docker("rm", "--force", known_new_id)
@@ -521,7 +537,8 @@ def rollback() -> dict:
          git_blob(checked_file(ROOT / "proxy.mjs", mode=0o444)) == SOURCE_BLOB,
          "ROLLBACK_ACTIVE_PIN_CHANGED")
     valid_new_proxy(active, active["Id"], relay_id,
-                    old, old_pins["tls_directory"])
+                    old, old_pins["tls_directory"],
+                    old_pins["gateway_ipv4"])
     verify_live(wss, current, relay_id, status=True)
     preflight.native_release()
     owner_tty("ROLLBACK", digest(pins_raw), old_id,
