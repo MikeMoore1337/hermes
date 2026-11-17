@@ -25,6 +25,12 @@ OWNER_SOURCE = "82a51cc0d718e16e6d0be8869436359a06fc94b7"
 NATIVE_RELEASE = "30db4fbab46626985b078d574dbe0b839872840e"
 OLD_PROXY_BLOB = "7a0f4c20095ba2d98850c4e8e16d1823c60a1f06"
 NEW_PROXY_BLOB = "014c3ec08d2b532f710b52601efcb2a3dae4c633"
+# Original owner-VPS pair attested after the approved H454 native3 joint switch
+# (Nov 13, 2026) and source-only release; do NOT use the previous fork
+# rollback image stage1.FORK_IMAGE as the current running relay.
+LIVE_RELAY_IMAGE = "sha256:3488e1ff44bb0843ecbc62a1951277ccbf118d1f3ba899b7636a66aa84d55e06"
+LIVE_RELAY_ID = "c10587c6bdb51bcbdd4ccea65d5020a6a18deefaa13fb9f9d04eca4661b848d0"
+LIVE_SIDECAR_ID = "ad1977a65f10051a15eb69343f5925f9c47188bd4686bfefea8834c6667fd653"
 NATIVE_MANIFEST_SHA256 = "8af5e283ae473a3ef94a83908253a5bc47e64ef82a95be6cb38bf834cb0b9747"
 PREFLIGHT_UNIT_SHA256 = "2478a19c69e807bb93c5f99e4958862403a920bf98dec04c558add390972ce68"
 ACTIVE_UNIT_SHA256 = "75a681a6c6157acc3356513483b886f81097f958ef94d5d816a6eaf9c7ac4390"
@@ -149,6 +155,22 @@ def no_conflicting_transaction() -> None:
     require(result == "", "SIDECAR_CHECKPOINT_OCCUPIED")
 
 
+def check_pinned_live_pair(pins: dict) -> None:
+    """Match the specific, accepted original-VPS pair, not merely self-signed pins.
+
+    The prior stage1.FORK_IMAGE is a retained rollback checkpoint, not the
+    currently running owner-authorized relay. Any later pair replacement needs
+    its own verified release, updated exact pins, and explicit approval.
+    """
+    require(pins["relay_name"] == stage1.legacy.NAME
+            and pins["sidecar_name"] == stage1.PROXY
+            and pins["relay_image"] == LIVE_RELAY_IMAGE
+            and pins["sidecar_image"] == stage1.LEGACY_IMAGE
+            and pins["relay_id"] == LIVE_RELAY_ID
+            and pins["sidecar_id"] == LIVE_SIDECAR_ID,
+            "EXISTING_BRC_WSS_PAIR_CHANGED")
+
+
 def plan(candidate: Path) -> dict:
     require(sys.platform == "linux" and os.geteuid() == 0,
             "ORIGINAL_LINUX_ROOT_REQUIRED")
@@ -163,11 +185,7 @@ def plan(candidate: Path) -> dict:
     with stage1.locked_pins() as raw:
         wss = stage1.load_existing_wss()
         pins = wss._pins(raw)
-        require(pins["relay_name"] == stage1.legacy.NAME
-                and pins["sidecar_name"] == stage1.PROXY
-                and pins["relay_image"] == stage1.FORK_IMAGE
-                and pins["sidecar_image"] == stage1.LEGACY_IMAGE,
-                "EXISTING_BRC_WSS_PAIR_CHANGED")
+        check_pinned_live_pair(pins)
         directory = wss._directory(ROOT)
         try:
             old_source = wss._read_file(directory, "proxy.mjs", 0o444)
@@ -194,6 +212,7 @@ def plan(candidate: Path) -> dict:
             "candidate_proxy_sha256": sha256(new_source),
             "relay_container_id": relay["Id"],
             "sidecar_container_id": sidecar["Id"],
+            "relay_image": LIVE_RELAY_IMAGE,
             "native_services_inactive": True,
             "native_paired": False,
             "brc_wss_mutation": False,
