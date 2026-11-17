@@ -271,28 +271,42 @@ def pending_record(saved: dict[str, bytes]) -> dict:
     return doc
 
 
-def valid_new_proxy(proxy: dict, known_id: str, relay_id: str) -> None:
+def valid_new_proxy(proxy: dict, known_id: str, relay_id: str,
+                    original_proxy: dict, tls_dir: str) -> None:
     """Never stop/remove a container based on name or image alone."""
     host = proxy.get("HostConfig") or {}
     config = proxy.get("Config") or {}
     mounts = proxy.get("Mounts") or []
+    old_labels = (original_proxy.get("Config") or {}).get("Labels") or {}
+    labels = config.get("Labels") or {}
     expected = {
         "/run/h454-wss/proxy.mjs": str(ROOT / "proxy.mjs"),
+        "/run/h454-wss/relay.key": str(Path(tls_dir) / "relay.key"),
+        "/run/h454-wss/relay.crt": str(Path(tls_dir) / "relay.crt"),
     }
     gate(known_id != "" and proxy.get("Id") == known_id and
          proxy.get("Image") == stage1.LEGACY_IMAGE and
          config.get("User") == "65534:65534" and
-         (config.get("Labels") or {}).get("com.hermes.h454.role") == "wss-proxy" and
+         config.get("Entrypoint") == ["node"] and
+         config.get("Cmd") == ["/run/h454-wss/proxy.mjs"] and
+         labels.get("com.hermes.h454.role") == "wss-proxy" and
+         labels.get("com.hermes.h454.request") ==
+         old_labels.get("com.hermes.h454.request") and
+         stage1.HEX.fullmatch(str(labels.get("com.hermes.h454.request", ""))) and
          host.get("NetworkMode") == "container:" + relay_id and
          host.get("ReadonlyRootfs") is True and host.get("Privileged") is False and
          host.get("CapDrop") == ["ALL"] and host.get("PidsLimit") == 32 and
          host.get("Memory") == 128 * 1024 * 1024 and
          host.get("PortBindings") in ({}, None) and
          host.get("CapAdd") in ([], None) and
-         isinstance(mounts, list) and len(mounts) == 3 and
-         sum(m.get("Destination") == "/run/h454-wss/proxy.mjs" and
-             m.get("Source") == expected["/run/h454-wss/proxy.mjs"] and
-             m.get("Type") == "bind" and m.get("RW") is False for m in mounts) == 1,
+         host.get("Devices") in ([], None) and
+         host.get("PidMode") not in ("host",) and
+         host.get("SecurityOpt") in (["no-new-privileges"],
+                                    ["no-new-privileges:true"]) and
+         isinstance(mounts, list) and len(mounts) == len(expected) and
+         {m.get("Destination") for m in mounts} == set(expected) and
+         all(m.get("Type") == "bind" and m.get("RW") is False and
+             expected.get(m.get("Destination")) == m.get("Source") for m in mounts),
          "FOREIGN_NEW_PROXY_REFUSED")
 
 
@@ -340,7 +354,8 @@ def restore_known(wss, saved: dict[str, bytes],
              checkpoint["State"]["Running"] is False,
              "ORIGINAL_CHECKPOINT_CHANGED")
         if current is not None:
-            valid_new_proxy(current, known_new_id, relay_id)
+            valid_new_proxy(current, known_new_id, relay_id,
+                            checkpoint, original["tls_directory"])
             stage1.docker("stop", "--time", "12", known_new_id)
             stage1.docker("update", "--restart", "no", known_new_id)
             stage1.docker("rm", "--force", known_new_id)
@@ -496,7 +511,8 @@ def rollback() -> dict:
          current["proxy_sha256"] == digest(saved["candidate-proxy.mjs"]) and
          git_blob(checked_file(ROOT / "proxy.mjs", mode=0o444)) == SOURCE_BLOB,
          "ROLLBACK_ACTIVE_PIN_CHANGED")
-    valid_new_proxy(active, active["Id"], relay_id)
+    valid_new_proxy(active, active["Id"], relay_id,
+                    old, old_pins["tls_directory"])
     verify_live(wss, current, relay_id, status=True)
     preflight.native_release()
     owner_tty("ROLLBACK", digest(pins_raw), old_id,
