@@ -66,7 +66,7 @@ class SidecarOnlyCandidateTests(unittest.TestCase):
 
     def test_operator_rejects_noninteractive_tty(self):
         with mock.patch.object(tx.os, "geteuid", return_value=0), mock.patch.object(
-            tx.sys.stdin, "isatty", return_value=False
+            tx.sys, "stdin", mock.Mock(isatty=mock.Mock(return_value=False))
         ):
             with self.assertRaisesRegex(tx.Refused, "ORIGINAL_OWNER_TTY_REQUIRED"):
                 tx.owner_tty("CUTOVER", "a" * 64, "b" * 64, "c" * 64)
