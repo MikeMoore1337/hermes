@@ -8,6 +8,15 @@ at 30db4fba (owner root-console receipt). PR #896 implemented a protected
 WSS container still mounts the old proxy.mjs source. The relay itself already
 exposes the owner-bearer status route and must remain running.
 
+The exact plan-only preflight is now pinned to the historical native3
+receipt-aware source blob `cc5d723eb1d67f2447a5d50123d53de3f44f96ec`,
+staged only at `/root/h454_wss_native_status_preflight_903.py` after a
+verified source-only merge and original-host read-only admission. The
+original Nov-13 `native3-original-pins.json` is accepted only when its
+SHA256, original checkpoint IDs/images, TLS trust and active-pair lineage
+match the fixed owner attestation. Any genuine pending marker or unrecognized
+historical record still blocks cutover. The previous `_902.py` is preserved.
+
 The candidate operator is scripts/h454_wss_native_status_sidecar_cutover.py.
 It reuses the existing **exact original** pinned Stage 1 relay/WSS utilities
 from owner-source 82a51cc0 and the **plan-only** preflight merged in PR #900.
@@ -24,7 +33,7 @@ rollback, or a command copied from this PR against the original VPS.
 ## Provisional command contract (NOT RELEASED)
 
 - plan: read-only, loads exact source-verified
-  /root/h454_wss_native_status_preflight.py and tests the current host
+  /root/h454_wss_native_status_preflight_903.py and tests the current host
   against the original relay, TLS, source, dormant native unit and file hashes.
 - cutover --execute: requires **a separate specific owner-approved original
   root TTY** and an exact typed challenge. Its intended scope is a new sealed
