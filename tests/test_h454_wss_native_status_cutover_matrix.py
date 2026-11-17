@@ -104,13 +104,16 @@ class CutoverFailureMatrix(unittest.TestCase):
             def new_pins(*args, **kwargs):
                 if failed_op == "pin_render":
                     raise OSError("synthetic pinned manifest refused")
-                return b"synthetic-next-pins"
+                return tx.canonical(dict(pins, sidecar_id=new_id,
+                                         proxy_sha256=tx.digest(candidate)))
 
             def replace_pins(*args, **kwargs):
                 if failed_op == "pin_swap":
                     raise OSError("synthetic pin swap refused")
 
+            state = {"native_checks": 0}
             def native_check():
+                state["native_checks"] += 1
                 if failed_op == "native_postcheck":
                     raise OSError("synthetic systemd state drift")
 
@@ -157,6 +160,10 @@ class CutoverFailureMatrix(unittest.TestCase):
                     tx.cutover(root / "h454-wss-native-status-synthetic.mjs")
 
                 restore.assert_called_once()
+                if failed_op == "native_postcheck":
+                    self.assertEqual(state["native_checks"], 1)
+                if failed_op == "live_postcheck":
+                    self.assertEqual(seen_live, 2)
                 if restored:
                     self.assertFalse(pending.exists(),
                                      "successful restoration clears task-owned pending marker")
