@@ -142,7 +142,7 @@ class HostAdmissionTests(unittest.TestCase):
                 gate.stage1, "docker", side_effect=OSError("docker unavailable")
             ):
                 with self.assertRaises(OSError):
-                    gate.no_conflicting_transaction()
+                    gate.no_conflicting_transaction(mock.Mock(), {})
 
     def test_only_read_only_cli_mode(self):
         program = inspect.getsource(gate)
