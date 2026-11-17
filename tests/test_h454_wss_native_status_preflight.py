@@ -51,6 +51,46 @@ class ProxySourceContractTests(unittest.TestCase):
         self.assertEqual(len(gate.git_blob(b"abc")), 40)
 
 
+class AcceptedLiveRelayTests(unittest.TestCase):
+    """The H454 native3 candidate is live; original Stage1 image is rollback."""
+
+    def setUp(self):
+        self.pins = {
+            "relay_name": gate.stage1.legacy.NAME,
+            "sidecar_name": gate.stage1.PROXY,
+            "relay_image": gate.LIVE_RELAY_IMAGE,
+            "sidecar_image": gate.stage1.LEGACY_IMAGE,
+            "relay_id": gate.LIVE_RELAY_ID,
+            "sidecar_id": gate.LIVE_SIDECAR_ID,
+        }
+
+    def test_owner_attested_original_pair_passes(self):
+        self.assertEqual(
+            gate.LIVE_RELAY_IMAGE,
+            "sha256:3488e1ff44bb0843ecbc62a1951277ccbf118d1f3ba899b7636a66aa84d55e06",
+        )
+        self.assertNotEqual(gate.LIVE_RELAY_IMAGE, gate.stage1.FORK_IMAGE)
+        gate.check_pinned_live_pair(self.pins)
+
+    def test_old_rollback_relay_is_not_current(self):
+        altered = dict(self.pins, relay_image=gate.stage1.FORK_IMAGE)
+        with self.assertRaisesRegex(gate.Hold, "EXISTING_BRC_WSS_PAIR_CHANGED"):
+            gate.check_pinned_live_pair(altered)
+
+    def test_self_consistent_foreign_relay_pair_is_not_trusted(self):
+        for field, forged in (
+            ("relay_image", "sha256:" + "f" * 64),
+            ("sidecar_image", "sha256:" + "e" * 64),
+            ("relay_id", "d" * 64),
+            ("sidecar_id", "c" * 64),
+            ("relay_name", "foreign-relay"),
+            ("sidecar_name", "foreign-sidecar"),
+        ):
+            with self.subTest(field=field):
+                with self.assertRaisesRegex(gate.Hold, "EXISTING_BRC_WSS_PAIR_CHANGED"):
+                    gate.check_pinned_live_pair(dict(self.pins, **{field: forged}))
+
+
 class HostAdmissionTests(unittest.TestCase):
     def test_disabled_and_static_native_units(self):
         gate.unit_state("ActiveState=inactive\n"
