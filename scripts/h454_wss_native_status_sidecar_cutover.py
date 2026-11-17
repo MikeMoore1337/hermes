@@ -235,6 +235,133 @@ def normal_plan(module, candidate: Path) -> dict:
     return result
 
 
+def update_pending_new(new_id: str) -> None:
+    """Durably retain a new container ID before touching protected live pins."""
+    gate(stage1.HEX.fullmatch(new_id) is not None, "PENDING_NEW_ID_INVALID")
+    current = json.loads(checked_file(PENDING, mode=0o600))
+    gate(current.get("schema") == 1 and
+         current.get("action") == "cutover" and
+         current.get("new_sidecar_id") == "",
+         "PENDING_SOURCE_CHANGED")
+    current["new_sidecar_id"] = new_id
+    tmp = ROOT / ".h454-native-status-pending.tmp"
+    gate(not tmp.exists() and not tmp.is_symlink(), "PENDING_TEMP_COLLISION")
+    stage1.write_once(tmp, canonical(current))
+    os.replace(tmp, PENDING)
+    stage1.sync_pin_directory()
+    gate(json.loads(checked_file(PENDING, mode=0o600)) == current,
+         "PENDING_READBACK_FAILED")
+
+
+def pending_record(saved: dict[str, bytes]) -> dict:
+    """Only exact retained backup identity can authorize recovery."""
+    doc = json.loads(checked_file(PENDING, mode=0o600))
+    gate(type(doc) is dict and set(doc) == {
+        "schema", "action", "relay_id", "old_sidecar_id",
+        "new_sidecar_id", "old_proxy_sha256", "candidate_proxy_sha256",
+    } and type(doc["schema"]) is int and doc["schema"] == 1 and
+         doc["action"] in ("cutover", "rollback") and
+         doc["relay_id"] == saved["relay-id.txt"].decode("ascii").strip() and
+         doc["old_sidecar_id"] == saved["sidecar-id.txt"].decode("ascii").strip() and
+         doc["old_proxy_sha256"] == digest(saved["old-proxy.mjs"]) and
+         doc["candidate_proxy_sha256"] == digest(saved["candidate-proxy.mjs"]) and
+         (doc["new_sidecar_id"] == "" or
+          stage1.HEX.fullmatch(doc["new_sidecar_id"]) is not None),
+         "PENDING_IDENTITY_DRIFT")
+    return doc
+
+
+def valid_new_proxy(proxy: dict, known_id: str, relay_id: str) -> None:
+    """Never stop/remove a container based on name or image alone."""
+    host = proxy.get("HostConfig") or {}
+    config = proxy.get("Config") or {}
+    mounts = proxy.get("Mounts") or []
+    expected = {
+        "/run/h454-wss/proxy.mjs": str(ROOT / "proxy.mjs"),
+    }
+    gate(known_id != "" and proxy.get("Id") == known_id and
+         proxy.get("Image") == stage1.LEGACY_IMAGE and
+         config.get("User") == "65534:65534" and
+         (config.get("Labels") or {}).get("com.hermes.h454.role") == "wss-proxy" and
+         host.get("NetworkMode") == "container:" + relay_id and
+         host.get("ReadonlyRootfs") is True and host.get("Privileged") is False and
+         host.get("CapDrop") == ["ALL"] and host.get("PidsLimit") == 32 and
+         host.get("Memory") == 128 * 1024 * 1024 and
+         host.get("PortBindings") in ({}, None) and
+         host.get("CapAdd") in ([], None) and
+         isinstance(mounts, list) and len(mounts) == 3 and
+         sum(m.get("Destination") == "/run/h454-wss/proxy.mjs" and
+             m.get("Source") == expected["/run/h454-wss/proxy.mjs"] and
+             m.get("Type") == "bind" and m.get("RW") is False for m in mounts) == 1,
+         "FOREIGN_NEW_PROXY_REFUSED")
+
+
+def restore_known(wss, saved: dict[str, bytes],
+                  known_new_id: str, preflight) -> None:
+    """Restore only a demonstrably owned partial candidate; never guess Docker state.
+
+    Caller must hold the existing relay lock AND the existing WSS pin lock.
+    The legacy BRC relay is never stopped, renamed, removed or restarted.
+    """
+    old_id = saved["sidecar-id.txt"].decode("ascii").strip()
+    relay_id = saved["relay-id.txt"].decode("ascii").strip()
+    original = wss._pins(saved["old-pins.json"])
+    gate(original["sidecar_id"] == old_id and original["relay_id"] == relay_id
+         and original["proxy_sha256"] == digest(saved["old-proxy.mjs"]),
+         "RESTORE_ORIGINAL_PINS_INVALID")
+    relay = stage1.inspect("container", stage1.legacy.NAME)
+    gate(relay["Id"] == relay_id and relay["Image"] == stage1.FORK_IMAGE
+         and relay["State"]["Running"] is True, "RESTORE_RELAY_CHANGED")
+    checkpoint = current_name(CHECKPOINT)
+    current = current_name(stage1.PROXY)
+    gate(current_name(CHECKPOINT_NEW) is None, "FOREIGN_ROLLBACK_SLOT")
+    active_source = checked_file(ROOT / "proxy.mjs", mode=0o444)
+    gate(git_blob(active_source) in (OLD_BLOB, SOURCE_BLOB),
+         "FOREIGN_PROXY_SOURCE_REFUSED")
+    live_pins = wss._pins(checked_file(stage1.PINS, mode=0o600))
+    gate(live_pins["relay_id"] == relay_id and
+         live_pins["sidecar_id"] in (old_id, known_new_id) and
+         live_pins["proxy_sha256"] in (
+             digest(saved["old-proxy.mjs"]), digest(saved["candidate-proxy.mjs"])),
+         "FOREIGN_PIN_STATE_REFUSED")
+    if checkpoint is None:
+        # Failure before rename. The only acceptable live proxy is the OLD one.
+        gate(current is not None and current["Id"] == old_id and
+             current["Image"] == stage1.LEGACY_IMAGE and
+             active_source == saved["old-proxy.mjs"] and
+             live_pins["sidecar_id"] == old_id,
+             "UNRECOGNIZED_PRE_RENAME_PHASE")
+        stage1.docker("update", "--restart", "unless-stopped", old_id)
+        if current["State"]["Running"] is not True:
+            stage1.docker("start", old_id)
+    else:
+        gate(checkpoint["Id"] == old_id and
+             checkpoint["Image"] == stage1.LEGACY_IMAGE and
+             checkpoint["State"]["Running"] is False,
+             "ORIGINAL_CHECKPOINT_CHANGED")
+        if current is not None:
+            valid_new_proxy(current, known_new_id, relay_id)
+            stage1.docker("stop", "--time", "12", known_new_id)
+            stage1.docker("update", "--restart", "no", known_new_id)
+            stage1.docker("rm", "--force", known_new_id)
+            gate(current_name(stage1.PROXY) is None,
+                 "NEW_PROXY_REMOVAL_UNVERIFIED")
+        if active_source != saved["old-proxy.mjs"]:
+            replace_proxy(saved["old-proxy.mjs"])
+        gate(checked_file(ROOT / "proxy.mjs", mode=0o444) == saved["old-proxy.mjs"],
+             "RESTORED_PROXY_SOURCE_MISMATCH")
+        if checked_file(stage1.PINS, mode=0o600) != saved["old-pins.json"]:
+            stage1.replace_pins(saved["old-pins.json"])
+        stage1.docker("rename", old_id, stage1.PROXY)
+        stage1.docker("update", "--restart", "unless-stopped", old_id)
+        stage1.docker("start", old_id)
+    gate(current_name(stage1.PROXY)["Id"] == old_id and
+         checked_file(stage1.PINS, mode=0o600) == saved["old-pins.json"],
+         "RESTORED_PROXY_IDENTITY_MISMATCH")
+    verify_live(wss, original, relay_id)
+    preflight.native_release()
+
+
 def cutover(candidate: Path) -> dict:
     preflight = verified_preflight()
     preview = normal_plan(preflight, candidate)
