@@ -10,7 +10,8 @@ from scripts import h454_wss_native_status_sidecar_cutover as tx
 
 
 class RecoveryPhaseTests(unittest.TestCase):
-    def run_phase(self, phase: str, *, known=True, foreign=False):
+    def run_phase(self, phase: str, *, known=True, foreign=False,
+                  tamper_env=False, tamper_pins=False, tamper_restart=False):
         relay_id, old_id, new_id = "a" * 64, "b" * 64, "c" * 64
         old_source, candidate = b"synthetic-old-proxy", b"synthetic-status-proxy"
         old_pins = {
@@ -59,6 +60,12 @@ class RecoveryPhaseTests(unittest.TestCase):
                 )
             ],
         }
+        if tamper_env:
+            new["Config"]["Env"] = ["H454_SSH_SOURCE_IPV4=8.8.8.8"]
+        if tamper_restart:
+            new["HostConfig"]["RestartPolicy"] = {"Name": "always"}
+        if tamper_pins:
+            new_pins["tls_directory"] = "/hostile-tls"
         if phase in ("old-stopped", "old-running"):
             active, checkpoint, source, pins = old, None, old_source, tx.canonical(old_pins)
         elif phase == "renamed":
@@ -131,7 +138,7 @@ class RecoveryPhaseTests(unittest.TestCase):
             stack.enter_context(mock.patch.object(
                 tx.stage1, "replace_pins", side_effect=lambda raw: state.update(pins=raw)))
             stack.enter_context(mock.patch.object(tx, "verify_live"))
-            if foreign:
+            if foreign or tamper_env or tamper_pins or tamper_restart:
                 with self.assertRaises(tx.Refused):
                     tx.restore_known(wss, saved, new_id if known else "", preflight)
             else:
@@ -166,7 +173,19 @@ class RecoveryPhaseTests(unittest.TestCase):
         result = self.run_phase("new-active", foreign=True, known=False)
         self.assertNotIn("rm", [cmd[0] for cmd in result["commands"]])
 
-    def test_running_old_proxy_is_kept_running(self):
+    def test_changed_tls_root_pins_refuse_before_removal(self):
+        result = self.run_phase("new-active", tamper_pins=True)
+        self.assertNotIn("rm", [cmd[0] for cmd in result["commands"]])
+
+    def test_candidate_forbidden_egress_environment_refuses(self):
+        result = self.run_phase("new-active", tamper_env=True)
+        self.assertNotIn("rm", [cmd[0] for cmd in result["commands"]])
+
+    def test_candidate_auto_restart_policy_refuses(self):
+        result = self.run_phase("new-active", tamper_restart=True)
+        self.assertNotIn("rm", [cmd[0] for cmd in result["commands"]])
+
+        def test_running_old_proxy_is_kept_running(self):
         result = self.run_phase("old-running")
         self.assertNotIn("rm", [cmd[0] for cmd in result["commands"]])
         self.assertNotIn("start", [cmd[0] for cmd in result["commands"]])
