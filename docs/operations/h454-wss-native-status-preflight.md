@@ -36,6 +36,46 @@ scripts/h454_wss_native_status_preflight.py is intentionally plan-only:
 - There are NO Docker, systemd, key, token, DB or filesystem write operations.
   The plan cannot stage, migrate, start, stop, pair, revoke, or cut over.
 
+## Historical native3 transaction receipt admission (2026-11-17)
+
+After the owner-approved **successful** Nov-13 joint BRC/WSS cutover, the
+original transaction deliberately preserved the root-private file
+`native3-original-pins.json` and the stopped original relay/proxy
+checkpoints. This file is **not** `native3-pair.pending`, and must never
+be deleted or renamed merely to satisfy a subsequent sidecar-only plan.
+
+The first preflight implementation inadvertently treated both the durable
+history and a genuinely pending transaction as the same
+`EXISTING_WSS_TRANSACTION` error. The corrected read-only admission
+distinguishes them:
+
+- Any `prepare.pending`, `reconcile.pending`, `native3-pair.pending`,
+  `native-status-upgrade.pending`, existing status-upgrade backup or an
+  unrecognized old proxy checkpoint remains a blocking failure.
+- A historical `native3-original-pins.json` is accepted **only** when its
+  root ownership, regular-file mode 0600 and single link pass the no-follow
+  read, its exact previously attested SHA256 matches
+  `a7efdbb4d0d5eec05890929b27e4e76ee6c38ee20bb13d18e99cc5a2a67ee0cb`,
+  its old BRC/WSS IDs/images match the known Nov-13 original pair, its
+  shared TLS CA/key/certificate and network identity match the **current**
+  protected pins, and both stopped original native3 checkpoint containers
+  still have the exact attested Docker IDs/images/network namespace.
+- No historical file is also a valid clean state (a previous operation
+  may have archived its evidence through the separately reviewed re-arm).
+- The output records only `completed_native3_history_verified=true|false`.
+  It never prints the old/new pin JSON or secrets.
+
+These are **specific historical admission checks**, not a general
+`ignore retained pins` switch. A different snapshot or missing/checkpoint
+drift still fails closed. Tests distinguish genuine pending operations,
+foreign identities/CA and an occupied new status rollback checkpoint.
+
+Before rerunning the plan on the original VPS, preserve the previous
+`/root/h454_wss_native_status_preflight_902.py` unchanged. Stage the next
+exact merged operator revision in a fresh root-only filename. Only `plan`
+is permitted; Docker/WSS/native service starts, device pairing, credentials,
+recovery and cutover require their own separately scoped authorization.
+
 ## Corrected active pair identity (2026-11-17)
 
 Original-owner-host read-only diagnostics confirmed that the currently
@@ -81,7 +121,7 @@ The exact staging and operator SHA must be approved and verified independently.
 From the original unchanged owner-source release, the *read-only* command is:
 
     cd /opt/hermes-agent-owner/releases/main-82a51cc0d718e16e6d0be8869436359a06fc94b7
-    PYTHONPATH="$PWD" python3 -B /root/h454_wss_native_status_preflight_902.py plan \
+    PYTHONPATH="$PWD" python3 -B /root/h454_wss_native_status_preflight_903.py plan \
         --candidate-source /root/h454-wss-native-status-8303.mjs
 
 It must report H454_WSS_NATIVE_STATUS_PREPARE_PLAN_PASS; all original
