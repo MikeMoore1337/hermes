@@ -474,61 +474,88 @@ def cutover(candidate: Path) -> dict:
 
 
 def rollback() -> dict:
+    """Owner-confirmed after-success restoration using the sealed original."""
     preflight = verified_preflight()
     gate(os.geteuid() == 0, "ORIGINAL_ROOT_REQUIRED")
     saved = read_backup()
     relay_id = saved["relay-id.txt"].decode("ascii").strip()
     old_id = saved["sidecar-id.txt"].decode("ascii").strip()
     old_pins = stage1.load_existing_wss()._pins(saved["old-pins.json"])
-    gate(old_pins["relay_id"] == relay_id and old_pins["sidecar_id"] == old_id,
-         "ROLLBACK_ORIGINAL_IDENTITY_CHANGED")
+    gate(old_pins["relay_id"] == relay_id and
+         old_pins["sidecar_id"] == old_id, "ROLLBACK_ORIGINAL_IDENTITY_CHANGED")
     active = current_name(stage1.PROXY)
     old = current_name(CHECKPOINT)
-    gate(active is not None and old is not None and old["Id"] == old_id,
+    gate(active is not None and old is not None and old["Id"] == old_id and
+         current_name(CHECKPOINT_NEW) is None,
          "ROLLBACK_CONTAINER_STATE_CHANGED")
     pins_raw = checked_file(stage1.PINS, mode=0o600)
-    current = stage1.load_existing_wss()._pins(pins_raw)
+    wss = stage1.load_existing_wss()
+    current = wss._pins(pins_raw)
     gate(current["relay_id"] == relay_id and
          current["sidecar_id"] == active["Id"] and
          current["proxy_sha256"] == digest(saved["candidate-proxy.mjs"]) and
          git_blob(checked_file(ROOT / "proxy.mjs", mode=0o444)) == SOURCE_BLOB,
          "ROLLBACK_ACTIVE_PIN_CHANGED")
+    valid_new_proxy(active, active["Id"], relay_id)
+    verify_live(wss, current, relay_id, status=True)
+    preflight.native_release()
     owner_tty("ROLLBACK", digest(pins_raw), old_id,
               digest(saved["candidate-proxy.mjs"]))
     with stage1.legacy.lock():
         with stage1.locked_pins() as latest:
             gate(latest == pins_raw and current_name(stage1.PROXY)["Id"] == active["Id"]
-                 and current_name(CHECKPOINT)["Id"] == old_id, "ROLLBACK_RACE")
+                 and current_name(CHECKPOINT)["Id"] == old_id and
+                 current_name(CHECKPOINT_NEW) is None, "ROLLBACK_RACE")
             gate(not PENDING.exists() and not PENDING.is_symlink(),
                  "RECOVER_PENDING_FIRST")
             stage1.write_once(PENDING, canonical({
                 "schema": 1, "action": "rollback",
                 "relay_id": relay_id, "old_sidecar_id": old_id,
                 "new_sidecar_id": active["Id"],
+                "old_proxy_sha256": digest(saved["old-proxy.mjs"]),
+                "candidate_proxy_sha256": digest(saved["candidate-proxy.mjs"]),
             }))
-            stage1.docker("stop", "--time", "12", active["Id"])
-            stage1.docker("update", "--restart", "no", active["Id"])
-            stage1.docker("rename", active["Id"], CHECKPOINT + "-new")
-            replace_proxy(saved["old-proxy.mjs"])
-            stage1.replace_pins(saved["old-pins.json"])
-            stage1.docker("rename", old_id, stage1.PROXY)
-            stage1.docker("update", "--restart", "unless-stopped", old_id)
-            stage1.docker("start", old_id)
-            wss = stage1.load_existing_wss()
-            verify_live(wss, old_pins, relay_id)
-            preflight.native_release()
-            PENDING.unlink()
-            stage1.sync_pin_directory()
+            gate(pending_record(saved)["new_sidecar_id"] == active["Id"],
+                 "ROLLBACK_PENDING_DRIFT")
+            restore_known(wss, saved, active["Id"], preflight)
         gate(wss.reconcile(str(stage1.PINS)) == "READY",
              "POST_ROLLBACK_RECONCILE_HOLD")
+        PENDING.unlink()
+        stage1.sync_pin_directory()
     return {"status": "H454_WSS_NATIVE_STATUS_OLD_PROXY_RESTORED",
+            "relay_changed": False, "native_service_started": False,
+            "evidence_retained": True}
+
+
+def recover() -> dict:
+    """Owner-confirmed recovery of a persisted partial-phase marker.
+
+    An ambiguous Docker result with an unrecorded new ID still refuses.
+    """
+    preflight = verified_preflight()
+    gate(os.geteuid() == 0, "ORIGINAL_ROOT_REQUIRED")
+    saved = read_backup()
+    initial = pending_record(saved)
+    owner_tty("RECOVER", digest(saved["old-pins.json"]),
+              initial["old_sidecar_id"],
+              initial["candidate_proxy_sha256"])
+    with stage1.legacy.lock():
+        with stage1.locked_pins():
+            gate(pending_record(saved) == initial, "RECOVERY_RECORD_CHANGED")
+            wss = stage1.load_existing_wss()
+            restore_known(wss, saved, initial["new_sidecar_id"], preflight)
+        gate(wss.reconcile(str(stage1.PINS)) == "READY",
+             "RECOVERED_WSS_RECONCILE_HOLD")
+        PENDING.unlink()
+        stage1.sync_pin_directory()
+    return {"status": "H454_WSS_NATIVE_STATUS_RECOVERED_OLD_PROXY",
             "relay_changed": False, "native_service_started": False,
             "evidence_retained": True}
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("plan", "cutover", "rollback"))
+    parser.add_argument("mode", choices=("plan", "cutover", "rollback", "recover"))
     parser.add_argument("--candidate-source", type=Path)
     parser.add_argument("--execute", action="store_true")
     args = parser.parse_args(argv)
@@ -543,8 +570,8 @@ def main(argv: list[str] | None = None) -> int:
         elif args.mode == "cutover":
             result = cutover(args.candidate_source)
         else:
-            gate(args.candidate_source is None, "ROLLBACK_NO_CANDIDATE_REQUIRED")
-            result = rollback()
+            gate(args.candidate_source is None, "RESTORE_NO_CANDIDATE_REQUIRED")
+            result = rollback() if args.mode == "rollback" else recover()
         print(json.dumps(result, sort_keys=True))
         return 0
     except Exception as exc:
