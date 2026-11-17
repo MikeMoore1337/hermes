@@ -16,7 +16,7 @@ class RecoveryPhaseTests(unittest.TestCase):
         old_source, candidate = b"synthetic-old-proxy", b"synthetic-status-proxy"
         old_pins = {
             "relay_id": relay_id, "sidecar_id": old_id,
-            "relay_image": tx.stage1.FORK_IMAGE,
+            "relay_image": tx.LIVE_RELAY_IMAGE,
             "sidecar_image": tx.stage1.LEGACY_IMAGE,
             "proxy_sha256": tx.digest(old_source),
             "tls_directory": "/synthetic-tls", "gateway_ipv4": "172.21.0.1",
@@ -130,7 +130,7 @@ class RecoveryPhaseTests(unittest.TestCase):
             stack.enter_context(mock.patch.object(tx, "checked_file", side_effect=read))
             stack.enter_context(mock.patch.object(
                 tx.stage1, "inspect", return_value={
-                    "Id": relay_id, "Image": tx.stage1.FORK_IMAGE,
+                    "Id": relay_id, "Image": tx.LIVE_RELAY_IMAGE,
                     "State": {"Running": True}}))
             stack.enter_context(mock.patch.object(tx.stage1, "docker", side_effect=docker))
             stack.enter_context(mock.patch.object(
