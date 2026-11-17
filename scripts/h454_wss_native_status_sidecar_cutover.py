@@ -370,7 +370,11 @@ def cutover(candidate: Path) -> dict:
     # Owner confirmation is not a drift bypass.
     gate(normal_plan(preflight, candidate) == preview, "PLAN_CHANGED_AFTER_APPROVAL")
     new_bytes = preflight.read_fixed(candidate, uid={0}, modes={0o600})
+    gate(git_blob(new_bytes) == SOURCE_BLOB, "CANDIDATE_CHANGED_BEFORE_LOCK")
+
     with stage1.legacy.lock():
+        failed = False
+        new_id = ""
         with stage1.locked_pins() as raw:
             wss = stage1.load_existing_wss()
             pins = wss._pins(raw)
@@ -378,6 +382,8 @@ def cutover(candidate: Path) -> dict:
                  pins["sidecar_id"] == preview["sidecar_container_id"] and
                  digest(raw) == digest((ROOT / "pins.json").read_bytes()),
                  "LIVE_PINS_CHANGED")
+            gate(preflight.read_fixed(candidate, uid={0}, modes={0o600}) == new_bytes,
+                 "CANDIDATE_CHANGED_UNDER_LOCK")
             directory = wss._directory(ROOT)
             try:
                 old_bytes = wss._read_file(directory, "proxy.mjs", 0o444)
@@ -385,48 +391,81 @@ def cutover(candidate: Path) -> dict:
                 os.close(directory)
             preflight.check_proxy_source(old_bytes, new_bytes, pins["proxy_sha256"])
             verify_live(wss, pins, preview["relay_container_id"])
+            old_container = current_name(stage1.PROXY)
             gate(current_name(CHECKPOINT) is None and
-                 current_name(stage1.PROXY)["Id"] == pins["sidecar_id"],
+                 old_container is not None and
+                 old_container["Id"] == pins["sidecar_id"],
                  "ROLLBACK_CHECKPOINT_OR_PROXY_CHANGED")
             gate(not BACKUP.exists() and not BACKUP.is_symlink() and
                  not PENDING.exists() and not PENDING.is_symlink() and
                  current_name(CHECKPOINT_NEW) is None,
                  "UPGRADE_ALREADY_PREPARED")
-            # Independent retained source/pins before any Docker mutation.
+
+            # The only checkpoint is a new, unique owner-root name. No changes
+            # happen to the relay, SQLite, CA, cert/key or native systemd.
             backup(raw, old_bytes, new_bytes, pins["relay_id"], pins["sidecar_id"])
             stage1.write_once(PENDING, canonical({
-                "schema": 1, "relay_id": pins["relay_id"],
+                "schema": 1, "action": "cutover",
+                "relay_id": pins["relay_id"],
                 "old_sidecar_id": pins["sidecar_id"],
+                "new_sidecar_id": "",
                 "old_proxy_sha256": digest(old_bytes),
                 "candidate_proxy_sha256": digest(new_bytes),
             }))
+            saved = read_backup()
+            gate(pending_record(saved)["new_sidecar_id"] == "",
+                 "NEW_PENDING_READBACK_FAILED")
             stage1.sync_pin_directory()
-            new_id = ""
             try:
                 stage1.docker("stop", "--time", "12", pins["sidecar_id"])
                 stage1.docker("update", "--restart", "no", pins["sidecar_id"])
                 stage1.docker("rename", pins["sidecar_id"], CHECKPOINT)
                 replace_proxy(new_bytes)
-                new_id = stage1.create_sidecar(pins, pins["relay_id"],
-                                               stage1.inspect("container", CHECKPOINT))
+                new_id = stage1.create_sidecar(pins, pins["relay_id"], old_container)
+                update_pending_new(new_id)
                 next_raw = fresh_pins(wss, pins, new_id, new_bytes, pins["relay_id"])
                 stage1.replace_pins(next_raw)
                 stage1.docker("start", new_id)
                 verify_live(wss, wss._pins(next_raw), pins["relay_id"], status=True)
                 preflight.native_release()
-                gate(current_name(CHECKPOINT)["Id"] == pins["sidecar_id"] and
-                     current_name(stage1.PROXY)["Id"] == new_id,
-                     "POST_CUTOVER_CONTAINER_CHANGED")
-                PENDING.unlink()
-                stage1.sync_pin_directory()
+                old_checkpoint = current_name(CHECKPOINT)
+                new_active = current_name(stage1.PROXY)
+                gate(old_checkpoint is not None and new_active is not None and
+                     old_checkpoint["Id"] == pins["sidecar_id"] and
+                     new_active["Id"] == new_id, "POST_CUTOVER_CONTAINER_CHANGED")
             except Exception as exc:
-                # Retain the original files/containers and pending marker for
-                # an independent owner recovery; never guess/delete a container
-                # after an ambiguous Docker operation.
-                raise Refused("CUTOVER_INCOMPLETE_OWNER_RECOVERY_REQUIRED") from exc
-        # Reconciler acquires pins lock itself. Only call it after release.
-        gate(wss.reconcile(str(stage1.PINS)) == "READY",
-             "POST_CUTOVER_WSS_RECONCILE_HOLD")
+                try:
+                    restore_known(wss, saved, new_id, preflight)
+                except Exception as restore_exc:
+                    raise Refused("CUTOVER_INCOMPLETE_OWNER_RECOVERY_REQUIRED") from restore_exc
+                failed = True
+
+        # Reconciler acquires the pins lock itself. Verify after releasing it.
+        try:
+            gate(wss.reconcile(str(stage1.PINS)) == "READY",
+                 "POST_CUTOVER_WSS_RECONCILE_HOLD")
+        except Exception:
+            if failed:
+                raise Refused("RESTORED_WSS_RECONCILE_UNVERIFIED") from None
+            with stage1.locked_pins():
+                try:
+                    restore_known(wss, saved, new_id, preflight)
+                except Exception as restore_exc:
+                    raise Refused("POST_CUTOVER_OWNER_RECOVERY_REQUIRED") from restore_exc
+            try:
+                gate(wss.reconcile(str(stage1.PINS)) == "READY",
+                     "RESTORED_WSS_RECONCILE_UNVERIFIED")
+            except Exception:
+                raise Refused("POST_CUTOVER_OWNER_RECOVERY_REQUIRED") from None
+            failed = True
+
+        gate(pending_record(saved)["new_sidecar_id"] in ("", new_id),
+             "FINAL_PENDING_IDENTITY_DRIFT")
+        PENDING.unlink()
+        stage1.sync_pin_directory()
+        if failed:
+            raise Refused("CUTOVER_FAILED_ORIGINAL_PROXY_RESTORED")
+
     return {
         "status": "H454_WSS_NATIVE_STATUS_SWITCHED_PENDING_OWNER_ACCEPTANCE",
         "relay_changed": False, "native_service_started": False,
