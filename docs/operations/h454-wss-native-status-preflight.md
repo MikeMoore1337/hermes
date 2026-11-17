@@ -36,6 +36,43 @@ scripts/h454_wss_native_status_preflight.py is intentionally plan-only:
 - There are NO Docker, systemd, key, token, DB or filesystem write operations.
   The plan cannot stage, migrate, start, stop, pair, revoke, or cut over.
 
+## Corrected active pair identity (2026-11-17)
+
+Original-owner-host read-only diagnostics confirmed that the currently
+active BRC and WSS Docker containers both match their protected pinned
+images. The previous plan compared the active BRC against the now inactive
+Stage1 rollback image `sha256:7dd283729e164ccd0bb4477b4e8edab342fc4ca350922acee6b4d4f33de8bfa1`,
+and therefore wrongly refused `EXISTING_BRC_WSS_PAIR_CHANGED`.
+
+The **approved and directly attested** H454 native3 cutover on 2026-11-13
+installed active relay image
+`sha256:3488e1ff44bb0843ecbc62a1951277ccbf118d1f3ba899b7636a66aa84d55e06`.
+Its original active relay ID was
+`c10587c6bdb51bcbdd4ccea65d5020a6a18deefaa13fb9f9d04eca4661b848d0`,
+and WSS sidecar ID was
+`ad1977a65f10051a15eb69343f5925f9c47188bd4686bfefea8834c6667fd653`.
+The WSS sidecar's image remains the pinned `sha256:6e5f74...`.
+The owner-verified source-only deploy on November 13 independently
+reconfirmed these exact identities and running/network status; see
+Hermes #454 owner evidence comment 6858145960.
+
+The corrected read-only plan uses these **fixed, exact accepted-image and
+container identity pins** rather than adopting arbitrary values from
+`pins.json`. It then still independently validates Docker inspect,
+private network namespace, root-owned proxy source SHA and private CA/TLS,
+disabled native units and available rollback slots. Mismatched pinned
+manifest, runtime container, unexpected rollback, or a future separately
+authorized replacement still fails closed. This fix cannot authorize
+cutover, pairing, service start, or a user-host mutation.
+
+The previous root staging file
+`/root/h454_wss_native_status_preflight.py` is intentionally retained
+for evidence; new operator revisions must be staged under a **new**
+root-private filename and exact verified Git blob before any read-only
+plan rerun. The candidate WSS source at
+`/root/h454-wss-native-status-8303.mjs` is unchanged and already
+verified against `014c3ec08d2b532f710b52601efcb2a3dae4c633`.
+
 The host-side candidate must not be downloaded, trusted or executed merely
 because this PR is merged. After reviewed exact-main CI, a new owner-approved
 source-only staging step may place the exact reviewed source and operator in
