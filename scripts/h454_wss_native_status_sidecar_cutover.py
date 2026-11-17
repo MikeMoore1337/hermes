@@ -29,6 +29,8 @@ CHECKPOINT = "hermes-h454-wss-proxy-native-status-rollback"
 CHECKPOINT_NEW = CHECKPOINT + "-new"
 PREFLIGHT = Path("/root/h454_wss_native_status_preflight.py")
 PREFLIGHT_BLOB = "6caf8ffc488dd5dc399fef40f02db8109f6facf5"
+OWNER_SOURCE = "82a51cc0d718e16e6d0be8869436359a06fc94b7"
+STAGE1_BLOB = "146987245cc4575c5b0d6be65dc1b8d2d46cac8c"
 SOURCE_BLOB = "014c3ec08d2b532f710b52601efcb2a3dae4c633"
 OLD_BLOB = "7a0f4c20095ba2d98850c4e8e16d1823c60a1f06"
 ARTIFACTS = ("old-pins.json", "old-proxy.mjs", "candidate-proxy.mjs",
@@ -55,6 +57,13 @@ def git_blob(data: bytes) -> str:
 
 
 def verified_preflight():
+    owner = Path("/opt/hermes-agent-owner/releases/main-" + OWNER_SOURCE)
+    trusted = owner / "scripts/h454_stage1_pair_cutover.py"
+    gate(Path(stage1.__file__).resolve() == trusted,
+         "ORIGINAL_OWNER_SOURCE_IMPORT_CHANGED")
+    stage1_raw = trusted.read_bytes()
+    gate(git_blob(stage1_raw) == STAGE1_BLOB,
+         "ORIGINAL_OWNER_SOURCE_BLOB_CHANGED")
     gate(PREFLIGHT.parent == Path("/root") and not PREFLIGHT.is_symlink(),
          "PREFLIGHT_SOURCE_PATH")
     info = PREFLIGHT.lstat()
