@@ -81,7 +81,7 @@ The exact staging and operator SHA must be approved and verified independently.
 From the original unchanged owner-source release, the *read-only* command is:
 
     cd /opt/hermes-agent-owner/releases/main-82a51cc0d718e16e6d0be8869436359a06fc94b7
-    PYTHONPATH="$PWD" python3 -B /root/h454_wss_native_status_preflight.py plan \
+    PYTHONPATH="$PWD" python3 -B /root/h454_wss_native_status_preflight_902.py plan \
         --candidate-source /root/h454-wss-native-status-8303.mjs
 
 It must report H454_WSS_NATIVE_STATUS_PREPARE_PLAN_PASS; all original
