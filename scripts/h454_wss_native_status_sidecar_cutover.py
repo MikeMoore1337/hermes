@@ -357,6 +357,12 @@ def restore_known(wss, saved: dict[str, bytes],
     gate(git_blob(active_source) in (OLD_BLOB, SOURCE_BLOB),
          "FOREIGN_PROXY_SOURCE_REFUSED")
     live_pins = wss._pins(checked_file(stage1.PINS, mode=0o600))
+    # A recovery must never accept a changed CA, relay network, TLS identity,
+    # workspace lineage or any other field outside the sidecar-only scope.
+    immutable_keys = set(original) - {"sidecar_id", "proxy_sha256", "profile_sha256"}
+    gate(set(live_pins) == set(original) and
+         all(live_pins[key] == original[key] for key in immutable_keys),
+         "FOREIGN_WSS_PIN_FIELDS_CHANGED")
     gate(live_pins["relay_id"] == relay_id and
          live_pins["sidecar_id"] in (old_id, known_new_id) and
          live_pins["proxy_sha256"] in (
