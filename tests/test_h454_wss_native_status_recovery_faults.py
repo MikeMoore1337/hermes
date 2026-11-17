@@ -18,7 +18,7 @@ class RecoveryPhaseTests(unittest.TestCase):
             "relay_image": tx.stage1.FORK_IMAGE,
             "sidecar_image": tx.stage1.LEGACY_IMAGE,
             "proxy_sha256": tx.digest(old_source),
-            "tls_directory": "/synthetic-tls",
+            "tls_directory": "/synthetic-tls", "gateway_ipv4": "172.21.0.1",
         }
         new_pins = dict(old_pins, sidecar_id=new_id,
                         proxy_sha256=tx.digest(candidate))
@@ -35,6 +35,7 @@ class RecoveryPhaseTests(unittest.TestCase):
             "State": {"Running": True},
             "Config": {
                 "User": "65534:65534",
+                "Env": ["NODE_VERSION=24", "H454_SSH_SOURCE_IPV4=172.21.0.1"],
                 "Entrypoint": ["node"], "Cmd": ["/run/h454-wss/proxy.mjs"],
                 "Labels": {"com.hermes.h454.role": "wss-proxy",
                            "com.hermes.h454.request": "f" * 64},
@@ -44,6 +45,8 @@ class RecoveryPhaseTests(unittest.TestCase):
                 "ReadonlyRootfs": True, "Privileged": False,
                 "CapDrop": ["ALL"], "PidsLimit": 32,
                 "Memory": 128 * 1024 * 1024,
+                "RestartPolicy": {"Name": "unless-stopped"},
+                "PublishAllPorts": False,
                 "SecurityOpt": ["no-new-privileges"],
                 "PortBindings": {}, "CapAdd": [], "Devices": [],
             },
