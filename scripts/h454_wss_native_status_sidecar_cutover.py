@@ -27,10 +27,13 @@ ORIGINAL = ROOT / "native-status-original-pins.json"
 PENDING = ROOT / "native-status-upgrade.pending"
 CHECKPOINT = "hermes-h454-wss-proxy-native-status-rollback"
 CHECKPOINT_NEW = CHECKPOINT + "-new"
-PREFLIGHT = Path("/root/h454_wss_native_status_preflight.py")
-PREFLIGHT_BLOB = "6caf8ffc488dd5dc399fef40f02db8109f6facf5"
+PREFLIGHT = Path("/root/h454_wss_native_status_preflight_902.py")
+PREFLIGHT_BLOB = "cff3ce5cc3c4c774c43e1d2c7b663612d5fb06d4"
 OWNER_SOURCE = "82a51cc0d718e16e6d0be8869436359a06fc94b7"
 STAGE1_BLOB = "146987245cc4575c5b0d6be65dc1b8d2d46cac8c"
+LIVE_RELAY_IMAGE = "sha256:3488e1ff44bb0843ecbc62a1951277ccbf118d1f3ba899b7636a66aa84d55e06"
+LIVE_RELAY_ID = "c10587c6bdb51bcbdd4ccea65d5020a6a18deefaa13fb9f9d04eca4661b848d0"
+LIVE_SIDECAR_ID = "ad1977a65f10051a15eb69343f5925f9c47188bd4686bfefea8834c6667fd653"
 SOURCE_BLOB = "014c3ec08d2b532f710b52601efcb2a3dae4c633"
 OLD_BLOB = "7a0f4c20095ba2d98850c4e8e16d1823c60a1f06"
 ARTIFACTS = ("old-pins.json", "old-proxy.mjs", "candidate-proxy.mjs",
@@ -79,7 +82,11 @@ def verified_preflight():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     gate(module.NEW_PROXY_BLOB == SOURCE_BLOB and
-         module.OLD_PROXY_BLOB == OLD_BLOB, "PREFLIGHT_PINS_CHANGED")
+         module.OLD_PROXY_BLOB == OLD_BLOB and
+         module.LIVE_RELAY_IMAGE == LIVE_RELAY_IMAGE and
+         module.LIVE_RELAY_ID == LIVE_RELAY_ID and
+         module.LIVE_SIDECAR_ID == LIVE_SIDECAR_ID,
+         "PREFLIGHT_PINS_CHANGED")
     return module
 
 
@@ -193,7 +200,7 @@ def private_status_denied(pins: dict, ca: bytes) -> None:
 
 def verify_live(wss, pins: dict, original_relay_id: str, *, status=False) -> None:
     gate(pins["relay_id"] == original_relay_id and
-         pins["relay_image"] == stage1.FORK_IMAGE and
+         pins["relay_image"] == LIVE_RELAY_IMAGE and
          pins["sidecar_image"] == stage1.LEGACY_IMAGE, "BRC_IDENTITY_CHANGED")
     relay, proxy = wss._snapshot(pins, ROOT, Path(pins["tls_directory"]))
     gate(relay["Id"] == original_relay_id and
@@ -348,7 +355,7 @@ def restore_known(wss, saved: dict[str, bytes],
          and original["proxy_sha256"] == digest(saved["old-proxy.mjs"]),
          "RESTORE_ORIGINAL_PINS_INVALID")
     relay = stage1.inspect("container", stage1.legacy.NAME)
-    gate(relay["Id"] == relay_id and relay["Image"] == stage1.FORK_IMAGE
+    gate(relay["Id"] == relay_id and relay["Image"] == LIVE_RELAY_IMAGE
          and relay["State"]["Running"] is True, "RESTORE_RELAY_CHANGED")
     checkpoint = current_name(CHECKPOINT)
     current = current_name(stage1.PROXY)
