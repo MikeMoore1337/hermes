@@ -37,6 +37,13 @@ ACTIVE_UNIT_SHA256 = "75a681a6c6157acc3356513483b886f81097f958ef94d5d816a6eaf9c7
 TRUST_CA_SHA256 = "014868af3edc97e04c58099746964bde1d65d2f38c931360e27a8f309b8c0f7c"
 TRUST_CONFIG_SHA256 = "7ed257d75ca61649fd139657466d95d8358eb5c295eeacd14ae991188ff2f595"
 SIDECAR_CHECKPOINT = "hermes-h454-wss-proxy-native-status-rollback"
+SIDECAR_CHECKPOINT_NEW = SIDECAR_CHECKPOINT + "-new"
+HISTORICAL_NATIVE3_FILE = "native3-original-pins.json"
+HISTORICAL_NATIVE3_SHA256 = "a7efdbb4d0d5eec05890929b27e4e76ee6c38ee20bb13d18e99cc5a2a67ee0cb"
+HISTORICAL_RELAY_ID = "ec5e42db0d6ba1b65f1343fc4e6b6ac956a4715b35e654b663ed6d469818f57b"
+HISTORICAL_PROXY_ID = "714eb4224c99fdd33a4b723ef782a72bc9674c52b91ada8c32e2f11fd706cab6"
+HISTORICAL_RELAY_CHECKPOINT = "hermes-brc-relay-h454-native3-v2-rollback"
+HISTORICAL_PROXY_CHECKPOINT = "hermes-h454-wss-proxy-h454-native3-v2-rollback"
 ROOT = Path("/var/lib/hermes-h454-wss-sidecar")
 STATE = Path("/var/lib/hermes-commander-native")
 BASE = Path("/opt/hermes-commander-native")
@@ -139,20 +146,81 @@ def native_release() -> None:
         unit_state(outcome.stdout, state)
 
 
-def no_conflicting_transaction() -> None:
-    for path in (ROOT / "prepare.pending", ROOT / "reconcile.pending",
-                 ROOT / "native3-pair.pending", ROOT / "native3-original-pins.json",
-                 ROOT / "native-status-upgrade.pending",
-                 ROOT / "native-status-original-pins.json"):
+def verify_completed_native3_history(wss, live: dict) -> bool:
+    """Admit only the exact, retained *completed* Nov-13 native3 backup.
+
+    History is NOT a pending operation and must never be deleted for a new
+    sidecar-only upgrade. A foreign marker, changed digest, or missing/active
+    original rollback container is still a hard refusal.
+    """
+    historical = ROOT / HISTORICAL_NATIVE3_FILE
+    if not historical.exists() and not historical.is_symlink():
+        return False
+    raw = read_fixed(historical, uid={0}, modes={0o600}, limit=16384)
+    require(sha256(raw) == HISTORICAL_NATIVE3_SHA256,
+            "HISTORICAL_NATIVE3_PINS_DRIFT")
+    saved = wss._pins(raw)
+    require(saved["relay_name"] == stage1.legacy.NAME
+            and saved["sidecar_name"] == stage1.PROXY
+            and saved["relay_id"] == HISTORICAL_RELAY_ID
+            and saved["sidecar_id"] == HISTORICAL_PROXY_ID
+            and saved["relay_image"] == stage1.FORK_IMAGE
+            and saved["sidecar_image"] == stage1.LEGACY_IMAGE,
+            "HISTORICAL_NATIVE3_IDENTITY_DRIFT")
+    # Only the relay image/CIDs/IP and rebuilt sidecar profile may change.
+    # Certificates, key identity and network provenance remain pinned.
+    immutable = (
+        "version", "relay_name", "sidecar_name", "sidecar_image",
+        "network_id", "network_name", "gateway_ipv4", "proxy_sha256",
+        "ca_sha256", "certificate_sha256", "key_sha256", "tls_directory",
+    )
+    require(all(saved[k] == live[k] for k in immutable),
+            "HISTORICAL_NATIVE3_TRUST_DRIFT")
+    for name, identity, image in (
+        (HISTORICAL_RELAY_CHECKPOINT, HISTORICAL_RELAY_ID, stage1.FORK_IMAGE),
+        (HISTORICAL_PROXY_CHECKPOINT, HISTORICAL_PROXY_ID, stage1.LEGACY_IMAGE),
+    ):
+        # A successful, exact Docker listing is essential. Do not use optional
+        # inspect as "absent" proof when the Docker daemon is unavailable.
+        listing = stage1.docker(
+            "container", "ls", "--all", "--no-trunc",
+            "--filter", "name=^/" + name + "$", "--format", "{{.Names}}",
+        )
+        require(listing == name, "HISTORICAL_NATIVE3_CHECKPOINT_MISSING")
+        item = stage1.inspect("container", name)
+        require(item["Name"] == "/" + name
+                and item["Id"] == identity
+                and item["Image"] == image
+                and item["State"]["Running"] is False,
+                "HISTORICAL_NATIVE3_CHECKPOINT_DRIFT")
+        if name == HISTORICAL_PROXY_CHECKPOINT:
+            require(item["HostConfig"]["NetworkMode"] ==
+                    "container:" + HISTORICAL_RELAY_ID,
+                    "HISTORICAL_NATIVE3_NAMESPACE_DRIFT")
+    return True
+
+
+def no_conflicting_transaction(wss, live: dict) -> bool:
+    # A historical native3-original-pins.json is intentionally NOT in this
+    # list: it is admissible only through verify_completed_native3_history.
+    for name in (
+        "prepare.pending", "reconcile.pending", "native3-pair.pending",
+        "native-status-upgrade.pending", "native-status-original-pins.json",
+        "native-status-upgrade-evidence",
+    ):
+        path = ROOT / name
         require(not path.exists() and not path.is_symlink(),
                 "EXISTING_WSS_TRANSACTION")
-    # Failed Docker API discovery is NOT equivalent to an available checkpoint.
-    result = stage1.docker(
-        "container", "ls", "--all", "--no-trunc",
-        "--filter", "name=^/" + SIDECAR_CHECKPOINT + "$",
-        "--format", "{{.Names}}",
-    )
-    require(result == "", "SIDECAR_CHECKPOINT_OCCUPIED")
+    completed_history = verify_completed_native3_history(wss, live)
+    for checkpoint in (SIDECAR_CHECKPOINT, SIDECAR_CHECKPOINT_NEW):
+        result = stage1.docker(
+            "container", "ls", "--all", "--no-trunc",
+            "--filter", "name=^/" + checkpoint + "$",
+            "--format", "{{.Names}}",
+        )
+        require(result == "", "SIDECAR_CHECKPOINT_OCCUPIED")
+    return completed_history
+
 
 
 def check_pinned_live_pair(pins: dict) -> None:
@@ -201,7 +269,7 @@ def plan(candidate: Path) -> dict:
             os.close(tls_dir)
         wss._tls(pins, ca)
         require(sha256(ca) == TRUST_CA_SHA256, "TLS_TRUST_PIN_CHANGED")
-        no_conflicting_transaction()
+        historical_native3_verified = no_conflicting_transaction(wss, pins)
         return {
             "status": "H454_WSS_NATIVE_STATUS_PREPARE_PLAN_PASS",
             "owner_source": OWNER_SOURCE,
@@ -218,6 +286,7 @@ def plan(candidate: Path) -> dict:
             "brc_wss_mutation": False,
             "sidecar_native_status_deployed": False,
             "cutover_approval": "NOT_GRANTED",
+            "completed_native3_history_verified": historical_native3_verified,
         }
 
 
