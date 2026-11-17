@@ -115,15 +115,16 @@ class HostAdmissionTests(unittest.TestCase):
             with mock.patch.object(gate, "ROOT", Path(scratch)), mock.patch.object(
                 gate.stage1, "docker", return_value=""
             ) as docker:
-                gate.no_conflicting_transaction()
-                docker.assert_called_once_with(
-                    "container", "ls", "--all", "--no-trunc",
-                    "--filter", "name=^/" + gate.SIDECAR_CHECKPOINT + "$",
-                    "--format", "{{.Names}}",
+                self.assertFalse(gate.no_conflicting_transaction(mock.Mock(), {}))
+                self.assertEqual(docker.call_count, 2)
+                self.assertEqual(
+                    [call.args[4] for call in docker.call_args_list],
+                    ["name=^/" + gate.SIDECAR_CHECKPOINT + "$",
+                     "name=^/" + gate.SIDECAR_CHECKPOINT_NEW + "$"],
                 )
                 docker.return_value = gate.SIDECAR_CHECKPOINT
                 with self.assertRaisesRegex(gate.Hold, "SIDECAR_CHECKPOINT_OCCUPIED"):
-                    gate.no_conflicting_transaction()
+                    gate.no_conflicting_transaction(mock.Mock(), {})
 
     def test_pending_symlink_blocks_reentry_even_when_broken(self):
         with TemporaryDirectory() as scratch:
@@ -133,7 +134,7 @@ class HostAdmissionTests(unittest.TestCase):
                 (Path(scratch) / "native3-pair.pending").symlink_to(
                     Path(scratch) / "missing-target")
                 with self.assertRaisesRegex(gate.Hold, "EXISTING_WSS_TRANSACTION"):
-                    gate.no_conflicting_transaction()
+                    gate.no_conflicting_transaction(mock.Mock(), {})
 
     def test_failed_docker_discovery_does_not_mean_free_slot(self):
         with TemporaryDirectory() as scratch:
@@ -151,6 +152,114 @@ class HostAdmissionTests(unittest.TestCase):
                           'systemctl", "start"', 'os.replace(',
                           'os.unlink('):
             self.assertNotIn(forbidden, program)
+
+
+class HistoricalNative3ReceiptTests(unittest.TestCase):
+    """A completed joint cutover must preserve its checkpoint evidence."""
+
+    def setUp(self):
+        self.old = {
+            "version": 1, "relay_name": gate.stage1.legacy.NAME,
+            "sidecar_name": gate.stage1.PROXY,
+            "relay_id": gate.HISTORICAL_RELAY_ID,
+            "sidecar_id": gate.HISTORICAL_PROXY_ID,
+            "relay_image": gate.stage1.FORK_IMAGE,
+            "sidecar_image": gate.stage1.LEGACY_IMAGE,
+            "network_id": "b" * 64, "network_name": "hermes-brc-internal",
+            "gateway_ipv4": "172.21.0.1", "proxy_sha256": "c" * 64,
+            "ca_sha256": "d" * 64, "certificate_sha256": "e" * 64,
+            "key_sha256": "f" * 64, "tls_directory": "/synthetic-ca",
+            "relay_ipv4": "172.21.0.2", "profile_sha256": "1" * 64,
+        }
+        self.current = dict(
+            self.old, relay_id=gate.LIVE_RELAY_ID,
+            sidecar_id=gate.LIVE_SIDECAR_ID,
+            relay_image=gate.LIVE_RELAY_IMAGE,
+            profile_sha256="2" * 64,
+        )
+        self.original = {
+            gate.HISTORICAL_RELAY_CHECKPOINT: {
+                "Name": "/" + gate.HISTORICAL_RELAY_CHECKPOINT,
+                "Id": gate.HISTORICAL_RELAY_ID,
+                "Image": gate.stage1.FORK_IMAGE,
+                "State": {"Running": False}, "HostConfig": {},
+            },
+            gate.HISTORICAL_PROXY_CHECKPOINT: {
+                "Name": "/" + gate.HISTORICAL_PROXY_CHECKPOINT,
+                "Id": gate.HISTORICAL_PROXY_ID,
+                "Image": gate.stage1.LEGACY_IMAGE,
+                "State": {"Running": False},
+                "HostConfig": {"NetworkMode": "container:" + gate.HISTORICAL_RELAY_ID},
+            },
+        }
+
+    def verify(self, *, history_exists=True, altered=None,
+               pending=None, response=None):
+        with TemporaryDirectory(prefix="h454-native3-history-") as tmp:
+            root = Path(tmp)
+            if history_exists:
+                (root / gate.HISTORICAL_NATIVE3_FILE).write_bytes(b"test-receipt")
+            if pending:
+                (root / pending).write_bytes(b"incomplete")
+            old = dict(self.old, **(altered or {}))
+            wss = mock.Mock()
+            wss._pins.return_value = old
+            calls = []
+            def listed(*args):
+                selector = args[4]
+                calls.append(selector)
+                if selector in (
+                    "name=^/" + gate.HISTORICAL_RELAY_CHECKPOINT + "$",
+                    "name=^/" + gate.HISTORICAL_PROXY_CHECKPOINT + "$",
+                ):
+                    return selector[len("name=^/"):-1]
+                return response or ""
+            def inspected(kind, name):
+                self.assertEqual(kind, "container")
+                return self.original[name]
+            with mock.patch.object(gate, "ROOT", root), \
+                 mock.patch.object(gate, "read_fixed", return_value=b"historical-root-0600"), \
+                 mock.patch.object(gate, "sha256", side_effect=lambda raw:
+                                   gate.HISTORICAL_NATIVE3_SHA256 if
+                                   raw == b"historical-root-0600" else
+                                   hashlib.sha256(raw).hexdigest()), \
+                 mock.patch.object(gate.stage1, "docker", side_effect=listed), \
+                 mock.patch.object(gate.stage1, "inspect", side_effect=inspected):
+                if altered or pending or response:
+                    with self.assertRaises(gate.Hold):
+                        gate.no_conflicting_transaction(wss, self.current)
+                else:
+                    result = gate.no_conflicting_transaction(wss, self.current)
+                    self.assertIs(result, history_exists)
+                    if history_exists:
+                        self.assertEqual(len(calls), 4)
+                        self.assertTrue((root / gate.HISTORICAL_NATIVE3_FILE).exists())
+                    else:
+                        wss._pins.assert_not_called()
+
+    def test_completed_history_with_exact_two_stopped_checkpoints_is_preserved(self):
+        self.verify()
+
+    def test_fresh_absent_history_still_passes(self):
+        self.verify(history_exists=False)
+
+    def test_pending_workflow_never_bypassed_by_completed_history(self):
+        self.verify(pending="native3-pair.pending")
+        self.verify(pending="native-status-upgrade.pending")
+
+    def test_foreign_historical_ids_and_certificate_identity_refused(self):
+        self.verify(altered={"relay_id": "3" * 64})
+        self.verify(altered={"ca_sha256": "4" * 64})
+
+    def test_occupied_new_sidecar_checkpoint_refused(self):
+        self.verify(response=gate.SIDECAR_CHECKPOINT_NEW)
+
+    def test_missing_or_running_old_checkpoint_refused(self):
+        self.original[gate.HISTORICAL_RELAY_CHECKPOINT]["State"]["Running"] = True
+        with self.assertRaises(gate.Hold):
+            self.verify()
+
+
 
 
 if __name__ == "__main__":
