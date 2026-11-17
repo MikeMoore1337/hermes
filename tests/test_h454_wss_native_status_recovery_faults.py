@@ -185,7 +185,7 @@ class RecoveryPhaseTests(unittest.TestCase):
         result = self.run_phase("new-active", tamper_restart=True)
         self.assertNotIn("rm", [cmd[0] for cmd in result["commands"]])
 
-        def test_running_old_proxy_is_kept_running(self):
+    def test_running_old_proxy_is_kept_running(self):
         result = self.run_phase("old-running")
         self.assertNotIn("rm", [cmd[0] for cmd in result["commands"]])
         self.assertNotIn("start", [cmd[0] for cmd in result["commands"]])
