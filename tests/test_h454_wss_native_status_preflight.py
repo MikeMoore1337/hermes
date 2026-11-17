@@ -118,7 +118,7 @@ class HostAdmissionTests(unittest.TestCase):
                 self.assertFalse(gate.no_conflicting_transaction(mock.Mock(), {}))
                 self.assertEqual(docker.call_count, 2)
                 self.assertEqual(
-                    [call.args[4] for call in docker.call_args_list],
+                    [call.args[5] for call in docker.call_args_list],
                     ["name=^/" + gate.SIDECAR_CHECKPOINT + "$",
                      "name=^/" + gate.SIDECAR_CHECKPOINT_NEW + "$"],
                 )
@@ -206,7 +206,7 @@ class HistoricalNative3ReceiptTests(unittest.TestCase):
             wss._pins.return_value = old
             calls = []
             def listed(*args):
-                selector = args[4]
+                selector = args[5]
                 calls.append(selector)
                 if selector in (
                     "name=^/" + gate.HISTORICAL_RELAY_CHECKPOINT + "$",
