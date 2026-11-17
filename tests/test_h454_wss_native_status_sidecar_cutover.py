@@ -20,7 +20,7 @@ class SidecarOnlyCandidateTests(unittest.TestCase):
         self.assertNotEqual(tx.SOURCE_BLOB, tx.OLD_BLOB)
 
     def test_fresh_pins_keep_relay_and_change_only_proxy_metadata(self):
-        old = {"relay_id": "a" * 64, "relay_image": tx.stage1.FORK_IMAGE,
+        old = {"relay_id": "a" * 64, "relay_image": tx.LIVE_RELAY_IMAGE,
                "sidecar_id": "b" * 64, "sidecar_image": tx.stage1.LEGACY_IMAGE,
                "proxy_sha256": "c" * 64, "profile_sha256": "d" * 64,
                "tls_directory": "/synthetic"}
