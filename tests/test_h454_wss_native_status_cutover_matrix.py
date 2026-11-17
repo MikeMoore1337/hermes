@@ -21,7 +21,7 @@ class CutoverFailureMatrix(unittest.TestCase):
         old_source, candidate = b"synthetic-old", b"synthetic-new"
         pins = {
             "relay_id": relay_id, "sidecar_id": old_id,
-            "relay_image": tx.stage1.FORK_IMAGE,
+            "relay_image": tx.LIVE_RELAY_IMAGE,
             "sidecar_image": tx.stage1.LEGACY_IMAGE,
             "proxy_sha256": tx.digest(old_source),
             "tls_directory": "/synthetic-only",
