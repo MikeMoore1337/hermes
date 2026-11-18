@@ -18,6 +18,7 @@ import socket
 import ssl
 import stat
 import sys
+import time
 
 from scripts import h454_stage1_pair_cutover as stage1
 
@@ -233,6 +234,28 @@ def verify_live(wss, pins: dict, original_relay_id: str, *, status=False) -> Non
     wss._tls(pins, ca)
     if status:
         private_status_denied(pins, ca)
+
+
+
+def verify_started_sidecar(wss, pins: dict, relay_id: str) -> None:
+    """Permit brief TCP listener startup, but never retry identity/TLS drift.
+
+    Docker start may return while the new unprivileged Node process has not
+    bound its TLS port. Only refused/reset/timed-out connections are treated
+    as transient. A malformed Docker profile, invalid CA, TLS certificate
+    mismatch, namespace drift, or incorrect HTTP response fails immediately.
+    No container is restarted or re-created by this read-only readiness loop.
+    """
+    deadline = time.monotonic() + 12.0
+    while True:
+        try:
+            verify_live(wss, pins, relay_id, status=True)
+            return
+        except (ConnectionRefusedError, ConnectionResetError, TimeoutError):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise Refused("NEW_WSS_READINESS_TIMEOUT") from None
+            time.sleep(min(0.5, remaining))
 
 
 def current_name(name: str) -> dict | None:
@@ -550,7 +573,7 @@ def cutover(candidate: Path) -> dict:
                 phase = "START_NEW"
                 stage1.docker("start", new_id)
                 phase = "VERIFY_NEW_TLS"
-                verify_live(wss, wss._pins(next_raw), pins["relay_id"], status=True)
+                verify_started_sidecar(wss, wss._pins(next_raw), pins["relay_id"])
                 phase = "VERIFY_NATIVE_DISABLED"
                 preflight.native_release()
                 phase = "VERIFY_CONTAINER_IDS"
