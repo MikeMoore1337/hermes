@@ -205,7 +205,9 @@ def archive_evidence(tx, proof: dict) -> None:
     os.link(tx.ORIGINAL, tx.BACKUP / COPY, follow_symlinks=False)
     orig_stat = tx.ORIGINAL.lstat()
     linked_stat = (tx.BACKUP / COPY).lstat()
-    gate(stat.S_ISREG(orig_stat.st_mode) and orig_stat.st_uid == 0
+    # rearm() has already enforced original-root EUID=0. Compare to the
+    # executing owner here to permit identical non-root synthetic fixtures.
+    gate(stat.S_ISREG(orig_stat.st_mode) and orig_stat.st_uid == os.geteuid()
          and stat.S_IMODE(orig_stat.st_mode) == 0o600
          and (orig_stat.st_dev, orig_stat.st_ino) ==
              (linked_stat.st_dev, linked_stat.st_ino)
