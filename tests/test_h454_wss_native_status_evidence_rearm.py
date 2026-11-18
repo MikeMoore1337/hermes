@@ -84,6 +84,9 @@ class WssEvidenceArchiveTests(unittest.TestCase):
                 elif fail_at == "rename":
                     stack.enter_context(mock.patch.object(arch.os, "rename",
                                                          side_effect=OSError("synthetic")))
+                elif fail_at == "unlink":
+                    stack.enter_context(mock.patch.object(arch.os, "unlink",
+                                                         side_effect=OSError("synthetic")))
                 fn(fake, proof, root, backup, original, archive, original_bytes)
 
     def test_archives_exact_original_inode_bytes_and_keeps_old_source_backup(self):
@@ -148,6 +151,20 @@ class WssEvidenceArchiveTests(unittest.TestCase):
             self.assertEqual((backup / arch.COPY).read_bytes(), expected)
             self.assertEqual(original.stat().st_ino, (backup / arch.COPY).stat().st_ino)
         self.with_fixture(check, fail_at="rename")
+
+    def test_failure_after_atomic_archive_preserves_both_original_links(self):
+        def check(tx, proof, root, backup, original, archive, expected):
+            with self.assertRaises(OSError):
+                arch.archive_evidence(tx, proof)
+            self.assertTrue(original.exists())
+            self.assertFalse(backup.exists())
+            archived = archive / "evidence" / arch.COPY
+            self.assertTrue(archived.is_file())
+            self.assertEqual(original.read_bytes(), expected)
+            self.assertEqual(archived.read_bytes(), expected)
+            self.assertEqual(original.stat().st_ino, archived.stat().st_ino)
+            self.assertEqual(archived.stat().st_nlink, 2)
+        self.with_fixture(check, fail_at="unlink")
 
     def test_early_execute_or_missing_execute_rejected_without_plan(self):
         with mock.patch.object(arch, "plan") as plan, mock.patch.object(arch, "rearm") as rearm:
