@@ -56,6 +56,8 @@ class SyntheticSuccessTests(unittest.TestCase):
             "pins": original_pins,
             "pending_id": "",
             "backup_created": False,
+            "guard": False,
+            "guard_order": [],
         }
         preflight = Mock()
         preflight.read_fixed.return_value = new_source
@@ -63,7 +65,12 @@ class SyntheticSuccessTests(unittest.TestCase):
         wss._pins.side_effect = json.loads
         wss._directory.return_value = 11
         wss._read_file.return_value = old_source
-        wss.reconcile.return_value = "READY"
+        def reconcile_postcheck(path):
+            self.assertFalse(state["guard"],
+                             "legacy WSS reconcile must run after guard removal")
+            state["guard_order"].append("reconcile")
+            return "READY"
+        wss.reconcile.side_effect = reconcile_postcheck
 
         def container_by_name(name):
             if name == tx.stage1.PROXY:
@@ -75,6 +82,8 @@ class SyntheticSuccessTests(unittest.TestCase):
             raise AssertionError("unexpected container name")
 
         def docker(*args):
+            self.assertTrue(state["guard"],
+                            "no Docker mutation before WSS prepare marker")
             commands.append(args)
             if args[0] == "stop":
                 self.assertEqual(args[-1], old_id)
@@ -130,6 +139,19 @@ class SyntheticSuccessTests(unittest.TestCase):
             self.assertEqual(saved["relay-id.txt"], (relay_id + "\n").encode())
             return {"new_sidecar_id": state["pending_id"]}
 
+        def acquire_guard(saved, *, existing_ok=False):
+            self.assertFalse(existing_ok)
+            self.assertFalse(state["guard"])
+            self.assertTrue((root / "native-status-upgrade.pending").exists())
+            state["guard_order"].append("acquired")
+            state["guard"] = True
+
+        def release_guard(saved):
+            self.assertTrue(state["guard"])
+            self.assertTrue(new["State"]["Running"])
+            state["guard_order"].append("released")
+            state["guard"] = False
+
         def verify_live(wss_arg, pins, relay, *, status=False):
             self.assertIs(wss_arg, wss)
             self.assertEqual(relay, relay_id)
@@ -166,6 +188,8 @@ class SyntheticSuccessTests(unittest.TestCase):
                 setmock(tx, "backup", side_effect=persist_backup)
                 setmock(tx, "read_backup", return_value=saved)
                 setmock(tx, "pending_record", side_effect=pending_record)
+                setmock(tx, "acquire_reconcile_guard", side_effect=acquire_guard)
+                setmock(tx, "release_reconcile_guard", side_effect=release_guard)
                 setmock(tx, "replace_proxy", side_effect=replace_proxy)
                 setmock(tx, "fresh_pins", return_value=next_pins)
                 setmock(tx, "update_pending_new", side_effect=update_pending_id)
@@ -194,6 +218,8 @@ class SyntheticSuccessTests(unittest.TestCase):
                 self.assertEqual(state["old_source"], new_source)
                 self.assertEqual(state["pins"], next_pins)
                 self.assertFalse((root / "native-status-upgrade.pending").exists())
+                self.assertEqual(state["guard_order"],
+                                 ["acquired", "released", "reconcile"])
                 preflight.native_release.assert_called_once()
                 wss.reconcile.assert_called_once()
                 self.assertEqual(confirm.call_count, 1)
