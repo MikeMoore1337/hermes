@@ -507,6 +507,7 @@ def cutover(candidate: Path) -> dict:
             saved = read_backup()
             gate(pending_record(saved)["new_sidecar_id"] == "",
                  "NEW_PENDING_READBACK_FAILED")
+            acquire_reconcile_guard(saved)
             stage1.sync_pin_directory()
             try:
                 stage1.docker("stop", "--time", "12", pins["sidecar_id"])
@@ -532,7 +533,12 @@ def cutover(candidate: Path) -> dict:
                     raise Refused("CUTOVER_INCOMPLETE_OWNER_RECOVERY_REQUIRED") from restore_exc
                 failed = True
 
-        # Reconciler acquires the pins lock itself. Verify after releasing it.
+        # The legacy WSS reconciler checks prepare.pending, and so cannot
+        # acquire a new pins.json inode and start a half-built sidecar.
+        # Release its guard only after the candidate is verified (or old
+        # sidecar has been fully restored).
+        release_reconcile_guard(saved)
+        # Reconciler acquires its own pin lock. Verify after releasing ours.
         try:
             gate(wss.reconcile(str(stage1.PINS)) == "READY",
                  "POST_CUTOVER_WSS_RECONCILE_HOLD")
@@ -540,10 +546,12 @@ def cutover(candidate: Path) -> dict:
             if failed:
                 raise Refused("RESTORED_WSS_RECONCILE_UNVERIFIED") from None
             with stage1.locked_pins():
+                acquire_reconcile_guard(saved)
                 try:
                     restore_known(wss, saved, new_id, preflight)
                 except Exception as restore_exc:
                     raise Refused("POST_CUTOVER_OWNER_RECOVERY_REQUIRED") from restore_exc
+            release_reconcile_guard(saved)
             try:
                 gate(wss.reconcile(str(stage1.PINS)) == "READY",
                      "RESTORED_WSS_RECONCILE_UNVERIFIED")
@@ -611,7 +619,9 @@ def rollback() -> dict:
             }))
             gate(pending_record(saved)["new_sidecar_id"] == active["Id"],
                  "ROLLBACK_PENDING_DRIFT")
+            acquire_reconcile_guard(saved)
             restore_known(wss, saved, active["Id"], preflight)
+        release_reconcile_guard(saved)
         gate(wss.reconcile(str(stage1.PINS)) == "READY",
              "POST_ROLLBACK_RECONCILE_HOLD")
         PENDING.unlink()
@@ -636,8 +646,10 @@ def recover() -> dict:
     with stage1.legacy.lock():
         with stage1.locked_pins():
             gate(pending_record(saved) == initial, "RECOVERY_RECORD_CHANGED")
+            acquire_reconcile_guard(saved, existing_ok=True)
             wss = stage1.load_existing_wss()
             restore_known(wss, saved, initial["new_sidecar_id"], preflight)
+        release_reconcile_guard(saved)
         gate(wss.reconcile(str(stage1.PINS)) == "READY",
              "RECOVERED_WSS_RECONCILE_HOLD")
         PENDING.unlink()
