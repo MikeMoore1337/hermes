@@ -45,6 +45,24 @@ class Refused(ValueError):
     """The CLI may print only constant status strings, never host secrets."""
 
 
+CUTOVER_FAILURE_PHASES = frozenset({
+    "STOP_OLD", "SET_OLD_RESTART_NO", "CHECKPOINT_OLD",
+    "SWAP_SOURCE", "CREATE_NEW", "RECORD_NEW_ID", "RENDER_NEW_PINS",
+    "SWAP_PINS", "START_NEW", "VERIFY_NEW_TLS",
+    "VERIFY_NATIVE_DISABLED", "VERIFY_CONTAINER_IDS", "RECONCILE_NEW",
+})
+
+
+class CutoverRestored(Refused):
+    """The old proxy is verified, and only a fixed step label is disclosed."""
+
+    def __init__(self, phase: str):
+        if phase not in CUTOVER_FAILURE_PHASES:
+            raise Refused("CUTOVER_FAILURE_PHASE_INVALID")
+        super().__init__("CUTOVER_FAILED_ORIGINAL_PROXY_RESTORED")
+        self.phase = phase
+
+
 def gate(ok, code):
     if not ok:
         raise Refused(code)
@@ -466,6 +484,7 @@ def cutover(candidate: Path) -> dict:
 
     with stage1.legacy.lock():
         failed = False
+        failed_phase = None
         new_id = ""
         with stage1.locked_pins() as raw:
             wss = stage1.load_existing_wss()
@@ -509,24 +528,39 @@ def cutover(candidate: Path) -> dict:
                  "NEW_PENDING_READBACK_FAILED")
             acquire_reconcile_guard(saved)
             stage1.sync_pin_directory()
+            # Fixed phase labels are safe to expose after a verified rollback.
+            # Never print raw Docker exceptions, protected pins, or TLS details.
+            phase = "STOP_OLD"
             try:
                 stage1.docker("stop", "--time", "12", pins["sidecar_id"])
+                phase = "SET_OLD_RESTART_NO"
                 stage1.docker("update", "--restart", "no", pins["sidecar_id"])
+                phase = "CHECKPOINT_OLD"
                 stage1.docker("rename", pins["sidecar_id"], CHECKPOINT)
+                phase = "SWAP_SOURCE"
                 replace_proxy(new_bytes)
+                phase = "CREATE_NEW"
                 new_id = stage1.create_sidecar(pins, pins["relay_id"], old_container)
+                phase = "RECORD_NEW_ID"
                 update_pending_new(new_id)
+                phase = "RENDER_NEW_PINS"
                 next_raw = fresh_pins(wss, pins, new_id, new_bytes, pins["relay_id"])
+                phase = "SWAP_PINS"
                 stage1.replace_pins(next_raw)
+                phase = "START_NEW"
                 stage1.docker("start", new_id)
+                phase = "VERIFY_NEW_TLS"
                 verify_live(wss, wss._pins(next_raw), pins["relay_id"], status=True)
+                phase = "VERIFY_NATIVE_DISABLED"
                 preflight.native_release()
+                phase = "VERIFY_CONTAINER_IDS"
                 old_checkpoint = current_name(CHECKPOINT)
                 new_active = current_name(stage1.PROXY)
                 gate(old_checkpoint is not None and new_active is not None and
                      old_checkpoint["Id"] == pins["sidecar_id"] and
                      new_active["Id"] == new_id, "POST_CUTOVER_CONTAINER_CHANGED")
-            except Exception as exc:
+            except Exception:
+                failed_phase = phase
                 try:
                     restore_known(wss, saved, new_id, preflight)
                 except Exception as restore_exc:
@@ -545,6 +579,7 @@ def cutover(candidate: Path) -> dict:
         except Exception:
             if failed:
                 raise Refused("RESTORED_WSS_RECONCILE_UNVERIFIED") from None
+            failed_phase = "RECONCILE_NEW"
             with stage1.locked_pins():
                 acquire_reconcile_guard(saved)
                 try:
@@ -564,7 +599,7 @@ def cutover(candidate: Path) -> dict:
         PENDING.unlink()
         stage1.sync_pin_directory()
         if failed:
-            raise Refused("CUTOVER_FAILED_ORIGINAL_PROXY_RESTORED")
+            raise CutoverRestored(failed_phase)
 
     return {
         "status": "H454_WSS_NATIVE_STATUS_SWITCHED_PENDING_OWNER_ACCEPTANCE",
@@ -684,8 +719,11 @@ def main(argv: list[str] | None = None) -> int:
         reason = str(exc) if isinstance(exc, Refused) else "OWNER_HOST_RUNTIME_HOLD"
         if not re.fullmatch("[A-Z_]{1,72}", reason):
             reason = "OWNER_HOST_RUNTIME_HOLD"
-        print(json.dumps({"status": "H454_WSS_NATIVE_STATUS_OPERATOR_HOLD",
-                          "reason": reason}, sort_keys=True))
+        result = {"status": "H454_WSS_NATIVE_STATUS_OPERATOR_HOLD",
+                  "reason": reason}
+        if isinstance(exc, CutoverRestored):
+            result["failed_phase"] = exc.phase
+        print(json.dumps(result, sort_keys=True))
         return 2
 
 
