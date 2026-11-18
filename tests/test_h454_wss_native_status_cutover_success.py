@@ -77,7 +77,7 @@ class SyntheticSuccessTests(unittest.TestCase):
         def docker(*args):
             commands.append(args)
             if args[0] == "stop":
-                self.assertEqual(args[2], old_id)
+                self.assertEqual(args[-1], old_id)
                 old["State"]["Running"] = False
             elif args[0] == "update":
                 self.assertEqual(args[-1], old_id)
