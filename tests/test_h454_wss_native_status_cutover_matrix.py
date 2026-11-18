@@ -143,6 +143,8 @@ class CutoverFailureMatrix(unittest.TestCase):
                 patch(tx, "replace_proxy", side_effect=new_source)
                 patch(tx, "fresh_pins", side_effect=new_pins)
                 patch(tx, "restore_known", new=restore)
+                patch(tx, "acquire_reconcile_guard")
+                patch(tx, "release_reconcile_guard")
                 patch(tx, "update_pending_new")
                 patch(tx, "pending_record", return_value={"new_sidecar_id": ""})
                 patch(tx.os, "close")
