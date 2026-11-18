@@ -64,10 +64,12 @@ def absent(path: Path) -> bool:
 
 
 def sync_dir(path: Path) -> None:
-    with os.fdopen(
-        os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW), "rb"
-    ) as directory:
-        os.fsync(directory.fileno())
+    # A directory descriptor cannot be fdopen()'d as a regular file.
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
 
 
 def root_operator():
