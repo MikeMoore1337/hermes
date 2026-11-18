@@ -94,6 +94,45 @@ Docker mutation, that it is released before final reconcile, and that
 foreign/malformed markers are never adopted. This is synthetic CI, not a
 live-concurrent-production test.
 
+## Original-owner production incident: restored old proxy, failed phase unknown
+
+2026-11-18 owner-approved **first and only WSS cutover attempt** returned
+`CUTOVER_FAILED_ORIGINAL_PROXY_RESTORED`. Subsequent original-host
+`docker inspect` confirmed the exact original BRC and WSS IDs/images
+running, the newly named rollback checkpoint absent, and native services
+still inactive. The owner executed further read-only forensics:
+
+- `ORIGINAL_PINS_RESTORED=PASS`: exact old pins bytes match root-only backup
+  and protected original snapshot.
+- `ORIGINAL_PROXY_RESTORED=PASS`: old script matches the original backed-up
+  bytes and pinned SHA256.
+- `native-status-upgrade.pending`, `prepare.pending`,
+  `reconcile.pending` and all known temporary source/pins absent.
+- `native-status-upgrade-evidence` (root 0700) and
+  `native-status-original-pins.json` (root 0600) **preserved**.
+- Bounded Docker event query yielded 0 matching events; this is not proof
+  of zero Docker operations or sufficient event retention.
+
+The original source caught an inner Docker/TLS/systemd exception,
+verified restoration and reconciler readiness, then returned only the generic
+`CUTOVER_FAILED_ORIGINAL_PROXY_RESTORED` code. The exact failed operation
+**cannot be deduced** from this evidence. Do not claim a specific root cause,
+delete retained evidence or rerun `cutover --execute`.
+
+The subsequent code-only patch introduces **allowlisted, fixed phase names**
+such as `STOP_OLD`, `CREATE_NEW`, `VERIFY_NEW_TLS`, `RECONCILE_NEW`
+in a restored-failure CLI result. A phase appears only after the old proxy
+has been successfully restored; no raw exceptions, Docker stderr, certificate
+bytes or bearer tokens are printed. All existing fail-closed recovery
+semantics remain. Synthetic fault injection validates each emitted phase.
+
+This diagnostic patch is **not** applied to the completed production incident
+and cannot reconstruct the previously lost failure phase. It must not be
+deployed or used for another WSS attempt under the consumed approval.
+Current preserved evidence also deliberately blocks another `plan`.
+Any evidence-preserving re-arm, new source/operator deployment and cutover
+need independent review and a **fresh, narrowly scoped owner permission**.
+
 ## Acceptance before merge / production discussion
 
 - Exact-source code review, concurrency/locking tests and a synthetic
