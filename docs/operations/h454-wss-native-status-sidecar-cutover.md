@@ -25,10 +25,22 @@ network, read-only workspace registry, SQLite state and tokens. The only
 planned live switch is the sidecar source, sidecar container and associated
 protected root-owned pins, with a retained old sidecar and old source/pin bytes.
 
-This PR is **DRAFT / RUNTIME_NO_GO** until an independent negative fault matrix,
-ambiguous Docker-result recovery, post-switch WSS/client acceptance, and
-owner-approved exact-original-host plan have passed. DO NOT run cutover,
-rollback, or a command copied from this PR against the original VPS.
+This component remains **RUNTIME_NO_GO** even if its tested source is merged.
+Do not run its cutover/rollback/recovery commands against the original VPS
+until separate original-host operator staging, the exact owner-scoped release
+approval, and a rehearsed incident recovery are accepted. A source-only merge
+does not enable new services, restart a WSS container or issue device credentials.
+
+On 2026-11-18, the owner DID run the previously merged **read-only**
+preflight from the original root console, using exact Git blob
+`cc5d723eb1d67f2447a5d50123d53de3f44f96ec`. It returned
+`H454_WSS_NATIVE_STATUS_PREPARE_PLAN_PASS` with
+`completed_native3_history_verified=true`,
+`native_services_inactive=true`, `native_paired=false`,
+`brc_wss_mutation=false`, `cutover_approval=NOT_GRANTED`. The old WSS proxy
+still runs; the candidate source was staged in a separate private root file.
+This host plan does **not** prove any authenticated bearer status or device
+reconnect after a WSS switch. See Issue #454 comment 6972355845.
 
 ## Provisional command contract (NOT RELEASED)
 
@@ -60,8 +72,12 @@ WSS restarts, pairing, native activation or OS permission changes.
   no remote secret values in logs, source SHA/blob pins and non-root negative.
 - Verified automatic restoration or a reviewed, tested explicit recovery
   operator for every known partial phase. No lost WSS service on failure.
-- Actual no-mutation owner-root plan, independent owner approval for the
-  exact runtime change, and tested restoration. BRC MUST NOT be restarted.
+- Original-root no-mutation plan PASS; still require an **independent**
+  code/security review and a separately accepted, **exact-host owner
+  authorization** before production cutover. BRC MUST NOT be restarted.
+- Exact-head CI includes a complete synthetic successful sidecar-only path,
+  a negative failure matrix and retained old proxy proof. Synthetic CI
+  does not constitute live failure injection or recovery acceptance.
 - After cutover, live ChatGPT/Codex device reconnect and genuine owner
   bearer/revocation tests, then separately approve native service activation.
 
