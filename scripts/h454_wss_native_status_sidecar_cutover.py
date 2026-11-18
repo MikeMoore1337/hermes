@@ -25,6 +25,7 @@ ROOT = stage1.PIN_ROOT
 BACKUP = ROOT / "native-status-upgrade-evidence"
 ORIGINAL = ROOT / "native-status-original-pins.json"
 PENDING = ROOT / "native-status-upgrade.pending"
+RECONCILER_MARKER = ROOT / "prepare.pending"
 CHECKPOINT = "hermes-h454-wss-proxy-native-status-rollback"
 CHECKPOINT_NEW = CHECKPOINT + "-new"
 PREFLIGHT = Path("/root/h454_wss_native_status_preflight_903.py")
@@ -285,6 +286,44 @@ def pending_record(saved: dict[str, bytes]) -> dict:
           stage1.HEX.fullmatch(doc["new_sidecar_id"]) is not None),
          "PENDING_IDENTITY_DRIFT")
     return doc
+
+
+def reconcile_guard_bytes(saved: dict[str, bytes]) -> bytes:
+    """Immutable task-owned admission marker recognized by old WSS reconciler."""
+    return canonical({
+        "schema": 1,
+        "scope": "H454-WSS-NATIVE-STATUS-SIDECAR-ONLY",
+        "old_pins_sha256": digest(saved["old-pins.json"]),
+        "relay_id": saved["relay-id.txt"].decode("ascii").strip(),
+        "old_sidecar_id": saved["sidecar-id.txt"].decode("ascii").strip(),
+        "candidate_proxy_sha256": digest(saved["candidate-proxy.mjs"]),
+    })
+
+
+def acquire_reconcile_guard(saved: dict[str, bytes], *, existing_ok=False) -> None:
+    """Prevent the legacy reconciler acquiring the NEW pins inode mid-switch.
+
+    Must be called with stage1.locked_pins() held before any Docker mutation.
+    The original WSS reconciler explicitly refuses when prepare.pending
+    exists, even after a pin-file os.replace changes its lock inode.
+    """
+    expected = reconcile_guard_bytes(saved)
+    if RECONCILER_MARKER.exists() or RECONCILER_MARKER.is_symlink():
+        gate(existing_ok and
+             checked_file(RECONCILER_MARKER, mode=0o600) == expected,
+             "FOREIGN_WSS_PREPARE_MARKER")
+        return
+    stage1.write_once(RECONCILER_MARKER, expected)
+    gate(checked_file(RECONCILER_MARKER, mode=0o600) == expected,
+         "WSS_PREPARE_READBACK_FAILED")
+    stage1.sync_pin_directory()
+
+
+def release_reconcile_guard(saved: dict[str, bytes]) -> None:
+    gate(checked_file(RECONCILER_MARKER, mode=0o600) ==
+         reconcile_guard_bytes(saved), "FOREIGN_WSS_PREPARE_MARKER")
+    RECONCILER_MARKER.unlink()
+    stage1.sync_pin_directory()
 
 
 def valid_new_proxy(proxy: dict, known_id: str, relay_id: str,
