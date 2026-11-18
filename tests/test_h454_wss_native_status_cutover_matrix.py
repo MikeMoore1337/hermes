@@ -158,8 +158,29 @@ class CutoverFailureMatrix(unittest.TestCase):
                 patch(tx.stage1, "replace_pins", side_effect=replace_pins)
                 patch(tx.stage1, "inspect", return_value=new_instance)
                 patch(preflight, "native_release", side_effect=native_check)
-                with self.assertRaises(tx.Refused):
-                    tx.cutover(root / "h454-wss-native-status-synthetic.mjs")
+                if restored:
+                    with self.assertRaises(tx.CutoverRestored) as caught:
+                        tx.cutover(root / "h454-wss-native-status-synthetic.mjs")
+                    self.assertEqual(str(caught.exception),
+                                     "CUTOVER_FAILED_ORIGINAL_PROXY_RESTORED")
+                    expected_phase = {
+                        "stop": "STOP_OLD",
+                        "update": "SET_OLD_RESTART_NO",
+                        "rename": "CHECKPOINT_OLD",
+                        "source_swap": "SWAP_SOURCE",
+                        "create": "CREATE_NEW",
+                        "pin_render": "RENDER_NEW_PINS",
+                        "pin_swap": "SWAP_PINS",
+                        "start": "START_NEW",
+                        "live_postcheck": "VERIFY_NEW_TLS",
+                        "native_postcheck": "VERIFY_NATIVE_DISABLED",
+                    }
+                    self.assertEqual(caught.exception.phase, expected_phase[failed_op])
+                else:
+                    with self.assertRaisesRegex(
+                        tx.Refused, "CUTOVER_INCOMPLETE_OWNER_RECOVERY_REQUIRED"
+                    ):
+                        tx.cutover(root / "h454-wss-native-status-synthetic.mjs")
 
                 restore.assert_called_once()
                 if failed_op == "native_postcheck":
