@@ -1,7 +1,8 @@
 """H454 status-only WSS candidate: synthetic pins, denials, owner TTY."""
 from __future__ import annotations
 
-from contextlib import nullcontext
+from contextlib import nullcontext, redirect_stdout
+from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import hashlib
@@ -97,6 +98,32 @@ class SidecarOnlyCandidateTests(unittest.TestCase):
             self.assertEqual(tx.main(["rollback"]), 2)
             cutover.assert_not_called()
             rollback.assert_not_called()
+
+    def test_rollback_report_exposes_only_allowlisted_failure_phase(self):
+        raw_exception = "DOCKER_BAD_CREDENTIAL private-token-internal-do-not-leak"
+        output = StringIO()
+        with mock.patch.object(tx, "verified_preflight", return_value=object()), \
+             mock.patch.object(tx, "cutover", side_effect=
+                               tx.CutoverRestored("VERIFY_NEW_TLS")), \
+             redirect_stdout(output):
+            self.assertEqual(
+                tx.main(["cutover", "--execute",
+                         "--candidate-source", "/root/synthetic-only.mjs"]), 2
+            )
+        reported = json.loads(output.getvalue())
+        self.assertEqual(reported, {
+            "status": "H454_WSS_NATIVE_STATUS_OPERATOR_HOLD",
+            "reason": "CUTOVER_FAILED_ORIGINAL_PROXY_RESTORED",
+            "failed_phase": "VERIFY_NEW_TLS",
+        })
+        self.assertNotIn(raw_exception, output.getvalue())
+
+    def test_arbitrary_phase_is_not_accepted_or_logged(self):
+        for invalid in ("SOURCE_BAD " + "A" * 80, "", "PRIVATE_KEY", "DOCKER_LOG_SECRET"):
+            with self.subTest(phase=invalid):
+                with self.assertRaisesRegex(tx.Refused,
+                                            "CUTOVER_FAILURE_PHASE_INVALID"):
+                    tx.CutoverRestored(invalid)
 
     def test_canonical_pins_has_single_trailing_lf(self):
         data = {"b": 2, "a": 1}
