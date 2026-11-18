@@ -94,6 +94,34 @@ Docker mutation, that it is released before final reconcile, and that
 foreign/malformed markers are never adopted. This is synthetic CI, not a
 live-concurrent-production test.
 
+## Bounded readiness after Docker start (source-only candidate)
+
+An independent source review identified a plausible, *not proven*, transient
+startup window: `docker start <new WSS CID>` can succeed before the
+unprivileged Node process binds TCP 3001. The original operator immediately
+called `verify_live(... status=True)`, which performed a single private
+TLS connection. A refused/reset/timed-out connection in that small window
+triggered a full rollback even when the new WSS might have become ready a
+moment later.
+
+A bounded, foreground, maximum-12-second listener-readiness loop now retries
+only `ConnectionRefusedError`, `ConnectionResetError` and `TimeoutError`
+from the exact existing private `verify_live` check. It never re-creates,
+restarts, changes pins or widens access during retry. TLS certificate failure,
+incorrect owner status/403, foreign Docker/namespace/profile, invalid pins,
+permission problems and other unexpected exceptions **fail immediately**.
+A prolonged listener failure returns `NEW_WSS_READINESS_TIMEOUT` within
+the already protected `VERIFY_NEW_TLS` failed phase and performs the
+original exact-byte rollback. Unit tests inject delayed TCP ready, timeout,
+malformed certificate, identity drift and verify zero Docker mutations.
+
+The real Nov-18 production error remains indeterminate. This source-only
+readiness improvement **must not** be described as a confirmed root-cause fix
+or proof that a second cutover would pass. The original one-time owner
+approval is consumed. The retained root-only evidence must be preserved and
+a separately reviewed rearm and fresh owner consent are required for any
+future original-host mutating operation.
+
 ## Original-owner production incident: restored old proxy, failed phase unknown
 
 2026-11-18 owner-approved **first and only WSS cutover attempt** returned
