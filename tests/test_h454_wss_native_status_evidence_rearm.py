@@ -157,5 +157,117 @@ class WssEvidenceArchiveTests(unittest.TestCase):
             rearm.assert_not_called()
 
 
+class RestoredOriginalPlanTests(unittest.TestCase):
+    def with_fixture(self, callback, *, mismatch=False, pending=False, stopped=False):
+        with TemporaryDirectory(prefix="h454-wss-readonly-plan-") as dirname:
+            root = Path(dirname)
+            old_raw = b'{"synthetic":"original-pins"}\n'
+            candidate = b"status-proxy-source-only"
+            old = b"old-proxy-source-only"
+            current_pins = {
+                "relay_id": "a" * 64,
+                "sidecar_id": "b" * 64,
+                "relay_image": "sha256:" + "c" * 64,
+                "sidecar_image": "sha256:" + "d" * 64,
+                "proxy_sha256": hashlib.sha256(old).hexdigest(),
+            }
+            backup_raw = old_raw if not mismatch else b'{"foreign":"pins"}\n'
+            saved = {
+                "old-pins.json": backup_raw,
+                "old-proxy.mjs": old,
+                "candidate-proxy.mjs": candidate,
+                "relay-id.txt": ("a" * 64 + "\n").encode("ascii"),
+                "sidecar-id.txt": ("b" * 64 + "\n").encode("ascii"),
+            }
+            if pending:
+                (root / "native-status-upgrade.pending").write_bytes(b"pending")
+            original = {
+                "Id": "b" * 64,
+                "Image": "sha256:" + "d" * 64,
+                "State": {"Running": not stopped},
+            }
+            wss = mock.Mock()
+            wss._pins.return_value = current_pins
+            preflight = mock.Mock()
+            preflight.read_fixed.return_value = candidate
+            preflight.verify_completed_native3_history.return_value = True
+
+            def current_name(name):
+                if name == "hermes-h454-wss-proxy":
+                    return original
+                return None
+
+            tx = SimpleNamespace(
+                CHECKPOINT="synthetic-old-checkpoint",
+                CHECKPOINT_NEW="synthetic-new-checkpoint",
+                ROOT=root, BACKUP=root / "native-status-upgrade-evidence",
+                LIVE_RELAY_ID="a" * 64,
+                LIVE_SIDECAR_ID="b" * 64,
+                LIVE_RELAY_IMAGE="sha256:" + "c" * 64,
+                stage1=SimpleNamespace(
+                    LEGACY_IMAGE="sha256:" + "d" * 64,
+                    PROXY="hermes-h454-wss-proxy",
+                    protected=mock.Mock(),
+                    load_existing_wss=mock.Mock(return_value=wss),
+                ),
+                current_name=mock.Mock(side_effect=current_name),
+                read_backup=mock.Mock(return_value=saved),
+                checked_file=mock.Mock(return_value=old),
+                verify_live=mock.Mock(),
+            )
+            with mock.patch.object(arch, "ROOT", root), \
+                 mock.patch.object(arch, "ARCHIVE", root / "not-yet-archived"):
+                callback(tx, preflight, old_raw)
+
+    def test_restored_live_pair_plan_does_not_call_any_docker_mutator(self):
+        def verify(tx, preflight, original):
+            proof = arch.inspect_locked(tx, preflight, original)
+            self.assertEqual(proof["original_pins_sha256"],
+                             hashlib.sha256(original).hexdigest())
+            self.assertFalse(proof["cutover_authorized"])
+            tx.verify_live.assert_called_once()
+            preflight.native_release.assert_called_once()
+            self.assertEqual(tx.current_name.call_count, 3)
+        self.with_fixture(verify)
+
+    def test_changed_backup_refused_without_mutations(self):
+        def verify(tx, preflight, original):
+            with self.assertRaisesRegex(arch.RearmHold,
+                                        "ORIGINAL_PAIR_NOT_RESTORED"):
+                arch.inspect_locked(tx, preflight, original)
+            tx.verify_live.assert_not_called()
+        self.with_fixture(verify, mismatch=True)
+
+    def test_unfinished_transaction_refused_before_reading_backup(self):
+        def verify(tx, preflight, original):
+            with self.assertRaisesRegex(arch.RearmHold,
+                                        "UNFINISHED_WSS_TRANSACTION"):
+                arch.inspect_locked(tx, preflight, original)
+            tx.read_backup.assert_not_called()
+        self.with_fixture(verify, pending=True)
+
+    def test_stopped_original_sidecar_refused(self):
+        def verify(tx, preflight, original):
+            with self.assertRaisesRegex(arch.RearmHold,
+                                        "ORIGINAL_SIDECAR_CHANGED"):
+                arch.inspect_locked(tx, preflight, original)
+        self.with_fixture(verify, stopped=True)
+
+    def test_root_only_and_tty_required_before_rearm(self):
+        with mock.patch.object(arch.os, "geteuid", return_value=65534):
+            with self.assertRaisesRegex(arch.RearmHold, "ROOT_REQUIRED"):
+                arch.root_operator()
+        with mock.patch.object(arch.sys, "stdin") as stdin, \
+             mock.patch.object(arch.sys, "stdout") as stdout:
+            stdin.isatty.return_value = False
+            stdout.isatty.return_value = False
+            with self.assertRaisesRegex(arch.RearmHold,
+                                        "OWNER_ROOT_TTY_REQUIRED"):
+                arch.confirm({
+                    "original_pins_sha256": "a" * 64,
+                    "original_sidecar_id": "b" * 64,
+                })
+
+
 if __name__ == "__main__":
     unittest.main()
