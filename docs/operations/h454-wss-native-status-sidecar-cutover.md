@@ -63,6 +63,37 @@ sufficiently tested**. Therefore it must not be promoted from Draft or used in
 production. Existing source-only PRs, plan PASS and green CI do not authorize
 WSS restarts, pairing, native activation or OS permission changes.
 
+## Preventing the existing WSS reconciler race
+
+The installed `h454_wss_relay_reconcile.py` acquires a file lock on
+`pins.json`, but the sidecar switch replaces that file with `os.replace`,
+which creates a **new inode**. Locking only the previous inode does not prevent
+a separate running reconciler from observing new pins before the replacement
+sidecar has started. This could cause a conflicting Docker start or leave
+stale `reconcile.pending` state.
+
+The cutover now writes an exclusively created root-owned,
+exact-receipt-bound `prepare.pending` **while still holding the original pins
+lock and before any Docker stop**. The existing, installed reconciler already
+refuses ANY `prepare.pending`, including when it locks the new pins inode.
+The marker remains until either the new sidecar has passed its TLS/status and
+native-inactive checks or the old sidecar has been restored. It is removed
+before the transaction invokes the normal reconciler for final verification.
+
+Rollback and owner-approved recovery establish the same guard before any
+container change; recovery accepts a pre-existing guard only if its exact
+bytes match the retained original pins/CID/source receipt. Foreign markers,
+dangling symlinks, mismatched bytes or Docker ambiguity remain hard refusals.
+A crash during the transaction leaves evidence intact and requires the
+separate TTY-approved `recover` path or a manual incident review. Do not
+delete `prepare.pending` merely to re-run preflight.
+
+The regression suite checks the *actual installed reconciler source* contains
+its `prepare.pending` refusal, that the guard precedes every simulated
+Docker mutation, that it is released before final reconcile, and that
+foreign/malformed markers are never adopted. This is synthetic CI, not a
+live-concurrent-production test.
+
 ## Acceptance before merge / production discussion
 
 - Exact-source code review, concurrency/locking tests and a synthetic
