@@ -44,6 +44,84 @@ class OriginalHermesNativeEnrollmentTests(unittest.TestCase):
         post.assert_not_called()
         write.assert_not_called()
 
+    def test_immutable_owner_release_sources_exact_git_blobs(self):
+        # The existing deploy runner creates a root-owned 0755 release,
+        # then chmod -R a-w makes it 0555. No owner-host permission changes.
+        checkout = Path(op.__file__).resolve().parents[1]
+        with mock.patch.object(op, "SOURCE", checkout), \
+             mock.patch.object(op, "NATIVE", checkout), \
+             mock.patch.object(op, "_dir") as directory, \
+             mock.patch.object(op, "_read",
+                               side_effect=lambda path, **kwargs: path.read_bytes()):
+            op._source_gate()
+        self.assertEqual(directory.call_args_list, [
+            mock.call(checkout, owner=0, mode=0o555),
+            mock.call(checkout, owner=0, mode=0o755),
+        ])
+
+    def test_immutable_owner_directory_fail_closed_on_drift(self):
+        class SyntheticPath:
+            def __init__(self, *, owner=0, mode=0o555, parents=()):
+                self.owner, self.mode, self.parents = owner, mode, parents
+
+            def is_absolute(self):
+                return True
+
+            def lstat(self):
+                return SimpleNamespace(st_uid=self.owner,
+                                       st_mode=stat.S_IFDIR | self.mode)
+
+        safe_parent = SyntheticPath(owner=0, mode=0o755)
+        readonly = SyntheticPath(mode=0o555, parents=(safe_parent,))
+        op._dir(readonly, owner=0, mode=0o555)
+        for bad in (
+            SyntheticPath(mode=0o755, parents=(safe_parent,)),
+            SyntheticPath(owner=1000, mode=0o555, parents=(safe_parent,)),
+            SyntheticPath(mode=0o555, parents=(
+                SyntheticPath(owner=0, mode=0o777),)),
+            SyntheticPath(mode=0o555, parents=(
+                SyntheticPath(owner=1000, mode=0o755),)),
+        ):
+            with self.subTest(mode=bad.mode, owner=bad.owner):
+                with self.assertRaises(op.EnrollmentHold):
+                    op._dir(bad, owner=0, mode=0o555)
+
+    def test_read_only_plan_reports_only_fixed_failure_stage(self):
+        import io
+        for failed_stage in ("SOURCE", "SERVICE", "RUNTIME", "COMPILED_BRC"):
+            with self.subTest(stage=failed_stage), \
+                 mock.patch.object(op.os, "geteuid", return_value=0), \
+                 mock.patch.object(op.socket, "gethostname",
+                                   return_value="vps1777112993"), \
+                 mock.patch.object(op, "_source_gate") as source, \
+                 mock.patch.object(op, "_service_gate",
+                                   return_value=(object(),
+                                     SimpleNamespace(roots=(("hermes", "/synthetic"),)),
+                                     "a" * 64)) as service, \
+                 mock.patch.object(op, "_runtime_gate") as runtime, \
+                 mock.patch.object(op, "_compiled_gate") as compiled, \
+                 mock.patch.object(op, "_docker_post") as post, \
+                 mock.patch.object(op, "_write_device") as write, \
+                 mock.patch("sys.stdout", new_callable=io.StringIO) as stdout:
+                stages = {
+                    "SOURCE": source,
+                    "SERVICE": service,
+                    "RUNTIME": runtime,
+                    "COMPILED_BRC": compiled,
+                }
+                stages[failed_stage].side_effect = RuntimeError(
+                    "synthetic-sensitive-path-and-token-never-print")
+                self.assertEqual(op.main(["plan"]), 2)
+                output = stdout.getvalue()
+                self.assertNotIn("synthetic-sensitive", output)
+                result = json.loads(output)
+                self.assertEqual(result["status"],
+                                 "H454_HERMES_NATIVE_ENROLLMENT_HOLD")
+                self.assertEqual(result["failed_stage"], failed_stage)
+                self.assertTrue(result["no_auto_retry"])
+                post.assert_not_called()
+                write.assert_not_called()
+
     def test_wrong_host_and_nonroot_never_inspect_live_relay(self):
         for uid, hostname in ((1000, "vps1777112993"), (0, "wrong-vps")):
             with self.subTest(uid=uid, host=hostname), \

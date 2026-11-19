@@ -46,6 +46,29 @@ to the operator memory, not printed. This starts short-lived non-root Node
 processes inside the production relay **only if separately authorized**,
 but does not start any new listener, update the image or introduce an MCP.
 
+## Immutable owner-release permission compatibility
+
+The production source deploy script `deploy/hermes-main-deploy.sh` first
+creates the root-owned source release directory as `0755`, then uses
+`chmod -R a-w "$release"` after publishing. The resulting exact directory
+mode is **`0555`**, not `0755`. The first owner original-VPS
+`plan` in PR #907 returned `H454_HERMES_NATIVE_ENROLLMENT_HOLD`.
+A read-only root-console diagnostic narrowed it to
+`H454_DIAG_STAGE=SOURCE`, `H454_DIAG_REASON=UNSAFE_DIRECTORY`.
+
+The corrected operator requires exact `0555` for the pinned, immutable
+**original owner source release**, retaining UID root, no symlinks and
+root-owned/non-group-writable ancestors. The **separate native 30db
+source release** still requires exact root-owned `0755` and immutable
+Git-blob content. This is NOT a request to chmod original production
+directories; doing so would weaken the deployed source's protection.
+
+`plan` now reports only one fixed `failed_stage` enum on a
+read-only admission failure: `SOURCE`, `SERVICE`, `RUNTIME`, or
+`COMPILED_BRC`. No Python exception messages, private file content,
+owner paths or tokens are returned. No automatic retry or any device
+registration is authorized by this source patch.
+
 ## Exact preflight and execution
 
 `plan` is read-only and root-only. It checks installed original-owner Git
