@@ -70,6 +70,18 @@ class EnrollmentHold(ValueError):
     """Fixed error only; no token, code, device ID, path or raw HTTP body."""
 
 
+class PlanStageHold(EnrollmentHold):
+    """Expose only the fixed failing read-only gate, never the exception."""
+
+    ALLOWED = frozenset({"SOURCE", "SERVICE", "RUNTIME", "COMPILED_BRC"})
+
+    def __init__(self, stage: str):
+        if stage not in self.ALLOWED:
+            raise EnrollmentHold("INVALID_PLAN_STAGE")
+        self.stage = stage
+        super().__init__("NATIVE_READ_ONLY_STAGE_HOLD")
+
+
 def gate(value: bool, code: str) -> None:
     if not value:
         raise EnrollmentHold(code)
@@ -131,7 +143,11 @@ def _read(path: Path, *, owner: int, modes: tuple[int, ...],
 
 
 def _source_gate() -> None:
-    _dir(SOURCE, owner=0, mode=0o755)
+    # main deploy creates SOURCE as 0755, then chmod -R a-w makes it
+    # immutable 0555. Requiring 0755 accidentally rejects the deployed
+    # original owner source, while accepting an unnecessarily writable mode.
+    # The native release is installed separately and remains root:root 0755.
+    _dir(SOURCE, owner=0, mode=0o555)
     _dir(NATIVE, owner=0, mode=0o755)
     for rel, expected in SOURCE_BLOBS.items():
         gate(_blob(_read(SOURCE / rel, owner=0, modes=(0o444, 0o644),
@@ -302,10 +318,22 @@ def plan() -> dict:
     gate(os.geteuid() == 0 and
          socket.gethostname().split(".")[0] == "vps1777112993",
          "ORIGINAL_ROOT_REQUIRED")
-    _source_gate()
-    _, candidate, manifest_sha = _service_gate()
-    _runtime_gate()
-    _compiled_gate()
+    try:
+        _source_gate()
+    except Exception:
+        raise PlanStageHold("SOURCE") from None
+    try:
+        _, candidate, manifest_sha = _service_gate()
+    except Exception:
+        raise PlanStageHold("SERVICE") from None
+    try:
+        _runtime_gate()
+    except Exception:
+        raise PlanStageHold("RUNTIME") from None
+    try:
+        _compiled_gate()
+    except Exception:
+        raise PlanStageHold("COMPILED_BRC") from None
     return {
         "status": "H454_HERMES_NATIVE_ENROLL_PLAN_PASS",
         "manifest_sha256": manifest_sha,
@@ -525,13 +553,16 @@ def main(argv=None) -> int:
         report = enroll() if arguments.execute else plan()
         print(json.dumps(report, sort_keys=True))
         return 0
-    except Exception:
+    except Exception as exc:
         # No access tokens, current codes, paths or Docker errors in output.
-        print(json.dumps({
+        result = {
             "status": "H454_HERMES_NATIVE_ENROLLMENT_HOLD",
             "no_auto_retry": True,
             "service_started": False,
-        }, sort_keys=True))
+        }
+        if isinstance(exc, PlanStageHold):
+            result["failed_stage"] = exc.stage
+        print(json.dumps(result, sort_keys=True))
         return 2
 
 
