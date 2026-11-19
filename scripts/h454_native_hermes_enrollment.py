@@ -238,6 +238,7 @@ def _bridge_peers_gate(network: dict) -> None:
              if type(m) is dict
          ), "FOREIGN_BRIDGE_PEER_OR_ADDRESS")
 
+
 def _runtime_gate() -> None:
     relay = _docker_inspect("hermes-brc-relay")
     wss = _docker_inspect("hermes-h454-wss-proxy")
