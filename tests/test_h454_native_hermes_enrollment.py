@@ -122,6 +122,146 @@ class OriginalHermesNativeEnrollmentTests(unittest.TestCase):
                 post.assert_not_called()
                 write.assert_not_called()
 
+    def _h15_bridge_fixtures(self):
+        other_id = "d" * 64
+        bridge_id = "c" * 64
+        bridge = {
+            "Id": bridge_id,
+            "Internal": True,
+            "Driver": "bridge",
+            "Containers": {
+                op.RELAY: {"Name": "hermes-brc-relay",
+                           "IPv4Address": op.IP + "/28"},
+                other_id: {"Name": op.H15_PEER_NAME.lstrip("/"),
+                           "IPv4Address": op.H15_PEER_CIDR},
+            },
+        }
+        peer = {
+            "Id": other_id,
+            "Name": op.H15_PEER_NAME,
+            "Image": op.H15_PEER_IMAGE,
+            "State": {"Running": True},
+            "Config": {"Labels": {"com.hermes.scope": op.H15_PEER_SCOPE}},
+            "HostConfig": {
+                "NetworkMode": op.NETWORK,
+                "ReadonlyRootfs": True,
+                "Privileged": False,
+                "CapDrop": ["ALL"],
+                "SecurityOpt": ["no-new-privileges"],
+                "PortBindings": {},
+                "PublishAllPorts": False,
+            },
+            "NetworkSettings": {
+                "Networks": {
+                    op.NETWORK: {"IPAddress": op.H15_PEER_IP,
+                                 "NetworkID": bridge_id}
+                },
+                "Ports": {},
+            },
+            "Mounts": [{"Destination": "/workspace"}],
+        }
+        return bridge, peer, other_id
+
+    def test_h15_exact_second_peer_admitted_without_docker_mutation(self):
+        bridge, peer, peer_id = self._h15_bridge_fixtures()
+        with mock.patch.object(op, "_docker_inspect",
+                               return_value=peer) as inspect:
+            op._bridge_peers_gate(bridge)
+        inspect.assert_called_once_with(peer_id)
+
+        bridge["Containers"].pop(peer_id)
+        with mock.patch.object(op, "_docker_inspect") as inspect:
+            op._bridge_peers_gate(bridge)
+        inspect.assert_not_called()
+
+    def test_h15_peer_rejects_unknown_or_weakened_profile(self):
+        from copy import deepcopy
+        clean, peer, peer_id = self._h15_bridge_fixtures()
+        cases = (
+            ("foreign_peer", lambda b, p:
+                b["Containers"].update({"e" * 64: {"Name": "outsider"}})),
+            ("unexpected_name", lambda b, p:
+                b["Containers"][peer_id].update(Name="outsider")),
+            ("unexpected_endpoint", lambda b, p:
+                b["Containers"][peer_id].update(IPv4Address="172.29.251.4/28")),
+            ("unexpected_image", lambda b, p:
+                p.update(Image="sha256:" + "a" * 64)),
+            ("unexpected_label", lambda b, p:
+                p["Config"]["Labels"].update({"com.hermes.scope": "foreign"})),
+            ("not_running", lambda b, p:
+                p["State"].update(Running=False)),
+            ("foreign_id", lambda b, p: p.update(Id="a" * 64)),
+            ("host_network", lambda b, p:
+                p["HostConfig"].update(NetworkMode="host")),
+            ("privileged", lambda b, p:
+                p["HostConfig"].update(Privileged=True)),
+            ("writable_root", lambda b, p:
+                p["HostConfig"].update(ReadonlyRootfs=False)),
+            ("extra_caps", lambda b, p:
+                p["HostConfig"].update(CapDrop=[])),
+            ("missing_nnp", lambda b, p:
+                p["HostConfig"].update(SecurityOpt=[])),
+            ("public_ports", lambda b, p:
+                p["HostConfig"].update(PortBindings={"80/tcp": [{}]})),
+            ("foreign_bridge", lambda b, p:
+                p["NetworkSettings"]["Networks"][op.NETWORK].update(
+                    NetworkID="b" * 64)),
+            ("foreign_ip", lambda b, p:
+                p["NetworkSettings"]["Networks"][op.NETWORK].update(
+                    IPAddress="172.29.251.4")),
+            ("docker_socket", lambda b, p:
+                p.update(Mounts=[{"Destination": "/var/run/docker.sock"}])),
+        )
+        for label, change in cases:
+            with self.subTest(case=label):
+                bridge = deepcopy(clean)
+                candidate = deepcopy(peer)
+                change(bridge, candidate)
+                with mock.patch.object(op, "_docker_inspect",
+                                       return_value=candidate):
+                    with self.assertRaisesRegex(
+                            op.EnrollmentHold,
+                            "^FOREIGN_BRIDGE_PEER_OR_ADDRESS$"):
+                        op._bridge_peers_gate(bridge)
+
+    def test_runtime_with_h15_second_peer_checks_health_and_no_post(self):
+        bridge, peer, peer_id = self._h15_bridge_fixtures()
+        relay = {
+            "Id": op.RELAY, "Image": op.RELAY_IMAGE,
+            "Name": "/hermes-brc-relay",
+            "State": {"Running": True},
+            "NetworkSettings": {
+                "Networks": {
+                    op.NETWORK: {"IPAddress": op.IP,
+                                 "NetworkID": bridge["Id"]}
+                },
+                "Ports": {},
+            },
+            "HostConfig": {"PortBindings": {}, "PublishAllPorts": False},
+            "Mounts": [],
+            "Config": {"Env": ["HOST=0.0.0.0", "PORT=3000"]},
+        }
+        wss = {
+            "Id": op.WSS, "Image": op.WSS_IMAGE,
+            "State": {"Running": True},
+            "HostConfig": {"NetworkMode": "container:" + op.RELAY},
+        }
+        entries = {
+            "hermes-brc-relay": relay,
+            "hermes-h454-wss-proxy": wss,
+            op.NETWORK: bridge,
+            peer_id: peer,
+        }
+        with mock.patch.object(op, "_docker_inspect",
+                               side_effect=entries.__getitem__) as inspect, \
+             mock.patch.object(op.http.client, "HTTPConnection") as connection, \
+             mock.patch.object(op, "_docker_post") as post:
+            connection.return_value.getresponse.return_value.status = 200
+            op._runtime_gate()
+        self.assertEqual(inspect.call_count, 4)
+        connection.assert_called_once_with(op.IP, 3000, timeout=4)
+        post.assert_not_called()
+
     def test_wrong_host_and_nonroot_never_inspect_live_relay(self):
         for uid, hostname in ((1000, "vps1777112993"), (0, "wrong-vps")):
             with self.subTest(uid=uid, host=hostname), \

@@ -48,6 +48,14 @@ WSS = "196e5eb6760addf709377d4f9560515fadbb2d074a3df80d99878d8935df23bb"
 WSS_IMAGE = "sha256:6e5f74ae35d38713ba8cd4c7b7167eb92f57a2ea439c91b4c29d5aa8b7f2a589"
 IP = "172.29.251.2"
 NETWORK = "hermes-brc-internal"
+# Existing H15 Hermes VPS sandbox is a separate, already approved BRC client.
+# Admission is confined to this exact image and bridge endpoint, not a label
+# or a broadly trusted network CIDR. Unknown peers still fail closed.
+H15_PEER_NAME = "/hermes-h15-hermes-agent"
+H15_PEER_SCOPE = "h15-permanent-hermes-v1"
+H15_PEER_IMAGE = "sha256:1d5b144c8b145dd18dca58e13eaefadc06b615c20c278d3be06ba44d8da0db11"
+H15_PEER_IP = "172.29.251.3"
+H15_PEER_CIDR = H15_PEER_IP + "/28"
 SERVICE = "hermes-commander-native"
 STATE = Path("/var/lib/hermes-commander-native")
 UNIT = Path("/etc/systemd/system/hermes-commander-native.service")
@@ -180,6 +188,57 @@ def _docker_inspect(*items: str) -> dict:
     return document[0]
 
 
+def _bridge_peers_gate(network: dict) -> None:
+    """Admit relay alone or one exact, isolated H15 Hermes sandbox peer.
+
+    The WSS proxy shares the relay's network namespace and therefore is not
+    a separate bridge endpoint. Never disconnect a peer as a preflight repair.
+    """
+    peers = network.get("Containers")
+    gate(type(peers) is dict and RELAY in peers and len(peers) in (1, 2),
+         "FOREIGN_BRIDGE_PEER_OR_ADDRESS")
+    if len(peers) == 1:
+        return
+    peer_id = next(cid for cid in peers if cid != RELAY)
+    endpoint = peers[peer_id]
+    gate(type(peer_id) is str and re.fullmatch(r"[a-f0-9]{64}", peer_id)
+         is not None and type(endpoint) is dict
+         and endpoint.get("Name") == H15_PEER_NAME.lstrip("/")
+         and endpoint.get("IPv4Address") == H15_PEER_CIDR,
+         "FOREIGN_BRIDGE_PEER_OR_ADDRESS")
+    peer = _docker_inspect(peer_id)
+    host = peer.get("HostConfig") or {}
+    config = peer.get("Config") or {}
+    networks = (peer.get("NetworkSettings") or {}).get("Networks") or {}
+    ports = (peer.get("NetworkSettings") or {}).get("Ports") or {}
+    gate(peer.get("Id") == peer_id
+         and peer.get("Name") == H15_PEER_NAME
+         and peer.get("Image") == H15_PEER_IMAGE
+         and (peer.get("State") or {}).get("Running") is True
+         and (config.get("Labels") or {}).get("com.hermes.scope")
+         == H15_PEER_SCOPE
+         and host.get("NetworkMode") == NETWORK
+         and host.get("ReadonlyRootfs") is True
+         and host.get("Privileged") is False
+         and set(host.get("CapDrop") or []) == {"ALL"}
+         and "no-new-privileges" in {
+             str(opt).split(":", 1)[0]
+             for opt in (host.get("SecurityOpt") or [])
+         }
+         and not host.get("PortBindings")
+         and not host.get("PublishAllPorts")
+         and not any(ports.values())
+         and set(networks) == {NETWORK}
+         and networks[NETWORK].get("IPAddress") == H15_PEER_IP
+         and networks[NETWORK].get("NetworkID") == network.get("Id")
+         and all(
+             m.get("Destination") not in
+             ("/var/run/docker.sock", "/run/docker.sock")
+             for m in (peer.get("Mounts") or [])
+             if type(m) is dict
+         ), "FOREIGN_BRIDGE_PEER_OR_ADDRESS")
+
+
 def _runtime_gate() -> None:
     relay = _docker_inspect("hermes-brc-relay")
     wss = _docker_inspect("hermes-h454-wss-proxy")
@@ -197,9 +256,9 @@ def _runtime_gate() -> None:
          and attached[NETWORK].get("IPAddress") == IP
          and attached[NETWORK].get("NetworkID") == network.get("Id")
          and network.get("Internal") is True
-         and network.get("Driver") == "bridge"
-         and set(network.get("Containers") or {}) == {RELAY},
+         and network.get("Driver") == "bridge",
          "FOREIGN_BRIDGE_PEER_OR_ADDRESS")
+    _bridge_peers_gate(network)
     host = relay.get("HostConfig", {})
     ports = relay.get("NetworkSettings", {}).get("Ports") or {}
     mounts = relay.get("Mounts", [])
