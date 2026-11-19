@@ -253,8 +253,8 @@ class OriginalHermesNativeEnrollmentTests(unittest.TestCase):
             peer_id: peer,
         }
         with mock.patch.object(op, "_docker_inspect",
-                               side_effect=entries.__getitem__) as inspect, \\
-             mock.patch.object(op.http.client, "HTTPConnection") as connection, \\
+                               side_effect=entries.__getitem__) as inspect, \
+             mock.patch.object(op.http.client, "HTTPConnection") as connection, \
              mock.patch.object(op, "_docker_post") as post:
             connection.return_value.getresponse.return_value.status = 200
             op._runtime_gate()
