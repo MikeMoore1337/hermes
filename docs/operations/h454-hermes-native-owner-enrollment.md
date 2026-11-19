@@ -12,6 +12,12 @@ owner on November 19, 2026:
   HTTP 3000 *inside* Docker and no host-published ports.
 - Original BRC `/health` returned 200 from original root host without a
   bearer, but its `/device/start` and `/device/poll` were **NOT** invoked.
+- November 19 original-root network diagnosis: an existing permanent H15
+  Hermes VPS sandbox `hermes-h15-hermes-agent` is a second bridge endpoint,
+  `172.29.251.3/28`, scope `h15-permanent-hermes-v1`, image
+  `sha256:1d5b144c8b145dd18dca58e13eaefadc06b615c20c278d3be06ba44d8da0db11`.
+  This is separate from the namespace-sharing WSS proxy and must not be
+  disconnected just to satisfy the enrollment plan.
 - Actual compiled BRC `app.js` was inspected from the live container:
   `native_pairing_scope_denied`, owner-bound native ID guard, and
   `/device/native-status` guard are present. Structural evidence is not
@@ -73,8 +79,9 @@ registration is authorized by this source patch.
 
 `plan` is read-only and root-only. It checks installed original-owner Git
 blobs, exact native source/release identity, native manifest parser,
-private trust CA/pins, Docker CID/image/netns/internal bridge with no other
-bridge peers, no BRC host port publishing, live `GET /health` 200 without a
+private trust CA/pins, Docker CID/image/netns/internal bridge with no unrecognized bridge peers (relay alone or the exact existing
+H15 sandbox with pinned name/image/scope/IP and restricted Docker profile),
+no BRC host port publishing, live `GET /health` 200 without a
 bearer, compiled native protection, 0600 service-owned manifest, 0644 exact
 systemd unit, no existing or interrupted credential file, and a
 disabled/inactive native service. It prints only sanitized status,
@@ -118,6 +125,28 @@ unpersisted device may require reviewed reconciliation or revocation.
 An interrupted file stage remains available for forensic review and
 blocks future plans. Do not blindly remove it or reuse a code.
 No Docker container is stopped/restarted; no keys or image are changed.
+
+## Second bridge endpoint - guarded source correction
+
+The original-root read-only `plan` returned `failed_stage=RUNTIME`.
+A bounded diagnosis found `FOREIGN_BRIDGE_PEER_OR_ADDRESS`: all other
+relay/network and WSS namespace checks passed, but the internal bridge has
+two endpoints rather than the operator's assumed one. The second endpoint is
+the existing H15 Hermes sandbox, not an unknown newly approved agent.
+
+The enrollment operator now admits the relay by itself or the exact existing
+H15 peer with a single pinned image, scope, name, IPv4/28 endpoint, running
+state, correct bridge and minimum Docker restrictions (read-only rootfs, all
+caps dropped, no-new-privileges, non-privileged, no host-published ports or
+Docker socket mount). It rejects any third bridge endpoint, changed image,
+scope, network identity, or weakened isolation. Peer inspection is read-only.
+The exact profile is still subject to original-host `plan` attestation;
+an unverified field causes a HOLD, not an automatic container change.
+
+The original `_908.py` and existing WSS rollback/archive evidence must be
+preserved. Stage a separately named, Git-blob-verified new operator on the
+original root host and execute `plan` only. A successful plan does not
+authorize `enroll --execute`, service activation or token issuance.
 
 ## Current acceptance
 
