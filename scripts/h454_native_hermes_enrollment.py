@@ -140,6 +140,18 @@ def _source_gate() -> None:
                      owner=0, modes=(0o444, 0o644), maximum=30000))
          == "9d2fe1fd5d98b791a00cb57799b49d9582ae9849",
          "NATIVE_PRIVATE_SOURCE_DRIFT")
+    # Source bytes are not enough if PYTHONPATH imported different modules.
+    for function, relative in (
+        (native_start, "device_fabric/native_brc_enrollment.py"),
+        (native_poll, "device_fabric/native_brc_enrollment.py"),
+        (parse_candidate, "device_fabric/native_install_preview.py"),
+        (_parse_config, "scripts/h454_native_linux_runtime.py"),
+        (approve_owner, "scripts/h454_native_owner_pair.py"),
+        (pending_owner, "scripts/h454_native_owner_pair.py"),
+        (host_db_preflight, "scripts/h15_brc_owner_private_pair.py"),
+    ):
+        gate(Path(function.__code__.co_filename).resolve(strict=True)
+             == SOURCE / relative, "TRUSTED_IMPORT_PATH_DRIFT")
 
 
 def _docker_inspect(*items: str) -> dict:
@@ -356,7 +368,10 @@ def _docker_post(path: str, body: bytes) -> tuple[int, bytes]:
         timeout=12, check=False)
     gate(done.returncode == 0 and 0 < len(done.stdout) <= 4096,
          "PRIVATE_RELAY_POST_UNVERIFIED")
-    document = json.loads(done.stdout.decode("ascii"))
+    try:
+        document = json.loads(done.stdout.decode("ascii"))
+    except (ValueError, UnicodeError, TypeError):
+        raise EnrollmentHold("PRIVATE_RELAY_POST_UNVERIFIED") from None
     gate(type(document) is dict and set(document) == {"status", "body"}
          and type(document["status"]) is int
          and document["status"] in (200, 400)
