@@ -10,6 +10,7 @@ import unittest
 from unittest.mock import patch
 
 from scripts import h454_native_paired_host as host
+from scripts import h454_native_paired_staging as staging
 from scripts.h454_native_paired_rebind import RebindDenied
 
 
@@ -25,6 +26,36 @@ def properties(*, active="failed"):
 
 
 class PairedHostAdmissionTests(unittest.TestCase):
+    def test_staging_requires_unchanged_reinspection_and_never_starts_service(self):
+        plan = host.HostPlan(None, b"m", b"synthetic-bearer", b"t", {},
+                             b"bundle", b"receipt", b"wheel", 972, 968)
+        with patch.object(host, "inspect", side_effect=[plan, plan]) as inspect, \
+             patch.object(staging, "stage_source") as source, \
+             patch.object(staging, "stage_wheel") as wheel, \
+             patch.object(staging, "_normalize_dirs") as normalize:
+            self.assertIs(staging.stage(), plan)
+            self.assertEqual(inspect.call_count, 2)
+            self.assertEqual(inspect.call_args.kwargs, {"staged": True})
+            source.assert_called_once()
+            wheel.assert_called_once()
+            normalize.assert_called_once()
+
+        changed = host.HostPlan(None, b"different", b"synthetic-bearer", b"t", {},
+                                b"bundle", b"receipt", b"wheel", 972, 968)
+        with patch.object(host, "inspect", side_effect=[plan, changed]), \
+             patch.object(staging, "stage_source"), patch.object(staging, "stage_wheel"), \
+             patch.object(staging, "_normalize_dirs"), \
+             self.assertRaisesRegex(RebindDenied, "^native_paired_stage_denied$"):
+            staging.stage()
+
+    def test_failed_admission_never_stages_source_or_wheel(self):
+        with patch.object(host, "inspect", side_effect=RebindDenied("synthetic")), \
+             patch.object(staging, "stage_source") as source, \
+             patch.object(staging, "stage_wheel") as wheel, \
+             self.assertRaises(RebindDenied):
+            staging.stage()
+        source.assert_not_called()
+        wheel.assert_not_called()
     @unittest.skipUnless(os.name == "posix", "Linux staged-tree admission only")
     def test_staged_tree_checks_empty_files_and_rejects_extra_or_symlink(self):
         with tempfile.TemporaryDirectory(prefix="h454-tree-synthetic-") as temp, \
