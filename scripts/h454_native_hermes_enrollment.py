@@ -56,6 +56,13 @@ H15_PEER_SCOPE = "h15-permanent-hermes-v1"
 H15_PEER_IMAGE = "sha256:1d5b144c8b145dd18dca58e13eaefadc06b615c20c278d3be06ba44d8da0db11"
 H15_PEER_IP = "172.29.251.3"
 H15_PEER_CIDR = H15_PEER_IP + "/28"
+# The existing BRC device-code endpoint derives ws_url from PUBLIC_URL
+# (OAuth/MCP domain), while original-host READ connects through pinned
+# private WSS on the distinct hermes hostname. Never accept either from
+# an untrusted caller or rewrite the relay's public_url at runtime.
+RELAY_PUBLIC_URL = "https://mcp.mikemoore.top"
+ENROLLMENT_WS_URL = "wss://mcp.mikemoore.top/ws"
+NATIVE_WS_URL = "wss://hermes.mikemoore.top/ws"
 SERVICE = "hermes-commander-native"
 STATE = Path("/var/lib/hermes-commander-native")
 UNIT = Path("/etc/systemd/system/hermes-commander-native.service")
@@ -76,6 +83,24 @@ SOURCE_BLOBS = {
 
 class EnrollmentHold(ValueError):
     """Fixed error only; no token, code, device ID, path or raw HTTP body."""
+
+
+class EnrollmentStageHold(EnrollmentHold):
+    """Fixed post-consent stage, not a reason to retry or clean state."""
+
+    ALLOWED = frozenset({
+        "INITIAL_PLAN", "TARGET_TTY", "PLAN_BEFORE_CODE",
+        "SERVICE_BEFORE_CODE", "ISSUE_CODE", "CODE_TTY",
+        "PLAN_BEFORE_CAS", "OWNER_CAS", "TOKEN_POLL",
+        "TOKEN_IDENTITY", "CONFIG_VALIDATION", "DEVICE_WRITE",
+        "SERVICE_POSTCHECK",
+    })
+
+    def __init__(self, stage: str):
+        if stage not in self.ALLOWED:
+            raise EnrollmentHold("INVALID_ENROLL_STAGE")
+        self.stage = stage
+        super().__init__("NATIVE_ENROLL_STAGE_HOLD")
 
 
 class PlanStageHold(EnrollmentHold):
@@ -269,6 +294,8 @@ def _runtime_gate() -> None:
     environ = relay.get("Config", {}).get("Env") or []
     gate(environ.count("HOST=0.0.0.0") == 1 and
          environ.count("PORT=3000") == 1, "RELAY_BINDING_CHANGED")
+    gate(environ.count("PUBLIC_URL=" + RELAY_PUBLIC_URL) == 1,
+         "RELAY_PUBLIC_ORIGIN_CHANGED")
     # No token or request with GET /health; no public listener is exposed.
     conn = http.client.HTTPConnection(IP, 3000, timeout=4)
     try:
@@ -276,6 +303,13 @@ def _runtime_gate() -> None:
             "Host": "brc-agent.internal", "Connection": "close"})
         response = conn.getresponse()
         gate(response.status == 200, "RELAY_HEALTH_UNAVAILABLE")
+        health = response.read(4097)
+        gate(0 < len(health) <= 4096, "RELAY_PUBLIC_ORIGIN_CHANGED")
+        document = json.loads(health)
+        gate(type(document) is dict
+             and document.get("ok") is True
+             and document.get("publicUrl") == RELAY_PUBLIC_URL,
+             "RELAY_PUBLIC_ORIGIN_CHANGED")
     finally:
         conn.close()
 
@@ -549,56 +583,82 @@ def _write_device(state: Path, uid: int, gid: int, data: bytes) -> None:
 
 
 def enroll() -> dict:
-    checked = plan()
-    _tty_confirm(
-        "H454 ENROLL READ ONLY HERMES VPS " + checked["manifest_sha256"],
-        "Enroll ONE new original Hermes VPS native device. This creates "
-        "one pending BRC code, owner-binds it and stores a service-owned "
-        "0600 bearer. It does NOT start systemd or access project files.",
-    )
-    gate(plan() == checked, "HOST_DRIFT_AFTER_APPROVAL")
-    service, candidate, digest = _service_gate()
-    current = native_start("hermes-vps", post=_docker_post)
-    # Only the short user-code is ever displayed, on private owner TTY.
-    _tty_confirm("PAIR H454 hermes-vps " + current.user_code,
-                 "Approve the exact fresh, expiring native Hermes device code "
-                 "on this ORIGINAL trusted root terminal.")
-    gate(plan() == checked, "HOST_DRIFT_BEFORE_PAIRING")
-    _approve_pending(current.user_code)
-    paired = native_poll(
-        current, post=_docker_post, expected_ws_url="wss://hermes.mikemoore.top/ws"
-    )
-    gate(paired.target == "hermes-vps"
-         and IDENTITY["hermes-vps"].fullmatch(paired.device_id) is not None
-         and TOKEN.fullmatch(paired.token) is not None,
-         "ISSUED_DEVICE_IDENTITY_UNTRUSTED")
-    payload = canonical({
-        "schema": CONFIG_SCHEMA,
-        "target": "hermes-vps",
-        "device_id": paired.device_id,
-        "token": paired.token,
-        "url": paired.ws_url,
-        "release_sha": RELEASE,
-        "manifest_sha256": digest,
-        "roots": [
-            {"project": project, "path": path} for project, path in candidate.roots
-        ],
-    })
-    _parse_config(payload, candidate)
-    _write_device(STATE, service.pw_uid, service.pw_gid, payload)
-    # No service start/enable, no shell, no new public ingress.
-    unit_state = subprocess.run([
-        "/usr/bin/systemctl", "is-active", SERVICE + ".service",
-    ], capture_output=True, timeout=5, check=False)
-    gate(unit_state.stdout.strip() == b"inactive", "SERVICE_ACTIVATION_DRIFT")
-    return {
-        "status": "H454_HERMES_NATIVE_OWNER_DEVICE_PAIRED_SERVICE_OFF",
-        "device_paired": True,
-        "credential_persisted_service_0600": True,
-        "service_started": False,
-        "brc_wss_changed": False,
-        "owner_approved": True,
-    }
+    """One owner-approved attempt. A failure NEVER authorizes a retry."""
+    stage = "INITIAL_PLAN"
+    try:
+        checked = plan()
+        stage = "TARGET_TTY"
+        _tty_confirm(
+            "H454 ENROLL READ ONLY HERMES VPS " + checked["manifest_sha256"],
+            "Enroll ONE new original Hermes VPS native device. This creates "
+            "one pending BRC code, owner-binds it and stores a service-owned "
+            "0600 bearer. It does NOT start systemd or access project files.",
+        )
+        stage = "PLAN_BEFORE_CODE"
+        gate(plan() == checked, "HOST_DRIFT_AFTER_APPROVAL")
+        stage = "SERVICE_BEFORE_CODE"
+        service, candidate, digest = _service_gate()
+        stage = "ISSUE_CODE"
+        current = native_start("hermes-vps", post=_docker_post)
+        stage = "CODE_TTY"
+        # Short expiring user code is only shown on the private owner TTY.
+        _tty_confirm(
+            "PAIR H454 hermes-vps " + current.user_code,
+            "Approve the exact fresh, expiring native Hermes device code "
+            "on this ORIGINAL trusted root terminal.",
+        )
+        stage = "PLAN_BEFORE_CAS"
+        gate(plan() == checked, "HOST_DRIFT_BEFORE_PAIRING")
+        stage = "OWNER_CAS"
+        _approve_pending(current.user_code)
+        stage = "TOKEN_POLL"
+        # BRC computes ws_url from its immutable PUBLIC_URL. The original
+        # native worker instead uses an independently pinned private TLS WSS.
+        # Do not replace the BRC response or accept arbitrary URLs.
+        paired = native_poll(
+            current, post=_docker_post, expected_ws_url=ENROLLMENT_WS_URL
+        )
+        stage = "TOKEN_IDENTITY"
+        gate(paired.target == "hermes-vps"
+             and paired.ws_url == ENROLLMENT_WS_URL
+             and IDENTITY["hermes-vps"].fullmatch(paired.device_id) is not None
+             and TOKEN.fullmatch(paired.token) is not None,
+             "ISSUED_DEVICE_IDENTITY_UNTRUSTED")
+        payload = canonical({
+            "schema": CONFIG_SCHEMA,
+            "target": "hermes-vps",
+            "device_id": paired.device_id,
+            "token": paired.token,
+            "url": NATIVE_WS_URL,
+            "release_sha": RELEASE,
+            "manifest_sha256": digest,
+            "roots": [
+                {"project": project, "path": path}
+                for project, path in candidate.roots
+            ],
+        })
+        stage = "CONFIG_VALIDATION"
+        _parse_config(payload, candidate)
+        stage = "DEVICE_WRITE"
+        _write_device(STATE, service.pw_uid, service.pw_gid, payload)
+        stage = "SERVICE_POSTCHECK"
+        # No service start/enable, no shell, no new public ingress.
+        unit_state = subprocess.run([
+            "/usr/bin/systemctl", "is-active", SERVICE + ".service",
+        ], capture_output=True, timeout=5, check=False)
+        gate(unit_state.stdout.strip() == b"inactive", "SERVICE_ACTIVATION_DRIFT")
+        return {
+            "status": "H454_HERMES_NATIVE_OWNER_DEVICE_PAIRED_SERVICE_OFF",
+            "device_paired": True,
+            "credential_persisted_service_0600": True,
+            "service_started": False,
+            "brc_wss_changed": False,
+            "owner_approved": True,
+        }
+    except Exception:
+        # Do not expose exception messages, tokens, codes, paths or DB rows.
+        # Any stage after ISSUE_CODE could have partial side effects.
+        raise EnrollmentStageHold(stage) from None
 
 
 def main(argv=None) -> int:
@@ -619,7 +679,7 @@ def main(argv=None) -> int:
             "no_auto_retry": True,
             "service_started": False,
         }
-        if isinstance(exc, PlanStageHold):
+        if isinstance(exc, (PlanStageHold, EnrollmentStageHold)):
             result["failed_stage"] = exc.stage
         print(json.dumps(result, sort_keys=True))
         return 2

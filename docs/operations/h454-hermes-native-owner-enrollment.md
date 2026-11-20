@@ -148,11 +148,63 @@ preserved. Stage a separately named, Git-blob-verified new operator on the
 original root host and execute `plan` only. A successful plan does not
 authorize `enroll --execute`, service activation or token issuance.
 
+## Post-consent original VPS HOLD (November 20)
+
+Owner independently completed exact `_909.py plan` on the original
+Hermes VPS with `H454_HERMES_NATIVE_ENROLL_PLAN_PASS` and then approved
+ONE pairing attempt. Both original-root TTY confirmations occurred;
+the second included the fresh expiring user-code, which is not recorded
+in the repository. The operator returned only
+`H454_HERMES_NATIVE_ENROLLMENT_HOLD`, with no failed-stage label.
+
+Subsequent owner-read-only reconciliation:
+`DEVICE_FILE=ABSENT`, `PENDING_FILE=ABSENT`,
+`NATIVE_SERVICE=INACTIVE_DISABLED`, `TARGET_DEVICE_ROWS=0`,
+`TARGET_CODE_ROWS_RETURNED=0`. A separate service-UID read-only
+verification found `HOST_DB_PREFLIGHT=PASS`, `SQLITE_WAL=PASS`,
+`ADMIN_OWNER_UNIQUE=PASS`, `NATIVE_DEVICE_ID_ROWS=0`,
+`NATIVE_BOUND_CODE_ROWS=0`. No tokens or DB changes were made by
+these diagnostics. Absence of expired codes later cannot establish
+the exact failing stage. The earlier owner consent is consumed:
+**no automatic retry or cleanup**.
+
+### Source contract correction and bounded failure telemetry
+
+The pinned upstream BRC `/device/poll` builds its returned `ws_url`
+from `cfg.publicUrl.replace(/^http/, 'ws') + '/ws'`. The existing
+immutable relay deployment sets `PUBLIC_URL=https://mcp.mikemoore.top`
+(used for OAuth/MCP). The native read-only worker instead requires
+`wss://hermes.mikemoore.top/ws` and connects over separately pinned
+private CA/SNI to the sidecar. The old operator incorrectly expected
+the native WSS address in the *BRC enrollment response*, which would
+cause an orphaned device if all preceding stages succeeded.
+
+The corrected source binds and verifies the BRC `PUBLIC_URL` from
+the exact running relay `docker inspect`, accepts only the derived
+`wss://mcp.mikemoore.top/ws` in the *BRC control-plane reply*, then
+writes the independently fixed native WSS URL into the protected service
+config. No attacker-supplied URL, redirect, discovery or host port
+is accepted. A mismatched runtime origin now fails in the nonmutating
+`plan` before any new code is issued.
+
+For every post-consent failure, the operator reports a single constant
+`failed_stage` such as `OWNER_CAS`, `TOKEN_POLL` or
+`DEVICE_WRITE`, without printing exceptions, bearer, user-code,
+SQL row, project root or Docker payload. Any HOLD is still
+`no_auto_retry=true` and may require separate owner-approved
+reconciliation. Tests are isolated and source-only. This change
+does not establish that the old failure reached the URL check.
+
+Use a **new, unused** root-only operator filename with exact merged Git
+blob and repeat `plan` only after code review and exact-head CI.
+New pairing/credential creation needs an independent explicit owner
+approval; none is implied by this fix or earlier attempt.
+
 ## Current acceptance
 
-- Python local/mock tests: await exact-head GitHub CI.
-- Original Hermes owner-root: BRC internal bridge and native trust PASS,
-  this new operator's `plan` **NOT_RUN**.
+- Python local/mock tests: exact-head CI required for post-HOLD fix.
+- Original Hermes owner-root: old `_909.py plan` **PASS**,
+  owner-pairing attempt **HOLD**; revised operator `plan` NOT_RUN.
 - Owner-paired device: NOT_RUN; no credential issued/stored.
 - Native first start / bearer status and revocation: NOT_RUN.
 - YFC and Windows native installation/activation: NOT_RUN.
