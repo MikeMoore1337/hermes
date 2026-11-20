@@ -1,6 +1,7 @@
 """Synthetic paired-upgrade host admission; no real host or credential."""
 from types import SimpleNamespace
 from contextlib import ExitStack
+import fcntl
 from pathlib import Path
 import hashlib
 import os
@@ -29,6 +30,22 @@ def properties(*, active="failed"):
 
 
 class PairedHostAdmissionTests(unittest.TestCase):
+    def test_operation_holds_lock_for_staging_and_switch_and_rejects_unknown_mode(self):
+        from contextlib import contextmanager
+        events = []
+        @contextmanager
+        def locked():
+            events.append("lock")
+            yield
+            events.append("unlock")
+        with patch.object(apply_tx, "host_lock", locked), \
+             patch.object(staging, "stage", side_effect=lambda: events.append("stage") or "plan"), \
+             patch.object(apply_tx, "apply_staged", side_effect=lambda plan: events.append(plan)):
+            self.assertEqual(apply_tx.operate("install-off"), "INSTALLED_DISABLED_PAIRED")
+            self.assertEqual(events, ["lock", "stage", "plan", "unlock"])
+            with self.assertRaises(RebindDenied):
+                apply_tx.operate("unexpected")
+
     def test_frozen_recovery_thaws_only_after_old_state_and_units_verify(self):
         trust, ca, unit = b"old-trust", b"old-ca", b"old-unit"
         record = {"uid": 972, "gid": 968}
@@ -283,6 +300,37 @@ class PairedHostAdmissionTests(unittest.TestCase):
 
 @unittest.skipUnless(os.name == "posix" and os.geteuid() == 0, "root-only synthetic transaction")
 class PairedTransactionIntegrationTests(unittest.TestCase):
+    def test_host_lock_cooperates_with_upgrade_and_enrollment_writers(self):
+        with tempfile.TemporaryDirectory() as temp, ExitStack() as stack:
+            root = Path(temp)
+            locks, state = root / "locks", root / "state"
+            locks.mkdir(mode=0o777); locks.chmod(0o1777)
+            state.mkdir(mode=0o700); os.chown(state, 65534, 65534)
+            lock = locks / "upgrade.lock"
+            lock.touch(mode=0o600)
+            stack.enter_context(patch.object(apply_tx, "LOCK", lock))
+            stack.enter_context(patch.object(apply_tx, "STATE", state))
+            stack.enter_context(patch.object(apply_tx, "owned_directory"))
+            stack.enter_context(patch.object(apply_tx.socket, "gethostname", return_value="vps1777112993"))
+            stack.enter_context(patch.object(apply_tx.pwd, "getpwnam", return_value=SimpleNamespace(pw_uid=65534)))
+            upgrade_fd = os.open(lock, os.O_RDWR)
+            state_fd = os.open(state, os.O_RDONLY | os.O_DIRECTORY)
+            stack.callback(os.close, upgrade_fd); stack.callback(os.close, state_fd)
+            with apply_tx.host_lock():
+                for fd in (upgrade_fd, state_fd):
+                    with self.assertRaises(BlockingIOError):
+                        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(upgrade_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            with self.assertRaises(BlockingIOError):
+                with apply_tx.host_lock():
+                    pass
+            fcntl.flock(upgrade_fd, fcntl.LOCK_UN)
+            lock.unlink()
+            lock.symlink_to(state)
+            with self.assertRaises(OSError):
+                with apply_tx.host_lock():
+                    pass
+
     def test_real_files_survive_interrupted_switch_and_completed_rollback(self):
         for scenario in ("completed", "unit_interrupted", "receipt_interrupted"):
             with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as temp, ExitStack() as stack:

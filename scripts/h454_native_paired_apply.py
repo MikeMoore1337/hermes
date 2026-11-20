@@ -5,6 +5,8 @@ import hashlib
 import json
 import os
 from pathlib import Path
+from contextlib import contextmanager
+import fcntl
 import pwd
 import re
 import socket
@@ -14,6 +16,7 @@ import subprocess
 from device_fabric.native_private_tls import load_private_relay
 from scripts import h454_native_paired_freeze as freeze
 from scripts import h454_native_paired_host as host
+from scripts import h454_native_paired_staging as staging
 from scripts import h454_native_paired_state as state_tx
 from scripts import h454_native_paired_systemd as systemd_tx
 from scripts.h454_native_paired_rebind import RebindDenied, _canonical
@@ -23,6 +26,7 @@ STATE = Path("/var/lib/hermes-commander-native")
 BASE = Path("/opt/hermes-commander-native")
 UNIT_DIRS = {"trust": BASE / "trust", "preflight": Path("/etc/systemd/system"),
              "active": Path("/etc/systemd/system")}
+LOCK = Path("/run/lock/h454-native-private-version-upgrade.lock")
 PHASES = frozenset({"RECHECK", "RECEIPT", "UNIT_JOURNAL", "FREEZE", "STATE_JOURNAL",
                     "STATE_SWITCH", "UNIT_SWITCH", "RELOAD", "VERIFY", "THAW", "RECEIPT_FINISH"})
 
@@ -31,6 +35,45 @@ class ApplyHold(RebindDenied):
     def __init__(self, phase: str):
         self.phase = phase if phase in PHASES else "RECHECK"
         super().__init__("native_paired_apply_hold")
+
+
+@contextmanager
+def host_lock():
+    """Coordinate with the existing native upgrader and enrollment writer."""
+    lock_fd = state_fd = None
+    try:
+        if os.geteuid() != 0 or socket.gethostname() != "vps1777112993":
+            raise RebindDenied()
+        owned_directory(LOCK.parent.parent)
+        owned_directory(STATE.parent)
+        parent = LOCK.parent.lstat()
+        if (not stat.S_ISDIR(parent.st_mode) or parent.st_uid != 0
+            or stat.S_IMODE(parent.st_mode) != 0o1777):
+            raise RebindDenied()
+        lock_fd = os.open(LOCK, os.O_RDWR | os.O_NOFOLLOW | os.O_CLOEXEC)
+        lock = os.fstat(lock_fd)
+        if (not stat.S_ISREG(lock.st_mode) or lock.st_uid != 0 or lock.st_nlink != 1
+            or stat.S_IMODE(lock.st_mode) != 0o600 or lock.st_size != 0):
+            raise RebindDenied()
+        fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        current = LOCK.lstat()
+        if (current.st_dev, current.st_ino) != (lock.st_dev, lock.st_ino):
+            raise RebindDenied()
+        state_fd = os.open(STATE, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+        state = os.fstat(state_fd)
+        identity = pwd.getpwnam("hermes-commander-native")
+        if (state.st_uid not in (0, identity.pw_uid) or stat.S_IMODE(state.st_mode) != 0o700):
+            raise RebindDenied()
+        fcntl.flock(state_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        current = STATE.lstat()
+        if (current.st_dev, current.st_ino) != (state.st_dev, state.st_ino):
+            raise RebindDenied()
+        yield
+    finally:
+        if state_fd is not None:
+            os.close(state_fd)
+        if lock_fd is not None:
+            os.close(lock_fd)
 
 
 def _sha(data: bytes) -> str:
@@ -313,3 +356,18 @@ def apply_staged(plan: host.HostPlan) -> None:
         _mark(receipt, "success", b"INSTALLED_DISABLED_PAIRED\n")
     except Exception:
         raise ApplyHold(phase) from None
+
+
+def operate(mode: str) -> str:
+    """Run one coordinated operation; a trusted host launcher is still required."""
+    if mode not in ("install-off", "recover-off", "rollback-off"):
+        raise RebindDenied()
+    with host_lock():
+        if mode == "install-off":
+            apply_staged(staging.stage())
+            return "INSTALLED_DISABLED_PAIRED"
+        if mode == "recover-off":
+            recover_frozen()
+        else:
+            rollback_disabled()
+        return "OLD_DISABLED_PAIRED"
