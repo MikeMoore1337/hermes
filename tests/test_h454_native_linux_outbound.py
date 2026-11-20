@@ -238,12 +238,15 @@ class NativeLinuxOutboundRealKernelTests(unittest.TestCase):
         self.assertEqual(options["max_size"], native.MAX_INBOUND)
         body = json.loads(
             client.socket.outgoing[2]["result"]["content"][0]["text"])
-        data = base64.b64decode(body["data"], validate=True)
+        self.assertEqual(set(body), {"status", "tool", "id", "result"})
+        self.assertEqual((body["status"], body["tool"], body["id"]),
+                         ("ok", "native_file_read", "call-one"))
+        data = base64.b64decode(body["result"]["data"], validate=True)
         self.assertEqual(data, b"# Hermes\nTODO smoke\n")
-        self.assertEqual(body["sha256"], hashlib.sha256(data).hexdigest())
+        self.assertEqual(body["result"]["sha256"], hashlib.sha256(data).hexdigest())
         searched = json.loads(
             client.socket.outgoing[-1]["result"]["content"][0]["text"])
-        self.assertEqual(searched["matches"], [{"path":"README.md","line":2}])
+        self.assertEqual(searched["result"]["matches"], [{"path":"README.md","line":2}])
         self.assertNotIn(TOKEN, str(client.socket.outgoing))
         self.assertNotIn(str(self.root), str(client.socket.outgoing))
 

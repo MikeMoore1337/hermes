@@ -321,7 +321,7 @@ def run_session(config: LocalLinuxDeviceConfig,
                     try:
                         out = dispatcher.call(frame)
                         # Dispatcher already verified native adapter result.
-                        serialized = _result_frame(msg_id, out["result"])
+                        serialized = _result_frame(msg_id, out)
                     except NativeLinuxReadDenied:
                         serialized = _result_frame(msg_id, {}, refused=True)
                     ws.send(serialized)

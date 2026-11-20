@@ -2,14 +2,20 @@
 // Hermes #454: invoke the compiled EXISTING MCP relay's new native dispatcher
 // against three strictly synthetic owner/device records. No owner host IO.
 import path from 'node:path';
-import {pathToFileURL} from 'node:url';
+import {fileURLToPath,pathToFileURL} from 'node:url';
 import {createHash} from 'node:crypto';
+import {spawnSync} from 'node:child_process';
 
 const root=process.cwd();
 const url=pathToFileURL(path.join(root,
   'packages/relay/dist/mcp/hermes-native-three-read.js')).href;
 const {NATIVE_THREE_TOOLS,invokeOwnerNativeThreeRead}=await import(url);
 const assert=(check,why)=>{if(!check)throw Error(why);};
+const repository=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
+const python=spawnSync('python3',['-B','-m','tests.h454_native_wire_fixture'],
+  {cwd:repository,encoding:'utf8',timeout:10000});
+assert(python.status===0,'ACTUAL_PYTHON_WIRE_FIXTURE_FAILED');
+const actualLinuxRead=JSON.parse(python.stdout);
 const ctx={userId:'owner-1',clientId:'chatgpt-fixture'};
 const profiles=[
  {host:'windows',name:'H454 Windows native read-only',id:'h454-win-native-'+'a'.repeat(32),platform:'win32',n:3},
@@ -59,6 +65,8 @@ const hub={
     }else throw Error('UNEXPECTED_TOOL');
     if(malformed)payload.secret='should-not-leak';
     if(revokeNext) rows.find(r=>r.device_id===id).paused=1;
+    if(row.host==='hermes-vps' && tool==='native_file_read' && !malformed && !revokeNext)
+      return actualLinuxRead;
     const value=row.host==='windows' ? payload
       : {status:'ok',tool,id:'call-id-1',result:payload};
     return {isError:false,content:[{type:'text',text:JSON.stringify(value)}]};
