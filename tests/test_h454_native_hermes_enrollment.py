@@ -240,7 +240,7 @@ class OriginalHermesNativeEnrollmentTests(unittest.TestCase):
             "HostConfig": {"PortBindings": {}, "PublishAllPorts": False},
             "Mounts": [],
             "Config": {"Env": ["HOST=0.0.0.0", "PORT=3000",
-                                   "PUBLIC_URL=" + op.RELAY_PUBLIC_URL]},
+                               "PUBLIC_URL=" + op.RELAY_PUBLIC_URL]},
         }
         wss = {
             "Id": op.WSS, "Image": op.WSS_IMAGE,
@@ -257,11 +257,27 @@ class OriginalHermesNativeEnrollmentTests(unittest.TestCase):
                                side_effect=entries.__getitem__) as inspect, \
              mock.patch.object(op.http.client, "HTTPConnection") as connection, \
              mock.patch.object(op, "_docker_post") as post:
-            connection.return_value.getresponse.return_value.status = 200
+            response = connection.return_value.getresponse.return_value
+            response.status = 200
+            response.read.return_value = json.dumps({
+                "ok": True, "publicUrl": op.RELAY_PUBLIC_URL,
+            }).encode("ascii")
             op._runtime_gate()
         self.assertEqual(inspect.call_count, 4)
         connection.assert_called_once_with(op.IP, 3000, timeout=4)
         post.assert_not_called()
+
+        with mock.patch.object(op, "_docker_inspect",
+                               side_effect=entries.__getitem__), \
+             mock.patch.object(op.http.client, "HTTPConnection") as connection:
+            response = connection.return_value.getresponse.return_value
+            response.status = 200
+            response.read.return_value = json.dumps({
+                "ok": True, "publicUrl": "https://foreign.example",
+            }).encode("ascii")
+            with self.assertRaisesRegex(
+                    op.EnrollmentHold, "^RELAY_PUBLIC_ORIGIN_CHANGED$"):
+                op._runtime_gate()
 
     def test_wrong_host_and_nonroot_never_inspect_live_relay(self):
         for uid, hostname in ((1000, "vps1777112993"), (0, "wrong-vps")):
@@ -471,7 +487,7 @@ class OriginalHermesNativeEnrollmentTests(unittest.TestCase):
                  mock.patch.object(op, "_parse_config") as parse, \
                  mock.patch.object(op, "_write_device") as write, \
                  mock.patch.object(op.subprocess, "run",
-                    return_value=SimpleNamespace(stdout=b"inactive\\n")) as process, \
+                    return_value=SimpleNamespace(stdout=b"inactive\n")) as process, \
                  mock.patch("sys.stdout", new_callable=StringIO) as output:
                 providers = {
                     "plan": plan, "_tty_confirm": tty,
