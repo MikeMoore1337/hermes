@@ -27,6 +27,7 @@ from device_fabric.linux_native_search import (
     LinuxNativeSearch, MAX_ENTRIES, MAX_MATCHES, MAX_CONTENT_BYTES,
 )
 from device_fabric.native_effect_grants import DEVICE
+from device_fabric.native_brc_enrollment import IDENTITY
 
 MAX_FRAME_BYTES = 4096
 MAX_SESSION_CALLS = 64
@@ -190,7 +191,9 @@ class LinuxOriginalReadDispatcher:
     def __init__(self, *, device_id: str,
                  local_roots: dict[str, LinuxNativeFiles],
                  is_device_revoked: Callable[[], bool]):
-        if (type(device_id) is not str or DEVICE.fullmatch(device_id) is None
+        if (type(device_id) is not str
+            or (DEVICE.fullmatch(device_id) is None and not any(
+                IDENTITY[target].fullmatch(device_id) for target in ("hermes-vps", "yfc-vps")))
             or type(local_roots) is not dict or not 1 <= len(local_roots) <= 5
             or not callable(is_device_revoked)):
             raise NativeLinuxReadDenied("native_linux_read_denied")

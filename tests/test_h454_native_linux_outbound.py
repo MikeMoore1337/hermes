@@ -20,7 +20,7 @@ from device_fabric.linux_native_read_dispatch import LinuxOriginalReadDispatcher
 from device_fabric import linux_native_outbound as native
 
 
-DEVICE = "h454-linux-hermes-" + "a" * 16
+DEVICE = "h454-linux-hermes-" + "a" * 32
 TOKEN = "synthetic-not-a-real-owner-token-" + "x" * 40
 
 

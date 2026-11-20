@@ -25,7 +25,7 @@ from scripts import h454_native_linux_runtime as runtime
 RELEASE = "a" * 40
 ARTIFACT = "b" * 64
 TARGET = "hermes-vps"
-DEVICE = "h454-linux-hermes-" + "c" * 16
+DEVICE = "h454-linux-hermes-" + "c" * 32
 TOKEN = "synthetic-private-fixture-bearer-" + "X" * 55
 
 

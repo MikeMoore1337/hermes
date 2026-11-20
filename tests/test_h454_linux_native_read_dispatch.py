@@ -105,6 +105,22 @@ class OriginalLinuxReadDispatcherContracts(unittest.TestCase):
             device_id=DEVICE, local_roots={"hermes": self.files},
             is_device_revoked=lambda: False)
 
+    def test_owner_enrolled_linux_ids_can_read_but_malformed_long_ids_are_denied(self):
+        for prefix in ("h454-linux-hermes-", "h454-linux-yfc-"):
+            with self.subTest(prefix=prefix):
+                identity = prefix + "a" * 32
+                dispatcher = LinuxOriginalReadDispatcher(
+                    device_id=identity, local_roots={"hermes": self.files},
+                    is_device_revoked=lambda: False)
+                self.assertEqual(dispatcher.call(frame(STAT))["result"]["kind"], "file")
+        for identity in ("h454-linux-hermes-" + "a" * 31,
+                         "h454-linux-hermes-" + "A" * 32,
+                         "h454-linux-hermes-" + "a" * 33,
+                         "h454-win-native-" + "a" * 32):
+            with self.subTest(identity=identity), self.assertRaises(NativeLinuxReadDenied):
+                LinuxOriginalReadDispatcher(device_id=identity, local_roots={"hermes": self.files},
+                                            is_device_revoked=lambda: False)
+
     def test_actual_kernel_stat_and_read_sha256(self):
         info = self.dispatcher.call(frame(STAT, uid="stat-1", relative="README.md"))
         self.assertEqual(info["result"]["kind"], "file")
