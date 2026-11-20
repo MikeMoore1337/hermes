@@ -13,6 +13,7 @@ from scripts.h454_native_paired_rebind import (
     replace_frozen_state,
 )
 from scripts.h454_native_readonly_bundle import SOURCE_FILES, build_bytes
+from scripts import h454_native_paired_state as state_tx
 from scripts.h454_native_linux_runtime import SCHEMA as DEVICE_SCHEMA
 
 OLD = "a" * 40
@@ -207,6 +208,119 @@ class FrozenStateTests(unittest.TestCase):
         self.assertEqual(self.file.read_bytes(), b"concurrent-change")
         self.assertEqual((self.directory / ".h454-paired-device.json.pending").read_bytes(),
                          b"new-synthetic")
+
+
+@unittest.skipUnless(os.name == "posix" and hasattr(os, "O_NOFOLLOW"),
+                     "journaled state requires Linux-style descriptor operations")
+class JournaledStateTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix="h454-journal-synthetic-")
+        self.addCleanup(self.temp.cleanup)
+        root = Path(self.temp.name)
+        self.state, self.journal = root / "state", root / "journal"
+        self.state.mkdir(mode=0o700)
+        self.journal.mkdir(mode=0o700)
+        self.manifest, self.device = snapshots()
+        for name, data in (("manifest.json", self.manifest), ("device.json", self.device)):
+            path = self.state / name
+            path.write_bytes(data)
+            path.chmod(0o600)
+        self.uid = os.geteuid()
+
+    def prepare(self):
+        state_tx.prepare(self.state, self.journal, trusted_uid=self.uid,
+                         old_release=OLD, new_release=NEW, bundle_sha256="e" * 64)
+
+    def assert_old(self):
+        self.assertEqual((self.state / "manifest.json").read_bytes(), self.manifest)
+        self.assertEqual((self.state / "device.json").read_bytes(), self.device)
+
+    def test_sealed_journal_contains_no_bearer_and_switch_recovers_once(self):
+        self.prepare()
+        for path in self.journal.iterdir():
+            self.assertNotIn(TOKEN.encode(), path.read_bytes())
+        state_tx.switch(self.state, self.journal, trusted_uid=self.uid)
+        self.assertEqual(json.loads((self.state / "device.json").read_bytes())["release_sha"], NEW)
+        state_tx.recover(self.state, self.journal, trusted_uid=self.uid)
+        self.assert_old()
+        with self.assertRaises(RebindDenied):
+            state_tx.switch(self.state, self.journal, trusted_uid=self.uid)
+        self.assert_old()
+
+    def test_interrupted_each_switch_step_recovers_without_token_backup(self):
+        self.prepare()
+        real = state_tx.replace_frozen_state
+        calls = []
+
+        def interrupt_second(*args, **kwargs):
+            calls.append(1)
+            if len(calls) == 2:
+                raise OSError("synthetic failure")
+            return real(*args, **kwargs)
+
+        with patch.object(state_tx, "replace_frozen_state", side_effect=interrupt_second):
+            with self.assertRaises(RebindDenied):
+                state_tx.switch(self.state, self.journal, trusted_uid=self.uid)
+        self.assertNotEqual((self.state / "manifest.json").read_bytes(), self.manifest)
+        self.assertEqual((self.state / "device.json").read_bytes(), self.device)
+        state_tx.recover(self.state, self.journal, trusted_uid=self.uid)
+        self.assert_old()
+        with self.assertRaises(RebindDenied):
+            state_tx.switch(self.state, self.journal, trusted_uid=self.uid)
+
+    def test_interruption_after_both_replacements_still_recovers(self):
+        self.prepare()
+        real = state_tx.replace_frozen_state
+        calls = []
+
+        def interrupt_after_second(*args, **kwargs):
+            real(*args, **kwargs)
+            calls.append(1)
+            if len(calls) == 2:
+                raise OSError("synthetic failure")
+
+        with patch.object(state_tx, "replace_frozen_state", side_effect=interrupt_after_second):
+            with self.assertRaises(RebindDenied):
+                state_tx.switch(self.state, self.journal, trusted_uid=self.uid)
+        self.assertEqual(json.loads((self.state / "device.json").read_bytes())["release_sha"], NEW)
+        self.assertFalse((self.journal / "complete").exists())
+        state_tx.recover(self.state, self.journal, trusted_uid=self.uid)
+        self.assert_old()
+
+    def test_unsealed_or_changed_device_never_switches(self):
+        with self.assertRaises(RebindDenied):
+            state_tx.switch(self.state, self.journal, trusted_uid=self.uid)
+        self.prepare()
+        changed = json.loads(self.device)
+        changed["token"] = "brc_dev_" + "y" * 64
+        (self.state / "device.json").write_bytes(encode(changed))
+        with self.assertRaises(RebindDenied):
+            state_tx.switch(self.state, self.journal, trusted_uid=self.uid)
+        self.assertEqual((self.state / "manifest.json").read_bytes(), self.manifest)
+        self.assertFalse((self.journal / "started").exists())
+
+    def test_changed_journal_snapshot_and_shared_directory_fail_closed(self):
+        with self.assertRaises(RebindDenied):
+            state_tx.prepare(self.state, self.state, trusted_uid=self.uid,
+                             old_release=OLD, new_release=NEW, bundle_sha256="e" * 64)
+        self.assert_old()
+        self.prepare()
+        (self.journal / "new-manifest.json").write_bytes(b"tampered")
+        with self.assertRaises(RebindDenied):
+            state_tx.switch(self.state, self.journal, trusted_uid=self.uid)
+        self.assert_old()
+
+    def test_staged_partial_device_forces_hold_and_is_preserved(self):
+        self.prepare()
+        pending = self.state / ".h454-paired-device.json.pending"
+        pending.write_bytes(self.device)
+        pending.chmod(0o600)
+        with self.assertRaises(RebindDenied):
+            state_tx.switch(self.state, self.journal, trusted_uid=self.uid)
+        with self.assertRaises(RebindDenied):
+            state_tx.recover(self.state, self.journal, trusted_uid=self.uid)
+        self.assertEqual(pending.read_bytes(), self.device)
+        self.assert_old()
 
 
 if __name__ == "__main__":
