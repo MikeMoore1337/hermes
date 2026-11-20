@@ -211,3 +211,22 @@ def recover(directories: dict[str, Path], journal: Path, *, trusted_uid: int) ->
     finally:
         if fd is not None:
             os.close(fd)
+
+
+def verify_new(directories: dict[str, Path], journal: Path, *, trusted_uid: int) -> None:
+    """Verify all new files and the completion marker without systemd actions."""
+    fd = None
+    try:
+        if type(directories) is not dict or set(directories) != set(FILES):
+            raise RebindDenied()
+        fd = _directory(journal, trusted_uid)
+        snapshots = _load(fd, trusted_uid)
+        if _read(fd, "complete", owner=trusted_uid) != b"COMPLETE\n":
+            raise RebindDenied()
+        if any(_target(directories[k], FILES[k], trusted_uid) != snapshots[k][1] for k in FILES):
+            raise RebindDenied()
+    except Exception:
+        raise RebindDenied("native_paired_rebind_denied") from None
+    finally:
+        if fd is not None:
+            os.close(fd)

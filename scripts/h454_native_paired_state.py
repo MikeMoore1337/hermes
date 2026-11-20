@@ -200,3 +200,30 @@ def recover(state: Path, journal: Path, *, trusted_uid: int) -> None:
             os.close(state_fd)
         if journal_fd is not None:
             os.close(journal_fd)
+
+
+def verify_new(state: Path, journal: Path, *, trusted_uid: int) -> None:
+    """Verify a complete new pair without returning the bearer or changing files."""
+    state_fd = journal_fd = None
+    try:
+        state_fd = _directory(state, trusted_uid)
+        journal_fd = _directory(journal, trusted_uid)
+        _distinct(state_fd, journal_fd)
+        _no_pending(state_fd)
+        record, old, new = _load(journal_fd, trusted_uid)
+        if _read(journal_fd, "complete", owner=trusted_uid) != b"COMPLETE\n":
+            raise RebindDenied()
+        manifest, device = _read(state_fd, "manifest.json"), _read(state_fd, "device.json")
+        if manifest != new or _digest(device) != record["new_device_sha256"]:
+            raise RebindDenied()
+        old_device = recover_device(device, old, new, old_release=record["old_release"],
+                                    new_release=record["new_release"])
+        if _digest(old_device) != record["old_device_sha256"]:
+            raise RebindDenied()
+    except Exception:
+        raise RebindDenied("native_paired_rebind_denied") from None
+    finally:
+        if state_fd is not None:
+            os.close(state_fd)
+        if journal_fd is not None:
+            os.close(journal_fd)

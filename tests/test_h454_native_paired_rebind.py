@@ -247,7 +247,10 @@ class JournaledStateTests(unittest.TestCase):
         self.prepare()
         for path in self.journal.iterdir():
             self.assertNotIn(TOKEN.encode(), path.read_bytes())
+        with self.assertRaises(RebindDenied):
+            state_tx.verify_new(self.state, self.journal, trusted_uid=self.uid)
         state_tx.switch(self.state, self.journal, trusted_uid=self.uid)
+        state_tx.verify_new(self.state, self.journal, trusted_uid=self.uid)
         self.assertEqual(json.loads((self.state / "device.json").read_bytes())["release_sha"], NEW)
         state_tx.recover(self.state, self.journal, trusted_uid=self.uid)
         self.assert_old()
@@ -475,7 +478,10 @@ class SystemdJournalTests(unittest.TestCase):
 
     def test_switch_and_restore_all_exact_files_without_replay(self):
         systemd_tx.prepare(self.journal, self.snapshots, trusted_uid=self.uid)
+        with self.assertRaises(RebindDenied):
+            systemd_tx.verify_new(self.directories, self.journal, trusted_uid=self.uid)
         systemd_tx.switch(self.directories, self.journal, trusted_uid=self.uid)
+        systemd_tx.verify_new(self.directories, self.journal, trusted_uid=self.uid)
         for key, name in systemd_tx.FILES.items():
             self.assertEqual((self.directories[key] / name).read_bytes(), self.snapshots[key][1])
         systemd_tx.recover(self.directories, self.journal, trusted_uid=self.uid)

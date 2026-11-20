@@ -120,6 +120,10 @@ def inspect() -> HostPlan:
             (identity.pw_uid, identity.pw_gid) or stat.S_IMODE(meta.st_mode) != 0o700):
             raise RebindDenied()
         owned_directory(state.parent)
+        for name in (".h454-hermes-enrollment.pending", ".h454-paired-manifest.json.pending",
+                     ".h454-paired-device.json.pending"):
+            if (state / name).exists() or (state / name).is_symlink():
+                raise RebindDenied()
         manifest = checked_file(state / "manifest.json", 8192, owner=identity.pw_uid,
                                 private=True, modes={0o600})
         device = checked_file(state / "device.json", 8192, owner=identity.pw_uid,
@@ -130,6 +134,14 @@ def inspect() -> HostPlan:
         if _sha(manifest) != MANIFEST_SHA:
             raise RebindDenied()
         original = Path("/opt/hermes-commander-native/releases/main-" + OLD)
+        base = Path("/opt/hermes-commander-native")
+        for directory, mode in ((base, 0o755), (base / "releases", 0o755),
+                                (base / "deps", 0o755), (base / "receipts", 0o700),
+                                (base / "deps" / ("main-" + OLD), 0o755)):
+            owned_directory(directory, mode=mode)
+        upgrade_receipt = base / "receipts" / ("h454-paired-upgrade-" + NEW)
+        if upgrade_receipt.exists() or upgrade_receipt.is_symlink():
+            raise RebindDenied()
         owned_directory(original, mode=0o755)
         for name, expected in OLD_BLOBS.items():
             if _blob(checked_file(original / name, 262144, modes={0o444})) != expected:
