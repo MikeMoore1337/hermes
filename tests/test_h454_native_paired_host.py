@@ -13,6 +13,8 @@ from scripts import h454_native_paired_host as host
 from scripts import h454_native_paired_staging as staging
 from scripts import h454_native_paired_apply as apply_tx
 from scripts.h454_native_paired_rebind import RebindDenied
+from tests.test_h454_native_paired_rebind import OLD, NEW, TOKEN, snapshots
+from scripts.h454_native_paired_rebind import rebind
 
 
 def properties(*, active="failed"):
@@ -27,6 +29,66 @@ def properties(*, active="failed"):
 
 
 class PairedHostAdmissionTests(unittest.TestCase):
+    def test_frozen_recovery_thaws_only_after_old_state_and_units_verify(self):
+        trust, ca, unit = b"old-trust", b"old-ca", b"old-unit"
+        record = {"uid": 972, "gid": 968}
+        events = []
+
+        def callback(name, result=None, fail=False):
+            def run(*args, **kwargs):
+                events.append(name)
+                if fail:
+                    raise ValueError("synthetic-secret")
+                return result
+            return run
+
+        def checked(path, *args, **kwargs):
+            if path.name == "private-relay.json": return trust
+            if path.name == "ca.crt": return ca
+            return unit
+
+        def run(fail):
+            events.clear()
+            with ExitStack() as stack:
+                stack.enter_context(patch.object(apply_tx.os, "geteuid", return_value=0))
+                stack.enter_context(patch.object(apply_tx.socket, "gethostname", return_value="vps1777112993"))
+                stack.enter_context(patch.object(Path, "exists", lambda path: path.name == "prepared"))
+                stack.enter_context(patch.object(Path, "is_symlink", return_value=False))
+                stack.enter_context(patch.object(Path, "lstat", return_value=SimpleNamespace(
+                    st_mode=stat.S_IFDIR | 0o700, st_uid=0)))
+                stack.enter_context(patch.object(apply_tx, "_record", return_value=record))
+                stack.enter_context(patch.object(apply_tx, "_inert", side_effect=callback("inert")))
+                stack.enter_context(patch.object(apply_tx.systemd_tx, "recover", side_effect=callback("units")))
+                stack.enter_context(patch.object(apply_tx.state_tx, "recover", side_effect=callback("state", fail=fail)))
+                stack.enter_context(patch.object(apply_tx, "_old_pair_matches", side_effect=callback("pair")))
+                stack.enter_context(patch.object(apply_tx, "_reload", side_effect=callback("reload")))
+                stack.enter_context(patch.object(apply_tx, "checked_file", side_effect=checked))
+                stack.enter_context(patch.object(host, "TRUST_SHA", hashlib.sha256(trust).hexdigest()))
+                stack.enter_context(patch.object(host, "CA_SHA", hashlib.sha256(ca).hexdigest()))
+                stack.enter_context(patch.object(host, "UNIT_SHA", {name: hashlib.sha256(unit).hexdigest()
+                    for name in ("hermes-commander-native.service", "hermes-commander-native-preflight.service")}))
+                stack.enter_context(patch.object(apply_tx, "load_private_relay", side_effect=callback(
+                    "trust", SimpleNamespace(relay_ipv4="172.29.251.2"))))
+                stack.enter_context(patch.object(host, "_check_unit", side_effect=callback("unit_check")))
+                stack.enter_context(patch.object(apply_tx, "_no_service_process", side_effect=callback("no_process")))
+                stack.enter_context(patch.object(apply_tx.freeze, "restore_owner", side_effect=callback("thaw")))
+                stack.enter_context(patch.object(apply_tx, "_mark", side_effect=callback("receipt")))
+                if fail:
+                    with self.assertRaisesRegex(RebindDenied, "^native_paired_recovery_hold$"):
+                        apply_tx.recover_frozen()
+                else:
+                    apply_tx.recover_frozen()
+            return list(events)
+
+        success = run(False)
+        for event in ("units", "state", "pair", "reload", "trust", "unit_check", "no_process"):
+            self.assertLess(success.index(event), success.index("thaw"))
+        self.assertEqual(success[-1], "receipt")
+        failed = run(True)
+        self.assertNotIn("thaw", failed)
+        self.assertNotIn("reload", failed)
+        self.assertNotIn("receipt", failed)
+
     def test_coordinator_thaws_only_after_both_journals_and_manager_verify(self):
         transition = SimpleNamespace(trust=b"new-trust", manifest=b"new-manifest",
                                      device=b"synthetic-secret", active_unit=b"new-active",
@@ -52,7 +114,7 @@ class PairedHostAdmissionTests(unittest.TestCase):
                 stack.enter_context(patch.object(apply_tx, "_frozen_matches", side_effect=callback("matches")))
                 stack.enter_context(patch.object(apply_tx, "_reload", side_effect=callback("reload")))
                 stack.enter_context(patch.object(apply_tx, "_no_service_process", side_effect=callback("no_process")))
-                stack.enter_context(patch.object(apply_tx, "_finish", side_effect=callback("finish")))
+                stack.enter_context(patch.object(apply_tx, "_mark", side_effect=callback("finish")))
                 stack.enter_context(patch.object(apply_tx, "load_private_relay", side_effect=callback("trust", SimpleNamespace(relay_ipv4="172.29.251.2"))))
                 stack.enter_context(patch.object(host, "_check_unit", side_effect=callback("unit_check")))
                 stack.enter_context(patch.object(apply_tx.freeze, "freeze", side_effect=callback("freeze")))
@@ -217,6 +279,83 @@ class PairedHostAdmissionTests(unittest.TestCase):
             patches(stack, 0)
             with self.assertRaisesRegex(RebindDenied, "^native_paired_host_denied$"):
                 host.inspect()
+
+
+@unittest.skipUnless(os.name == "posix" and os.geteuid() == 0, "root-only synthetic transaction")
+class PairedTransactionIntegrationTests(unittest.TestCase):
+    def test_real_files_survive_interrupted_switch_and_completed_rollback(self):
+        for scenario in ("completed", "unit_interrupted", "receipt_interrupted"):
+            with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as temp, ExitStack() as stack:
+                root = Path(temp)
+                base, state, units = root / "base", root / "state", root / "units"
+                base.mkdir(); state.mkdir(mode=0o700); units.mkdir()
+                (base / "receipts").mkdir(); (base / "trust").mkdir()
+                manifest, device = snapshots()
+                for name, raw in (("manifest.json", manifest), ("device.json", device)):
+                    path = state / name
+                    path.write_bytes(raw); path.chmod(0o600); os.chown(path, 65534, 65534)
+                os.chown(state, 65534, 65534)
+                old_trust, new_trust, ca = b"old trust", b"new trust", b"synthetic ca"
+                for name, raw in (("private-relay.json", old_trust), ("ca.crt", ca)):
+                    path = base / "trust" / name
+                    path.write_bytes(raw); path.chmod(0o444)
+                old_units = {name: ("old " + name).encode() for name in host.UNIT_SHA}
+                for name, raw in old_units.items():
+                    path = units / name
+                    path.write_bytes(raw); path.chmod(0o644)
+                bound = rebind(manifest, device, old_release=OLD, new_release=NEW, bundle_sha256="e" * 64)
+                transition = SimpleNamespace(manifest=bound.manifest, device=bound.device, trust=new_trust,
+                    active_unit=b"new active", preflight_unit=b"new preflight")
+                plan = host.HostPlan(transition, manifest, device, old_trust, old_units,
+                                     b"bundle", b"receipt", b"wheel", 65534, 65534)
+                directories = {"trust": base / "trust", "active": units, "preflight": units}
+                for obj, name, value in ((apply_tx, "BASE", base), (apply_tx, "STATE", state),
+                        (apply_tx, "UNIT_DIRS", directories), (host, "OLD", OLD), (host, "NEW", NEW),
+                        (host, "BUNDLE_SHA", "e" * 64), (host, "MANIFEST_SHA", hashlib.sha256(manifest).hexdigest()),
+                        (host, "TRUST_SHA", hashlib.sha256(old_trust).hexdigest()),
+                        (host, "CA_SHA", hashlib.sha256(ca).hexdigest()),
+                        (host, "UNIT_SHA", {k: hashlib.sha256(v).hexdigest() for k, v in old_units.items()})):
+                    stack.enter_context(patch.object(obj, name, value))
+                stack.enter_context(patch.object(apply_tx.socket, "gethostname", return_value="vps1777112993"))
+                stack.enter_context(patch.object(apply_tx.pwd, "getpwnam", return_value=SimpleNamespace(
+                    pw_uid=65534, pw_gid=65534, pw_shell="/usr/sbin/nologin")))
+                stack.enter_context(patch.object(apply_tx, "owned_directory"))
+                stack.enter_context(patch.object(host, "inspect", return_value=plan))
+                for name in ("_stopped", "_inert", "_no_service_process", "_reload"):
+                    stack.enter_context(patch.object(apply_tx, name))
+                stack.enter_context(patch.object(host, "_check_unit"))
+                stack.enter_context(patch.object(apply_tx, "load_private_relay", return_value=SimpleNamespace(relay_ipv4="127.0.0.1")))
+                if scenario == "unit_interrupted":
+                    real = apply_tx.systemd_tx.replace_trusted_file
+                    def fail_after_replace(*args, **kwargs):
+                        real(*args, **kwargs)
+                        raise OSError("synthetic interruption")
+                    with patch.object(apply_tx.systemd_tx, "replace_trusted_file", side_effect=fail_after_replace):
+                        with self.assertRaises(apply_tx.ApplyHold):
+                            apply_tx.apply_staged(plan)
+                    self.assertEqual(state.stat().st_uid, 0)
+                    apply_tx.recover_frozen()
+                elif scenario == "receipt_interrupted":
+                    with patch.object(apply_tx, "_mark", side_effect=OSError("synthetic interruption")):
+                        with self.assertRaises(apply_tx.ApplyHold) as caught:
+                            apply_tx.apply_staged(plan)
+                        self.assertEqual(caught.exception.phase, "RECEIPT_FINISH")
+                    self.assertEqual(state.stat().st_uid, 65534)
+                    apply_tx.rollback_disabled()
+                else:
+                    apply_tx.apply_staged(plan)
+                    self.assertEqual(state.stat().st_uid, 65534)
+                    apply_tx.rollback_disabled()
+                self.assertEqual(state.stat().st_uid, 65534)
+                self.assertEqual((state / "manifest.json").read_bytes(), manifest)
+                self.assertEqual((state / "device.json").read_bytes(), device)
+                self.assertEqual((base / "trust" / "private-relay.json").read_bytes(), old_trust)
+                for name, raw in old_units.items():
+                    self.assertEqual((units / name).read_bytes(), raw)
+                receipt = base / "receipts" / ("h454-paired-upgrade-" + NEW)
+                for path in receipt.rglob("*"):
+                    if path.is_file():
+                        self.assertNotIn(TOKEN.encode(), path.read_bytes())
 
 
 if __name__ == "__main__":

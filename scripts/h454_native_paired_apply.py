@@ -5,6 +5,10 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import pwd
+import re
+import socket
+import stat
 import subprocess
 
 from device_fabric.native_private_tls import load_private_relay
@@ -13,7 +17,7 @@ from scripts import h454_native_paired_host as host
 from scripts import h454_native_paired_state as state_tx
 from scripts import h454_native_paired_systemd as systemd_tx
 from scripts.h454_native_paired_rebind import RebindDenied, _canonical
-from scripts.h454_native_private_versioned_upgrade import checked_file, create_file
+from scripts.h454_native_private_versioned_upgrade import checked_file, create_file, owned_directory
 
 STATE = Path("/var/lib/hermes-commander-native")
 BASE = Path("/opt/hermes-commander-native")
@@ -96,13 +100,169 @@ def _frozen_matches(plan: host.HostPlan) -> None:
             raise RebindDenied()
 
 
-def _finish(receipt: Path) -> None:
-    create_file(receipt / "success", b"INSTALLED_DISABLED_PAIRED\n", 0o600)
+def _mark(receipt: Path, name: str, content: bytes) -> None:
+    create_file(receipt / name, content, 0o600)
     fd = os.open(receipt, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
         os.fsync(fd)
     finally:
         os.close(fd)
+
+
+def _record(receipt: Path) -> dict:
+    """Read only pinned, nonsecret recovery metadata from the root receipt."""
+    owned_directory(receipt, mode=0o700)
+    raw = checked_file(receipt / "plan.json", 8192, private=True, modes={0o600})
+    data = json.loads(raw)
+    keys = {"schema", "target", "old_release", "new_release", "bundle_sha256", "uid", "gid",
+            "old_manifest_sha256", "new_manifest_sha256", "old_device_sha256", "new_device_sha256",
+            "old_trust_sha256", "new_trust_sha256", "old_active_sha256", "new_active_sha256",
+            "old_preflight_sha256", "new_preflight_sha256"}
+    if (type(data) is not dict or _canonical(data) != raw or set(data) != keys
+        or data["schema"] != "h454-paired-upgrade-v1" or data["target"] != "hermes-vps"
+        or data["old_release"] != host.OLD or data["new_release"] != host.NEW
+        or data["bundle_sha256"] != host.BUNDLE_SHA
+        or data["old_manifest_sha256"] != host.MANIFEST_SHA
+        or data["old_trust_sha256"] != host.TRUST_SHA
+        or data["old_active_sha256"] != host.UNIT_SHA["hermes-commander-native.service"]
+        or data["old_preflight_sha256"] != host.UNIT_SHA["hermes-commander-native-preflight.service"]):
+        raise RebindDenied()
+    identity = pwd.getpwnam("hermes-commander-native")
+    if (type(data["uid"]) is not int or type(data["gid"]) is not int
+        or (data["uid"], data["gid"]) != (identity.pw_uid, identity.pw_gid)
+        or identity.pw_uid <= 0 or identity.pw_gid <= 0
+        or identity.pw_shell not in ("/usr/sbin/nologin", "/sbin/nologin")
+        or any(type(data[key]) is not str or re.fullmatch(r"[0-9a-f]{64}", data[key]) is None
+               for key in keys if key.endswith("_sha256"))):
+        raise RebindDenied()
+    return data
+
+
+def _inert(uid: int) -> None:
+    """Deny active, activating, enabled or running native units during recovery."""
+    for name in host.UNIT_SHA:
+        status = subprocess.run(["/usr/bin/systemctl", "show", name, "--no-pager",
+                                 "--property=ActiveState,SubState,MainPID,UnitFileState"],
+                                stdin=subprocess.DEVNULL, capture_output=True,
+                                timeout=5, check=False)
+        if status.returncode != 0 or len(status.stdout) > 1024:
+            raise RebindDenied()
+        lines = status.stdout.decode("ascii").splitlines()
+        values = dict(line.split("=", 1) for line in lines if "=" in line)
+        if (len(lines) != 4 or set(values) != {"ActiveState", "SubState", "MainPID", "UnitFileState"}
+            or values["MainPID"] != "0" or values["SubState"] not in {"dead", "failed"}
+            or values["ActiveState"] not in {"inactive", "failed"}
+            or values["UnitFileState"] != ("static" if "preflight" in name else "disabled")):
+            raise RebindDenied()
+    _no_service_process(uid)
+
+
+def _old_pair_matches(record: dict) -> None:
+    for name, key in (("manifest.json", "old_manifest_sha256"), ("device.json", "old_device_sha256")):
+        raw = checked_file(STATE / name, 8192, owner=record["uid"], private=True, modes={0o600})
+        if _sha(raw) != record[key] or (STATE / name).lstat().st_gid != record["gid"]:
+            raise RebindDenied()
+
+
+def recover_frozen() -> None:
+    """Recover an interrupted frozen switch under the caller-held host lock.
+
+    Any unrecognized file, pending stage or malformed journal remains in
+    place and keeps the directory frozen. A completed install can be recovered
+    only after a separately initiated and journaled rollback freeze.
+    """
+    try:
+        if os.geteuid() != 0 or socket.gethostname() != "vps1777112993":
+            raise RebindDenied()
+        receipt = BASE / "receipts" / ("h454-paired-upgrade-" + host.NEW)
+        record = _record(receipt)
+        success = receipt / "success"
+        completed = success.exists() or success.is_symlink()
+        if completed and checked_file(success, 128, private=True, modes={0o600}) != b"INSTALLED_DISABLED_PAIRED\n":
+            raise RebindDenied()
+        rollback_freeze = receipt / "rollback-freeze"
+        rollback_started = rollback_freeze.exists() or rollback_freeze.is_symlink()
+        if completed and not rollback_started:
+            raise RebindDenied()
+        freeze_journal = rollback_freeze if rollback_started else receipt / "freeze"
+        state = STATE.lstat()
+        if (not stat.S_ISDIR(state.st_mode) or state.st_uid != 0
+            or stat.S_IMODE(state.st_mode) != 0o700):
+            raise RebindDenied()
+        _inert(record["uid"])
+        systemd_tx.recover(UNIT_DIRS, receipt / "systemd", trusted_uid=0)
+        pair_journal = receipt / "state"
+        if (pair_journal / "prepared").exists() or (pair_journal / "prepared").is_symlink():
+            state_tx.recover(STATE, pair_journal, trusted_uid=0)
+        else:
+            fd = state_tx._directory(STATE, 0)
+            try:
+                state_tx._no_pending(fd)
+            finally:
+                os.close(fd)
+        _old_pair_matches(record)
+        _reload()
+        trust = checked_file(BASE / "trust/private-relay.json", 2048, modes={0o444})
+        ca = checked_file(BASE / "trust/ca.crt", 8192, modes={0o444})
+        if _sha(trust) != host.TRUST_SHA or _sha(ca) != host.CA_SHA:
+            raise RebindDenied()
+        relay = load_private_relay("hermes-vps", host.OLD)
+        for name, expected in host.UNIT_SHA.items():
+            key = "preflight" if "preflight" in name else "active"
+            unit = checked_file(UNIT_DIRS[key] / name, 16384, modes={0o644})
+            if _sha(unit) != expected:
+                raise RebindDenied()
+            host._check_unit(name, relay.relay_ipv4)
+        _no_service_process(record["uid"])
+        freeze.restore_owner(STATE, freeze_journal, trusted_uid=0,
+                             service_uid=record["uid"], service_gid=record["gid"])
+        _mark(receipt, "rollback-success" if completed else "recovered", b"OLD_DISABLED_PAIRED\n")
+    except Exception:
+        raise RebindDenied("native_paired_recovery_hold") from None
+
+
+def rollback_disabled() -> None:
+    """Roll back a verified, thawed install, including a missing final receipt."""
+    try:
+        if os.geteuid() != 0 or socket.gethostname() != "vps1777112993":
+            raise RebindDenied()
+        receipt = BASE / "receipts" / ("h454-paired-upgrade-" + host.NEW)
+        record = _record(receipt)
+        success = receipt / "success"
+        if ((success.exists() or success.is_symlink())
+            and checked_file(success, 128, private=True, modes={0o600}) != b"INSTALLED_DISABLED_PAIRED\n"):
+            raise RebindDenied()
+        for name in ("rollback-success", "recovered"):
+            if (receipt / name).exists() or (receipt / name).is_symlink():
+                raise RebindDenied()
+        current = STATE.lstat()
+        if (not stat.S_ISDIR(current.st_mode) or (current.st_uid, current.st_gid) !=
+            (record["uid"], record["gid"]) or stat.S_IMODE(current.st_mode) != 0o700):
+            raise RebindDenied()
+        _inert(record["uid"])
+        systemd_tx.verify_new(UNIT_DIRS, receipt / "systemd", trusted_uid=0)
+        relay = load_private_relay("hermes-vps", host.NEW)
+        for name in host.UNIT_SHA:
+            host._check_unit(name, relay.relay_ipv4)
+        for name, key in (("manifest.json", "new_manifest_sha256"), ("device.json", "new_device_sha256")):
+            raw = checked_file(STATE / name, 8192, owner=record["uid"], private=True, modes={0o600})
+            if _sha(raw) != record[key] or (STATE / name).lstat().st_gid != record["gid"]:
+                raise RebindDenied()
+        freeze_journal = receipt / "rollback-freeze"
+        freeze_journal.mkdir(mode=0o700)
+        freeze_journal.chmod(0o700)
+        fd = os.open(receipt, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        _inert(record["uid"])
+        freeze.freeze(STATE, freeze_journal, trusted_uid=0,
+                      service_uid=record["uid"], service_gid=record["gid"])
+        state_tx.verify_new(STATE, receipt / "state", trusted_uid=0)
+        recover_frozen()
+    except Exception:
+        raise RebindDenied("native_paired_rollback_hold") from None
 
 
 def apply_staged(plan: host.HostPlan) -> None:
@@ -150,6 +310,6 @@ def apply_staged(plan: host.HostPlan) -> None:
         freeze.restore_owner(STATE, receipt / "freeze", trusted_uid=0,
                              service_uid=plan.uid, service_gid=plan.gid)
         phase = "RECEIPT_FINISH"
-        _finish(receipt)
+        _mark(receipt, "success", b"INSTALLED_DISABLED_PAIRED\n")
     except Exception:
         raise ApplyHold(phase) from None
