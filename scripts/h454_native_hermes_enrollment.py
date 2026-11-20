@@ -303,6 +303,13 @@ def _runtime_gate() -> None:
             "Host": "brc-agent.internal", "Connection": "close"})
         response = conn.getresponse()
         gate(response.status == 200, "RELAY_HEALTH_UNAVAILABLE")
+        health = response.read(4097)
+        gate(0 < len(health) <= 4096, "RELAY_PUBLIC_ORIGIN_CHANGED")
+        document = json.loads(health)
+        gate(type(document) is dict
+             and document.get("ok") is True
+             and document.get("publicUrl") == RELAY_PUBLIC_URL,
+             "RELAY_PUBLIC_ORIGIN_CHANGED")
     finally:
         conn.close()
 
@@ -652,6 +659,7 @@ def enroll() -> dict:
         # Do not expose exception messages, tokens, codes, paths or DB rows.
         # Any stage after ISSUE_CODE could have partial side effects.
         raise EnrollmentStageHold(stage) from None
+
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
