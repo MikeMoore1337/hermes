@@ -65,8 +65,17 @@ class TerminalSupervisorTests(unittest.TestCase):
     def running(pid):
         try:
             return Path(f"/proc/{pid}/stat").read_text().split(") ", 1)[1][0] != "Z"
-        except FileNotFoundError:
+        except (FileNotFoundError, ProcessLookupError):
             return False
+
+    def test_disappearing_proc_entry_is_not_running(self):
+        for error in (FileNotFoundError, ProcessLookupError):
+            with self.subTest(error=error.__name__), \
+                 patch.object(Path, "read_text", side_effect=error):
+                self.assertFalse(self.running(12345))
+        with patch.object(Path, "read_text", side_effect=PermissionError), \
+             self.assertRaises(PermissionError):
+            self.running(12345)
 
     def test_detached_descendant_terminates_and_other_session_continues(self):
         marker = self.root / "detached.pid"
