@@ -14,6 +14,7 @@ from scripts.h454_native_paired_rebind import (
 )
 from scripts.h454_native_readonly_bundle import SOURCE_FILES, build_bytes
 from scripts import h454_native_paired_state as state_tx
+from scripts import h454_native_paired_freeze as freeze_tx
 from scripts.h454_native_linux_runtime import SCHEMA as DEVICE_SCHEMA
 
 OLD = "a" * 40
@@ -329,6 +330,65 @@ class JournaledStateTests(unittest.TestCase):
             state_tx.recover(self.state, self.journal, trusted_uid=self.uid)
         self.assertEqual(pending.read_bytes(), self.device)
         self.assert_old()
+
+
+@unittest.skipUnless(os.name == "posix" and hasattr(os, "O_NOFOLLOW"),
+                     "directory freeze requires Linux-style descriptor operations")
+class DirectoryFreezeTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix="h454-freeze-synthetic-")
+        self.addCleanup(self.temp.cleanup)
+        root = Path(self.temp.name)
+        self.state, self.journal = root / "state", root / "journal"
+        self.state.mkdir(mode=0o700)
+        self.journal.mkdir(mode=0o700)
+
+    def test_rejects_current_uid_as_service_identity_without_mutation(self):
+        before = self.state.stat()
+        with self.assertRaises(RebindDenied):
+            freeze_tx.freeze(self.state, self.journal, trusted_uid=os.geteuid(),
+                             service_uid=os.geteuid(), service_gid=os.getegid())
+        self.assertEqual(self.state.stat().st_uid, before.st_uid)
+        self.assertEqual(list(self.journal.iterdir()), [])
+
+    def test_root_roundtrip_or_nonroot_permission_denial(self):
+        if os.geteuid() != 0:
+            with self.assertRaises(RebindDenied):
+                freeze_tx.freeze(self.state, self.journal, trusted_uid=os.geteuid(),
+                                 service_uid=12345, service_gid=12345)
+            return
+        os.chown(self.state, 12345, 12345)
+        freeze_tx.freeze(self.state, self.journal, trusted_uid=0,
+                         service_uid=12345, service_gid=12345)
+        self.assertEqual(self.state.stat().st_uid, 0)
+        self.assertEqual((self.journal / "frozen").read_bytes(), b"FROZEN\n")
+        freeze_tx.restore_owner(self.state, self.journal, trusted_uid=0,
+                                service_uid=12345, service_gid=12345)
+        self.assertEqual((self.state.stat().st_uid, self.state.stat().st_gid), (12345, 12345))
+
+    def test_interrupted_freeze_never_loses_recorded_original_owner(self):
+        if os.geteuid() != 0:
+            with self.assertRaises(RebindDenied):
+                freeze_tx.restore_owner(self.state, self.journal, trusted_uid=os.geteuid(),
+                                        service_uid=12345, service_gid=12345)
+            return
+        os.chown(self.state, 12345, 12345)
+        create = freeze_tx._create
+
+        def interrupt(fd, name, data):
+            if name == "frozen":
+                raise OSError("synthetic interruption")
+            return create(fd, name, data)
+
+        with patch.object(freeze_tx, "_create", side_effect=interrupt):
+            with self.assertRaises(RebindDenied):
+                freeze_tx.freeze(self.state, self.journal, trusted_uid=0,
+                                 service_uid=12345, service_gid=12345)
+        self.assertEqual(self.state.stat().st_uid, 0)
+        self.assertFalse((self.journal / "frozen").exists())
+        freeze_tx.restore_owner(self.state, self.journal, trusted_uid=0,
+                                service_uid=12345, service_gid=12345)
+        self.assertEqual((self.state.stat().st_uid, self.state.stat().st_gid), (12345, 12345))
 
 
 if __name__ == "__main__":
