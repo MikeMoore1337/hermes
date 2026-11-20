@@ -298,9 +298,14 @@ class PairedHostAdmissionTests(unittest.TestCase):
                 host.inspect()
 
 
-@unittest.skipUnless(os.name == "posix" and os.geteuid() == 0, "root-only synthetic transaction")
+@unittest.skipUnless(os.name == "posix", "Linux synthetic transaction")
 class PairedTransactionIntegrationTests(unittest.TestCase):
     def test_host_lock_cooperates_with_upgrade_and_enrollment_writers(self):
+        if os.geteuid() != 0:
+            with self.assertRaises(RebindDenied):
+                with apply_tx.host_lock():
+                    pass
+            return
         with tempfile.TemporaryDirectory() as temp, ExitStack() as stack:
             root = Path(temp)
             locks, state = root / "locks", root / "state"
@@ -332,6 +337,11 @@ class PairedTransactionIntegrationTests(unittest.TestCase):
                     pass
 
     def test_real_files_survive_interrupted_switch_and_completed_rollback(self):
+        if os.geteuid() != 0:
+            for operation in (apply_tx.recover_frozen, apply_tx.rollback_disabled):
+                with self.assertRaises(RebindDenied):
+                    operation()
+            return
         for scenario in ("completed", "unit_interrupted", "receipt_interrupted"):
             with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as temp, ExitStack() as stack:
                 root = Path(temp)
