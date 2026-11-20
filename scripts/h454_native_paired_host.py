@@ -15,21 +15,21 @@ from scripts.h454_native_linux_wheel import verify_bytes as verify_wheel
 from scripts.h454_native_paired_rebind import RebindDenied, Transition, build_transition, verified_sources
 from scripts.h454_native_private_versioned_upgrade import checked_file, owned_directory, raw_show
 
-OLD = "2ce60cc8a3fc1e33df36632bc671f737b0d50131"
-NEW = "05bb8c0f408f4a172fd06d843a7ce8c82d11de30"
-BUNDLE_SHA = "464f828308961c5b0cfd9e8705e6b644537361b4fa44b319ab2a23a32d988364"
+OLD = "05bb8c0f408f4a172fd06d843a7ce8c82d11de30"
+NEW = "e7afc8f750a052d45b6ebaa1408342ff1a35d04b"
+BUNDLE_SHA = "b4d9c56d7feef17e222132b4154fa436738d9fbd66551371da6be141e4654757"
 WHEEL_SHA = "6aa59f0ef92e796b2db6f5f26550c4713c0e4036899fadf02f55e2ed4db0b7ae"
-MANIFEST_SHA = "74843680d4b186393d59727202ce2445b188c8ac5f79f7f2fd5f62db80d90d7a"
-TRUST_SHA = "296901df88ebb14d83a89a54ccf7f5013b04e14ff859299b4bb1a551bfd33c37"
+MANIFEST_SHA = "7171ee4ef5c3e2cf4c869423a6c04a114c5c42b60b874ae395dcf69623311ee8"
+TRUST_SHA = "982d64ea80a4a251e86591faebdfe672ba9e69d9158759e836a71da7401e68ca"
 CA_SHA = "014868af3edc97e04c58099746964bde1d65d2f38c931360e27a8f309b8c0f7c"
 UNIT_SHA = {
-    "hermes-commander-native.service": "1ad811553cce900b2fcdeaf9810b54864c9602c0ad6aa70f2257cb62b141e043",
-    "hermes-commander-native-preflight.service": "89ee7d3a02310bf63f28ed70fdd96a5564c30463deb7f9dfda81142085488af8",
+    "hermes-commander-native.service": "7cc27169b97c3d664dc8a483909aa8071123eb0d03ee30054b557d74e1037778",
+    "hermes-commander-native-preflight.service": "5314ac9109d93223c8ee5ecb6ec271f5db0a5cf5bea919f8c679e9c67da9eb3e",
 }
 OLD_BLOBS = {
     "device_fabric/__init__.py": "b0a593a1351215ce4f3c05b805faeb34bef0161a",
     "device_fabric/linux_native_files.py": "898c57fbfcdc8f6102dc4d4ddb6f24a1c69bcca8",
-    "device_fabric/linux_native_outbound.py": "fac78190b4cba0a8ff1d5bf12523ade7ea833564",
+    "device_fabric/linux_native_outbound.py": "42875b59d4ec0cc8e36c55750c05763cee6914c5",
     "device_fabric/linux_native_read_dispatch.py": "13330c3f3f470bf4c05f9818dc00f3387265128a",
     "device_fabric/linux_native_search.py": "21347322c0b278cd312f80e2c7cbf4dcc2c74d89",
     "device_fabric/native_brc_enrollment.py": "6ceffd491306026360e3355c1939586cd61df88c",
