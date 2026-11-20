@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -79,6 +80,7 @@ class RealLinuxUnitRenderTests(unittest.TestCase):
                 self.assertIn("IPAddressAllow=8.8.4.4/32", text)
                 self.assertIn("IPAddressAllow=1.1.1.1/32", text)
                 self.assertIn("ReadOnlyPaths=/srv/hermes/source", text)
+                self.assertIn("InaccessiblePaths=-/srv/hermes/source/.git", text)
                 self.assertIn("ReadOnlyPaths=/var/lib/hermes-commander-native", text)
                 pinned="/opt/hermes-commander-native/deps/main-"+RELEASE
                 self.assertIn("Environment=PYTHONPATH="+pinned, text)
@@ -196,6 +198,50 @@ class RealLinuxUnitRenderTests(unittest.TestCase):
 
 
 class OSIsolationKernelTests(unittest.TestCase):
+    def test_git_mask_must_match_every_protected_root(self):
+        roots = ("/srv/hermes/source", "/srv/other/source")
+        text = hardening_properties() + (
+            "\nInaccessiblePaths=-/srv/hermes/source/.git -/srv/other/source/.git")
+        self.assertTrue(service._properties_are_hardened(text, git_roots=roots))
+        self.assertFalse(service._properties_are_hardened(
+            text.replace(" -/srv/other/source/.git", ""), git_roots=roots))
+        self.assertFalse(service._properties_are_hardened(
+            text.replace("-/srv/hermes/source/.git", "-/srv/hermes/other/.git"),
+            git_roots=roots))
+
+    def test_effective_git_access_denies_isolation_even_with_manager_mask(self):
+        root = "/srv/hermes/source"
+        properties = hardening_properties() + "\nInaccessiblePaths=-" + root + "/.git"
+        proc = SimpleNamespace(returncode=0, stdout=properties.encode("ascii"))
+        with patch.object(service, "_service_identity"), \
+             patch.object(service, "_kernel_evidence", return_value=True), \
+             patch.object(service, "STATUS", SimpleNamespace(read_text=lambda **_: "status")), \
+             patch.object(service, "CGROUP", SimpleNamespace(read_text=lambda **_: "cgroup")), \
+             patch.object(service.subprocess, "run", return_value=proc), \
+             patch.dict(service.os.environ, {"INVOCATION_ID":"e"*32}), \
+             patch.object(Path, "lstat", return_value=SimpleNamespace()), \
+             patch.object(service.os, "access", return_value=False) as access:
+            self.assertTrue(service.real_os_isolation_verified(git_roots=(root,)))
+            access.assert_any_call(Path(root) / ".git", os.R_OK)
+            access.assert_any_call(Path(root) / ".git", os.X_OK)
+            access.side_effect = lambda _path, mode: mode == os.X_OK
+            self.assertFalse(service.real_os_isolation_verified(git_roots=(root,)))
+
+    def test_absent_git_is_allowed_but_unexpected_metadata_error_denied(self):
+        root = "/srv/hermes/source"
+        properties = hardening_properties() + "\nInaccessiblePaths=-" + root + "/.git"
+        proc = SimpleNamespace(returncode=0, stdout=properties.encode("ascii"))
+        with patch.object(service, "_service_identity"), \
+             patch.object(service, "_kernel_evidence", return_value=True), \
+             patch.object(service, "STATUS", SimpleNamespace(read_text=lambda **_: "status")), \
+             patch.object(service, "CGROUP", SimpleNamespace(read_text=lambda **_: "cgroup")), \
+             patch.object(service.subprocess, "run", return_value=proc), \
+             patch.dict(service.os.environ, {"INVOCATION_ID":"e"*32}), \
+             patch.object(Path, "lstat", side_effect=FileNotFoundError) as stat:
+            self.assertTrue(service.real_os_isolation_verified(git_roots=(root,)))
+            stat.side_effect = OSError
+            self.assertFalse(service.real_os_isolation_verified(git_roots=(root,)))
+
     def test_systemd_all_address_denials_accept_both_families_only(self):
         public = hardening_properties()
         private = public.replace("IPAddressAllow=8.8.4.4/32 1.1.1.1/32",
@@ -270,7 +316,8 @@ class LiveWorkerLifecycleTests(unittest.TestCase):
     def setUp(self):
         self.fake=SimpleNamespace(device=SimpleNamespace(
             device_id="h454-linux-hermes-"+"c"*32,
-            token="brc_dev_"+"x"*64,target="hermes-vps"))
+            token="brc_dev_"+"x"*64,target="hermes-vps"),
+            project_roots=(("hermes", "/srv/hermes/source"),))
         self.transport=Mock()
         self.os_gate=Mock(return_value=True)
         self.status_factory=Mock(return_value=lambda:False)
@@ -298,10 +345,32 @@ class LiveWorkerLifecycleTests(unittest.TestCase):
              patch.object(service, "run_once", return_value="session_deadline") as session:
             self.assertEqual(service.main(args), 0)
             self.assertGreaterEqual(gate.call_count, 3)
-            self.assertTrue(all(call.kwargs == {"private_relay_ip": private.relay_ipv4}
-                                for call in gate.call_args_list))
+            self.assertEqual(gate.call_args_list[0].kwargs,
+                             {"private_relay_ip": private.relay_ipv4, "git_roots": ()})
+            self.assertTrue(all(call.kwargs == {
+                "private_relay_ip": private.relay_ipv4,
+                "git_roots": ("/srv/hermes/source",)}
+                for call in gate.call_args_list[1:]))
             self.assertIs(session.call_args.kwargs["connector"], self.transport)
             self.assertFalse(session.call_args.kwargs["is_device_revoked"]())
+
+    def test_cli_denies_unmasked_git_before_bearer_or_network(self):
+        private = SimpleNamespace(relay_ipv4="172.29.251.2")
+        args = ["--run-once", "--target", TARGET, "--release-sha", RELEASE,
+                "--manifest-sha256", "d" * 64]
+        with patch.object(service, "load_private_relay", return_value=private), \
+             patch.object(service, "_service_identity"), \
+             patch.object(service, "real_os_isolation_verified",
+                          side_effect=lambda **kw: not kw.get("git_roots")) as gate, \
+             patch.object(service, "load_local_runtime", return_value=self.fake) as load, \
+             patch.object(service, "private_revoked_provider") as status, \
+             patch.object(service, "run_once") as session:
+            self.assertEqual(service.main(args), 2)
+            load.assert_called_once()
+            self.assertEqual(gate.call_args_list[-1].kwargs["git_roots"],
+                             ("/srv/hermes/source",))
+            status.assert_not_called()
+            session.assert_not_called()
 
     def test_real_worker_composes_existing_native_wss_and_owner_revocation(self):
         with patch.object(service,"_service_identity"), \
@@ -322,6 +391,10 @@ class LiveWorkerLifecycleTests(unittest.TestCase):
         self.assertTrue(callable(read.call_args.kwargs["is_device_revoked"]))
         self.assertIs(read.call_args.kwargs["is_os_isolation_verified"],self.os_gate)
         self.assertGreaterEqual(self.os_gate.call_count,3)
+        denied = read.call_args.kwargs["is_device_revoked"]
+        self.assertFalse(denied())
+        self.os_gate.return_value = False
+        self.assertTrue(denied())
         self.assertEqual(load.call_args.kwargs["manifest_path"],
                          Path(service.MANIFEST_PATH))
         self.assertEqual(load.call_args.kwargs["config_path"],
@@ -355,7 +428,7 @@ class LiveWorkerLifecycleTests(unittest.TestCase):
              patch.object(service,"_service_identity"), \
              patch.object(service,"load_local_runtime") as load:
             self.assertEqual(service.main(args),2)
-            gate.assert_called_once_with(private_relay_ip="172.29.251.2")
+            gate.assert_called_once_with(private_relay_ip="172.29.251.2", git_roots=())
             load.assert_not_called()
         with patch.object(service,"real_os_isolation_verified",
                           return_value=False):
