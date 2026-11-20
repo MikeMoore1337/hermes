@@ -10,7 +10,7 @@ from unittest.mock import patch
 from device_fabric.native_install_preview import SCHEMA, SERVICE
 from scripts.h454_native_paired_rebind import (
     RebindDenied, build_transition, rebind, rebind_trust, recover_device,
-    replace_frozen_state,
+    replace_frozen_state, verified_sources,
 )
 from scripts.h454_native_readonly_bundle import SOURCE_FILES, build_bytes
 from scripts import h454_native_paired_state as state_tx
@@ -51,9 +51,13 @@ class PairedRebindTests(unittest.TestCase):
                         "release_sha": OLD, "relay_ipv4": "172.29.251.2",
                         "ca_sha256": hashlib.sha256(ca).hexdigest(),
                         "server_name": "brc-agent.internal", "port": 3001})
-        bundle, receipt = build_bytes(target="hermes-vps", release_sha=NEW,
-                                      sources={name: b"synthetic" for name in SOURCE_FILES})
+        sources = {name: b"synthetic" for name in SOURCE_FILES}
+        bundle, receipt = build_bytes(target="hermes-vps", release_sha=NEW, sources=sources)
         bundle_sha = hashlib.sha256(bundle).hexdigest()
+        self.assertEqual(verified_sources(bundle, receipt, release=NEW,
+                                          expected_bundle_sha256=bundle_sha), sources)
+        with self.assertRaises(RebindDenied):
+            verified_sources(bundle, receipt, release=NEW, expected_bundle_sha256="0" * 64)
         with patch("scripts.h454_native_paired_rebind.private_tls._context"):
             transition = build_transition(manifest, device, trust, ca, bundle, receipt,
                                           old_release=OLD, new_release=NEW,

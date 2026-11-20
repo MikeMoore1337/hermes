@@ -3,10 +3,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
+import io
 import json
 import os
 import re
 import stat
+import tarfile
 from pathlib import Path
 
 from device_fabric.native_brc_enrollment import IDENTITY, TOKEN
@@ -15,7 +17,7 @@ from device_fabric import native_private_tls as private_tls
 from scripts.h454_native_linux_runtime import _parse_config, _unique
 from scripts.h454_native_linux_active_unit import render_active_unit
 from scripts.h454_native_linux_unit_candidate import render_preflight_unit
-from scripts.h454_native_readonly_bundle import verify_bytes
+from scripts.h454_native_readonly_bundle import SOURCE_FILES, _bounded_ustar, verify_bytes
 
 
 class RebindDenied(ValueError):
@@ -173,6 +175,28 @@ def build_transition(manifest: bytes, device: bytes, trust: bytes, ca: bytes,
                                     dns_ipv4="", private_relay=True).encode("ascii")
         preflight = render_preflight_unit(paired.manifest, **common).encode("ascii")
         return Transition(paired.manifest, paired.device, new_trust, active, preflight)
+    except Exception:
+        raise RebindDenied("native_paired_rebind_denied") from None
+
+
+def verified_sources(bundle: bytes, receipt: bytes, *, release: str,
+                     expected_bundle_sha256: str) -> dict[str, bytes]:
+    """Read only the independently verified source members; never extract paths."""
+    try:
+        verified = verify_bytes(bundle, receipt, target="hermes-vps", release_sha=release)
+        if verified["bundle_sha256"] != expected_bundle_sha256:
+            raise RebindDenied()
+        result = {}
+        with tarfile.open(fileobj=io.BytesIO(_bounded_ustar(bundle)), mode="r:") as archive:
+            for member in archive:
+                if member.name in SOURCE_FILES:
+                    stream = archive.extractfile(member)
+                    if stream is None or member.name in result:
+                        raise RebindDenied()
+                    result[member.name] = stream.read()
+        if set(result) != set(SOURCE_FILES):
+            raise RebindDenied()
+        return result
     except Exception:
         raise RebindDenied("native_paired_rebind_denied") from None
 
