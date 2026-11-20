@@ -90,8 +90,9 @@ manifest SHA256 and booleans, never project roots.
 `enroll --execute` is **NOT APPROVED** by green CI or a successful plan.
 After fresh explicit owner permission for one original-Hermes-VPS device
 pairing, stage an exact source Git blob in an unused root-only 0600 file.
-The operator must run as actual root with owner-source
-`82a51cc0d718e16e6d0be8869436359a06fc94b7` as `PYTHONPATH` and
+After a separately approved deployment of the exact source release, the
+operator must run as actual root with owner-source
+`5b62d5bba585c6bb6d1f7f6abe6a7def33ab4f7d` as `PYTHONPATH` and
 require **two real owner-root TTY challenges**:
 
 1. Exact target and native manifest SHA256 *before any POST*.
@@ -210,11 +211,11 @@ and no target device. Do not retry or remove this record automatically.
 
 The enrollment client now accepts the exact BRC hostname as well as the
 existing native hostname, while still requiring an exact returned URL match.
-The operator now pins the corrected client blob but still names the old
-immutable owner release, so it refuses that old source. This change alone does
-not fix the installed operator: an independently approved production source
-release and a reviewed operator release-SHA repin are required before another
-separately approved pairing attempt.
+The operator pins the corrected client blob and exact owner source release
+`5b62d5bba585c6bb6d1f7f6abe6a7def33ab4f7d`. Neither this source change nor
+its CI deploys that release or updates the installed operator. A separately
+approved deployment and operator staging, followed by read-only verification,
+are required before another separately approved pairing attempt.
 
 ## Current acceptance
 

@@ -59,6 +59,25 @@ class OriginalHermesNativeEnrollmentTests(unittest.TestCase):
             mock.call(checkout, owner=0, mode=0o755),
         ])
 
+    def test_old_enrollment_client_is_rejected_by_source_pin(self):
+        checkout = Path(op.__file__).resolve().parents[1]
+
+        def read(path, **kwargs):
+            data = path.read_bytes()
+            if path.name == "native_brc_enrollment.py":
+                old = data.replace(b'"hermes.mikemoore.top", "mcp.mikemoore.top"',
+                                   b'"hermes.mikemoore.top"')
+                self.assertNotEqual(old, data)
+                return old
+            return data
+
+        with mock.patch.object(op, "SOURCE", checkout), \
+             mock.patch.object(op, "NATIVE", checkout), \
+             mock.patch.object(op, "_dir"), \
+             mock.patch.object(op, "_read", side_effect=read), \
+             self.assertRaisesRegex(op.EnrollmentHold, "TRUSTED_SOURCE_DRIFT"):
+            op._source_gate()
+
     def test_immutable_owner_directory_fail_closed_on_drift(self):
         class SyntheticPath:
             def __init__(self, *, owner=0, mode=0o555, parents=()):
