@@ -143,13 +143,17 @@ def _frozen_matches(plan: host.HostPlan) -> None:
             raise RebindDenied()
 
 
-def _mark(receipt: Path, name: str, content: bytes) -> None:
-    create_file(receipt / name, content, 0o600)
+def _sync_dir(receipt: Path) -> None:
     fd = os.open(receipt, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
         os.fsync(fd)
     finally:
         os.close(fd)
+
+
+def _mark(receipt: Path, name: str, content: bytes) -> None:
+    create_file(receipt / name, content, 0o600)
+    _sync_dir(receipt)
 
 
 def _record(receipt: Path) -> dict:
@@ -207,6 +211,31 @@ def _old_pair_matches(record: dict) -> None:
             raise RebindDenied()
 
 
+def _no_state_pending() -> None:
+    fd = os.open(STATE, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        state_tx._no_pending(fd)
+    finally:
+        os.close(fd)
+
+
+def _verify_old(record: dict) -> None:
+    _no_state_pending()
+    _old_pair_matches(record)
+    trust = systemd_tx._target(UNIT_DIRS["trust"], "private-relay.json", 0)
+    ca = checked_file(BASE / "trust/ca.crt", 8192, modes={0o444})
+    if _sha(trust) != host.TRUST_SHA or _sha(ca) != host.CA_SHA:
+        raise RebindDenied()
+    relay = load_private_relay("hermes-vps", host.OLD)
+    for name, expected in host.UNIT_SHA.items():
+        key = "preflight" if "preflight" in name else "active"
+        unit = systemd_tx._target(UNIT_DIRS[key], name, 0)
+        if _sha(unit) != expected:
+            raise RebindDenied()
+        host._check_unit(name, relay.relay_ipv4)
+    _no_service_process(record["uid"])
+
+
 def recover_frozen() -> None:
     """Recover an interrupted frozen switch under the caller-held host lock.
 
@@ -229,10 +258,23 @@ def recover_frozen() -> None:
             raise RebindDenied()
         freeze_journal = rollback_freeze if rollback_started else receipt / "freeze"
         state = STATE.lstat()
-        if (not stat.S_ISDIR(state.st_mode) or state.st_uid != 0
-            or stat.S_IMODE(state.st_mode) != 0o700):
+        if not stat.S_ISDIR(state.st_mode) or stat.S_IMODE(state.st_mode) != 0o700:
             raise RebindDenied()
         _inert(record["uid"])
+        marker = receipt / ("rollback-success" if completed else "recovered")
+        if (state.st_uid, state.st_gid) == (record["uid"], record["gid"]):
+            freeze.verify_restored(STATE, freeze_journal, trusted_uid=0,
+                                   service_uid=record["uid"], service_gid=record["gid"])
+            _verify_old(record)
+            if marker.exists() or marker.is_symlink():
+                if checked_file(marker, 128, private=True, modes={0o600}) != b"OLD_DISABLED_PAIRED\n":
+                    raise RebindDenied()
+                _sync_dir(receipt)
+            else:
+                _mark(receipt, marker.name, b"OLD_DISABLED_PAIRED\n")
+            return
+        if state.st_uid != 0:
+            raise RebindDenied()
         systemd_tx.recover(UNIT_DIRS, receipt / "systemd", trusted_uid=0)
         pair_journal = receipt / "state"
         if (pair_journal / "prepared").exists() or (pair_journal / "prepared").is_symlink():
@@ -243,20 +285,10 @@ def recover_frozen() -> None:
                 state_tx._no_pending(fd)
             finally:
                 os.close(fd)
+        _no_state_pending()
         _old_pair_matches(record)
         _reload()
-        trust = checked_file(BASE / "trust/private-relay.json", 2048, modes={0o444})
-        ca = checked_file(BASE / "trust/ca.crt", 8192, modes={0o444})
-        if _sha(trust) != host.TRUST_SHA or _sha(ca) != host.CA_SHA:
-            raise RebindDenied()
-        relay = load_private_relay("hermes-vps", host.OLD)
-        for name, expected in host.UNIT_SHA.items():
-            key = "preflight" if "preflight" in name else "active"
-            unit = checked_file(UNIT_DIRS[key] / name, 16384, modes={0o644})
-            if _sha(unit) != expected:
-                raise RebindDenied()
-            host._check_unit(name, relay.relay_ipv4)
-        _no_service_process(record["uid"])
+        _verify_old(record)
         freeze.restore_owner(STATE, freeze_journal, trusted_uid=0,
                              service_uid=record["uid"], service_gid=record["gid"])
         _mark(receipt, "rollback-success" if completed else "recovered", b"OLD_DISABLED_PAIRED\n")

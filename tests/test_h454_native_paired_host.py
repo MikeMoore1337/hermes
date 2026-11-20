@@ -78,14 +78,17 @@ class PairedHostAdmissionTests(unittest.TestCase):
                 stack.enter_context(patch.object(Path, "exists", lambda path: path.name == "prepared"))
                 stack.enter_context(patch.object(Path, "is_symlink", return_value=False))
                 stack.enter_context(patch.object(Path, "lstat", return_value=SimpleNamespace(
-                    st_mode=stat.S_IFDIR | 0o700, st_uid=0)))
+                    st_mode=stat.S_IFDIR | 0o700, st_uid=0, st_gid=0)))
                 stack.enter_context(patch.object(apply_tx, "_record", return_value=record))
                 stack.enter_context(patch.object(apply_tx, "_inert", side_effect=callback("inert")))
                 stack.enter_context(patch.object(apply_tx.systemd_tx, "recover", side_effect=callback("units")))
                 stack.enter_context(patch.object(apply_tx.state_tx, "recover", side_effect=callback("state", fail=fail)))
                 stack.enter_context(patch.object(apply_tx, "_old_pair_matches", side_effect=callback("pair")))
+                stack.enter_context(patch.object(apply_tx, "_no_state_pending", side_effect=callback("pending")))
                 stack.enter_context(patch.object(apply_tx, "_reload", side_effect=callback("reload")))
                 stack.enter_context(patch.object(apply_tx, "checked_file", side_effect=checked))
+                stack.enter_context(patch.object(apply_tx.systemd_tx, "_target", side_effect=lambda directory, name, uid:
+                    trust if name == "private-relay.json" else unit))
                 stack.enter_context(patch.object(host, "TRUST_SHA", hashlib.sha256(trust).hexdigest()))
                 stack.enter_context(patch.object(host, "CA_SHA", hashlib.sha256(ca).hexdigest()))
                 stack.enter_context(patch.object(host, "UNIT_SHA", {name: hashlib.sha256(unit).hexdigest()
@@ -349,7 +352,9 @@ class PairedTransactionIntegrationTests(unittest.TestCase):
                     operation()
             return
         for scenario in ("completed", "freeze_interrupted", "state_interrupted", "unit_interrupted",
-                         "reload_interrupted", "verify_interrupted", "thaw_interrupted", "receipt_interrupted"):
+                         "recovery_receipt_interrupted", "recovery_fsync_interrupted", "reload_interrupted", "verify_interrupted",
+                         "thaw_interrupted", "receipt_interrupted", "rollback_receipt_interrupted",
+                         "rollback_fsync_interrupted"):
             with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as temp, ExitStack() as stack:
                 root = Path(temp)
                 base, state, units = root / "base", root / "state", root / "units"
@@ -390,10 +395,13 @@ class PairedTransactionIntegrationTests(unittest.TestCase):
                     stack.enter_context(patch.object(apply_tx, name))
                 stack.enter_context(patch.object(host, "_check_unit"))
                 stack.enter_context(patch.object(apply_tx, "load_private_relay", return_value=SimpleNamespace(relay_ipv4="127.0.0.1")))
-                if scenario in ("state_interrupted", "unit_interrupted", "thaw_interrupted"):
+                if scenario in ("state_interrupted", "unit_interrupted", "recovery_receipt_interrupted",
+                                "recovery_fsync_interrupted", "thaw_interrupted"):
                     module, operation = {
                         "state_interrupted": (apply_tx.state_tx, "replace_frozen_state"),
                         "unit_interrupted": (apply_tx.systemd_tx, "replace_trusted_file"),
+                        "recovery_receipt_interrupted": (apply_tx.systemd_tx, "replace_trusted_file"),
+                        "recovery_fsync_interrupted": (apply_tx.systemd_tx, "replace_trusted_file"),
                         "thaw_interrupted": (apply_tx.freeze, "restore_owner"),
                     }[scenario]
                     real = getattr(module, operation)
@@ -408,7 +416,32 @@ class PairedTransactionIntegrationTests(unittest.TestCase):
                         apply_tx.rollback_disabled()
                     else:
                         self.assertEqual(state.stat().st_uid, 0)
+                        if scenario in ("recovery_receipt_interrupted", "recovery_fsync_interrupted"):
+                            fail = "_mark" if scenario == "recovery_receipt_interrupted" else "_sync_dir"
+                            with patch.object(apply_tx, fail, side_effect=OSError("synthetic interruption")):
+                                with self.assertRaises(RebindDenied):
+                                    apply_tx.recover_frozen()
+                            self.assertEqual(state.stat().st_uid, 65534)
+                            pending = state / ".h454-paired-device.json.pending"
+                            pending.write_bytes(b"synthetic partial")
+                            with self.assertRaises(RebindDenied):
+                                apply_tx.recover_frozen()
+                            self.assertEqual(pending.read_bytes(), b"synthetic partial")
+                            pending.unlink()
+                            pending_unit = units / ".h454-paired-hermes-commander-native.service.pending"
+                            pending_unit.write_bytes(b"synthetic partial")
+                            with self.assertRaises(RebindDenied):
+                                apply_tx.recover_frozen()
+                            self.assertEqual(pending_unit.read_bytes(), b"synthetic partial")
+                            pending_unit.unlink()
                         apply_tx.recover_frozen()
+                        if scenario in ("recovery_receipt_interrupted", "recovery_fsync_interrupted"):
+                            apply_tx.recover_frozen()
+                            marker = base / "receipts" / ("h454-paired-upgrade-" + NEW) / "recovered"
+                            marker.write_bytes(b"unexpected")
+                            with self.assertRaises(RebindDenied):
+                                apply_tx.recover_frozen()
+                            self.assertEqual(marker.read_bytes(), b"unexpected")
                 elif scenario == "freeze_interrupted":
                     real = apply_tx.freeze._create
                     def fail_after_chown(fd, name, data):
@@ -435,6 +468,15 @@ class PairedTransactionIntegrationTests(unittest.TestCase):
                         self.assertEqual(caught.exception.phase, "RECEIPT_FINISH")
                     self.assertEqual(state.stat().st_uid, 65534)
                     apply_tx.rollback_disabled()
+                elif scenario in ("rollback_receipt_interrupted", "rollback_fsync_interrupted"):
+                    apply_tx.apply_staged(plan)
+                    fail = "_mark" if scenario == "rollback_receipt_interrupted" else "_sync_dir"
+                    with patch.object(apply_tx, fail, side_effect=OSError("synthetic interruption")):
+                        with self.assertRaises(RebindDenied):
+                            apply_tx.rollback_disabled()
+                    self.assertEqual(state.stat().st_uid, 65534)
+                    apply_tx.recover_frozen()
+                    apply_tx.recover_frozen()
                 else:
                     apply_tx.apply_staged(plan)
                     self.assertEqual(state.stat().st_uid, 65534)

@@ -375,6 +375,14 @@ class DirectoryFreezeTests(unittest.TestCase):
         freeze_tx.restore_owner(self.state, self.journal, trusted_uid=0,
                                 service_uid=12345, service_gid=12345)
         self.assertEqual((self.state.stat().st_uid, self.state.stat().st_gid), (12345, 12345))
+        freeze_tx.verify_restored(self.state, self.journal, trusted_uid=0,
+                                  service_uid=12345, service_gid=12345)
+        self.state.rename(self.state.with_name("original"))
+        self.state.mkdir(mode=0o700)
+        os.chown(self.state, 12345, 12345)
+        with self.assertRaises(RebindDenied):
+            freeze_tx.verify_restored(self.state, self.journal, trusted_uid=0,
+                                      service_uid=12345, service_gid=12345)
 
     def test_interrupted_freeze_never_loses_recorded_original_owner(self):
         if os.geteuid() != 0:

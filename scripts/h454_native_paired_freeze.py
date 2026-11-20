@@ -53,6 +53,50 @@ def freeze(state: Path, journal: Path, *, trusted_uid: int,
             os.close(journal_fd)
 
 
+def _record(journal_fd: int, trusted_uid: int, service_uid: int, service_gid: int) -> dict:
+    names = set(os.listdir(journal_fd))
+    if names - {"directory.json", "frozen"}:
+        raise RebindDenied()
+    if "frozen" in names and _read(journal_fd, "frozen", owner=trusted_uid) != b"FROZEN\n":
+        raise RebindDenied()
+    raw = _read(journal_fd, "directory.json", owner=trusted_uid)
+    record = json.loads(raw)
+    if (type(record) is not dict or _canonical(record) != raw
+        or set(record) != {"schema", "uid", "gid", "dev", "ino"}
+        or record["schema"] != "h454-paired-freeze-v1"
+        or (record["uid"], record["gid"]) != (service_uid, service_gid)
+        or any(type(record[k]) is not int for k in ("uid", "gid", "dev", "ino"))
+        or type(service_uid) is not int or type(service_gid) is not int
+        or service_uid <= 0 or service_gid <= 0 or service_uid == trusted_uid):
+        raise RebindDenied()
+    return record
+
+
+def verify_restored(state: Path, journal: Path, *, trusted_uid: int,
+                    service_uid: int, service_gid: int) -> None:
+    """Confirm an already restored directory is the exact journaled inode."""
+    state_fd = journal_fd = None
+    try:
+        if type(trusted_uid) is not int or not state.is_absolute():
+            raise RebindDenied()
+        journal_fd = _directory(journal, trusted_uid)
+        record = _record(journal_fd, trusted_uid, service_uid, service_gid)
+        state_fd = os.open(state, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        _distinct(state_fd, journal_fd)
+        current = os.fstat(state_fd)
+        if ((current.st_dev, current.st_ino) != (record["dev"], record["ino"])
+            or (current.st_uid, current.st_gid) != (service_uid, service_gid)
+            or stat.S_IMODE(current.st_mode) != 0o700):
+            raise RebindDenied()
+    except Exception:
+        raise RebindDenied("native_paired_rebind_denied") from None
+    finally:
+        if state_fd is not None:
+            os.close(state_fd)
+        if journal_fd is not None:
+            os.close(journal_fd)
+
+
 def restore_owner(state: Path, journal: Path, *, trusted_uid: int,
                   service_uid: int, service_gid: int) -> None:
     """Restore ownership after independent full-transition verification.
@@ -65,21 +109,7 @@ def restore_owner(state: Path, journal: Path, *, trusted_uid: int,
         if type(trusted_uid) is not int or not state.is_absolute():
             raise RebindDenied()
         journal_fd = _directory(journal, trusted_uid)
-        names = set(os.listdir(journal_fd))
-        if names - {"directory.json", "frozen"}:
-            raise RebindDenied()
-        if "frozen" in names and _read(journal_fd, "frozen", owner=trusted_uid) != b"FROZEN\n":
-            raise RebindDenied()
-        raw = _read(journal_fd, "directory.json", owner=trusted_uid)
-        record = json.loads(raw)
-        if (type(record) is not dict or _canonical(record) != raw
-            or set(record) != {"schema", "uid", "gid", "dev", "ino"}
-            or record["schema"] != "h454-paired-freeze-v1"
-            or (record["uid"], record["gid"]) != (service_uid, service_gid)
-            or any(type(record[k]) is not int for k in ("uid", "gid", "dev", "ino"))
-            or type(service_uid) is not int or type(service_gid) is not int
-            or service_uid <= 0 or service_gid <= 0 or service_uid == trusted_uid):
-            raise RebindDenied()
+        record = _record(journal_fd, trusted_uid, service_uid, service_gid)
         state_fd = os.open(state, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
         _distinct(state_fd, journal_fd)
         current = os.fstat(state_fd)
