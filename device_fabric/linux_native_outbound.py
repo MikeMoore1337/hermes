@@ -286,7 +286,10 @@ def run_session(config: LocalLinuxDeviceConfig,
                 try:
                     raw = ws.recv(timeout=min(MAX_PING_INTERVAL, remaining))
                 except TimeoutError:
-                    return "idle_timeout"
+                    if not welcome:
+                        return "idle_timeout"
+                    # Relay heartbeats can arrive after this receive timeout.
+                    continue
                 msg = decode_message(raw)
                 typ = msg["type"]
                 if typ == "welcome":

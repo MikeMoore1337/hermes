@@ -116,7 +116,7 @@ def render_active_unit(
             + " PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1",
             "UMask=0077",
             "Restart=on-success",
-            "RestartSec=90s",
+            "RestartSec=5s",
             "RuntimeMaxSec=300s",
             "TimeoutStopSec=10s",
             "KillMode=control-group",

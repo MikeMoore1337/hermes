@@ -352,7 +352,7 @@ class NativeLinuxRuntimeIntegration(unittest.TestCase):
             prepared, connector=connector,
             is_device_revoked=lambda: False,
             is_os_isolation_verified=lambda: True)
-        self.assertEqual(out, "idle_timeout")
+        self.assertEqual(out, "session_message_budget")
         self.assertEqual([m["type"] for m in ws.sent], ["hello", "result"])
         text = json.loads(ws.sent[-1]["result"]["content"][0]["text"])
         self.assertEqual((text["status"], text["tool"], text["id"]),
