@@ -15,6 +15,8 @@ from scripts.h454_native_paired_rebind import (
 from scripts.h454_native_readonly_bundle import SOURCE_FILES, build_bytes
 from scripts import h454_native_paired_state as state_tx
 from scripts import h454_native_paired_freeze as freeze_tx
+from scripts.h454_native_paired_systemd import MODES, replace_trusted_file
+from scripts import h454_native_paired_systemd as systemd_tx
 from scripts.h454_native_linux_runtime import SCHEMA as DEVICE_SCHEMA
 
 OLD = "a" * 40
@@ -393,6 +395,158 @@ class DirectoryFreezeTests(unittest.TestCase):
         freeze_tx.restore_owner(self.state, self.journal, trusted_uid=0,
                                 service_uid=12345, service_gid=12345)
         self.assertEqual((self.state.stat().st_uid, self.state.stat().st_gid), (12345, 12345))
+
+
+@unittest.skipUnless(os.name == "posix" and hasattr(os, "O_NOFOLLOW"),
+                     "trusted file replacement requires Linux-style descriptor operations")
+class TrustedFileTests(unittest.TestCase):
+    def test_exact_trust_and_unit_replacement_preserves_modes(self):
+        with tempfile.TemporaryDirectory(prefix="h454-unit-synthetic-") as temp:
+            directory = Path(temp)
+            directory.chmod(0o755)
+            for name, mode in MODES.items():
+                path = directory / name
+                path.write_bytes(b"old-synthetic")
+                path.chmod(mode)
+                replace_trusted_file(directory, name, expected=b"old-synthetic",
+                                     replacement=b"new-synthetic", trusted_uid=os.geteuid())
+                self.assertEqual(path.read_bytes(), b"new-synthetic")
+                self.assertEqual(path.stat().st_mode & 0o777, mode)
+                with self.assertRaises(RebindDenied):
+                    replace_trusted_file(directory, name, expected=b"old-synthetic",
+                                         replacement=b"bad", trusted_uid=os.geteuid())
+                self.assertEqual(path.read_bytes(), b"new-synthetic")
+
+    def test_refuses_untrusted_directory_links_and_foreign_stage(self):
+        with tempfile.TemporaryDirectory(prefix="h454-unit-synthetic-") as temp:
+            directory = Path(temp)
+            directory.chmod(0o755)
+            name = "private-relay.json"
+            target = directory / name
+            target.write_bytes(b"original")
+            target.chmod(0o444)
+            pending = directory / (".h454-paired-" + name + ".pending")
+            pending.write_bytes(b"preserve")
+            with self.assertRaises(RebindDenied):
+                replace_trusted_file(directory, name, expected=b"original",
+                                     replacement=b"new", trusted_uid=os.geteuid())
+            self.assertEqual(pending.read_bytes(), b"preserve")
+            pending.unlink()
+            directory.chmod(0o777)
+            with self.assertRaises(RebindDenied):
+                replace_trusted_file(directory, name, expected=b"original",
+                                     replacement=b"new", trusted_uid=os.geteuid())
+            directory.chmod(0o755)
+            target.unlink()
+            other = directory / "outside"
+            other.write_bytes(b"outside")
+            target.symlink_to(other)
+            with self.assertRaises(RebindDenied):
+                replace_trusted_file(directory, name, expected=b"outside",
+                                     replacement=b"new", trusted_uid=os.geteuid())
+            self.assertEqual(other.read_bytes(), b"outside")
+
+
+@unittest.skipUnless(os.name == "posix" and hasattr(os, "O_NOFOLLOW"),
+                     "trust/unit journal requires Linux-style descriptor operations")
+class SystemdJournalTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix="h454-unit-journal-synthetic-")
+        self.addCleanup(self.temp.cleanup)
+        root = Path(self.temp.name)
+        self.units, self.trust, self.journal = root / "units", root / "trust", root / "journal"
+        self.units.mkdir(mode=0o755)
+        self.trust.mkdir(mode=0o755)
+        self.journal.mkdir(mode=0o700)
+        self.directories = {"trust": self.trust, "preflight": self.units, "active": self.units}
+        self.snapshots = {}
+        for key, name in systemd_tx.FILES.items():
+            old, new = ("old-" + key).encode(), ("new-" + key).encode()
+            path = self.directories[key] / name
+            path.write_bytes(old)
+            path.chmod(MODES[name])
+            self.snapshots[key] = (old, new)
+        self.uid = os.geteuid()
+
+    def assert_old(self):
+        for key, name in systemd_tx.FILES.items():
+            self.assertEqual((self.directories[key] / name).read_bytes(), self.snapshots[key][0])
+
+    def test_switch_and_restore_all_exact_files_without_replay(self):
+        systemd_tx.prepare(self.journal, self.snapshots, trusted_uid=self.uid)
+        systemd_tx.switch(self.directories, self.journal, trusted_uid=self.uid)
+        for key, name in systemd_tx.FILES.items():
+            self.assertEqual((self.directories[key] / name).read_bytes(), self.snapshots[key][1])
+        systemd_tx.recover(self.directories, self.journal, trusted_uid=self.uid)
+        self.assert_old()
+        with self.assertRaises(RebindDenied):
+            systemd_tx.switch(self.directories, self.journal, trusted_uid=self.uid)
+        self.assert_old()
+
+    def test_interrupted_switch_restores_every_known_file(self):
+        systemd_tx.prepare(self.journal, self.snapshots, trusted_uid=self.uid)
+        real = systemd_tx.replace_trusted_file
+        count = []
+
+        def fail_after_second(*args, **kwargs):
+            real(*args, **kwargs)
+            count.append(1)
+            if len(count) == 2:
+                raise OSError("synthetic interruption")
+
+        with patch.object(systemd_tx, "replace_trusted_file", side_effect=fail_after_second):
+            with self.assertRaises(RebindDenied):
+                systemd_tx.switch(self.directories, self.journal, trusted_uid=self.uid)
+        systemd_tx.recover(self.directories, self.journal, trusted_uid=self.uid)
+        self.assert_old()
+
+    def test_interruptions_after_first_and_last_file_also_restore(self):
+        for cutoff in (1, 3):
+            with self.subTest(cutoff=cutoff), tempfile.TemporaryDirectory(
+                    prefix="h454-unit-interrupt-") as temp:
+                root = Path(temp)
+                units, trust, journal = root / "units", root / "trust", root / "journal"
+                units.mkdir(mode=0o755)
+                trust.mkdir(mode=0o755)
+                journal.mkdir(mode=0o700)
+                directories = {"trust": trust, "preflight": units, "active": units}
+                for key, name in systemd_tx.FILES.items():
+                    path = directories[key] / name
+                    path.write_bytes(self.snapshots[key][0])
+                    path.chmod(MODES[name])
+                systemd_tx.prepare(journal, self.snapshots, trusted_uid=self.uid)
+                real, count = systemd_tx.replace_trusted_file, []
+
+                def interrupt(*args, **kwargs):
+                    real(*args, **kwargs)
+                    count.append(1)
+                    if len(count) == cutoff:
+                        raise OSError("synthetic interruption")
+
+                with patch.object(systemd_tx, "replace_trusted_file", side_effect=interrupt):
+                    with self.assertRaises(RebindDenied):
+                        systemd_tx.switch(directories, journal, trusted_uid=self.uid)
+                systemd_tx.recover(directories, journal, trusted_uid=self.uid)
+                for key, name in systemd_tx.FILES.items():
+                    self.assertEqual((directories[key] / name).read_bytes(), self.snapshots[key][0])
+
+    def test_foreign_file_or_pending_stage_is_preserved_and_blocks_recovery(self):
+        systemd_tx.prepare(self.journal, self.snapshots, trusted_uid=self.uid)
+        target = self.trust / systemd_tx.FILES["trust"]
+        target.chmod(0o644)
+        target.write_bytes(b"foreign")
+        target.chmod(0o444)
+        with self.assertRaises(RebindDenied):
+            systemd_tx.recover(self.directories, self.journal, trusted_uid=self.uid)
+        self.assertEqual(target.read_bytes(), b"foreign")
+        target.chmod(0o644)
+        target.write_bytes(self.snapshots["trust"][0])
+        target.chmod(0o444)
+        pending = self.units / (".h454-paired-" + systemd_tx.FILES["active"] + ".pending")
+        pending.write_bytes(b"preserve")
+        with self.assertRaises(RebindDenied):
+            systemd_tx.recover(self.directories, self.journal, trusted_uid=self.uid)
+        self.assertEqual(pending.read_bytes(), b"preserve")
 
 
 if __name__ == "__main__":
