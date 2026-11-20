@@ -27,7 +27,7 @@ BASE = Path("/opt/hermes-commander-native")
 UNIT_DIRS = {"trust": BASE / "trust", "preflight": Path("/etc/systemd/system"),
              "active": Path("/etc/systemd/system")}
 LOCK = Path("/run/lock/h454-native-private-version-upgrade.lock")
-PHASES = frozenset({"RECHECK", "RECEIPT", "UNIT_JOURNAL", "FREEZE", "STATE_JOURNAL",
+PHASES = frozenset({"STAGE", "RECHECK", "RECEIPT", "UNIT_JOURNAL", "FREEZE", "STATE_JOURNAL",
                     "STATE_SWITCH", "UNIT_SWITCH", "RELOAD", "VERIFY", "THAW", "RECEIPT_FINISH"})
 
 
@@ -364,7 +364,11 @@ def operate(mode: str) -> str:
         raise RebindDenied()
     with host_lock():
         if mode == "install-off":
-            apply_staged(staging.stage())
+            try:
+                plan = staging.stage()
+            except Exception:
+                raise ApplyHold("STAGE") from None
+            apply_staged(plan)
             return "INSTALLED_DISABLED_PAIRED"
         if mode == "recover-off":
             recover_frozen()

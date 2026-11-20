@@ -88,8 +88,12 @@ def main(argv: list[str]) -> int:
             status = operator.operate(mode)
         print("H454_PAIRED_UPGRADE=" + status)
         return 0
-    except Exception:
-        print("H454_PAIRED_UPGRADE=HOLD")
+    except Exception as exc:
+        phase = getattr(exc, "phase", None)
+        allowed = {"STAGE", "RECHECK", "RECEIPT", "UNIT_JOURNAL", "FREEZE", "STATE_JOURNAL",
+                   "STATE_SWITCH", "UNIT_SWITCH", "RELOAD", "VERIFY", "THAW", "RECEIPT_FINISH"}
+        suffix = " FAILED_STAGE=" + phase if type(phase) is str and phase in allowed else ""
+        print("H454_PAIRED_UPGRADE=HOLD" + suffix)
         return 2
 
 

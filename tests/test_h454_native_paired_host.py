@@ -45,6 +45,12 @@ class PairedHostAdmissionTests(unittest.TestCase):
             self.assertEqual(events, ["lock", "stage", "plan", "unlock"])
             with self.assertRaises(RebindDenied):
                 apply_tx.operate("unexpected")
+        with patch.object(apply_tx, "host_lock", locked), \
+             patch.object(staging, "stage", side_effect=ValueError("private detail")):
+            with self.assertRaises(apply_tx.ApplyHold) as error:
+                apply_tx.operate("install-off")
+            self.assertEqual(error.exception.phase, "STAGE")
+            self.assertNotIn("private detail", str(error.exception))
 
     def test_frozen_recovery_thaws_only_after_old_state_and_units_verify(self):
         trust, ca, unit = b"old-trust", b"old-ca", b"old-unit"

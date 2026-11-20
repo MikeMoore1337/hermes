@@ -70,7 +70,11 @@ class host:
     def inspect(): pass
 @contextmanager
 def host_lock(): yield
-def operate(mode): return 'SYNTHETIC_' + mode.upper()
+class Failure(Exception):
+    phase = 'UNIT_SWITCH'
+def operate(mode):
+    if mode == 'recover-off': raise Failure('synthetic private detail')
+    return 'SYNTHETIC_' + mode.upper()
 """
         with tempfile.TemporaryDirectory() as temp:
             archive = Path(temp) / "source.zip"
@@ -87,13 +91,14 @@ launcher.socket.gethostname = lambda: 'vps1777112993'
 launcher.verified_archive = lambda release, digest, owner: sys.argv[2]
 raise SystemExit(launcher.main([sys.argv[3], 'a' * 40, 'b' * 64]))
 """
-            for mode, expected in (("plan", "PLAN_PASS_NO_MUTATION"),
-                                   ("install-off", "SYNTHETIC_INSTALL-OFF")):
+            for mode, expected, rc in (("plan", "PLAN_PASS_NO_MUTATION", 0),
+                                       ("install-off", "SYNTHETIC_INSTALL-OFF", 0),
+                                       ("recover-off", "HOLD FAILED_STAGE=UNIT_SWITCH", 2)):
                 with self.subTest(mode=mode):
                     result = subprocess.run([sys.executable, "-I", "-S", "-B", "-c", harness,
                                              str(Path(launcher.__file__)), str(archive), mode],
                                             capture_output=True, text=True, timeout=10, check=False)
-                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(result.returncode, rc, result.stderr)
                     self.assertEqual(result.stdout.strip(), "H454_PAIRED_UPGRADE=" + expected)
 
 
