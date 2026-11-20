@@ -17,6 +17,7 @@ from scripts import h454_native_paired_state as state_tx
 from scripts import h454_native_paired_freeze as freeze_tx
 from scripts.h454_native_paired_systemd import MODES, replace_trusted_file
 from scripts import h454_native_paired_systemd as systemd_tx
+from scripts import h454_native_paired_source as source_stage
 from scripts.h454_native_linux_runtime import SCHEMA as DEVICE_SCHEMA
 
 OLD = "a" * 40
@@ -547,6 +548,47 @@ class SystemdJournalTests(unittest.TestCase):
         with self.assertRaises(RebindDenied):
             systemd_tx.recover(self.directories, self.journal, trusted_uid=self.uid)
         self.assertEqual(pending.read_bytes(), b"preserve")
+
+
+@unittest.skipUnless(os.name == "posix" and hasattr(os, "O_NOFOLLOW"),
+                     "source staging requires Linux-style descriptor operations")
+class SourceStageTests(unittest.TestCase):
+    def test_stages_only_verified_exact_members_without_overwrite(self):
+        sources = {name: ("synthetic:" + name).encode() for name in SOURCE_FILES}
+        bundle, receipt = build_bytes(target="hermes-vps", release_sha=NEW, sources=sources)
+        sha = hashlib.sha256(bundle).hexdigest()
+        with tempfile.TemporaryDirectory(prefix="h454-source-synthetic-") as temp:
+            root = Path(temp)
+            root.chmod(0o755)
+            source_stage.stage(root, bundle, receipt, release=NEW,
+                               bundle_sha256=sha, trusted_uid=os.geteuid())
+            leaf = root / ("main-" + NEW)
+            for name, expected in sources.items():
+                path = leaf / name
+                self.assertEqual(path.read_bytes(), expected)
+                self.assertEqual(path.stat().st_mode & 0o777, 0o444)
+            self.assertEqual(len([p for p in leaf.rglob("*") if p.is_file()]), len(SOURCE_FILES))
+            with self.assertRaises(RebindDenied):
+                source_stage.stage(root, bundle, receipt, release=NEW,
+                                   bundle_sha256=sha, trusted_uid=os.geteuid())
+            self.assertEqual((leaf / "scripts/h454_native_linux_service.py").read_bytes(),
+                             sources["scripts/h454_native_linux_service.py"])
+
+    def test_untrusted_bundle_and_writable_parent_create_no_release(self):
+        sources = {name: b"synthetic" for name in SOURCE_FILES}
+        bundle, receipt = build_bytes(target="hermes-vps", release_sha=NEW, sources=sources)
+        sha = hashlib.sha256(bundle).hexdigest()
+        with tempfile.TemporaryDirectory(prefix="h454-source-synthetic-") as temp:
+            root = Path(temp)
+            with self.assertRaises(RebindDenied):
+                source_stage.stage(root, bundle + b"x", receipt, release=NEW,
+                                   bundle_sha256=sha, trusted_uid=os.geteuid())
+            self.assertFalse((root / ("main-" + NEW)).exists())
+            root.chmod(0o777)
+            with self.assertRaises(RebindDenied):
+                source_stage.stage(root, bundle, receipt, release=NEW,
+                                   bundle_sha256=sha, trusted_uid=os.geteuid())
+            self.assertFalse((root / ("main-" + NEW)).exists())
 
 
 if __name__ == "__main__":
