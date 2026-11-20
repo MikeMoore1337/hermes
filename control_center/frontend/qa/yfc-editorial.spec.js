@@ -27,7 +27,7 @@ function popupHtml({incomplete=false,invalidMatrix=false}={}){
   invalidMatrix?{...full,claim_source_matrix:[{...full.claim_source_matrix[0],source_ids:["unknown"]}]}:full;
  return `<!doctype html><html lang="ru"><meta charset="utf-8"><title>Root YFC</title>
  <body><h1>Подтвердить доступ YFC</h1>
- <button id="grant">Разрешить просмотр черновиков</button>
+ <button id="grant" hidden>Разрешить просмотр черновиков</button>
  <button id="publish" hidden>Подтверждаю публикацию в YFC</button>
  <script>
  const PROTOCOL=${JSON.stringify(PROTOCOL)};
@@ -39,7 +39,7 @@ function popupHtml({incomplete=false,invalidMatrix=false}={}){
   if(e.source!==opener||e.origin!=="http://127.0.0.1:9133"||
      !e.data||e.data.protocol!==PROTOCOL)return;
   const m=e.data;
-  if(m.kind==="hello"){nonce=m.nonce;return;}
+  if(m.kind==="hello"){nonce=m.nonce;document.querySelector("#grant").hidden=false;return;}
   if(!confirmed||m.nonce!==nonce||m.kind!=="request")return;
   if(m.action==="publish"){
    pending=m;
