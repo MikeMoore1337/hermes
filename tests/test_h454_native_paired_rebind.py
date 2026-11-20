@@ -5,7 +5,10 @@ import unittest
 from unittest.mock import patch
 
 from device_fabric.native_install_preview import SCHEMA, SERVICE
-from scripts.h454_native_paired_rebind import RebindDenied, rebind, rebind_trust, recover_device
+from scripts.h454_native_paired_rebind import (
+    RebindDenied, build_transition, rebind, rebind_trust, recover_device,
+)
+from scripts.h454_native_readonly_bundle import SOURCE_FILES, build_bytes
 from scripts.h454_native_linux_runtime import SCHEMA as DEVICE_SCHEMA
 
 OLD = "a" * 40
@@ -35,6 +38,34 @@ def snapshots():
 
 
 class PairedRebindTests(unittest.TestCase):
+    def test_transition_requires_exact_bundle_and_preserves_paired_identity(self):
+        manifest, device = snapshots()
+        ca = b"-----BEGIN CERTIFICATE-----\nsynthetic\n-----END CERTIFICATE-----\n"
+        trust = encode({"schema": "h454-private-relay-v1", "target": "hermes-vps",
+                        "release_sha": OLD, "relay_ipv4": "172.29.251.2",
+                        "ca_sha256": hashlib.sha256(ca).hexdigest(),
+                        "server_name": "brc-agent.internal", "port": 3001})
+        bundle, receipt = build_bytes(target="hermes-vps", release_sha=NEW,
+                                      sources={name: b"synthetic" for name in SOURCE_FILES})
+        bundle_sha = hashlib.sha256(bundle).hexdigest()
+        with patch("scripts.h454_native_paired_rebind.private_tls._context"):
+            transition = build_transition(manifest, device, trust, ca, bundle, receipt,
+                                          old_release=OLD, new_release=NEW,
+                                          expected_bundle_sha256=bundle_sha)
+            self.assertEqual(json.loads(transition.device)["token"], TOKEN)
+            self.assertEqual(json.loads(transition.device)["device_id"], DEVICE)
+            self.assertEqual(json.loads(transition.trust)["relay_ipv4"], "172.29.251.2")
+            self.assertIn(("--release-sha " + NEW).encode(), transition.active_unit)
+            self.assertIn(b"IPAddressDeny=any\n", transition.active_unit)
+            self.assertNotIn(TOKEN, repr(transition))
+            for bad_bundle, bad_receipt, expected in ((bundle, receipt, "0" * 64),
+                                                       (bundle + b"x", receipt, bundle_sha),
+                                                       (bundle, receipt + b"x", bundle_sha)):
+                with self.assertRaises(RebindDenied):
+                    build_transition(manifest, device, trust, ca, bad_bundle, bad_receipt,
+                                     old_release=OLD, new_release=NEW,
+                                     expected_bundle_sha256=expected)
+
     def test_private_trust_rebind_preserves_exact_ca_and_relay(self):
         ca = b"-----BEGIN CERTIFICATE-----\nsynthetic\n-----END CERTIFICATE-----\n"
         old = {"schema": "h454-private-relay-v1", "target": "hermes-vps",

@@ -10,6 +10,9 @@ from device_fabric.native_brc_enrollment import IDENTITY, TOKEN
 from device_fabric.native_install_preview import parse_candidate
 from device_fabric import native_private_tls as private_tls
 from scripts.h454_native_linux_runtime import _parse_config, _unique
+from scripts.h454_native_linux_active_unit import render_active_unit
+from scripts.h454_native_linux_unit_candidate import render_preflight_unit
+from scripts.h454_native_readonly_bundle import verify_bytes
 
 
 class RebindDenied(ValueError):
@@ -23,6 +26,18 @@ class Rebound:
 
     def __repr__(self) -> str:
         return "Rebound([REDACTED])"
+
+
+@dataclass(frozen=True, repr=False, slots=True)
+class Transition:
+    manifest: bytes
+    device: bytes
+    trust: bytes
+    active_unit: bytes
+    preflight_unit: bytes
+
+    def __repr__(self) -> str:
+        return "Transition([REDACTED])"
 
 
 def _canonical(value: object) -> bytes:
@@ -131,5 +146,29 @@ def recover_device(device: bytes, old_manifest: bytes, new_manifest: bytes, *,
             or TOKEN.fullmatch(current.token) is None):
             raise RebindDenied()
         return device
+    except Exception:
+        raise RebindDenied("native_paired_rebind_denied") from None
+
+
+def build_transition(manifest: bytes, device: bytes, trust: bytes, ca: bytes,
+                     bundle: bytes, receipt: bytes, *, old_release: str,
+                     new_release: str, expected_bundle_sha256: str) -> Transition:
+    """Build a validated paired transition in memory; never install or start it."""
+    try:
+        verified = verify_bytes(bundle, receipt, target="hermes-vps", release_sha=new_release)
+        if verified["bundle_sha256"] != expected_bundle_sha256:
+            raise RebindDenied()
+        paired = rebind(manifest, device, old_release=old_release,
+                        new_release=new_release, bundle_sha256=expected_bundle_sha256)
+        new_trust = rebind_trust(trust, ca, old_release=old_release,
+                                 new_release=new_release)
+        relay = json.loads(new_trust)["relay_ipv4"]
+        digest = hashlib.sha256(paired.manifest).hexdigest()
+        common = {"target": "hermes-vps", "release_sha": new_release,
+                  "manifest_sha256": digest}
+        active = render_active_unit(paired.manifest, **common, relay_ipv4=relay,
+                                    dns_ipv4="", private_relay=True).encode("ascii")
+        preflight = render_preflight_unit(paired.manifest, **common).encode("ascii")
+        return Transition(paired.manifest, paired.device, new_trust, active, preflight)
     except Exception:
         raise RebindDenied("native_paired_rebind_denied") from None
