@@ -96,6 +96,25 @@ class TrustLoading(unittest.TestCase):
                 ws(direct.ENDPOINT,**dict(options,additional_headers={'Authorization':'Bearer '+TOKEN}))
             connection.assert_called_once()
 
+    def test_handshake_timeout_is_distinct_from_bad_certificate(self):
+        config=direct.PrivateRelay('hermes-vps',RELEASE,'172.29.251.2',b'fake-ca')
+        options={'additional_headers':{'Authorization':'Bearer '+TOKEN,'X-BRC-Protocol':'1'},
+                 'open_timeout':10,'close_timeout':3,'compression':None,'proxy':None,
+                 'max_size':8192,'ping_interval':20,'ping_timeout':20}
+        for error, expected in ((TimeoutError('private detail'), TimeoutError),
+                                (ssl.SSLCertVerificationError('private detail'), direct.PrivateTLSDenied)):
+            with self.subTest(error=type(error).__name__):
+                closed=[]
+                raw=type('S',(),{'close':lambda self:closed.append(True)})()
+                def underlying(*_args, **_kwargs):
+                    raise error
+                with (patch.object(direct.socket,'create_connection',return_value=raw),
+                      patch.object(direct,'_context',return_value=object())):
+                    with self.assertRaises(expected) as caught:
+                        direct.private_websocket_connector(config,underlying)(direct.ENDPOINT,**options)
+                self.assertEqual(closed,[True])
+                self.assertNotIn('private detail',str(caught.exception))
+
 
     def test_render_private_hermes_unit_blocks_all_public_egress(self):
         manifest = json.dumps({

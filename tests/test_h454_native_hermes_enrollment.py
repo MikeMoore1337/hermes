@@ -48,16 +48,36 @@ class OriginalHermesNativeEnrollmentTests(unittest.TestCase):
         # The existing deploy runner creates a root-owned 0755 release,
         # then chmod -R a-w makes it 0555. No owner-host permission changes.
         checkout = Path(op.__file__).resolve().parents[1]
+        native = checkout / "tests" / "fixtures" / "installed-native-release"
+        pinned = checkout / "tests" / "fixtures" / "h454-native-private-tls-30db.py.txt"
+        def read(path, **_kwargs):
+            if path == native / "device_fabric/native_private_tls.py":
+                return pinned.read_bytes()
+            return path.read_bytes()
         with mock.patch.object(op, "SOURCE", checkout), \
-             mock.patch.object(op, "NATIVE", checkout), \
+             mock.patch.object(op, "NATIVE", native), \
              mock.patch.object(op, "_dir") as directory, \
-             mock.patch.object(op, "_read",
-                               side_effect=lambda path, **kwargs: path.read_bytes()):
+             mock.patch.object(op, "_read", side_effect=read):
             op._source_gate()
         self.assertEqual(directory.call_args_list, [
             mock.call(checkout, owner=0, mode=0o555),
-            mock.call(checkout, owner=0, mode=0o755),
+            mock.call(native, owner=0, mode=0o755),
         ])
+
+    def test_installed_native_tls_drift_is_rejected(self):
+        checkout = Path(op.__file__).resolve().parents[1]
+        native = checkout / "tests" / "fixtures" / "installed-native-release"
+        pinned = checkout / "tests" / "fixtures" / "h454-native-private-tls-30db.py.txt"
+        def read(path, **_kwargs):
+            if path == native / "device_fabric/native_private_tls.py":
+                return pinned.read_bytes() + b"\n# drift"
+            return path.read_bytes()
+        with mock.patch.object(op, "SOURCE", checkout), \
+             mock.patch.object(op, "NATIVE", native), \
+             mock.patch.object(op, "_dir"), \
+             mock.patch.object(op, "_read", side_effect=read), \
+             self.assertRaisesRegex(op.EnrollmentHold, "NATIVE_PRIVATE_SOURCE_DRIFT"):
+            op._source_gate()
 
     def test_old_enrollment_client_is_rejected_by_source_pin(self):
         checkout = Path(op.__file__).resolve().parents[1]
