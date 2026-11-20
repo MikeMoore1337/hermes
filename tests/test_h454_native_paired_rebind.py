@@ -2,9 +2,10 @@
 import hashlib
 import json
 import unittest
+from unittest.mock import patch
 
 from device_fabric.native_install_preview import SCHEMA, SERVICE
-from scripts.h454_native_paired_rebind import RebindDenied, rebind
+from scripts.h454_native_paired_rebind import RebindDenied, rebind, rebind_trust
 from scripts.h454_native_linux_runtime import SCHEMA as DEVICE_SCHEMA
 
 OLD = "a" * 40
@@ -34,6 +35,25 @@ def snapshots():
 
 
 class PairedRebindTests(unittest.TestCase):
+    def test_private_trust_rebind_preserves_exact_ca_and_relay(self):
+        ca = b"-----BEGIN CERTIFICATE-----\nsynthetic\n-----END CERTIFICATE-----\n"
+        old = {"schema": "h454-private-relay-v1", "target": "hermes-vps",
+               "release_sha": OLD, "relay_ipv4": "172.29.251.2",
+               "ca_sha256": hashlib.sha256(ca).hexdigest(),
+               "server_name": "brc-agent.internal", "port": 3001}
+        with patch("scripts.h454_native_paired_rebind.private_tls._context") as verify:
+            result = rebind_trust(encode(old), ca, old_release=OLD, new_release=NEW)
+            self.assertEqual(json.loads(result), {**old, "release_sha": NEW})
+            verify.assert_called_once_with(ca)
+            for changes in ({"relay_ipv4": "8.8.8.8"}, {"port": 443},
+                            {"target": "yfc-vps"}, {"ca_sha256": "0" * 64},
+                            {"server_name": "foreign.invalid"}):
+                with self.subTest(changes=changes), self.assertRaises(RebindDenied):
+                    rebind_trust(encode({**old, **changes}), ca,
+                                 old_release=OLD, new_release=NEW)
+            with self.assertRaises(RebindDenied):
+                rebind_trust(encode(old) + b"\n", ca, old_release=OLD, new_release=NEW)
+
     def test_preserves_bearer_identity_and_scope_across_release(self):
         manifest, device = snapshots()
         result = rebind(manifest, device, old_release=OLD, new_release=NEW,

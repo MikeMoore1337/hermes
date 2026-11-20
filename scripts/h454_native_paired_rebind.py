@@ -8,7 +8,8 @@ import re
 
 from device_fabric.native_brc_enrollment import IDENTITY, TOKEN
 from device_fabric.native_install_preview import parse_candidate
-from scripts.h454_native_linux_runtime import _parse_config
+from device_fabric import native_private_tls as private_tls
+from scripts.h454_native_linux_runtime import _parse_config, _unique
 
 
 class RebindDenied(ValueError):
@@ -63,5 +64,37 @@ def rebind(manifest: bytes, device: bytes, *, old_release: str,
         if updated != original:
             raise RebindDenied()
         return Rebound(new_manifest, new_device)
+    except Exception:
+        raise RebindDenied("native_paired_rebind_denied") from None
+
+
+def rebind_trust(raw: bytes, ca: bytes, *, old_release: str, new_release: str) -> bytes:
+    """Rebind validated private TLS trust without changing the relay or CA."""
+    try:
+        if (type(raw) is not bytes or not 0 < len(raw) <= 2048
+            or type(ca) is not bytes or not 0 < len(ca) <= private_tls.CA_MAX_BYTES
+            or type(old_release) is not str or type(new_release) is not str
+            or re.fullmatch(r"[0-9a-f]{40}", old_release) is None
+            or re.fullmatch(r"[0-9a-f]{40}", new_release) is None
+            or old_release == new_release or "0" * 40 in (old_release, new_release)):
+            raise RebindDenied()
+        info = json.loads(raw.decode("ascii"), object_pairs_hook=_unique,
+                          parse_constant=lambda _: (_ for _ in ()).throw(ValueError()))
+        if (type(info) is not dict or _canonical(info) != raw or set(info) != {
+            "schema", "target", "release_sha", "relay_ipv4", "ca_sha256",
+            "server_name", "port",
+        } or info["schema"] != "h454-private-relay-v1"
+            or info["target"] != "hermes-vps" or info["release_sha"] != old_release
+            or info["server_name"] != private_tls.HOST
+            or type(info["port"]) is not int or info["port"] != private_tls.PORT
+            or not private_tls._private_ip(info["relay_ipv4"])
+            or info["ca_sha256"] != hashlib.sha256(ca).hexdigest()
+            or not ca.startswith(b"-----BEGIN CERTIFICATE-----")
+            or not ca.rstrip().endswith(b"-----END CERTIFICATE-----")
+            or ca.count(b"-----BEGIN CERTIFICATE-----") != 1):
+            raise RebindDenied()
+        private_tls._context(ca)
+        info["release_sha"] = new_release
+        return _canonical(info)
     except Exception:
         raise RebindDenied("native_paired_rebind_denied") from None
