@@ -101,7 +101,8 @@ def _kernel_evidence(status: str, cgroup: str, invocation: str,
         return False
 
 
-def _properties_are_hardened(text: str, *, private_relay_ip: str | None = None) -> bool:
+def _properties_are_hardened(text: str, *, private_relay_ip: str | None = None,
+                             git_roots: tuple[str, ...] = ()) -> bool:
     try:
         if type(text) is not str or not 0 < len(text) <= 16384:
             return False
@@ -112,6 +113,13 @@ def _properties_are_hardened(text: str, *, private_relay_ip: str | None = None) 
                 return False
             values[key] = value
         if any(values.get(k) != v for k, v in EXPECTED_HARDENING.items()):
+            return False
+        if (type(git_roots) is not tuple or len(git_roots) > 5
+            or any(type(root) is not str or not root.startswith("/")
+                   or ".." in root.split("/") for root in git_roots)):
+            return False
+        masks = values.get("InaccessiblePaths", "").split()
+        if any("-" + root + "/.git" not in masks for root in git_roots):
             return False
         deny = values.get("IPAddressDeny", "").split()
         if deny != ["any"] and not (
@@ -184,7 +192,8 @@ def _pinned_websocket_dependency(release_sha: str) -> bool:
         return False
 
 
-def real_os_isolation_verified(*, private_relay_ip: str | None = None) -> bool:
+def real_os_isolation_verified(*, private_relay_ip: str | None = None,
+                               git_roots: tuple[str, ...] = ()) -> bool:
     """Every call rechecks actual process capabilities and manager policy."""
     try:
         if sys.platform != "linux" or os.name != "posix":
@@ -200,7 +209,7 @@ def real_os_isolation_verified(*, private_relay_ip: str | None = None) -> bool:
         ):
             return False
         keys = [*EXPECTED_HARDENING, "IPAddressDeny",
-                "IPAddressAllow", "CapabilityBoundingSet"]
+                "IPAddressAllow", "CapabilityBoundingSet", "InaccessiblePaths"]
         command = ["/usr/bin/systemctl", "show", UNIT, "--no-pager",
                    "--property=" + ",".join(keys)]
         proc = subprocess.run(
@@ -211,8 +220,21 @@ def real_os_isolation_verified(*, private_relay_ip: str | None = None) -> bool:
         )
         if proc.returncode != 0 or len(proc.stdout) > 16384:
             return False
-        return _properties_are_hardened(proc.stdout.decode("ascii"),
-                                        private_relay_ip=private_relay_ip)
+        if not _properties_are_hardened(proc.stdout.decode("ascii"),
+                                        private_relay_ip=private_relay_ip,
+                                        git_roots=git_roots):
+            return False
+        for root in git_roots:
+            git = Path(root) / ".git"
+            try:
+                git.lstat()
+            except FileNotFoundError:
+                continue
+            except OSError:
+                return False
+            if os.access(git, os.R_OK) or os.access(git, os.X_OK):
+                return False
+        return True
     except Exception:
         return False
 
@@ -237,13 +259,15 @@ def run_trusted_once(*, target: str, release_sha: str,
         _deny()
     try:
         private = None
+        git_roots: tuple[str, ...] = ()
+        enforce_git_mask = connector is None and os_gate is None
         if connector is None:
             # CLI production path is always private, even if the public
             # BRC endpoint appears to work. Never allow an implicit fallback.
             private = load_private_relay(target, release_sha)
             if os_gate is None:
                 os_gate = lambda: real_os_isolation_verified(
-                    private_relay_ip=private.relay_ipv4)
+                    private_relay_ip=private.relay_ipv4, git_roots=git_roots)
             if status_factory is not revoked_provider:
                 _deny()
             status_factory = lambda **kwargs: private_revoked_provider(
@@ -259,6 +283,10 @@ def run_trusted_once(*, target: str, release_sha: str,
             manifest_path=Path(MANIFEST_PATH),
             config_path=Path(CONFIG_PATH),
         )
+        if enforce_git_mask:
+            git_roots = tuple(root for _, root in prepared.project_roots)
+            if not git_roots:
+                _deny()
         if os_gate() is not True:
             _deny()
         revoked = status_factory(
@@ -278,7 +306,8 @@ def run_trusted_once(*, target: str, release_sha: str,
         if os_gate() is not True:
             _deny()
         return run_once(
-            prepared, connector=connector, is_device_revoked=revoked,
+            prepared, connector=connector,
+            is_device_revoked=lambda: os_gate() is not True or revoked() is not False,
             is_os_isolation_verified=os_gate,
         )
     except Exception:

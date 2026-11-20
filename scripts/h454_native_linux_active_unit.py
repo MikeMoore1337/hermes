@@ -163,6 +163,7 @@ def render_active_unit(
             *((("ReadOnlyPaths=" + str(TRUST),)) if private_relay else ()),
         ]
         lines.extend("ReadOnlyPaths=" + root for _, root in candidate.roots)
+        lines.extend("InaccessiblePaths=-" + root + "/.git" for _, root in candidate.roots)
         lines.extend([
             "StandardOutput=journal",
             "StandardError=journal",
