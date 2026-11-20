@@ -15,16 +15,16 @@ from scripts.h454_native_linux_wheel import verify_bytes as verify_wheel
 from scripts.h454_native_paired_rebind import RebindDenied, Transition, build_transition, verified_sources
 from scripts.h454_native_private_versioned_upgrade import checked_file, owned_directory, raw_show
 
-OLD = "30db4fbab46626985b078d574dbe0b839872840e"
-NEW = "f95bc75678334233a5b6a5cb6136a048d1f5e299"
-BUNDLE_SHA = "f655da2fde877f52f8bae8b709670de510f51280b66a706f1ed3b9c3c512e359"
+OLD = "f95bc75678334233a5b6a5cb6136a048d1f5e299"
+NEW = "9181c49b3095cca64c8f49b641e1689cc987e7ee"
+BUNDLE_SHA = "46b59d4f25a70981beb8d9582728d3d0c435cea7377e7f96aceb264f03a89e38"
 WHEEL_SHA = "6aa59f0ef92e796b2db6f5f26550c4713c0e4036899fadf02f55e2ed4db0b7ae"
-MANIFEST_SHA = "8af5e283ae473a3ef94a83908253a5bc47e64ef82a95be6cb38bf834cb0b9747"
-TRUST_SHA = "7ed257d75ca61649fd139657466d95d8358eb5c295eeacd14ae991188ff2f595"
+MANIFEST_SHA = "cd3f3711472f7f5d56ce022657aefd7d3a6ca9b5c9bb694b3658ff0e418ed2a3"
+TRUST_SHA = "7c2b0e6304ff37f9baf03c4f2304ada70d99dc535402f3f87c9a4be1dc4dc925"
 CA_SHA = "014868af3edc97e04c58099746964bde1d65d2f38c931360e27a8f309b8c0f7c"
 UNIT_SHA = {
-    "hermes-commander-native.service": "75a681a6c6157acc3356513483b886f81097f958ef94d5d816a6eaf9c7ac4390",
-    "hermes-commander-native-preflight.service": "2478a19c69e807bb93c5f99e4958862403a920bf98dec04c558add390972ce68",
+    "hermes-commander-native.service": "09ec8f8d8120b8e94dba4c3e256a890ff7af3a7325d96802db5280127eb8a99c",
+    "hermes-commander-native-preflight.service": "8a6d2e53ece6add51929c5cc2ed815bb87b91d7a59a51cef2f0d9216e86872ad",
 }
 OLD_BLOBS = {
     "device_fabric/__init__.py": "b0a593a1351215ce4f3c05b805faeb34bef0161a",
@@ -32,14 +32,14 @@ OLD_BLOBS = {
     "device_fabric/linux_native_outbound.py": "fac78190b4cba0a8ff1d5bf12523ade7ea833564",
     "device_fabric/linux_native_read_dispatch.py": "91f918828820dad2ce9d862a459b7e9999458707",
     "device_fabric/linux_native_search.py": "21347322c0b278cd312f80e2c7cbf4dcc2c74d89",
-    "device_fabric/native_brc_enrollment.py": "6f17835d5a67869e2fdc1dbcbcb2bc373b0372ec",
+    "device_fabric/native_brc_enrollment.py": "6ceffd491306026360e3355c1939586cd61df88c",
     "device_fabric/native_brc_status.py": "53576289893181f46b3b720dbd2e913de08caece",
     "device_fabric/native_effect_grants.py": "732470da527cfc07a2474486a8929752e76242dc",
     "device_fabric/native_install_preview.py": "72b1e8661bb170db81412203f29deea40fddf56e",
     "device_fabric/native_private_tls.py": "9d2fe1fd5d98b791a00cb57799b49d9582ae9849",
     "scripts/h454_native_install_preflight.py": "c0d7d7cc880ee39926cbcf92df818f22e7461598",
     "scripts/h454_native_linux_runtime.py": "b6e4383e8746d473fda745e351b02323c2bfb8b2",
-    "scripts/h454_native_linux_service.py": "c375effa28aaa6721ef36597694d8bc829043453",
+    "scripts/h454_native_linux_service.py": "38f826c773e180ada6075de67e28e48241380c0d",
     "scripts/h454_native_linux_unit_candidate.py": "6cc64e431f580ed84c69d44d24ce5700daa7cdc1",
 }
 
