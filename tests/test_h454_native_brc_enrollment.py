@@ -37,6 +37,28 @@ def grant(target):
 
 
 class NativePairingProtocol(unittest.TestCase):
+    def test_hermes_relay_url_is_accepted_but_other_origins_are_denied(self):
+        one = pairing.start("hermes-vps", post=lambda *_: (200, enc(pending())))
+        relay_url = "wss://mcp.mikemoore.top/ws"
+        response = {**grant("hermes-vps"), "ws_url": relay_url}
+        requests = []
+
+        def post(path, body):
+            requests.append((path, json.loads(body)))
+            return 200, enc(response)
+
+        paired = pairing.poll(one, post=post, expected_ws_url=relay_url)
+        self.assertEqual(paired.ws_url, relay_url)
+        self.assertEqual(len(requests), 1)
+        self.assertNotIn("device_id", requests[0][1])
+
+        for bad_url in ("wss://evil.example/ws", relay_url + "?x=1",
+                        "wss://mcp.mikemoore.top:443/ws"):
+            with self.subTest(url=bad_url), self.assertRaises(pairing.EnrollmentDenied):
+                pairing.poll(one, post=post, expected_ws_url=bad_url)
+        with self.assertRaises(pairing.EnrollmentDenied):
+            pairing.poll(one, post=post, expected_ws_url="wss://hermes.mikemoore.top/ws")
+
     def test_real_device_code_protocol_with_owner_bound_new_id_all_three(self):
         for target in TARGETS:
             with self.subTest(target=target):

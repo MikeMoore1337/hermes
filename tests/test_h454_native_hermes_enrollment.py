@@ -437,6 +437,43 @@ class OriginalHermesNativeEnrollmentTests(unittest.TestCase):
                          ["/usr/bin/systemctl", "is-active",
                           "hermes-commander-native.service"])
 
+    def test_real_pairing_client_accepts_operator_relay_origin(self):
+        manifest_sha = "f" * 64
+        report = {"status": "H454_HERMES_NATIVE_ENROLL_PLAN_PASS",
+                  "manifest_sha256": manifest_sha}
+        service = SimpleNamespace(pw_uid=972, pw_gid=968)
+        candidate = SimpleNamespace(roots=(("hermes", "/synthetic"),))
+        calls = []
+
+        def post(path, body):
+            calls.append((path, json.loads(body)))
+            if path == "/device/start":
+                return 200, json.dumps({
+                    "device_code": "a" * 48, "user_code": "ABCD-2345",
+                    "verification_uri": "https://example.test/verify",
+                    "verification_uri_complete": "https://example.test/verify",
+                    "expires_in": 900, "interval": 3,
+                }).encode()
+            return 200, json.dumps({
+                "device_id": "h454-linux-hermes-" + "a" * 32,
+                "device_token": "brc_dev_" + "z" * 64,
+                "token_type": "bearer", "ws_url": op.ENROLLMENT_WS_URL,
+            }).encode()
+
+        with mock.patch.object(op, "plan", return_value=report), \
+             mock.patch.object(op, "_tty_confirm"), \
+             mock.patch.object(op, "_service_gate", return_value=(service, candidate, manifest_sha)), \
+             mock.patch.object(op, "_docker_post", side_effect=post), \
+             mock.patch.object(op, "_approve_pending"), \
+             mock.patch.object(op, "_parse_config"), \
+             mock.patch.object(op, "_write_device") as write, \
+             mock.patch.object(op.subprocess, "run", return_value=SimpleNamespace(stdout=b"inactive\n")):
+            result = op.enroll()
+        self.assertTrue(result["device_paired"])
+        self.assertEqual([path for path, _ in calls], ["/device/start", "/device/poll"])
+        self.assertNotIn("device_id", calls[1][1])
+        self.assertEqual(json.loads(write.call_args.args[3])["url"], op.NATIVE_WS_URL)
+
     def test_host_drift_blocks_before_creating_device_code(self):
         first = {"status": "H454_HERMES_NATIVE_ENROLL_PLAN_PASS",
                  "manifest_sha256": "a" * 64}

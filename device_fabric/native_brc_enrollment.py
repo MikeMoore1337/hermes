@@ -132,7 +132,7 @@ def _verified_ws_uri(value: str) -> bool:
         if parsed.path != "/ws" or parsed.query or parsed.fragment or parsed.username:
             return False
         if parsed.scheme == "wss":
-            return parsed.netloc == "hermes.mikemoore.top" and parsed.port is None
+            return parsed.netloc in ("hermes.mikemoore.top", "mcp.mikemoore.top") and parsed.port is None
         if parsed.scheme == "ws" and parsed.hostname == "127.0.0.1":
             return parsed.port is not None and 1024 <= parsed.port <= 65535 and (
                 parsed.netloc == "127.0.0.1:" + str(parsed.port))

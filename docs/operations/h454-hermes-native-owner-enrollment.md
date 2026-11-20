@@ -200,6 +200,21 @@ blob and repeat `plan` only after code review and exact-head CI.
 New pairing/credential creation needs an independent explicit owner
 approval; none is implied by this fix or earlier attempt.
 
+## TOKEN_POLL hold after owner-approved attempt
+
+The subsequent original-host attempt reached `TOKEN_POLL` and stopped before
+issuing a bearer: the pinned enrollment client rejected the exact BRC WSS URL
+before calling `/device/poll`. A read-only in-memory reproduction confirmed
+zero POSTs, and a separate read-only database count observed one approved code
+and no target device. Do not retry or remove this record automatically.
+
+The enrollment client now accepts the exact BRC hostname as well as the
+existing native hostname, while still requiring an exact returned URL match.
+The installed immutable owner source and this operator remain pinned to the
+older client. This source change alone does not fix the installed operator:
+an independently approved production source release and a reviewed operator
+repin are required before another separately approved pairing attempt.
+
 ## Current acceptance
 
 - Python local/mock tests: exact-head CI required for post-HOLD fix.
