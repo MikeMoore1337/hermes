@@ -98,3 +98,38 @@ def rebind_trust(raw: bytes, ca: bytes, *, old_release: str, new_release: str) -
         return _canonical(info)
     except Exception:
         raise RebindDenied("native_paired_rebind_denied") from None
+
+
+def recover_device(device: bytes, old_manifest: bytes, new_manifest: bytes, *,
+                   old_release: str, new_release: str) -> bytes:
+    """Recover an old device config from either complete release-bound version.
+
+    The caller must authenticate both manifests and the current device
+    fingerprint, and protect the returned bearer. This never reads or writes disk.
+    """
+    try:
+        old = parse_candidate(old_manifest, expected_release=old_release,
+                              expected_target="hermes-vps")
+        new = parse_candidate(new_manifest, expected_release=new_release,
+                              expected_target="hermes-vps")
+        old_data, new_data = json.loads(old_manifest), json.loads(new_manifest)
+        expected_new = dict(old_data, release_sha=new_release,
+                            artifact_sha256=new_data["artifact_sha256"])
+        if (_canonical(expected_new) != new_manifest or old_release == new_release
+            or old.roots != new.roots or old.service_identity != new.service_identity):
+            raise RebindDenied()
+        try:
+            current = _parse_config(device, old)
+        except Exception:
+            restored = rebind(new_manifest, device, old_release=new_release,
+                              new_release=old_release,
+                              bundle_sha256=old_data["artifact_sha256"])
+            if restored.manifest != old_manifest:
+                raise RebindDenied()
+            return restored.device
+        if (IDENTITY["hermes-vps"].fullmatch(current.device_id) is None
+            or TOKEN.fullmatch(current.token) is None):
+            raise RebindDenied()
+        return device
+    except Exception:
+        raise RebindDenied("native_paired_rebind_denied") from None

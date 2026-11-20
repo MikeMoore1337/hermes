@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import patch
 
 from device_fabric.native_install_preview import SCHEMA, SERVICE
-from scripts.h454_native_paired_rebind import RebindDenied, rebind, rebind_trust
+from scripts.h454_native_paired_rebind import RebindDenied, rebind, rebind_trust, recover_device
 from scripts.h454_native_linux_runtime import SCHEMA as DEVICE_SCHEMA
 
 OLD = "a" * 40
@@ -89,6 +89,25 @@ class PairedRebindTests(unittest.TestCase):
                                  (OLD, NEW, "bad"), (OLD, NEW, "0" * 64)):
             with self.assertRaises(RebindDenied):
                 rebind(manifest, device, old_release=old, new_release=new, bundle_sha256=bundle)
+
+    def test_recover_device_from_either_version_without_a_token_backup(self):
+        old_manifest, old_device = snapshots()
+        new = rebind(old_manifest, old_device, old_release=OLD, new_release=NEW,
+                     bundle_sha256="e" * 64)
+        for device in (old_device, new.device):
+            with self.subTest(version=json.loads(device)["release_sha"]):
+                self.assertEqual(recover_device(device, old_manifest, new.manifest,
+                                                old_release=OLD, new_release=NEW), old_device)
+        corrupt = json.loads(new.device)
+        corrupt["roots"] = [{"project": "hermes", "path": "/etc"}]
+        with self.assertRaises(RebindDenied):
+            recover_device(encode(corrupt), old_manifest, new.manifest,
+                           old_release=OLD, new_release=NEW)
+        changed_manifest = json.loads(new.manifest)
+        changed_manifest["roots"] = [{"project": "hermes", "path": "/etc"}]
+        with self.assertRaises(RebindDenied):
+            recover_device(new.device, old_manifest, encode(changed_manifest),
+                           old_release=OLD, new_release=NEW)
 
 
 if __name__ == "__main__":
