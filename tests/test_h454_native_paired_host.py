@@ -342,7 +342,8 @@ class PairedTransactionIntegrationTests(unittest.TestCase):
                 with self.assertRaises(RebindDenied):
                     operation()
             return
-        for scenario in ("completed", "unit_interrupted", "receipt_interrupted"):
+        for scenario in ("completed", "freeze_interrupted", "state_interrupted", "unit_interrupted",
+                         "reload_interrupted", "verify_interrupted", "thaw_interrupted", "receipt_interrupted"):
             with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as temp, ExitStack() as stack:
                 root = Path(temp)
                 base, state, units = root / "base", root / "state", root / "units"
@@ -383,12 +384,40 @@ class PairedTransactionIntegrationTests(unittest.TestCase):
                     stack.enter_context(patch.object(apply_tx, name))
                 stack.enter_context(patch.object(host, "_check_unit"))
                 stack.enter_context(patch.object(apply_tx, "load_private_relay", return_value=SimpleNamespace(relay_ipv4="127.0.0.1")))
-                if scenario == "unit_interrupted":
-                    real = apply_tx.systemd_tx.replace_trusted_file
+                if scenario in ("state_interrupted", "unit_interrupted", "thaw_interrupted"):
+                    module, operation = {
+                        "state_interrupted": (apply_tx.state_tx, "replace_frozen_state"),
+                        "unit_interrupted": (apply_tx.systemd_tx, "replace_trusted_file"),
+                        "thaw_interrupted": (apply_tx.freeze, "restore_owner"),
+                    }[scenario]
+                    real = getattr(module, operation)
                     def fail_after_replace(*args, **kwargs):
                         real(*args, **kwargs)
                         raise OSError("synthetic interruption")
-                    with patch.object(apply_tx.systemd_tx, "replace_trusted_file", side_effect=fail_after_replace):
+                    with patch.object(module, operation, side_effect=fail_after_replace):
+                        with self.assertRaises(apply_tx.ApplyHold):
+                            apply_tx.apply_staged(plan)
+                    if scenario == "thaw_interrupted":
+                        self.assertEqual(state.stat().st_uid, 65534)
+                        apply_tx.rollback_disabled()
+                    else:
+                        self.assertEqual(state.stat().st_uid, 0)
+                        apply_tx.recover_frozen()
+                elif scenario == "freeze_interrupted":
+                    real = apply_tx.freeze._create
+                    def fail_after_chown(fd, name, data):
+                        if name == "frozen":
+                            raise OSError("synthetic interruption")
+                        return real(fd, name, data)
+                    with patch.object(apply_tx.freeze, "_create", side_effect=fail_after_chown):
+                        with self.assertRaises(apply_tx.ApplyHold):
+                            apply_tx.apply_staged(plan)
+                    self.assertEqual(state.stat().st_uid, 0)
+                    apply_tx.recover_frozen()
+                elif scenario in ("reload_interrupted", "verify_interrupted"):
+                    module, operation = ((apply_tx, "_reload") if scenario == "reload_interrupted"
+                                         else (apply_tx.state_tx, "verify_new"))
+                    with patch.object(module, operation, side_effect=OSError("synthetic interruption")):
                         with self.assertRaises(apply_tx.ApplyHold):
                             apply_tx.apply_staged(plan)
                     self.assertEqual(state.stat().st_uid, 0)
