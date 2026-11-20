@@ -1,12 +1,16 @@
 """Synthetic credential-preserving release rebinding; no host or network."""
 import hashlib
 import json
+import os
+from pathlib import Path
+import tempfile
 import unittest
 from unittest.mock import patch
 
 from device_fabric.native_install_preview import SCHEMA, SERVICE
 from scripts.h454_native_paired_rebind import (
     RebindDenied, build_transition, rebind, rebind_trust, recover_device,
+    replace_frozen_state,
 )
 from scripts.h454_native_readonly_bundle import SOURCE_FILES, build_bytes
 from scripts.h454_native_linux_runtime import SCHEMA as DEVICE_SCHEMA
@@ -139,6 +143,70 @@ class PairedRebindTests(unittest.TestCase):
         with self.assertRaises(RebindDenied):
             recover_device(new.device, old_manifest, encode(changed_manifest),
                            old_release=OLD, new_release=NEW)
+
+
+@unittest.skipUnless(os.name == "posix" and hasattr(os, "O_NOFOLLOW"),
+                     "frozen state requires Linux-style descriptor operations")
+class FrozenStateTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix="h454-paired-synthetic-")
+        self.addCleanup(self.temp.cleanup)
+        self.directory = Path(self.temp.name)
+        self.directory.chmod(0o700)
+        self.file = self.directory / "device.json"
+        self.file.write_bytes(b"old-synthetic")
+        self.file.chmod(0o600)
+
+    def replace(self, expected=b"old-synthetic", replacement=b"new-synthetic"):
+        replace_frozen_state(self.directory, "device.json", expected=expected,
+                             replacement=replacement, trusted_uid=os.geteuid())
+
+    def test_replaces_only_expected_regular_file_and_preserves_private_mode(self):
+        before = self.file.stat()
+        self.replace()
+        after = self.file.stat()
+        self.assertEqual(self.file.read_bytes(), b"new-synthetic")
+        self.assertEqual(after.st_mode & 0o777, 0o600)
+        self.assertEqual((after.st_uid, after.st_gid, after.st_nlink),
+                         (before.st_uid, before.st_gid, 1))
+        self.assertFalse((self.directory / ".h454-paired-device.json.pending").exists())
+
+    def test_refuses_drift_existing_stage_symlink_and_unfrozen_directory(self):
+        with self.assertRaises(RebindDenied):
+            self.replace(expected=b"wrong")
+        self.assertEqual(self.file.read_bytes(), b"old-synthetic")
+        pending = self.directory / ".h454-paired-device.json.pending"
+        pending.write_bytes(b"retain")
+        with self.assertRaises(RebindDenied):
+            self.replace()
+        self.assertEqual(pending.read_bytes(), b"retain")
+        pending.unlink()
+        self.directory.chmod(0o755)
+        with self.assertRaises(RebindDenied):
+            self.replace()
+        self.directory.chmod(0o700)
+        self.file.unlink()
+        outside = self.directory / "outside"
+        outside.write_bytes(b"protected")
+        self.file.symlink_to(outside)
+        with self.assertRaises(RebindDenied):
+            self.replace()
+        self.assertEqual(outside.read_bytes(), b"protected")
+
+    def test_mid_switch_drift_keeps_current_and_staged_files(self):
+        real_stat = os.stat
+
+        def drift(name, *args, **kwargs):
+            if name == "device.json" and kwargs.get("dir_fd") is not None:
+                self.file.write_bytes(b"concurrent-change")
+            return real_stat(name, *args, **kwargs)
+
+        with patch("scripts.h454_native_paired_rebind.os.stat", side_effect=drift):
+            with self.assertRaises(RebindDenied):
+                self.replace()
+        self.assertEqual(self.file.read_bytes(), b"concurrent-change")
+        self.assertEqual((self.directory / ".h454-paired-device.json.pending").read_bytes(),
+                         b"new-synthetic")
 
 
 if __name__ == "__main__":

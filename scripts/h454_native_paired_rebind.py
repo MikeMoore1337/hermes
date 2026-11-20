@@ -4,7 +4,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 import json
+import os
 import re
+import stat
+from pathlib import Path
 
 from device_fabric.native_brc_enrollment import IDENTITY, TOKEN
 from device_fabric.native_install_preview import parse_candidate
@@ -172,3 +175,68 @@ def build_transition(manifest: bytes, device: bytes, trust: bytes, ca: bytes,
         return Transition(paired.manifest, paired.device, new_trust, active, preflight)
     except Exception:
         raise RebindDenied("native_paired_rebind_denied") from None
+
+
+def replace_frozen_state(directory: Path, name: str, *, expected: bytes,
+                         replacement: bytes, trusted_uid: int) -> None:
+    """Replace one checked state file while its private directory is frozen.
+
+    The host operator must stop the service, exclude other service-UID
+    processes, verify parent directories, freeze this directory under root,
+    and journal recovery first.
+    A staged file is retained on failure for explicit reconciliation.
+    """
+    dfd = fd = None
+    try:
+        if (name not in ("manifest.json", "device.json") or not directory.is_absolute()
+            or type(expected) is not bytes or not 0 < len(expected) <= 8192
+            or type(replacement) is not bytes or not 0 < len(replacement) <= 8192
+            or type(trusted_uid) is not int or trusted_uid != os.geteuid()):
+            raise RebindDenied()
+        dfd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        parent = os.fstat(dfd)
+        if parent.st_uid != trusted_uid or stat.S_IMODE(parent.st_mode) != 0o700:
+            raise RebindDenied()
+        fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=dfd)
+        before = os.fstat(fd)
+        data = os.read(fd, 8193)
+        if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
+            or stat.S_IMODE(before.st_mode) != 0o600 or data != expected):
+            raise RebindDenied()
+        os.close(fd)
+        fd = None
+        staged = ".h454-paired-" + name + ".pending"
+        fd = os.open(staged, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                     0o600, dir_fd=dfd)
+        os.fchown(fd, before.st_uid, before.st_gid)
+        os.fchmod(fd, 0o600)
+        view = memoryview(replacement)
+        while view:
+            n = os.write(fd, view)
+            if n <= 0:
+                raise RebindDenied()
+            view = view[n:]
+        os.fsync(fd)
+        os.close(fd)
+        fd = None
+        current = os.stat(name, dir_fd=dfd, follow_symlinks=False)
+        if (current.st_dev, current.st_ino, current.st_size, current.st_ctime_ns) != (
+            before.st_dev, before.st_ino, before.st_size, before.st_ctime_ns
+        ):
+            raise RebindDenied()
+        os.replace(staged, name, src_dir_fd=dfd, dst_dir_fd=dfd)
+        os.fsync(dfd)
+        fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=dfd)
+        after = os.fstat(fd)
+        if (not stat.S_ISREG(after.st_mode) or after.st_nlink != 1
+            or stat.S_IMODE(after.st_mode) != 0o600
+            or (after.st_uid, after.st_gid) != (before.st_uid, before.st_gid)
+            or os.read(fd, 8193) != replacement):
+            raise RebindDenied()
+    except Exception:
+        raise RebindDenied("native_paired_rebind_denied") from None
+    finally:
+        if fd is not None:
+            os.close(fd)
+        if dfd is not None:
+            os.close(dfd)
