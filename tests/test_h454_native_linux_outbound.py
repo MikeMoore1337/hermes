@@ -9,6 +9,7 @@ import base64
 import hashlib
 import json
 import platform
+import ssl
 import sys
 import tempfile
 import unittest
@@ -18,6 +19,7 @@ from unittest.mock import patch
 from device_fabric.linux_native_files import LinuxNativeFiles
 from device_fabric.linux_native_read_dispatch import LinuxOriginalReadDispatcher
 from device_fabric import linux_native_outbound as native
+from device_fabric import native_private_tls as tls
 
 
 DEVICE = "h454-linux-hermes-" + "a" * 32
@@ -294,6 +296,47 @@ class NativeLinuxOutboundRealKernelTests(unittest.TestCase):
             native.run_session(config(), self.broker, conn)
         self.assertEqual(len(conn.calls), 1)
         self.assertTrue(conn.socket.closed)
+
+    def test_connect_timeout_is_bounded_and_never_dispatches(self):
+        calls = []
+        def timeout(*args, **kwargs):
+            calls.append(1)
+            raise TimeoutError("synthetic private detail")
+        with patch.object(self.broker, "call") as dispatch:
+            result = native.run_session(config(), self.broker, timeout)
+        self.assertEqual(result, "transport_timeout")
+        self.assertEqual(len(calls), 1)
+        dispatch.assert_not_called()
+
+    def test_private_tls_handshake_timeout_reaches_session_recovery(self):
+        device = native.local_config(target="hermes-vps", device_id=DEVICE,
+                                     token="brc_dev_" + "x" * 64)
+        private = tls.PrivateRelay("hermes-vps", "a" * 40, "172.29.251.2", b"ca")
+        def handshake(*_args, **_kwargs):
+            raise TimeoutError("synthetic private detail")
+        raw = type("S", (), {"close": lambda self: None})()
+        with (patch.object(tls.socket, "create_connection", return_value=raw),
+              patch.object(tls, "_context", return_value=object()),
+              patch.object(self.broker, "call") as dispatch):
+            result = native.run_session(device, self.broker,
+                                        tls.private_websocket_connector(private, handshake))
+        self.assertEqual(result, "transport_timeout")
+        dispatch.assert_not_called()
+
+    def test_private_tls_bad_certificate_stays_fatal(self):
+        device = native.local_config(target="hermes-vps", device_id=DEVICE,
+                                     token="brc_dev_" + "x" * 64)
+        private = tls.PrivateRelay("hermes-vps", "a" * 40, "172.29.251.2", b"ca")
+        def bad_certificate(*_args, **_kwargs):
+            raise ssl.SSLCertVerificationError("synthetic private detail")
+        raw = type("S", (), {"close": lambda self: None})()
+        with (patch.object(tls.socket, "create_connection", return_value=raw),
+              patch.object(tls, "_context", return_value=object()),
+              patch.object(self.broker, "call") as dispatch):
+            with self.assertRaises(native.LinuxOutboundDenied):
+                native.run_session(device, self.broker,
+                                   tls.private_websocket_connector(private, bad_certificate))
+        dispatch.assert_not_called()
 
     def test_unknown_write_process_and_foreign_scope_never_invoked(self):
         messages = [

@@ -234,6 +234,9 @@ def private_websocket_connector(config: PrivateRelay, underlying: Callable) -> C
                 WS_URI, sock=raw, ssl=_context(config.ca),
                 server_hostname=HOST, **kwargs,
             )
+        except TimeoutError:
+            raw.close()
+            raise TimeoutError('native_transport_timeout') from None
         except Exception:
             raw.close()
             raise PrivateTLSDenied('h454_private_tls_denied') from None

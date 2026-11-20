@@ -267,16 +267,19 @@ def run_session(config: LocalLinuxDeviceConfig,
     processed = 0
     deadline = monotonic() + MAX_SESSION_SECONDS
     try:
-        conn = connector(
-            config.url,
-            additional_headers={
-                "Authorization": "Bearer " + config.token,
-                "X-BRC-Protocol": str(WIRE_PROTOCOL),
-            },
-            open_timeout=10, close_timeout=3,
-            compression=None, proxy=None, max_size=MAX_INBOUND,
-            ping_interval=20, ping_timeout=20,
-        )
+        try:
+            conn = connector(
+                config.url,
+                additional_headers={
+                    "Authorization": "Bearer " + config.token,
+                    "X-BRC-Protocol": str(WIRE_PROTOCOL),
+                },
+                open_timeout=10, close_timeout=3,
+                compression=None, proxy=None, max_size=MAX_INBOUND,
+                ping_interval=20, ping_timeout=20,
+            )
+        except TimeoutError:
+            return "transport_timeout"
         with conn as ws:
             ws.send(json.dumps(hello(config), separators=(",", ":")))
             for _ in range(MAX_MESSAGES):
