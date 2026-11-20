@@ -200,12 +200,28 @@ blob and repeat `plan` only after code review and exact-head CI.
 New pairing/credential creation needs an independent explicit owner
 approval; none is implied by this fix or earlier attempt.
 
+## TOKEN_POLL hold after owner-approved attempt
+
+The subsequent original-host attempt reached `TOKEN_POLL` and stopped before
+issuing a bearer: the pinned enrollment client rejected the exact BRC WSS URL
+before calling `/device/poll`. A read-only in-memory reproduction confirmed
+zero POSTs, and a separate read-only database count observed one approved code
+and no target device. Do not retry or remove this record automatically.
+
+The enrollment client now accepts the exact BRC hostname as well as the
+existing native hostname, while still requiring an exact returned URL match.
+The operator now pins the corrected client blob but still names the old
+immutable owner release, so it refuses that old source. This change alone does
+not fix the installed operator: an independently approved production source
+release and a reviewed operator release-SHA repin are required before another
+separately approved pairing attempt.
+
 ## Current acceptance
 
 - Python local/mock tests: exact-head CI required for post-HOLD fix.
-- Original Hermes owner-root: old `_909.py plan` **PASS**,
-  owner-pairing attempt **HOLD**; revised operator `plan` NOT_RUN.
-- Owner-paired device: NOT_RUN; no credential issued/stored.
+- Original Hermes owner-root: `_910.py plan` **PASS**; the one approved
+  pairing attempt **HOLD** at `TOKEN_POLL`.
+- Owner-paired device: not created; no credential issued/stored by this attempt.
 - Native first start / bearer status and revocation: NOT_RUN.
 - YFC and Windows native installation/activation: NOT_RUN.
 - ChatGPT+Codex 2-client x 3-original-host READ E2E: NOT_RUN.

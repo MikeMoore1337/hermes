@@ -73,7 +73,7 @@ NATIVE = Path("/opt/hermes-commander-native/releases/main-" + RELEASE)
 TMP_NAME = ".h454-hermes-enrollment.pending"
 MAX_CONFIG = 8192
 SOURCE_BLOBS = {
-    "device_fabric/native_brc_enrollment.py": "6f17835d5a67869e2fdc1dbcbcb2bc373b0372ec",
+    "device_fabric/native_brc_enrollment.py": "6ceffd491306026360e3355c1939586cd61df88c",
     "device_fabric/native_install_preview.py": "72b1e8661bb170db81412203f29deea40fddf56e",
     "scripts/h454_native_linux_runtime.py": "b6e4383e8746d473fda745e351b02323c2bfb8b2",
     "scripts/h454_native_owner_pair.py": "dce81b9f97dc03e71ec1a5f7ad1cfddc9bc57423",
