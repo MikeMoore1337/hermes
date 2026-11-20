@@ -87,6 +87,8 @@ class RealLinuxUnitRenderTests(unittest.TestCase):
                 self.assertIn("--run-once --target "+target, text)
                 self.assertIn("--manifest-sha256 ", text)
                 self.assertIn("Restart=on-success", text)
+                self.assertIn("RestartSec=5s", text)
+                self.assertIn("StartLimitBurst=3", text)
                 self.assertIn("RuntimeMaxSec=300s", text)
                 self.assertIn("[Install]\nWantedBy=multi-user.target", text)
                 self.assertNotIn("ExecStartPre=/bin/sh", text)

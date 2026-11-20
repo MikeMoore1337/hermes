@@ -286,7 +286,10 @@ def run_session(config: LocalLinuxDeviceConfig,
                 try:
                     raw = ws.recv(timeout=min(MAX_PING_INTERVAL, remaining))
                 except TimeoutError:
-                    return "idle_timeout"
+                    if not welcome:
+                        return "idle_timeout"
+                    # Relay heartbeats can arrive after this receive timeout.
+                    continue
                 msg = decode_message(raw)
                 typ = msg["type"]
                 if typ == "welcome":
@@ -321,7 +324,7 @@ def run_session(config: LocalLinuxDeviceConfig,
                     try:
                         out = dispatcher.call(frame)
                         # Dispatcher already verified native adapter result.
-                        serialized = _result_frame(msg_id, out["result"])
+                        serialized = _result_frame(msg_id, out)
                     except NativeLinuxReadDenied:
                         serialized = _result_frame(msg_id, {}, refused=True)
                     ws.send(serialized)

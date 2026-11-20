@@ -352,10 +352,12 @@ class NativeLinuxRuntimeIntegration(unittest.TestCase):
             prepared, connector=connector,
             is_device_revoked=lambda: False,
             is_os_isolation_verified=lambda: True)
-        self.assertEqual(out, "idle_timeout")
+        self.assertEqual(out, "session_message_budget")
         self.assertEqual([m["type"] for m in ws.sent], ["hello", "result"])
         text = json.loads(ws.sent[-1]["result"]["content"][0]["text"])
-        self.assertEqual(base64.b64decode(text["data"]),
+        self.assertEqual((text["status"], text["tool"], text["id"]),
+                         ("ok", "native_file_read", "read-one"))
+        self.assertEqual(base64.b64decode(text["result"]["data"]),
                          b"# Hermes\nTODO native\n")
         self.assertNotIn(TOKEN, str(ws.sent))
         self.assertNotIn(str(self.root), str(ws.sent))

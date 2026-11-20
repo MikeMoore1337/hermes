@@ -62,6 +62,8 @@ class FakeSocket:
         if not self.incoming:
             raise TimeoutError
         item = self.incoming.pop(0)
+        if isinstance(item, TimeoutError):
+            raise item
         return json.dumps(item, ensure_ascii=True) if type(item) is dict else item
 
     def send(self, message):
@@ -221,7 +223,7 @@ class NativeLinuxOutboundRealKernelTests(unittest.TestCase):
             call("native_file_search", "search-1", query="todo"),
         ]
         reason, client = self.run_messages(messages)
-        self.assertEqual(reason, "idle_timeout")
+        self.assertEqual(reason, "session_message_budget")
         self.assertTrue(client.socket.closed)
         self.assertEqual(
             [x["type"] for x in client.socket.outgoing],
@@ -238,14 +240,32 @@ class NativeLinuxOutboundRealKernelTests(unittest.TestCase):
         self.assertEqual(options["max_size"], native.MAX_INBOUND)
         body = json.loads(
             client.socket.outgoing[2]["result"]["content"][0]["text"])
-        data = base64.b64decode(body["data"], validate=True)
+        self.assertEqual(set(body), {"status", "tool", "id", "result"})
+        self.assertEqual((body["status"], body["tool"], body["id"]),
+                         ("ok", "native_file_read", "call-one"))
+        data = base64.b64decode(body["result"]["data"], validate=True)
         self.assertEqual(data, b"# Hermes\nTODO smoke\n")
-        self.assertEqual(body["sha256"], hashlib.sha256(data).hexdigest())
+        self.assertEqual(body["result"]["sha256"], hashlib.sha256(data).hexdigest())
         searched = json.loads(
             client.socket.outgoing[-1]["result"]["content"][0]["text"])
-        self.assertEqual(searched["matches"], [{"path":"README.md","line":2}])
+        self.assertEqual(searched["result"]["matches"], [{"path":"README.md","line":2}])
         self.assertNotIn(TOKEN, str(client.socket.outgoing))
         self.assertNotIn(str(self.root), str(client.socket.outgoing))
+
+    def test_idle_wait_survives_until_relay_heartbeat(self):
+        times = iter((0, 1, 16, 17, 18, 241))
+        reason, client = self.run_messages(
+            [welcome(), TimeoutError(), {"type": "ping", "ts": 1794250000000}, call()],
+            monotonic=lambda: next(times))
+        self.assertEqual(reason, "session_deadline")
+        self.assertEqual([m["type"] for m in client.socket.outgoing],
+                         ["hello", "pong", "result"])
+        self.assertEqual(len(client.calls), 1)
+
+    def test_timeout_before_welcome_ends_session(self):
+        reason, client = self.run_messages([TimeoutError(), welcome(), call()])
+        self.assertEqual(reason, "idle_timeout")
+        self.assertEqual([m["type"] for m in client.socket.outgoing], ["hello"])
 
     def test_no_processing_call_before_authenticated_welcome(self):
         conn = FakeConnector([call()])
@@ -372,7 +392,7 @@ class NativeLinuxOutboundRealKernelTests(unittest.TestCase):
     def test_no_process_or_network_side_effect_from_local_dispatch(self):
         with patch("subprocess.Popen", side_effect=AssertionError("shell forbidden")):
             reason, conn = self.run_messages([welcome(), call("native_file_stat")])
-        self.assertEqual(reason, "idle_timeout")
+        self.assertEqual(reason, "session_message_budget")
         self.assertEqual(len(conn.calls), 1)
 
 
