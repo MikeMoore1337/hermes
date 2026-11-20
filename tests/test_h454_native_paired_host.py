@@ -5,6 +5,7 @@ from pathlib import Path
 import hashlib
 import os
 import stat
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -24,6 +25,30 @@ def properties(*, active="failed"):
 
 
 class PairedHostAdmissionTests(unittest.TestCase):
+    @unittest.skipUnless(os.name == "posix", "Linux staged-tree admission only")
+    def test_staged_tree_checks_empty_files_and_rejects_extra_or_symlink(self):
+        with tempfile.TemporaryDirectory(prefix="h454-tree-synthetic-") as temp, \
+             patch.object(host, "owned_directory"):
+            root = Path(temp)
+            (root / "pkg").mkdir(mode=0o755)
+            (root / "pkg").chmod(0o755)
+            files = {"pkg/empty": b"", "pkg/source.py": b"synthetic"}
+            for name, data in files.items():
+                path = root / name
+                path.write_bytes(data)
+                path.chmod(0o444)
+            host._verified_tree(root, files, trusted_uid=os.geteuid())
+            extra = root / "pkg/extra"
+            extra.write_bytes(b"foreign")
+            with self.assertRaises(RebindDenied):
+                host._verified_tree(root, files, trusted_uid=os.geteuid())
+            extra.unlink()
+            target = root / "pkg/source.py"
+            target.unlink()
+            target.symlink_to(root / "pkg/empty")
+            with self.assertRaises(RebindDenied):
+                host._verified_tree(root, files, trusted_uid=os.geteuid())
+
     def test_failed_disabled_service_with_complete_deny_is_inert(self):
         with patch.object(host, "raw_show", return_value=properties()), \
              patch.object(host.subprocess, "run", return_value=SimpleNamespace(

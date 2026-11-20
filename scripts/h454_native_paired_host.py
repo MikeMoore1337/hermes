@@ -4,14 +4,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import socket
 import stat
 import subprocess
 
 from device_fabric.native_private_tls import load_private_relay
+from scripts.h454_native_linux_wheel import RECEIPT as WHEEL_RECEIPT, _receipt as wheel_receipt
 from scripts.h454_native_linux_wheel import verify_bytes as verify_wheel
-from scripts.h454_native_paired_rebind import RebindDenied, Transition, build_transition
+from scripts.h454_native_paired_rebind import RebindDenied, Transition, build_transition, verified_sources
 from scripts.h454_native_private_versioned_upgrade import checked_file, owned_directory, raw_show
 
 OLD = "30db4fbab46626985b078d574dbe0b839872840e"
@@ -100,14 +101,59 @@ def _check_unit(name: str, relay_ip: str) -> None:
             raise RebindDenied()
 
 
-def inspect() -> HostPlan:
+def _exact_file(path: Path, before: os.stat_result, expected: bytes) -> bool:
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    try:
+        opened = os.fstat(fd)
+        data = os.read(fd, len(expected) + 1)
+        after = os.fstat(fd)
+        fields = ("st_dev", "st_ino", "st_size", "st_ctime_ns", "st_mode", "st_uid")
+        return data == expected and all(
+            getattr(before, key) == getattr(opened, key) == getattr(after, key)
+            for key in fields
+        )
+    finally:
+        os.close(fd)
+
+
+def _verified_tree(root: Path, files: dict[str, bytes], *, trusted_uid: int = 0) -> None:
+    if type(trusted_uid) is not int or trusted_uid != os.geteuid():
+        raise RebindDenied()
+    owned_directory(root, owner=trusted_uid, mode=0o755)
+    expected_dirs = set()
+    for name in files:
+        path = PurePosixPath(name)
+        if path.is_absolute() or any(p in ("", ".", "..") for p in path.parts):
+            raise RebindDenied()
+        for parent in path.parents:
+            if str(parent) != ".":
+                expected_dirs.add(parent.as_posix())
+    actual_files, actual_dirs = set(), set()
+    for path in root.rglob("*"):
+        rel = path.relative_to(root).as_posix()
+        info = path.lstat()
+        if stat.S_ISDIR(info.st_mode) and info.st_uid == trusted_uid and stat.S_IMODE(info.st_mode) == 0o755:
+            actual_dirs.add(rel)
+        elif (rel in files and stat.S_ISREG(info.st_mode) and info.st_uid == trusted_uid
+              and info.st_nlink == 1 and stat.S_IMODE(info.st_mode) == 0o444
+              and _exact_file(path, info, files[rel])):
+            actual_files.add(rel)
+        else:
+            raise RebindDenied()
+        if len(actual_files) > len(files) or len(actual_dirs) > len(expected_dirs):
+            raise RebindDenied()
+    if actual_files != set(files) or actual_dirs != expected_dirs:
+        raise RebindDenied()
+
+
+def inspect(*, staged: bool = False) -> HostPlan:
     """Read only: bind installed old files, staged source and paired identity.
 
     This admission does not stage, install, alter files, reload systemd, access
     the relay, or establish owner approval. It never returns data for logging.
     """
     try:
-        if os.geteuid() != 0 or socket.gethostname() != "vps1777112993":
+        if type(staged) is not bool or os.geteuid() != 0 or socket.gethostname() != "vps1777112993":
             raise RebindDenied()
         import pwd as passwd
         identity = passwd.getpwnam("hermes-commander-native")
@@ -177,11 +223,17 @@ def inspect() -> HostPlan:
         wheel = checked_file(wheel_path, 400000, private=True, modes={0o600})
         if _sha(wheel) != WHEEL_SHA:
             raise RebindDenied()
-        verify_wheel(wheel)
-        for target in (Path("/opt/hermes-commander-native/releases/main-" + NEW),
-                       Path("/opt/hermes-commander-native/deps/main-" + NEW)):
-            if target.exists() or target.is_symlink():
-                raise RebindDenied()
+        verified_wheel = verify_wheel(wheel)
+        source_target = base / "releases" / ("main-" + NEW)
+        deps_target = base / "deps" / ("main-" + NEW)
+        if staged:
+            sources = verified_sources(bundle, receipt, release=NEW, expected_bundle_sha256=BUNDLE_SHA)
+            _verified_tree(source_target, sources)
+            deps = dict(verified_wheel.files)
+            deps[WHEEL_RECEIPT] = wheel_receipt("hermes-vps", NEW, verified_wheel)
+            _verified_tree(deps_target, deps)
+        elif any(target.exists() or target.is_symlink() for target in (source_target, deps_target)):
+            raise RebindDenied()
         transition = build_transition(manifest, device, trust, ca, bundle, receipt,
                                       old_release=OLD, new_release=NEW,
                                       expected_bundle_sha256=BUNDLE_SHA)
