@@ -8,7 +8,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
@@ -273,6 +273,34 @@ class LiveWorkerLifecycleTests(unittest.TestCase):
         self.os_gate=Mock(return_value=True)
         self.status_factory=Mock(return_value=lambda:False)
 
+    def test_cli_uses_default_live_guards_before_connecting(self):
+        private = SimpleNamespace(relay_ipv4="172.29.251.2")
+        revoked = Mock(return_value=False)
+        ws = ModuleType("websockets")
+        ws.__path__ = []
+        sync = ModuleType("websockets.sync")
+        sync.__path__ = []
+        client = ModuleType("websockets.sync.client")
+        client.connect = Mock()
+        args = ["--run-once", "--target", TARGET, "--release-sha", RELEASE,
+                "--manifest-sha256", "d" * 64]
+        with patch.dict(sys.modules, {"websockets": ws, "websockets.sync": sync,
+                                     "websockets.sync.client": client}), \
+             patch.object(service, "load_private_relay", return_value=private), \
+             patch.object(service, "_service_identity"), \
+             patch.object(service, "real_os_isolation_verified", return_value=True) as gate, \
+             patch.object(service, "load_local_runtime", return_value=self.fake), \
+             patch.object(service, "private_revoked_provider", return_value=revoked), \
+             patch.object(service, "_pinned_websocket_dependency", return_value=True), \
+             patch.object(service, "private_websocket_connector", return_value=self.transport), \
+             patch.object(service, "run_once", return_value="session_deadline") as session:
+            self.assertEqual(service.main(args), 0)
+            self.assertGreaterEqual(gate.call_count, 3)
+            self.assertTrue(all(call.kwargs == {"private_relay_ip": private.relay_ipv4}
+                                for call in gate.call_args_list))
+            self.assertIs(session.call_args.kwargs["connector"], self.transport)
+            self.assertFalse(session.call_args.kwargs["is_device_revoked"]())
+
     def test_real_worker_composes_existing_native_wss_and_owner_revocation(self):
         with patch.object(service,"_service_identity"), \
              patch.object(service,"load_local_runtime",return_value=self.fake) as load, \
@@ -318,17 +346,27 @@ class LiveWorkerLifecycleTests(unittest.TestCase):
             "--release-sha",RELEASE,
             "--manifest-sha256","d"*64,
         ]
-        with patch.object(service,"real_os_isolation_verified",
-                          return_value=False), \
+        with patch.object(service,"load_private_relay",
+                          return_value=SimpleNamespace(relay_ipv4="172.29.251.2")), \
+             patch.object(service,"real_os_isolation_verified",
+                          return_value=False) as gate, \
              patch.object(service,"_service_identity"), \
              patch.object(service,"load_local_runtime") as load:
             self.assertEqual(service.main(args),2)
+            gate.assert_called_once_with(private_relay_ip="172.29.251.2")
             load.assert_not_called()
         with patch.object(service,"real_os_isolation_verified",
                           return_value=False):
             with self.assertRaises(SystemExit) as exc:
                 service.main(args+["--bypass-os"])
             self.assertEqual(exc.exception.code, 2)
+
+    def test_non_callable_explicit_os_gate_is_denied(self):
+        with patch.object(service, "load_private_relay") as load:
+            with self.assertRaises(service.NativeLinuxServiceDenied):
+                service.run_trusted_once(target=TARGET, release_sha=RELEASE,
+                                         manifest_sha256="d" * 64, os_gate=False)
+            load.assert_not_called()
 
 
 if __name__=="__main__":

@@ -232,7 +232,7 @@ def run_trusted_once(*, target: str, release_sha: str,
         or EXPECTED_SHA.fullmatch(release_sha) is None
         or type(manifest_sha256) is not str
         or EXPECTED_DIGEST.fullmatch(manifest_sha256) is None
-        or not callable(os_gate) or not callable(status_factory)
+        or (os_gate is not None and not callable(os_gate)) or not callable(status_factory)
         or (connector is not None and not callable(connector))):
         _deny()
     try:
