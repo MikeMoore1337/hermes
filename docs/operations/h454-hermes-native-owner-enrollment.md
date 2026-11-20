@@ -210,17 +210,18 @@ and no target device. Do not retry or remove this record automatically.
 
 The enrollment client now accepts the exact BRC hostname as well as the
 existing native hostname, while still requiring an exact returned URL match.
-The installed immutable owner source and this operator remain pinned to the
-older client. This source change alone does not fix the installed operator:
-an independently approved production source release and a reviewed operator
-repin are required before another separately approved pairing attempt.
+The operator now pins the corrected client blob but still names the old
+immutable owner release, so it refuses that old source. This change alone does
+not fix the installed operator: an independently approved production source
+release and a reviewed operator release-SHA repin are required before another
+separately approved pairing attempt.
 
 ## Current acceptance
 
 - Python local/mock tests: exact-head CI required for post-HOLD fix.
-- Original Hermes owner-root: old `_909.py plan` **PASS**,
-  owner-pairing attempt **HOLD**; revised operator `plan` NOT_RUN.
-- Owner-paired device: NOT_RUN; no credential issued/stored.
+- Original Hermes owner-root: `_910.py plan` **PASS**; the one approved
+  pairing attempt **HOLD** at `TOKEN_POLL`.
+- Owner-paired device: not created; no credential issued/stored by this attempt.
 - Native first start / bearer status and revocation: NOT_RUN.
 - YFC and Windows native installation/activation: NOT_RUN.
 - ChatGPT+Codex 2-client x 3-original-host READ E2E: NOT_RUN.
