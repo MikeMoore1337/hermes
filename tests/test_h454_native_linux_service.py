@@ -194,6 +194,24 @@ class RealLinuxUnitRenderTests(unittest.TestCase):
 
 
 class OSIsolationKernelTests(unittest.TestCase):
+    def test_systemd_all_address_denials_accept_both_families_only(self):
+        public = hardening_properties()
+        private = public.replace("IPAddressAllow=8.8.4.4/32 1.1.1.1/32",
+                                 "IPAddressAllow=172.29.251.2/32")
+        for properties, relay in ((public, None), (private, "172.29.251.2")):
+            for deny in ("any", "0.0.0.0/0 ::/0", "::/0 0.0.0.0/0"):
+                with self.subTest(relay=relay, deny=deny):
+                    self.assertTrue(service._properties_are_hardened(
+                        properties.replace("IPAddressDeny=any", "IPAddressDeny=" + deny),
+                        private_relay_ip=relay))
+            for deny in ("", "0.0.0.0/0", "::/0", "0.0.0.0/1 ::/0",
+                         "0.0.0.0/0 ::/0 127.0.0.1/32", "any 0.0.0.0/0",
+                         "0.0.0.0/0 ::/0 ::/0"):
+                with self.subTest(relay=relay, deny=deny):
+                    self.assertFalse(service._properties_are_hardened(
+                        properties.replace("IPAddressDeny=any", "IPAddressDeny=" + deny),
+                        private_relay_ip=relay))
+
     def test_actual_kernel_status_and_systemd_hardening_contract(self):
         expected_cgroup="0::/system.slice/hermes-commander-native.service\n"
         invocation="e"*32

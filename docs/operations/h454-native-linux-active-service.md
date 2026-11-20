@@ -1,5 +1,22 @@
 # Hermes #454 / Stage 2A - live Linux native READ systemd service
 
+## Original Hermes VPS first-start denial (2026-11-20)
+
+After owner-approved pairing and an isolated three-test openat2 canary under
+the dedicated service UID, the first approved start exited with status 2 and
+the device remained offline. Read-only manager inspection established an
+independent deterministic blocker: systemd returned `IPAddressDeny` as the
+two complete IPv4 and IPv6 CIDRs, while the installed source accepted only
+the literal `any`. All other compared manager properties matched. This does
+not prove no earlier gate also denied that first run.
+
+The source parser accepts either `any` or exactly both full-address-family
+CIDRs, while continuing to reject incomplete and extra entries. The installed
+native release remains unchanged. Its existing versioned installer refuses an
+already paired `device.json`; do not remove the credential or repeat pairing.
+A separately reviewed credential-preserving upgrade and owner approval are
+required before changing the installed runtime or attempting another start.
+
 **Implementation status: a real single-session worker and a hardened systemd
 unit renderer, NOT deployed on either owner VPS.** It is not another MCP
 server. The existing owner OAuth BRC relay, accepted READ-only native

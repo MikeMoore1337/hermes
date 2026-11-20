@@ -113,7 +113,10 @@ def _properties_are_hardened(text: str, *, private_relay_ip: str | None = None) 
             values[key] = value
         if any(values.get(k) != v for k, v in EXPECTED_HARDENING.items()):
             return False
-        if values.get("IPAddressDeny") != "any":
+        deny = values.get("IPAddressDeny", "").split()
+        if deny != ["any"] and not (
+            len(deny) == 2 and set(deny) == {"0.0.0.0/0", "::/0"}
+        ):
             return False
         ip_words = values.get("IPAddressAllow", "").split()
         if private_relay_ip is not None:
