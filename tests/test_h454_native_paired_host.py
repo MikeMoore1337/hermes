@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 from scripts import h454_native_paired_host as host
 from scripts import h454_native_paired_staging as staging
+from scripts import h454_native_paired_apply as apply_tx
 from scripts.h454_native_paired_rebind import RebindDenied
 
 
@@ -26,6 +27,62 @@ def properties(*, active="failed"):
 
 
 class PairedHostAdmissionTests(unittest.TestCase):
+    def test_coordinator_thaws_only_after_both_journals_and_manager_verify(self):
+        transition = SimpleNamespace(trust=b"new-trust", manifest=b"new-manifest",
+                                     device=b"synthetic-secret", active_unit=b"new-active",
+                                     preflight_unit=b"new-preflight")
+        plan = host.HostPlan(transition, b"old-manifest", b"old-synthetic-secret", b"old-trust",
+            {"hermes-commander-native.service": b"old-active",
+             "hermes-commander-native-preflight.service": b"old-preflight"},
+            b"bundle", b"receipt", b"wheel", 972, 968)
+
+        def run(fail):
+            events = []
+            def callback(name, result=None):
+                def invoke(*args, **kwargs):
+                    events.append(name)
+                    if name == fail:
+                        raise ValueError("synthetic-sensitive-error")
+                    return result
+                return invoke
+            with ExitStack() as stack:
+                stack.enter_context(patch.object(host, "inspect", return_value=plan))
+                stack.enter_context(patch.object(apply_tx, "_receipt", side_effect=callback("receipt", Path("/synthetic"))))
+                stack.enter_context(patch.object(apply_tx, "_stopped", side_effect=callback("stopped")))
+                stack.enter_context(patch.object(apply_tx, "_frozen_matches", side_effect=callback("matches")))
+                stack.enter_context(patch.object(apply_tx, "_reload", side_effect=callback("reload")))
+                stack.enter_context(patch.object(apply_tx, "_no_service_process", side_effect=callback("no_process")))
+                stack.enter_context(patch.object(apply_tx, "_finish", side_effect=callback("finish")))
+                stack.enter_context(patch.object(apply_tx, "load_private_relay", side_effect=callback("trust", SimpleNamespace(relay_ipv4="172.29.251.2"))))
+                stack.enter_context(patch.object(host, "_check_unit", side_effect=callback("unit_check")))
+                stack.enter_context(patch.object(apply_tx.freeze, "freeze", side_effect=callback("freeze")))
+                stack.enter_context(patch.object(apply_tx.freeze, "restore_owner", side_effect=callback("thaw")))
+                for module, operation, name in ((apply_tx.systemd_tx, "prepare", "unit_prepare"),
+                        (apply_tx.systemd_tx, "switch", "unit_switch"),
+                        (apply_tx.systemd_tx, "verify_new", "unit_verify"),
+                        (apply_tx.state_tx, "prepare", "state_prepare"),
+                        (apply_tx.state_tx, "switch", "state_switch"),
+                        (apply_tx.state_tx, "verify_new", "state_verify")):
+                    stack.enter_context(patch.object(module, operation, side_effect=callback(name)))
+                if fail:
+                    with self.assertRaises(apply_tx.ApplyHold) as caught:
+                        apply_tx.apply_staged(plan)
+                    self.assertEqual(caught.exception.phase, "UNIT_SWITCH")
+                    self.assertNotIn("synthetic-sensitive", str(caught.exception))
+                else:
+                    apply_tx.apply_staged(plan)
+            return events
+
+        success = run(None)
+        self.assertLess(success.index("state_verify"), success.index("thaw"))
+        self.assertLess(success.index("unit_verify"), success.index("thaw"))
+        self.assertLess(success.index("reload"), success.index("thaw"))
+        self.assertEqual(success[-1], "finish")
+        failed = run("unit_switch")
+        self.assertNotIn("thaw", failed)
+        self.assertNotIn("reload", failed)
+        self.assertNotIn("finish", failed)
+
     def test_staging_requires_unchanged_reinspection_and_never_starts_service(self):
         plan = host.HostPlan(None, b"m", b"synthetic-bearer", b"t", {},
                              b"bundle", b"receipt", b"wheel", 972, 968)
