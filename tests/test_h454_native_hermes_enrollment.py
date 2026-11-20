@@ -239,7 +239,8 @@ class OriginalHermesNativeEnrollmentTests(unittest.TestCase):
             },
             "HostConfig": {"PortBindings": {}, "PublishAllPorts": False},
             "Mounts": [],
-            "Config": {"Env": ["HOST=0.0.0.0", "PORT=3000"]},
+            "Config": {"Env": ["HOST=0.0.0.0", "PORT=3000",
+                                   "PUBLIC_URL=" + op.RELAY_PUBLIC_URL]},
         }
         wss = {
             "Id": op.WSS, "Image": op.WSS_IMAGE,
@@ -373,7 +374,7 @@ class OriginalHermesNativeEnrollmentTests(unittest.TestCase):
         token = "brc_dev_" + "A" * 64
         paired = SimpleNamespace(target="hermes-vps", device_id=device_id,
                                  token=token,
-                                 ws_url="wss://hermes.mikemoore.top/ws")
+                                 ws_url=op.ENROLLMENT_WS_URL)
         candidate = SimpleNamespace(roots=(("hermes", "/test/host-project"),))
         service = SimpleNamespace(pw_uid=972, pw_gid=968)
         with mock.patch.object(op, "plan", return_value=report) as plan, \
@@ -403,7 +404,11 @@ class OriginalHermesNativeEnrollmentTests(unittest.TestCase):
         self.assertEqual(write.call_count, 1)
         saved = json.loads(write.call_args.args[3])
         self.assertEqual(saved["token"], token)
+        self.assertEqual(saved["url"], op.NATIVE_WS_URL)
         self.assertEqual(saved["device_id"], device_id)
+        poll.assert_called_once_with(
+            pending, post=op._docker_post,
+            expected_ws_url=op.ENROLLMENT_WS_URL)
         self.assertEqual(saved["target"], "hermes-vps")
         self.assertEqual(saved["release_sha"], op.RELEASE)
         self.assertEqual(saved["roots"], [
@@ -425,12 +430,80 @@ class OriginalHermesNativeEnrollmentTests(unittest.TestCase):
              mock.patch.object(op, "native_start") as start, \
              mock.patch.object(op, "_approve_pending") as approve, \
              mock.patch.object(op, "_write_device") as write:
-            with self.assertRaisesRegex(op.EnrollmentHold,
-                                        "^HOST_DRIFT_AFTER_APPROVAL$"):
+            with self.assertRaises(op.EnrollmentStageHold) as hold:
                 op.enroll()
+            self.assertEqual(hold.exception.stage, "PLAN_BEFORE_CODE")
             start.assert_not_called()
             approve.assert_not_called()
             write.assert_not_called()
+
+    def test_enroll_reports_fixed_stage_without_exception_or_token(self):
+        from io import StringIO
+        phase_cases = (
+            ("INITIAL_PLAN", "plan"),
+            ("TARGET_TTY", "_tty_confirm"),
+            ("SERVICE_BEFORE_CODE", "_service_gate"),
+            ("ISSUE_CODE", "native_start"),
+            ("OWNER_CAS", "_approve_pending"),
+            ("TOKEN_POLL", "native_poll"),
+            ("CONFIG_VALIDATION", "_parse_config"),
+            ("DEVICE_WRITE", "_write_device"),
+        )
+        report = {"status": "H454_HERMES_NATIVE_ENROLL_PLAN_PASS",
+                  "manifest_sha256": "f" * 64}
+        pending = SimpleNamespace(target="hermes-vps", user_code="ABCD-EFGH")
+        paired = SimpleNamespace(
+            target="hermes-vps", device_id="h454-linux-hermes-" + "a" * 32,
+            token="brc_dev_" + "Z" * 64, ws_url=op.ENROLLMENT_WS_URL)
+        service = SimpleNamespace(pw_uid=972, pw_gid=968)
+        candidate = SimpleNamespace(roots=(("hermes", "/synthetic"),))
+        for stage, failing in phase_cases:
+            with self.subTest(stage=stage), \
+                 mock.patch.object(op, "plan", return_value=report) as plan, \
+                 mock.patch.object(op, "_tty_confirm") as tty, \
+                 mock.patch.object(op, "_service_gate",
+                                   return_value=(service, candidate, "f" * 64)) as svc, \
+                 mock.patch.object(op, "native_start",
+                                   return_value=pending) as start, \
+                 mock.patch.object(op, "_approve_pending") as cas, \
+                 mock.patch.object(op, "native_poll",
+                                   return_value=paired) as poll, \
+                 mock.patch.object(op, "_parse_config") as parse, \
+                 mock.patch.object(op, "_write_device") as write, \
+                 mock.patch.object(op.subprocess, "run",
+                    return_value=SimpleNamespace(stdout=b"inactive\\n")) as process, \
+                 mock.patch("sys.stdout", new_callable=StringIO) as output:
+                providers = {
+                    "plan": plan, "_tty_confirm": tty,
+                    "_service_gate": svc, "native_start": start,
+                    "_approve_pending": cas, "native_poll": poll,
+                    "_parse_config": parse, "_write_device": write,
+                }
+                providers[failing].side_effect = ValueError(
+                    "SECRET_brс_dev_PRIVATE-NEVER-PRINT")
+                self.assertEqual(op.main(["enroll", "--execute"]), 2)
+                result = json.loads(output.getvalue())
+                self.assertEqual(result["status"],
+                                 "H454_HERMES_NATIVE_ENROLLMENT_HOLD")
+                self.assertEqual(result["failed_stage"], stage)
+                self.assertTrue(result["no_auto_retry"])
+                self.assertFalse(result["service_started"])
+                self.assertNotIn("SECRET", output.getvalue())
+                if stage in ("INITIAL_PLAN", "TARGET_TTY", "SERVICE_BEFORE_CODE"):
+                    cas.assert_not_called()
+                    poll.assert_not_called()
+                    write.assert_not_called()
+                if stage == "OWNER_CAS":
+                    poll.assert_not_called()
+                if stage == "TOKEN_POLL":
+                    write.assert_not_called()
+
+    def test_native_enrollment_url_uses_public_relay_but_private_native_wss(self):
+        self.assertEqual(op.RELAY_PUBLIC_URL, "https://mcp.mikemoore.top")
+        self.assertEqual(op.ENROLLMENT_WS_URL,
+                         "wss://mcp.mikemoore.top/ws")
+        self.assertEqual(op.NATIVE_WS_URL,
+                         "wss://hermes.mikemoore.top/ws")
 
     def test_missing_execute_never_issues_code_or_starts_service(self):
         with mock.patch.object(op, "plan") as plan, \
