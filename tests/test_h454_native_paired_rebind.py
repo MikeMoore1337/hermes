@@ -310,6 +310,14 @@ class JournaledStateTests(unittest.TestCase):
             state_tx.switch(self.state, self.journal, trusted_uid=self.uid)
         self.assert_old()
 
+    def test_foreign_journal_entry_is_preserved_and_refused(self):
+        foreign = self.journal / "foreign"
+        foreign.write_bytes(b"preserve")
+        with self.assertRaises(RebindDenied):
+            self.prepare()
+        self.assertEqual(foreign.read_bytes(), b"preserve")
+        self.assert_old()
+
     def test_staged_partial_device_forces_hold_and_is_preserved(self):
         self.prepare()
         pending = self.state / ".h454-paired-device.json.pending"

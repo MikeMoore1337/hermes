@@ -86,6 +86,8 @@ def prepare(state: Path, journal: Path, *, trusted_uid: int,
         journal_fd = _directory(journal, trusted_uid)
         _distinct(state_fd, journal_fd)
         _no_pending(state_fd)
+        if os.listdir(journal_fd):
+            raise RebindDenied()
         manifest = _read(state_fd, "manifest.json")
         device = _read(state_fd, "device.json")
         new = rebind(manifest, device, old_release=old_release,
@@ -112,6 +114,11 @@ def prepare(state: Path, journal: Path, *, trusted_uid: int,
 
 
 def _load(journal_fd: int, trusted_uid: int) -> tuple[dict, bytes, bytes]:
+    if set(os.listdir(journal_fd)) - {
+        "old-manifest.json", "new-manifest.json", "journal.json",
+        "prepared", "started", "complete",
+    }:
+        raise RebindDenied()
     if _read(journal_fd, "prepared", owner=trusted_uid) != b"PREPARED\n":
         raise RebindDenied()
     raw = _read(journal_fd, "journal.json", owner=trusted_uid)
