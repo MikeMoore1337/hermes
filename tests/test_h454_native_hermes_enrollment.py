@@ -50,9 +50,12 @@ class OriginalHermesNativeEnrollmentTests(unittest.TestCase):
         checkout = Path(op.__file__).resolve().parents[1]
         native = checkout / "tests" / "fixtures" / "installed-native-release"
         pinned = checkout / "tests" / "fixtures" / "h454-native-private-tls-30db.py.txt"
+        runtime = checkout / "tests" / "fixtures" / "h454-native-linux-runtime-b6e4383.py.txt"
         def read(path, **_kwargs):
             if path == native / "device_fabric/native_private_tls.py":
                 return pinned.read_bytes()
+            if path == checkout / "scripts/h454_native_linux_runtime.py":
+                return runtime.read_bytes()
             return path.read_bytes()
         with mock.patch.object(op, "SOURCE", checkout), \
              mock.patch.object(op, "NATIVE", native), \
@@ -68,15 +71,26 @@ class OriginalHermesNativeEnrollmentTests(unittest.TestCase):
         checkout = Path(op.__file__).resolve().parents[1]
         native = checkout / "tests" / "fixtures" / "installed-native-release"
         pinned = checkout / "tests" / "fixtures" / "h454-native-private-tls-30db.py.txt"
+        runtime = checkout / "tests" / "fixtures" / "h454-native-linux-runtime-b6e4383.py.txt"
         def read(path, **_kwargs):
             if path == native / "device_fabric/native_private_tls.py":
                 return pinned.read_bytes() + b"\n# drift"
+            if path == checkout / "scripts/h454_native_linux_runtime.py":
+                return runtime.read_bytes()
             return path.read_bytes()
         with mock.patch.object(op, "SOURCE", checkout), \
              mock.patch.object(op, "NATIVE", native), \
              mock.patch.object(op, "_dir"), \
              mock.patch.object(op, "_read", side_effect=read), \
              self.assertRaisesRegex(op.EnrollmentHold, "NATIVE_PRIVATE_SOURCE_DRIFT"):
+            op._source_gate()
+
+    def test_updated_runtime_is_rejected_by_historical_source_pin(self):
+        checkout = Path(op.__file__).resolve().parents[1]
+        with mock.patch.object(op, "SOURCE", checkout), \
+             mock.patch.object(op, "_dir"), \
+             mock.patch.object(op, "_read", side_effect=lambda path, **_kwargs: path.read_bytes()), \
+             self.assertRaisesRegex(op.EnrollmentHold, "TRUSTED_SOURCE_DRIFT"):
             op._source_gate()
 
     def test_old_enrollment_client_is_rejected_by_source_pin(self):
