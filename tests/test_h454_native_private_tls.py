@@ -84,6 +84,7 @@ class TrustLoading(unittest.TestCase):
                 with patch.object(direct,'_read',side_effect=[encode(changed),ca]), self.assertRaises(direct.PrivateTLSDenied):
                     direct.load_private_relay('yfc-vps', RELEASE)
         lines='\n'.join([f'{k}={"yes" if k == "PrivateNetwork" else v}' for k,v in service.EXPECTED_HARDENING.items()]+[
+            'LimitNOFILE=32768','StandardInput=null','StandardOutput=journal','StandardError=journal',
             'RestrictAddressFamilies=AF_UNIX','IPAddressDeny=any','IPAddressAllow=','CapabilityBoundingSet=',
             'TemporaryFileSystem=/run:ro','BindPaths=','BindReadOnlyPaths='+' '.join(
                 f'{p}:{p}:rbind' for p in (direct.UNIX_DIRECTORY,direct.AUDIT_DIRECTORY))])
@@ -110,6 +111,8 @@ class TrustLoading(unittest.TestCase):
         self.assertIn('PrivateNetwork=yes\n',rendered)
         self.assertIn('RestrictAddressFamilies=AF_UNIX\n',rendered)
         self.assertIn('IPAddressDeny=any\n',rendered)
+        self.assertIn('LimitNOFILE=32768\n',rendered)
+        self.assertIn('StandardInput=null\n',rendered)
         self.assertIn('TemporaryFileSystem=/run:ro\n',rendered)
         self.assertIn('BindReadOnlyPaths='+direct.UNIX_DIRECTORY+'\n',rendered)
         self.assertNotIn('IPAddressAllow=',rendered)

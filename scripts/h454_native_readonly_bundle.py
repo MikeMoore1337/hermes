@@ -39,6 +39,7 @@ MAX_RECEIPT_SIZE = 4096
 SOURCE_FILES: Final = tuple(sorted((
     "device_fabric/__init__.py",
     "device_fabric/linux_native_files.py",
+    "device_fabric/linux_native_landlock.py",
     "device_fabric/linux_native_outbound.py",
     "device_fabric/linux_native_read_dispatch.py",
     "device_fabric/linux_native_search.py",

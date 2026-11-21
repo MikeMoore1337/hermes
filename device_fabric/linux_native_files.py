@@ -130,7 +130,9 @@ class LinuxNativeFiles:
                 os.close(fd)
             raise NativeLinuxDenied("native_linux_denied") from None
         self._root_fd = fd
+        self._root_path = root
         self.project = project
+        self._landlock_snapshot = None
 
     def close(self) -> None:
         if self._root_fd >= 0:
@@ -150,6 +152,43 @@ class LinuxNativeFiles:
         if self._root_fd < 0:
             raise NativeLinuxDenied("native_linux_denied")
         _relative(relative, allow_root=directory or metadata)
+        policy = self._landlock_snapshot
+        if policy is not None:
+            if policy._closed:
+                raise NativeLinuxDenied("native_linux_denied")
+            if directory:
+                admitted = policy.directories.get(relative)
+                if admitted is None:
+                    raise NativeLinuxDenied("native_linux_denied")
+                if relative:
+                    current = _kernel_openat2(self._root_fd, relative, os.O_PATH | os.O_DIRECTORY)
+                    try:
+                        node = os.fstat(current)
+                        if (node.st_dev, node.st_ino) != admitted[1:]:
+                            raise NativeLinuxDenied("native_linux_denied")
+                    finally:
+                        os.close(current)
+                os.lseek(admitted[0], 0, os.SEEK_SET)
+                return os.dup(admitted[0])
+            if relative == "" and metadata:
+                return os.dup(self._root_fd)
+            if relative not in policy.regular and relative not in policy.directories:
+                raise NativeLinuxDenied("native_linux_denied")
+            flags = os.O_PATH if metadata else os.O_RDONLY | os.O_NONBLOCK
+            fd = _kernel_openat2(self._root_fd, relative, flags)
+            try:
+                node = os.fstat(fd)
+                if relative in policy.regular:
+                    identity = (node.st_dev, node.st_ino, node.st_mode, node.st_nlink,
+                                node.st_size, node.st_mtime_ns, node.st_ctime_ns)
+                    if identity != policy.regular[relative]:
+                        raise NativeLinuxDenied("native_linux_denied")
+                elif not metadata or (node.st_dev, node.st_ino) != policy.directories[relative][1:]:
+                    raise NativeLinuxDenied("native_linux_denied")
+                return fd
+            except Exception:
+                os.close(fd)
+                raise
         if relative == "":
             return os.dup(self._root_fd)
         flags = (os.O_PATH if metadata else os.O_RDONLY | os.O_NONBLOCK)
@@ -171,6 +210,11 @@ class LinuxNativeFiles:
             fd = self._open(relative, metadata=True)
             try:
                 info = os.fstat(fd)
+                if self._landlock_snapshot is not None and relative in self._landlock_snapshot.regular:
+                    identity = (info.st_dev, info.st_ino, info.st_mode, info.st_nlink,
+                                info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+                    if identity != self._landlock_snapshot.regular[relative]:
+                        raise NativeLinuxDenied("native_linux_denied")
                 kind = self._kind(info)
                 return {"status": "ok", "project": self.project,
                         "relative": relative, "action": "stat",
@@ -199,6 +243,11 @@ class LinuxNativeFiles:
             fd = self._open(relative)
             try:
                 before = os.fstat(fd)
+                if self._landlock_snapshot is not None:
+                    identity = (before.st_dev, before.st_ino, before.st_mode, before.st_nlink,
+                                before.st_size, before.st_mtime_ns, before.st_ctime_ns)
+                    if identity != self._landlock_snapshot.regular.get(relative):
+                        raise NativeLinuxDenied("native_linux_denied")
                 if (self._kind(before) != "file" or before.st_size < 0
                     or before.st_size > ceiling):
                     raise NativeLinuxDenied("native_linux_denied")

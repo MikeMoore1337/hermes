@@ -29,6 +29,7 @@ except ImportError:
     pwd = None  # Windows can import portable parser tests.
 
 from device_fabric.linux_native_files import LinuxNativeFiles, NativeLinuxDenied
+from device_fabric.linux_native_landlock import ReadSnapshot
 from device_fabric.linux_native_outbound import (
     ENDPOINT, LocalLinuxDeviceConfig, LinuxOutboundDenied,
     local_config, run_session,
@@ -227,7 +228,8 @@ def local_preflight(prepared: PreparedRuntime) -> dict[str, object]:
 
 def run_once(prepared: PreparedRuntime, *, connector: Connector,
              is_device_revoked: Callable[[], bool],
-             is_os_isolation_verified: Callable[[], bool]) -> str:
+             is_os_isolation_verified: Callable[[], bool],
+             landlock_yfc: bool = False) -> str:
     """Source-only injectable one-shot runner. NOT exposed as a CLI/service.
 
     The trusted host installer is responsible for actual OS enforcement,
@@ -237,7 +239,8 @@ def run_once(prepared: PreparedRuntime, *, connector: Connector,
     """
     if (type(prepared) is not PreparedRuntime
         or not callable(connector) or not callable(is_device_revoked)
-        or not callable(is_os_isolation_verified)):
+        or not callable(is_os_isolation_verified) or type(landlock_yfc) is not bool
+        or (landlock_yfc and prepared.device.target != 'yfc-vps')):
         raise RuntimeDenied("native_linux_runtime_denied")
     try:
         _service_identity(prepared.device.target)
@@ -249,6 +252,11 @@ def run_once(prepared: PreparedRuntime, *, connector: Connector,
             for project, path in prepared.project_roots:
                 roots[project] = stack.enter_context(
                     LinuxNativeFiles(root=Path(path), project=project))
+            if landlock_yfc:
+                if len(roots) != 1:
+                    raise RuntimeDenied("native_linux_runtime_denied")
+                snapshot = stack.enter_context(ReadSnapshot(next(iter(roots.values()))))
+                snapshot.seal()
             dispatcher = LinuxOriginalReadDispatcher(
                 device_id=prepared.device.device_id, local_roots=roots,
                 is_device_revoked=is_device_revoked)

@@ -81,7 +81,8 @@ class SourceBundleWorkflowPolicy(unittest.TestCase):
 
 class NativeSourceArchivePure(unittest.TestCase):
     def test_exact_allowlist_excludes_write_process_grant_and_host_secrets(self):
-        self.assertEqual(len(bundle.SOURCE_FILES), 14)
+        self.assertEqual(len(bundle.SOURCE_FILES), 15)
+        self.assertIn("device_fabric/linux_native_landlock.py", bundle.SOURCE_FILES)
         self.assertIn("device_fabric/linux_native_outbound.py",
                       bundle.SOURCE_FILES)
         self.assertIn("scripts/h454_native_linux_runtime.py",

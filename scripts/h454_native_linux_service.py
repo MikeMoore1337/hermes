@@ -58,7 +58,8 @@ EXPECTED_HARDENING = {
     "MemoryDenyWriteExecute": "yes",
 }
 PROC_CAPS = ("CapEff", "CapPrm", "CapBnd", "CapAmb")
-SHOW_KEYS = (*EXPECTED_HARDENING, "RestrictAddressFamilies", "TemporaryFileSystem",
+SHOW_KEYS = (*EXPECTED_HARDENING, "LimitNOFILE", "StandardInput", "StandardOutput", "StandardError",
+             "RestrictAddressFamilies", "TemporaryFileSystem",
              "BindPaths", "BindReadOnlyPaths", "IPAddressDeny", "IPAddressAllow",
              "CapabilityBoundingSet", "InaccessiblePaths")
 
@@ -120,6 +121,11 @@ def _properties_are_hardened(text: str, *, private_relay_ip: str | None = None,
             values[key] = value
         unix_relay = target == 'yfc-vps' and private_relay_ip == UNIX_ENDPOINT
         expected = dict(EXPECTED_HARDENING)
+        if target == 'yfc-vps':
+            expected['LimitNOFILE'] = '32768'
+            expected['StandardInput'] = 'null'
+            expected['StandardOutput'] = 'journal'
+            expected['StandardError'] = 'journal'
         if unix_relay:
             expected['PrivateNetwork'] = 'yes'
             expected['RestrictAddressFamilies'] = 'AF_UNIX'
@@ -264,12 +270,19 @@ def _audit_properties() -> str:
 
 
 def real_os_isolation_verified(*, private_relay_ip: str | None = None,
-                               git_roots: tuple[str, ...] = (), target: str | None = None) -> bool:
+                               git_roots: tuple[str, ...] = (), target: str | None = None,
+                               expected_identity: tuple[int, int] | None = None) -> bool:
     """Every call rechecks actual process capabilities and manager policy."""
     try:
         if sys.platform != "linux" or os.name != "posix":
             return False
-        _service_identity("hermes-vps")
+        if target == 'yfc-vps':
+            if (type(expected_identity) is not tuple or len(expected_identity) != 2 or
+                any(type(value) is not int or value <= 0 for value in expected_identity) or
+                expected_identity != (os.geteuid(), os.getegid())):
+                return False
+        else:
+            _service_identity("hermes-vps")
         if EXPECTED_INVOCATION.fullmatch(os.environ.get("INVOCATION_ID", "")) is None:
             return False
         status = STATUS.read_text(encoding="ascii")
@@ -336,6 +349,7 @@ def run_trusted_once(*, target: str, release_sha: str,
         _deny()
     try:
         private = None
+        landlock_yfc = target == 'yfc-vps' and connector is None
         git_roots: tuple[str, ...] = ()
         enforce_git_mask = connector is None and os_gate is None
         if connector is None:
@@ -343,8 +357,9 @@ def run_trusted_once(*, target: str, release_sha: str,
             # BRC endpoint appears to work. Never allow an implicit fallback.
             private = load_private_relay(target, release_sha)
             if os_gate is None:
+                identity = {'expected_identity': (os.geteuid(), os.getegid())} if target == 'yfc-vps' else {}
                 os_gate = lambda: real_os_isolation_verified(
-                    private_relay_ip=private.relay_ipv4, git_roots=git_roots, target=target)
+                    private_relay_ip=private.relay_ipv4, git_roots=git_roots, target=target, **identity)
             if status_factory is not revoked_provider:
                 _deny()
             status_factory = lambda **kwargs: private_revoked_provider(
@@ -386,6 +401,7 @@ def run_trusted_once(*, target: str, release_sha: str,
             prepared, connector=connector,
             is_device_revoked=lambda: os_gate() is not True or revoked() is not False,
             is_os_isolation_verified=os_gate,
+            **({'landlock_yfc': True} if landlock_yfc else {}),
         )
     except Exception:
         raise NativeLinuxServiceDenied("native_linux_service_denied") from None
