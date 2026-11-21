@@ -98,6 +98,25 @@ class TrustLoading(unittest.TestCase):
             self.assertFalse(service._properties_are_hardened(changed,private_relay_ip=direct.UNIX_ENDPOINT,target='yfc-vps'))
         self.assertFalse(service._properties_are_hardened(lines,private_relay_ip=direct.UNIX_ENDPOINT,target='hermes-vps'))
 
+    def test_hermes_landlock_requires_private_run_and_only_audit_socket(self):
+        values = dict(service.EXPECTED_HARDENING, LimitNOFILE='32768',
+            StandardInput='null', StandardOutput='journal', StandardError='journal',
+            TemporaryFileSystem='/run:ro', BindPaths='',
+            RestrictAddressFamilies='AF_INET AF_INET6 AF_UNIX',
+            BindReadOnlyPaths=direct.AUDIT_DIRECTORY+':'+direct.AUDIT_DIRECTORY+':rbind',
+            IPAddressDeny='any', IPAddressAllow='172.29.251.2/32', CapabilityBoundingSet='')
+        def checked(props):
+            text='\n'.join(k+'='+v for k,v in props.items())
+            return service._properties_are_hardened(text,private_relay_ip='172.29.251.2',target='hermes-vps')
+        self.assertTrue(checked(values))
+        for changes in ({'TemporaryFileSystem':''},{'BindPaths':'/run/systemd/private'},
+                        {'BindReadOnlyPaths':''},{'BindReadOnlyPaths':values['BindReadOnlyPaths']+' /run/systemd/private'},
+                        {'StandardInput':'socket'},{'LimitNOFILE':'1024'},
+                        {'RestrictAddressFamilies':'AF_UNIX AF_INET AF_INET6 AF_NETLINK'},
+                        {'IPAddressAllow':'0.0.0.0/0'}):
+            with self.subTest(changes=changes):
+                self.assertFalse(checked(dict(values,**changes)))
+
     def test_yfc_unix_unit_has_no_ip_egress(self):
         manifest=json.dumps({'schema':SCHEMA,'target':'yfc-vps','release_sha':RELEASE,
             'artifact_sha256':'c'*64,'service_name':SERVICE['yfc-vps'][0],
