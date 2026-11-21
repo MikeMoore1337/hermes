@@ -81,6 +81,9 @@ def operate(mode):
             with zipfile.ZipFile(archive, "w") as package:
                 package.writestr("scripts/__init__.py", "")
                 package.writestr("scripts/h454_native_paired_apply.py", code)
+                package.writestr("scripts/h454_native_audit_setup.py",
+                    "def plan(): return {'status':'SYNTHETIC_AUDIT_PLAN'}\n"
+                    "def install(): return {'status':'SYNTHETIC_AUDIT_READY'}\n")
             harness = """\
 import importlib.util, sys
 spec = importlib.util.spec_from_file_location('launcher_under_test', sys.argv[1])
@@ -93,6 +96,8 @@ raise SystemExit(launcher.main([sys.argv[3], 'a' * 40, 'b' * 64]))
 """
             for mode, expected, rc in (("plan", "PLAN_PASS_NO_MUTATION", 0),
                                        ("install-off", "SYNTHETIC_INSTALL-OFF", 0),
+                                       ("audit-plan", "SYNTHETIC_AUDIT_PLAN", 0),
+                                       ("audit-setup", "SYNTHETIC_AUDIT_READY", 0),
                                        ("recover-off", "HOLD FAILED_STAGE=UNIT_SWITCH", 2)):
                 with self.subTest(mode=mode):
                     result = subprocess.run([sys.executable, "-I", "-S", "-B", "-c", harness,

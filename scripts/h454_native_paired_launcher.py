@@ -70,7 +70,7 @@ def verified_archive(release: str, digest: str, *, owner: int) -> Path:
 
 def main(argv: list[str]) -> int:
     try:
-        if (len(argv) != 3 or argv[0] not in ("plan", "install-off", "recover-off", "rollback-off")
+        if (len(argv) != 3 or argv[0] not in ("plan", "install-off", "recover-off", "rollback-off", "audit-plan", "audit-setup")
             or os.geteuid() != 0 or socket.gethostname() != "vps1777112993"
             or not sys.flags.isolated or not sys.flags.no_site or not sys.flags.dont_write_bytecode
             or any(name == prefix or name.startswith(prefix + ".")
@@ -79,19 +79,25 @@ def main(argv: list[str]) -> int:
         mode, release, digest = argv
         archive = verified_archive(release, digest, owner=0)
         sys.path.insert(0, str(archive))
-        operator = importlib.import_module("scripts.h454_native_paired_apply")
+        if mode in ("audit-plan", "audit-setup"):
+            audit = importlib.import_module("scripts.h454_native_audit_setup")
+            result = audit.plan() if mode == "audit-plan" else audit.install()
+            status = result["status"]
+        else:
+            operator = importlib.import_module("scripts.h454_native_paired_apply")
         if mode == "plan":
             with operator.host_lock():
                 operator.host.inspect()
             status = "PLAN_PASS_NO_MUTATION"
-        else:
+        elif mode not in ("audit-plan", "audit-setup"):
             status = operator.operate(mode)
         print("H454_PAIRED_UPGRADE=" + status)
         return 0
     except Exception as exc:
         phase = getattr(exc, "phase", None)
         allowed = {"STAGE", "RECHECK", "RECEIPT", "UNIT_JOURNAL", "FREEZE", "STATE_JOURNAL",
-                   "STATE_SWITCH", "UNIT_SWITCH", "RELOAD", "VERIFY", "THAW", "RECEIPT_FINISH"}
+                   "STATE_SWITCH", "UNIT_SWITCH", "RELOAD", "VERIFY", "THAW", "RECEIPT_FINISH",
+                   "AUDIT_SETUP", "AUDIT_CLEANUP"}
         suffix = " FAILED_STAGE=" + phase if type(phase) is str and phase in allowed else ""
         print("H454_PAIRED_UPGRADE=HOLD" + suffix)
         return 2
