@@ -28,6 +28,11 @@ CA = 'ca.crt'
 HOST = 'brc-agent.internal'
 PORT = 3001
 WS_URI = 'wss://brc-agent.internal:3001/ws'
+UNIX_DIRECTORY = '/run/hermes-commander-tunnel'
+UNIX_SOCKET = UNIX_DIRECTORY + '/relay.sock'
+UNIX_ENDPOINT = 'unix:' + UNIX_SOCKET
+AUDIT_DIRECTORY = '/run/hermes-commander-audit'
+AUDIT_SOCKET = AUDIT_DIRECTORY + '/properties.sock'
 CA_MAX_BYTES = 8192
 SHA40 = re.compile(r'[0-9a-f]{40}\Z')
 SHA64 = re.compile(r'[0-9a-f]{64}\Z')
@@ -120,13 +125,21 @@ def load_private_relay(target: str, release_sha: str, *, root: Path = TRUST) -> 
             return out
         info = json.loads(raw.decode('ascii'), object_pairs_hook=unique,
                           parse_constant=lambda _: _deny())
-        if (type(info) is not dict or set(info) != {
-            'schema', 'target', 'release_sha', 'relay_ipv4', 'ca_sha256',
-            'server_name', 'port',
-        } or info['schema'] != 'h454-private-relay-v1' or
+        if type(info) is not dict:
+            _deny()
+        common = {'schema', 'target', 'release_sha', 'ca_sha256', 'server_name', 'port'}
+        if (info.get('schema') == 'h454-private-relay-v1' and
+                set(info) == common | {'relay_ipv4'} and _private_ip(info['relay_ipv4'])):
+            address = info['relay_ipv4']
+        elif (target == 'yfc-vps' and info.get('schema') == 'h454-private-relay-unix-v1' and
+              set(info) == common | {'relay_socket'} and info['relay_socket'] == UNIX_SOCKET):
+            address = UNIX_ENDPOINT
+        else:
+            _deny()
+        if (
             info['target'] != target or info['release_sha'] != release_sha or
             info['server_name'] != HOST or type(info['port']) is not int or
-            info['port'] != PORT or not _private_ip(info['relay_ipv4']) or
+            info['port'] != PORT or
             type(info['ca_sha256']) is not str or
             SHA64.fullmatch(info['ca_sha256']) is None or
             json.dumps(info, sort_keys=True, separators=(',', ':'),
@@ -140,7 +153,7 @@ def load_private_relay(target: str, release_sha: str, *, root: Path = TRUST) -> 
             _deny()
         # Verify trust can be loaded before the first credential is used.
         _context(ca)
-        return PrivateRelay(target, release_sha, info['relay_ipv4'], ca)
+        return PrivateRelay(target, release_sha, address, ca)
     except Exception:
         raise PrivateTLSDenied('h454_private_tls_denied') from None
 
@@ -155,8 +168,23 @@ def _context(ca: bytes) -> ssl.SSLContext:
     return ctx
 
 
+def _raw_socket(config: PrivateRelay, timeout: float):
+    if config.relay_ipv4 == UNIX_ENDPOINT:
+        if config.target != 'yfc-vps':
+            _deny()
+        raw = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        try:
+            raw.settimeout(timeout)
+            raw.connect(UNIX_SOCKET)
+            return raw
+        except Exception:
+            raw.close()
+            raise
+    return socket.create_connection((config.relay_ipv4, PORT), timeout=timeout)
+
+
 def _connection(config: PrivateRelay, timeout: float):
-    raw = socket.create_connection((config.relay_ipv4, PORT), timeout=timeout)
+    raw = _raw_socket(config, timeout)
     try:
         return _context(config.ca).wrap_socket(raw, server_hostname=HOST)
     except Exception:
@@ -228,7 +256,7 @@ def private_websocket_connector(config: PrivateRelay, underlying: Callable) -> C
             not headers['Authorization'].startswith('Bearer brc_dev_') or
             TOKEN.fullmatch(headers['Authorization'][7:]) is None):
             _deny()
-        raw = socket.create_connection((config.relay_ipv4, PORT), timeout=8)
+        raw = _raw_socket(config, 8)
         try:
             return underlying(
                 WS_URI, sock=raw, ssl=_context(config.ca),

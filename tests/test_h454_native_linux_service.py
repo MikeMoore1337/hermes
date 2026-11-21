@@ -260,6 +260,70 @@ class OSIsolationKernelTests(unittest.TestCase):
                         properties.replace("IPAddressDeny=any", "IPAddressDeny=" + deny),
                         private_relay_ip=relay))
 
+    def test_yfc_kernel_must_deny_both_inet_socket_families(self):
+        with patch.object(service.socket, 'socket', side_effect=PermissionError(service.errno.EPERM, 'denied')) as create:
+            self.assertTrue(service._inet_socket_creation_denied())
+            self.assertEqual(create.call_count, 4)
+        opened=Mock()
+        with patch.object(service.socket, 'socket', return_value=opened):
+            self.assertFalse(service._inet_socket_creation_denied())
+            opened.close.assert_called_once()
+        with patch.object(service.socket, 'socket', side_effect=OSError(service.errno.EMFILE, 'full')):
+            self.assertFalse(service._inet_socket_creation_denied())
+
+    def test_yfc_run_mount_must_be_read_only_tmpfs(self):
+        line='33 1 0:42 / /run ro,nosuid - tmpfs tmpfs ro,size=1024\n'
+        self.assertTrue(service._private_run_mount(line))
+        self.assertFalse(service._private_run_mount(line.replace(' - tmpfs ', ' - ext4 ')))
+        self.assertFalse(service._private_run_mount(line.replace('/run ro,', '/run rw,')))
+        self.assertFalse(service._private_run_mount(line+line))
+        self.assertFalse(service._private_run_mount('malformed'))
+
+    def test_audit_socket_requires_root_manager_and_bounded_response(self):
+        folder=SimpleNamespace(st_mode=service.stat.S_IFDIR | 0o755,st_uid=0)
+        endpoint=SimpleNamespace(st_mode=service.stat.S_IFSOCK | 0o660,st_uid=0,st_gid=321)
+        client=Mock()
+        client.getsockopt.return_value=service.struct.pack('3i',1,0,0)
+        client.recv.side_effect=[b'PrivateNetwork=yes\n',b'']
+        sock=Mock();sock.__enter__=Mock(return_value=client);sock.__exit__=Mock(return_value=False)
+        with patch.object(Path,'lstat',side_effect=[folder,endpoint]), \
+             patch.object(service.os,'getegid',return_value=321), \
+             patch.object(service.socket,'socket',return_value=sock):
+            self.assertEqual(service._audit_properties(),'PrivateNetwork=yes\n')
+        client.getsockopt.return_value=service.struct.pack('3i',222,0,0)
+        with patch.object(Path,'lstat',side_effect=[folder,endpoint]), \
+             patch.object(service.os,'getegid',return_value=321), \
+             patch.object(service.socket,'socket',return_value=sock), \
+             self.assertRaises(service.NativeLinuxServiceDenied):
+            service._audit_properties()
+        client.getsockopt.return_value=service.struct.pack('3i',1,0,0)
+        client.recv.side_effect=[b'x'*16385]
+        with patch.object(Path,'lstat',side_effect=[folder,endpoint]), \
+             patch.object(service.os,'getegid',return_value=321), \
+             patch.object(service.socket,'socket',return_value=sock), \
+             self.assertRaises(service.NativeLinuxServiceDenied):
+            service._audit_properties()
+        bad=SimpleNamespace(st_mode=service.stat.S_IFSOCK | 0o666,st_uid=0,st_gid=321)
+        with patch.object(Path,'lstat',side_effect=[folder,bad]), \
+             patch.object(service.os,'getegid',return_value=321), \
+             patch.object(service.socket,'socket') as create, \
+             self.assertRaises(service.NativeLinuxServiceDenied):
+            service._audit_properties()
+        create.assert_not_called()
+
+    def test_yfc_gate_denies_if_kernel_allows_inet(self):
+        with patch.object(service.sys, 'platform', 'linux'), \
+             patch.object(service, '_service_identity'), \
+             patch.object(service, 'STATUS', SimpleNamespace(read_text=lambda **_: 'status')), \
+             patch.object(service, 'CGROUP', SimpleNamespace(read_text=lambda **_: 'cgroup')), \
+             patch.object(service, '_kernel_evidence', return_value=True), \
+             patch.object(service, '_inet_socket_creation_denied', return_value=False), \
+             patch.object(service.subprocess, 'run') as systemctl, \
+             patch.dict(service.os.environ, {'INVOCATION_ID':'e'*32}):
+            self.assertFalse(service.real_os_isolation_verified(
+                private_relay_ip=service.UNIX_ENDPOINT,target='yfc-vps'))
+            systemctl.assert_not_called()
+
     def test_actual_kernel_status_and_systemd_hardening_contract(self):
         expected_cgroup="0::/system.slice/hermes-commander-native.service\n"
         invocation="e"*32
@@ -346,9 +410,9 @@ class LiveWorkerLifecycleTests(unittest.TestCase):
             self.assertEqual(service.main(args), 0)
             self.assertGreaterEqual(gate.call_count, 3)
             self.assertEqual(gate.call_args_list[0].kwargs,
-                             {"private_relay_ip": private.relay_ipv4, "git_roots": ()})
+                             {"private_relay_ip": private.relay_ipv4, "git_roots": (), "target": "hermes-vps"})
             self.assertTrue(all(call.kwargs == {
-                "private_relay_ip": private.relay_ipv4,
+                "private_relay_ip": private.relay_ipv4, "target": "hermes-vps",
                 "git_roots": ("/srv/hermes/source",)}
                 for call in gate.call_args_list[1:]))
             self.assertIs(session.call_args.kwargs["connector"], self.transport)
@@ -428,7 +492,7 @@ class LiveWorkerLifecycleTests(unittest.TestCase):
              patch.object(service,"_service_identity"), \
              patch.object(service,"load_local_runtime") as load:
             self.assertEqual(service.main(args),2)
-            gate.assert_called_once_with(private_relay_ip="172.29.251.2", git_roots=())
+            gate.assert_called_once_with(private_relay_ip="172.29.251.2", git_roots=(), target="hermes-vps")
             load.assert_not_called()
         with patch.object(service,"real_os_isolation_verified",
                           return_value=False):

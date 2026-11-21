@@ -9,19 +9,22 @@ The CLI does not install, start, enable, pair or provision any service.
 from __future__ import annotations
 
 import argparse
+import errno
 import ipaddress
 import importlib
 import os
 import stat
 from pathlib import Path
 import re
+import socket
+import struct
 import subprocess
 import sys
 from typing import Callable
 
 from device_fabric.native_brc_status import revoked_provider, PUBLIC, StatusDenied
 from device_fabric.native_private_tls import (
-    _private_ip, load_private_relay, private_revoked_provider,
+    _private_ip, UNIX_ENDPOINT, UNIX_DIRECTORY, AUDIT_DIRECTORY, AUDIT_SOCKET, load_private_relay, private_revoked_provider,
     private_websocket_connector,
 )
 from scripts.h454_native_linux_runtime import (
@@ -55,6 +58,9 @@ EXPECTED_HARDENING = {
     "MemoryDenyWriteExecute": "yes",
 }
 PROC_CAPS = ("CapEff", "CapPrm", "CapBnd", "CapAmb")
+SHOW_KEYS = (*EXPECTED_HARDENING, "RestrictAddressFamilies", "TemporaryFileSystem",
+             "BindPaths", "BindReadOnlyPaths", "IPAddressDeny", "IPAddressAllow",
+             "CapabilityBoundingSet", "InaccessiblePaths")
 
 
 class NativeLinuxServiceDenied(ValueError):
@@ -102,7 +108,7 @@ def _kernel_evidence(status: str, cgroup: str, invocation: str,
 
 
 def _properties_are_hardened(text: str, *, private_relay_ip: str | None = None,
-                             git_roots: tuple[str, ...] = ()) -> bool:
+                             git_roots: tuple[str, ...] = (), target: str | None = None) -> bool:
     try:
         if type(text) is not str or not 0 < len(text) <= 16384:
             return False
@@ -112,7 +118,14 @@ def _properties_are_hardened(text: str, *, private_relay_ip: str | None = None,
             if not sep or key in values:
                 return False
             values[key] = value
-        if any(values.get(k) != v for k, v in EXPECTED_HARDENING.items()):
+        unix_relay = target == 'yfc-vps' and private_relay_ip == UNIX_ENDPOINT
+        expected = dict(EXPECTED_HARDENING)
+        if unix_relay:
+            expected['PrivateNetwork'] = 'yes'
+            expected['RestrictAddressFamilies'] = 'AF_UNIX'
+            expected['TemporaryFileSystem'] = '/run:ro'
+            expected['BindPaths'] = ''
+        if any(values.get(k) != v for k, v in expected.items()):
             return False
         if (type(git_roots) is not tuple or len(git_roots) > 5
             or any(type(root) is not str or not root.startswith("/")
@@ -127,6 +140,12 @@ def _properties_are_hardened(text: str, *, private_relay_ip: str | None = None,
         ):
             return False
         ip_words = values.get("IPAddressAllow", "").split()
+        if unix_relay:
+            binds = values.get('BindReadOnlyPaths', '').split()
+            allowed = (UNIX_DIRECTORY, AUDIT_DIRECTORY)
+            return (not ip_words and values.get("CapabilityBoundingSet") in ("", "~") and
+                    len(binds) == len(allowed) and
+                    set(binds) == {path + ':' + path + ':rbind' for path in allowed})
         if private_relay_ip is not None:
             return (_private_ip(private_relay_ip) and
                     ip_words == [private_relay_ip + "/32"] and
@@ -192,8 +211,60 @@ def _pinned_websocket_dependency(release_sha: str) -> bool:
         return False
 
 
+def _inet_socket_creation_denied() -> bool:
+    for family in (socket.AF_INET, socket.AF_INET6):
+        for kind in (socket.SOCK_STREAM, socket.SOCK_DGRAM):
+            try:
+                sock = socket.socket(family, kind)
+            except OSError as exc:
+                if exc.errno not in (errno.EAFNOSUPPORT, errno.EPERM, errno.EACCES):
+                    return False
+            else:
+                sock.close()
+                return False
+    return True
+
+
+def _private_run_mount(text: str) -> bool:
+    try:
+        mounts = []
+        for line in text.splitlines():
+            left, right = line.split(' - ', 1)
+            fields, filesystem = left.split(), right.split()
+            if fields[4] == '/run':
+                mounts.append(filesystem[0] == 'tmpfs' and 'ro' in fields[5].split(','))
+        return mounts == [True]
+    except (ValueError, IndexError):
+        return False
+
+
+def _audit_properties() -> str:
+    folder = Path(AUDIT_DIRECTORY).lstat()
+    endpoint = Path(AUDIT_SOCKET).lstat()
+    if (not stat.S_ISDIR(folder.st_mode) or folder.st_uid != 0 or
+        stat.S_IMODE(folder.st_mode) != 0o755 or
+        not stat.S_ISSOCK(endpoint.st_mode) or endpoint.st_uid != 0 or
+        endpoint.st_gid != os.getegid() or stat.S_IMODE(endpoint.st_mode) != 0o660):
+        raise NativeLinuxServiceDenied('native_linux_service_denied')
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+        client.settimeout(5)
+        client.connect(AUDIT_SOCKET)
+        pid, uid, gid = struct.unpack('3i', client.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
+        if (pid, uid, gid) != (1, 0, 0):
+            raise NativeLinuxServiceDenied('native_linux_service_denied')
+        data = bytearray()
+        while len(data) <= 16384:
+            part = client.recv(16385 - len(data))
+            if not part:
+                break
+            data.extend(part)
+        if not data or len(data) > 16384:
+            raise NativeLinuxServiceDenied('native_linux_service_denied')
+        return data.decode('ascii')
+
+
 def real_os_isolation_verified(*, private_relay_ip: str | None = None,
-                               git_roots: tuple[str, ...] = ()) -> bool:
+                               git_roots: tuple[str, ...] = (), target: str | None = None) -> bool:
     """Every call rechecks actual process capabilities and manager policy."""
     try:
         if sys.platform != "linux" or os.name != "posix":
@@ -208,21 +279,27 @@ def real_os_isolation_verified(*, private_relay_ip: str | None = None,
             uid=os.geteuid(), gid=os.getegid(),
         ):
             return False
-        keys = [*EXPECTED_HARDENING, "IPAddressDeny",
-                "IPAddressAllow", "CapabilityBoundingSet", "InaccessiblePaths"]
-        command = ["/usr/bin/systemctl", "show", UNIT, "--no-pager",
-                   "--property=" + ",".join(keys)]
-        proc = subprocess.run(
-            command, stdin=subprocess.DEVNULL, capture_output=True,
-            timeout=5, check=False, env={
-                "PATH": "/usr/bin:/bin", "LC_ALL": "C",
-            },
-        )
-        if proc.returncode != 0 or len(proc.stdout) > 16384:
-            return False
-        if not _properties_are_hardened(proc.stdout.decode("ascii"),
+        if target == 'yfc-vps' and private_relay_ip == UNIX_ENDPOINT:
+            if (not _inet_socket_creation_denied() or
+                not _private_run_mount(Path('/proc/self/mountinfo').read_text(encoding='ascii'))):
+                return False
+        if target == 'yfc-vps' and private_relay_ip == UNIX_ENDPOINT:
+            properties = _audit_properties()
+        else:
+            command = ["/usr/bin/systemctl", "show", UNIT, "--no-pager",
+                       "--property=" + ",".join(SHOW_KEYS)]
+            proc = subprocess.run(
+                command, stdin=subprocess.DEVNULL, capture_output=True,
+                timeout=5, check=False, env={
+                    "PATH": "/usr/bin:/bin", "LC_ALL": "C",
+                },
+            )
+            if proc.returncode != 0 or len(proc.stdout) > 16384:
+                return False
+            properties = proc.stdout.decode('ascii')
+        if not _properties_are_hardened(properties,
                                         private_relay_ip=private_relay_ip,
-                                        git_roots=git_roots):
+                                        git_roots=git_roots, target=target):
             return False
         for root in git_roots:
             git = Path(root) / ".git"
@@ -267,7 +344,7 @@ def run_trusted_once(*, target: str, release_sha: str,
             private = load_private_relay(target, release_sha)
             if os_gate is None:
                 os_gate = lambda: real_os_isolation_verified(
-                    private_relay_ip=private.relay_ipv4, git_roots=git_roots)
+                    private_relay_ip=private.relay_ipv4, git_roots=git_roots, target=target)
             if status_factory is not revoked_provider:
                 _deny()
             status_factory = lambda **kwargs: private_revoked_provider(
