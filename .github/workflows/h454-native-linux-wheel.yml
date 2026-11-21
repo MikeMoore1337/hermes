@@ -100,7 +100,11 @@ jobs:
           sudo -n install -d -m 0755 /opt/h454-test-deps
           sudo -n python3 -m zipfile -e "$RUNNER_TEMP/h454-native-wheel/websockets-17.2-py3-none-any.whl" /opt/h454-test-deps
           sudo -n chmod -R a+rX /opt/h454-test-deps
-          sudo -n env PYTHONPATH="$PWD:/opt/h454-test-deps" python3 -B -m unittest -v tests.h454_linux_native_landlock_integration 2>&1 | tee "$RUNNER_TEMP/h454-landlock.log"
+          sudo -n install -d -m 0755 /opt/h454-test-src
+          git archive HEAD | sudo -n tar -x -C /opt/h454-test-src
+          sudo -n chmod -R a+rX /opt/h454-test-src
+          cd /opt/h454-test-src
+          sudo -n env PYTHONPATH="/opt/h454-test-src:/opt/h454-test-deps" python3 -B -m unittest -v tests.h454_linux_native_landlock_integration 2>&1 | tee "$RUNNER_TEMP/h454-landlock.log"
           grep -Fxq 'OK' "$RUNNER_TEMP/h454-landlock.log"
       - name: Upload verified original PyPI wheel only (NO HOST INSTALL)
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

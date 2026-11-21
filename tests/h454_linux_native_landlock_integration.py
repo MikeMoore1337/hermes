@@ -344,8 +344,12 @@ class LandlockTests(unittest.TestCase):
 
     @unittest.skipUnless(getattr(os, 'geteuid', lambda: -1)() == 0, 'root-owned immutable fixture required')
     def test_snapshot_excludes_untrusted_writers_hardlinks_and_symlinks(self):
+        import resource
         from device_fabric.linux_native_files import LinuxNativeFiles
         from device_fabric.linux_native_landlock import ReadSnapshot
+        limits=resource.getrlimit(resource.RLIMIT_NOFILE)
+        resource.setrlimit(resource.RLIMIT_NOFILE,(32768,limits[1]))
+        self.addCleanup(resource.setrlimit,resource.RLIMIT_NOFILE,limits)
         with tempfile.TemporaryDirectory(dir='/var/lib') as folder:
             root=Path(folder);os.chmod(root,0o755)
             for name in ('safe.py','foreign.py','writable.py','hard.py'):
