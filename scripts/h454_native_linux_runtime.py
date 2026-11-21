@@ -256,6 +256,7 @@ def run_once(prepared: PreparedRuntime, *, connector: Connector,
                     raise RuntimeDenied("native_linux_runtime_denied")
                 snapshot = stack.enter_context(ReadSnapshot(next(iter(roots.values()))))
                 snapshot.seal()
+                print('H454_NATIVE_OS_READ_ISOLATION=PASS', flush=True)
             dispatcher = LinuxOriginalReadDispatcher(
                 device_id=prepared.device.device_id, local_roots=roots,
                 is_device_revoked=is_device_revoked)
