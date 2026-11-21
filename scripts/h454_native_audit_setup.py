@@ -147,6 +147,14 @@ print('AUDIT_SOCKET_PROBE=PASS')"""
         raise AuditSetupHold('h454_audit_setup_denied')
 
 
+def _sync_unit_directory() -> None:
+    fd=os.open(UNIT_DIR,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_CLOEXEC)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
 def _rollback(created: list[tuple[Path, int, int, str]], *,
               account_uid: int | None, account_gid: int | None,
               start_attempted: bool) -> None:
@@ -161,6 +169,7 @@ def _rollback(created: list[tuple[Path, int, int, str]], *,
     for path,_dev,_ino,_digest in created:
         path.unlink()
     if created:
+        _sync_unit_directory()
         _run(['/usr/bin/systemctl','daemon-reload'])
     if start_attempted and (SOCKET_DIR.exists() or SOCKET_DIR.is_symlink()):
         node=SOCKET_DIR.lstat()
@@ -223,6 +232,7 @@ def install() -> dict[str, object]:
                 path=UNIT_DIR/name
                 create_file(path,body.encode('ascii'),0o644)
                 info=path.lstat();created.append((path,info.st_dev,info.st_ino,hashlib.sha256(body.encode('ascii')).hexdigest()))
+            _sync_unit_directory()
             _run(['/usr/bin/systemctl','daemon-reload'])
             start_attempted=True
             _run(['/usr/bin/systemctl','start',SOCKET_UNIT])
