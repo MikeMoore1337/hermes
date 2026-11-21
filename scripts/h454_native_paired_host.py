@@ -15,16 +15,16 @@ from scripts.h454_native_linux_wheel import verify_bytes as verify_wheel
 from scripts.h454_native_paired_rebind import RebindDenied, Transition, build_transition, verified_sources
 from scripts.h454_native_private_versioned_upgrade import checked_file, owned_directory, raw_show
 
-OLD = "e7afc8f750a052d45b6ebaa1408342ff1a35d04b"
-NEW = "143fc01781e91daba0dd4b3382b11f9941b0d240"
-BUNDLE_SHA = "0833d161e8c4786d7f83dca258bfb793bbc63de72bd75569fea78f4c068803ac"
+OLD = "143fc01781e91daba0dd4b3382b11f9941b0d240"
+NEW = "91c54417e97ad2f1e548b3d7d38db1b17ed5db93"
+BUNDLE_SHA = "99098a4a781a0be0dc54be18752ce4ca19c0dd30d9c5c8288c708980a7f7dbf7"
 WHEEL_SHA = "6aa59f0ef92e796b2db6f5f26550c4713c0e4036899fadf02f55e2ed4db0b7ae"
-MANIFEST_SHA = "3a1bbc9829b6523adfb77ea4e6ea119559c1b49daabd0537f9e5dcff4a2ef7b8"
-TRUST_SHA = "eca5746bc45db81e9deb992a685ca7809445b0b045caf28b2125201f03e04d84"
+MANIFEST_SHA = "0b8dac8e166ab4a54c7b5a522803567326aa9c634344a84b990943e60b4298fd"
+TRUST_SHA = "ee782e898418513898fceb6a9c5dec4568ebf4d5d9be299a8f632e2bde599db8"
 CA_SHA = "014868af3edc97e04c58099746964bde1d65d2f38c931360e27a8f309b8c0f7c"
 UNIT_SHA = {
-    "hermes-commander-native.service": "f11975772555f8239be48ee6b1f836f0f38030f711c7c8655086687fde74a7b2",
-    "hermes-commander-native-preflight.service": "726f338d01e65aacc25b7a1ab05fd0d86348406c3ae4a0551e7ffba34df05ce1",
+    "hermes-commander-native.service": "9ddf244fcc903377bf947f4fc7382b3e0f9ca63c00e35780ab517a84e4fee24d",
+    "hermes-commander-native-preflight.service": "8cdf29eeed87b45b05b16141b2bf6bdfd1791fa783798fcb368eec62854e8d87",
 }
 OLD_BLOBS = {
     "device_fabric/__init__.py": "b0a593a1351215ce4f3c05b805faeb34bef0161a",
@@ -39,7 +39,7 @@ OLD_BLOBS = {
     "device_fabric/native_private_tls.py": "2a13594e7fa1f68871f15b7716845009294304c2",
     "scripts/h454_native_install_preflight.py": "c0d7d7cc880ee39926cbcf92df818f22e7461598",
     "scripts/h454_native_linux_runtime.py": "b6e4383e8746d473fda745e351b02323c2bfb8b2",
-    "scripts/h454_native_linux_service.py": "bc64ca59689df24f9986086c978f901e5c206ba6",
+    "scripts/h454_native_linux_service.py": "5f4c395d3b62760ef8f6ce8859e041542024bd79",
     "scripts/h454_native_linux_unit_candidate.py": "6cc64e431f580ed84c69d44d24ce5700daa7cdc1",
 }
 
