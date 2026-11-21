@@ -84,7 +84,8 @@ class RealLinuxUnitRenderTests(unittest.TestCase):
                 self.assertIn("ReadOnlyPaths=/var/lib/hermes-commander-native", text)
                 pinned="/opt/hermes-commander-native/deps/main-"+RELEASE
                 self.assertIn("Environment=PYTHONPATH="+pinned, text)
-                self.assertIn("AssertPathExists="+pinned+"/websockets/sync/client.py", text)
+                flavor = "asyncio" if target == "yfc-vps" else "sync"
+                self.assertIn("AssertPathExists="+pinned+"/websockets/"+flavor+"/client.py", text)
                 self.assertIn("ReadOnlyPaths="+pinned, text)
                 self.assertIn("--run-once --target "+target, text)
                 self.assertIn("--manifest-sha256 ", text)
@@ -454,10 +455,10 @@ class LiveWorkerLifecycleTests(unittest.TestCase):
         prepared=SimpleNamespace(device=SimpleNamespace(device_id='h454-linux-yfc-'+'a'*32,
             token='brc_dev_'+'x'*64),project_roots=(('your-fitness-coach','/srv/yfc/source'),))
         ws=ModuleType('websockets');ws.__path__=[]
-        sync=ModuleType('websockets.sync');sync.__path__=[]
-        client=ModuleType('websockets.sync.client');client.connect=Mock()
+        asynchronous=ModuleType('websockets.asyncio');asynchronous.__path__=[]
+        client=ModuleType('websockets.asyncio.client');client.connect=Mock()
         args=['--run-once','--target','yfc-vps','--release-sha',RELEASE,'--manifest-sha256','d'*64]
-        with patch.dict(sys.modules,{'websockets':ws,'websockets.sync':sync,'websockets.sync.client':client}), \
+        with patch.dict(sys.modules,{'websockets':ws,'websockets.asyncio':asynchronous,'websockets.asyncio.client':client}), \
              patch.object(service.os,'geteuid',return_value=1234), \
              patch.object(service.os,'getegid',return_value=1234), \
              patch.object(service,'load_private_relay',return_value=private), \
@@ -465,10 +466,14 @@ class LiveWorkerLifecycleTests(unittest.TestCase):
              patch.object(service,'real_os_isolation_verified',return_value=True) as gate, \
              patch.object(service,'load_local_runtime',return_value=prepared), \
              patch.object(service,'private_revoked_provider',return_value=lambda:False), \
-             patch.object(service,'_pinned_websocket_dependency',return_value=True), \
-             patch.object(service,'private_websocket_connector',return_value=self.transport), \
+             patch.object(service,'_pinned_websocket_dependency',return_value=True) as pinned, \
+             patch.object(service,'sync_adapter',return_value=Mock()) as adapter, \
+             patch.object(service,'private_websocket_connector',return_value=self.transport) as private_connector, \
              patch.object(service,'run_once',return_value='session_deadline') as session:
             self.assertEqual(service.main(args),0)
+            pinned.assert_called_once_with(RELEASE,'yfc-vps')
+            adapter.assert_called_once_with(client.connect)
+            private_connector.assert_called_once_with(private,adapter.return_value)
             identity_check.assert_called_once_with('yfc-vps')
             self.assertTrue(session.call_args.kwargs['landlock_yfc'])
             self.assertTrue(all(c.kwargs['expected_identity']==(1234,1234) for c in gate.call_args_list))

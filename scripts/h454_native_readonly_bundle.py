@@ -38,6 +38,7 @@ MAX_UNCOMPRESSED_SIZE = 3 * 1024 * 1024
 MAX_RECEIPT_SIZE = 4096
 SOURCE_FILES: Final = tuple(sorted((
     "device_fabric/__init__.py",
+    "device_fabric/linux_native_async_transport.py",
     "device_fabric/linux_native_files.py",
     "device_fabric/linux_native_landlock.py",
     "device_fabric/linux_native_outbound.py",

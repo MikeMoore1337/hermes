@@ -102,7 +102,7 @@ def render_active_unit(
             "After=network-online.target local-fs.target",
             "AssertPathExists=" + MANIFEST_PATH,
             "AssertPathExists=" + CONFIG_PATH,
-            "AssertPathExists=" + deps + "/websockets/sync/client.py",
+            "AssertPathExists=" + deps + "/websockets/" + ("asyncio" if target == "yfc-vps" else "sync") + "/client.py",
             *(("AssertPathExists=" + str(TRUST / name) for name in (CONFIG, CA)) if private_relay else ()),
             "StartLimitIntervalSec=300",
             "StartLimitBurst=3",

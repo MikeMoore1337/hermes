@@ -269,7 +269,8 @@ class LandlockTests(unittest.TestCase):
                 import os,resource,sys
                 from pathlib import Path
                 from unittest.mock import patch
-                from websockets.sync.client import connect
+                from websockets.asyncio.client import connect
+                from device_fabric.linux_native_async_transport import sync_adapter
                 from device_fabric.linux_native_outbound import LocalLinuxDeviceConfig,ENDPOINT
                 from device_fabric import linux_native_outbound as outbound
                 from device_fabric import native_private_tls as tls
@@ -282,8 +283,8 @@ class LandlockTests(unittest.TestCase):
                     open_timeout=10,close_timeout=3,compression=None,proxy=None,max_size=8192,ping_interval=20,ping_timeout=20)
                 good=tls.PrivateRelay('yfc-vps','a'*40,tls.UNIX_ENDPOINT,ca)
                 bad=tls.PrivateRelay('yfc-vps','a'*40,tls.UNIX_ENDPOINT,wrong)
-                good_connector=tls.private_websocket_connector(good,connect)
-                bad_connector=tls.private_websocket_connector(bad,connect)
+                good_connector=tls.private_websocket_connector(good,sync_adapter(connect))
+                bad_connector=tls.private_websocket_connector(bad,sync_adapter(connect))
                 device=LocalLinuxDeviceConfig('yfc-vps','h454-linux-yfc-'+'a'*32,'brc_dev_'+'x'*64,ENDPOINT)
                 prepared=runtime.PreparedRuntime(device,(('your-fitness-coach',sys.argv[1]),),None)
                 outbound.MAX_TOOL_CALLS=1

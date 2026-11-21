@@ -9,7 +9,9 @@ on:
       - tests/test_h454_native_linux_wheel.py
       - tests/test_h454_native_linux_service.py
       - tests/h454_linux_native_landlock_integration.py
+      - tests/test_h454_linux_native_async_transport.py
       - device_fabric/linux_native_landlock.py
+      - device_fabric/linux_native_async_transport.py
       - device_fabric/linux_native_files.py
       - device_fabric/linux_native_read_dispatch.py
       - device_fabric/native_private_tls.py

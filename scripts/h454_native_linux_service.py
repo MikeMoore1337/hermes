@@ -22,6 +22,7 @@ import subprocess
 import sys
 from typing import Callable
 
+from device_fabric.linux_native_async_transport import sync_adapter
 from device_fabric.native_brc_status import revoked_provider, PUBLIC, StatusDenied
 from device_fabric.native_private_tls import (
     _private_ip, UNIX_ENDPOINT, UNIX_DIRECTORY, AUDIT_DIRECTORY, AUDIT_SOCKET, load_private_relay, private_revoked_provider,
@@ -182,7 +183,7 @@ def _properties_are_hardened(text: str, *, private_relay_ip: str | None = None,
 
 
 
-def _pinned_websocket_dependency(release_sha: str) -> bool:
+def _pinned_websocket_dependency(release_sha: str, target: str = 'hermes-vps') -> bool:
     """Deny the global/pip/user-installed websockets module at live startup.
 
     A PATH or PYTHONPATH override must not select an unpinned implementation.
@@ -190,7 +191,8 @@ def _pinned_websocket_dependency(release_sha: str) -> bool:
     fixed release-scoped immutable directory before activating systemd.
     """
     try:
-        if type(release_sha) is not str or EXPECTED_SHA.fullmatch(release_sha) is None:
+        if (type(release_sha) is not str or EXPECTED_SHA.fullmatch(release_sha) is None
+            or target not in ('hermes-vps', 'yfc-vps')):
             return False
         expected = Path("/opt/hermes-commander-native/deps") / ("main-" + release_sha)
         info = expected.lstat()
@@ -198,12 +200,13 @@ def _pinned_websocket_dependency(release_sha: str) -> bool:
             or info.st_mode & 0o022):
             return False
         package = importlib.import_module("websockets")
-        client = importlib.import_module("websockets.sync.client")
+        client_name = 'asyncio' if target == 'yfc-vps' else 'sync'
+        client = importlib.import_module('websockets.' + client_name + '.client')
         if getattr(package, "__version__", None) != "17.2":
             return False
         for loaded, name in (
             (package, "websockets/__init__.py"),
-            (client, "websockets/sync/client.py"),
+            (client, 'websockets/' + client_name + '/client.py'),
         ):
             file = Path(loaded.__file__)
             if (file.is_symlink() or not file.is_file()
@@ -391,10 +394,14 @@ def run_trusted_once(*, target: str, release_sha: str,
             # Never inherit an arbitrary system pip package. This fixed
             # release's dependency must be the exact offline-hash-staged
             # universal wheel, root-owned and unmodifiable by the service.
-            if not _pinned_websocket_dependency(release_sha):
+            if not _pinned_websocket_dependency(release_sha, target):
                 _deny()
-            from websockets.sync.client import connect
-            connector = private_websocket_connector(private, connect)
+            if target == 'yfc-vps':
+                from websockets.asyncio.client import connect
+                connector = private_websocket_connector(private, sync_adapter(connect))
+            else:
+                from websockets.sync.client import connect
+                connector = private_websocket_connector(private, connect)
         if os_gate() is not True:
             _deny()
         return run_once(
