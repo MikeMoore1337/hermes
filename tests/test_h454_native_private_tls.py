@@ -86,7 +86,7 @@ class TrustLoading(unittest.TestCase):
         lines='\n'.join([f'{k}={"yes" if k == "PrivateNetwork" else v}' for k,v in service.EXPECTED_HARDENING.items()]+[
             'RestrictAddressFamilies=AF_UNIX','IPAddressDeny=any','IPAddressAllow=','CapabilityBoundingSet=',
             'TemporaryFileSystem=/run:ro','BindPaths=','BindReadOnlyPaths='+' '.join(
-                f'{p}:{p}:rbind' for p in (direct.UNIX_DIRECTORY,'/run/dbus/system_bus_socket','/run/systemd/system'))])
+                f'{p}:{p}:rbind' for p in (direct.UNIX_DIRECTORY,direct.AUDIT_DIRECTORY))])
         self.assertTrue(service._properties_are_hardened(lines,private_relay_ip=direct.UNIX_ENDPOINT,target='yfc-vps'))
         for changed in (lines.replace('PrivateNetwork=yes','PrivateNetwork=no'),
                         lines.replace('IPAddressAllow=','IPAddressAllow=127.0.0.1/32'),

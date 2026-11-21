@@ -279,6 +279,38 @@ class OSIsolationKernelTests(unittest.TestCase):
         self.assertFalse(service._private_run_mount(line+line))
         self.assertFalse(service._private_run_mount('malformed'))
 
+    def test_audit_socket_requires_root_manager_and_bounded_response(self):
+        folder=SimpleNamespace(st_mode=service.stat.S_IFDIR | 0o755,st_uid=0)
+        endpoint=SimpleNamespace(st_mode=service.stat.S_IFSOCK | 0o660,st_uid=0,st_gid=321)
+        client=Mock()
+        client.getsockopt.return_value=service.struct.pack('3i',1,0,0)
+        client.recv.side_effect=[b'PrivateNetwork=yes\n',b'']
+        sock=Mock();sock.__enter__=Mock(return_value=client);sock.__exit__=Mock(return_value=False)
+        with patch.object(Path,'lstat',side_effect=[folder,endpoint]), \
+             patch.object(service.os,'getegid',return_value=321), \
+             patch.object(service.socket,'socket',return_value=sock):
+            self.assertEqual(service._audit_properties(),'PrivateNetwork=yes\n')
+        client.getsockopt.return_value=service.struct.pack('3i',222,0,0)
+        with patch.object(Path,'lstat',side_effect=[folder,endpoint]), \
+             patch.object(service.os,'getegid',return_value=321), \
+             patch.object(service.socket,'socket',return_value=sock), \
+             self.assertRaises(service.NativeLinuxServiceDenied):
+            service._audit_properties()
+        client.getsockopt.return_value=service.struct.pack('3i',1,0,0)
+        client.recv.side_effect=[b'x'*16385]
+        with patch.object(Path,'lstat',side_effect=[folder,endpoint]), \
+             patch.object(service.os,'getegid',return_value=321), \
+             patch.object(service.socket,'socket',return_value=sock), \
+             self.assertRaises(service.NativeLinuxServiceDenied):
+            service._audit_properties()
+        bad=SimpleNamespace(st_mode=service.stat.S_IFSOCK | 0o666,st_uid=0,st_gid=321)
+        with patch.object(Path,'lstat',side_effect=[folder,bad]), \
+             patch.object(service.os,'getegid',return_value=321), \
+             patch.object(service.socket,'socket') as create, \
+             self.assertRaises(service.NativeLinuxServiceDenied):
+            service._audit_properties()
+        create.assert_not_called()
+
     def test_yfc_gate_denies_if_kernel_allows_inet(self):
         with patch.object(service.sys, 'platform', 'linux'), \
              patch.object(service, '_service_identity'), \

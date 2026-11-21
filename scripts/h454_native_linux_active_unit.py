@@ -11,7 +11,7 @@ import ipaddress
 import re
 
 from device_fabric.native_install_preview import parse_candidate, InstallPlanDenied
-from device_fabric.native_private_tls import TRUST, CONFIG, CA, UNIX_ENDPOINT, UNIX_DIRECTORY, _private_ip
+from device_fabric.native_private_tls import TRUST, CONFIG, CA, UNIX_ENDPOINT, UNIX_DIRECTORY, AUDIT_DIRECTORY, _private_ip
 from scripts.h454_native_linux_unit_candidate import (
     SERVICE_USER, MANIFEST_PATH, CONFIG_PATH,
 )
@@ -131,8 +131,7 @@ def render_active_unit(
             "PrivateNetwork=" + ("yes" if unix_relay else "no"),
             *(("TemporaryFileSystem=/run:ro",
                "BindReadOnlyPaths=" + UNIX_DIRECTORY,
-               "BindReadOnlyPaths=/run/dbus/system_bus_socket",
-               "BindReadOnlyPaths=/run/systemd/system") if unix_relay else ()),
+               "BindReadOnlyPaths=" + AUDIT_DIRECTORY) if unix_relay else ()),
             "ProtectProc=invisible",
             "ProcSubset=all",
             "ProtectControlGroups=yes",

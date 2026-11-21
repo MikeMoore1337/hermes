@@ -17,13 +17,14 @@ import stat
 from pathlib import Path
 import re
 import socket
+import struct
 import subprocess
 import sys
 from typing import Callable
 
 from device_fabric.native_brc_status import revoked_provider, PUBLIC, StatusDenied
 from device_fabric.native_private_tls import (
-    _private_ip, UNIX_ENDPOINT, UNIX_DIRECTORY, load_private_relay, private_revoked_provider,
+    _private_ip, UNIX_ENDPOINT, UNIX_DIRECTORY, AUDIT_DIRECTORY, AUDIT_SOCKET, load_private_relay, private_revoked_provider,
     private_websocket_connector,
 )
 from scripts.h454_native_linux_runtime import (
@@ -57,6 +58,9 @@ EXPECTED_HARDENING = {
     "MemoryDenyWriteExecute": "yes",
 }
 PROC_CAPS = ("CapEff", "CapPrm", "CapBnd", "CapAmb")
+SHOW_KEYS = (*EXPECTED_HARDENING, "RestrictAddressFamilies", "TemporaryFileSystem",
+             "BindPaths", "BindReadOnlyPaths", "IPAddressDeny", "IPAddressAllow",
+             "CapabilityBoundingSet", "InaccessiblePaths")
 
 
 class NativeLinuxServiceDenied(ValueError):
@@ -138,7 +142,7 @@ def _properties_are_hardened(text: str, *, private_relay_ip: str | None = None,
         ip_words = values.get("IPAddressAllow", "").split()
         if unix_relay:
             binds = values.get('BindReadOnlyPaths', '').split()
-            allowed = (UNIX_DIRECTORY, '/run/dbus/system_bus_socket', '/run/systemd/system')
+            allowed = (UNIX_DIRECTORY, AUDIT_DIRECTORY)
             return (not ip_words and values.get("CapabilityBoundingSet") in ("", "~") and
                     len(binds) == len(allowed) and
                     set(binds) == {path + ':' + path + ':rbind' for path in allowed})
@@ -234,6 +238,31 @@ def _private_run_mount(text: str) -> bool:
         return False
 
 
+def _audit_properties() -> str:
+    folder = Path(AUDIT_DIRECTORY).lstat()
+    endpoint = Path(AUDIT_SOCKET).lstat()
+    if (not stat.S_ISDIR(folder.st_mode) or folder.st_uid != 0 or
+        stat.S_IMODE(folder.st_mode) != 0o755 or
+        not stat.S_ISSOCK(endpoint.st_mode) or endpoint.st_uid != 0 or
+        endpoint.st_gid != os.getegid() or stat.S_IMODE(endpoint.st_mode) != 0o660):
+        raise NativeLinuxServiceDenied('native_linux_service_denied')
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+        client.settimeout(5)
+        client.connect(AUDIT_SOCKET)
+        pid, uid, gid = struct.unpack('3i', client.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
+        if (pid, uid, gid) != (1, 0, 0):
+            raise NativeLinuxServiceDenied('native_linux_service_denied')
+        data = bytearray()
+        while len(data) <= 16384:
+            part = client.recv(16385 - len(data))
+            if not part:
+                break
+            data.extend(part)
+        if not data or len(data) > 16384:
+            raise NativeLinuxServiceDenied('native_linux_service_denied')
+        return data.decode('ascii')
+
+
 def real_os_isolation_verified(*, private_relay_ip: str | None = None,
                                git_roots: tuple[str, ...] = (), target: str | None = None) -> bool:
     """Every call rechecks actual process capabilities and manager policy."""
@@ -254,20 +283,21 @@ def real_os_isolation_verified(*, private_relay_ip: str | None = None,
             if (not _inet_socket_creation_denied() or
                 not _private_run_mount(Path('/proc/self/mountinfo').read_text(encoding='ascii'))):
                 return False
-        keys = [*EXPECTED_HARDENING, "RestrictAddressFamilies", "TemporaryFileSystem",
-                "BindPaths", "BindReadOnlyPaths", "IPAddressDeny",
-                "IPAddressAllow", "CapabilityBoundingSet", "InaccessiblePaths"]
-        command = ["/usr/bin/systemctl", "show", UNIT, "--no-pager",
-                   "--property=" + ",".join(keys)]
-        proc = subprocess.run(
-            command, stdin=subprocess.DEVNULL, capture_output=True,
-            timeout=5, check=False, env={
-                "PATH": "/usr/bin:/bin", "LC_ALL": "C",
-            },
-        )
-        if proc.returncode != 0 or len(proc.stdout) > 16384:
-            return False
-        if not _properties_are_hardened(proc.stdout.decode("ascii"),
+        if target == 'yfc-vps' and private_relay_ip == UNIX_ENDPOINT:
+            properties = _audit_properties()
+        else:
+            command = ["/usr/bin/systemctl", "show", UNIT, "--no-pager",
+                       "--property=" + ",".join(SHOW_KEYS)]
+            proc = subprocess.run(
+                command, stdin=subprocess.DEVNULL, capture_output=True,
+                timeout=5, check=False, env={
+                    "PATH": "/usr/bin:/bin", "LC_ALL": "C",
+                },
+            )
+            if proc.returncode != 0 or len(proc.stdout) > 16384:
+                return False
+            properties = proc.stdout.decode('ascii')
+        if not _properties_are_hardened(properties,
                                         private_relay_ip=private_relay_ip,
                                         git_roots=git_roots, target=target):
             return False
