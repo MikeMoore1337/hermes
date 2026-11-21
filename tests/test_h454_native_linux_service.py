@@ -88,6 +88,7 @@ class RealLinuxUnitRenderTests(unittest.TestCase):
                 self.assertIn("TemporaryFileSystem=/run:ro\n", text)
                 self.assertIn("BindReadOnlyPaths="+service.AUDIT_DIRECTORY+"\n", text)
                 self.assertIn("LimitNOFILE=32768\n", text)
+                self.assertIn("Requires=hermes-commander-audit.socket\n", text)
                 self.assertIn("ReadOnlyPaths="+pinned, text)
                 self.assertIn("--run-once --target "+target, text)
                 self.assertIn("--manifest-sha256 ", text)
@@ -191,6 +192,10 @@ class RealLinuxUnitRenderTests(unittest.TestCase):
                          "actual systemd syntax verifier only on Linux CI")
     def test_systemd_analyze_accepts_real_service_unit(self):
         with tempfile.TemporaryDirectory(prefix="h454-active-unit-syntax-") as tmp:
+            from scripts.h454_native_linux_audit_unit import render_audit_units
+            socket_unit,audit_unit=render_audit_units()
+            (Path(tmp)/'hermes-commander-audit.socket').write_text(socket_unit)
+            (Path(tmp)/'hermes-commander-audit@.service').write_text(audit_unit)
             dest=Path(tmp)/unit.UNIT_NAME
             dest.write_text(render())
             result=subprocess.run(
