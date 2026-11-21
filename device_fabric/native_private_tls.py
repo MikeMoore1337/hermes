@@ -57,6 +57,11 @@ def _private_ip(text: str) -> bool:
         return False
 
 
+def _permitted_relay_ip(target: str, address: str) -> bool:
+    # Loopback is only a transport; the pinned TLS certificate authenticates the peer.
+    return _private_ip(address) or (target == 'yfc-vps' and address == '127.0.0.1')
+
+
 def _guard_dir(root: Path) -> None:
     if not root.is_absolute():
         _deny()
@@ -126,7 +131,7 @@ def load_private_relay(target: str, release_sha: str, *, root: Path = TRUST) -> 
         } or info['schema'] != 'h454-private-relay-v1' or
             info['target'] != target or info['release_sha'] != release_sha or
             info['server_name'] != HOST or type(info['port']) is not int or
-            info['port'] != PORT or not _private_ip(info['relay_ipv4']) or
+            info['port'] != PORT or not _permitted_relay_ip(target, info['relay_ipv4']) or
             type(info['ca_sha256']) is not str or
             SHA64.fullmatch(info['ca_sha256']) is None or
             json.dumps(info, sort_keys=True, separators=(',', ':'),

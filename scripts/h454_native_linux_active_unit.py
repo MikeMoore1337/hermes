@@ -11,7 +11,7 @@ import ipaddress
 import re
 
 from device_fabric.native_install_preview import parse_candidate, InstallPlanDenied
-from device_fabric.native_private_tls import TRUST, CONFIG, CA, _private_ip
+from device_fabric.native_private_tls import TRUST, CONFIG, CA, _permitted_relay_ip
 from scripts.h454_native_linux_unit_candidate import (
     SERVICE_USER, MANIFEST_PATH, CONFIG_PATH,
 )
@@ -63,7 +63,7 @@ def render_active_unit(
         relays = tuple(ipaddress.IPv4Address(part) for part in relay_parts)
         if private_relay:
             # Private bridge never needs public Cloudflare or DNS egress.
-            if len(relays) != 1 or dns_ipv4 != "" or not _private_ip(relay_ipv4):
+            if len(relays) != 1 or dns_ipv4 != "" or not _permitted_relay_ip(target, relay_ipv4):
                 raise LinuxActiveUnitDenied("native_linux_active_unit_denied")
             dns = None
         else:

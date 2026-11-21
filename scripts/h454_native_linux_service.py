@@ -21,7 +21,7 @@ from typing import Callable
 
 from device_fabric.native_brc_status import revoked_provider, PUBLIC, StatusDenied
 from device_fabric.native_private_tls import (
-    _private_ip, load_private_relay, private_revoked_provider,
+    _permitted_relay_ip, load_private_relay, private_revoked_provider,
     private_websocket_connector,
 )
 from scripts.h454_native_linux_runtime import (
@@ -102,7 +102,7 @@ def _kernel_evidence(status: str, cgroup: str, invocation: str,
 
 
 def _properties_are_hardened(text: str, *, private_relay_ip: str | None = None,
-                             git_roots: tuple[str, ...] = ()) -> bool:
+                             git_roots: tuple[str, ...] = (), target: str | None = None) -> bool:
     try:
         if type(text) is not str or not 0 < len(text) <= 16384:
             return False
@@ -128,7 +128,7 @@ def _properties_are_hardened(text: str, *, private_relay_ip: str | None = None,
             return False
         ip_words = values.get("IPAddressAllow", "").split()
         if private_relay_ip is not None:
-            return (_private_ip(private_relay_ip) and
+            return (_permitted_relay_ip(target, private_relay_ip) and
                     ip_words == [private_relay_ip + "/32"] and
                     values.get("CapabilityBoundingSet") in ("", "~"))
         if len(ip_words) not in (2, 3) or len(set(ip_words)) != len(ip_words):
@@ -193,7 +193,7 @@ def _pinned_websocket_dependency(release_sha: str) -> bool:
 
 
 def real_os_isolation_verified(*, private_relay_ip: str | None = None,
-                               git_roots: tuple[str, ...] = ()) -> bool:
+                               git_roots: tuple[str, ...] = (), target: str | None = None) -> bool:
     """Every call rechecks actual process capabilities and manager policy."""
     try:
         if sys.platform != "linux" or os.name != "posix":
@@ -222,7 +222,7 @@ def real_os_isolation_verified(*, private_relay_ip: str | None = None,
             return False
         if not _properties_are_hardened(proc.stdout.decode("ascii"),
                                         private_relay_ip=private_relay_ip,
-                                        git_roots=git_roots):
+                                        git_roots=git_roots, target=target):
             return False
         for root in git_roots:
             git = Path(root) / ".git"
@@ -267,7 +267,7 @@ def run_trusted_once(*, target: str, release_sha: str,
             private = load_private_relay(target, release_sha)
             if os_gate is None:
                 os_gate = lambda: real_os_isolation_verified(
-                    private_relay_ip=private.relay_ipv4, git_roots=git_roots)
+                    private_relay_ip=private.relay_ipv4, git_roots=git_roots, target=target)
             if status_factory is not revoked_provider:
                 _deny()
             status_factory = lambda **kwargs: private_revoked_provider(

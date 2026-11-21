@@ -346,9 +346,9 @@ class LiveWorkerLifecycleTests(unittest.TestCase):
             self.assertEqual(service.main(args), 0)
             self.assertGreaterEqual(gate.call_count, 3)
             self.assertEqual(gate.call_args_list[0].kwargs,
-                             {"private_relay_ip": private.relay_ipv4, "git_roots": ()})
+                             {"private_relay_ip": private.relay_ipv4, "git_roots": (), "target": "hermes-vps"})
             self.assertTrue(all(call.kwargs == {
-                "private_relay_ip": private.relay_ipv4,
+                "private_relay_ip": private.relay_ipv4, "target": "hermes-vps",
                 "git_roots": ("/srv/hermes/source",)}
                 for call in gate.call_args_list[1:]))
             self.assertIs(session.call_args.kwargs["connector"], self.transport)
@@ -371,6 +371,17 @@ class LiveWorkerLifecycleTests(unittest.TestCase):
                              ("/srv/hermes/source",))
             status.assert_not_called()
             session.assert_not_called()
+
+    def test_yfc_loopback_passes_target_to_os_gate_before_credentials(self):
+        args = ["--run-once", "--target", "yfc-vps", "--release-sha", RELEASE,
+                "--manifest-sha256", "d" * 64]
+        with patch.object(service, "load_private_relay", return_value=SimpleNamespace(relay_ipv4="127.0.0.1")), \
+             patch.object(service, "_service_identity"), \
+             patch.object(service, "real_os_isolation_verified", return_value=False) as gate, \
+             patch.object(service, "load_local_runtime") as load:
+            self.assertEqual(service.main(args), 2)
+            gate.assert_called_once_with(private_relay_ip="127.0.0.1", git_roots=(), target="yfc-vps")
+            load.assert_not_called()
 
     def test_real_worker_composes_existing_native_wss_and_owner_revocation(self):
         with patch.object(service,"_service_identity"), \
@@ -428,7 +439,7 @@ class LiveWorkerLifecycleTests(unittest.TestCase):
              patch.object(service,"_service_identity"), \
              patch.object(service,"load_local_runtime") as load:
             self.assertEqual(service.main(args),2)
-            gate.assert_called_once_with(private_relay_ip="172.29.251.2", git_roots=())
+            gate.assert_called_once_with(private_relay_ip="172.29.251.2", git_roots=(), target="hermes-vps")
             load.assert_not_called()
         with patch.object(service,"real_os_isolation_verified",
                           return_value=False):

@@ -69,6 +69,38 @@ class TrustLoading(unittest.TestCase):
         self.assertFalse(service._properties_are_hardened(lines.replace('IPAddressDeny=any','IPAddressDeny='),
             private_relay_ip='172.29.251.2'))
 
+    def test_yfc_loopback_is_scoped_and_still_requires_tls(self):
+        ca=b'-----BEGIN CERTIFICATE-----\nsynthetic\n-----END CERTIFICATE-----\n'
+        with patch.object(direct, '_guard_dir'), patch.object(direct, '_context'):
+            manifest=self._manifest(ca, target='yfc-vps', relay_ipv4='127.0.0.1')
+            with patch.object(direct, '_read', side_effect=[manifest,ca]):
+                self.assertEqual(direct.load_private_relay('yfc-vps', RELEASE).relay_ipv4, '127.0.0.1')
+            for ip in ('127.0.0.2', '0.0.0.0', '8.8.8.8'):
+                with patch.object(direct, '_read', side_effect=[self._manifest(ca, target='yfc-vps', relay_ipv4=ip),ca]), self.assertRaises(direct.PrivateTLSDenied):
+                    direct.load_private_relay('yfc-vps', RELEASE)
+        lines='\n'.join([f'{k}={v}' for k,v in service.EXPECTED_HARDENING.items()]+[
+            'IPAddressDeny=any','IPAddressAllow=127.0.0.1/32','CapabilityBoundingSet='])
+        self.assertTrue(service._properties_are_hardened(lines, private_relay_ip='127.0.0.1', target='yfc-vps'))
+        self.assertFalse(service._properties_are_hardened(lines, private_relay_ip='127.0.0.1', target='hermes-vps'))
+        self.assertFalse(service._properties_are_hardened(lines.replace('IPAddressAllow=127.0.0.1/32',
+            'IPAddressAllow=127.0.0.1/32 8.8.8.8/32'), private_relay_ip='127.0.0.1', target='yfc-vps'))
+
+    def test_yfc_unit_limits_loopback_egress(self):
+        manifest=json.dumps({'schema':SCHEMA,'target':'yfc-vps','release_sha':RELEASE,
+            'artifact_sha256':'c'*64,'service_name':SERVICE['yfc-vps'][0],
+            'service_identity':SERVICE['yfc-vps'][1],'start_state':'DISABLED',
+            'access_mode':'READ_ONLY','roots':[{'project':'your-fitness-coach','path':'/srv/yfc/source'}]},
+            sort_keys=True,separators=(',',':')).encode('ascii')
+        args=dict(manifest=manifest,target='yfc-vps',release_sha=RELEASE,
+            manifest_sha256=hashlib.sha256(manifest).hexdigest(),relay_ipv4='127.0.0.1',
+            dns_ipv4='',private_relay=True)
+        rendered=unit.render_active_unit(**args)
+        self.assertEqual([line for line in rendered.splitlines() if line.startswith('IPAddressAllow=')],
+                         ['IPAddressAllow=127.0.0.1/32'])
+        for ip in ('127.0.0.2','8.8.8.8'):
+            with self.assertRaises(unit.LinuxActiveUnitDenied):
+                unit.render_active_unit(**dict(args,relay_ipv4=ip))
+
     def test_websocket_never_uses_public_ip_for_network(self):
         config=direct.PrivateRelay('hermes-vps',RELEASE,'172.29.251.2',b'fake-ca')
         recorded=[]
@@ -172,14 +204,22 @@ class LocalCertificateE2E(unittest.TestCase):
                 '-out',cls.ca,'-days','1','-subj','/CN=synthetic-ca',
                 '-addext','basicConstraints=critical,CA:TRUE',
                 '-addext','keyUsage=critical,keyCertSign,cRLSign')
+        cls.other_ca=folder/'other-ca.crt'
+        openssl('req','-x509','-newkey','rsa:2048','-nodes','-keyout',folder/'other-ca.key',
+                '-out',cls.other_ca,'-days','1','-subj','/CN=other-synthetic-ca',
+                '-addext','basicConstraints=critical,CA:TRUE',
+                '-addext','keyUsage=critical,keyCertSign,cRLSign')
         openssl('req','-newkey','rsa:2048','-nodes','-keyout',key,'-out',csr,
                 '-subj','/CN=brc-agent.internal')
         openssl('x509','-req','-in',csr,'-CA',cls.ca,'-CAkey',cakey,
                 '-CAcreateserial','-out',cert,'-days','1','-extfile',ext)
         context=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         context.load_cert_chain(str(cert),str(key))
+        cls.requests=[]
+        requests=cls.requests
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
+                requests.append(True)
                 if self.path != '/device/native-status' or self.headers.get('Authorization')!='Bearer '+TOKEN:
                     self.send_response(403);self.send_header('Content-Length','0');self.end_headers();return
                 content=json.dumps({'schema':'h454-native-device-status-v1',
@@ -215,6 +255,9 @@ class LocalCertificateE2E(unittest.TestCase):
                     base_url='http://localhost:3000')
 
     def test_wrong_ca_cannot_send_bearer(self):
-        pinned=direct.PrivateRelay('hermes-vps',RELEASE,'127.0.0.1',b'bad ca data')
+        pinned=direct.PrivateRelay('yfc-vps',RELEASE,'127.0.0.1',self.other_ca.read_bytes())
+        before=len(self.requests)
         with patch.object(direct,'PORT',self.server.server_address[1]):
-            self.assertFalse(direct.current_bearer(pinned,target='hermes-vps',device_id=IDENTITY,bearer=TOKEN))
+            self.assertFalse(direct.current_bearer(pinned,target='yfc-vps',
+                device_id='h454-linux-yfc-'+'a'*32,bearer=TOKEN))
+        self.assertEqual(len(self.requests),before)
