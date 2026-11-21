@@ -271,6 +271,14 @@ class OSIsolationKernelTests(unittest.TestCase):
         with patch.object(service.socket, 'socket', side_effect=OSError(service.errno.EMFILE, 'full')):
             self.assertFalse(service._inet_socket_creation_denied())
 
+    def test_yfc_run_mount_must_be_read_only_tmpfs(self):
+        line='33 1 0:42 / /run ro,nosuid - tmpfs tmpfs ro,size=1024\n'
+        self.assertTrue(service._private_run_mount(line))
+        self.assertFalse(service._private_run_mount(line.replace(' - tmpfs ', ' - ext4 ')))
+        self.assertFalse(service._private_run_mount(line.replace('/run ro,', '/run rw,')))
+        self.assertFalse(service._private_run_mount(line+line))
+        self.assertFalse(service._private_run_mount('malformed'))
+
     def test_yfc_gate_denies_if_kernel_allows_inet(self):
         with patch.object(service.sys, 'platform', 'linux'), \
              patch.object(service, '_service_identity'), \

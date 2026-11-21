@@ -84,11 +84,15 @@ class TrustLoading(unittest.TestCase):
                 with patch.object(direct,'_read',side_effect=[encode(changed),ca]), self.assertRaises(direct.PrivateTLSDenied):
                     direct.load_private_relay('yfc-vps', RELEASE)
         lines='\n'.join([f'{k}={"yes" if k == "PrivateNetwork" else v}' for k,v in service.EXPECTED_HARDENING.items()]+[
-            'RestrictAddressFamilies=AF_UNIX','IPAddressDeny=any','IPAddressAllow=','CapabilityBoundingSet='])
+            'RestrictAddressFamilies=AF_UNIX','IPAddressDeny=any','IPAddressAllow=','CapabilityBoundingSet=',
+            'TemporaryFileSystem=/run:ro','BindReadOnlyPaths='+' '.join(
+                f'{p}:{p}:rbind' for p in (direct.UNIX_DIRECTORY,'/run/dbus/system_bus_socket','/run/systemd/system'))])
         self.assertTrue(service._properties_are_hardened(lines,private_relay_ip=direct.UNIX_ENDPOINT,target='yfc-vps'))
         for changed in (lines.replace('PrivateNetwork=yes','PrivateNetwork=no'),
                         lines.replace('IPAddressAllow=','IPAddressAllow=127.0.0.1/32'),
-                        lines.replace('RestrictAddressFamilies=AF_UNIX','RestrictAddressFamilies=AF_UNIX AF_INET')):
+                        lines.replace('RestrictAddressFamilies=AF_UNIX','RestrictAddressFamilies=AF_UNIX AF_INET'),
+                        lines.replace('TemporaryFileSystem=/run:ro','TemporaryFileSystem='),
+                        lines.replace('BindReadOnlyPaths=','BindReadOnlyPaths=/run/postgresql:/run/postgresql:rbind ')):
             self.assertFalse(service._properties_are_hardened(changed,private_relay_ip=direct.UNIX_ENDPOINT,target='yfc-vps'))
         self.assertFalse(service._properties_are_hardened(lines,private_relay_ip=direct.UNIX_ENDPOINT,target='hermes-vps'))
 
@@ -105,6 +109,8 @@ class TrustLoading(unittest.TestCase):
         self.assertIn('PrivateNetwork=yes\n',rendered)
         self.assertIn('RestrictAddressFamilies=AF_UNIX\n',rendered)
         self.assertIn('IPAddressDeny=any\n',rendered)
+        self.assertIn('TemporaryFileSystem=/run:ro\n',rendered)
+        self.assertIn('BindReadOnlyPaths='+direct.UNIX_DIRECTORY+'\n',rendered)
         self.assertNotIn('IPAddressAllow=',rendered)
 
     def test_websocket_never_uses_public_ip_for_network(self):

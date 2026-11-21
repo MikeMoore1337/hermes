@@ -23,7 +23,7 @@ from typing import Callable
 
 from device_fabric.native_brc_status import revoked_provider, PUBLIC, StatusDenied
 from device_fabric.native_private_tls import (
-    _private_ip, UNIX_ENDPOINT, load_private_relay, private_revoked_provider,
+    _private_ip, UNIX_ENDPOINT, UNIX_DIRECTORY, load_private_relay, private_revoked_provider,
     private_websocket_connector,
 )
 from scripts.h454_native_linux_runtime import (
@@ -119,6 +119,7 @@ def _properties_are_hardened(text: str, *, private_relay_ip: str | None = None,
         if unix_relay:
             expected['PrivateNetwork'] = 'yes'
             expected['RestrictAddressFamilies'] = 'AF_UNIX'
+            expected['TemporaryFileSystem'] = '/run:ro'
         if any(values.get(k) != v for k, v in expected.items()):
             return False
         if (type(git_roots) is not tuple or len(git_roots) > 5
@@ -135,7 +136,11 @@ def _properties_are_hardened(text: str, *, private_relay_ip: str | None = None,
             return False
         ip_words = values.get("IPAddressAllow", "").split()
         if unix_relay:
-            return not ip_words and values.get("CapabilityBoundingSet") in ("", "~")
+            binds = values.get('BindReadOnlyPaths', '').split()
+            allowed = (UNIX_DIRECTORY, '/run/dbus/system_bus_socket', '/run/systemd/system')
+            return (not ip_words and values.get("CapabilityBoundingSet") in ("", "~") and
+                    len(binds) == len(allowed) and
+                    set(binds) == {path + ':' + path + ':rbind' for path in allowed})
         if private_relay_ip is not None:
             return (_private_ip(private_relay_ip) and
                     ip_words == [private_relay_ip + "/32"] and
@@ -215,6 +220,19 @@ def _inet_socket_creation_denied() -> bool:
     return True
 
 
+def _private_run_mount(text: str) -> bool:
+    try:
+        mounts = []
+        for line in text.splitlines():
+            left, right = line.split(' - ', 1)
+            fields, filesystem = left.split(), right.split()
+            if fields[4] == '/run':
+                mounts.append(filesystem[0] == 'tmpfs' and 'ro' in fields[5].split(','))
+        return mounts == [True]
+    except (ValueError, IndexError):
+        return False
+
+
 def real_os_isolation_verified(*, private_relay_ip: str | None = None,
                                git_roots: tuple[str, ...] = (), target: str | None = None) -> bool:
     """Every call rechecks actual process capabilities and manager policy."""
@@ -232,9 +250,11 @@ def real_os_isolation_verified(*, private_relay_ip: str | None = None,
         ):
             return False
         if target == 'yfc-vps' and private_relay_ip == UNIX_ENDPOINT:
-            if not _inet_socket_creation_denied():
+            if (not _inet_socket_creation_denied() or
+                not _private_run_mount(Path('/proc/self/mountinfo').read_text(encoding='ascii'))):
                 return False
-        keys = [*EXPECTED_HARDENING, "RestrictAddressFamilies", "IPAddressDeny",
+        keys = [*EXPECTED_HARDENING, "RestrictAddressFamilies", "TemporaryFileSystem",
+                "BindReadOnlyPaths", "IPAddressDeny",
                 "IPAddressAllow", "CapabilityBoundingSet", "InaccessiblePaths"]
         command = ["/usr/bin/systemctl", "show", UNIT, "--no-pager",
                    "--property=" + ",".join(keys)]
