@@ -84,8 +84,10 @@ class RealLinuxUnitRenderTests(unittest.TestCase):
                 self.assertIn("ReadOnlyPaths=/var/lib/hermes-commander-native", text)
                 pinned="/opt/hermes-commander-native/deps/main-"+RELEASE
                 self.assertIn("Environment=PYTHONPATH="+pinned, text)
-                flavor = "asyncio" if target == "yfc-vps" else "sync"
-                self.assertIn("AssertPathExists="+pinned+"/websockets/"+flavor+"/client.py", text)
+                self.assertIn("AssertPathExists="+pinned+"/websockets/asyncio/client.py", text)
+                self.assertIn("TemporaryFileSystem=/run:ro\n", text)
+                self.assertIn("BindReadOnlyPaths="+service.AUDIT_DIRECTORY+"\n", text)
+                self.assertIn("LimitNOFILE=32768\n", text)
                 self.assertIn("ReadOnlyPaths="+pinned, text)
                 self.assertIn("--run-once --target "+target, text)
                 self.assertIn("--manifest-sha256 ", text)
@@ -338,6 +340,30 @@ class OSIsolationKernelTests(unittest.TestCase):
                 private_relay_ip=service.UNIX_ENDPOINT,target='yfc-vps',expected_identity=(1235,1234)))
             read.assert_not_called()
 
+    def test_hermes_gate_rechecks_identity_and_uses_only_audit_socket(self):
+        values=dict(service.EXPECTED_HARDENING,LimitNOFILE='32768',StandardInput='null',
+            StandardOutput='journal',StandardError='journal',TemporaryFileSystem='/run:ro',
+            BindPaths='',BindReadOnlyPaths=service.AUDIT_DIRECTORY+':'+service.AUDIT_DIRECTORY+':rbind',
+            RestrictAddressFamilies='AF_INET AF_INET6 AF_UNIX',IPAddressDeny='any',
+            IPAddressAllow='172.29.251.2/32',CapabilityBoundingSet='')
+        properties='\n'.join(k+'='+v for k,v in values.items())
+        with patch.object(service.sys,'platform','linux'), \
+             patch.object(service.os,'geteuid',return_value=1234), \
+             patch.object(service.os,'getegid',return_value=1234), \
+             patch.object(service,'STATUS',SimpleNamespace(read_text=lambda **_:'status')), \
+             patch.object(service,'CGROUP',SimpleNamespace(read_text=lambda **_:'cgroup')), \
+             patch.object(service,'_kernel_evidence',return_value=True), \
+             patch.object(service,'_private_run_mount',return_value=True), \
+             patch.object(service,'_audit_properties',return_value=properties) as audit, \
+             patch.object(service,'_service_identity',side_effect=AssertionError('NSS after confinement')), \
+             patch.object(service.subprocess,'run',side_effect=AssertionError('process after confinement')), \
+             patch.dict(service.os.environ,{'INVOCATION_ID':'e'*32}):
+            self.assertTrue(service.real_os_isolation_verified(private_relay_ip='172.29.251.2',
+                target='hermes-vps',expected_identity=(1234,1234)))
+            audit.assert_called_once()
+            self.assertFalse(service.real_os_isolation_verified(private_relay_ip='172.29.251.2',
+                target='hermes-vps',expected_identity=(1235,1234)))
+
     def test_actual_kernel_status_and_systemd_hardening_contract(self):
         expected_cgroup="0::/system.slice/hermes-commander-native.service\n"
         invocation="e"*32
@@ -405,14 +431,16 @@ class LiveWorkerLifecycleTests(unittest.TestCase):
         revoked = Mock(return_value=False)
         ws = ModuleType("websockets")
         ws.__path__ = []
-        sync = ModuleType("websockets.sync")
-        sync.__path__ = []
-        client = ModuleType("websockets.sync.client")
+        asynchronous = ModuleType("websockets.asyncio")
+        asynchronous.__path__ = []
+        client = ModuleType("websockets.asyncio.client")
         client.connect = Mock()
         args = ["--run-once", "--target", TARGET, "--release-sha", RELEASE,
                 "--manifest-sha256", "d" * 64]
-        with patch.dict(sys.modules, {"websockets": ws, "websockets.sync": sync,
-                                     "websockets.sync.client": client}), \
+        with patch.dict(sys.modules, {"websockets": ws, "websockets.asyncio": asynchronous,
+                                     "websockets.asyncio.client": client}), \
+             patch.object(service.os, "geteuid", return_value=1234), \
+             patch.object(service.os, "getegid", return_value=1234), \
              patch.object(service, "load_private_relay", return_value=private), \
              patch.object(service, "_service_identity"), \
              patch.object(service, "real_os_isolation_verified", return_value=True) as gate, \
@@ -424,11 +452,12 @@ class LiveWorkerLifecycleTests(unittest.TestCase):
             self.assertEqual(service.main(args), 0)
             self.assertGreaterEqual(gate.call_count, 3)
             self.assertEqual(gate.call_args_list[0].kwargs,
-                             {"private_relay_ip": private.relay_ipv4, "git_roots": (), "target": "hermes-vps"})
+                             {"private_relay_ip": private.relay_ipv4, "git_roots": (), "target": "hermes-vps", "expected_identity": (1234,1234)})
             self.assertTrue(all(call.kwargs == {
                 "private_relay_ip": private.relay_ipv4, "target": "hermes-vps",
-                "git_roots": ("/srv/hermes/source",)}
+                "git_roots": ("/srv/hermes/source",), "expected_identity": (1234,1234)}
                 for call in gate.call_args_list[1:]))
+            self.assertTrue(session.call_args.kwargs['landlock_read'])
             self.assertIs(session.call_args.kwargs["connector"], self.transport)
             self.assertFalse(session.call_args.kwargs["is_device_revoked"]())
 
@@ -475,7 +504,7 @@ class LiveWorkerLifecycleTests(unittest.TestCase):
             adapter.assert_called_once_with(client.connect)
             private_connector.assert_called_once_with(private,adapter.return_value)
             identity_check.assert_called_once_with('yfc-vps')
-            self.assertTrue(session.call_args.kwargs['landlock_yfc'])
+            self.assertTrue(session.call_args.kwargs['landlock_read'])
             self.assertTrue(all(c.kwargs['expected_identity']==(1234,1234) for c in gate.call_args_list))
 
     def test_real_worker_composes_existing_native_wss_and_owner_revocation(self):
@@ -534,7 +563,8 @@ class LiveWorkerLifecycleTests(unittest.TestCase):
              patch.object(service,"_service_identity"), \
              patch.object(service,"load_local_runtime") as load:
             self.assertEqual(service.main(args),2)
-            gate.assert_called_once_with(private_relay_ip="172.29.251.2", git_roots=(), target="hermes-vps")
+            self.assertEqual(gate.call_args.kwargs['private_relay_ip'],"172.29.251.2")
+            self.assertEqual(gate.call_args.kwargs['target'],"hermes-vps")
             load.assert_not_called()
         with patch.object(service,"real_os_isolation_verified",
                           return_value=False):

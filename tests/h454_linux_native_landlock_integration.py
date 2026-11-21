@@ -218,8 +218,40 @@ class LandlockTests(unittest.TestCase):
                      patch.object(service,'_service_identity',side_effect=AssertionError('NSS after confinement')), \\
                      patch.dict(os.environ,{'INVOCATION_ID':'e'*32}):
                     result=runtime.run_once(prepared,connector=lambda *a,**k:None,
-                        is_device_revoked=lambda:False,is_os_isolation_verified=gate,landlock_yfc=True)
+                        is_device_revoked=lambda:False,is_os_isolation_verified=gate,landlock_read=True)
                 assert result == 'synthetic-session';print('PASS')
+            ''')
+            proc=subprocess.run(['runuser','-u','nobody','--',sys.executable,'-B','-c',script,folder],capture_output=True,text=True,timeout=15)
+            self.assertEqual(proc.returncode,0,proc.stderr)
+            self.assertEqual(proc.stdout.strip(),'PASS')
+
+    @unittest.skipUnless(getattr(os, 'geteuid', lambda: -1)() == 0, 'root-owned immutable fixture required')
+    def test_hermes_runtime_denies_protected_file_before_session(self):
+        with tempfile.TemporaryDirectory(dir='/var/lib') as folder:
+            root=Path(folder);os.chmod(root,0o755)
+            (root/'safe.py').write_text('synthetic');os.chmod(root/'safe.py',0o644)
+            (root/'.env.example').write_text('synthetic');os.chmod(root/'.env.example',0o644)
+            script=textwrap.dedent('''
+                import os,resource,sys
+                from unittest.mock import patch
+                from device_fabric.linux_native_outbound import LocalLinuxDeviceConfig,ENDPOINT
+                from device_fabric import linux_native_landlock as boundary
+                from scripts import h454_native_linux_runtime as runtime
+                boundary._trusted_source_fs=lambda _fd: True
+                resource.setrlimit(resource.RLIMIT_NOFILE,(32768,resource.getrlimit(resource.RLIMIT_NOFILE)[1]))
+                device=LocalLinuxDeviceConfig('hermes-vps','h454-linux-hermes-'+'a'*32,'brc_dev_'+'x'*64,ENDPOINT)
+                prepared=runtime.PreparedRuntime(device,(('hermes',sys.argv[1]),),None)
+                def session(_device,dispatcher,_connector):
+                    files=dispatcher._roots['hermes']
+                    assert files.read_file('safe.py')['size_bytes']==9
+                    try:os.open('.env.example',os.O_RDONLY,dir_fd=files._root_fd)
+                    except PermissionError:pass
+                    else:raise AssertionError('protected file readable')
+                    return 'synthetic-session'
+                with patch.object(runtime,'_service_identity'),patch.object(runtime,'run_session',side_effect=session):
+                    result=runtime.run_once(prepared,connector=lambda *a,**k:None,
+                        is_device_revoked=lambda:False,is_os_isolation_verified=lambda:True,landlock_read=True)
+                assert result=='synthetic-session';print('PASS')
             ''')
             proc=subprocess.run(['runuser','-u','nobody','--',sys.executable,'-B','-c',script,folder],capture_output=True,text=True,timeout=15)
             self.assertEqual(proc.returncode,0,proc.stderr)
@@ -290,7 +322,7 @@ class LandlockTests(unittest.TestCase):
                 outbound.MAX_TOOL_CALLS=1
                 with patch.object(runtime,'_service_identity'):
                     outcome=runtime.run_once(prepared,connector=good_connector,
-                        is_device_revoked=lambda:False,is_os_isolation_verified=lambda:True,landlock_yfc=True)
+                        is_device_revoked=lambda:False,is_os_isolation_verified=lambda:True,landlock_read=True)
                 assert outcome=='session_call_budget'
                 try:bad_connector(tls.ENDPOINT,**opts)
                 except tls.PrivateTLSDenied:pass

@@ -95,6 +95,7 @@ def verify_bytes(data: bytes) -> VerifiedWheel:
         for required in (
             "websockets/__init__.py",
             "websockets/sync/client.py",
+            "websockets/asyncio/client.py",
             "websockets-17.2.dist-info/METADATA",
             "websockets-17.2.dist-info/WHEEL",
             "websockets-17.2.dist-info/RECORD",

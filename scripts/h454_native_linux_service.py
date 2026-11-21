@@ -122,11 +122,13 @@ def _properties_are_hardened(text: str, *, private_relay_ip: str | None = None,
             values[key] = value
         unix_relay = target == 'yfc-vps' and private_relay_ip == UNIX_ENDPOINT
         expected = dict(EXPECTED_HARDENING)
-        if target == 'yfc-vps':
+        if target in ('hermes-vps', 'yfc-vps'):
             expected['LimitNOFILE'] = '32768'
             expected['StandardInput'] = 'null'
             expected['StandardOutput'] = 'journal'
             expected['StandardError'] = 'journal'
+            expected['TemporaryFileSystem'] = '/run:ro'
+            expected['BindPaths'] = ''
         if unix_relay:
             expected['PrivateNetwork'] = 'yes'
             expected['RestrictAddressFamilies'] = 'AF_UNIX'
@@ -134,6 +136,10 @@ def _properties_are_hardened(text: str, *, private_relay_ip: str | None = None,
             expected['BindPaths'] = ''
         if any(values.get(k) != v for k, v in expected.items()):
             return False
+        if target in ('hermes-vps', 'yfc-vps') and not unix_relay:
+            families = values.get('RestrictAddressFamilies', '').split()
+            if len(families) != 3 or set(families) != {'AF_UNIX', 'AF_INET', 'AF_INET6'}:
+                return False
         if (type(git_roots) is not tuple or len(git_roots) > 5
             or any(type(root) is not str or not root.startswith("/")
                    or ".." in root.split("/") for root in git_roots)):
@@ -147,6 +153,10 @@ def _properties_are_hardened(text: str, *, private_relay_ip: str | None = None,
         ):
             return False
         ip_words = values.get("IPAddressAllow", "").split()
+        if target in ('hermes-vps', 'yfc-vps') and not unix_relay:
+            if values.get('BindReadOnlyPaths', '').split() != [
+                    AUDIT_DIRECTORY + ':' + AUDIT_DIRECTORY + ':rbind']:
+                return False
         if unix_relay:
             binds = values.get('BindReadOnlyPaths', '').split()
             allowed = (UNIX_DIRECTORY, AUDIT_DIRECTORY)
@@ -200,7 +210,7 @@ def _pinned_websocket_dependency(release_sha: str, target: str = 'hermes-vps') -
             or info.st_mode & 0o022):
             return False
         package = importlib.import_module("websockets")
-        client_name = 'asyncio' if target == 'yfc-vps' else 'sync'
+        client_name = 'asyncio'
         client = importlib.import_module('websockets.' + client_name + '.client')
         if getattr(package, "__version__", None) != "17.2":
             return False
@@ -279,7 +289,7 @@ def real_os_isolation_verified(*, private_relay_ip: str | None = None,
     try:
         if sys.platform != "linux" or os.name != "posix":
             return False
-        if target == 'yfc-vps':
+        if target in ('hermes-vps', 'yfc-vps'):
             if (type(expected_identity) is not tuple or len(expected_identity) != 2 or
                 any(type(value) is not int or value <= 0 for value in expected_identity) or
                 expected_identity != (os.geteuid(), os.getegid())):
@@ -296,10 +306,12 @@ def real_os_isolation_verified(*, private_relay_ip: str | None = None,
         ):
             return False
         if target == 'yfc-vps' and private_relay_ip == UNIX_ENDPOINT:
-            if (not _inet_socket_creation_denied() or
-                not _private_run_mount(Path('/proc/self/mountinfo').read_text(encoding='ascii'))):
+            if not _inet_socket_creation_denied():
                 return False
-        if target == 'yfc-vps' and private_relay_ip == UNIX_ENDPOINT:
+        if target in ('hermes-vps', 'yfc-vps'):
+            if not _private_run_mount(Path('/proc/self/mountinfo').read_text(encoding='ascii')):
+                return False
+        if target in ('hermes-vps', 'yfc-vps'):
             properties = _audit_properties()
         else:
             command = ["/usr/bin/systemctl", "show", UNIT, "--no-pager",
@@ -352,15 +364,16 @@ def run_trusted_once(*, target: str, release_sha: str,
         _deny()
     try:
         private = None
-        landlock_yfc = target == 'yfc-vps' and connector is None
+        landlock_read = connector is None
         git_roots: tuple[str, ...] = ()
         enforce_git_mask = connector is None and os_gate is None
+        _service_identity(target)
         if connector is None:
             # CLI production path is always private, even if the public
             # BRC endpoint appears to work. Never allow an implicit fallback.
             private = load_private_relay(target, release_sha)
             if os_gate is None:
-                identity = {'expected_identity': (os.geteuid(), os.getegid())} if target == 'yfc-vps' else {}
+                identity = {'expected_identity': (os.geteuid(), os.getegid())}
                 os_gate = lambda: real_os_isolation_verified(
                     private_relay_ip=private.relay_ipv4, git_roots=git_roots, target=target, **identity)
             if status_factory is not revoked_provider:
@@ -369,7 +382,6 @@ def run_trusted_once(*, target: str, release_sha: str,
                 private, **kwargs)
         elif os_gate is None:
             os_gate = real_os_isolation_verified
-        _service_identity(target)
         if os_gate() is not True:
             _deny()
         prepared = load_local_runtime(
@@ -396,19 +408,15 @@ def run_trusted_once(*, target: str, release_sha: str,
             # universal wheel, root-owned and unmodifiable by the service.
             if not _pinned_websocket_dependency(release_sha, target):
                 _deny()
-            if target == 'yfc-vps':
-                from websockets.asyncio.client import connect
-                connector = private_websocket_connector(private, sync_adapter(connect))
-            else:
-                from websockets.sync.client import connect
-                connector = private_websocket_connector(private, connect)
+            from websockets.asyncio.client import connect
+            connector = private_websocket_connector(private, sync_adapter(connect))
         if os_gate() is not True:
             _deny()
         return run_once(
             prepared, connector=connector,
             is_device_revoked=lambda: os_gate() is not True or revoked() is not False,
             is_os_isolation_verified=os_gate,
-            **({'landlock_yfc': True} if landlock_yfc else {}),
+            **({'landlock_read': True} if landlock_read else {}),
         )
     except Exception:
         raise NativeLinuxServiceDenied("native_linux_service_denied") from None

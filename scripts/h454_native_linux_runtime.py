@@ -229,7 +229,7 @@ def local_preflight(prepared: PreparedRuntime) -> dict[str, object]:
 def run_once(prepared: PreparedRuntime, *, connector: Connector,
              is_device_revoked: Callable[[], bool],
              is_os_isolation_verified: Callable[[], bool],
-             landlock_yfc: bool = False) -> str:
+             landlock_read: bool = False) -> str:
     """Source-only injectable one-shot runner. NOT exposed as a CLI/service.
 
     The trusted host installer is responsible for actual OS enforcement,
@@ -239,8 +239,7 @@ def run_once(prepared: PreparedRuntime, *, connector: Connector,
     """
     if (type(prepared) is not PreparedRuntime
         or not callable(connector) or not callable(is_device_revoked)
-        or not callable(is_os_isolation_verified) or type(landlock_yfc) is not bool
-        or (landlock_yfc and prepared.device.target != 'yfc-vps')):
+        or not callable(is_os_isolation_verified) or type(landlock_read) is not bool):
         raise RuntimeDenied("native_linux_runtime_denied")
     try:
         _service_identity(prepared.device.target)
@@ -252,7 +251,7 @@ def run_once(prepared: PreparedRuntime, *, connector: Connector,
             for project, path in prepared.project_roots:
                 roots[project] = stack.enter_context(
                     LinuxNativeFiles(root=Path(path), project=project))
-            if landlock_yfc:
+            if landlock_read:
                 if len(roots) != 1:
                     raise RuntimeDenied("native_linux_runtime_denied")
                 snapshot = stack.enter_context(ReadSnapshot(next(iter(roots.values()))))

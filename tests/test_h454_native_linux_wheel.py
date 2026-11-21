@@ -21,6 +21,7 @@ def synthetic_wheel() -> bytes:
     contents = {
         "websockets/__init__.py": b"__version__ = '17.2'\n",
         "websockets/sync/client.py": b"def connect(): pass\n",
+        "websockets/asyncio/client.py": b"def connect(): pass\n",
         "websockets-17.2.dist-info/METADATA": b"Metadata-Version: 2.4\nName: websockets\nVersion: 17.2\n",
         "websockets-17.2.dist-info/WHEEL": b"Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: py3-none-any\n",
         "websockets-17.2.dist-info/RECORD": b"synthetic fixture,not a real PyPI wheel\n",
@@ -54,6 +55,7 @@ class NativeOfflineWheel(unittest.TestCase):
                 self.assertFalse(staged["native_service_started"])
                 parent = self.root / ("main-" + RELEASE)
                 self.assertTrue((parent / "websockets/sync/client.py").is_file())
+                self.assertTrue((parent / "websockets/asyncio/client.py").is_file())
                 self.assertTrue((parent / wheel.RECEIPT).is_file())
                 self.assertTrue(all(
                     (p.stat().st_mode & 0o777) == 0o444 for p in parent.rglob("*")
@@ -111,6 +113,18 @@ class NativeOfflineWheel(unittest.TestCase):
                                   hashlib.sha256(tampered).hexdigest()):
                     with self.assertRaises(wheel.WheelDenied):
                         wheel.verify_bytes(tampered)
+
+    def test_wheel_without_async_client_is_rejected(self):
+        output=io.BytesIO()
+        with zipfile.ZipFile(io.BytesIO(self.payload)) as source, \
+             zipfile.ZipFile(output,'w',compression=zipfile.ZIP_DEFLATED) as target:
+            for member in source.infolist():
+                if member.filename != 'websockets/asyncio/client.py':
+                    target.writestr(member.filename,source.read(member))
+        tampered=output.getvalue()
+        with patch.object(wheel,'WHEEL_SHA256',hashlib.sha256(tampered).hexdigest()), \
+             self.assertRaises(wheel.WheelDenied):
+            wheel.verify_bytes(tampered)
 
     def test_rollback_denies_tampering_links_and_unrelated_releases(self):
         wheel.stage_wheel(self.payload, target=TARGETS[0], release_sha=RELEASE,

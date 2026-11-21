@@ -4,6 +4,8 @@ from __future__ import annotations
 import gzip
 import hashlib
 import io
+import importlib.machinery
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -99,7 +101,7 @@ class PrivateVersionedSourceContracts(unittest.TestCase):
         self.assertEqual(len(m.SOURCE_FILES), 14)
         self.assertIn("device_fabric/native_private_tls.py", m.SOURCE_FILES)
 
-    def test_generated_unit_matches_new_main_private_renderer_exactly(self):
+    def test_historical_upgrade_uses_only_the_historical_unit_renderer(self):
         data = {
             "schema": SCHEMA, "target": m.TARGET,
             "release_sha": m.CURRENT, "artifact_sha256": m.BUNDLE_SHA,
@@ -114,9 +116,17 @@ class PrivateVersionedSourceContracts(unittest.TestCase):
             release_sha=m.CURRENT, manifest_sha256=manifest_hash)
         self.assertIn("RestrictSUIDSGID=no\n", baseline)
         legacy = baseline.replace("RestrictSUIDSGID=no\n", "RestrictSUIDSGID=yes\n")
-        with patch.object(m, "render_preflight_unit", return_value=legacy):
+        fixture = Path(__file__).resolve().parent / 'fixtures/h454-native-linux-active-unit-077c60.py.txt'
+        raw=fixture.read_bytes()
+        self.assertEqual(hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest(),
+                         '046f374e2500362c7aa690f16b4c8717b19392ba')
+        loader=importlib.machinery.SourceFileLoader('h454_legacy_active_unit',str(fixture))
+        spec=importlib.util.spec_from_loader(loader.name,loader)
+        historical=importlib.util.module_from_spec(spec);loader.exec_module(historical)
+        with patch.object(m, "render_preflight_unit", return_value=legacy), \
+             patch.object(m, "render_active_unit", historical.render_active_unit):
             candidate = m._unit_rendered(manifest, "172.29.251.2")
-        current = render_active_unit(
+        current = historical.render_active_unit(
             manifest, target=m.TARGET, release_sha=m.CURRENT,
             manifest_sha256=manifest_hash, relay_ipv4="172.29.251.2",
             dns_ipv4="", private_relay=True,
@@ -128,6 +138,9 @@ class PrivateVersionedSourceContracts(unittest.TestCase):
         self.assertNotIn("IPAddressAllow=1.1.1.1", current)
         self.assertNotIn("IPAddressAllow=8.8.8.8", current)
         self.assertIn("ReadOnlyPaths=/opt/hermes-commander-native/trust", current)
+        with patch.object(m, "render_preflight_unit", return_value=legacy), \
+             self.assertRaises(m.UpgradeHold):
+            m._unit_rendered(manifest, "172.29.251.2")
 
     def test_inert_deny_bypasses_and_no_service_activation(self):
         self.assertTrue(set(("plan", "install-off", "rollback-off")))
