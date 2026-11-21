@@ -38,7 +38,7 @@ def render_tunnel_unit(*, ssh_ipv4: str, relay_ipv4: str) -> str:
             '[Service]', 'Type=exec', 'User=hermes-commander-tunnel',
             'Group=hermes-commander-native', 'RuntimeDirectory=' + UNIX_DIRECTORY.rsplit('/', 1)[-1],
             'RuntimeDirectoryMode=0750', 'UMask=0077',
-            'ExecStart=' + ' '.join(ssh), 'Restart=on-failure', 'RestartSec=5s',
+            'ExecStart=' + ' '.join(ssh), 'Restart=always', 'RestartSec=5s',
             'NoNewPrivileges=yes', 'CapabilityBoundingSet=', 'AmbientCapabilities=',
             'ProtectSystem=strict', 'ProtectHome=yes', 'PrivateTmp=yes', 'PrivateDevices=yes',
             'ProtectControlGroups=yes', 'ProtectKernelTunables=yes', 'ProtectKernelModules=yes',

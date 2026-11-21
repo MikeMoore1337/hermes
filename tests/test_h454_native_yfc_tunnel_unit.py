@@ -13,6 +13,7 @@ class TunnelUnitTests(unittest.TestCase):
         text=render_tunnel_unit(ssh_ipv4='8.8.8.8',relay_ipv4='172.29.251.2')
         for item in ('User=hermes-commander-tunnel\n', 'Group=hermes-commander-native\n',
                      'RuntimeDirectoryMode=0750\n', 'IPAddressDeny=any\n',
+                     'Restart=always\n',
                      'IPAddressAllow=8.8.8.8/32\n', 'StrictHostKeyChecking=yes',
                      'UserKnownHostsFile=/etc/hermes-commander-tunnel/known_hosts',
                      'IdentityAgent=none', 'StreamLocalBindMask=0117',
