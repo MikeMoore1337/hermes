@@ -120,6 +120,7 @@ def _properties_are_hardened(text: str, *, private_relay_ip: str | None = None,
             expected['PrivateNetwork'] = 'yes'
             expected['RestrictAddressFamilies'] = 'AF_UNIX'
             expected['TemporaryFileSystem'] = '/run:ro'
+            expected['BindPaths'] = ''
         if any(values.get(k) != v for k, v in expected.items()):
             return False
         if (type(git_roots) is not tuple or len(git_roots) > 5
@@ -254,7 +255,7 @@ def real_os_isolation_verified(*, private_relay_ip: str | None = None,
                 not _private_run_mount(Path('/proc/self/mountinfo').read_text(encoding='ascii'))):
                 return False
         keys = [*EXPECTED_HARDENING, "RestrictAddressFamilies", "TemporaryFileSystem",
-                "BindReadOnlyPaths", "IPAddressDeny",
+                "BindPaths", "BindReadOnlyPaths", "IPAddressDeny",
                 "IPAddressAllow", "CapabilityBoundingSet", "InaccessiblePaths"]
         command = ["/usr/bin/systemctl", "show", UNIT, "--no-pager",
                    "--property=" + ",".join(keys)]
