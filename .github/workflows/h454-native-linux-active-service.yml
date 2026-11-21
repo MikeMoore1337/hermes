@@ -42,7 +42,7 @@ jobs:
             tests.test_h454_native_linux_unit_candidate \
             tests.test_h454_native_readonly_bundle \
             tests.test_h454_native_brc_status
-          echo 'H454_REAL_LINUX_READ_RUNTIME_AND_13_FILE_BUNDLE=PASS'
+          echo 'H454_REAL_LINUX_READ_RUNTIME_AND_16_FILE_BUNDLE=PASS'
       - name: Prove no owner-host deployment or agent pairing
         shell: bash
         run: |

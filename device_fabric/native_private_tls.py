@@ -243,6 +243,11 @@ def private_websocket_connector(config: PrivateRelay, underlying: Callable) -> C
     """Keep BRC public logical device URL, but connect only to the private TLS peer."""
     if type(config) is not PrivateRelay or not callable(underlying):
         _deny()
+    # Load the SNI codec before a YFC Landlock policy blocks new imports.
+    try:
+        HOST.encode('idna')
+    except (LookupError, UnicodeError):
+        _deny()
 
     def connect(url: str, **kwargs):
         allowed = {'additional_headers', 'open_timeout', 'close_timeout',

@@ -102,7 +102,7 @@ def render_active_unit(
             "After=network-online.target local-fs.target",
             "AssertPathExists=" + MANIFEST_PATH,
             "AssertPathExists=" + CONFIG_PATH,
-            "AssertPathExists=" + deps + "/websockets/sync/client.py",
+            "AssertPathExists=" + deps + "/websockets/" + ("asyncio" if target == "yfc-vps" else "sync") + "/client.py",
             *(("AssertPathExists=" + str(TRUST / name) for name in (CONFIG, CA)) if private_relay else ()),
             "StartLimitIntervalSec=300",
             "StartLimitBurst=3",
@@ -161,10 +161,12 @@ def render_active_unit(
             "MemoryMax=256M",
             "CPUQuota=25%",
             "TasksMax=24",
+            *(("LimitNOFILE=32768",) if target == "yfc-vps" else ()),
             "ReadOnlyPaths=" + source,
             "ReadOnlyPaths=" + deps,
             "ReadOnlyPaths=/var/lib/hermes-commander-native",
             *((("ReadOnlyPaths=" + str(TRUST),)) if private_relay else ()),
+            *(("StandardInput=null",) if target == "yfc-vps" else ()),
         ]
         lines.extend("ReadOnlyPaths=" + root for _, root in candidate.roots)
         lines.extend("InaccessiblePaths=-" + root + "/.git" for _, root in candidate.roots)

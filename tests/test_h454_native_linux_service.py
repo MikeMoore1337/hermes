@@ -84,7 +84,8 @@ class RealLinuxUnitRenderTests(unittest.TestCase):
                 self.assertIn("ReadOnlyPaths=/var/lib/hermes-commander-native", text)
                 pinned="/opt/hermes-commander-native/deps/main-"+RELEASE
                 self.assertIn("Environment=PYTHONPATH="+pinned, text)
-                self.assertIn("AssertPathExists="+pinned+"/websockets/sync/client.py", text)
+                flavor = "asyncio" if target == "yfc-vps" else "sync"
+                self.assertIn("AssertPathExists="+pinned+"/websockets/"+flavor+"/client.py", text)
                 self.assertIn("ReadOnlyPaths="+pinned, text)
                 self.assertIn("--run-once --target "+target, text)
                 self.assertIn("--manifest-sha256 ", text)
@@ -314,15 +315,28 @@ class OSIsolationKernelTests(unittest.TestCase):
     def test_yfc_gate_denies_if_kernel_allows_inet(self):
         with patch.object(service.sys, 'platform', 'linux'), \
              patch.object(service, '_service_identity'), \
+             patch.object(service.os, 'geteuid', return_value=1234), \
+             patch.object(service.os, 'getegid', return_value=1234), \
              patch.object(service, 'STATUS', SimpleNamespace(read_text=lambda **_: 'status')), \
              patch.object(service, 'CGROUP', SimpleNamespace(read_text=lambda **_: 'cgroup')), \
              patch.object(service, '_kernel_evidence', return_value=True), \
-             patch.object(service, '_inet_socket_creation_denied', return_value=False), \
+             patch.object(service, '_inet_socket_creation_denied', return_value=False) as denied, \
              patch.object(service.subprocess, 'run') as systemctl, \
              patch.dict(service.os.environ, {'INVOCATION_ID':'e'*32}):
             self.assertFalse(service.real_os_isolation_verified(
-                private_relay_ip=service.UNIX_ENDPOINT,target='yfc-vps'))
+                private_relay_ip=service.UNIX_ENDPOINT,target='yfc-vps',expected_identity=(1234,1234)))
+            denied.assert_called_once()
             systemctl.assert_not_called()
+
+    def test_yfc_gate_rejects_changed_cached_identity(self):
+        read=Mock()
+        with patch.object(service.sys,'platform','linux'), \
+             patch.object(service.os,'geteuid',return_value=1234), \
+             patch.object(service.os,'getegid',return_value=1234), \
+             patch.object(service,'STATUS',SimpleNamespace(read_text=read)):
+            self.assertFalse(service.real_os_isolation_verified(
+                private_relay_ip=service.UNIX_ENDPOINT,target='yfc-vps',expected_identity=(1235,1234)))
+            read.assert_not_called()
 
     def test_actual_kernel_status_and_systemd_hardening_contract(self):
         expected_cgroup="0::/system.slice/hermes-commander-native.service\n"
@@ -435,6 +449,34 @@ class LiveWorkerLifecycleTests(unittest.TestCase):
                              ("/srv/hermes/source",))
             status.assert_not_called()
             session.assert_not_called()
+
+    def test_yfc_cli_requires_landlock_and_verified_identity(self):
+        private=SimpleNamespace(relay_ipv4=service.UNIX_ENDPOINT)
+        prepared=SimpleNamespace(device=SimpleNamespace(device_id='h454-linux-yfc-'+'a'*32,
+            token='brc_dev_'+'x'*64),project_roots=(('your-fitness-coach','/srv/yfc/source'),))
+        ws=ModuleType('websockets');ws.__path__=[]
+        asynchronous=ModuleType('websockets.asyncio');asynchronous.__path__=[]
+        client=ModuleType('websockets.asyncio.client');client.connect=Mock()
+        args=['--run-once','--target','yfc-vps','--release-sha',RELEASE,'--manifest-sha256','d'*64]
+        with patch.dict(sys.modules,{'websockets':ws,'websockets.asyncio':asynchronous,'websockets.asyncio.client':client}), \
+             patch.object(service.os,'geteuid',return_value=1234), \
+             patch.object(service.os,'getegid',return_value=1234), \
+             patch.object(service,'load_private_relay',return_value=private), \
+             patch.object(service,'_service_identity') as identity_check, \
+             patch.object(service,'real_os_isolation_verified',return_value=True) as gate, \
+             patch.object(service,'load_local_runtime',return_value=prepared), \
+             patch.object(service,'private_revoked_provider',return_value=lambda:False), \
+             patch.object(service,'_pinned_websocket_dependency',return_value=True) as pinned, \
+             patch.object(service,'sync_adapter',return_value=Mock()) as adapter, \
+             patch.object(service,'private_websocket_connector',return_value=self.transport) as private_connector, \
+             patch.object(service,'run_once',return_value='session_deadline') as session:
+            self.assertEqual(service.main(args),0)
+            pinned.assert_called_once_with(RELEASE,'yfc-vps')
+            adapter.assert_called_once_with(client.connect)
+            private_connector.assert_called_once_with(private,adapter.return_value)
+            identity_check.assert_called_once_with('yfc-vps')
+            self.assertTrue(session.call_args.kwargs['landlock_yfc'])
+            self.assertTrue(all(c.kwargs['expected_identity']==(1234,1234) for c in gate.call_args_list))
 
     def test_real_worker_composes_existing_native_wss_and_owner_revocation(self):
         with patch.object(service,"_service_identity"), \

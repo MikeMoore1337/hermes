@@ -20,14 +20,19 @@ from scripts.h454_native_linux_unit_candidate import render_preflight_unit
 
 
 class PrivateVersionedSourceContracts(unittest.TestCase):
+    def historical_bundle(self, files):
+        with patch.object(bundle, "SOURCE_FILES", m.SOURCE_FILES):
+            archive, receipt = bundle.build_bytes(
+                target=m.TARGET, release_sha=m.CURRENT, sources=files)
+            manifest = bundle._manifest(
+                target=m.TARGET, release_sha=m.CURRENT, sources=files)
+        return archive, receipt, manifest
+
     def test_bundle_proves_exact_source_count_and_status(self):
         files = {name: ("# fixture " + name + "\n").encode() for name in m.SOURCE_FILES}
         files["device_fabric/native_private_tls.py"] += b"def load_private_relay(): pass\n"
         files["scripts/h454_native_linux_service.py"] += b"private_websocket_connector\n"
-        binary, receipt = bundle.build_bytes(
-            target=m.TARGET, release_sha=m.CURRENT, sources=files)
-        manifest_bytes = bundle._manifest(
-            target=m.TARGET, release_sha=m.CURRENT, sources=files)
+        binary, receipt, manifest_bytes = self.historical_bundle(files)
         with patch.object(m, "BUNDLE_SHA", hashlib.sha256(binary).hexdigest()), \
              patch.object(m, "MANIFEST_SOURCE_SHA", hashlib.sha256(manifest_bytes).hexdigest()):
             self.assertEqual(m.verified_source(binary, receipt), files)
@@ -45,11 +50,8 @@ class PrivateVersionedSourceContracts(unittest.TestCase):
                  for name in m.SOURCE_FILES}
         files["device_fabric/native_private_tls.py"] += b"def load_private_relay(): pass\n"
         files["scripts/h454_native_linux_service.py"] += b"private_websocket_connector\n"
-        archive, receipt = bundle.build_bytes(
-            target=m.TARGET, release_sha=m.CURRENT, sources=files)
-        manifest = bundle._manifest(
-            target=m.TARGET, release_sha=m.CURRENT, sources=files)
-        old_13_paths = tuple(name for name in bundle.SOURCE_FILES
+        archive, receipt, manifest = self.historical_bundle(files)
+        old_13_paths = tuple(name for name in m.SOURCE_FILES
                              if name != "device_fabric/native_private_tls.py")
         self.assertEqual(len(old_13_paths), 13)
         # Reproduce original VPS behavior: old owner-source decoder is pinned
@@ -64,10 +66,16 @@ class PrivateVersionedSourceContracts(unittest.TestCase):
     def test_strict_new_14_ustar_denies_extras_and_malformed_gzip(self):
         files = {name: ("# fixture " + name + "\n").encode()
                  for name in m.SOURCE_FILES}
-        archive, _ = bundle.build_bytes(
-            target=m.TARGET, release_sha=m.CURRENT, sources=files)
-        self.assertEqual(len(m._bounded_14_ustar(archive)),
-                         len(bundle._bounded_ustar(archive)))
+        archive, _, _ = self.historical_bundle(files)
+        with patch.object(bundle, "SOURCE_FILES", m.SOURCE_FILES):
+            self.assertEqual(len(m._bounded_14_ustar(archive)),
+                             len(bundle._bounded_ustar(archive)))
+        current_files = {name: ("# current " + name + "\n").encode()
+                         for name in bundle.SOURCE_FILES}
+        current_archive, _ = bundle.build_bytes(
+            target=m.TARGET, release_sha=m.CURRENT, sources=current_files)
+        with self.assertRaises(m.UpgradeHold):
+            m._bounded_14_ustar(current_archive)
         for changed in (archive + b"EXTRA", archive[:-10]):
             with self.subTest(kind="gzip"), self.assertRaises(m.UpgradeHold):
                 m._bounded_14_ustar(changed)

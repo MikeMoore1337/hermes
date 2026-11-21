@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+from contextlib import nullcontext
 import hashlib
 import json
 import re
@@ -211,6 +212,7 @@ class LinuxOriginalReadDispatcher:
         self._reads = 0
         self._searches = 0
         self._lock = threading.Lock()
+        self._io_lock = threading.Lock()
 
     def _active(self) -> None:
         try:
@@ -236,24 +238,25 @@ class LinuxOriginalReadDispatcher:
                 self._searches += 1
                 if self._searches > MAX_SESSION_SEARCHES:
                     raise NativeLinuxReadDenied("native_linux_read_denied")
-        self._active()
         files = self._roots.get(args["project"])
         if files is None:
             raise NativeLinuxReadDenied("native_linux_read_denied")
         try:
-            if tool == STAT:
-                result = files.stat_file(args["relative"])
-            elif tool == READ:
-                result = files.read_file(args["relative"])
-            elif tool == LIST:
-                result = files.list_directory(args["relative"])
-            else:
-                result = LinuxNativeSearch(files).search(
-                    args["query"], mode=args["mode"],
-                    relative_root=args["relative_root"])
-            safe = _check_result(result, project=args["project"],
-                                 tool=tool, args=args)
-            self._active()
+            with self._io_lock if files._landlock_snapshot is not None else nullcontext():
+                self._active()
+                if tool == STAT:
+                    result = files.stat_file(args["relative"])
+                elif tool == READ:
+                    result = files.read_file(args["relative"])
+                elif tool == LIST:
+                    result = files.list_directory(args["relative"])
+                else:
+                    result = LinuxNativeSearch(files).search(
+                        args["query"], mode=args["mode"],
+                        relative_root=args["relative_root"])
+                safe = _check_result(result, project=args["project"],
+                                     tool=tool, args=args)
+                self._active()
             return {"status": "ok", "tool": tool, "id": identity,
                     "result": safe}
         except (NativeLinuxDenied, NativeLinuxReadDenied, OSError, UnicodeError,

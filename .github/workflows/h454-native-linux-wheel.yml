@@ -8,6 +8,14 @@ on:
       - scripts/h454_native_linux_service.py
       - tests/test_h454_native_linux_wheel.py
       - tests/test_h454_native_linux_service.py
+      - tests/h454_linux_native_landlock_integration.py
+      - tests/test_h454_linux_native_async_transport.py
+      - device_fabric/linux_native_landlock.py
+      - device_fabric/linux_native_async_transport.py
+      - device_fabric/linux_native_files.py
+      - device_fabric/linux_native_read_dispatch.py
+      - device_fabric/native_private_tls.py
+      - scripts/h454_native_linux_runtime.py
       - deploy/h454/native-linux/requirements.lock
       - docs/operations/h454-native-linux-wheel.md
       - .github/workflows/h454-native-linux-wheel.yml
@@ -87,6 +95,19 @@ jobs:
           print("H454_NATIVE_LINUX_REAL_PYPI_WHEEL_STAGED=PASS")
           print("H454_NATIVE_LINUX_NO_GLOBAL_PIP_OR_HOST=PASS")
           PY
+      - name: Exercise real Landlock and private WebSocket on synthetic files
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n install -d -m 0755 /opt/h454-test-deps
+          sudo -n python3 -m zipfile -e "$RUNNER_TEMP/h454-native-wheel/websockets-17.2-py3-none-any.whl" /opt/h454-test-deps
+          sudo -n chmod -R a+rX /opt/h454-test-deps
+          sudo -n install -d -m 0755 /opt/h454-test-src
+          git archive HEAD | sudo -n tar -x -C /opt/h454-test-src
+          sudo -n chmod -R a+rX /opt/h454-test-src
+          cd /opt/h454-test-src
+          sudo -n env PYTHONPATH="/opt/h454-test-src:/opt/h454-test-deps" python3 -B -m unittest -v tests.h454_linux_native_landlock_integration 2>&1 | tee "$RUNNER_TEMP/h454-landlock.log"
+          grep -Fxq 'OK' "$RUNNER_TEMP/h454-landlock.log"
       - name: Upload verified original PyPI wheel only (NO HOST INSTALL)
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

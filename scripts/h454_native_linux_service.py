@@ -22,6 +22,7 @@ import subprocess
 import sys
 from typing import Callable
 
+from device_fabric.linux_native_async_transport import sync_adapter
 from device_fabric.native_brc_status import revoked_provider, PUBLIC, StatusDenied
 from device_fabric.native_private_tls import (
     _private_ip, UNIX_ENDPOINT, UNIX_DIRECTORY, AUDIT_DIRECTORY, AUDIT_SOCKET, load_private_relay, private_revoked_provider,
@@ -58,7 +59,8 @@ EXPECTED_HARDENING = {
     "MemoryDenyWriteExecute": "yes",
 }
 PROC_CAPS = ("CapEff", "CapPrm", "CapBnd", "CapAmb")
-SHOW_KEYS = (*EXPECTED_HARDENING, "RestrictAddressFamilies", "TemporaryFileSystem",
+SHOW_KEYS = (*EXPECTED_HARDENING, "LimitNOFILE", "StandardInput", "StandardOutput", "StandardError",
+             "RestrictAddressFamilies", "TemporaryFileSystem",
              "BindPaths", "BindReadOnlyPaths", "IPAddressDeny", "IPAddressAllow",
              "CapabilityBoundingSet", "InaccessiblePaths")
 
@@ -120,6 +122,11 @@ def _properties_are_hardened(text: str, *, private_relay_ip: str | None = None,
             values[key] = value
         unix_relay = target == 'yfc-vps' and private_relay_ip == UNIX_ENDPOINT
         expected = dict(EXPECTED_HARDENING)
+        if target == 'yfc-vps':
+            expected['LimitNOFILE'] = '32768'
+            expected['StandardInput'] = 'null'
+            expected['StandardOutput'] = 'journal'
+            expected['StandardError'] = 'journal'
         if unix_relay:
             expected['PrivateNetwork'] = 'yes'
             expected['RestrictAddressFamilies'] = 'AF_UNIX'
@@ -176,7 +183,7 @@ def _properties_are_hardened(text: str, *, private_relay_ip: str | None = None,
 
 
 
-def _pinned_websocket_dependency(release_sha: str) -> bool:
+def _pinned_websocket_dependency(release_sha: str, target: str = 'hermes-vps') -> bool:
     """Deny the global/pip/user-installed websockets module at live startup.
 
     A PATH or PYTHONPATH override must not select an unpinned implementation.
@@ -184,7 +191,8 @@ def _pinned_websocket_dependency(release_sha: str) -> bool:
     fixed release-scoped immutable directory before activating systemd.
     """
     try:
-        if type(release_sha) is not str or EXPECTED_SHA.fullmatch(release_sha) is None:
+        if (type(release_sha) is not str or EXPECTED_SHA.fullmatch(release_sha) is None
+            or target not in ('hermes-vps', 'yfc-vps')):
             return False
         expected = Path("/opt/hermes-commander-native/deps") / ("main-" + release_sha)
         info = expected.lstat()
@@ -192,12 +200,13 @@ def _pinned_websocket_dependency(release_sha: str) -> bool:
             or info.st_mode & 0o022):
             return False
         package = importlib.import_module("websockets")
-        client = importlib.import_module("websockets.sync.client")
+        client_name = 'asyncio' if target == 'yfc-vps' else 'sync'
+        client = importlib.import_module('websockets.' + client_name + '.client')
         if getattr(package, "__version__", None) != "17.2":
             return False
         for loaded, name in (
             (package, "websockets/__init__.py"),
-            (client, "websockets/sync/client.py"),
+            (client, 'websockets/' + client_name + '/client.py'),
         ):
             file = Path(loaded.__file__)
             if (file.is_symlink() or not file.is_file()
@@ -264,12 +273,19 @@ def _audit_properties() -> str:
 
 
 def real_os_isolation_verified(*, private_relay_ip: str | None = None,
-                               git_roots: tuple[str, ...] = (), target: str | None = None) -> bool:
+                               git_roots: tuple[str, ...] = (), target: str | None = None,
+                               expected_identity: tuple[int, int] | None = None) -> bool:
     """Every call rechecks actual process capabilities and manager policy."""
     try:
         if sys.platform != "linux" or os.name != "posix":
             return False
-        _service_identity("hermes-vps")
+        if target == 'yfc-vps':
+            if (type(expected_identity) is not tuple or len(expected_identity) != 2 or
+                any(type(value) is not int or value <= 0 for value in expected_identity) or
+                expected_identity != (os.geteuid(), os.getegid())):
+                return False
+        else:
+            _service_identity("hermes-vps")
         if EXPECTED_INVOCATION.fullmatch(os.environ.get("INVOCATION_ID", "")) is None:
             return False
         status = STATUS.read_text(encoding="ascii")
@@ -336,6 +352,7 @@ def run_trusted_once(*, target: str, release_sha: str,
         _deny()
     try:
         private = None
+        landlock_yfc = target == 'yfc-vps' and connector is None
         git_roots: tuple[str, ...] = ()
         enforce_git_mask = connector is None and os_gate is None
         if connector is None:
@@ -343,8 +360,9 @@ def run_trusted_once(*, target: str, release_sha: str,
             # BRC endpoint appears to work. Never allow an implicit fallback.
             private = load_private_relay(target, release_sha)
             if os_gate is None:
+                identity = {'expected_identity': (os.geteuid(), os.getegid())} if target == 'yfc-vps' else {}
                 os_gate = lambda: real_os_isolation_verified(
-                    private_relay_ip=private.relay_ipv4, git_roots=git_roots, target=target)
+                    private_relay_ip=private.relay_ipv4, git_roots=git_roots, target=target, **identity)
             if status_factory is not revoked_provider:
                 _deny()
             status_factory = lambda **kwargs: private_revoked_provider(
@@ -376,16 +394,21 @@ def run_trusted_once(*, target: str, release_sha: str,
             # Never inherit an arbitrary system pip package. This fixed
             # release's dependency must be the exact offline-hash-staged
             # universal wheel, root-owned and unmodifiable by the service.
-            if not _pinned_websocket_dependency(release_sha):
+            if not _pinned_websocket_dependency(release_sha, target):
                 _deny()
-            from websockets.sync.client import connect
-            connector = private_websocket_connector(private, connect)
+            if target == 'yfc-vps':
+                from websockets.asyncio.client import connect
+                connector = private_websocket_connector(private, sync_adapter(connect))
+            else:
+                from websockets.sync.client import connect
+                connector = private_websocket_connector(private, connect)
         if os_gate() is not True:
             _deny()
         return run_once(
             prepared, connector=connector,
             is_device_revoked=lambda: os_gate() is not True or revoked() is not False,
             is_os_isolation_verified=os_gate,
+            **({'landlock_yfc': True} if landlock_yfc else {}),
         )
     except Exception:
         raise NativeLinuxServiceDenied("native_linux_service_denied") from None
