@@ -223,7 +223,7 @@ class LandlockTests(unittest.TestCase):
             ''')
             proc=subprocess.run(['runuser','-u','nobody','--',sys.executable,'-B','-c',script,folder],capture_output=True,text=True,timeout=15)
             self.assertEqual(proc.returncode,0,proc.stderr)
-            self.assertEqual(proc.stdout.strip(),'PASS')
+            self.assertEqual(proc.stdout.splitlines(),['H454_NATIVE_OS_READ_ISOLATION=PASS','PASS'])
 
     @unittest.skipUnless(getattr(os, 'geteuid', lambda: -1)() == 0, 'root-owned immutable fixture required')
     def test_hermes_runtime_denies_protected_file_before_session(self):
@@ -255,7 +255,7 @@ class LandlockTests(unittest.TestCase):
             ''')
             proc=subprocess.run(['runuser','-u','nobody','--',sys.executable,'-B','-c',script,folder],capture_output=True,text=True,timeout=15)
             self.assertEqual(proc.returncode,0,proc.stderr)
-            self.assertEqual(proc.stdout.strip(),'PASS')
+            self.assertEqual(proc.stdout.splitlines(),['H454_NATIVE_OS_READ_ISOLATION=PASS','PASS'])
 
     @unittest.skipUnless(getattr(os, 'geteuid', lambda: -1)() == 0 and HAVE_PINNED_WEBSOCKETS,
                          'root-owned fixture and pinned websockets 17.2 required')
@@ -336,7 +336,7 @@ class LandlockTests(unittest.TestCase):
                 proc=subprocess.run(['runuser','-u','nobody','--',sys.executable,'-B','-c',script,
                     str(root),str(ca),str(other),socket_path],capture_output=True,text=True,timeout=20)
                 self.assertEqual(proc.returncode,0,proc.stderr)
-                self.assertEqual(proc.stdout.strip(),'PASS')
+                self.assertEqual(proc.stdout.splitlines(),['H454_NATIVE_OS_READ_ISOLATION=PASS','PASS'])
                 self.assertEqual(requests,[True])
                 self.assertEqual(results,[True])
             finally:
