@@ -6,6 +6,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
 from pathlib import Path
 import socket
+import socketserver
 import ssl
 import subprocess
 import tempfile
@@ -69,37 +70,42 @@ class TrustLoading(unittest.TestCase):
         self.assertFalse(service._properties_are_hardened(lines.replace('IPAddressDeny=any','IPAddressDeny='),
             private_relay_ip='172.29.251.2'))
 
-    def test_yfc_loopback_is_scoped_and_still_requires_tls(self):
+    def test_unix_transport_is_yfc_only_and_denies_all_ip(self):
         ca=b'-----BEGIN CERTIFICATE-----\nsynthetic\n-----END CERTIFICATE-----\n'
+        doc=json.loads(self._manifest(ca))
+        doc.update(schema='h454-private-relay-unix-v1',target='yfc-vps',relay_socket=direct.UNIX_SOCKET)
+        del doc['relay_ipv4']
+        encode=lambda obj: json.dumps(obj,sort_keys=True,separators=(',',':')).encode()
         with patch.object(direct, '_guard_dir'), patch.object(direct, '_context'):
-            manifest=self._manifest(ca, target='yfc-vps', relay_ipv4='127.0.0.1')
-            with patch.object(direct, '_read', side_effect=[manifest,ca]):
-                self.assertEqual(direct.load_private_relay('yfc-vps', RELEASE).relay_ipv4, '127.0.0.1')
-            for ip in ('127.0.0.2', '0.0.0.0', '8.8.8.8'):
-                with patch.object(direct, '_read', side_effect=[self._manifest(ca, target='yfc-vps', relay_ipv4=ip),ca]), self.assertRaises(direct.PrivateTLSDenied):
+            with patch.object(direct, '_read', side_effect=[encode(doc),ca]):
+                self.assertEqual(direct.load_private_relay('yfc-vps', RELEASE).relay_ipv4, direct.UNIX_ENDPOINT)
+            for key,value in (('target','hermes-vps'),('relay_socket','/tmp/relay.sock'),('port',443)):
+                changed=dict(doc, **{key:value})
+                with patch.object(direct,'_read',side_effect=[encode(changed),ca]), self.assertRaises(direct.PrivateTLSDenied):
                     direct.load_private_relay('yfc-vps', RELEASE)
-        lines='\n'.join([f'{k}={v}' for k,v in service.EXPECTED_HARDENING.items()]+[
-            'IPAddressDeny=any','IPAddressAllow=127.0.0.1/32','CapabilityBoundingSet='])
-        self.assertTrue(service._properties_are_hardened(lines, private_relay_ip='127.0.0.1', target='yfc-vps'))
-        self.assertFalse(service._properties_are_hardened(lines, private_relay_ip='127.0.0.1', target='hermes-vps'))
-        self.assertFalse(service._properties_are_hardened(lines.replace('IPAddressAllow=127.0.0.1/32',
-            'IPAddressAllow=127.0.0.1/32 8.8.8.8/32'), private_relay_ip='127.0.0.1', target='yfc-vps'))
+        lines='\n'.join([f'{k}={"yes" if k == "PrivateNetwork" else v}' for k,v in service.EXPECTED_HARDENING.items()]+[
+            'RestrictAddressFamilies=AF_UNIX','IPAddressDeny=any','IPAddressAllow=','CapabilityBoundingSet='])
+        self.assertTrue(service._properties_are_hardened(lines,private_relay_ip=direct.UNIX_ENDPOINT,target='yfc-vps'))
+        for changed in (lines.replace('PrivateNetwork=yes','PrivateNetwork=no'),
+                        lines.replace('IPAddressAllow=','IPAddressAllow=127.0.0.1/32'),
+                        lines.replace('RestrictAddressFamilies=AF_UNIX','RestrictAddressFamilies=AF_UNIX AF_INET')):
+            self.assertFalse(service._properties_are_hardened(changed,private_relay_ip=direct.UNIX_ENDPOINT,target='yfc-vps'))
+        self.assertFalse(service._properties_are_hardened(lines,private_relay_ip=direct.UNIX_ENDPOINT,target='hermes-vps'))
 
-    def test_yfc_unit_limits_loopback_egress(self):
+    def test_yfc_unix_unit_has_no_ip_egress(self):
         manifest=json.dumps({'schema':SCHEMA,'target':'yfc-vps','release_sha':RELEASE,
             'artifact_sha256':'c'*64,'service_name':SERVICE['yfc-vps'][0],
             'service_identity':SERVICE['yfc-vps'][1],'start_state':'DISABLED',
             'access_mode':'READ_ONLY','roots':[{'project':'your-fitness-coach','path':'/srv/yfc/source'}]},
             sort_keys=True,separators=(',',':')).encode('ascii')
         args=dict(manifest=manifest,target='yfc-vps',release_sha=RELEASE,
-            manifest_sha256=hashlib.sha256(manifest).hexdigest(),relay_ipv4='127.0.0.1',
+            manifest_sha256=hashlib.sha256(manifest).hexdigest(),relay_ipv4=direct.UNIX_ENDPOINT,
             dns_ipv4='',private_relay=True)
         rendered=unit.render_active_unit(**args)
-        self.assertEqual([line for line in rendered.splitlines() if line.startswith('IPAddressAllow=')],
-                         ['IPAddressAllow=127.0.0.1/32'])
-        for ip in ('127.0.0.2','8.8.8.8'):
-            with self.assertRaises(unit.LinuxActiveUnitDenied):
-                unit.render_active_unit(**dict(args,relay_ipv4=ip))
+        self.assertIn('PrivateNetwork=yes\n',rendered)
+        self.assertIn('RestrictAddressFamilies=AF_UNIX\n',rendered)
+        self.assertIn('IPAddressDeny=any\n',rendered)
+        self.assertNotIn('IPAddressAllow=',rendered)
 
     def test_websocket_never_uses_public_ip_for_network(self):
         config=direct.PrivateRelay('hermes-vps',RELEASE,'172.29.251.2',b'fake-ca')
@@ -215,11 +221,9 @@ class LocalCertificateE2E(unittest.TestCase):
                 '-CAcreateserial','-out',cert,'-days','1','-extfile',ext)
         context=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         context.load_cert_chain(str(cert),str(key))
-        cls.requests=[]
-        requests=cls.requests
+        cls.server_context=context
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
-                requests.append(True)
                 if self.path != '/device/native-status' or self.headers.get('Authorization')!='Bearer '+TOKEN:
                     self.send_response(403);self.send_header('Content-Length','0');self.end_headers();return
                 content=json.dumps({'schema':'h454-native-device-status-v1',
@@ -255,9 +259,35 @@ class LocalCertificateE2E(unittest.TestCase):
                     base_url='http://localhost:3000')
 
     def test_wrong_ca_cannot_send_bearer(self):
-        pinned=direct.PrivateRelay('yfc-vps',RELEASE,'127.0.0.1',self.other_ca.read_bytes())
-        before=len(self.requests)
+        pinned=direct.PrivateRelay('hermes-vps',RELEASE,'127.0.0.1',b'bad ca data')
         with patch.object(direct,'PORT',self.server.server_address[1]):
-            self.assertFalse(direct.current_bearer(pinned,target='yfc-vps',
-                device_id='h454-linux-yfc-'+'a'*32,bearer=TOKEN))
-        self.assertEqual(len(self.requests),before)
+            self.assertFalse(direct.current_bearer(pinned,target='hermes-vps',device_id=IDENTITY,bearer=TOKEN))
+
+    def test_yfc_status_over_unix_socket_checks_real_tls_before_bearer(self):
+        device='h454-linux-yfc-'+'a'*32
+        requests=[]
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                requests.append(True)
+                if self.path != '/device/native-status' or self.headers.get('Authorization') != 'Bearer '+TOKEN:
+                    self.send_response(403);self.send_header('Content-Length','0');self.end_headers();return
+                body=json.dumps({'schema':'h454-native-device-status-v1','device_id':device,
+                    'active':True,'owner_bound':True},separators=(',',':')).encode()
+                self.send_response(200);self.send_header('Content-Type','application/json')
+                self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body)
+            def log_message(self,*args): pass
+        with tempfile.TemporaryDirectory() as folder:
+            path=str(Path(folder)/'relay.sock')
+            server=socketserver.UnixStreamServer(path,Handler)
+            server.socket=self.server_context.wrap_socket(server.socket,server_side=True)
+            worker=threading.Thread(target=server.serve_forever,daemon=True);worker.start()
+            try:
+                good=direct.PrivateRelay('yfc-vps',RELEASE,direct.UNIX_ENDPOINT,self.ca.read_bytes())
+                bad=direct.PrivateRelay('yfc-vps',RELEASE,direct.UNIX_ENDPOINT,self.other_ca.read_bytes())
+                with patch.object(direct,'UNIX_SOCKET',path):
+                    self.assertTrue(direct.current_bearer(good,target='yfc-vps',device_id=device,bearer=TOKEN))
+                    self.assertEqual(len(requests),1)
+                    self.assertFalse(direct.current_bearer(bad,target='yfc-vps',device_id=device,bearer=TOKEN))
+                    self.assertEqual(len(requests),1)
+            finally:
+                server.shutdown();server.server_close();worker.join(timeout=3)

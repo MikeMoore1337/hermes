@@ -11,7 +11,7 @@ import ipaddress
 import re
 
 from device_fabric.native_install_preview import parse_candidate, InstallPlanDenied
-from device_fabric.native_private_tls import TRUST, CONFIG, CA, _permitted_relay_ip
+from device_fabric.native_private_tls import TRUST, CONFIG, CA, UNIX_ENDPOINT, _private_ip
 from scripts.h454_native_linux_unit_candidate import (
     SERVICE_USER, MANIFEST_PATH, CONFIG_PATH,
 )
@@ -56,14 +56,15 @@ def render_active_unit(
         # Accept one or two separately verified A-records for the same
         # owner-pinned WSS hostname. Preserve existing one-IP call sites.
         # Reject whitespace, empty entries and more than two relay routes.
-        relay_parts = relay_ipv4.split(",")
-        if (not 1 <= len(relay_parts) <= MAX_EGRESS_IPS - 1
-            or any(not part or part.strip() != part for part in relay_parts)):
+        unix_relay = private_relay and target == "yfc-vps" and relay_ipv4 == UNIX_ENDPOINT
+        relay_parts = [] if unix_relay else relay_ipv4.split(",")
+        if (not unix_relay and (not 1 <= len(relay_parts) <= MAX_EGRESS_IPS - 1
+            or any(not part or part.strip() != part for part in relay_parts))):
             raise LinuxActiveUnitDenied("native_linux_active_unit_denied")
         relays = tuple(ipaddress.IPv4Address(part) for part in relay_parts)
         if private_relay:
             # Private bridge never needs public Cloudflare or DNS egress.
-            if len(relays) != 1 or dns_ipv4 != "" or not _permitted_relay_ip(target, relay_ipv4):
+            if dns_ipv4 != "" or (not unix_relay and (len(relays) != 1 or not _private_ip(relay_ipv4))):
                 raise LinuxActiveUnitDenied("native_linux_active_unit_denied")
             dns = None
         else:
@@ -127,7 +128,7 @@ def render_active_unit(
             "ProtectHome=yes",
             "PrivateTmp=yes",
             "PrivateDevices=yes",
-            "PrivateNetwork=no",
+            "PrivateNetwork=" + ("yes" if unix_relay else "no"),
             "ProtectProc=invisible",
             "ProcSubset=all",
             "ProtectControlGroups=yes",
@@ -149,7 +150,7 @@ def render_active_unit(
             "LockPersonality=yes",
             "SystemCallArchitectures=native",
             "SystemCallFilter=~@mount @reboot @swap",
-            "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6",
+            "RestrictAddressFamilies=" + ("AF_UNIX" if unix_relay else "AF_UNIX AF_INET AF_INET6"),
             "IPAddressDeny=any",
             *("IPAddressAllow=" + str(addr) + "/32"
               for addr in (relays if private_relay else (*relays, dns))),

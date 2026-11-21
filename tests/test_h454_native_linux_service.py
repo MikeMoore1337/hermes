@@ -260,6 +260,30 @@ class OSIsolationKernelTests(unittest.TestCase):
                         properties.replace("IPAddressDeny=any", "IPAddressDeny=" + deny),
                         private_relay_ip=relay))
 
+    def test_yfc_kernel_must_deny_both_inet_socket_families(self):
+        with patch.object(service.socket, 'socket', side_effect=PermissionError(service.errno.EPERM, 'denied')) as create:
+            self.assertTrue(service._inet_socket_creation_denied())
+            self.assertEqual(create.call_count, 4)
+        opened=Mock()
+        with patch.object(service.socket, 'socket', return_value=opened):
+            self.assertFalse(service._inet_socket_creation_denied())
+            opened.close.assert_called_once()
+        with patch.object(service.socket, 'socket', side_effect=OSError(service.errno.EMFILE, 'full')):
+            self.assertFalse(service._inet_socket_creation_denied())
+
+    def test_yfc_gate_denies_if_kernel_allows_inet(self):
+        with patch.object(service.sys, 'platform', 'linux'), \
+             patch.object(service, '_service_identity'), \
+             patch.object(service, 'STATUS', SimpleNamespace(read_text=lambda **_: 'status')), \
+             patch.object(service, 'CGROUP', SimpleNamespace(read_text=lambda **_: 'cgroup')), \
+             patch.object(service, '_kernel_evidence', return_value=True), \
+             patch.object(service, '_inet_socket_creation_denied', return_value=False), \
+             patch.object(service.subprocess, 'run') as systemctl, \
+             patch.dict(service.os.environ, {'INVOCATION_ID':'e'*32}):
+            self.assertFalse(service.real_os_isolation_verified(
+                private_relay_ip=service.UNIX_ENDPOINT,target='yfc-vps'))
+            systemctl.assert_not_called()
+
     def test_actual_kernel_status_and_systemd_hardening_contract(self):
         expected_cgroup="0::/system.slice/hermes-commander-native.service\n"
         invocation="e"*32
@@ -371,17 +395,6 @@ class LiveWorkerLifecycleTests(unittest.TestCase):
                              ("/srv/hermes/source",))
             status.assert_not_called()
             session.assert_not_called()
-
-    def test_yfc_loopback_passes_target_to_os_gate_before_credentials(self):
-        args = ["--run-once", "--target", "yfc-vps", "--release-sha", RELEASE,
-                "--manifest-sha256", "d" * 64]
-        with patch.object(service, "load_private_relay", return_value=SimpleNamespace(relay_ipv4="127.0.0.1")), \
-             patch.object(service, "_service_identity"), \
-             patch.object(service, "real_os_isolation_verified", return_value=False) as gate, \
-             patch.object(service, "load_local_runtime") as load:
-            self.assertEqual(service.main(args), 2)
-            gate.assert_called_once_with(private_relay_ip="127.0.0.1", git_roots=(), target="yfc-vps")
-            load.assert_not_called()
 
     def test_real_worker_composes_existing_native_wss_and_owner_revocation(self):
         with patch.object(service,"_service_identity"), \
