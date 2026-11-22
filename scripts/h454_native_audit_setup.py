@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import grp
+import fcntl
 import hashlib
 import os
 from pathlib import Path
@@ -9,6 +10,7 @@ import pwd
 import socket
 import stat
 import subprocess
+from contextlib import contextmanager
 
 from scripts import h454_native_paired_apply as paired
 from scripts.h454_native_linux_audit_unit import render_audit_units
@@ -174,6 +176,39 @@ def ensure_lock() -> None:
         os.close(fd)
 
 
+@contextmanager
+def yfc_host_lock():
+    """Use the shared lock before YFC has a native state directory."""
+    fd = None
+    try:
+        if os.geteuid()!=0:
+            raise AuditSetupHold()
+        owned_directory(paired.LOCK.parent.parent)
+        owned_directory(MANIFEST.parent.parent)
+        parent=paired.LOCK.parent.lstat()
+        if (not stat.S_ISDIR(parent.st_mode) or parent.st_uid!=0 or
+            stat.S_IMODE(parent.st_mode)!=0o1777 or
+            hashlib.sha256(checked_file(YFC_HOST_KEY,1024,modes={0o644})).hexdigest()!=YFC_HOST_KEY_SHA):
+            raise AuditSetupHold()
+        fd=os.open(paired.LOCK,os.O_RDWR|os.O_NOFOLLOW|os.O_CLOEXEC)
+        info=os.fstat(fd)
+        if (not stat.S_ISREG(info.st_mode) or info.st_uid!=0 or info.st_nlink!=1 or
+            stat.S_IMODE(info.st_mode)!=0o600 or info.st_size!=0):
+            raise AuditSetupHold()
+        fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        current=paired.LOCK.lstat()
+        if (current.st_dev,current.st_ino)!=(info.st_dev,info.st_ino):
+            raise AuditSetupHold()
+        yield
+    except AuditSetupHold:
+        raise
+    except Exception:
+        raise AuditSetupHold('h454_audit_setup_denied') from None
+    finally:
+        if fd is not None:
+            os.close(fd)
+
+
 def _socket_probe() -> None:
     code="""import socket,struct
 s=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM);s.settimeout(5)
@@ -252,10 +287,10 @@ def _rollback(created: list[tuple[Path, int, int, str]], *,
         raise AuditSetupHold('h454_audit_cleanup_hold')
 
 
-def _install(plan_function, *, active_sha: str, expected_state: str) -> dict[str, object]:
+def _install(plan_function, *, active_sha: str, expected_state: str, lock_factory) -> dict[str, object]:
     """Install a fixed, unprivileged local query socket without touching the worker."""
     ensure_lock()
-    with paired.host_lock():
+    with lock_factory():
         plan_function()
         created=[]
         account_uid=None
@@ -303,8 +338,8 @@ def _install(plan_function, *, active_sha: str, expected_state: str) -> dict[str
 
 
 def install() -> dict[str, object]:
-    return _install(plan,active_sha=ACTIVE_SHA,expected_state='active')
+    return _install(plan,active_sha=ACTIVE_SHA,expected_state='active',lock_factory=paired.host_lock)
 
 
 def install_yfc() -> dict[str, object]:
-    return _install(plan_yfc,active_sha=YFC_ACTIVE_SHA,expected_state='inactive')
+    return _install(plan_yfc,active_sha=YFC_ACTIVE_SHA,expected_state='inactive',lock_factory=yfc_host_lock)

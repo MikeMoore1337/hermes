@@ -58,11 +58,11 @@ class AuditSetupTests(unittest.TestCase):
     def test_yfc_install_selects_only_inactive_pinned_worker(self):
         with patch.object(setup,'_install',return_value={'status':'ok'}) as install:
             self.assertEqual(setup.install_yfc(),{'status':'ok'})
-        install.assert_called_once_with(setup.plan_yfc,active_sha=setup.YFC_ACTIVE_SHA,expected_state='inactive')
+        install.assert_called_once_with(setup.plan_yfc,active_sha=setup.YFC_ACTIVE_SHA,expected_state='inactive',lock_factory=setup.yfc_host_lock)
 
     def test_yfc_uncertain_account_creation_requires_recovery(self):
         with patch.object(setup,'ensure_lock'), \
-             patch.object(setup.paired,'host_lock',return_value=nullcontext()), \
+             patch.object(setup,'yfc_host_lock',return_value=nullcontext()), \
              patch.object(setup,'plan_yfc',return_value={}), \
              patch.object(setup,'_run',side_effect=TimeoutError('private detail')), \
              patch.object(setup,'_identity_absent',return_value=False), \
@@ -72,6 +72,34 @@ class AuditSetupTests(unittest.TestCase):
         self.assertEqual(error.exception.phase,'AUDIT_CLEANUP')
         self.assertNotIn('private detail',str(error.exception))
         rollback.assert_called_once()
+
+    def test_yfc_lock_works_without_state_directory_and_refuses_concurrent_or_wrong_host(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder); lock_dir=root/'lock'; lock_dir.mkdir(mode=0o777); lock_dir.chmod(0o1777)
+            lock=lock_dir/'lifecycle.lock'; lock.touch(mode=0o600); lock.chmod(0o600)
+            host=root/'host.pub'; host.write_bytes(b'host'); host.chmod(0o644)
+            real_fstat=os.fstat; real_lstat=Path.lstat
+            def root_fstat(fd):
+                value=real_fstat(fd)
+                return SimpleNamespace(st_mode=value.st_mode,st_uid=0,st_nlink=value.st_nlink,
+                                       st_size=value.st_size,st_dev=value.st_dev,st_ino=value.st_ino)
+            def root_lstat(path,*args,**kwargs):
+                value=real_lstat(path,*args,**kwargs)
+                return SimpleNamespace(st_mode=value.st_mode,st_uid=0) if path==lock_dir else value
+            with patch.object(setup.paired,'LOCK',lock),patch.object(setup,'YFC_HOST_KEY',host), \
+                 patch.object(setup,'YFC_HOST_KEY_SHA',hashlib.sha256(b'host').hexdigest()), \
+                 patch.object(setup,'owned_directory'),patch.object(setup.os,'geteuid',return_value=0), \
+                 patch.object(setup.os,'fstat',side_effect=root_fstat),patch.object(Path,'lstat',root_lstat), \
+                 patch.object(setup,'checked_file',side_effect=lambda path,*a,**k:path.read_bytes()):
+                with setup.yfc_host_lock():
+                    with self.assertRaises(setup.AuditSetupHold):
+                        with setup.yfc_host_lock(): pass
+                host.write_bytes(b'other')
+                with self.assertRaises(setup.AuditSetupHold):
+                    with setup.yfc_host_lock(): pass
+                host.write_bytes(b'host'); lock.chmod(0o644)
+                with self.assertRaises(setup.AuditSetupHold):
+                    with setup.yfc_host_lock(): pass
 
     def test_uncertain_account_creation_requires_recovery(self):
         with patch.object(setup,'ensure_lock'), \
