@@ -7,11 +7,14 @@ actual verified signed binary exists without a successful hosted workflow.
 
 ## Why it cannot sign automatically now
 
-Hermes currently has no declared OSI-approved LICENSE in GitHub metadata.
+The owner has licensed the enumerated Windows first-party files under MIT;
+see `licenses/HERMES-COMMANDER-WINDOWS-SCOPE.md`. This does not license the
+whole repository or third-party dependencies. Hermes has no repository-wide
+OSI-approved LICENSE in GitHub metadata.
 SignPath Foundation requires an OSI-approved license without proprietary
 code, a maintained and already released project, and separate publisher
-approval. Eligibility requires the owner's legal review, not merely that
-a GitHub repository is public. Do not relicense the repository unilaterally.
+approval. Eligibility requires source and dependency provenance review and
+SignPath acceptance, not merely a public repository or scoped MIT grant.
 
 Official references:
 - https://signpath.org/
@@ -58,9 +61,8 @@ SHA-256 receipt become a seven-day signed CI artifact.
 
 ## Actions required from the owner later
 
-1. Review the licenses of all original source/dependencies. Decide
-   whether an OSI-approved release of Hermes is legally appropriate.
-   SignPath's free OSS eligibility is not guaranteed.
+1. Review the licenses and provenance of all source and dependencies in the
+   actual build. SignPath's free OSS eligibility is not guaranteed.
 2. After acceptance by SignPath Foundation, configure the project,
    nested MSI/EXE signing, GitHub integration, signing policy and protected
    h454-signpath-release Environment in GitHub, without sharing secrets.
