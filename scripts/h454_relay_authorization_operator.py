@@ -25,6 +25,8 @@ from scripts import h454_relay_second_authorized_key as key_slot
 
 REGISTRY_PARENT = Path('/var/lib')
 REGISTRY_NAME = 'hermes-h454-wss-key'
+YFC_REGISTRY_NAME = 'hermes-h454-yfc-wss-key'
+YFC_ACCOUNT = 'hermes-yfc-forward'
 RELAY_NAME = 'hermes-brc-relay'
 NETWORK_NAME = 'hermes-brc-internal'
 HEX = re.compile(r'[a-f0-9]{64}\Z')
@@ -132,6 +134,14 @@ def snapshot(account, public_key):
                options.get('authorizedkeyscommand') == ['none'] and options.get('usedns') == ['no'] and
                options.get('strictmodes') == ['yes'] and options.get('allowtcpforwarding') == ['local'] and
                len(permit) == 1 and (permit[0] == 'any' or str(address) + ':3001' in permit[0].split()), 'SSHD_POLICY')
+        if account == YFC_ACCOUNT:
+            required = {'permitopen': str(address) + ':3001', 'permitlisten': 'none',
+                        'allowstreamlocalforwarding': 'no', 'allowagentforwarding': 'no',
+                        'permittty': 'no', 'x11forwarding': 'no', 'passwordauthentication': 'no',
+                        'kbdinteractiveauthentication': 'no', 'forcecommand': '/usr/sbin/nologin',
+                        'authenticationmethods': 'publickey', 'pubkeyauthentication': 'yes',
+                        'permittunnel': 'no', 'permituserrc': 'no'}
+            demand(all(options.get(name) == [value] for name, value in required.items()), 'SSHD_POLICY')
         return {'version': 1, 'account': account, 'uid': user.pw_uid, 'gid': user.pw_gid,
                 'home': user.pw_dir, 'public_key': canonical_key, 'original_sha256': original,
                 'relay_id': relay['Id'], 'relay_image': relay['Image'], 'network_id': network['NetworkID'],
@@ -140,16 +150,16 @@ def snapshot(account, public_key):
         os.close(ssh_fd)
 
 
-def _registry(create):
+def _registry(create, *, yfc=False):
     parent = _directory(REGISTRY_PARENT, owner=0)
     try:
         if create:
             try:
-                os.mkdir(REGISTRY_NAME, 0o700, dir_fd=parent)
+                os.mkdir(YFC_REGISTRY_NAME if yfc else REGISTRY_NAME, 0o700, dir_fd=parent)
                 os.fsync(parent)
             except FileExistsError:
                 pass
-        fd = os.open(REGISTRY_NAME, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+        fd = os.open(YFC_REGISTRY_NAME if yfc else REGISTRY_NAME, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
     finally:
         os.close(parent)
     try:
@@ -258,9 +268,10 @@ def _request(registry, pin):
     return value
 
 
-def prepare(account, public_key):
+def prepare(account, public_key, *, yfc=False):
+    demand((account == YFC_ACCOUNT) == yfc, 'ACCOUNT_SCOPE')
     request = snapshot(account, public_key)
-    registry = _registry(True)
+    registry = _registry(True, yfc=yfc)
     lock = None
     try:
         names = _names(registry)
@@ -290,12 +301,13 @@ def prepare(account, public_key):
         os.close(registry)
 
 
-def install(pin):
-    registry = _registry(False)
+def install(pin, *, yfc=False):
+    registry = _registry(False, yfc=yfc)
     lock = None
     try:
         lock = _locked(registry)
         request = _request(registry, pin)
+        demand((request['account'] == YFC_ACCOUNT) == yfc, 'ACCOUNT_SCOPE')
         demand(snapshot(request['account'], request['public_key']) == request, 'SNAPSHOT_DRIFT')
         user, ssh_fd = _ssh_directory(request['account'], request)
         try:
@@ -335,12 +347,13 @@ def install(pin):
         os.close(registry)
 
 
-def revoke(pin):
-    registry = _registry(False)
+def revoke(pin, *, yfc=False):
+    registry = _registry(False, yfc=yfc)
     lock = None
     try:
         lock = _locked(registry)
         request = _request(registry, pin)
+        demand((request['account'] == YFC_ACCOUNT) == yfc, 'ACCOUNT_SCOPE')
         user, ssh_fd = _ssh_directory(request['account'], request)
         try:
             try:
@@ -385,6 +398,7 @@ def main():
     parser.add_argument('mode', choices=('prepare', 'install', 'revoke'))
     parser.add_argument('--request-sha256')
     parser.add_argument('--owner-approved', action='store_true')
+    parser.add_argument('--yfc', action='store_true')
     args = parser.parse_args()
     try:
         if args.mode == 'prepare':
@@ -393,14 +407,14 @@ def main():
             demand(len(raw) <= 4096, 'INPUT')
             value = json.loads(raw, object_pairs_hook=_unique_object)
             demand(isinstance(value, dict) and set(value) == {'account', 'public_key'}, 'INPUT')
-            print('H454_RELAY_REQUEST_SHA256=' + prepare(value['account'], value['public_key']))
+            print('H454_RELAY_REQUEST_SHA256=' + prepare(value['account'], value['public_key'], yfc=args.yfc))
         else:
             demand(args.owner_approved and args.request_sha256 is not None, 'APPROVAL')
             if args.mode == 'install':
-                install(args.request_sha256)
+                install(args.request_sha256, yfc=args.yfc)
                 print('H454_RELAY_KEY=INSTALLED_PENDING_CONNECTION_TEST')
             else:
-                status = revoke(args.request_sha256)
+                status = revoke(args.request_sha256, yfc=args.yfc)
                 print('H454_RELAY_KEY_SLOT=' + status)
                 print('H454_EXISTING_SESSIONS=NOT_TERMINATED')
                 print('H454_OTHER_KEY_PATHS=NOT_VERIFIED')

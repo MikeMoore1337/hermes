@@ -67,6 +67,58 @@ if os.name == 'posix' and os.geteuid() == 0:
         def prepare(self):
             return subject.prepare('brc_fixture', key(2) + ' fixture')
 
+        def yfc_policy(self):
+            self.settings = self.settings.replace(b'permitopen any', b'permitopen 172.20.0.2:3001')
+            self.settings += (b'permitlisten none\nallowstreamlocalforwarding no\n'
+                              b'allowagentforwarding no\npermittty no\nx11forwarding no\n'
+                              b'passwordauthentication no\nkbdinteractiveauthentication no\n'
+                              b'forcecommand /usr/sbin/nologin\nauthenticationmethods publickey\n'
+                              b'pubkeyauthentication yes\npermittunnel no\npermituserrc no\n')
+
+        def test_yfc_uses_separate_registry_and_account_scope(self):
+            existing_pin = self.prepare()
+            existing_request = (self.registry / 'request.json').read_bytes()
+            self.yfc_policy()
+            with self.assertRaisesRegex(subject.Hold, 'ACCOUNT_SCOPE'):
+                subject.prepare(subject.YFC_ACCOUNT, key(2))
+            with self.assertRaisesRegex(subject.Hold, 'ACCOUNT_SCOPE'):
+                subject.prepare('brc_fixture', key(2), yfc=True)
+            pin = subject.prepare(subject.YFC_ACCOUNT, key(2), yfc=True)
+            self.assertNotEqual(existing_pin, pin)
+            with self.assertRaises(subject.Hold):
+                subject.install(pin)
+            self.assertFalse((self.ssh / 'authorized_keys2').exists())
+            subject.install(pin, yfc=True)
+            self.assertIn(b'permitopen="172.20.0.2:3001"', (self.ssh / 'authorized_keys2').read_bytes())
+            subject.revoke(pin, yfc=True)
+            self.assertEqual((self.ssh / 'authorized_keys2').read_bytes(), b'')
+            self.assertEqual((self.registry / 'request.json').read_bytes(), existing_request)
+            self.assertTrue((self.parent / subject.YFC_REGISTRY_NAME / 'receipt.json').exists())
+
+        def test_yfc_requires_exact_forwarding_and_no_interactive_access(self):
+            self.yfc_policy()
+            good = self.settings
+            for original, replacement in (
+                    (b'permitopen 172.20.0.2:3001', b'permitopen any'),
+                    (b'permitlisten none', b'permitlisten any'),
+                    (b'allowstreamlocalforwarding no', b'allowstreamlocalforwarding yes'),
+                    (b'allowagentforwarding no', b'allowagentforwarding yes'),
+                    (b'permittty no', b'permittty yes'),
+                    (b'x11forwarding no', b'x11forwarding yes'),
+                    (b'passwordauthentication no', b'passwordauthentication yes'),
+                    (b'kbdinteractiveauthentication no', b'kbdinteractiveauthentication yes'),
+                    (b'forcecommand /usr/sbin/nologin', b'forcecommand none'),
+                    (b'authenticationmethods publickey', b'authenticationmethods any'),
+                    (b'pubkeyauthentication yes', b'pubkeyauthentication no'),
+                    (b'permittunnel no', b'permittunnel yes'),
+                    (b'permituserrc no', b'permituserrc yes')):
+                with self.subTest(option=original):
+                    self.settings = good.replace(original, replacement)
+                    with self.assertRaisesRegex(subject.Hold, 'SSHD_POLICY'):
+                        subject.prepare(subject.YFC_ACCOUNT, key(2), yfc=True)
+                    self.assertFalse((self.parent / subject.YFC_REGISTRY_NAME).exists())
+                    self.assertFalse((self.ssh / 'authorized_keys2').exists())
+
         def test_prepare_install_and_revoke_are_bounded_and_idempotent(self):
             pin = self.prepare()
             self.assertEqual(self.prepare(), pin)
