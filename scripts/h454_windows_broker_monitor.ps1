@@ -1,5 +1,5 @@
 #requires -Version 5.1
-# The monitor can restage a running original but cannot start, stop or reroute it.
+# The default monitor only restages; explicit auto recovery can start on the validated private route.
 function New-H454BrokerMonitorDefinition([string]$GuardPath,[hashtable]$Pins,[string]$TaskUser,[datetime]$StartTime,[switch]$AutoRecover) {
     Require-H454 (-not [string]::IsNullOrWhiteSpace($GuardPath) -and [IO.Path]::IsPathRooted($GuardPath) -and
         -not $GuardPath.Contains('"') -and -not $GuardPath.Contains("`r") -and -not $GuardPath.Contains("`n") -and
