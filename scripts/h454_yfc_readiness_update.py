@@ -155,6 +155,8 @@ def tls_ready() -> None:
 
 def start_services() -> None:
     run('/usr/bin/systemctl','daemon-reload')
+    # Controlled stop/start and rollback must not exhaust systemd's restart budget.
+    run('/usr/bin/systemctl','reset-failed',TUNNEL,NATIVE)
     run('/usr/bin/systemctl','start',TUNNEL)
     tls_ready()
     run('/usr/bin/systemctl','start',NATIVE)

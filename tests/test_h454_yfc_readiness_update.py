@@ -46,6 +46,20 @@ class ReadinessUpdateTests(unittest.TestCase):
                 with self.assertRaises(update.Hold):
                     update.candidates(self.old)
 
+    def test_controlled_restart_resets_budget_and_waits_for_pinned_tls(self):
+        events=[]
+        def run(*args, **_kwargs):
+            events.append(args)
+            return b''
+        with (patch.object(update,'run',side_effect=run),
+              patch.object(update,'tls_ready',side_effect=lambda:events.append('tls')),
+              patch.object(update,'service_state')):
+            update.start_services()
+        self.assertEqual(events,[('/usr/bin/systemctl','daemon-reload'),
+            ('/usr/bin/systemctl','reset-failed',update.TUNNEL,update.NATIVE),
+            ('/usr/bin/systemctl','start',update.TUNNEL), 'tls',
+            ('/usr/bin/systemctl','start',update.NATIVE)])
+
     @unittest.skipUnless(os.name == 'posix', 'Linux unit installer')
     def test_install_then_rollback_restores_units_and_keeps_credential_untouched(self):
         with tempfile.TemporaryDirectory() as folder:
