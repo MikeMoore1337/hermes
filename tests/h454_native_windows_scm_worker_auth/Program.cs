@@ -57,6 +57,26 @@ internal static class CiReceiptTests
         if (NativeWorkerSupervisor.ReceiptMatches(
             System.Text.Encoding.UTF8.GetBytes(duplicate),sha,service,worker))
             return 8;
+        var local = new Dictionary<string, string>
+        {
+            ["schema"] = "h454-personal-receipt-v1",
+            ["source_sha"] = sha,
+            ["exe_sha256"] = service,
+            ["worker_sha256"] = worker,
+        };
+        byte[] localRaw = JsonSerializer.SerializeToUtf8Bytes(local);
+        if (!NativeWorkerSupervisor.ReceiptMatches(localRaw, sha, service, worker, true) ||
+            NativeWorkerSupervisor.ReceiptMatches(localRaw, sha, service, worker) ||
+            NativeWorkerSupervisor.ReceiptMatches(raw, sha, service, worker, true) ||
+            NativeWorkerSupervisor.ReceiptMatches(localRaw, sha, new string('e',64), worker, true) ||
+            NativeWorkerSupervisor.ReceiptMatches(localRaw, sha, service, new string('f',64), true) ||
+            NativeWorkerSupervisor.ReceiptMatches(localRaw, sha[..39] + "f", service, worker, true)) return 9;
+        local["unexpected_root"] = "C:\\";
+        if (NativeWorkerSupervisor.ReceiptMatches(JsonSerializer.SerializeToUtf8Bytes(local), sha, service, worker, true)) return 10;
+        local.Remove("unexpected_root");
+        string duplicateLocal = JsonSerializer.Serialize(local).Replace("\"source_sha\":", "\"source_sha\":\"bad\",\"source_sha\":");
+        if (NativeWorkerSupervisor.ReceiptMatches(System.Text.Encoding.UTF8.GetBytes(duplicateLocal), sha, service, worker, true)) return 11;
+        Console.WriteLine("H454_WIN32_PERSONAL_RELEASE_RECEIPT=PASS");
         // Invalid fields never permit worker launch; no test executable
         // can ever invoke NativeWorkerSupervisor.TryLaunch.
         Console.WriteLine("H454_WIN32_SIGNED_RELEASE_RECEIPT=PASS");

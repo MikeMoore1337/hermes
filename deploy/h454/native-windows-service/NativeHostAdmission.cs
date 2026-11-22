@@ -130,6 +130,19 @@ internal static class NativeHostAdmission
     internal static bool ProtectedStateFile(FileInfo file) =>
         MatchesServiceUser() && IsOrdinaryFile(file);
 
+    internal static string? ReleaseReceiptPath(string state)
+    {
+        try
+        {
+            FileInfo signed = new(Path.Combine(state, "signed-release.json"));
+            FileInfo personal = new(Path.Combine(state, "personal-release.json"));
+            if (signed.Exists == personal.Exists) return null;
+            FileInfo selected = signed.Exists ? signed : personal;
+            return IsOrdinaryFile(selected) ? selected.FullName : null;
+        }
+        catch { return null; }
+    }
+
     internal static bool PrivateStateIsConfined()
     {
         try
@@ -147,7 +160,7 @@ internal static class NativeHostAdmission
             if (!RestrictedDacl(sec)) return false;
             return IsOrdinaryFile(new FileInfo(Path.Combine(state.FullName, "manifest.json")))
                 && IsOrdinaryFile(new FileInfo(Path.Combine(state.FullName, "device.json")))
-                && IsOrdinaryFile(new FileInfo(Path.Combine(state.FullName, "signed-release.json")));
+                && ReleaseReceiptPath(state.FullName) is not null;
         }
         catch { return false; }
     }
@@ -251,6 +264,35 @@ internal static class NativeHostAdmission
         catch { return false; }
     }
 
+    internal static bool InstallDaclForIdentity(FileSystemSecurity sec, SecurityIdentifier serviceSid)
+    {
+        try
+        {
+            if (!sec.AreAccessRulesProtected) return false;
+            string system = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null).Value;
+            string admins = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null).Value;
+            var owner = sec.GetOwner(typeof(SecurityIdentifier)) as SecurityIdentifier;
+            if (owner is null || (owner.Value != system && owner.Value != admins)) return false;
+            bool serviceRead = false;
+            FileSystemRights unsafeRights = FileSystemRights.Write | FileSystemRights.Delete |
+                FileSystemRights.DeleteSubdirectoriesAndFiles | FileSystemRights.ChangePermissions |
+                FileSystemRights.TakeOwnership;
+            foreach (FileSystemAccessRule rule in sec.GetAccessRules(true, true, typeof(SecurityIdentifier)))
+            {
+                string id = ((SecurityIdentifier)rule.IdentityReference).Value;
+                if (rule.IsInherited || rule.AccessControlType != AccessControlType.Allow ||
+                    (id != system && id != admins && id != serviceSid.Value)) return false;
+                if (id == serviceSid.Value)
+                {
+                    if ((rule.FileSystemRights & unsafeRights) != 0) return false;
+                    if ((rule.FileSystemRights & FileSystemRights.ReadData) != 0) serviceRead = true;
+                }
+            }
+            return serviceRead;
+        }
+        catch { return false; }
+    }
+
     internal static bool InstallBinaryIsReadOnly(string path)
     {
         // The virtual service account must not be able to replace the
@@ -265,6 +307,10 @@ internal static class NativeHostAdmission
                 return false;
             string? parent = file.DirectoryName;
             if (parent is null || !ReadWithoutWrite(parent)) return false;
+            var sections = AccessControlSections.Access | AccessControlSections.Owner;
+            if (!InstallDaclForIdentity(FileSystemAclExtensions.GetAccessControl(file, sections), ExpectedSid()) ||
+                !InstallDaclForIdentity(FileSystemAclExtensions.GetAccessControl(new DirectoryInfo(parent), sections), ExpectedSid()))
+                return false;
             using SafeFileHandle read = OpenRoot(path, FILE_READ_ATTRIBUTES,
                 SHARE_READ_WRITE_DELETE, IntPtr.Zero, OPEN_EXISTING,
                 FILE_FLAG_OPEN_REPARSE_POINT, IntPtr.Zero);
