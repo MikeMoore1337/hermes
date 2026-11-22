@@ -51,7 +51,7 @@ class ReadinessUpdateTests(unittest.TestCase):
                 with self.assertRaises(update.Hold):
                     update.candidates(self.old)
 
-    def test_controlled_restart_resets_budget_and_waits_for_pinned_tls(self):
+    def test_controlled_restart_waits_for_pinned_tls(self):
         events=[]
         def run(*args, **_kwargs):
             events.append(args)
@@ -61,9 +61,24 @@ class ReadinessUpdateTests(unittest.TestCase):
               patch.object(update,'service_state')):
             update.start_services()
         self.assertEqual(events,[('/usr/bin/systemctl','daemon-reload'),
-            ('/usr/bin/systemctl','reset-failed',update.TUNNEL,update.NATIVE),
             ('/usr/bin/systemctl','start',update.TUNNEL), 'tls',
             ('/usr/bin/systemctl','start',update.NATIVE)])
+
+    def test_stop_resets_active_unit_but_never_resets_unloaded_inactive_unit(self):
+        events=[]
+        def run(*args, **_kwargs):
+            events.append(args)
+            if args[1] == 'show':
+                return b'active\n' if args[2] == update.NATIVE else b'inactive\n'
+            if args[1] == 'reset-failed' and args[2] == update.TUNNEL:
+                raise update.Hold()
+            return b''
+        with patch.object(update,'run',side_effect=run):
+            update.stop_services()
+        self.assertIn(('/usr/bin/systemctl','reset-failed',update.NATIVE),events)
+        self.assertNotIn(('/usr/bin/systemctl','reset-failed',update.TUNNEL),events)
+        self.assertEqual(events[-2:],[('/usr/bin/systemctl','stop',update.NATIVE),
+                                     ('/usr/bin/systemctl','stop',update.TUNNEL)])
 
     def test_tls_readiness_excludes_default_certificate_stores(self):
         with patch.object(update,'run',return_value=b'') as runner:
