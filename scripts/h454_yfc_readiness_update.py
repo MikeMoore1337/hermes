@@ -226,13 +226,15 @@ def plan() -> tuple[dict[str, bytes], dict[str, bytes]]:
     old = {name:checked(UNITS/name) for name in OLD}
     new = candidates(old)
     no_pending_replacements()
-    demand(not CHECKPOINT.exists() and not CHECKPOINT.is_symlink())
+    if CHECKPOINT.exists() or CHECKPOINT.is_symlink():
+        demand(saved() == old)
     return old, new
 
 
 def execute() -> None:
     old, new = plan()
-    checkpoint(old)
+    if not CHECKPOINT.exists():
+        checkpoint(old)
     try:
         stop_services()
         for name in (TUNNEL,NATIVE):

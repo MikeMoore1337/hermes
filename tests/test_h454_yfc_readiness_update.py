@@ -66,6 +66,9 @@ class ReadinessUpdateTests(unittest.TestCase):
                 update.restore(update.saved())
                 self.assertEqual({n:(units/n).read_bytes() for n in self.old},self.old)
                 self.assertEqual(credential.read_bytes(),b'synthetic credential')
+                update.execute()
+                self.assertEqual({n:(units/n).read_bytes() for n in self.new},self.new)
+                self.assertEqual(credential.read_bytes(),b'synthetic credential')
 
     @unittest.skipUnless(os.name == 'posix', 'Linux unit installer')
     def test_checkpoint_and_mid_update_failure_restore_both_units(self):
