@@ -78,13 +78,14 @@ def _safe_to_write(plan: DisabledPlan, paths: InstallPaths,
 
 
 def _exact_active_unit(plan: DisabledPlan, *, unit_text: str,
-                       manifest: bytes, relay_ipv4: str, dns_ipv4: str) -> bytes:
+                       manifest: bytes, relay_ipv4: str, dns_ipv4: str,
+                       private_relay: bool = False) -> bytes:
     try:
         expected = render_active_unit(
             manifest, target=plan.target,
             release_sha=plan.release_sha,
             manifest_sha256=plan.manifest_sha256,
-            relay_ipv4=relay_ipv4, dns_ipv4=dns_ipv4,
+            relay_ipv4=relay_ipv4, dns_ipv4=dns_ipv4, private_relay=private_relay,
         )
         if type(unit_text) is not str or unit_text != expected:
             _deny()
@@ -121,13 +122,14 @@ def install_disabled(
     reload_daemon: Callable[[], None],
     is_disabled: Callable[[str], bool],
     owner_uid: int, ancestors: bool,
+    private_relay: bool = False,
 ) -> dict[str, object]:
     """Only exclusive writes for this exact NEW unit and private receipt."""
     try:
         _safe_to_write(plan, paths,owner_uid=owner_uid,ancestors=ancestors)
         unit_bytes = _exact_active_unit(
             plan, unit_text=unit_text, manifest=manifest,
-            relay_ipv4=relay_ipv4, dns_ipv4=dns_ipv4,
+            relay_ipv4=relay_ipv4, dns_ipv4=dns_ipv4, private_relay=private_relay,
         )
         unit, receipt = _paths(plan,paths)
         if (unit.exists() or unit.is_symlink()
@@ -170,6 +172,7 @@ def rollback_disabled(
     reload_daemon: Callable[[], None],
     is_disabled: Callable[[str], bool],
     owner_uid: int, ancestors: bool,
+    private_relay: bool = False,
 ) -> dict[str, object]:
     """Remove only the exact reviewed unit after independent disabled proof.
 
@@ -180,7 +183,7 @@ def rollback_disabled(
     try:
         data = _exact_active_unit(
             plan, unit_text=unit_text, manifest=manifest,
-            relay_ipv4=relay_ipv4, dns_ipv4=dns_ipv4,
+            relay_ipv4=relay_ipv4, dns_ipv4=dns_ipv4, private_relay=private_relay,
         )
         unit,receipt = _paths(plan,paths)
         if (unit.is_symlink() or not unit.is_file()
@@ -234,6 +237,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--receipt",type=Path,required=True)
     parser.add_argument("--relay-ipv4",required=True)
     parser.add_argument("--dns-ipv4",required=True)
+    parser.add_argument("--private-relay", action="store_true")
     args = parser.parse_args(argv)
     try:
         plan = plan_bytes(
@@ -248,6 +252,7 @@ def main(argv: list[str] | None = None) -> int:
             target=args.target,release_sha=args.release_sha,
             manifest_sha256=plan.manifest_sha256,
             relay_ipv4=args.relay_ipv4,dns_ipv4=args.dns_ipv4,
+            private_relay=args.private_relay,
         )
         _verify_service_user()
         _owner_tty_confirm(plan,"INSTALL" if args.action=="install-disabled"
@@ -255,6 +260,7 @@ def main(argv: list[str] | None = None) -> int:
         common=dict(plan=plan,unit_text=unit_text,
                     manifest=_private_manifest(args.manifest),
                     relay_ipv4=args.relay_ipv4,dns_ipv4=args.dns_ipv4,
+                    private_relay=args.private_relay,
                     paths=InstallPaths(),reload_daemon=_reload_daemon,
                     is_disabled=_disabled_unit,owner_uid=0,ancestors=True)
         result=(install_disabled(**common) if args.action=="install-disabled"
