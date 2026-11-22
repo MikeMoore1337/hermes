@@ -89,6 +89,7 @@ class RealLinuxUnitRenderTests(unittest.TestCase):
                 self.assertIn("BindReadOnlyPaths="+service.AUDIT_DIRECTORY+"\n", text)
                 self.assertIn("LimitNOFILE=32768\n", text)
                 self.assertIn("Requires=hermes-commander-audit.socket\n", text)
+                self.assertNotIn("Requires=hermes-commander-tunnel.service\n", text)
                 self.assertIn("ReadOnlyPaths="+pinned, text)
                 self.assertIn("--run-once --target "+target, text)
                 self.assertIn("--manifest-sha256 ", text)

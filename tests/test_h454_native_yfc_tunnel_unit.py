@@ -23,6 +23,15 @@ class TunnelUnitTests(unittest.TestCase):
             self.assertIn(item,text)
         self.assertEqual(len([x for x in text.splitlines() if x.startswith('IPAddressAllow=')]),1)
 
+    def test_tunnel_is_ready_only_after_pinned_tls_succeeds(self):
+        text=render_tunnel_unit(ssh_ipv4='8.8.8.8',relay_ipv4='172.29.251.2')
+        readiness=next(x for x in text.splitlines() if x.startswith('ExecStartPost='))
+        for item in ('/usr/bin/timeout 25', '/usr/bin/timeout 3', 'openssl s_client',
+                     '-unix /run/hermes-commander-tunnel/relay.sock',
+                     '-verify_hostname brc-agent.internal', '-verify_return_error',
+                     '-CAfile /opt/hermes-commander-native/trust/ca.crt'):
+            self.assertIn(item, readiness)
+
     def test_untrusted_or_public_relay_addresses_are_denied(self):
         for ssh,relay in (('127.0.0.1','172.29.251.2'),('224.0.0.1','172.29.251.2'),('8.8.8.8','8.8.4.4'),
                           ('8.8.8.8;id','172.29.251.2'),('8.8.8.8','172.29.251.2\nUser=root'),
