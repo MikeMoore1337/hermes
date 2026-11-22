@@ -13,6 +13,7 @@ import subprocess
 from scripts import h454_native_paired_apply as paired
 from scripts.h454_native_linux_audit_unit import render_audit_units
 from scripts.h454_native_private_versioned_upgrade import checked_file, create_file, owned_directory, raw_show
+from device_fabric.native_private_tls import load_private_relay
 
 ACCOUNT = 'hermes-commander-audit'
 SOCKET_UNIT = 'hermes-commander-audit.socket'
@@ -24,6 +25,12 @@ SOCKET_DIR = Path('/run/hermes-commander-audit')
 MANIFEST = Path('/var/lib/hermes-commander-native/manifest.json')
 MANIFEST_SHA = '0b8dac8e166ab4a54c7b5a522803567326aa9c634344a84b990943e60b4298fd'
 ACTIVE_SHA = '9ddf244fcc903377bf947f4fc7382b3e0f9ca63c00e35780ab517a84e4fee24d'
+YFC_RELEASE = 'e26d0cb7ae4a7260f500f3fdebbb80bb378a22b5'
+YFC_ACTIVE_SHA = '487ce0184ad6d7b3cbf63c9cc9078320508ad2715d4bf94a3a8e35366f1d38db'
+YFC_RECEIPT = Path('/opt/hermes-commander-native/receipts/yfc-vps-' + YFC_RELEASE + '-active.json')
+YFC_RECEIPT_SHA = '0f454a5678b734b447506bc90e757167c74007a41d57226701c5ebd83aac2ba1'
+YFC_HOST_KEY = Path('/etc/ssh/ssh_host_ed25519_key.pub')
+YFC_HOST_KEY_SHA = 'bd6d9675cc868f14e97c8ef24f58c560cf41930f6bc2dcb7eedc93e6262ff595'
 
 
 class AuditSetupHold(ValueError):
@@ -108,6 +115,46 @@ def plan() -> dict[str, object]:
         if any(state.get(key) != value for key, value in required.items()):
             raise AuditSetupHold()
         return {'status':'H454_AUDIT_SETUP_PLAN_PASS','mutations':False}
+    except Exception:
+        raise AuditSetupHold('h454_audit_setup_denied') from None
+
+
+def plan_yfc() -> dict[str, object]:
+    """Read-only admission for the installed, unpaired and inactive YFC unit."""
+    try:
+        if os.geteuid() != 0:
+            raise AuditSetupHold()
+        owned_directory(UNIT_DIR)
+        owned_directory(YFC_RECEIPT.parent)
+        identity = pwd.getpwnam('hermes-commander-native')
+        if (identity.pw_uid <= 0 or identity.pw_gid <= 0 or identity.pw_dir != '/nonexistent' or
+            identity.pw_shell not in ('/usr/sbin/nologin','/sbin/nologin') or
+            any(item.pw_uid==identity.pw_uid and item.pw_name!=identity.pw_name for item in pwd.getpwall()) or
+            not _service_group_exclusive(identity) or MANIFEST.parent.exists() or
+            MANIFEST.parent.is_symlink()):
+            raise AuditSetupHold()
+        password=_run(['/usr/bin/passwd','-S','hermes-commander-native']).stdout.decode('ascii').split()
+        if len(password)<2 or password[0]!='hermes-commander-native' or password[1] not in ('L','LK'):
+            raise AuditSetupHold()
+        receipt = checked_file(YFC_RECEIPT,8192,private=True,modes={0o600})
+        active = checked_file(UNIT_DIR/'hermes-commander-native.service',16384,modes={0o644})
+        host_key = checked_file(YFC_HOST_KEY,1024,modes={0o644})
+        if (hashlib.sha256(receipt).hexdigest()!=YFC_RECEIPT_SHA or
+            hashlib.sha256(active).hexdigest()!=YFC_ACTIVE_SHA or
+            hashlib.sha256(host_key).hexdigest()!=YFC_HOST_KEY_SHA or
+            not _identity_absent() or SOCKET_DIR.exists() or SOCKET_DIR.is_symlink() or
+            any((directory/name).exists() or (directory/name).is_symlink()
+                for directory in UNIT_SEARCH_DIRS for name in (SOCKET_UNIT,AUDIT_UNIT))):
+            raise AuditSetupHold()
+        load_private_relay('yfc-vps',YFC_RELEASE)
+        state=raw_show('hermes-commander-native.service')
+        required={'ActiveState':'inactive','UnitFileState':'disabled','LoadState':'loaded',
+                  'FragmentPath':str(UNIT_DIR/'hermes-commander-native.service'),
+                  'User':'hermes-commander-native','Group':'hermes-commander-native',
+                  'DropInPaths':'','NeedDaemonReload':'no'}
+        if any(state.get(key)!=value for key,value in required.items()):
+            raise AuditSetupHold()
+        return {'status':'H454_YFC_AUDIT_SETUP_PLAN_PASS','mutations':False}
     except Exception:
         raise AuditSetupHold('h454_audit_setup_denied') from None
 
@@ -205,11 +252,11 @@ def _rollback(created: list[tuple[Path, int, int, str]], *,
         raise AuditSetupHold('h454_audit_cleanup_hold')
 
 
-def install() -> dict[str, object]:
+def _install(plan_function, *, active_sha: str, expected_state: str) -> dict[str, object]:
     """Install a fixed, unprivileged local query socket without touching the worker."""
     ensure_lock()
     with paired.host_lock():
-        plan()
+        plan_function()
         created=[]
         account_uid=None
         account_gid=None
@@ -241,8 +288,8 @@ def install() -> dict[str, object]:
                 raise AuditSetupHold()
             _socket_probe()
             active=checked_file(UNIT_DIR/'hermes-commander-native.service',16384,modes={0o644})
-            if (hashlib.sha256(active).hexdigest()!=ACTIVE_SHA or
-                raw_show('hermes-commander-native.service').get('ActiveState')!='active'):
+            if (hashlib.sha256(active).hexdigest()!=active_sha or
+                raw_show('hermes-commander-native.service').get('ActiveState')!=expected_state):
                 raise AuditSetupHold()
             return {'status':'H454_AUDIT_SOCKET_READY','worker_restarted':False}
         except Exception:
@@ -253,3 +300,11 @@ def install() -> dict[str, object]:
             except Exception:
                 raise AuditSetupHold('h454_audit_cleanup_hold') from None
             raise AuditSetupHold('h454_audit_setup_denied') from None
+
+
+def install() -> dict[str, object]:
+    return _install(plan,active_sha=ACTIVE_SHA,expected_state='active')
+
+
+def install_yfc() -> dict[str, object]:
+    return _install(plan_yfc,active_sha=YFC_ACTIVE_SHA,expected_state='inactive')
