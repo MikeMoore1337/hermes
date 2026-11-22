@@ -39,6 +39,11 @@ def render_tunnel_unit(*, ssh_ipv4: str, relay_ipv4: str) -> str:
             'Group=hermes-commander-native', 'RuntimeDirectory=' + UNIX_DIRECTORY.rsplit('/', 1)[-1],
             'RuntimeDirectoryMode=0750', 'UMask=0077',
             'ExecStart=' + ' '.join(ssh), 'Restart=always', 'RestartSec=5s',
+            "ExecStartPost=/usr/bin/timeout 25 /bin/sh -c 'until /usr/bin/timeout 3 "
+            "/usr/bin/openssl s_client -unix /run/hermes-commander-tunnel/relay.sock "
+            "-servername brc-agent.internal -verify_hostname brc-agent.internal "
+            "-verify_return_error -CAfile /opt/hermes-commander-native/trust/ca.crt "
+            "</dev/null >/dev/null 2>&1; do sleep 1; done'",
             'NoNewPrivileges=yes', 'CapabilityBoundingSet=', 'AmbientCapabilities=',
             'ProtectSystem=strict', 'ProtectHome=yes', 'PrivateTmp=yes', 'PrivateDevices=yes',
             'ProtectControlGroups=yes', 'ProtectKernelTunables=yes', 'ProtectKernelModules=yes',

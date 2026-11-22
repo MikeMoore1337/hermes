@@ -101,6 +101,8 @@ def render_active_unit(
             "Wants=network-online.target",
             "Requires=hermes-commander-audit.socket",
             "After=network-online.target local-fs.target hermes-commander-audit.socket",
+            *(("Requires=hermes-commander-tunnel.service",
+               "After=hermes-commander-tunnel.service") if unix_relay else ()),
             "AssertPathExists=" + MANIFEST_PATH,
             "AssertPathExists=" + CONFIG_PATH,
             "AssertPathExists=" + deps + "/websockets/asyncio/client.py",

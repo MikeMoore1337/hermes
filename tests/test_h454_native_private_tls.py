@@ -127,6 +127,8 @@ class TrustLoading(unittest.TestCase):
             manifest_sha256=hashlib.sha256(manifest).hexdigest(),relay_ipv4=direct.UNIX_ENDPOINT,
             dns_ipv4='',private_relay=True)
         rendered=unit.render_active_unit(**args)
+        self.assertIn('Requires=hermes-commander-tunnel.service\n',rendered)
+        self.assertIn('After=hermes-commander-tunnel.service\n',rendered)
         self.assertIn('PrivateNetwork=yes\n',rendered)
         self.assertIn('RestrictAddressFamilies=AF_UNIX\n',rendered)
         self.assertIn('IPAddressDeny=any\n',rendered)
