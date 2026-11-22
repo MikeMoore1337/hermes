@@ -155,6 +155,22 @@ try{
     $script:bridge=$false;$script:private=$true;$script:running=$true;$script:agentStaged=$true
     $monitor=Restore-H454Original @params -Apply -OwnerApproved -RestageOnly
     Require-H454 ($monitor.Status -ceq 'ORIGINAL_STAGED' -and ($script:events -join ',') -ceq 'broker-stage') 'FIXTURE_MONITOR_RESTAGE'
+    Reset-Fixture;$refused=$false
+    try{$null=Restore-H454Original @params -Apply -OwnerApproved -AutoRecover}catch{$refused=$_.Exception.Message -ceq 'H454_RESTORE_AUTO_ROUTE'}
+    Require-H454 ($refused -and $script:events.Count -eq 0 -and -not $script:mutationFenceActive) 'FIXTURE_AUTO_BRIDGE_REFUSED'
+    Reset-Fixture;$script:bridge=$false;$script:private=$true
+    $auto=Restore-H454Original @params -Apply -OwnerApproved -AutoRecover
+    Require-H454 ($auto.Status -ceq 'ORIGINAL_STAGED' -and ($script:events -join ',') -ceq 'start,agent-stage,broker-stage') 'FIXTURE_AUTO_START'
+    $script:events=@()
+    $auto=Restore-H454Original @params -Apply -OwnerApproved -AutoRecover
+    Require-H454 ($auto.Status -ceq 'ORIGINAL_STAGED' -and ($script:events -join ',') -ceq 'broker-stage') 'FIXTURE_AUTO_ALREADY_RUNNING'
+    Reset-Fixture;$script:bridge=$false;$script:private=$true;$script:delayedStart=$true;$reason=''
+    try{$null=Restore-H454Original @params -Apply -OwnerApproved -AutoRecover}catch{$reason=$_.Exception.Message}
+    Require-H454 ($reason -ceq 'H454_DOCKER_AMBIGUOUS' -and $script:mutationFenceActive) 'FIXTURE_AUTO_AMBIGUOUS'
+    $before=$script:events.Count;$reason=''
+    try{$null=Restore-H454Original @params -Apply -OwnerApproved -AutoRecover}catch{$reason=$_.Exception.Message}
+    Require-H454 ($reason -ceq 'H454_MUTATION_UNSETTLED' -and $script:events.Count -eq $before) 'FIXTURE_AUTO_NO_REPLAY'
+    'PS51_SYNTHETIC_AUTO_RECOVERY=PASS'
     Reset-Fixture
     $badText=[Text.Encoding]::UTF8.GetString($credential.AgentBytes).Replace('"pairedAt":"manual"','"pairedAt":"not-manual"')
     $bad=[Text.Encoding]::UTF8.GetBytes($badText)

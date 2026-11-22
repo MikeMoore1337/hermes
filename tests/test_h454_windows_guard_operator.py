@@ -154,6 +154,8 @@ public class TestCurl {
                                   (['-OwnerApproved'], 'H454_GUARD_OPERATOR_SOURCE'),
                                   (['-OwnerApproved', '-StartWss'], 'H454_GUARD_OPERATOR_WSS_MODE'),
                                   (['-OwnerApproved', '-RestageOnly'], 'H454_GUARD_OPERATOR_MONITOR_MODE'),
+                                  (['-OwnerApproved', '-AutoRecover'], 'H454_GUARD_OPERATOR_AUTO_MODE'),
+                                  (['-OwnerApproved', '-RestoreOriginal', '-AutoRecover', '-RestageOnly'], 'H454_GUARD_OPERATOR_AUTO_MODE'),
                                   (['-OwnerApproved', '-InstallBrokerMonitor'], 'H454_GUARD_OPERATOR_MONITOR_MODE'),
                                   (['-OwnerApproved', '-PrepareBrokerCandidate'], 'H454_GUARD_OPERATOR_CANDIDATE_MODE'),
                                   (['-OwnerApproved', '-BeginBrokerTrial'], 'H454_GUARD_OPERATOR_TRIAL_MODE'),

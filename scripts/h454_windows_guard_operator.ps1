@@ -9,7 +9,7 @@ param(
     [Parameter(Mandatory=$true)][ValidatePattern('^[A-F0-9]{64}$')][string]$TaskSourceSha256,
     [Parameter(Mandatory=$true)][ValidatePattern('^[A-F0-9]{64}$')][string]$RecoverySourceSha256,
     [switch]$PrepareWss,[switch]$StartWss,[switch]$CheckOriginal,[switch]$PrepareRecoveryRoute,[switch]$PrepareRecoveryBroker,
-    [switch]$RestoreOriginal,[switch]$RestageOnly,[switch]$InstallBrokerMonitor,[switch]$PrepareBrokerCandidate,
+    [switch]$RestoreOriginal,[switch]$RestageOnly,[switch]$AutoRecover,[switch]$InstallBrokerMonitor,[switch]$PrepareBrokerCandidate,
     [switch]$BeginBrokerTrial,[switch]$RecoverBrokerTrial,[switch]$CompleteBrokerTrial,[switch]$OriginalMcpObserved,
     [string]$FilesSourceSha256,[string]$SupervisorSha256,[string]$IdentitySha256,
     [string]$ModuleSha256,[string]$CaSha256,[string]$NodeSha256,[string]$PublicKeySha256,
@@ -145,6 +145,9 @@ try{
     Require-H454 (-not $Apply -or $OwnerApproved) 'H454_GUARD_OPERATOR_APPROVAL'
     Require-H454 (-not $StartWss -or ($PrepareWss -and $Apply -and $OwnerApproved)) 'H454_GUARD_OPERATOR_WSS_MODE'
     Require-H454 (-not $RestageOnly -or ($RestoreOriginal -and $Apply -and $OwnerApproved)) 'H454_GUARD_OPERATOR_MONITOR_MODE'
+    Require-H454 (-not $AutoRecover -or ($RestoreOriginal -and $Apply -and $OwnerApproved -and -not $RestageOnly -and
+        -not $InstallBrokerMonitor -and -not $PrepareBrokerCandidate -and -not $BeginBrokerTrial -and
+        -not $RecoverBrokerTrial -and -not $CompleteBrokerTrial)) 'H454_GUARD_OPERATOR_AUTO_MODE'
     Require-H454 (-not $InstallBrokerMonitor -or ($RestoreOriginal -and -not $RestageOnly)) 'H454_GUARD_OPERATOR_MONITOR_MODE'
     Require-H454 (-not $PrepareBrokerCandidate -or ($RestoreOriginal -and -not $RestageOnly -and -not $InstallBrokerMonitor)) 'H454_GUARD_OPERATOR_CANDIDATE_MODE'
     $trial=($BeginBrokerTrial -or $RecoverBrokerTrial -or $CompleteBrokerTrial)
@@ -167,7 +170,7 @@ try{
             [DateTime]::TryParseExact($WindowEndUtc,$utcFormat,[Globalization.CultureInfo]::InvariantCulture,$utcStyles,[ref]$trialWindowEnd) -and
             $trialWindowStart.Kind -eq [DateTimeKind]::Utc -and $trialWindowEnd.Kind -eq [DateTimeKind]::Utc) 'H454_TRIAL_WINDOW'
     }
-    if($RestageOnly -or $InstallBrokerMonitor -or $PrepareBrokerCandidate -or $trial){
+    if($RestageOnly -or $AutoRecover -or $InstallBrokerMonitor -or $PrepareBrokerCandidate -or $trial){
         Require-H454 ($GuardOperatorSourceSha256 -cmatch '^[A-F0-9]{64}$') 'H454_GUARD_OPERATOR_MONITOR_PINS'
         $null=Read-H454PinnedBytes $PSCommandPath $GuardOperatorSourceSha256
     }
@@ -202,7 +205,7 @@ try{
     }
     Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Utility\Microsoft.PowerShell.Utility.psd1') -ErrorAction Stop
     Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Security\Microsoft.PowerShell.Security.psd1') -ErrorAction Stop
-    if($RestageOnly){Assert-H454PrivateAcl $PSCommandPath}
+    if($RestageOnly -or $AutoRecover){Assert-H454PrivateAcl $PSCommandPath}
     $taskSource=Join-Path $PSScriptRoot 'h454_windows_wss_task.ps1'
     $recoverySource=Join-Path $PSScriptRoot 'h454_windows_offline_recovery.ps1'
     $taskText=Read-H454PinnedSource $taskSource $TaskSourceSha256
@@ -386,7 +389,7 @@ try{
                                 -Apply -OwnerApproved:$OwnerApproved -OriginalMcpObserved:$OriginalMcpObserved
                         }else{
                             $result=Restore-H454Original @restoreArgs -TokenBytes $credential.TokenBytes -AgentBytes $credential.AgentBytes `
-                                -Apply -OwnerApproved:$OwnerApproved -RestageOnly:$RestageOnly
+                                -Apply -OwnerApproved:$OwnerApproved -RestageOnly:$RestageOnly -AutoRecover:$AutoRecover
                         }
                     } finally {
                         [Array]::Clear($credential.TokenBytes,0,$credential.TokenBytes.Length)
@@ -402,6 +405,7 @@ try{
                     @($brokerCredentialSource,$BrokerCredentialSourceSha256),@($verifierSource,$VerifierSourceSha256))){
                     Require-H454 ((Get-FileHash -LiteralPath $pair[0] -Algorithm SHA256).Hash -ceq $pair[1]) 'H454_GUARD_OPERATOR_SOURCE_DRIFT'
                 }
+                if($AutoRecover){Require-H454 ((Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash -ceq $GuardOperatorSourceSha256) 'H454_GUARD_OPERATOR_SOURCE_DRIFT'}
             }elseif($PrepareRecoveryBroker){
                 $brokerSource=Join-Path $PSScriptRoot 'h454_windows_broker_route.ps1'
                 $brokerText=Read-H454PinnedSource $brokerSource $BrokerRouteSourceSha256

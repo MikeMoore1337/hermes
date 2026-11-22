@@ -289,6 +289,15 @@ reboot remain unverified.
 
 ## Interruption and rollback boundary
 
+`-AutoRecover` is an explicitly selected monitor mode for the pinned original
+sandbox. It may start the stopped original only when the validated broker is
+running and the original is attached exclusively to the expected private
+network. It never repairs or switches a network automatically. The operator
+and its dependencies must be pinned and protected by the private ACL, and the
+existing durable mutation fence blocks every retry after an ambiguous Docker
+operation. The default monitor remains restage-only; selecting auto recovery
+does not install a task, establish live reconnect, or prove reboot recovery.
+
 The rollout must acquire the exclusive runtime lock, persist verified snapshots,
 install the guarded **old** launcher, then persist a flushed, no-overwrite
 pending marker before stopping either container. A guarded candidate launcher must

@@ -1,6 +1,6 @@
 #requires -Version 5.1
 # The monitor can restage a running original but cannot start, stop or reroute it.
-function New-H454BrokerMonitorDefinition([string]$GuardPath,[hashtable]$Pins,[string]$TaskUser,[datetime]$StartTime) {
+function New-H454BrokerMonitorDefinition([string]$GuardPath,[hashtable]$Pins,[string]$TaskUser,[datetime]$StartTime,[switch]$AutoRecover) {
     Require-H454 (-not [string]::IsNullOrWhiteSpace($GuardPath) -and [IO.Path]::IsPathRooted($GuardPath) -and
         -not $GuardPath.Contains('"') -and -not $GuardPath.Contains("`r") -and -not $GuardPath.Contains("`n") -and
         [IO.Path]::GetFileName($GuardPath) -ceq 'h454_windows_guard_operator.ps1') 'H454_MONITOR_INPUT'
@@ -25,7 +25,8 @@ function New-H454BrokerMonitorDefinition([string]$GuardPath,[hashtable]$Pins,[st
         $arguments+=' -'+$key+' '+$value
     }
     Require-H454 ($Pins.ProxyImageId -cne $Pins.BrokerImageId) 'H454_MONITOR_PINS'
-    $arguments+=' -RestoreOriginal -RestageOnly -Apply -OwnerApproved'
+    if($AutoRecover){$arguments+=' -RestoreOriginal -AutoRecover -Apply -OwnerApproved'}
+    else{$arguments+=' -RestoreOriginal -RestageOnly -Apply -OwnerApproved'}
     $sid=Get-H454WssTaskSid $TaskUser
     Require-H454 ($sid -ceq [Security.Principal.WindowsIdentity]::GetCurrent().User.Value) 'H454_MONITOR_PRINCIPAL'
     $exe=Join-Path ([Environment]::GetFolderPath('System')) 'WindowsPowerShell\v1.0\powershell.exe'
