@@ -156,9 +156,8 @@ internal static class Program
                 NATIVE_NOT_PROVISIONED, 0);
             return;
         }
-        // A signed release receipt is protected by the same NTFS ACLs
-        // as the owner-paired DPAPI device/manifest. An independently
-        // installed worker must have both expected SHA-256 digests.
+        // A protected signed or personal receipt pins both installed hashes.
+        // Personal integrity is not a publicly trusted publisher signature.
         // The process inherits this exact unprivileged service SID.
         using Process? child = NativeWorkerSupervisor.TryLaunch(Revision());
         if (child is null)

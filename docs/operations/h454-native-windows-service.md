@@ -158,3 +158,23 @@ it before any native host launch.
 PyInstaller may leave extraction files after abrupt forced termination.
 No automatic recursive cleanup runs on owner state; cleanup requires
 a separate reviewed owner host operation with symlink/inode checks.
+
+## Owner-only local integrity candidate
+
+For the owner's explicitly approved personal installation, the service accepts
+one protected `personal-release.json` instead of `signed-release.json`. Its
+strict `h454-personal-receipt-v1` schema contains only `schema`, `source_sha`,
+`exe_sha256` and `worker_sha256`. It must match the exact running source
+revision and both installed binary hashes; duplicates, extra fields, wrong
+hashes, missing receipts and simultaneous receipt types fail closed. The
+receipt lives in the same administrator-owned, service-read-only state as the
+device and manifest. It proves local integrity only, not a trusted publisher.
+
+The install directory and both executables must have protected, non-inherited
+DACLs owned by SYSTEM or Administrators, and allow only those principals and
+the read/execute-only service SID. This also prevents other unprivileged users
+from replacing a binary between its hash check and process creation. The
+receipt format does not create, provision, pair or start the service: a trusted
+administrator must establish and verify the build inputs, ACLs, state and
+service identity. Native Windows enrollment, DPAPI provisioning, recovery
+and original-host end-to-end tests remain unverified.

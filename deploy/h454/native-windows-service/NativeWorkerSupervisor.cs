@@ -1,8 +1,8 @@
 // H454 Stage 2A: a tightly pinned Windows native READ worker subprocess.
 // This runs only AFTER the SCM process token, owner-project kernel READ-only
 // probes and protected ProgramData ACLs are validated by NativeHostAdmission.
-// Exactly one trusted signed-release receipt pins both installed binaries;
-// a matching file hash is *not* a substitute for the original signing audit.
+// One protected receipt pins both installed binaries. A personal receipt
+// establishes local integrity only; it does not assert publisher trust.
 // No arbitrary executable/path/credential/URL/command may be supplied by MCP.
 using System.Diagnostics;
 using System.Security.Cryptography;
@@ -15,6 +15,7 @@ internal static class NativeWorkerSupervisor
 {
     internal const string Worker = "HermesCommanderNativeWorker.exe";
     internal const string SignedReceipt = "signed-release.json";
+    internal const string PersonalReceipt = "personal-release.json";
     internal const string Ready = "H454_NATIVE_BRC_SESSION_READY=YES";
     private const int MaxReceiptBytes = 4096;
     private const long MaxWorkerBytes = 180L * 1024L * 1024L;
@@ -27,7 +28,7 @@ internal static class NativeWorkerSupervisor
 
     internal static bool ReceiptMatches(
         byte[] data, string revision,
-        string serviceHash, string workerHash)
+        string serviceHash, string workerHash, bool personal = false)
     {
         try
         {
@@ -42,6 +43,12 @@ internal static class NativeWorkerSupervisor
             HashSet<string> keys = new(StringComparer.Ordinal);
             foreach (JsonProperty item in root.EnumerateObject())
                 if (!keys.Add(item.Name)) return false;
+            if (personal)
+                return keys.SetEquals(["schema", "source_sha", "exe_sha256", "worker_sha256"])
+                    && root.GetProperty("schema").GetString() == "h454-personal-receipt-v1"
+                    && root.GetProperty("source_sha").GetString() == revision
+                    && root.GetProperty("exe_sha256").GetString() == serviceHash
+                    && root.GetProperty("worker_sha256").GetString() == workerHash;
             if (!keys.SetEquals([
                 "schema", "source_sha", "msi_sha256", "exe_sha256",
                 "worker_sha256", "signer_thumbprint", "msi_valid",
@@ -106,18 +113,22 @@ internal static class NativeWorkerSupervisor
                 (binary.Attributes & FileAttributes.ReparsePoint) != 0 ||
                 (ownBinary.Attributes & FileAttributes.ReparsePoint) != 0 ||
                 binary.Length is < 1 or > MaxWorkerBytes ||
-                !NativeHostAdmission.InstallBinaryIsReadOnly(workerPath))
+                !NativeHostAdmission.InstallBinaryIsReadOnly(workerPath) ||
+                !NativeHostAdmission.InstallBinaryIsReadOnly(servicePath))
                 return null;
 
-            string state = Path.Combine(Environment.GetFolderPath(
+            string stateDir = Path.Combine(Environment.GetFolderPath(
                 Environment.SpecialFolder.CommonApplicationData),
-                "HermesCommanderNative", SignedReceipt);
+                "HermesCommanderNative");
+            string? state = NativeHostAdmission.ReleaseReceiptPath(stateDir);
+            if (state is null) return null;
             FileInfo receipt = new(state);
             if (!NativeHostAdmission.ProtectedStateFile(receipt))
                 return null;
             byte[] bytes = File.ReadAllBytes(state);
             if (!ReceiptMatches(bytes, revision,
-                HashPinnedFile(servicePath), HashPinnedFile(workerPath)))
+                HashPinnedFile(servicePath), HashPinnedFile(workerPath),
+                Path.GetFileName(state) == PersonalReceipt))
                 return null;
 
             ProcessStartInfo settings = new(workerPath)

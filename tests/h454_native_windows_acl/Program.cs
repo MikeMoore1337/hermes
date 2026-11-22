@@ -72,6 +72,19 @@ internal static class NativeAclFixture
             foreignOwner.SetOwner(sid);
             Require(!NativeHostAdmission.RestrictedDaclForIdentity(
                 foreignOwner, sid), "FOREIGN_OWNER_ALLOWED");
+            var install = SafeAcl(sid);
+            install.AddAccessRule(new FileSystemAccessRule(
+                sid, FileSystemRights.ReadAndExecute, AccessControlType.Allow));
+            Require(NativeHostAdmission.InstallDaclForIdentity(install, sid), "INSTALL_READ_EXECUTE_REFUSED");
+            var installWritable = SafeAcl(sid);
+            installWritable.AddAccessRule(new FileSystemAccessRule(sid, FileSystemRights.Write, AccessControlType.Allow));
+            Require(!NativeHostAdmission.InstallDaclForIdentity(installWritable, sid), "INSTALL_SERVICE_WRITE_ALLOWED");
+            var installForeign = SafeAcl(sid);
+            installForeign.AddAccessRule(new FileSystemAccessRule(
+                new SecurityIdentifier(WellKnownSidType.WorldSid, null), FileSystemRights.Write, AccessControlType.Allow));
+            Require(!NativeHostAdmission.InstallDaclForIdentity(installForeign, sid), "INSTALL_WORLD_WRITE_ALLOWED");
+            Require(!NativeHostAdmission.InstallDaclForIdentity(inherited, sid), "INSTALL_INHERITANCE_ALLOWED");
+            Require(!NativeHostAdmission.InstallDaclForIdentity(foreignOwner, sid), "INSTALL_FOREIGN_OWNER_ALLOWED");
             // PyInstaller's private Temp is the ONLY writable service
             // folder. Validate protected DACL, owner and exact principals.
             var privateTemp = SafeAcl(sid);
