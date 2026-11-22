@@ -149,7 +149,9 @@ def service_state(name: str, expected: str) -> None:
     lines = value.decode('ascii').splitlines()
     demand(len(lines) == 6 and len({line.split('=', 1)[0] for line in lines}) == 6)
     state = dict(line.split('=', 1) for line in lines)
-    demand(state == {'ActiveState':expected, 'UnitFileState':'disabled', 'LoadState':'loaded',
+    enabled = state.pop('UnitFileState', None)
+    demand(enabled in (('disabled','enabled') if name == NATIVE else ('disabled',)))
+    demand(state == {'ActiveState':expected, 'LoadState':'loaded',
                      'FragmentPath':str(UNITS/name), 'DropInPaths':'', 'NeedDaemonReload':'no'})
 
 

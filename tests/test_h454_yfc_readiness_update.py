@@ -100,6 +100,16 @@ class ReadinessUpdateTests(unittest.TestCase):
         self.assertIn('-no-CAstore',command)
         self.assertIn('/opt/hermes-commander-native/trust/ca.crt',command)
 
+    def test_enabled_native_is_admitted_but_enabled_tunnel_is_denied(self):
+        def response(name):
+            return ('ActiveState=active\nUnitFileState=enabled\nLoadState=loaded\n'
+                    f'FragmentPath={update.UNITS/name}\nDropInPaths=\nNeedDaemonReload=no\n').encode()
+        with patch.object(update,'run',return_value=response(update.NATIVE)):
+            update.service_state(update.NATIVE,'active')
+        with patch.object(update,'run',return_value=response(update.TUNNEL)):
+            with self.assertRaises(update.Hold):
+                update.service_state(update.TUNNEL,'active')
+
     @unittest.skipUnless(os.name == 'posix' and shutil.which('openssl'), 'Linux OpenSSL required')
     def test_unpinned_default_ca_is_rejected(self):
         with tempfile.TemporaryDirectory() as folder:
