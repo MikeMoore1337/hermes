@@ -45,13 +45,13 @@ class SnapshotTests(unittest.TestCase):
             with self.subTest(name=name), self.assertRaises(snapshot.SnapshotDenied):
                 checked([('README.md', b'public', tarfile.REGTYPE), (name, b'x', kind)])
 
-    @unittest.skipUnless(sys.platform == 'linux' and hasattr(os, 'geteuid') and os.geteuid() == 0,
-                         'Linux root fixture required')
+    @unittest.skipUnless(sys.platform == 'linux', 'Linux renameat2 fixture required')
     def test_never_replaces_existing_snapshot(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / 'root'
             files = {'README.md': b'original'}
-            with patch.object(snapshot, 'SNAPSHOT_ROOT', root), patch.object(snapshot, '_trusted_directory'):
+            with patch.object(snapshot, 'SNAPSHOT_ROOT', root), patch.object(snapshot, '_trusted_directory'), \
+                    patch.object(os, 'geteuid', return_value=0):
                 target = snapshot.install(files, root)
                 with self.assertRaises(snapshot.SnapshotDenied):
                     snapshot.install({'README.md': b'changed'}, root)
