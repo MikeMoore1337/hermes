@@ -4,6 +4,10 @@ on:
   pull_request:
     paths:
       - scripts/h454_native_ssh_tunnel_guard.ps1
+      - scripts/h454_yfc_enrollment_bridge.ps1
+      - scripts/h454_yfc_owner_enrollment.py
+      - scripts/h454_yfc_receive_credential.py
+      - tests/test_h454_yfc_enrollment_bridge.py
       - tests/test_h454_native_ssh_tunnel_guard.py
       - docs/operations/h454-native-ssh-tunnel-guard.md
       - .github/workflows/h454-native-ssh-guard.yml
@@ -57,3 +61,8 @@ jobs:
           python -B -m unittest -v tests.test_h454_native_ssh_tunnel_guard
           if ($LASTEXITCODE -ne 0) { throw 'H454_GUARD_SOURCE_TESTS_FAILED' }
           Write-Output 'H454_GUARD_SOURCE_TESTS=PASS'
+      - name: Test hidden encrypted bridge processes without SSH
+        shell: pwsh
+        run: |
+          & pwsh.exe -NoProfile -NonInteractive -File ./scripts/h454_yfc_enrollment_bridge.ps1 -SelfTest
+          if ($LASTEXITCODE -ne 0) { throw 'H454_YFC_BRIDGE_SELFTEST_FAILED' }
