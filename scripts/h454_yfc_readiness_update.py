@@ -9,7 +9,10 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import pwd
+try:
+    import pwd
+except ImportError:
+    pwd = None
 import stat
 import subprocess
 import sys
@@ -250,7 +253,7 @@ def execute() -> None:
 
 def main() -> int:
     try:
-        demand(fcntl is not None and len(sys.argv)==2 and sys.argv[1] in ('check','install','rollback'))
+        demand(fcntl is not None and pwd is not None and len(sys.argv)==2 and sys.argv[1] in ('check','install','rollback'))
         lock = os.open(LOCK,os.O_RDWR|os.O_NOFOLLOW|os.O_CLOEXEC)
         try:
             info=os.fstat(lock)
