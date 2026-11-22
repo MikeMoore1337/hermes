@@ -42,7 +42,7 @@ def render_tunnel_unit(*, ssh_ipv4: str, relay_ipv4: str) -> str:
             "ExecStartPost=/usr/bin/timeout 25 /bin/sh -c 'until /usr/bin/timeout 3 "
             "/usr/bin/openssl s_client -unix /run/hermes-commander-tunnel/relay.sock "
             "-servername brc-agent.internal -verify_hostname brc-agent.internal "
-            "-verify_return_error -CAfile /opt/hermes-commander-native/trust/ca.crt "
+            "-verify_return_error -no-CApath -no-CAstore -CAfile /opt/hermes-commander-native/trust/ca.crt "
             "</dev/null >/dev/null 2>&1; do sleep 1; done'",
             'NoNewPrivileges=yes', 'CapabilityBoundingSet=', 'AmbientCapabilities=',
             'ProtectSystem=strict', 'ProtectHome=yes', 'PrivateTmp=yes', 'PrivateDevices=yes',

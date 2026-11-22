@@ -28,11 +28,11 @@ AUDIT = 'hermes-commander-audit.socket'
 OLD = {NATIVE:'487ce0184ad6d7b3cbf63c9cc9078320508ad2715d4bf94a3a8e35366f1d38db',
        TUNNEL:'8932bc2e3fc2886ed3a48abf3b45c648a391ed8df2e11a22fce59be1f6f43708'}
 NEW = {NATIVE:'961339018259eab16ff5bdc0c67cdc9865734cbd8c95c7bad027f356f3e4bb0f',
-       TUNNEL:'dc2c70294f992827c76ac32c9135f0bd3c626401c5831b9e7d632b65c77e31c4'}
+       TUNNEL:'c622fa4357f60f15d80e9ea917aed7e94fa842b057fb48cef4439f4e993b6f8a'}
 POST = (b"ExecStartPost=/usr/bin/timeout 25 /bin/sh -c 'until /usr/bin/timeout 3 "
         b"/usr/bin/openssl s_client -unix /run/hermes-commander-tunnel/relay.sock "
         b"-servername brc-agent.internal -verify_hostname brc-agent.internal "
-        b"-verify_return_error -CAfile /opt/hermes-commander-native/trust/ca.crt "
+        b"-verify_return_error -no-CApath -no-CAstore -CAfile /opt/hermes-commander-native/trust/ca.crt "
         b"</dev/null >/dev/null 2>&1; do sleep 1; done'\n")
 
 
@@ -145,7 +145,7 @@ def tls_ready() -> None:
             run('/usr/sbin/runuser','-u','hermes-commander-tunnel','-g','hermes-commander-native',
                 '--','/usr/bin/timeout','3','/usr/bin/openssl','s_client','-unix',
                 '/run/hermes-commander-tunnel/relay.sock','-servername','brc-agent.internal',
-                '-verify_hostname','brc-agent.internal','-verify_return_error','-CAfile',
+                '-verify_hostname','brc-agent.internal','-verify_return_error','-no-CApath','-no-CAstore','-CAfile',
                 '/opt/hermes-commander-native/trust/ca.crt', timeout=5)
             return
         except (Hold, subprocess.TimeoutExpired):
