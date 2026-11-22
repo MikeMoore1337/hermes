@@ -81,6 +81,9 @@ try{
     Require-H454 ($definition.Action.Arguments.Contains('-RestoreOriginal -RestageOnly -Apply -OwnerApproved') -and
         $definition.Action.Arguments.Contains('-WindowStyle Hidden') -and -not $definition.Action.Arguments.Contains('brc_dev_') -and
         -not $definition.Settings.Enabled) 'FIXTURE_DEFINITION'
+    $autoDefinition=New-H454BrokerMonitorDefinition (Join-Path $state 'h454_windows_guard_operator.ps1') $pins $user ((Get-Date).AddMinutes(5)) -AutoRecover
+    Require-H454 ($autoDefinition.Action.Arguments.Contains('-RestoreOriginal -AutoRecover -Apply -OwnerApproved') -and
+        -not $autoDefinition.Action.Arguments.Contains('-RestageOnly') -and -not $autoDefinition.Settings.Enabled) 'FIXTURE_AUTO_DEFINITION'
     $badPins=$pins.Clone();$badPins.BackupName='" -Command dangerous';$refused=$false
     try{$null=New-H454BrokerMonitorDefinition (Join-Path $state 'h454_windows_guard_operator.ps1') $badPins $user ((Get-Date).AddMinutes(5))}catch{$refused=$true}
     Require-H454 $refused 'FIXTURE_ARGUMENT_INJECTION'

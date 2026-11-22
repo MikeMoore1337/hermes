@@ -109,7 +109,7 @@ function Restore-H454Original(
     [string]$Launcher,[string]$LauncherSha256,[string]$AgentId,[string]$AgentImage,[string]$AgentName,[string]$DeviceId,
     [string]$OldImage,[string]$BrokerImage,[string]$CaSha256,[string]$DockerSha256,
     [string]$VerifierPath,[string]$VerifierSha256,[byte[]]$TokenBytes=$null,[byte[]]$AgentBytes=$null,
-    [switch]$Apply,[switch]$OwnerApproved,[switch]$RestageOnly,[scriptblock]$TrialMutation=$null
+    [switch]$Apply,[switch]$OwnerApproved,[switch]$RestageOnly,[switch]$AutoRecover,[scriptblock]$TrialMutation=$null
 ) {
     function Invoke-H454OriginalMutation([string[]]$Arguments,[byte[]]$InputBytes=$null) {
         if($null -ne $TrialMutation){return (& $TrialMutation $Arguments $InputBytes)}
@@ -129,6 +129,8 @@ function Restore-H454Original(
     $stateArgs=@($StateDir,$Lock,$MarkerSha256,$SafetyCheck,$Launcher,$LauncherSha256,$AgentId,$AgentImage,$AgentName,
         $OldImage,$BrokerImage,$CaSha256,$DockerSha256)
     $snapshot=Get-H454OriginalRestoreState @stateArgs
+    Require-H454 (-not $AutoRecover -or ($Apply -and $OwnerApproved -and -not $RestageOnly -and
+        $null -eq $TrialMutation -and $snapshot.OnPrivate -and -not $snapshot.OnBridge)) 'H454_RESTORE_AUTO_ROUTE'
     if(-not $Apply){return [pscustomobject]@{Status='PREFLIGHT';Running=$snapshot.Agent.State.Running;
         OnBridge=$snapshot.OnBridge;OnPrivate=$snapshot.OnPrivate}}
     Require-H454 ($null -ne $TokenBytes -and $TokenBytes.Length -ge 48 -and $TokenBytes.Length -le 264 -and
