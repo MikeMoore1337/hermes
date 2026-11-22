@@ -28,7 +28,7 @@ class TunnelUnitTests(unittest.TestCase):
         readiness=next(x for x in text.splitlines() if x.startswith('ExecStartPost='))
         for item in ('/usr/bin/timeout 25', '/usr/bin/timeout 3', 'openssl s_client',
                      '-unix /run/hermes-commander-tunnel/relay.sock',
-                     '-verify_hostname brc-agent.internal', '-verify_return_error',
+                     '-verify_hostname brc-agent.internal', '-verify_return_error', '-no-CApath', '-no-CAstore',
                      '-CAfile /opt/hermes-commander-native/trust/ca.crt'):
             self.assertIn(item, readiness)
 

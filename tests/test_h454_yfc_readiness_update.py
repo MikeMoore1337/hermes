@@ -2,7 +2,12 @@
 import hashlib
 import os
 from pathlib import Path
+import shutil
+import socket
+import ssl
+import subprocess
 import tempfile
+import threading
 import unittest
 from unittest.mock import patch
 
@@ -59,6 +64,61 @@ class ReadinessUpdateTests(unittest.TestCase):
             ('/usr/bin/systemctl','reset-failed',update.TUNNEL,update.NATIVE),
             ('/usr/bin/systemctl','start',update.TUNNEL), 'tls',
             ('/usr/bin/systemctl','start',update.NATIVE)])
+
+    def test_tls_readiness_excludes_default_certificate_stores(self):
+        with patch.object(update,'run',return_value=b'') as runner:
+            update.tls_ready()
+        command=runner.call_args.args
+        self.assertIn('-no-CApath',command)
+        self.assertIn('-no-CAstore',command)
+        self.assertIn('/opt/hermes-commander-native/trust/ca.crt',command)
+
+    @unittest.skipUnless(os.name == 'posix' and shutil.which('openssl'), 'Linux OpenSSL required')
+    def test_unpinned_default_ca_is_rejected(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)
+            def openssl(*args):
+                return subprocess.run(['openssl',*map(str,args)],check=True,stdout=subprocess.PIPE,
+                                      stderr=subprocess.PIPE,timeout=20).stdout
+            for name in ('pinned','other'):
+                openssl('req','-x509','-newkey','rsa:2048','-nodes','-days','1','-subj',f'/CN={name}',
+                        '-keyout',root/f'{name}.key','-out',root/f'{name}.crt',
+                        '-addext','basicConstraints=critical,CA:TRUE')
+            openssl('req','-new','-newkey','rsa:2048','-nodes','-subj','/CN=brc-agent.internal',
+                    '-keyout',root/'server.key','-out',root/'server.csr')
+            (root/'ext').write_text('subjectAltName=DNS:brc-agent.internal\n')
+            openssl('x509','-req','-in',root/'server.csr','-CA',root/'other.crt','-CAkey',root/'other.key',
+                    '-CAcreateserial','-days','1','-extfile',root/'ext','-out',root/'server.crt')
+            capath=root/'capath'; capath.mkdir()
+            ca_hash=openssl('x509','-in',root/'other.crt','-noout','-subject_hash').decode().strip()
+            (capath/(ca_hash+'.0')).symlink_to(root/'other.crt')
+            listener=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)
+            listener.bind(str(root/'relay.sock')); listener.listen(2); listener.settimeout(15)
+            context=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            context.load_cert_chain(root/'server.crt',root/'server.key')
+            def serve():
+                for _ in range(2):
+                    connection,_=listener.accept()
+                    try:
+                        with context.wrap_socket(connection,server_side=True):
+                            pass
+                    except ssl.SSLError:
+                        connection.close()
+            thread=threading.Thread(target=serve,daemon=True); thread.start()
+            env=dict(os.environ,SSL_CERT_DIR=str(capath))
+            command=['openssl','s_client','-unix',str(root/'relay.sock'),'-servername','brc-agent.internal',
+                     '-verify_hostname','brc-agent.internal','-verify_return_error','-no-CApath','-no-CAstore','-CAfile']
+            try:
+                good=subprocess.run(command+[str(root/'other.crt')],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,
+                                    stderr=subprocess.PIPE,env=env,timeout=10)
+                strict=subprocess.run(command+[str(root/'pinned.crt')],stdin=subprocess.DEVNULL,
+                                      stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,env=env,timeout=10)
+                thread.join(timeout=10)
+                self.assertFalse(thread.is_alive())
+                self.assertEqual(good.returncode,0,good.stderr.decode('utf-8',errors='replace'))
+                self.assertNotEqual(strict.returncode,0)
+            finally:
+                listener.close()
 
     @unittest.skipUnless(os.name == 'posix', 'Linux unit installer')
     def test_install_then_rollback_restores_units_and_keeps_credential_untouched(self):
