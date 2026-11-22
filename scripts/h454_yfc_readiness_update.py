@@ -32,6 +32,10 @@ OLD = {NATIVE:'487ce0184ad6d7b3cbf63c9cc9078320508ad2715d4bf94a3a8e35366f1d38db'
        TUNNEL:'8932bc2e3fc2886ed3a48abf3b45c648a391ed8df2e11a22fce59be1f6f43708'}
 NEW = {NATIVE:'961339018259eab16ff5bdc0c67cdc9865734cbd8c95c7bad027f356f3e4bb0f',
        TUNNEL:'c622fa4357f60f15d80e9ea917aed7e94fa842b057fb48cef4439f4e993b6f8a'}
+RECONNECT_OLD = dict(NEW)
+RECONNECT_NEW = {NATIVE:'bcba4c34ed1210589634713790c9b2f4beb46c725a4dfc1c97b0fced4bf43b18',
+                 TUNNEL:NEW[TUNNEL]}
+PHASE = 'readiness'
 POST = (b"ExecStartPost=/usr/bin/timeout 25 /bin/sh -c 'until /usr/bin/timeout 3 "
         b"/usr/bin/openssl s_client -unix /run/hermes-commander-tunnel/relay.sock "
         b"-servername brc-agent.internal -verify_hostname brc-agent.internal "
@@ -111,6 +115,14 @@ def no_pending_replacements() -> None:
 
 def candidates(old: dict[str, bytes]) -> dict[str, bytes]:
     demand(set(old) == set(OLD) and all(digest(old[k]) == OLD[k] for k in OLD))
+    if PHASE == 'reconnect':
+        limit = b'StartLimitIntervalSec=300\n'
+        restart = b'Restart=on-success\nRestartSec=5s\n'
+        demand(old[NATIVE].count(limit) == 1 and old[NATIVE].count(restart) == 1)
+        new = {NATIVE:old[NATIVE].replace(limit,b'StartLimitIntervalSec=60\n').replace(
+            restart,b'Restart=always\nRestartSec=10s\n'), TUNNEL:old[TUNNEL]}
+        demand(all(digest(new[k]) == NEW[k] for k in NEW))
+        return new
     marker = b'After=network-online.target local-fs.target hermes-commander-audit.socket\n'
     line = b'NoNewPrivileges=yes\n'
     demand(old[NATIVE].count(marker) == 1 and old[TUNNEL].count(line) == 1)
@@ -248,7 +260,8 @@ def execute() -> None:
         stop_services()
         for name in (TUNNEL,NATIVE):
             demand(digest(checked(UNITS/name)) == OLD[name])
-            replace_unit(UNITS/name,new[name])
+            if new[name] != old[name]:
+                replace_unit(UNITS/name,new[name])
         start_services()
     except Exception:
         restore(old)
@@ -256,8 +269,16 @@ def execute() -> None:
 
 
 def main() -> int:
+    global CHECKPOINT, OLD, NEW, PHASE
     try:
-        demand(fcntl is not None and pwd is not None and len(sys.argv)==2 and sys.argv[1] in ('check','install','rollback'))
+        demand(fcntl is not None and pwd is not None and len(sys.argv)==2)
+        command = sys.argv[1]
+        if command.startswith('reconnect-'):
+            PHASE = 'reconnect'
+            CHECKPOINT = Path('/opt/hermes-commander-native/receipts/h454-yfc-reconnect-e29edff3')
+            OLD, NEW = RECONNECT_OLD, RECONNECT_NEW
+            command = command.removeprefix('reconnect-')
+        demand(command in ('check','install','rollback'))
         lock = os.open(LOCK,os.O_RDWR|os.O_NOFOLLOW|os.O_CLOEXEC)
         try:
             info=os.fstat(lock)
@@ -265,16 +286,16 @@ def main() -> int:
                    and stat.S_IMODE(info.st_mode)==0o600 and info.st_size==0)
             fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
             demand((LOCK.lstat().st_dev,LOCK.lstat().st_ino)==(info.st_dev,info.st_ino))
-            if sys.argv[1] == 'check':
+            if command == 'check':
                 plan()
-            elif sys.argv[1] == 'install':
+            elif command == 'install':
                 execute()
             else:
                 preflight()
                 restore(saved())
         finally:
             os.close(lock)
-        print('H454_YFC_READINESS_' + sys.argv[1].upper() + '=PASS')
+        print('H454_YFC_' + PHASE.upper() + '_' + command.upper() + '=PASS')
         return 0
     except Exception:
         print('H454_YFC_READINESS=HOLD',file=sys.stderr)

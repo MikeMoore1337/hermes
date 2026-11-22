@@ -51,6 +51,18 @@ class ReadinessUpdateTests(unittest.TestCase):
                 with self.assertRaises(update.Hold):
                     update.candidates(self.old)
 
+    def test_reconnect_candidate_changes_only_bounded_restart_policy(self):
+        old={update.NATIVE:b'StartLimitIntervalSec=300\nRestart=on-success\nRestartSec=5s\n',
+             update.TUNNEL:b'unchanged pinned tunnel\n'}
+        new={update.NATIVE:b'StartLimitIntervalSec=60\nRestart=always\nRestartSec=10s\n',
+             update.TUNNEL:old[update.TUNNEL]}
+        with (patch.object(update,'PHASE','reconnect'),
+              patch.object(update,'OLD',{k:sha(v) for k,v in old.items()}),
+              patch.object(update,'NEW',{k:sha(v) for k,v in new.items()})):
+            self.assertEqual(update.candidates(old),new)
+            with self.assertRaises(update.Hold):
+                update.candidates(dict(old, **{update.NATIVE:old[update.NATIVE]+b'changed'}))
+
     def test_controlled_restart_waits_for_pinned_tls(self):
         events=[]
         def run(*args, **_kwargs):
@@ -115,13 +127,14 @@ class ReadinessUpdateTests(unittest.TestCase):
                 for _ in range(2):
                     connection,_=listener.accept()
                     try:
-                        with context.wrap_socket(connection,server_side=True):
-                            pass
-                    except ssl.SSLError:
+                        with context.wrap_socket(connection,server_side=True) as secured:
+                            secured.settimeout(3)
+                            secured.unwrap().close()
+                    except (ssl.SSLError, OSError):
                         connection.close()
             thread=threading.Thread(target=serve,daemon=True); thread.start()
             env=dict(os.environ,SSL_CERT_DIR=str(capath))
-            command=['openssl','s_client','-unix',str(root/'relay.sock'),'-servername','brc-agent.internal',
+            command=['openssl','s_client','-ign_eof','-unix',str(root/'relay.sock'),'-servername','brc-agent.internal',
                      '-verify_hostname','brc-agent.internal','-verify_return_error','-no-CApath','-no-CAstore','-CAfile']
             try:
                 good=subprocess.run(command+[str(root/'other.crt')],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,
@@ -134,6 +147,32 @@ class ReadinessUpdateTests(unittest.TestCase):
                 self.assertNotEqual(strict.returncode,0)
             finally:
                 listener.close()
+
+    @unittest.skipUnless(os.name == 'posix', 'Linux unit installer')
+    def test_reconnect_install_rollback_and_reapply_preserve_tunnel_inode(self):
+        old={update.NATIVE:b'StartLimitIntervalSec=300\nRestart=on-success\nRestartSec=5s\n',
+             update.TUNNEL:b'unchanged pinned tunnel\n'}
+        new={update.NATIVE:b'StartLimitIntervalSec=60\nRestart=always\nRestartSec=10s\n',
+             update.TUNNEL:old[update.TUNNEL]}
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder); units=root/'units'; units.mkdir()
+            for name, data in old.items():
+                (units/name).write_bytes(data); os.chmod(units/name,0o644)
+            tunnel_inode=(units/update.TUNNEL).stat().st_ino
+            with (patch.object(update,'PHASE','reconnect'),
+                  patch.object(update,'OLD',{k:sha(v) for k,v in old.items()}),
+                  patch.object(update,'NEW',{k:sha(v) for k,v in new.items()}),
+                  patch.object(update,'UNITS',units), patch.object(update,'CHECKPOINT',root/'receipt'),
+                  patch.object(update,'preflight'), patch.object(update,'service_state'),
+                  patch.object(update,'root_directory'), patch.object(update,'checked',side_effect=local_checked),
+                  patch.object(update,'stop_services'), patch.object(update,'start_services')):
+                update.execute()
+                self.assertEqual({n:(units/n).read_bytes() for n in new},new)
+                update.restore(update.saved())
+                self.assertEqual({n:(units/n).read_bytes() for n in old},old)
+                update.execute()
+                self.assertEqual({n:(units/n).read_bytes() for n in new},new)
+                self.assertEqual((units/update.TUNNEL).stat().st_ino,tunnel_inode)
 
     @unittest.skipUnless(os.name == 'posix', 'Linux unit installer')
     def test_install_then_rollback_restores_units_and_keeps_credential_untouched(self):

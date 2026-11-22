@@ -542,18 +542,20 @@ class LiveWorkerLifecycleTests(unittest.TestCase):
                          Path(service.CONFIG_PATH))
 
     def test_revoked_or_isolation_denied_before_network(self):
-        for gates in ((False,lambda:False),(True,lambda:True)):
-            with self.subTest(gates=gates), \
+        for target, gates in ((t, g) for t in ('hermes-vps','yfc-vps')
+                              for g in ((False,lambda:False),(True,lambda:True))):
+            with self.subTest(target=target,gates=gates), \
                  patch.object(service,"_service_identity"), \
                  patch.object(service,"load_local_runtime",
                      return_value=self.fake), \
                  patch.object(service,"run_once") as read:
-                with self.assertRaises(service.NativeLinuxServiceDenied):
-                    service.run_trusted_once(
-                        target=TARGET,release_sha=RELEASE,
-                        manifest_sha256="d"*64,connector=self.transport,
-                        os_gate=lambda:gates[0],
-                        status_factory=lambda **_:gates[1])
+                for _ in range(3):
+                    with self.assertRaises(service.NativeLinuxServiceDenied):
+                        service.run_trusted_once(
+                            target=target,release_sha=RELEASE,
+                            manifest_sha256="d"*64,connector=self.transport,
+                            os_gate=lambda:gates[0],
+                            status_factory=lambda **_:gates[1])
                 read.assert_not_called()
 
     def test_user_controlled_cli_cannot_bypass_os_proof(self):
