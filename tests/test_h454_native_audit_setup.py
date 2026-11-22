@@ -7,12 +7,72 @@ import stat
 import tempfile
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from scripts import h454_native_audit_setup as setup
 
 
 class AuditSetupTests(unittest.TestCase):
+    def test_yfc_plan_requires_exact_host_receipt_inactive_unit_and_trust(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder); unit=root/'units'; unit.mkdir()
+            receipt=root/'receipt'; host=root/'host-key'; manifest=root/'state'/'manifest.json'
+            identity=SimpleNamespace(pw_uid=11,pw_gid=12,pw_name='hermes-commander-native',pw_shell='/usr/sbin/nologin',pw_dir='/nonexistent')
+            state={'ActiveState':'inactive','UnitFileState':'disabled','LoadState':'loaded',
+                   'FragmentPath':str(unit/'hermes-commander-native.service'),
+                   'User':'hermes-commander-native','Group':'hermes-commander-native',
+                   'DropInPaths':'','NeedDaemonReload':'no'}
+            values={receipt:b'receipt',host:b'host',unit/'hermes-commander-native.service':b'unit'}
+            with patch.multiple(setup,UNIT_DIR=unit,UNIT_SEARCH_DIRS=(unit,),YFC_RECEIPT=receipt, \
+                                YFC_HOST_KEY=host,MANIFEST=manifest,SOCKET_DIR=root/'socket'), \
+                 patch.object(setup.os,'geteuid',return_value=0),patch.object(setup,'owned_directory'), \
+                 patch.object(setup,'_identity_absent',return_value=True), \
+                 patch.object(setup,'_service_group_exclusive',return_value=True) as exclusive, \
+                 patch.multiple(setup.pwd,getpwnam=Mock(return_value=identity),getpwall=Mock(return_value=[identity])), \
+                 patch.object(setup,'_run',return_value=SimpleNamespace(stdout=b'hermes-commander-native L')) as run, \
+                 patch.object(setup,'checked_file',side_effect=lambda path,*a,**k:values[path]), \
+                 patch.multiple(setup,YFC_RECEIPT_SHA=hashlib.sha256(b'receipt').hexdigest(), \
+                                YFC_HOST_KEY_SHA=hashlib.sha256(b'host').hexdigest(), \
+                                YFC_ACTIVE_SHA=hashlib.sha256(b'unit').hexdigest()), \
+                 patch.object(setup,'load_private_relay') as trust,patch.object(setup,'raw_show',return_value=state):
+                self.assertEqual(setup.plan_yfc()['status'],'H454_YFC_AUDIT_SETUP_PLAN_PASS')
+                for path in values:
+                    good=values[path]; values[path]=b'changed'
+                    with self.subTest(path=path.name),self.assertRaises(setup.AuditSetupHold):setup.plan_yfc()
+                    values[path]=good
+                state['ActiveState']='active'
+                with self.assertRaises(setup.AuditSetupHold):setup.plan_yfc()
+                state['ActiveState']='inactive'
+                exclusive.return_value=False
+                with self.assertRaises(setup.AuditSetupHold):setup.plan_yfc()
+                exclusive.return_value=True
+                run.return_value.stdout=b'hermes-commander-native P'
+                with self.assertRaises(setup.AuditSetupHold):setup.plan_yfc()
+                run.return_value.stdout=b'hermes-commander-native L'
+                manifest.parent.mkdir()
+                with self.assertRaises(setup.AuditSetupHold):setup.plan_yfc()
+                manifest.parent.rmdir()
+                trust.side_effect=ValueError('bad trust')
+                with self.assertRaises(setup.AuditSetupHold):setup.plan_yfc()
+
+    def test_yfc_install_selects_only_inactive_pinned_worker(self):
+        with patch.object(setup,'_install',return_value={'status':'ok'}) as install:
+            self.assertEqual(setup.install_yfc(),{'status':'ok'})
+        install.assert_called_once_with(setup.plan_yfc,active_sha=setup.YFC_ACTIVE_SHA,expected_state='inactive')
+
+    def test_yfc_uncertain_account_creation_requires_recovery(self):
+        with patch.object(setup,'ensure_lock'), \
+             patch.object(setup.paired,'host_lock',return_value=nullcontext()), \
+             patch.object(setup,'plan_yfc',return_value={}), \
+             patch.object(setup,'_run',side_effect=TimeoutError('private detail')), \
+             patch.object(setup,'_identity_absent',return_value=False), \
+             patch.object(setup,'_rollback') as rollback:
+            with self.assertRaises(setup.AuditSetupHold) as error:
+                setup.install_yfc()
+        self.assertEqual(error.exception.phase,'AUDIT_CLEANUP')
+        self.assertNotIn('private detail',str(error.exception))
+        rollback.assert_called_once()
+
     def test_uncertain_account_creation_requires_recovery(self):
         with patch.object(setup,'ensure_lock'), \
              patch.object(setup.paired,'host_lock',return_value=nullcontext()), \
