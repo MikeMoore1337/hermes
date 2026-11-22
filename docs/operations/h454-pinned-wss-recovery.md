@@ -297,6 +297,11 @@ and its dependencies must be pinned and protected by the private ACL, and the
 existing durable mutation fence blocks every retry after an ambiguous Docker
 operation. The default monitor remains restage-only; selecting auto recovery
 does not install a task, establish live reconnect, or prove reboot recovery.
+The auto-recovery task uses a locally built GUI-subsystem launcher which starts
+the fixed PowerShell guard with `CreateNoWindow`. The launcher accepts only the
+guard in its own directory and the explicit auto-recovery mode, and propagates
+the guard's exit code. Its installation still requires a protected directory,
+reviewed source and pinned contents; a source build is not publisher signing.
 
 The rollout must acquire the exclusive runtime lock, persist verified snapshots,
 install the guarded **old** launcher, then persist a flushed, no-overwrite

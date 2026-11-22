@@ -31,6 +31,8 @@ on:
       - scripts/h454_windows_recovery_route.ps1
       - scripts/h454_windows_broker_route.ps1
       - scripts/h454_windows_broker_monitor.ps1
+      - scripts/h454_windows_no_console.cs
+      - tests/h454_windows_no_console_fixture.ps1
       - tests/h454_windows_broker_route_fixture.ps1
       - tests/h454_windows_broker_monitor_fixture.ps1
       - scripts/h454_windows_guard_operator.ps1
@@ -103,6 +105,8 @@ on:
       - scripts/h454_windows_recovery_route.ps1
       - scripts/h454_windows_broker_route.ps1
       - scripts/h454_windows_broker_monitor.ps1
+      - scripts/h454_windows_no_console.cs
+      - tests/h454_windows_no_console_fixture.ps1
       - tests/h454_windows_broker_route_fixture.ps1
       - tests/h454_windows_broker_monitor_fixture.ps1
       - scripts/h454_windows_guard_operator.ps1
@@ -225,6 +229,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'H454_BROKER_ROUTE_TEST_FAILED' }
           & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests/h454_windows_broker_monitor_fixture.ps1 -TaskSource (Resolve-Path scripts/h454_windows_wss_task.ps1).Path -MonitorSource (Resolve-Path scripts/h454_windows_broker_monitor.ps1).Path
           if ($LASTEXITCODE -ne 0) { throw 'H454_BROKER_MONITOR_TEST_FAILED' }
+          & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests/h454_windows_no_console_fixture.ps1 -Source (Resolve-Path scripts/h454_windows_no_console.cs).Path -FixtureParent $env:RUNNER_TEMP
+          if ($LASTEXITCODE -ne 0) { throw 'H454_NO_CONSOLE_TEST_FAILED' }
           & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests/h454_windows_original_restore_fixture.ps1 -Verifier (Resolve-Path scripts/h454_verify_staged.cjs).Path
           if ($LASTEXITCODE -ne 0) { throw 'H454_ORIGINAL_RESTORE_TEST_FAILED' }
           & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests/h454_windows_candidate_prepare_fixture.ps1

@@ -30,6 +30,10 @@ function New-H454BrokerMonitorDefinition([string]$GuardPath,[hashtable]$Pins,[st
     $sid=Get-H454WssTaskSid $TaskUser
     Require-H454 ($sid -ceq [Security.Principal.WindowsIdentity]::GetCurrent().User.Value) 'H454_MONITOR_PRINCIPAL'
     $exe=Join-Path ([Environment]::GetFolderPath('System')) 'WindowsPowerShell\v1.0\powershell.exe'
+    if($AutoRecover){
+        $exe=Join-Path $state 'h454_windows_no_console.exe'
+        $arguments=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($arguments))
+    }
     $action=New-ScheduledTaskAction -Execute $exe -Argument $arguments
     $principal=New-ScheduledTaskPrincipal -UserId $TaskUser -LogonType Interactive -RunLevel Limited
     $settings=New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew `
