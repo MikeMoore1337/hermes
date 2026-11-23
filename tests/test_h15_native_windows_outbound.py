@@ -74,6 +74,28 @@ class FakeConnector:
 
 
 class OutboundReadOnlyTests(unittest.TestCase):
+    def test_personal_budget_keeps_socket_and_durable_claim_blocks_old_id(self):
+        config = outbound.Settings("wss://hermes.mikemoore.top/ws",
+            "h454-win-native-" + "a" * 32, "brc_dev_" + "b" * 48)
+        messages = [call(f"id-{i}", name="native_file_stat") for i in range(outbound.MAX_CALLS)]
+        messages += [call("id-0", name="native_file_stat"), call("id-new", name="native_file_stat")]
+        connector = FakeConnector([welcome()] + messages)
+        claimed = set()
+        def durable_claim(identifier):
+            if identifier in claimed:
+                return False
+            claimed.add(identifier)
+            return True
+        with patch.object(outbound.time, "sleep") as pause, \
+             patch.object(mcp.native, "handle_native_request", return_value=payload(operation="stat")) as reader:
+            result = outbound.run_session(config, connector, fresh_native=True,
+                continue_on_idle=True, claim_call=durable_claim, legacy_catalog=True)
+        self.assertEqual(result, "session_budget_exhausted")
+        self.assertEqual(reader.call_count, outbound.MAX_CALLS + 1)
+        self.assertEqual(len(connector.invocations), 1)
+        self.assertEqual(sum(x["type"] == "result" for x in connector.ws.sent), outbound.MAX_CALLS + 1)
+        pause.assert_called_once_with(5)
+
     def test_legacy_personal_catalog_accepts_read_and_rejects_unadvertised_search(self):
         config = outbound.Settings("wss://hermes.mikemoore.top/ws",
             "h454-win-native-" + "a" * 32, "brc_dev_" + "b" * 48)
