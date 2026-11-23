@@ -70,6 +70,9 @@ class NativeWindowsMsiContracts(unittest.TestCase):
             "H454_WINDOWS_MSI_VIRTUAL_SERVICE_FAIL_CLOSED=PASS",
             "H454_WINDOWS_MSI_EXISTING_SERVICE_DENIED=PASS",
             "H454_OWNER_WINDOWS_MSI_NOT_INSTALLED=YES",
+            "--version 5.0.2", "H454_WIX5_DISABLED_HASH_MATCH=PASS",
+            "H454_WIX5_ROLLBACK=PASS", "H454_WIX5_PREEXISTING_SERVICE",
+            "H454_WIX5_EXISTING_SERVICE_DENIED=PASS",
         ):
             self.assertIn(marker, text)
         for forbidden in (
