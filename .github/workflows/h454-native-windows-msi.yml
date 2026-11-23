@@ -186,3 +186,80 @@ jobs:
               if ($LASTEXITCODE -ne 0) { throw 'H454_FOREIGN_SCM_FIXTURE_REMOVE_DENIED' }
             }
           }
+      - name: Test personal WiX 5 MSI install and rollback on disposable runner
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $name = 'HermesCommanderNative'
+          $dir = Join-Path $env:RUNNER_TEMP 'h454-native-msi'
+          $worker = Join-Path $env:RUNNER_TEMP 'h454-worker-dist/HermesCommanderNativeWorker.exe'
+          $service = Join-Path $dir 'HermesCommanderNativeService.exe'
+          $msi = Join-Path $dir 'HermesCommanderNative-Personal-CI.msi'
+          $source = [IO.File]::ReadAllText((Join-Path $env:GITHUB_WORKSPACE 'deploy/h454/native-windows-msi/Package.wxs'))
+          $marker = '<Package Id="MikeMoore1337.HermesCommander.Native.Disabled"'
+          if ($source.Split(@($marker), [StringSplitOptions]::None).Count -ne 2) {
+            throw 'H454_WIX5_SOURCE_MISMATCH'
+          }
+          $wxs = Join-Path $dir 'Package-wix5.wxs'
+          [IO.File]::WriteAllText($wxs, $source.Replace($marker, '<Package'), [Text.UTF8Encoding]::new($false))
+          $tools = Join-Path $env:RUNNER_TEMP 'h454-wix5'
+          dotnet tool install wix --version 5.0.2 --tool-path $tools
+          if ($LASTEXITCODE -ne 0) { throw 'H454_WIX5_INSTALL_DENIED' }
+          & (Join-Path $tools 'wix.exe') build $wxs -arch x64 -d "ServiceExe=$service" -d "WorkerExe=$worker" -out $msi
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $msi -PathType Leaf) -or
+              (Get-AuthenticodeSignature -LiteralPath $msi).Status.ToString() -ne 'NotSigned') {
+            throw 'H454_WIX5_PERSONAL_BUILD_DENIED'
+          }
+          $installedExe = Join-Path $env:ProgramFiles 'Hermes Commander Native/HermesCommanderNativeService.exe'
+          $installedWorker = Join-Path $env:ProgramFiles 'Hermes Commander Native/HermesCommanderNativeWorker.exe'
+          $msiexec = Join-Path $env:WINDIR 'System32/msiexec.exe'
+          if ((Get-Service -Name $name -ErrorAction SilentlyContinue) -or
+              (Test-Path -LiteralPath $installedExe) -or (Test-Path -LiteralPath $installedWorker)) {
+            throw 'H454_WIX5_PREEXISTING_SERVICE'
+          }
+          $installed = $false
+          try {
+            $run = Start-Process -FilePath $msiexec -ArgumentList @('/i', $msi, '/qn', '/norestart', 'REBOOT=ReallySuppress') -Wait -PassThru -NoNewWindow
+            if ($run.ExitCode -ne 0) { throw 'H454_WIX5_INSTALL_DENIED' }
+            $installed = $true
+            $svc = Get-CimInstance -ClassName Win32_Service -Filter "Name='$name'"
+            if ($null -eq $svc -or $svc.StartMode -ne 'Disabled' -or $svc.State -ne 'Stopped' -or
+                $svc.StartName -cne 'NT SERVICE\HermesCommanderNative' -or $svc.PathName -notmatch '--service' -or
+                (Get-FileHash -LiteralPath $service).Hash -cne (Get-FileHash -LiteralPath $installedExe).Hash -or
+                (Get-FileHash -LiteralPath $worker).Hash -cne (Get-FileHash -LiteralPath $installedWorker).Hash) {
+              throw 'H454_WIX5_INSTALL_SCOPE_DENIED'
+            }
+            Write-Output 'H454_WIX5_DISABLED_HASH_MATCH=PASS'
+          } finally {
+            if ($installed -or (Get-Service -Name $name -ErrorAction SilentlyContinue)) {
+              $undo = Start-Process -FilePath $msiexec -ArgumentList @('/x', $msi, '/qn', '/norestart', 'REBOOT=ReallySuppress') -Wait -PassThru -NoNewWindow
+              if ($undo.ExitCode -ne 0) { throw 'H454_WIX5_ROLLBACK_DENIED' }
+            }
+            if ((Get-Service -Name $name -ErrorAction SilentlyContinue) -or
+                (Test-Path -LiteralPath $installedExe) -or (Test-Path -LiteralPath $installedWorker)) {
+              throw 'H454_WIX5_ORPHANED_SERVICE'
+            }
+          }
+          Write-Output 'H454_WIX5_ROLLBACK=PASS'
+          $foreign = Join-Path $env:WINDIR 'System32/notepad.exe'
+          $created = $false
+          try {
+            & sc.exe create $name binPath= $foreign start= disabled type= own obj= "NT AUTHORITY\LocalService" | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw 'H454_WIX5_FOREIGN_FIXTURE_DENIED' }
+            $created = $true
+            $before = Get-CimInstance Win32_Service -Filter "Name='$name'"
+            $result = Start-Process -FilePath $msiexec -ArgumentList @('/i', $msi, '/qn', '/norestart', 'REBOOT=ReallySuppress') -Wait -PassThru -NoNewWindow
+            $after = Get-CimInstance Win32_Service -Filter "Name='$name'"
+            if ($result.ExitCode -ne 1603 -or $null -eq $after -or
+                $after.PathName -cne $before.PathName -or $after.StartMode -ne 'Disabled' -or
+                $after.State -ne 'Stopped' -or (Test-Path -LiteralPath $installedExe) -or
+                (Test-Path -LiteralPath $installedWorker)) {
+              throw 'H454_WIX5_FOREIGN_SERVICE_TAKEOVER'
+            }
+            Write-Output 'H454_WIX5_EXISTING_SERVICE_DENIED=PASS'
+          } finally {
+            if ($created) {
+              & sc.exe delete $name | Out-Null
+              if ($LASTEXITCODE -ne 0) { throw 'H454_WIX5_FIXTURE_REMOVE_DENIED' }
+            }
+          }
