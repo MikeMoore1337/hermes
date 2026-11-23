@@ -228,7 +228,8 @@ const newYfcSocket=()=>({...yfcLive,socket:{...yfcLive.socket}});
 devices.set(yfc.id,newYfcSocket());
 before=calls;
 failCall=true;
-assert(denied(await invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_read',request)),
+const unnormalizedRequest={...request,relative:'a\u0301.md'};
+assert(denied(await invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_read',unnormalizedRequest)),
   'UNCERTAIN_FAILURE_MUST_DENY');
 failCall=false;
 assert(calls===before+1,'UNCERTAIN_FAILURE_MUST_NOT_RETRY');
