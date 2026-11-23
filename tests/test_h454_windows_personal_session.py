@@ -181,7 +181,7 @@ class RealWindowsPersonalSession(unittest.TestCase):
             self.assertEqual(worker.main(), 2)
         self.assertEqual(run.call_count, 5)
         self.assertTrue(all(call.kwargs["claim_call"] == journal.claim for call in run.call_args_list))
-        self.assertTrue(all(call.kwargs["legacy_catalog"] is True for call in run.call_args_list))
+        self.assertTrue(all(call.kwargs.get("legacy_catalog", False) is False for call in run.call_args_list))
         self.assertEqual([call.args[0] for call in sleep.call_args_list], [5, 5, 60, 60])
 
     def test_one_time_private_state_does_not_overwrite(self):
