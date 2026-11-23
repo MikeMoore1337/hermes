@@ -154,7 +154,7 @@ def decode_frame(raw: str | bytes) -> dict[str, Any]:
 
 
 def safe_call(session: McpSession, message: dict[str, Any],
-              seen: set[str]) -> dict[str, Any] | None:
+              seen: set[str], claim_call: Callable[[str], bool] | None = None) -> dict[str, Any] | None:
     """Translate only two remote BRC operations into checked local MCP calls."""
     if set(message) - {"type", "id", "tool", "args", "client", "timeoutMs"}:
         return None
@@ -174,6 +174,15 @@ def safe_call(session: McpSession, message: dict[str, Any],
         return None
     if ident in seen or len(seen) >= MAX_SEEN_IDS:
         return None
+    if claim_call is not None:
+        try:
+            claimed = claim_call(ident)
+        except Exception:
+            raise NativeTransportDenied("replay_journal_denied") from None
+        if claimed is False:
+            return None
+        if claimed is not True:
+            raise NativeTransportDenied("replay_journal_denied")
     seen.add(ident)
     rpc = session.handle({
         "jsonrpc": "2.0", "id": ident, "method": "tools/call",
@@ -189,7 +198,8 @@ def run_session(config: Settings, connector: Callable[..., Any],
                 *, seen_ids: set[str] | None = None,
                 fresh_native: bool = False,
                 on_verified_welcome: Callable[[], None] | None = None,
-                continue_on_idle: bool = False) -> str:
+                continue_on_idle: bool = False,
+                claim_call: Callable[[str], bool] | None = None) -> str:
     """One authenticated outbound TLS socket, one bounded local tool session.
 
     The connector is injected for offline tests. Production uses the
@@ -199,6 +209,8 @@ def run_session(config: Settings, connector: Callable[..., Any],
     # generic caller-supplied device name or tool catalog.
     if (type(fresh_native) is not bool or type(continue_on_idle) is not bool
         or type(config) is not Settings
+        or (claim_call is not None and not callable(claim_call))
+        or (claim_call is not None and not (fresh_native and continue_on_idle))
         or (on_verified_welcome is not None and not callable(on_verified_welcome))):
         raise NativeTransportDenied("invalid_native_profile")
     if fresh_native:
@@ -281,7 +293,7 @@ def run_session(config: Settings, connector: Callable[..., Any],
                     ws.send(json.dumps({"type": "pong", "ts": msg["ts"]},
                                        separators=(",", ":")))
                 elif kind == "call" and welcome:
-                    out = safe_call(session, msg, seen)
+                    out = safe_call(session, msg, seen, claim_call)
                     if out is not None:
                         # Never include the auth token in tool responses.
                         ws.send(json.dumps(out, separators=(",", ":"),
@@ -308,6 +320,7 @@ def run_bounded_reconnect(
     fresh_native: bool = False,
     on_verified_welcome: Callable[[], None] | None = None,
     recheck: Callable[[], None] | None = None,
+    claim_call: Callable[[str], bool] | None = None,
 ) -> str:
     """At most five sequential *read-only* sessions, no queued call replay.
 
@@ -319,6 +332,7 @@ def run_bounded_reconnect(
     if (type(fresh_native) is not bool or not callable(pause)
         or (on_verified_welcome is not None and not callable(on_verified_welcome))
         or (fresh_native and not callable(recheck))
+        or (claim_call is not None and not callable(claim_call))
         or {tool.get("name") for tool in TOOLS} != READONLY_NAMES or len(TOOLS) != len(READONLY_NAMES)):
         raise NativeTransportDenied("reconnect_requires_readonly_catalog")
     seen_ids: set[str] = set()
@@ -328,9 +342,11 @@ def run_bounded_reconnect(
             # a relay redelivery must not dispatch the same ID twice.
             if fresh_native:
                 recheck()
-                end = run_session(config, connector, seen_ids=seen_ids,
-                                  fresh_native=True, on_verified_welcome=on_verified_welcome,
-                                  continue_on_idle=True)
+                options = {"seen_ids": seen_ids, "fresh_native": True,
+                           "on_verified_welcome": on_verified_welcome, "continue_on_idle": True}
+                if claim_call is not None:
+                    options["claim_call"] = claim_call
+                end = run_session(config, connector, **options)
             else:
                 end = run_session(config, connector, seen_ids=seen_ids)
         except NativeTransportDenied as exc:

@@ -15,6 +15,7 @@ from typing import Callable
 
 from device_fabric import native_private_tls as private_tls
 from device_fabric import windows_personal_session as personal
+from device_fabric.personal_replay import PersonalReplay
 from device_fabric.native_brc_enrollment import Paired
 from scripts.h454_windows_personal_worker import current_sid, load_ca
 
@@ -78,6 +79,7 @@ def persist_new(paired: Paired, *, release_sha: str, ca: bytes,
                                       ca=ca, now=int(now()))
         # Create-new stops on collisions, including a partially completed setup.
         directory_create(root, sid)
+        PersonalReplay(root, create=True)
         fd = os.open(root / "device.json", os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_BINARY, 0o600)
         try:
             with os.fdopen(fd, "wb") as stream:

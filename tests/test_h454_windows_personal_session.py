@@ -101,6 +101,23 @@ class PersonalContracts(unittest.TestCase):
 
 @unittest.skipUnless(os.name == "nt", "real Windows DPAPI is required")
 class RealWindowsPersonalSession(unittest.TestCase):
+    def test_budget_reconnect_reuses_durable_claims_and_stops_on_failure(self):
+        from types import SimpleNamespace
+        candidate = SimpleNamespace(release_sha="c" * 40, expires_at=int(time.time()) + 120)
+        journal = Mock()
+        with patch.object(worker.sys, "argv", ["worker", "--run"]), \
+             patch.object(worker, "load_config", return_value=b"synthetic"), \
+             patch.object(worker.personal, "parse_config", return_value=(candidate, OWNER, CA_SHA)), \
+             patch.object(worker, "load_ca", return_value=FAKE_CA), \
+             patch.object(worker, "PersonalReplay", return_value=journal), \
+             patch.object(worker.private_tls, "private_websocket_connector", return_value=Mock()), \
+             patch.object(worker.personal, "run", side_effect=["read_budget_exhausted", "reconnect_budget_exhausted"]) as run, \
+             patch.object(worker.time, "sleep") as sleep:
+            self.assertEqual(worker.main(), 2)
+        self.assertEqual(run.call_count, 2)
+        self.assertTrue(all(call.kwargs["claim_call"] == journal.claim for call in run.call_args_list))
+        sleep.assert_called_once_with(5)
+
     def test_one_time_private_state_does_not_overwrite(self):
         paired = Paired("windows", DEVICE, TOKEN, "wss://mcp.mikemoore.top/ws")
         with tempfile.TemporaryDirectory(prefix="h454-personal-fixture-") as folder, \

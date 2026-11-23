@@ -101,7 +101,8 @@ def parse_config(raw: bytes) -> tuple[PrivateWindowsSession, str, str]:
 def run(config: bytes, *, user_verified: Callable[[], str], connector: Callable[..., Any],
         unseal: Callable[..., str] = unseal_for_current_user,
         owner_status: Callable[..., Callable[[], bool]] = status_provider,
-        utcnow: Callable[[], float] = time.time) -> str:
+        utcnow: Callable[[], float] = time.time,
+        claim_call: Callable[[str], bool] | None = None) -> str:
     """Use DPAPI and live owner status with existing per-I/O READ safeguards."""
     try:
         candidate, owner_sid, _ca_sha256 = parse_config(config)
@@ -117,9 +118,10 @@ def run(config: bytes, *, user_verified: Callable[[], str], connector: Callable[
                               bearer=token, base_url=PUBLIC)
         if not callable(active) or active() is not True:
             raise ValueError()
+        options = {"claim_call": claim_call} if claim_call is not None else {}
         return run_once(candidate, connector=connector, service_os_verified=lambda: user_verified() == owner_sid,
                         owner_pair_verified=active, is_device_revoked=lambda: active() is not True,
                         unseal_bearer=lambda value: token if value == candidate.sealed_bearer else "",
-                        utcnow=utcnow, bounded_reconnect=True)
+                        utcnow=utcnow, bounded_reconnect=True, **options)
     except Exception:
         raise PersonalSessionDenied("personal_windows_denied") from None

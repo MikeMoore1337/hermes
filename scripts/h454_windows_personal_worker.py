@@ -12,9 +12,11 @@ import os
 from pathlib import Path
 import stat
 import sys
+import time
 
 from device_fabric import windows_personal_session as personal
 from device_fabric import native_private_tls as private_tls
+from device_fabric.personal_replay import PersonalReplay
 from scripts.h454_native_win32_worker import _TokenUser
 
 REPARSE = 0x400
@@ -120,6 +122,7 @@ def main() -> int:
         from websockets.sync.client import connect
         config = load_config()
         candidate, _owner_sid, ca_sha256 = personal.parse_config(config)
+        replay = PersonalReplay(Path(os.environ["LOCALAPPDATA"]) / "HermesCommanderPersonal")
         relay = private_tls.PrivateRelay("windows", candidate.release_sha,
                                          private_tls.WINDOWS_LOOPBACK, load_ca(ca_sha256))
         def status(*, target, device_id, bearer, base_url):
@@ -127,11 +130,15 @@ def main() -> int:
                 raise ValueError()
             return lambda: private_tls.current_bearer(relay, target=target,
                                                        device_id=device_id, bearer=bearer)
-        personal.run(config, user_verified=current_sid,
-                     connector=private_tls.private_websocket_connector(relay, connect),
-                     owner_status=status)
-        # Exhaustion or disconnect means the device is offline, not healthy.
-        return 2
+        connector = private_tls.private_websocket_connector(relay, connect)
+        while True:
+            outcome = personal.run(config, user_verified=current_sid,
+                                   connector=connector, owner_status=status,
+                                   claim_call=replay.claim)
+            if outcome != "read_budget_exhausted" or time.time() >= candidate.expires_at:
+                return 2
+            # Bound reconnect churn; every session still enforces 16 calls.
+            time.sleep(5)
     except Exception:
         # A transport or path exception can contain private data.
         return 2
