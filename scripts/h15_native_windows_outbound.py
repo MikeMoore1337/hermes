@@ -38,6 +38,8 @@ MAX_CALLS = 16
 MAX_SEEN_IDS = 64
 MAX_RECONNECT_ATTEMPTS = 5
 RECONNECT_DELAYS = (1, 2, 4, 8)
+MAX_SUPERVISED_HEARTBEATS = 184
+MAX_HEARTBEATS_PER_MINUTE = 12
 READONLY_NAMES = frozenset({'native_file_stat', 'native_file_read', 'native_file_list', 'native_file_search'})
 DEVICE_ID = re.compile(r"^[A-Za-z0-9_-]{8,128}$")
 TOKEN = re.compile(r"^[A-Za-z0-9_.~-]{24,1024}$")
@@ -235,15 +237,29 @@ def run_session(config: Settings, connector: Callable[..., Any],
             welcome = False
             # No unbounded reconnect/daemon behavior. Explicit owner action
             # required to launch a future new host process.
-            for _ in range(MAX_SEEN_IDS + 16):
+            remaining = MAX_SEEN_IDS + 16
+            heartbeats = 0
+            heartbeat_times: list[float] = []
+            while remaining:
                 try:
                     raw = ws.recv(timeout=50)
                 except TimeoutError:
+                    remaining -= 1
                     if welcome and continue_on_idle:
                         continue
                     return "idle_timeout"
                 msg = decode_frame(raw)
                 kind = msg["type"]
+                if kind == "ping" and welcome and fresh_native and continue_on_idle:
+                    now = time.monotonic()
+                    heartbeat_times = [t for t in heartbeat_times if now - t < 60]
+                    if (heartbeats >= MAX_SUPERVISED_HEARTBEATS or
+                        len(heartbeat_times) >= MAX_HEARTBEATS_PER_MINUTE):
+                        raise NativeTransportDenied("heartbeat_rate_denied")
+                    heartbeats += 1
+                    heartbeat_times.append(now)
+                else:
+                    remaining -= 1
                 if kind == "welcome":
                     if (welcome or set(msg) != {"type", "protocol", "relayVersion",
                                                "serverTime"}
