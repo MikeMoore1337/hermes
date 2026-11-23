@@ -223,14 +223,17 @@ def run_session(config: Settings, connector: Callable[..., Any],
         if config.device_id != EXPECTED_DEVICE_ID:
             raise NativeTransportDenied("legacy_device_id_denied")
         greeting = hello(config)
-    session = McpSession()
-    init = session.handle({
-        "jsonrpc": "2.0", "id": 0, "method": "initialize",
-        "params": {"protocolVersion": PROTOCOL, "capabilities": {},
-                   "clientInfo": {"name": "brc-readonly-adapter", "version": "1"}},
-    })
-    if not isinstance(init, dict) or "result" not in init:
-        raise NativeTransportDenied("internal_mcp_init_failed")
+    def new_local_session() -> McpSession:
+        value = McpSession()
+        init = value.handle({
+            "jsonrpc": "2.0", "id": 0, "method": "initialize",
+            "params": {"protocolVersion": PROTOCOL, "capabilities": {},
+                       "clientInfo": {"name": "brc-readonly-adapter", "version": "1"}},
+        })
+        if not isinstance(init, dict) or "result" not in init:
+            raise NativeTransportDenied("internal_mcp_init_failed")
+        return value
+    session = new_local_session()
     seen: set[str] = seen_ids if seen_ids is not None else set()
     sent = 0
     try:
@@ -306,7 +309,16 @@ def run_session(config: Settings, connector: Callable[..., Any],
                                            ensure_ascii=True))
                         sent += 1
                     if sent >= MAX_CALLS or len(seen) >= MAX_CALLS:
-                        return "read_budget_exhausted"
+                        if claim_call is None:
+                            return "read_budget_exhausted"
+                        # The personal agent reserves IDs durably before every
+                        # READ. Keep its socket open during the same five-second
+                        # bounded pause formerly used between sessions.
+                        time.sleep(5)
+                        session = new_local_session()
+                        seen.clear()
+                        sent = 0
+                        remaining = MAX_SEEN_IDS + 16
                 elif kind == "error" and msg.get("fatal") is True:
                     raise NativeTransportDenied("relay_rejected")
                 elif not welcome:
