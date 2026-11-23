@@ -150,7 +150,7 @@ function reserveReady(hub:DeviceHub,store:SqliteStore,owner:string,host:Host,rec
     return {identity:record,socket};
   }catch{return null;}
 }
-function releaseUndispatched(reservation:Reservation):void {
+function releaseReservation(reservation:Reservation):void {
   if(!reservation.socket)return;
   const count=socketCalls.get(reservation.socket)??0;
   if(count>1)socketCalls.set(reservation.socket,count-1);else socketCalls.delete(reservation.socket);
@@ -282,17 +282,19 @@ export async function invokeOwnerNativeThreeRead(
   try { sameSocket=!reservation.socket || hub.get(identity.id)?.socket===reservation.socket; }
   catch { /* fail closed without sending */ }
   if(!sameSocket || !stillAuthorized(hub,store,ctx.userId,checked.host,identity)){
-    releaseUndispatched(reservation);
+    releaseReservation(reservation);
     return DENY;
   }
   const deviceId=identity.id;
   const argsHash=createHash('sha256').update(JSON.stringify(
       {host:checked.host,tool,args:checked.args})).digest('hex').slice(0,16);
   let result:Record<string,unknown>|null=null;
+  let responded=false;
   try {
     const response=await hub.call(deviceId,tool,checked.args,{
       client:{name:ctx.clientId},timeoutMs:8000,
     });
+    responded=true;
     if(response && !response.isError && Array.isArray(response.content)
        && response.content.length===1&&response.content[0]?.type==='text'
        && typeof response.content[0].text==='string'
@@ -307,7 +309,12 @@ export async function invokeOwnerNativeThreeRead(
       if(validResult(wrapped,tool,checked.args,checked.host))
         result=wrapped as Record<string,unknown>;
     }
-  }catch{ /* Never forward original host exception paths or socket errors. */ }
+  }catch{
+    // No reply may mean the reader did not count the call. Release capacity
+    // for future independent requests, but never replay this uncertain call.
+    if(!responded)releaseReservation(reservation);
+    // Never forward original host exception paths or socket errors.
+  }
   if(!stillAuthorized(hub,store,ctx.userId,checked.host,identity))result=null;
   try {
     store.audit({ts:started,user_id:ctx.userId,device_id:deviceId,
