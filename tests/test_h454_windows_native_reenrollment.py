@@ -287,6 +287,32 @@ class NewWindowsIdentityRunTests(unittest.TestCase):
         self.assertNotIn("write_file", json.dumps(hello))
         self.assertNotIn(BEARER, json.dumps(hello))
 
+    def test_revocation_still_stops_supervised_heartbeat_session(self):
+        state = {"revoked": False}
+        class Socket:
+            def __init__(self):
+                self.count = 0
+                self.sent = []
+                self.closed = False
+            def __enter__(self): return self
+            def __exit__(self, *_args): self.closed = True
+            def send(self, frame): self.sent.append(json.loads(frame))
+            def recv(self, timeout=None):
+                self.count += 1
+                if self.count == 1:
+                    return json.dumps({"type": "welcome", "protocol": 1,
+                                       "relayVersion": "test", "serverTime": NOW})
+                if self.count == 102:
+                    state["revoked"] = True
+                return json.dumps({"type": "ping", "ts": self.count})
+        socket = Socket()
+        with patch.object(outbound.time, "monotonic", side_effect=range(0, 5000, 20)):
+            with self.assertRaises(native.WindowsNativeIdentityDenied):
+                self.run_win(connector=lambda *_a, **_k: socket, bounded_reconnect=True,
+                             is_device_revoked=lambda: state["revoked"])
+        self.assertTrue(socket.closed)
+        self.assertEqual(sum(frame["type"] == "pong" for frame in socket.sent), 100)
+
     def test_new_hello_cannot_reuse_revoked_id_or_forge_caller_profile(self):
         for device, token, url in (
             (native.REVOKED_LEGACY_ID, BEARER, native.RELAY),

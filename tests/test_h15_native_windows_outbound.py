@@ -74,6 +74,40 @@ class FakeConnector:
 
 
 class OutboundReadOnlyTests(unittest.TestCase):
+    def test_supervised_heartbeats_do_not_consume_call_budget(self):
+        config = outbound.Settings("wss://hermes.mikemoore.top/ws",
+            "h454-win-native-" + "a" * 32, "brc_dev_" + "b" * 48)
+        connector = FakeConnector([welcome()] + [{"type": "ping", "ts": i}
+            for i in range(100)] + [call(f"id-{i}", name="native_file_stat")
+                                      for i in range(outbound.MAX_CALLS)])
+        with patch.object(outbound.time, "monotonic", side_effect=range(0, 2020, 20)), \
+             patch.object(mcp.native, "handle_native_request", return_value=payload(operation="stat")) as reader:
+            reason = outbound.run_session(config, connector, fresh_native=True, continue_on_idle=True)
+        self.assertEqual(reason, "read_budget_exhausted")
+        self.assertEqual(reader.call_count, outbound.MAX_CALLS)
+        self.assertEqual(sum(x["type"] == "pong" for x in connector.ws.sent), 100)
+
+    def test_supervised_heartbeat_flood_fails_closed(self):
+        config = outbound.Settings("wss://hermes.mikemoore.top/ws",
+            "h454-win-native-" + "a" * 32, "brc_dev_" + "b" * 48)
+        connector = FakeConnector([welcome(), {"type": "ping", "ts": 1},
+                                   {"type": "ping", "ts": 2}])
+        with patch.object(outbound.time, "monotonic", side_effect=[1.0, 1.1]):
+            with self.assertRaisesRegex(outbound.NativeTransportDenied, "heartbeat_rate_denied"):
+                outbound.run_session(config, connector, fresh_native=True, continue_on_idle=True)
+        self.assertTrue(connector.ws.closed)
+
+    def test_supervised_heartbeat_lifetime_is_bounded(self):
+        config = outbound.Settings("wss://hermes.mikemoore.top/ws",
+            "h454-win-native-" + "a" * 32, "brc_dev_" + "b" * 48)
+        connector = FakeConnector([welcome()] + [{"type": "ping", "ts": i}
+            for i in range(outbound.MAX_SUPERVISED_HEARTBEATS + 1)])
+        with patch.object(outbound.time, "monotonic", side_effect=range(0, 5000, 20)):
+            with self.assertRaisesRegex(outbound.NativeTransportDenied, "heartbeat_rate_denied"):
+                outbound.run_session(config, connector, fresh_native=True, continue_on_idle=True)
+        self.assertEqual(sum(x["type"] == "pong" for x in connector.ws.sent),
+                         outbound.MAX_SUPERVISED_HEARTBEATS)
+
     def test_supervised_idle_timeout_keeps_authenticated_connection(self):
         class IdleOnce(FakeWebSocket):
             def recv(self, timeout=None):
