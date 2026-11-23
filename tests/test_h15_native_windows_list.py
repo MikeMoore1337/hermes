@@ -42,7 +42,7 @@ class NativeListContract(unittest.TestCase):
         tools = sess.handle({"jsonrpc": "2.0", "id": 3, "method": "tools/list"})[
             "result"]["tools"]
         self.assertEqual({tool["name"] for tool in tools},
-                         {"native_file_read", "native_file_stat", "native_file_list"})
+                         {"native_file_read", "native_file_stat", "native_file_list", "native_file_search"})
         definition = next(t for t in tools if t["name"] == "native_file_list")
         self.assertEqual(definition["inputSchema"]["properties"]["relative"]["enum"], [""])
         self.assertTrue(definition["annotations"]["readOnlyHint"])

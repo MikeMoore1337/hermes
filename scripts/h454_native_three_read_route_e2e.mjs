@@ -12,13 +12,13 @@ const url=pathToFileURL(path.join(root,
 const {NATIVE_THREE_TOOLS,invokeOwnerNativeThreeRead}=await import(url);
 const assert=(check,why)=>{if(!check)throw Error(why);};
 const repository=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
-const python=spawnSync('python3',['-B','-m','tests.h454_native_wire_fixture'],
-  {cwd:repository,encoding:'utf8',timeout:10000});
+const python=spawnSync(process.env.H454_TEST_PYTHON || 'python3',['-B','-m','tests.h454_native_wire_fixture'],
+  {cwd:repository,encoding:'utf8',timeout:10000,windowsHide:true});
 assert(python.status===0,'ACTUAL_PYTHON_WIRE_FIXTURE_FAILED');
 const actualLinuxRead=JSON.parse(python.stdout);
 const ctx={userId:'owner-1',clientId:'chatgpt-fixture'};
 const profiles=[
- {host:'windows',name:'H454 Windows native read-only',id:'h454-win-native-'+'a'.repeat(32),platform:'win32',n:3},
+ {host:'windows',name:'H454 Windows native read-only',id:'h454-win-native-'+'a'.repeat(32),platform:'win32',n:4},
  {host:'hermes-vps',name:'H454 Hermes VPS native read-only',id:'h454-linux-hermes-'+'b'.repeat(32),platform:'linux',n:4},
  {host:'yfc-vps',name:'H454 YFC VPS native read-only',id:'h454-linux-yfc-'+'c'.repeat(32),platform:'linux',n:4},
 ];
@@ -43,7 +43,7 @@ const store={
   listDevices(owner){return owner===ctx.userId?rows:[];},
   audit(record){audited.push(record);},
 };
-let calls=0, revokeNext=false, malformed=false;
+let calls=0, revokeNext=false, malformed=false, escapeSearch=false;
 const hub={
   get(id){return devices.get(id);},
   async call(id,tool,args,opts){
@@ -59,8 +59,10 @@ const hub={
         action:'read',kind:'file',size_bytes:3,
         encoding:'base64',data:'YWJj',sha256:SHA};
     } else if(tool==='native_file_search'){
-      payload={status:'ok',project:args.project,relative_root:'',
-        mode:'names',matches:[{path:'src',kind:'directory'}],
+      const child=args.relative_root+(row.host==='windows'?'\\':'/')+'safe.py';
+      payload={status:'ok',project:args.project,relative_root:args.relative_root,
+        mode:'names',matches:[{path:args.relative_root&&!escapeSearch?child:'src',
+          kind:args.relative_root&&!escapeSearch?'file':'directory'}],
         entries_scanned:1,bytes_scanned:0,truncated:false};
     }else throw Error('UNEXPECTED_TOOL');
     if(malformed)payload.secret='should-not-leak';
@@ -110,15 +112,18 @@ for(const p of profiles){
     'native_file_read',args)), 'MIDFLIGHT_REVOCATION_ALLOWED');
   revokeNext=false;
   row.paused=0;
-  if(p.host==='windows'){
-    assert(denied(await invokeOwnerNativeThreeRead(hub,store,ctx,
-      'native_file_search',{host:'windows',project:'hermes',query:'src',
-         mode:'names',relative_root:''})), 'WINDOWS_SEARCH_MISADVERTISED');
-  }else{
+  {
     const found=await invokeOwnerNativeThreeRead(hub,store,ctx,
       'native_file_search',{host:p.host,project:'hermes',query:'src',
          mode:'names',relative_root:''});
-    assert(!found.isError,'NATIVE_LINUX_SEARCH_REFUSED_'+p.host);
+    assert(!found.isError,'NATIVE_SEARCH_REFUSED_'+p.host);
+    const nested={host:p.host,project:'hermes',query:'safe',mode:'names',relative_root:'different'};
+    assert(!(await invokeOwnerNativeThreeRead(hub,store,ctx,
+      'native_file_search',nested)).isError, 'NESTED_SEARCH_REFUSED_'+p.host);
+    escapeSearch=true;
+    assert(denied(await invokeOwnerNativeThreeRead(hub,store,ctx,
+      'native_file_search',nested)), 'SEARCH_ROOT_ESCAPE_ACCEPTED');
+    escapeSearch=false;
   }
 }
 assert(audited.length>=profiles.length,'NO_AUDIT');

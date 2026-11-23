@@ -38,7 +38,7 @@ MAX_CALLS = 16
 MAX_SEEN_IDS = 64
 MAX_RECONNECT_ATTEMPTS = 5
 RECONNECT_DELAYS = (1, 2, 4, 8)
-READONLY_NAMES = frozenset({'native_file_stat', 'native_file_read', 'native_file_list'})
+READONLY_NAMES = frozenset({'native_file_stat', 'native_file_read', 'native_file_list', 'native_file_search'})
 DEVICE_ID = re.compile(r"^[A-Za-z0-9_-]{8,128}$")
 TOKEN = re.compile(r"^[A-Za-z0-9_.~-]{24,1024}$")
 
@@ -162,9 +162,10 @@ def safe_call(session: McpSession, message: dict[str, Any],
     name = message.get("tool")
     args = message.get("args")
     if (type(ident) is not str or not 1 <= len(ident) <= 128
-        or type(name) is not str or name not in
-            ("native_file_read", "native_file_stat", "native_file_list")
-        or not isinstance(args, dict) or set(args) != {"project", "relative"}
+        or type(name) is not str or name not in READONLY_NAMES
+        or not isinstance(args, dict)
+        or set(args) != ({"project", "query", "mode", "relative_root"} if name == "native_file_search"
+                         else {"project", "relative"})
         or not all(type(v) is str for v in args.values())):
         return None
     if name == "native_file_list" and args["relative"] != "":
@@ -302,7 +303,7 @@ def run_bounded_reconnect(
     if (type(fresh_native) is not bool or not callable(pause)
         or (on_verified_welcome is not None and not callable(on_verified_welcome))
         or (fresh_native and not callable(recheck))
-        or {tool.get("name") for tool in TOOLS} != READONLY_NAMES or len(TOOLS) != 3):
+        or {tool.get("name") for tool in TOOLS} != READONLY_NAMES or len(TOOLS) != len(READONLY_NAMES)):
         raise NativeTransportDenied("reconnect_requires_readonly_catalog")
     seen_ids: set[str] = set()
     for index in range(MAX_RECONNECT_ATTEMPTS):

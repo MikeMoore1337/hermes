@@ -71,7 +71,7 @@ class NativeWindowsMcpStdioTests(unittest.TestCase):
         self.assertEqual(len(records), 3)
         self.assertEqual(records[0]["result"]["protocolVersion"], "2025-06-18")
         self.assertEqual([v["name"] for v in records[1]["result"]["tools"]],
-                         ["native_file_stat", "native_file_read", "native_file_list"])
+                         ["native_file_stat", "native_file_read", "native_file_list", "native_file_search"])
         for tool in records[1]["result"]["tools"]:
             self.assertTrue(tool["annotations"]["readOnlyHint"])
             self.assertFalse(tool["annotations"]["destructiveHint"])
@@ -246,11 +246,13 @@ class NativeWindowsMcpStdioTests(unittest.TestCase):
         self.assertEqual(set(mcp.native.READ_ROOTS), {
             "ai-development-toolkit", "hermes", "second-brain", "your-fitness-coach",
             "financial-horizon"})
-        self.assertEqual(len(mcp.TOOLS), 3)
+        self.assertEqual(len(mcp.TOOLS), 4)
         self.assertEqual({t["name"] for t in mcp.TOOLS},
-                         {"native_file_read", "native_file_stat", "native_file_list"})
+                         {"native_file_read", "native_file_stat", "native_file_list", "native_file_search"})
         self.assertTrue(all(t["name"] not in ("execute", "write", "start_process")
-                            and set(t["inputSchema"]["properties"]) == {"project", "relative"}
+                            and set(t["inputSchema"]["properties"]) == (
+                                {"project", "query", "mode", "relative_root"}
+                                if t["name"] == "native_file_search" else {"project", "relative"})
                             for t in mcp.TOOLS))
 
 

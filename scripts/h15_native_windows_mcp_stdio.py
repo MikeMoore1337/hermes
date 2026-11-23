@@ -22,6 +22,7 @@ import sys
 from typing import Any, BinaryIO
 
 from scripts import h15_native_windows_read as native
+from scripts import h454_native_windows_search as search
 
 PROTOCOL = "2025-06-18"
 SERVER = {"name": "hermes-original-windows-readonly", "version": "0.1.0"}
@@ -74,6 +75,24 @@ TOOLS = (
             "additionalProperties": False,
         },
         "annotations": {"title": "Windows original project discovery",
+                        "readOnlyHint": True, "destructiveHint": False,
+                        "openWorldHint": False},
+    },
+    {
+        "name": "native_file_search",
+        "description": "Search approved Windows source paths with bounded depth, entries and content bytes; no writes or shell.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project": {"type": "string", "enum": sorted(native.READ_ROOTS)},
+                "query": {"type": "string", "minLength": 1, "maxLength": search.MAX_QUERY_BYTES},
+                "mode": {"type": "string", "enum": ["names", "content"]},
+                "relative_root": {"type": "string", "maxLength": native.MAX_PATH_LENGTH},
+            },
+            "required": ["project", "query", "mode", "relative_root"],
+            "additionalProperties": False,
+        },
+        "annotations": {"title": "Windows original project search",
                         "readOnlyHint": True, "destructiveHint": False,
                         "openWorldHint": False},
     },
@@ -200,6 +219,39 @@ def _sanitized_result(value: object, project: str, relative: str,
     return value
 
 
+def _sanitized_search(value: object, project: str, root: str, mode: str) -> dict[str, Any]:
+    if (type(value) is not dict or set(value) != {"status", "project", "relative_root", "mode",
+            "matches", "truncated", "entries_scanned", "bytes_scanned"}
+        or value["status"] != "ok" or value["project"] != project
+        or value["relative_root"] != root or value["mode"] != mode
+        or type(value["truncated"]) is not bool or type(value["matches"]) is not list
+        or len(value["matches"]) > search.MAX_MATCHES
+        or type(value["entries_scanned"]) is not int or not 0 <= value["entries_scanned"] <= search.MAX_ENTRIES
+        or type(value["bytes_scanned"]) is not int or not 0 <= value["bytes_scanned"] <= search.MAX_CONTENT_BYTES):
+        raise ProtocolRefused("invalid_native_search")
+    seen = set()
+    for row in value["matches"]:
+        if type(row) is not dict or set(row) != ({"path", "kind"} if mode == "names" else {"path", "line"}):
+            raise ProtocolRefused("invalid_native_search")
+        path = row["path"]
+        if (type(path) is not str or (root and not path.casefold().startswith(root.casefold() + "\\"))
+            or (mode == "names" and row["kind"] not in ("file", "directory"))
+            or (mode == "content" and (type(row["line"]) is not int or row["line"] < 1))):
+            raise ProtocolRefused("invalid_native_search")
+        try:
+            native.build_request(project, path, "stat")
+        except native.NativeReadRefused as exc:
+            raise ProtocolRefused("invalid_native_search") from exc
+        if ((mode == "content" or row["kind"] == "file")
+            and native.ntpath.splitext(path)[1].lower() not in native.ALLOWED_EXTENSIONS):
+            raise ProtocolRefused("invalid_native_search")
+        key = (path.casefold(), row.get("line"))
+        if key in seen:
+            raise ProtocolRefused("invalid_native_search")
+        seen.add(key)
+    return value
+
+
 class McpSession:
     """Connection-local handshake, rate budget and dispatch. No state on disk."""
 
@@ -241,8 +293,22 @@ class McpSession:
         if not _params_exact(params, "name", "arguments"):
             return _error(identifier, -32602, "Invalid params")
         name, args = params["name"], params["arguments"]
-        if name not in ("native_file_stat", "native_file_read", "native_file_list") or not isinstance(args, dict):
+        if name not in ("native_file_stat", "native_file_read", "native_file_list", "native_file_search") or not isinstance(args, dict):
             return _tool_error(identifier)
+        if name == "native_file_search":
+            if (not _params_exact(args, "project", "query", "mode", "relative_root")
+                or not all(type(value) is str for value in args.values())
+                or self.read_calls >= MAX_READS):
+                return _tool_error(identifier)
+            self.read_calls += 1
+            try:
+                result = search.search(args["project"], args["query"], mode=args["mode"],
+                                       relative_root=args["relative_root"])
+                result = _sanitized_search(result, args["project"], args["relative_root"], args["mode"])
+            except (native.NativeReadRefused, ProtocolRefused, OSError, ValueError):
+                return _tool_error(identifier)
+            return _ok(identifier, {"content": [{"type": "text", "text": json.dumps(
+                result, separators=(",", ":"), ensure_ascii=True)}], "isError": False})
         if not _params_exact(args, "project", "relative"):
             return _tool_error(identifier)
         project, relative = args["project"], args["relative"]
