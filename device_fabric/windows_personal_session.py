@@ -105,6 +105,8 @@ def run(config: bytes, *, user_verified: Callable[[], str], connector: Callable[
         utcnow: Callable[[], float] = time.time,
         claim_call: Callable[[str], bool] | None = None) -> str:
     """Use DPAPI and live owner status with existing per-I/O READ safeguards."""
+    temporary_outage = False
+    session_expiry = None
     try:
         candidate, owner_sid, _ca_sha256 = parse_config(config)
         if user_verified() != owner_sid:
@@ -117,16 +119,36 @@ def run(config: bytes, *, user_verified: Callable[[], str], connector: Callable[
             raise ValueError()
         token = unseal(candidate.sealed_bearer, manifest_sha256=candidate.manifest_sha256,
                        device_id=candidate.device_id)
-        active = owner_status(target="windows", device_id=candidate.device_id,
+        status = owner_status(target="windows", device_id=candidate.device_id,
                               bearer=token, base_url=PUBLIC)
-        if not callable(active) or active() is not True:
+        if not callable(status):
             raise ValueError()
+
+        def active() -> bool:
+            nonlocal temporary_outage
+            result = status()
+            temporary_outage = result is None
+            return result is True
+
+        if active() is not True:
+            raise ValueError()
+        session_expiry = int(now) + 3600
         candidate = PrivateWindowsSession(candidate.release_sha, candidate.manifest_sha256,
-            candidate.device_id, candidate.relay_url, candidate.sealed_bearer, int(now) + 3600)
+            candidate.device_id, candidate.relay_url, candidate.sealed_bearer, session_expiry)
         options = {"claim_call": claim_call} if claim_call is not None else {}
         return run_once(candidate, connector=connector, service_os_verified=lambda: user_verified() == owner_sid,
                         owner_pair_verified=active, is_device_revoked=lambda: active() is not True,
                         unseal_bearer=lambda value: token if value == candidate.sealed_bearer else "",
                         utcnow=utcnow, bounded_reconnect=True, **options)
     except Exception:
+        # A new session still verifies SID, credential and revocation before IO.
+        if temporary_outage:
+            return "temporary_outage"
+        if session_expiry is not None:
+            try:
+                now = utcnow()
+                if type(now) in (int, float) and math.isfinite(now) and now >= session_expiry:
+                    return "session_expired"
+            except Exception:
+                pass
         raise PersonalSessionDenied("personal_windows_denied") from None

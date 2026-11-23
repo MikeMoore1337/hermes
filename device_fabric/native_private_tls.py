@@ -198,9 +198,9 @@ def _connection(config: PrivateRelay, timeout: float):
         raise
 
 
-def current_bearer(config: PrivateRelay, *, target: str, device_id: str,
-                   bearer: str, timeout: float = 8.0) -> bool:
-    """Check authoritative status on the private TLS sidecar per READ call."""
+def bearer_state(config: PrivateRelay, *, target: str, device_id: str,
+                 bearer: str, timeout: float = 8.0) -> bool | None:
+    """Return None for a temporary outage, never for an authentication denial."""
     if (type(config) is not PrivateRelay or target != config.target or
         type(device_id) is not str or IDENTITY[target].fullmatch(device_id) is None or
         type(bearer) is not str or TOKEN.fullmatch(bearer) is None or
@@ -220,6 +220,8 @@ def current_bearer(config: PrivateRelay, *, target: str, device_id: str,
             secure.sendall(headers)
             resp = http.client.HTTPResponse(secure)
             resp.begin()
+            if 500 <= resp.status <= 599:
+                return None
             if (resp.status != 200 or resp.getheader('Content-Type') != 'application/json'):
                 return False
             if resp.getheader('Content-Length') is not None:
@@ -230,8 +232,19 @@ def current_bearer(config: PrivateRelay, *, target: str, device_id: str,
             if len(data) > 512:
                 return False
         return parse_status(data, target=target, device_id=device_id)
+    except ssl.SSLError:
+        return False
+    except (OSError, TimeoutError, http.client.RemoteDisconnected):
+        return None
     except Exception:
         return False
+
+
+def current_bearer(config: PrivateRelay, *, target: str, device_id: str,
+                   bearer: str, timeout: float = 8.0) -> bool:
+    """Only an authoritative positive status permits a READ operation."""
+    return bearer_state(config, target=target, device_id=device_id,
+                        bearer=bearer, timeout=timeout) is True
 
 
 def private_revoked_provider(config: PrivateRelay, *, target: str,

@@ -4,6 +4,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import ssl
 from pathlib import Path
 import subprocess
 import tempfile
@@ -95,6 +96,55 @@ class PersonalContracts(unittest.TestCase):
                          utcnow=lambda: now)
         self.assertEqual(runner.call_args.args[0].expires_at, now + 3600)
 
+    def test_temporary_outage_retries_but_revocation_denies(self):
+        for value, expected in ((None, "temporary_outage"), (False, None)):
+            runner = Mock()
+            with self.subTest(value=value), patch.object(personal, "run_once", runner):
+                if expected is None:
+                    with self.assertRaises(personal.PersonalSessionDenied):
+                        personal.run(config(), user_verified=lambda: OWNER, connector=Mock(),
+                                     unseal=lambda *_a, **_k: TOKEN,
+                                     owner_status=lambda **_: lambda: value, utcnow=lambda: 1000)
+                else:
+                    self.assertEqual(personal.run(config(), user_verified=lambda: OWNER, connector=Mock(),
+                        unseal=lambda *_a, **_k: TOKEN, owner_status=lambda **_: lambda: value,
+                        utcnow=lambda: 1000), expected)
+                runner.assert_not_called()
+
+    def test_expired_session_is_retried_after_live_owner_check(self):
+        clock = Mock(side_effect=[1000, 4600])
+        with patch.object(personal, "run_once", side_effect=ValueError()):
+            result = personal.run(config(), user_verified=lambda: OWNER, connector=Mock(),
+                                  unseal=lambda *_a, **_k: TOKEN,
+                                  owner_status=lambda **_: lambda: True, utcnow=clock)
+        self.assertEqual(result, "session_expired")
+
+    def test_outage_or_revocation_during_session_never_authorizes_io(self):
+        for later in (None, False):
+            checks = iter((True, later))
+            def session(_candidate, **kwargs):
+                self.assertFalse(kwargs["owner_pair_verified"]())
+                raise ValueError()
+            with self.subTest(later=later), patch.object(personal, "run_once", side_effect=session):
+                arguments = dict(user_verified=lambda: OWNER, connector=Mock(),
+                                 unseal=lambda *_a, **_k: TOKEN,
+                                 owner_status=lambda **_: lambda: next(checks), utcnow=lambda: 1000)
+                if later is None:
+                    self.assertEqual(personal.run(config(), **arguments), "temporary_outage")
+                else:
+                    with self.assertRaises(personal.PersonalSessionDenied):
+                        personal.run(config(), **arguments)
+
+    def test_tls_outage_does_not_turn_bad_certificate_into_retry(self):
+        relay = private_tls.PrivateRelay("windows", "c" * 40, private_tls.WINDOWS_LOOPBACK, b"ca")
+        for error, expected in ((ConnectionRefusedError(), None), (ssl.SSLError(), False)):
+            with self.subTest(error=type(error).__name__), \
+                 patch.object(private_tls, "_connection", side_effect=error):
+                self.assertIs(private_tls.bearer_state(relay, target="windows", device_id=DEVICE,
+                                                       bearer=TOKEN), expected)
+                self.assertFalse(private_tls.current_bearer(relay, target="windows", device_id=DEVICE,
+                                                             bearer=TOKEN))
+
     def test_live_owner_status_and_policy_bound_dpapi_are_forwarded(self):
         unseal = Mock(return_value=TOKEN)
         status = Mock(return_value=lambda: True)
@@ -125,12 +175,13 @@ class RealWindowsPersonalSession(unittest.TestCase):
              patch.object(worker, "load_ca", return_value=FAKE_CA), \
              patch.object(worker, "PersonalReplay", return_value=journal), \
              patch.object(worker.private_tls, "private_websocket_connector", return_value=Mock()), \
-             patch.object(worker.personal, "run", side_effect=["read_budget_exhausted", "reconnect_budget_exhausted"]) as run, \
+             patch.object(worker.personal, "run", side_effect=["read_budget_exhausted", "session_expired",
+                          "temporary_outage", "reconnect_budget_exhausted", "fatal"]) as run, \
              patch.object(worker.time, "sleep") as sleep:
             self.assertEqual(worker.main(), 2)
-        self.assertEqual(run.call_count, 2)
+        self.assertEqual(run.call_count, 5)
         self.assertTrue(all(call.kwargs["claim_call"] == journal.claim for call in run.call_args_list))
-        sleep.assert_called_once_with(5)
+        self.assertEqual([call.args[0] for call in sleep.call_args_list], [5, 5, 60, 60])
 
     def test_one_time_private_state_does_not_overwrite(self):
         paired = Paired("windows", DEVICE, TOKEN, "wss://mcp.mikemoore.top/ws")
