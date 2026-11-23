@@ -126,7 +126,8 @@ function ownerDevice(hub:DeviceHub, store:SqliteStore, owner:string, host:Host):
 // Only defer before dispatch, never retry a call with an uncertain outcome.
 // Bounds prevent a disconnected device from consuming unbounded relay memory.
 const MAX_WAITING = 16, MAX_WAITING_PER_OWNER = 4;
-const WAIT_INTERVAL_MS = 200, WAIT_DEADLINE_MS = 4000;
+// Allow the measured YFC service restart and TLS reconnection to complete.
+const WAIT_INTERVAL_MS = 200, WAIT_DEADLINE_MS = 7000;
 // The pinned YFC reader retires a connection after 16 dispatched calls.
 // Count per socket, not per device: every fresh connection gets a new budget.
 const YFC_SESSION_CALLS = 16;
