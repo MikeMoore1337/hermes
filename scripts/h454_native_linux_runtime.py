@@ -21,6 +21,7 @@ from pathlib import Path
 import re
 import stat
 import sys
+import time
 from typing import Callable, Protocol, Any
 
 try:
@@ -31,7 +32,7 @@ except ImportError:
 from device_fabric.linux_native_files import LinuxNativeFiles, NativeLinuxDenied
 from device_fabric.linux_native_landlock import ReadSnapshot
 from device_fabric.linux_native_outbound import (
-    ENDPOINT, LocalLinuxDeviceConfig, LinuxOutboundDenied,
+    ENDPOINT, MAX_SESSION_SECONDS, LocalLinuxDeviceConfig, LinuxOutboundDenied,
     local_config, run_session,
 )
 from device_fabric.linux_native_read_dispatch import (
@@ -226,11 +227,34 @@ def local_preflight(prepared: PreparedRuntime) -> dict[str, object]:
         raise RuntimeDenied("native_linux_runtime_denied") from None
 
 
+def _run_yfc_sessions(prepared: PreparedRuntime, roots: dict[str, LinuxNativeFiles],
+                      connector: Connector, is_device_revoked: Callable[[], bool],
+                      is_os_isolation_verified: Callable[[], bool],
+                      *, monotonic: Callable[[], float] = time.monotonic) -> str:
+    """Rotate at most three read-only sessions within the existing time budget."""
+    deadline = monotonic() + MAX_SESSION_SECONDS
+    seen_ids: set[str] = set()
+    for _ in range(3):
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            return "session_deadline"
+        if is_os_isolation_verified() is not True or is_device_revoked() is not False:
+            raise RuntimeDenied("native_linux_runtime_denied")
+        dispatcher = LinuxOriginalReadDispatcher(device_id=prepared.device.device_id,
+            local_roots=roots, is_device_revoked=is_device_revoked)
+        outcome = run_session(prepared.device, dispatcher, connector,
+                              max_seconds=min(remaining, MAX_SESSION_SECONDS),
+                              seen_ids=seen_ids, monotonic=monotonic)
+        if outcome != "session_call_budget":
+            return outcome
+    return "session_call_budget"
+
+
 def run_once(prepared: PreparedRuntime, *, connector: Connector,
              is_device_revoked: Callable[[], bool],
              is_os_isolation_verified: Callable[[], bool],
-             landlock_read: bool = False) -> str:
-    """Source-only injectable one-shot runner. NOT exposed as a CLI/service.
+             landlock_read: bool = False, allow_session_rotation: bool = False) -> str:
+    """Source-only injectable bounded runner. NOT exposed as a CLI/service.
 
     The trusted host installer is responsible for actual OS enforcement,
     authenticated pairing and connection lifecycle. This code explicitly
@@ -239,7 +263,9 @@ def run_once(prepared: PreparedRuntime, *, connector: Connector,
     """
     if (type(prepared) is not PreparedRuntime
         or not callable(connector) or not callable(is_device_revoked)
-        or not callable(is_os_isolation_verified) or type(landlock_read) is not bool):
+        or not callable(is_os_isolation_verified) or type(landlock_read) is not bool
+        or type(allow_session_rotation) is not bool
+        or (allow_session_rotation and (not landlock_read or prepared.device.target != 'yfc-vps'))):
         raise RuntimeDenied("native_linux_runtime_denied")
     try:
         _service_identity(prepared.device.target)
@@ -257,6 +283,9 @@ def run_once(prepared: PreparedRuntime, *, connector: Connector,
                 snapshot = stack.enter_context(ReadSnapshot(next(iter(roots.values()))))
                 snapshot.seal()
                 print('H454_NATIVE_OS_READ_ISOLATION=PASS', flush=True)
+            if allow_session_rotation:
+                return _run_yfc_sessions(prepared, roots, connector, is_device_revoked,
+                                         is_os_isolation_verified)
             dispatcher = LinuxOriginalReadDispatcher(
                 device_id=prepared.device.device_id, local_roots=roots,
                 is_device_revoked=is_device_revoked)
