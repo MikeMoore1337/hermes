@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import math
 import re
 import time
 from typing import Any, Callable
@@ -21,11 +22,11 @@ from device_fabric.windows_native_reenrollment import (
     NEW_ID, MAX_CONFIG_BYTES, MAX_SEALED_BYTES, PrivateWindowsSession, RELAY, run_once,
 )
 
-SCHEMA = "h454-personal-windows-session-v1"
+SCHEMA = "h454-personal-windows-session-v2"
 SHA40 = re.compile(r"[0-9a-f]{40}\Z")
 SID = re.compile(r"S-1-[0-9]+(?:-[0-9]+){1,15}\Z")
 SHA64 = re.compile(r"[0-9a-f]{64}\Z")
-KEYS = {"schema", "release_sha", "owner_sid", "ca_sha256", "device_id", "sealed_bearer_b64", "expires_at"}
+KEYS = {"schema", "release_sha", "owner_sid", "ca_sha256", "device_id", "sealed_bearer_b64", "created_at"}
 
 
 class PersonalSessionDenied(ValueError):
@@ -66,7 +67,7 @@ def prepare_config(paired: Paired, *, owner_sid: str, release_sha: str,
         config = {"schema": SCHEMA, "release_sha": release_sha, "owner_sid": owner_sid,
                   "ca_sha256": ca_hash, "device_id": paired.device_id,
                   "sealed_bearer_b64": base64.b64encode(sealed).decode("ascii"),
-                  "expires_at": now + 3600}
+                  "created_at": now}
         raw = json.dumps(config, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("ascii")
         parse_config(raw)
         return raw
@@ -85,15 +86,15 @@ def parse_config(raw: bytes) -> tuple[PrivateWindowsSession, str, str]:
             or SID.fullmatch(obj["owner_sid"]) is None
             or type(obj["ca_sha256"]) is not str or SHA64.fullmatch(obj["ca_sha256"]) is None
             or type(obj["device_id"]) is not str or NEW_ID.fullmatch(obj["device_id"]) is None
-            or type(obj["sealed_bearer_b64"]) is not str or type(obj["expires_at"]) is not int
-            or obj["expires_at"] <= 0
+            or type(obj["sealed_bearer_b64"]) is not str or type(obj["created_at"]) is not int
+            or not 0 < obj["created_at"] < 2**53
             or json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("ascii") != raw):
             raise ValueError()
         sealed = base64.b64decode(obj["sealed_bearer_b64"], validate=True)
         if not 32 <= len(sealed) <= MAX_SEALED_BYTES:
             raise ValueError()
         return (PrivateWindowsSession(obj["release_sha"], policy_digest(obj["ca_sha256"]), obj["device_id"],
-                                      RELAY, sealed, obj["expires_at"]), obj["owner_sid"], obj["ca_sha256"])
+                                      RELAY, sealed, obj["created_at"] + 3600), obj["owner_sid"], obj["ca_sha256"])
     except Exception:
         raise PersonalSessionDenied("personal_windows_denied") from None
 
@@ -101,15 +102,18 @@ def parse_config(raw: bytes) -> tuple[PrivateWindowsSession, str, str]:
 def run(config: bytes, *, user_verified: Callable[[], str], connector: Callable[..., Any],
         unseal: Callable[..., str] = unseal_for_current_user,
         owner_status: Callable[..., Callable[[], bool]] = status_provider,
-        utcnow: Callable[[], float] = time.time) -> str:
+        utcnow: Callable[[], float] = time.time,
+        claim_call: Callable[[str], bool] | None = None) -> str:
     """Use DPAPI and live owner status with existing per-I/O READ safeguards."""
     try:
         candidate, owner_sid, _ca_sha256 = parse_config(config)
         if user_verified() != owner_sid:
             raise ValueError()
-        # Keep the existing one-hour maximum before decrypting the bearer.
+        # Device bearers at the existing relay are valid until revoked. Issue
+        # only a one-hour in-memory session after checking live owner status.
         now = utcnow()
-        if type(now) not in (int, float) or not 0 < candidate.expires_at - now <= 3600:
+        if (type(now) not in (int, float) or not math.isfinite(now)
+            or now < candidate.expires_at - 3600):
             raise ValueError()
         token = unseal(candidate.sealed_bearer, manifest_sha256=candidate.manifest_sha256,
                        device_id=candidate.device_id)
@@ -117,9 +121,12 @@ def run(config: bytes, *, user_verified: Callable[[], str], connector: Callable[
                               bearer=token, base_url=PUBLIC)
         if not callable(active) or active() is not True:
             raise ValueError()
+        candidate = PrivateWindowsSession(candidate.release_sha, candidate.manifest_sha256,
+            candidate.device_id, candidate.relay_url, candidate.sealed_bearer, int(now) + 3600)
+        options = {"claim_call": claim_call} if claim_call is not None else {}
         return run_once(candidate, connector=connector, service_os_verified=lambda: user_verified() == owner_sid,
                         owner_pair_verified=active, is_device_revoked=lambda: active() is not True,
                         unseal_bearer=lambda value: token if value == candidate.sealed_bearer else "",
-                        utcnow=utcnow, bounded_reconnect=True)
+                        utcnow=utcnow, bounded_reconnect=True, **options)
     except Exception:
         raise PersonalSessionDenied("personal_windows_denied") from None
