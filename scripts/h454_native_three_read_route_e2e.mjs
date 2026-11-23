@@ -223,6 +223,39 @@ devices.set(yfc.id,yfcLive);
 // seventeenth call must remain undispatched until a fresh socket appears.
 const newYfcSocket=()=>({...yfcLive,socket:{...yfcLive.socket}});
 
+// An uncertain failure is never replayed, but cannot permanently consume a
+// future session slot when the reader may have discarded the frame.
+devices.set(yfc.id,newYfcSocket());
+before=calls;
+failCall=true;
+const unnormalizedRequest={...request,relative:'a\u0301.md'};
+assert(denied(await invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_read',unnormalizedRequest)),
+  'UNCERTAIN_FAILURE_MUST_DENY');
+failCall=false;
+assert(calls===before+1,'UNCERTAIN_FAILURE_MUST_NOT_RETRY');
+for(let i=0;i<16;i++){
+  assert(!(await invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_read',request)).isError,
+    'FAILED_SLOT_NOT_RELEASED_'+i);
+}
+assert(calls===before+17,'FAILED_SLOT_DISPATCH_COUNT');
+
+// A received but invalid result still consumed a call on the reader.
+devices.set(yfc.id,newYfcSocket());
+before=calls;
+malformed=true;
+assert(denied(await invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_read',request)),
+  'MALFORMED_RESULT_ACCEPTED');
+malformed=false;
+for(let i=0;i<15;i++){
+  assert(!(await invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_read',request)).isError,
+    'MALFORMED_RESULT_BUDGET_'+i);
+}
+const afterMalformed=invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_read',request);
+await new Promise(resolve=>setTimeout(resolve,50));
+assert(calls===before+16,'MALFORMED_RESULT_SLOT_NOT_COUNTED');
+devices.set(yfc.id,newYfcSocket());
+assert(!(await afterMalformed).isError && calls===before+17,'MALFORMED_BUDGET_RECOVERY');
+
 // Revocation between reservation and dispatch must release the unused slot.
 devices.set(yfc.id,newYfcSocket());
 let schedulePause=true;
