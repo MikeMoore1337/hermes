@@ -151,6 +151,14 @@ const waiting=invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_read',reques
 setTimeout(()=>devices.set(yfc.id,yfcLive),100);
 assert(!(await waiting).isError && calls===before+1,'RECONNECT_WAIT_MUST_DISPATCH_ONCE');
 
+// A real YFC restart was observed to complete just after the old 4s window.
+// Exercise that delay without dispatching to the absent socket or replaying.
+devices.delete(yfc.id);
+before=calls;
+const slowReconnect=invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_read',request);
+setTimeout(()=>devices.set(yfc.id,{...yfcLive,socket:{...yfcLive.socket}}),5200);
+assert(!(await slowReconnect).isError && calls===before+1,'SLOW_RECONNECT_MUST_DISPATCH_ONCE');
+
 devices.delete(yfc.id);
 before=calls;
 const revoked=invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_read',request);
