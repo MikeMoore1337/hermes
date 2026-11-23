@@ -5,6 +5,8 @@
  * Source only until an authorized paired BRC/WSS cutover.
  */
 import { createHash } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
+import { setTimeout as delay } from 'node:timers/promises';
 import type { DeviceHub } from '../device-hub.js';
 import type { SqliteStore } from '../store/sqlite.js';
 import type { InvokeContext } from './invoke.js';
@@ -94,7 +96,7 @@ function safeArgs(method:Tool, raw:unknown):{host:Host;args:SafeArgs}|null {
   return {host:target,args:{project:o.project,relative:o.relative}};
 }
 
-function ownerDevice(hub:DeviceHub, store:SqliteStore, owner:string, host:Host):string|null {
+function ownerRecord(store:SqliteStore, owner:string, host:Host):{id:string;tokenHash:string}|null {
   try {
     const p=HOSTS[host], rows=store.listDevices(owner).filter(d=>
       d.name===p.name || (typeof d.device_id==='string' && p.id.test(d.device_id)));
@@ -102,16 +104,66 @@ function ownerDevice(hub:DeviceHub, store:SqliteStore, owner:string, host:Host):
     const d=rows[0];
     if (!p.id.test(d.device_id)||d.name!==p.name||d.platform!==p.platform||d.paused
         ||typeof d.token_hash!=='string'||!HEX.test(d.token_hash))return null;
-    const live=hub.get(d.device_id);
+    return {id:d.device_id,tokenHash:d.token_hash};
+  }catch{return null;}
+}
+function ownerDevice(hub:DeviceHub, store:SqliteStore, owner:string, host:Host):string|null {
+  try {
+    const p=HOSTS[host], record=ownerRecord(store,owner,host);
+    if(!record)return null;
+    const live=hub.get(record.id);
     const socket=live?.socket as {hermesAuthTokenHash?:string}|undefined;
-    if (!live||!socket||socket.hermesAuthTokenHash!==d.token_hash
-        ||live.ownerId!==owner||live.info.deviceId!==d.device_id
+    if (!live||!socket||socket.hermesAuthTokenHash!==record.tokenHash
+        ||live.ownerId!==owner||live.info.deviceId!==record.id
         ||live.info.name!==p.name||live.info.platform!==p.platform
         ||!Array.isArray(live.tools)||live.tools.length!==p.tools.length
         ||new Set(live.tools.map(t=>t.name)).size!==p.tools.length
         ||live.tools.some(t=>!p.tools.includes(t.name as Tool)))return null;
-    return d.device_id;
+    return record.id;
   }catch{return null;}
+}
+
+// Only defer before dispatch, never retry a call with an uncertain outcome.
+// Bounds prevent a disconnected device from consuming unbounded relay memory.
+const MAX_WAITING = 16, MAX_WAITING_PER_OWNER = 4;
+const WAIT_INTERVAL_MS = 200, WAIT_DEADLINE_MS = 4000;
+let waiting = 0;
+const waitingByOwner = new Map<string,number>();
+type OwnerRecord = {id:string;tokenHash:string};
+function stillAuthorized(hub:DeviceHub,store:SqliteStore,owner:string,host:Host,expected:OwnerRecord):boolean {
+  const current=ownerRecord(store,owner,host);
+  return !!current && current.id===expected.id && current.tokenHash===expected.tokenHash
+    && ownerDevice(hub,store,owner,host)===expected.id;
+}
+async function resolveOwnerDevice(hub:DeviceHub,store:SqliteStore,owner:string,host:Host):Promise<OwnerRecord|null> {
+  const ready=ownerDevice(hub,store,owner,host);
+  if(ready){
+    const record=ownerRecord(store,owner,host);
+    return record && record.id===ready && stillAuthorized(hub,store,owner,host,record) ? record : null;
+  }
+  if(host!=='yfc-vps')return null;
+  const record=ownerRecord(store,owner,host);
+  if(!record)return null;
+  try { if(hub.get(record.id))return null; } catch { return null; }
+  const count=waitingByOwner.get(owner)??0;
+  if(waiting>=MAX_WAITING || count>=MAX_WAITING_PER_OWNER)return null;
+  waiting++; waitingByOwner.set(owner,count+1);
+  try {
+    const deadline=performance.now()+WAIT_DEADLINE_MS;
+    while(performance.now()<deadline){
+      await delay(Math.min(WAIT_INTERVAL_MS,Math.max(1,deadline-performance.now())));
+      if(performance.now()>=deadline)return null;
+      const current=ownerRecord(store,owner,host);
+      if(!current || current.id!==record.id || current.tokenHash!==record.tokenHash)return null;
+      if(hub.get(record.id))return stillAuthorized(hub,store,owner,host,record) ? record : null;
+    }
+    return null;
+  }catch{return null;}
+  finally {
+    waiting--;
+    const remaining=(waitingByOwner.get(owner)??1)-1;
+    if(remaining)waitingByOwner.set(owner,remaining);else waitingByOwner.delete(owner);
+  }
 }
 function exactKeys(value:Record<string,unknown>,names:string[]):boolean {
   return Object.keys(value).sort().join(',')===names.slice().sort().join(',');
@@ -195,9 +247,10 @@ export async function invokeOwnerNativeThreeRead(
   const tool=name as Tool;
   const checked=safeArgs(tool,input);
   if(!checked)return DENY;
-  const deviceId=ownerDevice(hub,store,ctx.userId,checked.host);
-  if(!deviceId)return DENY;
   const started=Date.now();
+  const identity=await resolveOwnerDevice(hub,store,ctx.userId,checked.host);
+  if(!identity || !stillAuthorized(hub,store,ctx.userId,checked.host,identity))return DENY;
+  const deviceId=identity.id;
   const argsHash=createHash('sha256').update(JSON.stringify(
       {host:checked.host,tool,args:checked.args})).digest('hex').slice(0,16);
   let result:Record<string,unknown>|null=null;
@@ -220,14 +273,14 @@ export async function invokeOwnerNativeThreeRead(
         result=wrapped as Record<string,unknown>;
     }
   }catch{ /* Never forward original host exception paths or socket errors. */ }
-  if(ownerDevice(hub,store,ctx.userId,checked.host)!==deviceId)result=null;
+  if(!stillAuthorized(hub,store,ctx.userId,checked.host,identity))result=null;
   try {
     store.audit({ts:started,user_id:ctx.userId,device_id:deviceId,
       client:ctx.clientId,tool:tool,args_hash:argsHash,ok:result?1:0,
       ms:Date.now()-started,error:result?null:'NATIVE_HOST_READ_DENIED'});
   }catch{return DENY;}
   // Revocation and deletion may race both remote call and audit.
-  if(ownerDevice(hub,store,ctx.userId,checked.host)!==deviceId)return DENY;
+  if(!stillAuthorized(hub,store,ctx.userId,checked.host,identity))return DENY;
   return result ? {content:[{type:'text' as const,text:JSON.stringify(result)}],
     isError:false} : DENY;
 }
