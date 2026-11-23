@@ -39,15 +39,23 @@ const devices=new Map(profiles.map(p=>[p.id,{
     socket:{hermesAuthTokenHash:'f'.repeat(64)},
 }]));
 const audited=[];
+let rotateDuringAudit=false;
 const store={
-  listDevices(owner){return owner===ctx.userId?rows:[];},
-  audit(record){audited.push(record);},
+  listDevices(owner){return rows.filter(row=>row.user_id===owner);},
+  audit(record){
+    audited.push(record);
+    if(rotateDuringAudit){
+      rows.find(r=>r.device_id===record.device_id).token_hash='1'.repeat(64);
+      devices.get(record.device_id).socket.hermesAuthTokenHash='1'.repeat(64);
+    }
+  },
 };
-let calls=0, revokeNext=false, malformed=false, escapeSearch=false;
+let calls=0, revokeNext=false, rotateNext=false, malformed=false, escapeSearch=false, failCall=false;
 const hub={
   get(id){return devices.get(id);},
   async call(id,tool,args,opts){
     calls++;
+    if(failCall)throw Error('synthetic uncertain result');
     assert(opts.timeoutMs===8000,'BOUNDED_TIME');
     assert(opts.client.name===ctx.clientId,'CLIENT_BOUND');
     assert(!('host' in args),'HOST_NOT_SENT_TO_AGENT');
@@ -67,6 +75,10 @@ const hub={
     }else throw Error('UNEXPECTED_TOOL');
     if(malformed)payload.secret='should-not-leak';
     if(revokeNext) rows.find(r=>r.device_id===id).paused=1;
+    if(rotateNext){
+      rows.find(r=>r.device_id===id).token_hash='1'.repeat(64);
+      devices.get(id).socket.hermesAuthTokenHash='1'.repeat(64);
+    }
     if(row.host==='hermes-vps' && tool==='native_file_read' && !malformed && !revokeNext)
       return actualLinuxRead;
     const value=row.host==='windows' ? payload
@@ -126,6 +138,86 @@ for(const p of profiles){
     escapeSearch=false;
   }
 }
+
+// Calls arriving during the owner's brief disconnect wait before dispatch.
+// They are never replayed after dispatch, and every identity change fails closed.
+const yfc=profiles.find(p=>p.host==='yfc-vps');
+const yfcRow=rows.find(r=>r.device_id===yfc.id);
+const yfcLive=devices.get(yfc.id);
+const request={host:yfc.host,project:'hermes',relative:'README.md'};
+devices.delete(yfc.id);
+let before=calls;
+const waiting=invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_read',request);
+setTimeout(()=>devices.set(yfc.id,yfcLive),100);
+assert(!(await waiting).isError && calls===before+1,'RECONNECT_WAIT_MUST_DISPATCH_ONCE');
+
+devices.delete(yfc.id);
+before=calls;
+const revoked=invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_read',request);
+setTimeout(()=>{yfcRow.paused=1;},100);
+assert(denied(await revoked) && calls===before,'REVOKED_WHILE_WAITING');
+yfcRow.paused=0;
+
+const changedToken=invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_read',request);
+setTimeout(()=>{yfcRow.token_hash='1'.repeat(64);},100);
+assert(denied(await changedToken) && calls===before,'TOKEN_CHANGED_WHILE_WAITING');
+yfcRow.token_hash='f'.repeat(64);
+
+const duplicate=invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_read',request);
+setTimeout(()=>{rows.push({...yfcRow});},100);
+assert(denied(await duplicate) && calls===before,'AMBIGUOUS_OWNER_WHILE_WAITING');
+rows.pop();
+
+const forged=invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_read',request);
+setTimeout(()=>devices.set(yfc.id,{...yfcLive,ownerId:'other-owner'}),100);
+assert(denied(await forged) && calls===before,'FORGED_RECONNECT_MUST_NOT_DISPATCH');
+devices.delete(yfc.id);
+
+const bounded=Array.from({length:4},()=>invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_read',request));
+assert(denied(await invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_read',request)),
+  'OWNER_WAIT_LIMIT_NOT_ENFORCED');
+setTimeout(()=>devices.set(yfc.id,yfcLive),100);
+assert((await Promise.all(bounded)).every(result=>!result.isError),'BOUNDED_WAIT_RECOVERY_FAILED');
+assert(calls===before+4,'BOUNDED_WAIT_DISPATCH_COUNT');
+
+// Different owners cannot fill an unbounded number of pending requests either.
+const extraRows=Array.from({length:5},(_,i)=>({
+  ...yfcRow,user_id:'extra-owner-'+i,device_id:'h454-linux-yfc-'+String(i+1).repeat(32),
+}));
+rows.push(...extraRows);
+const globalPending=extraRows.slice(0,4).flatMap(row=>Array.from({length:4},()=>
+  invokeOwnerNativeThreeRead(hub,store,{userId:row.user_id,clientId:'synthetic'},'native_file_read',request)));
+assert(denied(await invokeOwnerNativeThreeRead(hub,store,
+  {userId:extraRows[4].user_id,clientId:'synthetic'},'native_file_read',request)),
+  'GLOBAL_WAIT_LIMIT_NOT_ENFORCED');
+for(const row of extraRows)row.paused=1;
+assert((await Promise.all(globalPending)).every(denied),'GLOBAL_WAIT_REVOCATION_NOT_ENFORCED');
+rows.splice(rows.length-extraRows.length,extraRows.length);
+
+failCall=true;
+before=calls;
+assert(denied(await invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_read',request)),
+  'UNCERTAIN_DISPATCH_MUST_FAIL_CLOSED');
+assert(calls===before+1,'UNCERTAIN_DISPATCH_MUST_NOT_RETRY');
+failCall=false;
+
+rotateNext=true;
+assert(denied(await invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_read',request)),
+  'MIDFLIGHT_TOKEN_ROTATION_ALLOWED');
+rotateNext=false;
+yfcRow.token_hash=yfcLive.socket.hermesAuthTokenHash='f'.repeat(64);
+rotateDuringAudit=true;
+assert(denied(await invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_read',request)),
+  'TOKEN_ROTATION_DURING_AUDIT_ALLOWED');
+rotateDuringAudit=false;
+yfcRow.token_hash=yfcLive.socket.hermesAuthTokenHash='f'.repeat(64);
+
+devices.delete(yfc.id);
+before=calls;
+assert(denied(await invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_read',request)),
+  'OFFLINE_WAIT_MUST_EXPIRE');
+assert(calls===before,'OFFLINE_WAIT_MUST_NOT_DISPATCH');
+devices.set(yfc.id,yfcLive);
 assert(audited.length>=profiles.length,'NO_AUDIT');
 assert(audited.every(x=>x.user_id===ctx.userId&&
   typeof x.args_hash==='string'&&x.args_hash.length===16),
