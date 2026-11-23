@@ -128,17 +128,19 @@ def main() -> int:
         def status(*, target, device_id, bearer, base_url):
             if base_url != personal.PUBLIC:
                 raise ValueError()
-            return lambda: private_tls.current_bearer(relay, target=target,
-                                                       device_id=device_id, bearer=bearer)
+            return lambda: private_tls.bearer_state(relay, target=target,
+                                                    device_id=device_id, bearer=bearer)
         connector = private_tls.private_websocket_connector(relay, connect)
         while True:
             outcome = personal.run(config, user_verified=current_sid,
                                    connector=connector, owner_status=status,
                                    claim_call=replay.claim)
-            if outcome != "read_budget_exhausted":
+            if outcome == "read_budget_exhausted" or outcome == "session_expired":
+                time.sleep(5)
+            elif outcome in ("temporary_outage", "reconnect_budget_exhausted"):
+                time.sleep(60)
+            else:
                 return 2
-            # Bound reconnect churn; every session still enforces 16 calls.
-            time.sleep(5)
     except Exception:
         # A transport or path exception can contain private data.
         return 2
