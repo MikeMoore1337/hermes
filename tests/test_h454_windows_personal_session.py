@@ -110,10 +110,16 @@ class PersonalContracts(unittest.TestCase):
 @unittest.skipUnless(os.name == "nt", "real Windows DPAPI is required")
 class RealWindowsPersonalSession(unittest.TestCase):
     def test_budget_reconnect_reuses_durable_claims_and_stops_on_failure(self):
-        from types import SimpleNamespace
+        from types import SimpleNamespace, ModuleType
         candidate = SimpleNamespace(release_sha="c" * 40, expires_at=int(time.time()) + 120)
         journal = Mock()
+        ws = ModuleType("websockets")
+        sync = ModuleType("websockets.sync")
+        client = ModuleType("websockets.sync.client")
+        client.connect = Mock()
         with patch.object(worker.sys, "argv", ["worker", "--run"]), \
+             patch.dict(worker.sys.modules, {"websockets": ws, "websockets.sync": sync,
+                                             "websockets.sync.client": client}), \
              patch.object(worker, "load_config", return_value=b"synthetic"), \
              patch.object(worker.personal, "parse_config", return_value=(candidate, OWNER, CA_SHA)), \
              patch.object(worker, "load_ca", return_value=FAKE_CA), \
