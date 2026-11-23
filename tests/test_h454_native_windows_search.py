@@ -126,3 +126,7 @@ class WindowsSearchTests(unittest.TestCase):
             response = session.handle(request)
         self.assertTrue(response["result"]["isError"])
         invoke.assert_not_called()
+
+
+def load_tests(loader, tests, pattern):
+    return tests if os.name == "nt" else unittest.TestSuite()
