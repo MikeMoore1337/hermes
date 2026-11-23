@@ -74,6 +74,25 @@ class FakeConnector:
 
 
 class OutboundReadOnlyTests(unittest.TestCase):
+    def test_legacy_personal_catalog_accepts_read_and_rejects_unadvertised_search(self):
+        config = outbound.Settings("wss://hermes.mikemoore.top/ws",
+            "h454-win-native-" + "a" * 32, "brc_dev_" + "b" * 48)
+        connector = FakeConnector([welcome()] + [call(f"id-{i}", name="native_file_stat")
+                                                   for i in range(outbound.MAX_CALLS)])
+        with patch.object(mcp.native, "handle_native_request", return_value=payload(operation="stat")) as reader:
+            self.assertEqual(outbound.run_session(config, connector, fresh_native=True,
+                continue_on_idle=True, legacy_catalog=True), "read_budget_exhausted")
+        self.assertEqual(reader.call_count, outbound.MAX_CALLS)
+        self.assertEqual({x["name"] for x in connector.ws.sent[0]["tools"]},
+                         {"native_file_stat", "native_file_read", "native_file_list"})
+        search = {"type": "call", "id": "search", "tool": "native_file_search",
+                  "args": {"project": "hermes", "mode": "names", "query": "README", "relative_root": ""}}
+        connector = FakeConnector([welcome(), search])
+        with patch.object(outbound, "safe_call") as safe:
+            with self.assertRaisesRegex(outbound.NativeTransportDenied, "unadvertised_tool_denied"):
+                outbound.run_session(config, connector, fresh_native=True, legacy_catalog=True)
+            safe.assert_not_called()
+
     def test_supervised_heartbeats_do_not_consume_call_budget(self):
         config = outbound.Settings("wss://hermes.mikemoore.top/ws",
             "h454-win-native-" + "a" * 32, "brc_dev_" + "b" * 48)

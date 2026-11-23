@@ -114,14 +114,14 @@ def hello(config: Settings) -> dict[str, Any]:
     }, "tools": tools_advertised()}
 
 
-def fresh_native_hello(config: Settings) -> dict[str, Any]:
+def fresh_native_hello(config: Settings, *, legacy_catalog: bool = False) -> dict[str, Any]:
     """Use the owner-bound H454 identity, never the revoked H15 name.
 
     The original parse_settings()/hello() contract stays unchanged for the
     legacy device. The new source must opt in explicitly and pass the exact
     fresh device ID, protocol token and pinned encrypted relay.
     """
-    if (type(config) is not Settings
+    if (type(legacy_catalog) is not bool or type(config) is not Settings
         or type(config.device_id) is not str
         or FRESH_DEVICE_ID.fullmatch(config.device_id) is None
         or type(config.device_token) is not str
@@ -130,6 +130,8 @@ def fresh_native_hello(config: Settings) -> dict[str, Any]:
         raise NativeTransportDenied("fresh_native_hello_denied")
     frame = hello(config)
     frame["device"]["name"] = FRESH_DEVICE_NAME
+    if legacy_catalog:
+        frame["tools"] = [tool for tool in frame["tools"] if tool.get("name") != "native_file_search"]
     return frame
 
 
@@ -199,7 +201,8 @@ def run_session(config: Settings, connector: Callable[..., Any],
                 fresh_native: bool = False,
                 on_verified_welcome: Callable[[], None] | None = None,
                 continue_on_idle: bool = False,
-                claim_call: Callable[[str], bool] | None = None) -> str:
+                claim_call: Callable[[str], bool] | None = None,
+                legacy_catalog: bool = False) -> str:
     """One authenticated outbound TLS socket, one bounded local tool session.
 
     The connector is injected for offline tests. Production uses the
@@ -208,13 +211,14 @@ def run_session(config: Settings, connector: Callable[..., Any],
     # Validate the HELLO profile before opening a socket. This is not a
     # generic caller-supplied device name or tool catalog.
     if (type(fresh_native) is not bool or type(continue_on_idle) is not bool
+        or type(legacy_catalog) is not bool or (legacy_catalog and not fresh_native)
         or type(config) is not Settings
         or (claim_call is not None and not callable(claim_call))
         or (claim_call is not None and not (fresh_native and continue_on_idle))
         or (on_verified_welcome is not None and not callable(on_verified_welcome))):
         raise NativeTransportDenied("invalid_native_profile")
     if fresh_native:
-        greeting = fresh_native_hello(config)
+        greeting = fresh_native_hello(config, legacy_catalog=legacy_catalog)
     else:
         if config.device_id != EXPECTED_DEVICE_ID:
             raise NativeTransportDenied("legacy_device_id_denied")
@@ -293,6 +297,8 @@ def run_session(config: Settings, connector: Callable[..., Any],
                     ws.send(json.dumps({"type": "pong", "ts": msg["ts"]},
                                        separators=(",", ":")))
                 elif kind == "call" and welcome:
+                    if legacy_catalog and msg.get("tool") == "native_file_search":
+                        raise NativeTransportDenied("unadvertised_tool_denied")
                     out = safe_call(session, msg, seen, claim_call)
                     if out is not None:
                         # Never include the auth token in tool responses.
@@ -321,6 +327,7 @@ def run_bounded_reconnect(
     on_verified_welcome: Callable[[], None] | None = None,
     recheck: Callable[[], None] | None = None,
     claim_call: Callable[[str], bool] | None = None,
+    legacy_catalog: bool = False,
 ) -> str:
     """At most five sequential *read-only* sessions, no queued call replay.
 
@@ -329,7 +336,8 @@ def run_bounded_reconnect(
     Nothing is persisted. On restart owner-scoped re-pair may be required.
     Fatal protocol/relay refusal does NOT get retried.
     """
-    if (type(fresh_native) is not bool or not callable(pause)
+    if (type(fresh_native) is not bool or type(legacy_catalog) is not bool
+        or (legacy_catalog and not fresh_native) or not callable(pause)
         or (on_verified_welcome is not None and not callable(on_verified_welcome))
         or (fresh_native and not callable(recheck))
         or (claim_call is not None and not callable(claim_call))
@@ -346,6 +354,8 @@ def run_bounded_reconnect(
                            "on_verified_welcome": on_verified_welcome, "continue_on_idle": True}
                 if claim_call is not None:
                     options["claim_call"] = claim_call
+                if legacy_catalog:
+                    options["legacy_catalog"] = True
                 end = run_session(config, connector, **options)
             else:
                 end = run_session(config, connector, seen_ids=seen_ids)

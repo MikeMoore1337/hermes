@@ -134,7 +134,7 @@ def main() -> int:
         while True:
             outcome = personal.run(config, user_verified=current_sid,
                                    connector=connector, owner_status=status,
-                                   claim_call=replay.claim)
+                                   claim_call=replay.claim, legacy_catalog=True)
             if outcome == "read_budget_exhausted" or outcome == "session_expired":
                 time.sleep(5)
             elif outcome in ("temporary_outage", "reconnect_budget_exhausted"):

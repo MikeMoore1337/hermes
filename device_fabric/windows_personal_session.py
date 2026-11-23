@@ -103,7 +103,8 @@ def run(config: bytes, *, user_verified: Callable[[], str], connector: Callable[
         unseal: Callable[..., str] = unseal_for_current_user,
         owner_status: Callable[..., Callable[[], bool]] = status_provider,
         utcnow: Callable[[], float] = time.time,
-        claim_call: Callable[[str], bool] | None = None) -> str:
+        claim_call: Callable[[str], bool] | None = None,
+        legacy_catalog: bool = False) -> str:
     """Use DPAPI and live owner status with existing per-I/O READ safeguards."""
     temporary_outage = False
     session_expiry = None
@@ -136,6 +137,8 @@ def run(config: bytes, *, user_verified: Callable[[], str], connector: Callable[
         candidate = PrivateWindowsSession(candidate.release_sha, candidate.manifest_sha256,
             candidate.device_id, candidate.relay_url, candidate.sealed_bearer, session_expiry)
         options = {"claim_call": claim_call} if claim_call is not None else {}
+        if legacy_catalog:
+            options["legacy_catalog"] = True
         return run_once(candidate, connector=connector, service_os_verified=lambda: user_verified() == owner_sid,
                         owner_pair_verified=active, is_device_revoked=lambda: active() is not True,
                         unseal_bearer=lambda value: token if value == candidate.sealed_bearer else "",
