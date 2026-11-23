@@ -464,6 +464,7 @@ class LiveWorkerLifecycleTests(unittest.TestCase):
                 "git_roots": ("/srv/hermes/source",), "expected_identity": (1234,1234)}
                 for call in gate.call_args_list[1:]))
             self.assertTrue(session.call_args.kwargs['landlock_read'])
+            self.assertNotIn('allow_session_rotation', session.call_args.kwargs)
             self.assertIs(session.call_args.kwargs["connector"], self.transport)
             self.assertFalse(session.call_args.kwargs["is_device_revoked"]())
 
@@ -511,6 +512,7 @@ class LiveWorkerLifecycleTests(unittest.TestCase):
             private_connector.assert_called_once_with(private,adapter.return_value)
             identity_check.assert_called_once_with('yfc-vps')
             self.assertTrue(session.call_args.kwargs['landlock_read'])
+            self.assertIs(session.call_args.kwargs['allow_session_rotation'], True)
             self.assertTrue(all(c.kwargs['expected_identity']==(1234,1234) for c in gate.call_args_list))
 
     def test_real_worker_composes_existing_native_wss_and_owner_revocation(self):

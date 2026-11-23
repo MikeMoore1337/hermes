@@ -242,7 +242,9 @@ def _result_frame(msg_id: str, result: dict[str, Any], *,
 def run_session(config: LocalLinuxDeviceConfig,
                 dispatcher: LinuxOriginalReadDispatcher,
                 connector: Callable[..., WebSocket],
-                *, monotonic: Callable[[], float] = time.monotonic) -> str:
+                *, monotonic: Callable[[], float] = time.monotonic,
+                max_seconds: float = MAX_SESSION_SECONDS,
+                seen_ids: set[str] | None = None) -> str:
     """One bounded outbound owner-paired WSS session, no reconnect or replay.
 
     External code must enforce OS isolation and supply an independently
@@ -257,15 +259,20 @@ def run_session(config: LocalLinuxDeviceConfig,
         or config.url != ENDPOINT
         or type(config.token) is not str or TOKEN.fullmatch(config.token) is None
         or dispatcher.device_id != config.device_id
-        or not callable(connector) or not callable(monotonic)):
+        or not callable(connector) or not callable(monotonic)
+        or type(max_seconds) not in (int, float) or not math.isfinite(max_seconds)
+        or not 0 < max_seconds <= MAX_SESSION_SECONDS
+        or (seen_ids is not None and (type(seen_ids) is not set
+            or len(seen_ids) > MAX_SEEN_IDS
+            or any(type(value) is not str or REQUEST_ID.fullmatch(value) is None for value in seen_ids)))):
         raise LinuxOutboundDenied("native_linux_transport_denied")
     if _CATALOG_NAMES != frozenset({READ, STAT, LIST, SEARCH}):
         raise LinuxOutboundDenied("native_linux_transport_denied")
 
-    seen: set[str] = set()
+    seen: set[str] = seen_ids if seen_ids is not None else set()
     welcome = False
     processed = 0
-    deadline = monotonic() + MAX_SESSION_SECONDS
+    deadline = monotonic() + max_seconds
     try:
         try:
             conn = connector(

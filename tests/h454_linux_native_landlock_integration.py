@@ -260,9 +260,17 @@ class LandlockTests(unittest.TestCase):
     @unittest.skipUnless(getattr(os, 'geteuid', lambda: -1)() == 0 and HAVE_PINNED_WEBSOCKETS,
                          'root-owned fixture and pinned websockets 17.2 required')
     def test_real_websocket_over_unix_after_landlock(self):
+        self._real_websocket_over_unix_after_landlock(rotate=False)
+
+    @unittest.skipUnless(getattr(os, 'geteuid', lambda: -1)() == 0 and HAVE_PINNED_WEBSOCKETS,
+                         'root-owned fixture and pinned websockets 17.2 required')
+    def test_yfc_rotates_sessions_without_escaping_landlock(self):
+        self._real_websocket_over_unix_after_landlock(rotate=True)
+
+    def _real_websocket_over_unix_after_landlock(self, rotate):
         import ssl
         from websockets.sync.server import unix_serve
-        with tempfile.TemporaryDirectory(dir='/var/lib') as folder:
+        with tempfile.TemporaryDirectory(dir=os.environ.get('H454_SYNTHETIC_PARENT', '/var/lib')) as folder:
             base=Path(folder);os.chmod(base,0o755)
             root=base/'project';root.mkdir(mode=0o755)
             (root/'safe.py').write_text('synthetic');os.chmod(root/'safe.py',0o644)
@@ -288,11 +296,15 @@ class LandlockTests(unittest.TestCase):
                 if hello.get('type') != 'hello':
                     return
                 connection.send(json.dumps({'type':'welcome','protocol':1,'relayVersion':'fixture','serverTime':1}))
-                connection.send(json.dumps({'type':'call','id':'fixture-read','tool':'native_file_read',
+                ident='fixture-read-'+str(len(requests))
+                if rotate and len(requests)>1:
+                    connection.send(json.dumps({'type':'call','id':'fixture-read-1','tool':'native_file_read',
+                        'args':{'project':'your-fitness-coach','relative':'safe.py'}}))
+                connection.send(json.dumps({'type':'call','id':ident,'tool':'native_file_read',
                     'args':{'project':'your-fitness-coach','relative':'safe.py'}}))
                 result=json.loads(connection.recv(timeout=5))
                 body=json.loads(result['result']['content'][0]['text'])
-                results.append(result['id']=='fixture-read' and body['status']=='ok' and body['result']['size_bytes']==9)
+                results.append(result['id']==ident and body['status']=='ok' and body['result']['size_bytes']==9)
             socket_path=str(base/'relay.sock')
             server=unix_serve(handler,path=socket_path,ssl=tls,process_request=inspect,compression=None)
             os.chmod(socket_path,0o666)
@@ -322,7 +334,8 @@ class LandlockTests(unittest.TestCase):
                 outbound.MAX_TOOL_CALLS=1
                 with patch.object(runtime,'_service_identity'):
                     outcome=runtime.run_once(prepared,connector=good_connector,
-                        is_device_revoked=lambda:False,is_os_isolation_verified=lambda:True,landlock_read=True)
+                        is_device_revoked=lambda:False,is_os_isolation_verified=lambda:True,landlock_read=True,
+                        allow_session_rotation=(sys.argv[5]=='rotate'))
                 assert outcome=='session_call_budget'
                 try:bad_connector(tls.ENDPOINT,**opts)
                 except tls.PrivateTLSDenied:pass
@@ -334,11 +347,12 @@ class LandlockTests(unittest.TestCase):
             ''')
             try:
                 proc=subprocess.run(['runuser','-u','nobody','--',sys.executable,'-B','-c',script,
-                    str(root),str(ca),str(other),socket_path],capture_output=True,text=True,timeout=20)
+                    str(root),str(ca),str(other),socket_path,'rotate' if rotate else 'single'],
+                    capture_output=True,text=True,timeout=30)
                 self.assertEqual(proc.returncode,0,proc.stderr)
                 self.assertEqual(proc.stdout.splitlines(),['H454_NATIVE_OS_READ_ISOLATION=PASS','PASS'])
-                self.assertEqual(requests,[True])
-                self.assertEqual(results,[True])
+                self.assertEqual(requests,[True]*(3 if rotate else 1))
+                self.assertEqual(results,[True]*(3 if rotate else 1))
             finally:
                 server.shutdown();worker.join(timeout=5)
 

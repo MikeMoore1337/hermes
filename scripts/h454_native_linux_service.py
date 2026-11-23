@@ -416,7 +416,9 @@ def run_trusted_once(*, target: str, release_sha: str,
             prepared, connector=connector,
             is_device_revoked=lambda: os_gate() is not True or revoked() is not False,
             is_os_isolation_verified=os_gate,
-            **({'landlock_read': True} if landlock_read else {}),
+            **({'landlock_read': True, 'allow_session_rotation': True}
+               if landlock_read and target == 'yfc-vps'
+               else {'landlock_read': True} if landlock_read else {}),
         )
     except Exception:
         raise NativeLinuxServiceDenied("native_linux_service_denied") from None

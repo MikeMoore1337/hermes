@@ -217,6 +217,26 @@ class NativeLinuxOutboundRealKernelTests(unittest.TestCase):
             connector, **kwargs)
         return reason, connector
 
+    def test_shared_ids_prevent_replay_across_rotated_sessions(self):
+        seen = set()
+        first = FakeConnector([welcome(), call(ident='request-1')])
+        second = FakeConnector([welcome(), call(ident='request-1'), call(ident='request-2')])
+        broker2 = LinuxOriginalReadDispatcher(device_id=DEVICE, local_roots={'hermes': self.files},
+                                               is_device_revoked=lambda: False)
+        with patch.object(native, 'MAX_TOOL_CALLS', 1):
+            self.assertEqual(native.run_session(config(), self.broker, first, seen_ids=seen), 'session_call_budget')
+            self.assertEqual(native.run_session(config(), broker2, second, seen_ids=seen), 'session_call_budget')
+        self.assertEqual(seen, {'request-1', 'request-2'})
+        self.assertEqual([item.get('id') for item in second.socket.outgoing if item['type']=='result'], ['request-2'])
+
+    def test_invalid_rotation_budgets_fail_before_connecting(self):
+        for seconds in (0, -1, float('nan'), float('inf'), native.MAX_SESSION_SECONDS+1):
+            with self.subTest(seconds=seconds):
+                connector = FakeConnector([])
+                with self.assertRaises(native.LinuxOutboundDenied):
+                    native.run_session(config(), self.broker, connector, max_seconds=seconds)
+                self.assertEqual(connector.calls, [])
+
     def test_actual_kernel_read_and_existing_relay_wire(self):
         messages = [
             welcome(), {"type": "ping", "ts": 1794250000000},
