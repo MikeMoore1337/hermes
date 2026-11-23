@@ -39,7 +39,7 @@ MAX_SEEN_IDS = 64
 MAX_RECONNECT_ATTEMPTS = 5
 RECONNECT_DELAYS = (1, 2, 4, 8)
 MAX_SUPERVISED_HEARTBEATS = 184
-MIN_HEARTBEAT_INTERVAL = 1.0
+MAX_HEARTBEATS_PER_MINUTE = 12
 READONLY_NAMES = frozenset({'native_file_stat', 'native_file_read', 'native_file_list', 'native_file_search'})
 DEVICE_ID = re.compile(r"^[A-Za-z0-9_-]{8,128}$")
 TOKEN = re.compile(r"^[A-Za-z0-9_.~-]{24,1024}$")
@@ -239,7 +239,7 @@ def run_session(config: Settings, connector: Callable[..., Any],
             # required to launch a future new host process.
             remaining = MAX_SEEN_IDS + 16
             heartbeats = 0
-            last_heartbeat = None
+            heartbeat_times: list[float] = []
             while remaining:
                 try:
                     raw = ws.recv(timeout=50)
@@ -252,11 +252,12 @@ def run_session(config: Settings, connector: Callable[..., Any],
                 kind = msg["type"]
                 if kind == "ping" and welcome and fresh_native and continue_on_idle:
                     now = time.monotonic()
+                    heartbeat_times = [t for t in heartbeat_times if now - t < 60]
                     if (heartbeats >= MAX_SUPERVISED_HEARTBEATS or
-                        (last_heartbeat is not None and now - last_heartbeat < MIN_HEARTBEAT_INTERVAL)):
+                        len(heartbeat_times) >= MAX_HEARTBEATS_PER_MINUTE):
                         raise NativeTransportDenied("heartbeat_rate_denied")
                     heartbeats += 1
-                    last_heartbeat = now
+                    heartbeat_times.append(now)
                 else:
                     remaining -= 1
                 if kind == "welcome":

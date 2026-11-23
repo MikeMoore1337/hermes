@@ -90,12 +90,23 @@ class OutboundReadOnlyTests(unittest.TestCase):
     def test_supervised_heartbeat_flood_fails_closed(self):
         config = outbound.Settings("wss://hermes.mikemoore.top/ws",
             "h454-win-native-" + "a" * 32, "brc_dev_" + "b" * 48)
-        connector = FakeConnector([welcome(), {"type": "ping", "ts": 1},
-                                   {"type": "ping", "ts": 2}])
-        with patch.object(outbound.time, "monotonic", side_effect=[1.0, 1.1]):
+        connector = FakeConnector([welcome()] + [{"type": "ping", "ts": i}
+            for i in range(outbound.MAX_HEARTBEATS_PER_MINUTE + 1)])
+        with patch.object(outbound.time, "monotonic", return_value=1.0):
             with self.assertRaisesRegex(outbound.NativeTransportDenied, "heartbeat_rate_denied"):
                 outbound.run_session(config, connector, fresh_native=True, continue_on_idle=True)
         self.assertTrue(connector.ws.closed)
+
+    def test_supervised_heartbeat_allows_a_delayed_burst(self):
+        config = outbound.Settings("wss://hermes.mikemoore.top/ws",
+            "h454-win-native-" + "a" * 32, "brc_dev_" + "b" * 48)
+        connector = FakeConnector([welcome()] + [{"type": "ping", "ts": i}
+            for i in range(3)] + [call(f"id-{i}", name="native_file_stat")
+                                  for i in range(outbound.MAX_CALLS)])
+        with patch.object(outbound.time, "monotonic", return_value=1.0), \
+             patch.object(mcp.native, "handle_native_request", return_value=payload(operation="stat")):
+            self.assertEqual(outbound.run_session(config, connector, fresh_native=True,
+                                                  continue_on_idle=True), "read_budget_exhausted")
 
     def test_supervised_heartbeat_lifetime_is_bounded(self):
         config = outbound.Settings("wss://hermes.mikemoore.top/ws",
