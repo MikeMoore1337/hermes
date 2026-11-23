@@ -74,6 +74,23 @@ class FakeConnector:
 
 
 class OutboundReadOnlyTests(unittest.TestCase):
+    def test_supervised_idle_timeout_keeps_authenticated_connection(self):
+        class IdleOnce(FakeWebSocket):
+            def recv(self, timeout=None):
+                if len(self.inbound) == outbound.MAX_CALLS and not getattr(self, "idle", False):
+                    self.idle = True
+                    raise TimeoutError()
+                return super().recv(timeout)
+        connector = FakeConnector([])
+        connector.ws = IdleOnce([welcome()] + [call(f"id-{i}", name="native_file_stat")
+                                                for i in range(outbound.MAX_CALLS)])
+        with patch.object(mcp.native, "handle_native_request", return_value=payload(operation="stat")) as reader:
+            reason = outbound.run_session(settings(), connector, continue_on_idle=True)
+        self.assertEqual(reason, "read_budget_exhausted")
+        self.assertTrue(connector.ws.idle)
+        self.assertEqual(reader.call_count, outbound.MAX_CALLS)
+        self.assertEqual(len(connector.invocations), 1)
+
     def test_outbound_wss_hello_auth_and_real_mcp_dispatch(self):
         connector = FakeConnector([welcome(), {"type": "ping", "ts": 7},
                                    call(), call("call-2", name="native_file_stat")])

@@ -185,7 +185,8 @@ def safe_call(session: McpSession, message: dict[str, Any],
 def run_session(config: Settings, connector: Callable[..., Any],
                 *, seen_ids: set[str] | None = None,
                 fresh_native: bool = False,
-                on_verified_welcome: Callable[[], None] | None = None) -> str:
+                on_verified_welcome: Callable[[], None] | None = None,
+                continue_on_idle: bool = False) -> str:
     """One authenticated outbound TLS socket, one bounded local tool session.
 
     The connector is injected for offline tests. Production uses the
@@ -193,7 +194,8 @@ def run_session(config: Settings, connector: Callable[..., Any],
     """
     # Validate the HELLO profile before opening a socket. This is not a
     # generic caller-supplied device name or tool catalog.
-    if (type(fresh_native) is not bool or type(config) is not Settings
+    if (type(fresh_native) is not bool or type(continue_on_idle) is not bool
+        or type(config) is not Settings
         or (on_verified_welcome is not None and not callable(on_verified_welcome))):
         raise NativeTransportDenied("invalid_native_profile")
     if fresh_native:
@@ -236,6 +238,8 @@ def run_session(config: Settings, connector: Callable[..., Any],
                 try:
                     raw = ws.recv(timeout=50)
                 except TimeoutError:
+                    if welcome and continue_on_idle:
+                        continue
                     return "idle_timeout"
                 msg = decode_frame(raw)
                 kind = msg["type"]
@@ -266,7 +270,7 @@ def run_session(config: Settings, connector: Callable[..., Any],
                         ws.send(json.dumps(out, separators=(",", ":"),
                                            ensure_ascii=True))
                         sent += 1
-                    if sent >= MAX_CALLS:
+                    if sent >= MAX_CALLS or len(seen) >= MAX_CALLS:
                         return "read_budget_exhausted"
                 elif kind == "error" and msg.get("fatal") is True:
                     raise NativeTransportDenied("relay_rejected")
@@ -284,6 +288,9 @@ def run_session(config: Settings, connector: Callable[..., Any],
 def run_bounded_reconnect(
     config: Settings, connector: Callable[..., Any],
     *, pause: Callable[[float], Any] = time.sleep,
+    fresh_native: bool = False,
+    on_verified_welcome: Callable[[], None] | None = None,
+    recheck: Callable[[], None] | None = None,
 ) -> str:
     """At most five sequential *read-only* sessions, no queued call replay.
 
@@ -292,24 +299,37 @@ def run_bounded_reconnect(
     Nothing is persisted. On restart owner-scoped re-pair may be required.
     Fatal protocol/relay refusal does NOT get retried.
     """
-    if {tool.get("name") for tool in TOOLS} != READONLY_NAMES or len(TOOLS) != 3:
+    if (type(fresh_native) is not bool or not callable(pause)
+        or (on_verified_welcome is not None and not callable(on_verified_welcome))
+        or (fresh_native and not callable(recheck))
+        or {tool.get("name") for tool in TOOLS} != READONLY_NAMES or len(TOOLS) != 3):
         raise NativeTransportDenied("reconnect_requires_readonly_catalog")
     seen_ids: set[str] = set()
     for index in range(MAX_RECONNECT_ATTEMPTS):
         try:
             # Preserve prior in-process request IDs over a connection reset;
             # a relay redelivery must not dispatch the same ID twice.
-            end = run_session(config, connector, seen_ids=seen_ids)
+            if fresh_native:
+                recheck()
+                end = run_session(config, connector, seen_ids=seen_ids,
+                                  fresh_native=True, on_verified_welcome=on_verified_welcome,
+                                  continue_on_idle=True)
+            else:
+                end = run_session(config, connector, seen_ids=seen_ids)
         except NativeTransportDenied as exc:
             if str(exc) != "transport_failed":
                 raise
             end = "transport_failed"
         if end not in ("idle_timeout", "transport_failed"):
             return end
+        if fresh_native:
+            recheck()
         if index == MAX_RECONNECT_ATTEMPTS - 1:
             return "reconnect_budget_exhausted"
         # Bound duration and prevent an uncontrolled tight connection loop.
         pause(RECONNECT_DELAYS[index])
+        if fresh_native:
+            recheck()
     return "reconnect_budget_exhausted"
 
 

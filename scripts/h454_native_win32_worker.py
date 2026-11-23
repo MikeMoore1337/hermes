@@ -233,6 +233,7 @@ def run_trusted_once(
         )
         if on_verified_welcome is not None:
             options["on_verified_welcome"] = on_verified_welcome
+            options["bounded_reconnect"] = True
         return read_session(candidate, **options)
     except Exception:
         raise Win32WorkerDenied("native_win32_worker_denied") from None

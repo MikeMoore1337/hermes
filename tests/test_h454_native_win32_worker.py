@@ -231,9 +231,9 @@ class NoHostWorkerSecurity(unittest.TestCase):
         self.transport.side_effect = lambda *_args, **_kwargs: socket
         ready = []
         result = self.call(on_verified_welcome=lambda: ready.append("yes"))
-        self.assertEqual(result, "idle_timeout")
+        self.assertEqual(result, "session_budget_exhausted")
         self.assertEqual(ready, ["yes"])
-        self.assertEqual(socket.received, 2)
+        self.assertEqual(socket.received, 80)
         self.assertTrue(socket.closed)
 
     def test_supervised_cli_never_signals_ready_with_wrong_os_sid(self):

@@ -28,8 +28,10 @@ requires a distinct `h454-win-native-<32 lowercase hex>` owner-paired ID.
   session. A guarded socket checks service/owner/revocation/expiry on each wire
   I/O and closes a partially entered connection if authorization changes.
   Even a hand-crafted in-memory candidate cannot reuse the revoked identity.
-  It has no queue, reconnect loop, shell, write, delete, process tool,
-  startup registration or remote root selection.
+  The SCM-supervised worker can retry a bounded read-only connection while
+  retaining in-process request IDs; there is no queue, shell, write, delete,
+  process tool, startup registration or remote root selection. Credentials
+  still expire within one hour and no renewal mechanism is implemented.
 - The existing `scripts/h15_native_windows_outbound.py` legacy CLI still
   requires its earlier ID; this source does **not** change that legacy
   registration or unpause it. The new handler is not exposed via any CLI,

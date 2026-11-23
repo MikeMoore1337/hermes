@@ -181,6 +181,62 @@ class NewWindowsIdentityRunTests(unittest.TestCase):
         self.assertEqual(self.unseal.call_args.args, (SEALED,))
         self.assertGreaterEqual(self.check_revoked.call_count, 2)
 
+    def test_supervised_reconnect_keeps_ids_and_global_read_budget(self):
+        def call(ident):
+            return json.dumps({"type": "call", "id": ident, "tool": "native_file_stat",
+                "args": {"project": "hermes", "relative": "README.md"}})
+
+        hello = json.dumps({"type": "welcome", "protocol": 1,
+                            "relayVersion": "test", "serverTime": NOW})
+        class Socket:
+            def __init__(self, frames):
+                self.frames, self.sent, self.closed = iter(frames), [], False
+            def __enter__(self): return self
+            def __exit__(self, *_): self.closed = True
+            def send(self, raw): self.sent.append(json.loads(raw))
+            def recv(self, timeout=None):
+                frame = next(self.frames)
+                if isinstance(frame, Exception): raise frame
+                return frame
+
+        first = Socket([hello, call("old"), OSError("disconnected")])
+        second = Socket([hello, call("old")] + [call(f"new-{i}") for i in range(15)])
+        sockets = iter((first, second))
+        connector = Mock(side_effect=lambda *_a, **_kw: next(sockets))
+        ready = []
+        result = {"status": "ok", "project": "hermes", "relative": "README.md",
+                  "action": "stat", "kind": "file", "size_bytes": 3}
+        with patch.object(outbound, "MAX_RECONNECT_ATTEMPTS", 2), \
+             patch.object(outbound, "RECONNECT_DELAYS", (0,)), \
+             patch("scripts.h15_native_windows_mcp_stdio.native.handle_native_request",
+                   return_value=result) as reader:
+            end = self.run_win(connector=connector, bounded_reconnect=True,
+                               on_verified_welcome=lambda: ready.append(True))
+        self.assertEqual(end, "read_budget_exhausted")
+        self.assertEqual(connector.call_count, 2)
+        self.assertEqual(reader.call_count, 16)
+        self.assertEqual(len([x for x in first.sent + second.sent if x["type"] == "result"]), 16)
+        self.assertEqual(ready, [True, True])
+        self.assertTrue(first.closed and second.closed)
+
+    def test_revoke_or_expiry_during_disconnect_prevents_retry(self):
+        for denial in ("revoked", "expired"):
+            with self.subTest(denial=denial):
+                state = {"revoked": False, "now": NOW}
+                class Socket:
+                    def __enter__(self): return self
+                    def __exit__(self, *_): return False
+                    def send(self, _raw): pass
+                    def recv(self, timeout=None):
+                        if denial == "revoked": state["revoked"] = True
+                        else: state["now"] = NOW + 201
+                        raise OSError("disconnected")
+                connector = Mock(return_value=Socket())
+                with self.assertRaises(native.WindowsNativeIdentityDenied):
+                    self.run_win(connector=connector, bounded_reconnect=True,
+                        is_device_revoked=lambda: state["revoked"], utcnow=lambda: state["now"])
+                connector.assert_called_once()
+
     def test_actual_fresh_wss_hello_matches_owner_bound_brc_identity(self):
         class Socket:
             def __init__(self):

@@ -219,6 +219,7 @@ def run_once(
     unseal_bearer: Callable[[bytes], str],
     utcnow: Callable[[], float] = time.time,
     on_verified_welcome: Callable[[], None] | None = None,
+    bounded_reconnect: bool = False,
 ) -> str:
     """A single future host session, deliberately NOT exposed as CLI/service.
 
@@ -230,7 +231,8 @@ def run_once(
         connector, service_os_verified, owner_pair_verified,
         is_device_revoked, unseal_bearer, utcnow,
     )) or type(candidate) is not PrivateWindowsSession
-        or (on_verified_welcome is not None and not callable(on_verified_welcome))):
+        or (on_verified_welcome is not None and not callable(on_verified_welcome))
+        or type(bounded_reconnect) is not bool):
         raise WindowsNativeIdentityDenied("native_win32_identity_denied")
 
     def gate() -> None:
@@ -254,6 +256,10 @@ def run_once(
             gate()
             return _GuardedSocket(connector(*args, **kwargs), gate)
 
+        if bounded_reconnect:
+            return outbound.run_bounded_reconnect(
+                settings, restricted_connector, fresh_native=True,
+                on_verified_welcome=on_verified_welcome, recheck=gate)
         if on_verified_welcome is not None:
             return outbound.run_session(
                 settings, restricted_connector, fresh_native=True,
