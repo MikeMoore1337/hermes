@@ -36,7 +36,7 @@ class NativeContractTests(unittest.TestCase):
         self.assertEqual(frame["device"]["name"], DEVICE_NAME)
         self.assertEqual(frame["device"]["platform"], "win32")
         self.assertEqual([tool["name"] for tool in frame["tools"]],
-                         ["native_file_stat", "native_file_read", "native_file_list"])
+                         ["native_file_stat", "native_file_read", "native_file_list", "native_file_search"])
         self.assertEqual(frame["tools"], list(TOOLS))
 
     def test_native_dispatch_uses_isolated_non_generic_route(self):

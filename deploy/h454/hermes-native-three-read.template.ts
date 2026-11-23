@@ -20,7 +20,7 @@ const PROJECTS = ['hermes','your-fitness-coach','ai-development-toolkit',
                   'financial-horizon','second-brain'];
 const HOSTS: Record<Host, {name:string; platform:string; id:RegExp; tools:Tool[]}> = {
   windows: {name:'H454 Windows native read-only', platform:'win32',
-    id:/^h454-win-native-[a-f0-9]{32}$/, tools:READ},
+    id:/^h454-win-native-[a-f0-9]{32}$/, tools:ALL},
   'hermes-vps': {name:'H454 Hermes VPS native read-only', platform:'linux',
     id:/^h454-linux-hermes-[a-f0-9]{32}$/, tools:ALL},
   'yfc-vps': {name:'H454 YFC VPS native read-only', platform:'linux',
@@ -37,8 +37,7 @@ const SECRET = /(?:^|[._-])(?:secret|credential|token|password|private[-_]?key|a
 
 function schema(name:Tool) {
   const search = name === 'native_file_search';
-  const host = {type:'string',enum:name==='native_file_search'
-    ? ['hermes-vps','yfc-vps'] : Object.keys(HOSTS)};
+  const host = {type:'string',enum:Object.keys(HOSTS)};
   const project = {type:'string',enum:PROJECTS};
   const fields:Record<string,object> = search
     ? {host,project,query:{type:'string',minLength:1,maxLength:96},
@@ -144,7 +143,10 @@ function validResult(value:unknown, method:Tool, args:SafeArgs, host:Host):boole
       if(!m||typeof m!=='object'||Array.isArray(m))return false;
       const row=m as Record<string,unknown>;
       if(typeof row.path!=='string'||!safePath(row.path,host,false))return false;
-      if(a.relative_root&&!row.path.startsWith(a.relative_root+'/'))return false;
+      const prefix=a.relative_root+(host==='windows'?'\\':'/');
+      if(a.relative_root&&!(host==='windows'
+        ? row.path.toLowerCase().startsWith(prefix.toLowerCase())
+        : row.path.startsWith(prefix)))return false;
       return a.mode==='names' ? Object.keys(row).sort().join(',')==='kind,path'
         && ['file','directory'].includes(row.kind as string)
         : Object.keys(row).sort().join(',')==='line,path'

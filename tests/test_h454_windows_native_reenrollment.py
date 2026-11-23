@@ -282,7 +282,7 @@ class NewWindowsIdentityRunTests(unittest.TestCase):
         self.assertEqual(hello["device"]["deviceId"], DEVICE)
         self.assertEqual(hello["device"]["platform"], "win32")
         self.assertEqual([t["name"] for t in hello["tools"]],
-                         ["native_file_stat", "native_file_read", "native_file_list"])
+                         ["native_file_stat", "native_file_read", "native_file_list", "native_file_search"])
         self.assertNotIn("start_process", json.dumps(hello))
         self.assertNotIn("write_file", json.dumps(hello))
         self.assertNotIn(BEARER, json.dumps(hello))
