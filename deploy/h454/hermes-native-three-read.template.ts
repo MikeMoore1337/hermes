@@ -127,24 +127,47 @@ function ownerDevice(hub:DeviceHub, store:SqliteStore, owner:string, host:Host):
 // Bounds prevent a disconnected device from consuming unbounded relay memory.
 const MAX_WAITING = 16, MAX_WAITING_PER_OWNER = 4;
 const WAIT_INTERVAL_MS = 200, WAIT_DEADLINE_MS = 4000;
+// The pinned YFC reader retires a connection after 16 dispatched calls.
+// Count per socket, not per device: every fresh connection gets a new budget.
+const YFC_SESSION_CALLS = 16;
+const socketCalls = new WeakMap<object,number>();
 let waiting = 0;
 const waitingByOwner = new Map<string,number>();
 type OwnerRecord = {id:string;tokenHash:string};
+type Reservation = {identity:OwnerRecord;socket:object|null};
 function stillAuthorized(hub:DeviceHub,store:SqliteStore,owner:string,host:Host,expected:OwnerRecord):boolean {
   const current=ownerRecord(store,owner,host);
   return !!current && current.id===expected.id && current.tokenHash===expected.tokenHash
     && ownerDevice(hub,store,owner,host)===expected.id;
 }
-async function resolveOwnerDevice(hub:DeviceHub,store:SqliteStore,owner:string,host:Host):Promise<OwnerRecord|null> {
+function reserveReady(hub:DeviceHub,store:SqliteStore,owner:string,host:Host,record:OwnerRecord):Reservation|null {
+  try {
+    if(!stillAuthorized(hub,store,owner,host,record))return null;
+    if(host!=='yfc-vps')return {identity:record,socket:null};
+    const socket=hub.get(record.id)?.socket;
+    if(!socket || (socketCalls.get(socket)??0)>=YFC_SESSION_CALLS)return null;
+    socketCalls.set(socket,(socketCalls.get(socket)??0)+1);
+    return {identity:record,socket};
+  }catch{return null;}
+}
+function releaseUndispatched(reservation:Reservation):void {
+  if(!reservation.socket)return;
+  const count=socketCalls.get(reservation.socket)??0;
+  if(count>1)socketCalls.set(reservation.socket,count-1);else socketCalls.delete(reservation.socket);
+}
+async function resolveOwnerDevice(hub:DeviceHub,store:SqliteStore,owner:string,host:Host):Promise<Reservation|null> {
   const ready=ownerDevice(hub,store,owner,host);
   if(ready){
     const record=ownerRecord(store,owner,host);
-    return record && record.id===ready && stillAuthorized(hub,store,owner,host,record) ? record : null;
+    if(!record || record.id!==ready || !stillAuthorized(hub,store,owner,host,record))return null;
+    const slot=reserveReady(hub,store,owner,host,record);
+    if(slot)return slot;
   }
   if(host!=='yfc-vps')return null;
   const record=ownerRecord(store,owner,host);
   if(!record)return null;
-  try { if(hub.get(record.id))return null; } catch { return null; }
+  try { if(hub.get(record.id) && !stillAuthorized(hub,store,owner,host,record))return null; }
+  catch { return null; }
   const count=waitingByOwner.get(owner)??0;
   if(waiting>=MAX_WAITING || count>=MAX_WAITING_PER_OWNER)return null;
   waiting++; waitingByOwner.set(owner,count+1);
@@ -155,7 +178,11 @@ async function resolveOwnerDevice(hub:DeviceHub,store:SqliteStore,owner:string,h
       if(performance.now()>=deadline)return null;
       const current=ownerRecord(store,owner,host);
       if(!current || current.id!==record.id || current.tokenHash!==record.tokenHash)return null;
-      if(hub.get(record.id))return stillAuthorized(hub,store,owner,host,record) ? record : null;
+      if(hub.get(record.id)){
+        if(!stillAuthorized(hub,store,owner,host,record))return null;
+        const slot=reserveReady(hub,store,owner,host,record);
+        if(slot)return slot;
+      }
     }
     return null;
   }catch{return null;}
@@ -248,8 +275,16 @@ export async function invokeOwnerNativeThreeRead(
   const checked=safeArgs(tool,input);
   if(!checked)return DENY;
   const started=Date.now();
-  const identity=await resolveOwnerDevice(hub,store,ctx.userId,checked.host);
-  if(!identity || !stillAuthorized(hub,store,ctx.userId,checked.host,identity))return DENY;
+  const reservation=await resolveOwnerDevice(hub,store,ctx.userId,checked.host);
+  if(!reservation)return DENY;
+  const identity=reservation.identity;
+  let sameSocket=false;
+  try { sameSocket=!reservation.socket || hub.get(identity.id)?.socket===reservation.socket; }
+  catch { /* fail closed without sending */ }
+  if(!sameSocket || !stillAuthorized(hub,store,ctx.userId,checked.host,identity)){
+    releaseUndispatched(reservation);
+    return DENY;
+  }
   const deviceId=identity.id;
   const argsHash=createHash('sha256').update(JSON.stringify(
       {host:checked.host,tool,args:checked.args})).digest('hex').slice(0,16);

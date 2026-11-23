@@ -218,6 +218,68 @@ assert(denied(await invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_read',
   'OFFLINE_WAIT_MUST_EXPIRE');
 assert(calls===before,'OFFLINE_WAIT_MUST_NOT_DISPATCH');
 devices.set(yfc.id,yfcLive);
+
+// A still-visible socket retires immediately after the sixteenth call. The
+// seventeenth call must remain undispatched until a fresh socket appears.
+const newYfcSocket=()=>({...yfcLive,socket:{...yfcLive.socket}});
+
+// Revocation between reservation and dispatch must release the unused slot.
+devices.set(yfc.id,newYfcSocket());
+let schedulePause=true;
+const pauseBetween={...hub,get(id){
+  const result=hub.get(id);
+  if(schedulePause){schedulePause=false;queueMicrotask(()=>{yfcRow.paused=1;});}
+  return result;
+}};
+before=calls;
+assert(denied(await invokeOwnerNativeThreeRead(pauseBetween,store,ctx,'native_file_read',request)),
+  'PRE_DISPATCH_REVOCATION_ALLOWED');
+assert(calls===before,'PRE_DISPATCH_REVOCATION_SENT');
+yfcRow.paused=0;
+for(let i=0;i<16;i++){
+  assert(!(await invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_read',request)).isError,
+    'UNDISPATCHED_RESERVATION_NOT_RELEASED_'+i);
+}
+
+// A socket replaced before dispatch is never charged or sent as the old one.
+const replacedLive=newYfcSocket();
+devices.set(yfc.id,replacedLive);
+let scheduleReplace=true;
+const replaceBetween={...hub,get(id){
+  const result=hub.get(id);
+  if(scheduleReplace){scheduleReplace=false;queueMicrotask(()=>devices.set(yfc.id,newYfcSocket()));}
+  return result;
+}};
+before=calls;
+assert(denied(await invokeOwnerNativeThreeRead(replaceBetween,store,ctx,'native_file_read',request)),
+  'PRE_DISPATCH_SOCKET_REPLACEMENT_ALLOWED');
+assert(calls===before,'PRE_DISPATCH_SOCKET_REPLACEMENT_SENT');
+
+devices.set(yfc.id,newYfcSocket());
+before=calls;
+for(let i=0;i<16;i++){
+  assert(!(await invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_read',request)).isError,
+    'YFC_SESSION_CALL_REFUSED_'+i);
+}
+assert(calls===before+16,'YFC_SESSION_COUNT');
+const afterBudget=invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_read',request);
+await new Promise(resolve=>setTimeout(resolve,50));
+assert(calls===before+16,'EXHAUSTED_SOCKET_DISPATCHED');
+devices.set(yfc.id,newYfcSocket());
+assert(!(await afterBudget).isError && calls===before+17,'NEW_SOCKET_NOT_USED_ONCE');
+
+// Reservations must serialize the seventeenth simultaneous call too.
+devices.set(yfc.id,newYfcSocket());
+before=calls;
+const simultaneous=Array.from({length:17},()=>
+  invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_read',request));
+await new Promise(resolve=>setTimeout(resolve,50));
+assert(calls===before+16,'CONCURRENT_EXHAUSTED_SOCKET_DISPATCHED');
+devices.set(yfc.id,newYfcSocket());
+assert((await Promise.all(simultaneous)).every(result=>!result.isError),
+  'CONCURRENT_SESSION_RECONNECT_FAILED');
+assert(calls===before+17,'CONCURRENT_DISPATCH_COUNT');
+
 assert(audited.length>=profiles.length,'NO_AUDIT');
 assert(audited.every(x=>x.user_id===ctx.userId&&
   typeof x.args_hash==='string'&&x.args_hash.length===16),
