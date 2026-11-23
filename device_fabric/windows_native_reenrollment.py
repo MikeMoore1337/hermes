@@ -221,6 +221,7 @@ def run_once(
     on_verified_welcome: Callable[[], None] | None = None,
     bounded_reconnect: bool = False,
     claim_call: Callable[[str], bool] | None = None,
+    legacy_catalog: bool = False,
 ) -> str:
     """A single future host session, deliberately NOT exposed as CLI/service.
 
@@ -234,7 +235,8 @@ def run_once(
     )) or type(candidate) is not PrivateWindowsSession
         or (on_verified_welcome is not None and not callable(on_verified_welcome))
         or (claim_call is not None and (not callable(claim_call) or not bounded_reconnect))
-        or type(bounded_reconnect) is not bool):
+        or type(bounded_reconnect) is not bool or type(legacy_catalog) is not bool
+        or (legacy_catalog and not bounded_reconnect)):
         raise WindowsNativeIdentityDenied("native_win32_identity_denied")
 
     def gate() -> None:
@@ -262,6 +264,8 @@ def run_once(
             options = {"fresh_native": True, "on_verified_welcome": on_verified_welcome, "recheck": gate}
             if claim_call is not None:
                 options["claim_call"] = claim_call
+            if legacy_catalog:
+                options["legacy_catalog"] = True
             return outbound.run_bounded_reconnect(settings, restricted_connector, **options)
         if on_verified_welcome is not None:
             return outbound.run_session(
