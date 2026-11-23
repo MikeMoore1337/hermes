@@ -135,7 +135,7 @@ def main() -> int:
             outcome = personal.run(config, user_verified=current_sid,
                                    connector=connector, owner_status=status,
                                    claim_call=replay.claim)
-            if outcome != "read_budget_exhausted" or time.time() >= candidate.expires_at:
+            if outcome != "read_budget_exhausted":
                 return 2
             # Bound reconnect churn; every session still enforces 16 calls.
             time.sleep(5)

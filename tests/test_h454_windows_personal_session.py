@@ -26,10 +26,10 @@ CA_SHA = "d" * 64
 FAKE_CA = b"-----BEGIN CERTIFICATE-----\nZg==\n-----END CERTIFICATE-----\n"
 
 
-def config(*, expires=1100, sealed=b"x" * 64, device=DEVICE):
+def config(*, created=900, sealed=b"x" * 64, device=DEVICE):
     obj = {"schema": personal.SCHEMA, "release_sha": "c" * 40, "owner_sid": OWNER, "ca_sha256": CA_SHA,
            "device_id": device, "sealed_bearer_b64": base64.b64encode(sealed).decode(),
-           "expires_at": expires}
+           "created_at": created}
     return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
 
 
@@ -66,26 +66,34 @@ class PersonalContracts(unittest.TestCase):
 
     def test_invalid_or_ambiguous_config_fails_closed(self):
         for raw in (b"{}", config(device="h454-win-01335a1f6e6705b4"),
-                    config() + b" ", config(sealed=b"x"), config(expires=True),
+                    config() + b" ", config(sealed=b"x"), config(created=True),
                     b'{"schema":"a","schema":"b"}'):
             with self.subTest(raw=raw[:32]), self.assertRaises(personal.PersonalSessionDenied):
                 personal.parse_config(raw)
 
-    def test_owner_expiry_and_revocation_prevent_network(self):
-        for verify, expiry, active in ((False, 1100, True), (True, 999, True),
-                                       (True, 5000, True), (True, 1100, False)):
-            with self.subTest(verify=verify, expiry=expiry, active=active):
+    def test_owner_future_time_and_revocation_prevent_network(self):
+        for verify, created, active in ((False, 900, True), (True, 1001, True),
+                                        (True, 900, False)):
+            with self.subTest(verify=verify, created=created, active=active):
                 connector = Mock()
                 unseal = Mock(return_value=TOKEN)
                 with patch.object(personal, "run_once") as runner:
                     with self.assertRaises(personal.PersonalSessionDenied):
-                        personal.run(config(expires=expiry), user_verified=lambda: OWNER if verify else "S-1-5-18",
+                        personal.run(config(created=created), user_verified=lambda: OWNER if verify else "S-1-5-18",
                                      connector=connector, unseal=unseal,
                                      owner_status=lambda **_: lambda: active, utcnow=lambda: 1000)
                     runner.assert_not_called()
                 connector.assert_not_called()
-                if not verify or expiry != 1100:
+                if not verify or created > 1000:
                     unseal.assert_not_called()
+
+    def test_old_personal_credential_gets_only_a_fresh_one_hour_session(self):
+        now = 90 * 86400
+        with patch.object(personal, "run_once", return_value="read_budget_exhausted") as runner:
+            personal.run(config(created=900), user_verified=lambda: OWNER, connector=Mock(),
+                         unseal=lambda *_a, **_k: TOKEN, owner_status=lambda **_: lambda: True,
+                         utcnow=lambda: now)
+        self.assertEqual(runner.call_args.args[0].expires_at, now + 3600)
 
     def test_live_owner_status_and_policy_bound_dpapi_are_forwarded(self):
         unseal = Mock(return_value=TOKEN)
@@ -181,7 +189,7 @@ class RealWindowsPersonalSession(unittest.TestCase):
         result = {"status": "ok", "project": "hermes", "relative": "README.md",
                   "action": "stat", "kind": "file", "size_bytes": 3}
         with patch.object(mcp.native, "handle_native_request", return_value=result) as reader:
-            outcome = personal.run(config(expires=now + 120, sealed=sealed),
+            outcome = personal.run(config(created=now, sealed=sealed),
                 user_verified=lambda: OWNER, connector=lambda *_a, **_k: Socket(),
                 owner_status=lambda **_: lambda: True)
         self.assertEqual(outcome, "read_budget_exhausted")
@@ -189,7 +197,7 @@ class RealWindowsPersonalSession(unittest.TestCase):
 
     def test_changed_ca_hash_cannot_decrypt_the_saved_bearer(self):
         sealed = seal_for_current_user(TOKEN, manifest_sha256=personal.policy_digest(CA_SHA), device_id=DEVICE)
-        obj = json.loads(config(expires=int(time.time()) + 120, sealed=sealed))
+        obj = json.loads(config(created=int(time.time()), sealed=sealed))
         obj["ca_sha256"] = "e" * 64
         raw = json.dumps(obj, sort_keys=True, separators=(",", ":")).encode()
         status = Mock()
