@@ -22,6 +22,11 @@ on:
       - tests/test_h15_native_windows_read.py
       - tests/test_h15_native_windows_read_on_win.py
       - device_fabric/windows_native_reenrollment.py
+      - device_fabric/windows_personal_session.py
+      - device_fabric/native_private_tls.py
+      - scripts/h454_windows_personal_worker.py
+      - scripts/h454_windows_personal_state.py
+      - tests/test_h454_windows_personal_session.py
       - scripts/h454_native_win32_worker.py
       - tests/test_h454_native_win32_worker.py
       - device_fabric/windows_native_dpapi.py
@@ -149,7 +154,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          python -B -m unittest -v tests.test_h454_windows_native_dpapi
+          python -B -m unittest -v tests.test_h454_windows_native_dpapi tests.test_h454_windows_personal_session
           if ($LASTEXITCODE -ne 0) { throw 'H454_WIN32_DPAPI_CURRENT_USER_DENIED' }
           Write-Output 'H454_WIN32_DPAPI_CURRENT_USER=PASS'
           Write-Output 'H454_WINDOWS_OWNER_DEVICE_ACCESS=NOT_RUN'

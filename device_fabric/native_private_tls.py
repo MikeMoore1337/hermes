@@ -31,6 +31,8 @@ WS_URI = 'wss://brc-agent.internal:3001/ws'
 UNIX_DIRECTORY = '/run/hermes-commander-tunnel'
 UNIX_SOCKET = UNIX_DIRECTORY + '/relay.sock'
 UNIX_ENDPOINT = 'unix:' + UNIX_SOCKET
+WINDOWS_LOOPBACK = 'windows-loopback:38184'
+WINDOWS_LOOPBACK_PORT = 38184
 AUDIT_DIRECTORY = '/run/hermes-commander-audit'
 AUDIT_SOCKET = AUDIT_DIRECTORY + '/properties.sock'
 CA_MAX_BYTES = 8192
@@ -169,6 +171,10 @@ def _context(ca: bytes) -> ssl.SSLContext:
 
 
 def _raw_socket(config: PrivateRelay, timeout: float):
+    if config.relay_ipv4 == WINDOWS_LOOPBACK:
+        if config.target != 'windows':
+            _deny()
+        return socket.create_connection(('127.0.0.1', WINDOWS_LOOPBACK_PORT), timeout=timeout)
     if config.relay_ipv4 == UNIX_ENDPOINT:
         if config.target != 'yfc-vps':
             _deny()

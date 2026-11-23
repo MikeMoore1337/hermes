@@ -297,6 +297,15 @@ class LocalCertificateE2E(unittest.TestCase):
         with patch.object(direct,'PORT',self.server.server_address[1]):
             self.assertFalse(direct.current_bearer(pinned,target='hermes-vps',device_id=IDENTITY,bearer=TOKEN))
 
+    def test_windows_loopback_checks_status_through_pinned_tls(self):
+        device='h454-win-native-'+'a'*32
+        pinned=direct.PrivateRelay('windows',RELEASE,direct.WINDOWS_LOOPBACK,self.ca.read_bytes())
+        wrong=direct.PrivateRelay('windows',RELEASE,direct.WINDOWS_LOOPBACK,self.other_ca.read_bytes())
+        with (patch.object(direct,'WINDOWS_LOOPBACK_PORT',self.server.server_address[1]),
+              patch.dict(globals(), {'IDENTITY': device})):
+            self.assertTrue(direct.current_bearer(pinned,target='windows',device_id=device,bearer=TOKEN))
+            self.assertFalse(direct.current_bearer(wrong,target='windows',device_id=device,bearer=TOKEN))
+
     def test_yfc_status_over_unix_socket_checks_real_tls_before_bearer(self):
         device='h454-linux-yfc-'+'a'*32
         requests=[]
