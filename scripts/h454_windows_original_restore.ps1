@@ -71,7 +71,11 @@ function Get-H454OriginalRestoreState(
         Label=$label;NetworkName=$networkName;HostAddress=$hostAddress;OnBridge=$onBridge;OnPrivate=$onPrivate}
 }
 
-function Assert-H454OriginalLiveRoute([object]$Snapshot,[string]$AgentId,[string]$DockerSha256) {
+function Assert-H454OriginalLiveRoute([object]$Snapshot,[string]$AgentId,[string]$DockerSha256,[scriptblock]$ReadOnlyProbe=$null) {
+    function Invoke-H454RouteProbe([string[]]$Arguments) {
+        if($null -ne $ReadOnlyProbe){return (& $ReadOnlyProbe $Arguments $null)}
+        return (Invoke-H454RecoveryDocker -Arguments $Arguments -DockerSha256 $DockerSha256)
+    }
     Require-H454 ($Snapshot.Agent.State.Running -and $Snapshot.OnPrivate -and -not $Snapshot.OnBridge) 'H454_RESTORE_RUNNING_ROUTE'
     $bootstrap="eval(Buffer.from(process.argv[1],'base64').toString())"
     $inspect=@'
@@ -81,7 +85,7 @@ const route=f.readFileSync('/proc/net/route','utf8').trim().split(/\r?\n/).slice
 d.lookup('host.docker.internal',{all:true,verbatim:true},(e,a)=>{if(e||!a.length)process.exit(2);console.log(JSON.stringify({hosts,route,addresses:a.map(x=>x.address)}))});
 '@
     $encoded=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($inspect))
-    $checked=Invoke-H454RecoveryDocker -Arguments @('exec','--user','65534:65534',$AgentId,'node','-e',$bootstrap,$encoded) -DockerSha256 $DockerSha256
+    $checked=Invoke-H454RouteProbe @('exec','--user','65534:65534',$AgentId,'node','-e',$bootstrap,$encoded)
     Require-H454 ($checked.Code -eq 0 -and $checked.Output.Length -gt 0 -and $checked.Output.Length -le 8192) 'H454_RESTORE_ROUTE_PROBE'
     $answer=ConvertFrom-Json -InputObject $checked.Output -ErrorAction Stop
     Require-H454 ($answer.hosts -is [bool] -and -not $answer.hosts -and $answer.route -is [bool] -and -not $answer.route -and
@@ -90,17 +94,17 @@ d.lookup('host.docker.internal',{all:true,verbatim:true},(e,a)=>{if(e||!a.length
         'com.hermes.h454.recovery' $Snapshot.Label $AgentId $Snapshot.Broker.Id $Snapshot.Bridge.Id 'bridge' $Snapshot.Plan.Cidr @($answer.addresses) $false
     $isolation="const n=require('node:net');const s=n.connect(38184,process.argv[2]);s.on('connect',()=>process.exit(2));s.on('error',e=>{if(!['ENETUNREACH','EHOSTUNREACH','ECONNREFUSED'].includes(e.code))process.exit(3);console.log('H454_DIRECT_UPSTREAM=REFUSED')});s.setTimeout(4000,()=>process.exit(4))"
     $encoded=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($isolation))
-    $direct=Invoke-H454RecoveryDocker -Arguments @('exec','--user','65534:65534',$AgentId,'node','-e',$bootstrap,$encoded,$Snapshot.HostAddress) -DockerSha256 $DockerSha256
+    $direct=Invoke-H454RouteProbe @('exec','--user','65534:65534',$AgentId,'node','-e',$bootstrap,$encoded,$Snapshot.HostAddress)
     Require-H454 ($direct.Code -eq 0 -and $direct.Output.Trim() -ceq 'H454_DIRECT_UPSTREAM=REFUSED') 'H454_RESTORE_DIRECT_ROUTE'
     $private=[string]$Snapshot.Broker.NetworkSettings.Networks.PSObject.Properties[$Snapshot.NetworkName].Value.IPAddress
     $upstream=[string]$Snapshot.Broker.NetworkSettings.Networks.bridge.IPAddress
     $closed="const n=require('node:net');const s=n.connect(38181,process.argv[2]);s.on('connect',()=>process.exit(2));s.on('error',e=>{if(e.code!=='ECONNREFUSED')process.exit(3);console.log('H454_STAGE_EXTERNAL=REFUSED')});s.setTimeout(4000,()=>process.exit(4))"
     $encoded=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($closed))
-    $agentCheck=Invoke-H454RecoveryDocker -Arguments @('exec','--user','65534:65534',$AgentId,'node','-e',$bootstrap,$encoded,$private) -DockerSha256 $DockerSha256
+    $agentCheck=Invoke-H454RouteProbe @('exec','--user','65534:65534',$AgentId,'node','-e',$bootstrap,$encoded,$private)
     Require-H454 ($agentCheck.Code -eq 0 -and $agentCheck.Output.Trim() -ceq 'H454_STAGE_EXTERNAL=REFUSED') 'H454_RESTORE_BROKER_EXPOSURE'
     $listeners="const n=require('node:net');async function c(h,p,yes){await new Promise((r,j)=>{const s=n.connect(p,h);s.on('connect',()=>{s.destroy();yes?r():j(0)});s.on('error',e=>!yes&&e.code==='ECONNREFUSED'?r():j(0));s.setTimeout(3000,()=>{s.destroy();j(0)})})} (async()=>{await c(process.argv[2],38180,true);await c(process.argv[3],38180,false);await c(process.argv[2],38181,false);await c(process.argv[3],38181,false);await c('127.0.0.1',38181,true);console.log('H454_BROKER_LISTENERS=PASS')})().catch(()=>process.exit(2))"
     $encoded=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($listeners))
-    $brokerCheck=Invoke-H454RecoveryDocker -Arguments @('exec','--user','65534:65534',$Snapshot.Broker.Id,'node','-e',$bootstrap,$encoded,$private,$upstream) -DockerSha256 $DockerSha256
+    $brokerCheck=Invoke-H454RouteProbe @('exec','--user','65534:65534',$Snapshot.Broker.Id,'node','-e',$bootstrap,$encoded,$private,$upstream)
     Require-H454 ($brokerCheck.Code -eq 0 -and $brokerCheck.Output.Trim() -ceq 'H454_BROKER_LISTENERS=PASS') 'H454_RESTORE_BROKER_EXPOSURE'
 }
 
@@ -111,10 +115,30 @@ function Restore-H454Original(
     [string]$VerifierPath,[string]$VerifierSha256,[byte[]]$TokenBytes=$null,[byte[]]$AgentBytes=$null,
     [switch]$Apply,[switch]$OwnerApproved,[switch]$RestageOnly,[switch]$AutoRecover,[scriptblock]$TrialMutation=$null
 ) {
+    $fenceState=[pscustomobject]@{Fence=$null}
     function Invoke-H454OriginalMutation([string[]]$Arguments,[byte[]]$InputBytes=$null) {
         if($null -ne $TrialMutation){return (& $TrialMutation $Arguments $InputBytes)}
+        if($null -eq $fenceState.Fence){
+            $fenceState.Fence=Open-H454MutationFence $StateDir $Lock 'original-restore' $MarkerSha256
+        }
         return (Invoke-H454RecoveryDocker -Arguments $Arguments -DockerSha256 $DockerSha256 -InputBytes $InputBytes)
     }
+    function Invoke-H454OriginalReadOnlyDocker([string[]]$Arguments,[byte[]]$InputBytes=$null) {
+        $temporary=$false
+        if($null -eq $TrialMutation -and $null -eq $fenceState.Fence){
+            $fenceState.Fence=Open-H454MutationFence $StateDir $Lock 'original-restore' $MarkerSha256
+            $temporary=$true
+        }
+        $result=Invoke-H454RecoveryDocker -Arguments $Arguments -DockerSha256 $DockerSha256 -InputBytes $InputBytes
+        # A nonzero CLI result can also mean a broken daemon connection. Keep
+        # the fence in that case, even when the caller later rejects the probe.
+        if($temporary -and $result.Code -eq 0){
+            Close-H454MutationFence $StateDir $Lock $fenceState.Fence
+            $fenceState.Fence=$null
+        }
+        return $result
+    }
+    $readOnlyProbe={param([string[]]$Arguments,[byte[]]$InputBytes) Invoke-H454OriginalReadOnlyDocker $Arguments $InputBytes}
     Require-H454 (-not $Apply -or $OwnerApproved) 'H454_RESTORE_APPROVAL'
     foreach($hash in @($MarkerSha256,$LauncherSha256,$CaSha256,$DockerSha256,$VerifierSha256)){
         Require-H454 ($hash -cmatch '^[A-F0-9]{64}$') 'H454_RESTORE_PINS'
@@ -128,6 +152,7 @@ function Restore-H454Original(
     Require-H454 ($verifierText.Length -gt 0 -and $verifierText.Length -le 8192) 'H454_RESTORE_VERIFIER'
     $stateArgs=@($StateDir,$Lock,$MarkerSha256,$SafetyCheck,$Launcher,$LauncherSha256,$AgentId,$AgentImage,$AgentName,
         $OldImage,$BrokerImage,$CaSha256,$DockerSha256)
+    if($Apply -and $null -eq $TrialMutation){Assert-H454MutationSettled $StateDir $Lock}
     $snapshot=Get-H454OriginalRestoreState @stateArgs
     Require-H454 (-not $AutoRecover -or ($Apply -and $OwnerApproved -and -not $RestageOnly -and
         $null -eq $TrialMutation -and $snapshot.OnPrivate -and -not $snapshot.OnBridge)) 'H454_RESTORE_AUTO_ROUTE'
@@ -147,10 +172,6 @@ function Restore-H454Original(
     Require-H454 ($agentCredential.deviceToken -ceq $surrogate) 'H454_RESTORE_CREDENTIAL'
     if($RestageOnly){
         Require-H454 ($snapshot.Agent.State.Running -and $snapshot.OnPrivate -and -not $snapshot.OnBridge) 'H454_RESTORE_MONITOR_STATE'
-    }
-    $mutationFence=$null
-    if($null -eq $TrialMutation){
-        $mutationFence=Open-H454MutationFence $StateDir $Lock 'original-restore' $MarkerSha256
     }
     if($snapshot.OnBridge -and -not $snapshot.OnPrivate){
         Require-H454 (-not $snapshot.Agent.State.Running) 'H454_RESTORE_RUNNING_ROUTE'
@@ -176,30 +197,30 @@ function Restore-H454Original(
         Require-H454 ($started.Code -eq 0) 'H454_RESTORE_START'
         $snapshot=Get-H454OriginalRestoreState @stateArgs
     }
-    Assert-H454OriginalLiveRoute $snapshot $AgentId $DockerSha256
+    Assert-H454OriginalLiveRoute $snapshot $AgentId $DockerSha256 $readOnlyProbe
     $bootstrap="eval(Buffer.from(process.argv[1],'base64').toString())"
     $verifier64=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($verifierText))
-    $verified=Invoke-H454RecoveryDocker -Arguments @('exec','--interactive','--user','65534:65534',$AgentId,'node','-e',$bootstrap,$verifier64) -DockerSha256 $DockerSha256 -InputBytes $AgentBytes
+    $verified=Invoke-H454OriginalReadOnlyDocker -Arguments @('exec','--interactive','--user','65534:65534',$AgentId,'node','-e',$bootstrap,$verifier64) -InputBytes $AgentBytes
     if($verified.Code -ne 0 -or $verified.Output -cne 'H454_STAGED_CREDENTIAL_MATCH'){
         Require-H454 (-not $RestageOnly) 'H454_RESTORE_STAGED_DRIFT'
         $empty="const f=require('node:fs');try{const d=f.lstatSync('/run/brc');if(!d.isDirectory()||d.isSymbolicLink()||d.uid!==65534||(d.mode&511)!==448)throw 0;for(const p of ['ready','device.json','config.json']){try{f.lstatSync('/run/brc/'+p);throw 0}catch(e){if(e.code!=='ENOENT')throw 0}}process.stdout.write('H454_STAGE_EMPTY')}catch{process.exit(2)}"
         $empty64=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($empty))
-        $emptyResult=Invoke-H454RecoveryDocker -Arguments @('exec','--user','65534:65534',$AgentId,'node','-e',$bootstrap,$empty64) -DockerSha256 $DockerSha256
+        $emptyResult=Invoke-H454OriginalReadOnlyDocker -Arguments @('exec','--user','65534:65534',$AgentId,'node','-e',$bootstrap,$empty64)
         Require-H454 ($emptyResult.Code -eq 0 -and $emptyResult.Output -ceq 'H454_STAGE_EMPTY') 'H454_RESTORE_STAGED_DRIFT'
         $snapshot=Get-H454OriginalRestoreState @stateArgs
-        Assert-H454OriginalLiveRoute $snapshot $AgentId $DockerSha256
+        Assert-H454OriginalLiveRoute $snapshot $AgentId $DockerSha256 $readOnlyProbe
         $stage=Invoke-H454OriginalMutation @('exec','--interactive','--user','65534:65534',$AgentId,'/bin/sh','/usr/local/bin/h15-stage.sh') $AgentBytes
         Require-H454 ($stage.Code -eq 0) 'H454_RESTORE_STAGE_AGENT'
-        $verified=Invoke-H454RecoveryDocker -Arguments @('exec','--interactive','--user','65534:65534',$AgentId,'node','-e',$bootstrap,$verifier64) -DockerSha256 $DockerSha256 -InputBytes $AgentBytes
+        $verified=Invoke-H454OriginalReadOnlyDocker -Arguments @('exec','--interactive','--user','65534:65534',$AgentId,'node','-e',$bootstrap,$verifier64) -InputBytes $AgentBytes
         Require-H454 ($verified.Code -eq 0 -and $verified.Output -ceq 'H454_STAGED_CREDENTIAL_MATCH') 'H454_RESTORE_STAGED_DRIFT'
     }
     $snapshot=Get-H454OriginalRestoreState @stateArgs
-    Assert-H454OriginalLiveRoute $snapshot $AgentId $DockerSha256
+    Assert-H454OriginalLiveRoute $snapshot $AgentId $DockerSha256 $readOnlyProbe
     Require-H454 ((Get-FileHash -LiteralPath $VerifierPath -Algorithm SHA256).Hash -ceq $VerifierSha256) 'H454_RESTORE_VERIFIER'
     $staged=Invoke-H454OriginalMutation @('exec','--interactive','--user','65534:65534',$snapshot.Broker.Id,'node','/opt/hermes-rollback/stage.cjs') $TokenBytes
     Require-H454 ($staged.Code -eq 0 -and $staged.Output -ceq 'H454_BROKER_TOKEN_STAGED') 'H454_RESTORE_STAGE_BROKER'
     $snapshot=Get-H454OriginalRestoreState @stateArgs
-    Assert-H454OriginalLiveRoute $snapshot $AgentId $DockerSha256
-    if($null -ne $mutationFence){Close-H454MutationFence $StateDir $Lock $mutationFence}
+    Assert-H454OriginalLiveRoute $snapshot $AgentId $DockerSha256 $readOnlyProbe
+    if($null -ne $fenceState.Fence){Close-H454MutationFence $StateDir $Lock $fenceState.Fence}
     return [pscustomobject]@{Status='ORIGINAL_STAGED';AgentId=$AgentId;BrokerId=$snapshot.Broker.Id}
 }

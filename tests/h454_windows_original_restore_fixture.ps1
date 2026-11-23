@@ -2,6 +2,7 @@
 param([Parameter(Mandatory=$true)][string]$Verifier)
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
+Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Utility\Microsoft.PowerShell.Utility.psd1') -ErrorAction Stop
 . (Join-Path $PSScriptRoot '..\scripts\h454_windows_secure_credential.ps1')
 . (Join-Path $PSScriptRoot '..\scripts\h454_windows_broker_credential.ps1')
 . (Join-Path $PSScriptRoot '..\scripts\h454_windows_original_restore.ps1')
@@ -31,6 +32,11 @@ $credential=Convert-H454BrokerCredential $raw $device
 $script:bridge=$true;$script:private=$false;$script:running=$false;$script:agentStaged=$false;$script:wrongStage=$false
 $script:events=@();$script:failEvent='';$script:failed=$false
 $script:mutationFenceActive=$false;$script:delayedStart=$false;$script:delayedStartPending=$false
+$script:failVerify=$false;$script:failAfterVerify=$false;$script:triggerStateFailure=$false
+$script:routeProbe=$false;$script:failRouteProbe=$false;$script:failRouteCheck=$false
+function Assert-H454MutationSettled([string]$StateDir,[IO.FileStream]$Lock) {
+    Require-H454 (-not $script:mutationFenceActive) 'H454_MUTATION_UNSETTLED'
+}
 function Open-H454MutationFence([string]$StateDir,[IO.FileStream]$Lock,[string]$Scope,[string]$MarkerSha256) {
     Require-H454 (-not $script:mutationFenceActive) 'H454_MUTATION_UNSETTLED'
     $script:mutationFenceActive=$true
@@ -44,14 +50,21 @@ function Reset-Fixture {
     $script:bridge=$true;$script:private=$false;$script:running=$false;$script:agentStaged=$false;$script:wrongStage=$false
     $script:events=@();$script:failEvent='';$script:failed=$false
     $script:mutationFenceActive=$false;$script:delayedStart=$false;$script:delayedStartPending=$false
+    $script:failVerify=$false;$script:failAfterVerify=$false;$script:triggerStateFailure=$false
+    $script:routeProbe=$false;$script:failRouteProbe=$false;$script:failRouteCheck=$false
 }
 function Get-H454OriginalRestoreState {
+    if($script:triggerStateFailure){throw 'FIXTURE_READ_ONLY_STATE_FAILURE'}
     return [pscustomobject]@{Agent=[pscustomobject]@{State=[pscustomobject]@{Running=$script:running}};
         Broker=[pscustomobject]@{Id=$brokerId};Plan=[pscustomobject]@{Id=('c'*64)};Bridge=[pscustomobject]@{Id=('d'*64)};
         OnBridge=$script:bridge;OnPrivate=$script:private}
 }
-function Assert-H454OriginalLiveRoute([object]$Snapshot,[string]$AgentId,[string]$DockerSha256){
+function Assert-H454OriginalLiveRoute([object]$Snapshot,[string]$AgentId,[string]$DockerSha256,[scriptblock]$ReadOnlyProbe=$null){
     Require-H454 ($Snapshot.Agent.State.Running -and $Snapshot.OnPrivate -and -not $Snapshot.OnBridge) 'FIXTURE_ROUTE'
+    if($script:routeProbe){
+        $null=& $ReadOnlyProbe @('exec','fixture-route-probe') $null
+        if($script:failRouteCheck){throw 'FIXTURE_READ_ONLY_ROUTE_FAILURE'}
+    }
 }
 function Invoke-H454RecoveryDocker {
     param([string[]]$Arguments,[string]$DockerSha256,[byte[]]$InputBytes=$null)
@@ -73,7 +86,12 @@ function Invoke-H454RecoveryDocker {
         $name='broker-stage';Require-H454 ([Text.Encoding]::UTF8.GetString($InputBytes) -ceq $token -and $script:agentStaged) 'FIXTURE_BROKER_SECRET'
         $out='H454_BROKER_TOKEN_STAGED'
     }elseif($op -ceq 'exec' -and $Arguments -ccontains '--interactive'){
+        if($script:failVerify){throw 'H454_DOCKER_AMBIGUOUS'}
         if($script:agentStaged -and -not $script:wrongStage){$out='H454_STAGED_CREDENTIAL_MATCH'}else{$code=2}
+        if($script:failAfterVerify){$script:triggerStateFailure=$true}
+    }elseif($op -ceq 'exec' -and $Arguments -ccontains 'fixture-route-probe'){
+        if($script:failRouteProbe){throw 'H454_DOCKER_AMBIGUOUS'}
+        $out='FIXTURE_ROUTE_OK'
     }elseif($op -ceq 'exec'){
         if($script:agentStaged -or $script:wrongStage){$code=2}else{$out='H454_STAGE_EMPTY'}
     }else{throw 'FIXTURE_UNEXPECTED_DOCKER'}
@@ -96,6 +114,33 @@ try{
     Require-H454 ($refused -and $script:events.Count -eq 0) 'FIXTURE_APPROVAL'
     $preview=Restore-H454Original @params
     Require-H454 ($preview.Status -ceq 'PREFLIGHT' -and $script:events.Count -eq 0) 'FIXTURE_PREVIEW'
+    foreach($failure in @('after-verify','after-route')){
+        Reset-Fixture;$script:bridge=$false;$script:private=$true;$script:running=$true;$script:agentStaged=$true
+        if($failure -ceq 'after-verify'){$script:failAfterVerify=$true}
+        else{$script:routeProbe=$true;$script:failRouteCheck=$true}
+        $refused=$false;try{$null=Restore-H454Original @params -Apply -OwnerApproved -AutoRecover}catch{$refused=$true}
+        Require-H454 ($refused -and -not $script:mutationFenceActive -and $script:events.Count -eq 0) 'FIXTURE_SETTLED_READ_ONLY_FENCE'
+        $script:failAfterVerify=$false;$script:triggerStateFailure=$false;$script:failRouteCheck=$false
+        $result=Restore-H454Original @params -Apply -OwnerApproved -AutoRecover
+        Require-H454 ($result.Status -ceq 'ORIGINAL_STAGED' -and -not $script:mutationFenceActive -and
+            ($script:events -join ',') -ceq 'broker-stage') 'FIXTURE_READ_ONLY_RETRY'
+    }
+    foreach($failure in @('verify','route')){
+        Reset-Fixture;$script:bridge=$false;$script:private=$true;$script:running=$true;$script:agentStaged=$true
+        if($failure -ceq 'verify'){$script:failVerify=$true}
+        else{$script:routeProbe=$true;$script:failRouteProbe=$true}
+        $reason='';try{$null=Restore-H454Original @params -Apply -OwnerApproved -AutoRecover}catch{$reason=$_.Exception.Message}
+        Require-H454 ($reason -ceq 'H454_DOCKER_AMBIGUOUS' -and $script:mutationFenceActive -and $script:events.Count -eq 0) 'FIXTURE_AMBIGUOUS_PROBE_FENCE'
+        $script:failVerify=$false;$script:failRouteProbe=$false
+        $reason='';try{$null=Restore-H454Original @params -Apply -OwnerApproved -AutoRecover}catch{$reason=$_.Exception.Message}
+        Require-H454 ($reason -ceq 'H454_MUTATION_UNSETTLED' -and $script:events.Count -eq 0) 'FIXTURE_AMBIGUOUS_PROBE_REPLAY'
+    }
+    Reset-Fixture;$script:bridge=$false;$script:private=$true;$script:running=$false;$script:agentStaged=$true
+    $script:routeProbe=$true;$script:failRouteCheck=$true
+    $reason='';try{$null=Restore-H454Original @params -Apply -OwnerApproved -AutoRecover}catch{$reason=$_.Exception.Message}
+    Require-H454 ($reason -ceq 'FIXTURE_READ_ONLY_ROUTE_FAILURE' -and $script:mutationFenceActive -and
+        ($script:events -join ',') -ceq 'start') 'FIXTURE_POST_MUTATION_FENCE'
+    'PS51_SYNTHETIC_READ_ONLY_FENCES=PASS'
     foreach($mode in @('direct','trial')){
         if($mode -ceq 'trial'){
             $params.TrialMutation={
@@ -148,7 +193,8 @@ try{
     'PS51_SYNTHETIC_ORIGINAL_RESTORE_DELAYED_DOCKER=PASS'
     Reset-Fixture;$script:bridge=$false;$script:private=$true;$script:running=$true;$script:wrongStage=$true
     $refused=$false;try{$null=Restore-H454Original @params -Apply -OwnerApproved}catch{$refused=$true}
-    Require-H454 ($refused -and $script:events -cnotcontains 'agent-stage' -and $script:events -cnotcontains 'broker-stage') 'FIXTURE_STAGED_DRIFT'
+    Require-H454 ($refused -and $script:mutationFenceActive -and $script:events -cnotcontains 'agent-stage' -and
+        $script:events -cnotcontains 'broker-stage') 'FIXTURE_STAGED_DRIFT'
     Reset-Fixture;$refused=$false
     try{$null=Restore-H454Original @params -Apply -OwnerApproved -RestageOnly}catch{$refused=$true}
     Require-H454 ($refused -and $script:events.Count -eq 0) 'FIXTURE_MONITOR_STOPPED'

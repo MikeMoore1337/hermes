@@ -27,6 +27,7 @@ on:
       - tests/h454_windows_trial_route_fixture.ps1
       - scripts/h454_verify_staged.cjs
       - tests/h454_windows_original_restore_fixture.ps1
+      - tests/h454_windows_route_probe_fixture.ps1
       - scripts/h454_windows_recovery_docker.ps1
       - scripts/h454_windows_recovery_route.ps1
       - scripts/h454_windows_broker_route.ps1
@@ -101,6 +102,7 @@ on:
       - tests/h454_windows_trial_route_fixture.ps1
       - scripts/h454_verify_staged.cjs
       - tests/h454_windows_original_restore_fixture.ps1
+      - tests/h454_windows_route_probe_fixture.ps1
       - scripts/h454_windows_recovery_docker.ps1
       - scripts/h454_windows_recovery_route.ps1
       - scripts/h454_windows_broker_route.ps1
@@ -233,6 +235,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'H454_NO_CONSOLE_TEST_FAILED' }
           & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests/h454_windows_original_restore_fixture.ps1 -Verifier (Resolve-Path scripts/h454_verify_staged.cjs).Path
           if ($LASTEXITCODE -ne 0) { throw 'H454_ORIGINAL_RESTORE_TEST_FAILED' }
+          & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests/h454_windows_route_probe_fixture.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'H454_ROUTE_PROBE_TEST_FAILED' }
           & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests/h454_windows_candidate_prepare_fixture.ps1
           if ($LASTEXITCODE -ne 0) { throw 'H454_CANDIDATE_PREPARE_TEST_FAILED' }
           & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests/h454_windows_broker_trial_fixture.ps1 -FixtureParent $env:RUNNER_TEMP -Verifier (Resolve-Path scripts/h454_verify_staged.cjs).Path
