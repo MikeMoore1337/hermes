@@ -75,6 +75,12 @@ class WindowsSearchTests(unittest.TestCase):
         self.assertTrue(result["truncated"])
         read.assert_called_once()
 
+    def test_content_matches_stop_at_budget(self):
+        (self.code / "many.py").write_text("needle\n" * (search.MAX_MATCHES + 3), encoding="utf-8")
+        result = search.search("hermes", "needle", mode="content", relative_root="src")
+        self.assertTrue(result["truncated"])
+        self.assertEqual(len(result["matches"]), search.MAX_MATCHES)
+
     def test_ancestor_cannot_be_renamed_during_content_read(self):
         original = native.handle_native_request
         moved = self.root.with_name("moved-code")
@@ -108,3 +114,15 @@ class WindowsSearchTests(unittest.TestCase):
                 "truncated": False, "entries_scanned": 1, "bytes_scanned": 0}
         with self.assertRaises(mcp.ProtocolRefused):
             mcp._sanitized_search(fake, "hermes", "src", "names")
+
+    def test_search_shares_mcp_read_budget(self):
+        session = mcp.McpSession()
+        session.initialized = True
+        session.read_calls = mcp.MAX_READS
+        request = {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {
+            "name": "native_file_search", "arguments": {"project": "hermes", "query": "safe",
+            "mode": "names", "relative_root": ""}}}
+        with patch.object(search, "search") as invoke:
+            response = session.handle(request)
+        self.assertTrue(response["result"]["isError"])
+        invoke.assert_not_called()
