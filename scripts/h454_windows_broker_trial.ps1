@@ -12,6 +12,99 @@ function Assert-H454BrokerTrialMarker([hashtable]$RestoreArgs,[string]$Candidate
     Assert-H454WssTaskFile (Join-Path $RestoreArgs.StateDir 'h454-broker-trial.pending') (Hash-H454Bytes $bytes) 4096
 }
 
+function Get-H454CandidatePromotionMarker([hashtable]$RestoreArgs,[string]$CandidateId,[string]$CandidateImage) {
+    $null=Get-H454BrokerTrialMarker $RestoreArgs $CandidateId $CandidateImage
+    return [Text.UTF8Encoding]::new($false).GetBytes("H454-CANDIDATE-PROMOTION-1`n$($RestoreArgs.AgentId)`n$CandidateId`n$CandidateImage`n$($RestoreArgs.MarkerSha256)`n")
+}
+
+function Assert-H454CandidatePromotionMarker([hashtable]$RestoreArgs,[string]$CandidateId,[string]$CandidateImage) {
+    Assert-H454RecoveryLock $RestoreArgs.StateDir $RestoreArgs.Lock
+    $bytes=Get-H454CandidatePromotionMarker $RestoreArgs $CandidateId $CandidateImage
+    Assert-H454WssTaskFile (Join-Path $RestoreArgs.StateDir 'h454-candidate-promotion.pending') (Hash-H454Bytes $bytes) 4096
+}
+
+function Enable-H454CandidatePromotion([hashtable]$RestoreArgs,[string]$CandidateId,[string]$CandidateImage,
+    [switch]$CandidateMcpObserved,[switch]$Apply,[switch]$OwnerApproved) {
+    Require-H454 (-not $Apply -or ($OwnerApproved -and $CandidateMcpObserved)) 'H454_PROMOTION_MCP_ACKNOWLEDGMENT'
+    Assert-H454BrokerTrialMarker $RestoreArgs $CandidateId $CandidateImage
+    Assert-H454BrokerTrialSettled $RestoreArgs
+    $state=Get-H454BrokerTrialState $RestoreArgs $CandidateId $CandidateImage -Pending
+    Require-H454 (-not $state.Original.Agent.State.Running -and $state.Original.OnBridge -and
+        -not $state.Original.OnPrivate -and $state.Candidate.State.Running -and
+        $state.OnPrivate -and -not $state.OnBridge) 'H454_PROMOTION_STATE'
+    if(-not $Apply){return [pscustomobject]@{Status='PROMOTION_PREFLIGHT';CandidateId=$CandidateId}}
+    $path=Join-Path $RestoreArgs.StateDir 'h454-candidate-promotion.pending'
+    if(Test-Path -LiteralPath $path){
+        Assert-H454CandidatePromotionMarker $RestoreArgs $CandidateId $CandidateImage
+    }else{
+        $bytes=Get-H454CandidatePromotionMarker $RestoreArgs $CandidateId $CandidateImage
+        $stream=[IO.FileStream]::new($path,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None,4096,[IO.FileOptions]::WriteThrough)
+        try{$stream.Write($bytes,0,$bytes.Length);$stream.Flush($true)}finally{$stream.Dispose()}
+        Assert-H454CandidatePromotionMarker $RestoreArgs $CandidateId $CandidateImage
+    }
+    return [pscustomobject]@{Status='CANDIDATE_PROMOTION_RECORDED';CandidateId=$CandidateId}
+}
+
+function Assert-H454OriginalAutoRecoveryTask([hashtable]$RestoreArgs) {
+    $task=Get-ScheduledTask -TaskName 'HermesH454BrokerAutoRecover' -TaskPath '\' -ErrorAction Stop
+    Require-H454 ([string]$task.State -cin @('Ready','Running') -and @($task.Actions).Count -eq 1 -and
+        @($task.Triggers).Count -eq 2 -and $task.Settings.Enabled -and
+        [string]$task.Principal.LogonType -ceq 'Interactive' -and [string]$task.Principal.RunLevel -ceq 'Limited' -and
+        (Get-H454WssTaskSid ([string]$task.Principal.UserId)) -ceq [Security.Principal.WindowsIdentity]::GetCurrent().User.Value) 'H454_PROMOTION_TASK'
+    $exe=[string]$task.Actions[0].Execute;$dir=[IO.Path]::GetDirectoryName($exe)
+    $guard=Join-Path $dir 'h454_windows_guard_operator.ps1';$restore=Join-Path $dir 'h454_windows_original_restore.ps1'
+    Require-H454 ([IO.Path]::GetDirectoryName($dir) -ieq [Environment]::GetFolderPath('LocalApplicationData') -and
+        [IO.Path]::GetFileName($dir) -cmatch '^HermesH454AutoRecovery-bedadf9863ec-[a-f0-9]{32}$' -and
+        [IO.Path]::GetFileName($exe) -ceq 'h454_windows_no_console.exe' -and
+        [string]::IsNullOrEmpty([string]$task.Actions[0].WorkingDirectory)) 'H454_PROMOTION_TASK'
+    foreach($path in @($dir,$exe,$guard,$restore)){Assert-H454PrivateAcl $path}
+    Require-H454 ((Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash -ceq '6DB1C1EA111DFD9B8980285CE3C963B7907C1F0F34FEE70184E53050587319FE' -and
+        (Get-FileHash -LiteralPath $guard -Algorithm SHA256).Hash -ceq 'D2F32981125858E1E3A4EBD38ED32C0721E0722FB4164CE4C5130E354819D9B6' -and
+        (Get-FileHash -LiteralPath $restore -Algorithm SHA256).Hash -ceq 'A449810666C4D2C21848FDC0F2189BF9B778C710EC007BF7D13178C298CB8F30') 'H454_PROMOTION_TASK'
+    $text=[Text.UTF8Encoding]::new($false,$true).GetString([Convert]::FromBase64String([string]$task.Actions[0].Arguments))
+    $prefix='-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "'+$guard+'"'
+    $suffix=' -RestoreOriginal -AutoRecover -Apply -OwnerApproved'
+    Require-H454 ($text.StartsWith($prefix,[StringComparison]::Ordinal) -and $text.EndsWith($suffix,[StringComparison]::Ordinal)) 'H454_PROMOTION_TASK'
+    $middle=$text.Substring($prefix.Length,$text.Length-$prefix.Length-$suffix.Length)
+    $names=@('OriginalLauncherSha256','GuardedLauncherSha256','BackupName','TaskBackupName','TaskBackupSha256',
+        'TaskSourceSha256','RecoverySourceSha256','OriginalProfileSourceSha256','RecoveryDockerSourceSha256',
+        'DockerSha256','RecoveryRouteSourceSha256','NetworkGuardSourceSha256','ProxyImageId','BrokerImageId',
+        'WssConfigSha256','SupervisorSha256','CaSha256','CurlSha256','RestoreSourceSha256',
+        'SecureCredentialSourceSha256','BrokerCredentialSourceSha256','VerifierSourceSha256','GuardOperatorSourceSha256')
+    $parsed=@{};$rebuilt=''
+    foreach($m in [regex]::Matches($middle,' -([A-Za-z0-9]+) ([A-Za-z0-9_.:-]+)')){
+        $key=$m.Groups[1].Value;$value=$m.Groups[2].Value
+        Require-H454 ($key -cin $names -and -not $parsed.ContainsKey($key)) 'H454_PROMOTION_TASK'
+        if($key -ceq 'BackupName'){Require-H454 ($value -cmatch '^h454-original-launcher-[a-f0-9]{32}\.txt$') 'H454_PROMOTION_TASK'}
+        elseif($key -ceq 'TaskBackupName'){Require-H454 ($value -cmatch '^h454-legacy-task-[a-f0-9]{32}\.xml$') 'H454_PROMOTION_TASK'}
+        elseif($key -cin @('ProxyImageId','BrokerImageId')){Require-H454 ($value -cmatch '^sha256:[a-f0-9]{64}$') 'H454_PROMOTION_TASK'}
+        else{Require-H454 ($value -cmatch '^[A-F0-9]{64}$') 'H454_PROMOTION_TASK'}
+        $parsed[$key]=$value;$rebuilt+=$m.Value
+    }
+    Require-H454 ($parsed.Count -eq $names.Count -and $rebuilt -ceq $middle -and
+        $parsed.GuardOperatorSourceSha256 -ceq 'D2F32981125858E1E3A4EBD38ED32C0721E0722FB4164CE4C5130E354819D9B6' -and
+        $parsed.RestoreSourceSha256 -ceq 'A449810666C4D2C21848FDC0F2189BF9B778C710EC007BF7D13178C298CB8F30' -and
+        $parsed.OriginalLauncherSha256 -ceq $RestoreArgs.LauncherSha256 -and $parsed.DockerSha256 -ceq $RestoreArgs.DockerSha256) 'H454_PROMOTION_TASK'
+}
+
+function Disable-H454CandidatePromotion([hashtable]$RestoreArgs,[string]$CandidateId,[string]$CandidateImage,
+    [switch]$OriginalMcpObserved,[switch]$Apply,[switch]$OwnerApproved) {
+    Require-H454 (-not $Apply -or ($OwnerApproved -and $OriginalMcpObserved)) 'H454_PROMOTION_MCP_ACKNOWLEDGMENT'
+    Assert-H454BrokerTrialMarker $RestoreArgs $CandidateId $CandidateImage
+    Assert-H454CandidatePromotionMarker $RestoreArgs $CandidateId $CandidateImage
+    Assert-H454BrokerTrialSettled $RestoreArgs
+    $state=Get-H454BrokerTrialState $RestoreArgs $CandidateId $CandidateImage -Pending
+    Require-H454 ($state.Original.Agent.State.Running -and $state.Original.OnPrivate -and -not $state.Original.OnBridge -and
+        -not $state.Candidate.State.Running -and $state.OnBridge -and -not $state.OnPrivate) 'H454_PROMOTION_RESTORE_STATE'
+    Assert-H454OriginalAutoRecoveryTask $RestoreArgs
+    if(-not $Apply){return [pscustomobject]@{Status='DEMOTION_PREFLIGHT';CandidateId=$CandidateId}}
+    $path=Join-Path $RestoreArgs.StateDir 'h454-candidate-promotion.pending'
+    Assert-H454CandidatePromotionMarker $RestoreArgs $CandidateId $CandidateImage
+    [IO.File]::Delete($path)
+    Require-H454 (-not (Test-Path -LiteralPath $path)) 'H454_PROMOTION_ACTIVE'
+    return [pscustomobject]@{Status='CANDIDATE_PROMOTION_CLEARED';CandidateId=$CandidateId}
+}
+
 function Find-H454BrokerTrialCandidate([string]$CandidateId,[string]$DockerSha256) {
     Require-H454 ($CandidateId -cmatch '^[a-f0-9]{64}$') 'H454_TRIAL_IDENTITY'
     $candidateMatches=@(foreach($name in @('hermes-h454-broker-candidate','hermes-h454-process-candidate')){
@@ -471,6 +564,65 @@ function Start-H454BrokerTrial([hashtable]$RestoreArgs,[string]$CandidateId,[str
     return [pscustomobject]@{Status='CANDIDATE_STAGED_MCP_REQUIRED';CandidateId=$CandidateId}
 }
 
+function Maintain-H454BrokerCandidate([hashtable]$RestoreArgs,[string]$CandidateId,[string]$CandidateImage,
+    [byte[]]$TokenBytes=$null,[byte[]]$AgentBytes=$null,[switch]$Apply,[switch]$OwnerApproved) {
+    Require-H454 (-not $Apply -or $OwnerApproved) 'H454_TRIAL_APPROVAL'
+    Assert-H454BrokerTrialMarker $RestoreArgs $CandidateId $CandidateImage
+    Assert-H454CandidatePromotionMarker $RestoreArgs $CandidateId $CandidateImage
+    if($Apply){$null=Resolve-H454TrialRecordedOperation $RestoreArgs $CandidateId $CandidateImage}
+    Assert-H454BrokerTrialSettled $RestoreArgs
+    $state=Get-H454BrokerTrialState $RestoreArgs $CandidateId $CandidateImage -Pending
+    Require-H454 (-not $state.Original.Agent.State.Running -and $state.Original.OnBridge -and
+        -not $state.Original.OnPrivate -and $state.OnPrivate -and -not $state.OnBridge) 'H454_TRIAL_MAINTAIN_ROUTE'
+    if(-not $Apply){return [pscustomobject]@{Status='MAINTAIN_PREFLIGHT';CandidateRunning=$state.Candidate.State.Running}}
+    Assert-H454BrokerTrialCredential $RestoreArgs $TokenBytes $AgentBytes
+    $verifier=Read-H454PinnedBytes $RestoreArgs.VerifierPath $RestoreArgs.VerifierSha256
+    if(-not $state.Candidate.State.Running){
+        $null=Invoke-H454BrokerTrialDocker $RestoreArgs @('start',$CandidateId) -CandidateId $CandidateId -CandidateImage $CandidateImage
+        $state=Get-H454BrokerTrialState $RestoreArgs $CandidateId $CandidateImage -Pending
+    }
+    Require-H454 ($state.Candidate.State.Running -and $state.OnPrivate -and -not $state.OnBridge -and
+        -not $state.Original.Agent.State.Running) 'H454_TRIAL_MAINTAIN_STATE'
+    $bootstrap="eval(Buffer.from(process.argv[1],'base64').toString())"
+    $inspect=@'
+const f=require('node:fs');
+try{
+  const d=f.lstatSync('/run/brc',{bigint:true});
+  if(!d.isDirectory()||d.isSymbolicLink()||d.uid!==65534n||(d.mode&511n)!==448n)throw 0;
+  const files={};
+  for(const n of ['ready','device.json','config.json']){
+    try{
+      const s=f.lstatSync('/run/brc/'+n,{bigint:true});
+      if(!s.isFile()||s.isSymbolicLink()||s.uid!==65534n||s.gid!==65534n||(s.mode&511n)!==384n||s.nlink!==1n)throw 0;
+      files[n]=s;
+    }catch(e){if(e.code!=='ENOENT')throw 0}
+  }
+  if(Object.keys(files).length===0){process.stdout.write('H454_STAGE_EMPTY');process.exit(0)}
+  if(Object.keys(files).length!==3||files['config.json'].size>4096n)throw 0;
+  const fd=f.openSync('/run/brc/config.json',f.constants.O_RDONLY|f.constants.O_NOFOLLOW);
+  const before=f.fstatSync(fd,{bigint:true});const contents=f.readFileSync(fd,'utf8');const after=f.fstatSync(fd,{bigint:true});f.closeSync(fd);
+  const original=files['config.json'];
+  if(before.dev!==original.dev||before.ino!==original.ino||before.size!==original.size||before.mtimeNs!==original.mtimeNs||before.ctimeNs!==original.ctimeNs||
+     after.dev!==before.dev||after.ino!==before.ino||after.size!==before.size||after.mtimeNs!==before.mtimeNs||after.ctimeNs!==before.ctimeNs||after.nlink!==1n||
+     contents!=='{"allowedDirectories":["/workspace"],"telemetryEnabled":false}\n')throw 0;
+  process.stdout.write('H454_STAGE_PRESENT');
+}catch{process.exit(2)}
+'@
+    $inspect64=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($inspect))
+    $stage=Invoke-H454BrokerTrialDocker $RestoreArgs @('exec','--user','65534:65534',$CandidateId,'node','-e',$bootstrap,$inspect64)
+    Require-H454 ($stage -cin @('H454_STAGE_EMPTY','H454_STAGE_PRESENT')) 'H454_TRIAL_STAGE_DRIFT'
+    if($stage -ceq 'H454_STAGE_EMPTY'){
+        $null=Invoke-H454BrokerTrialDocker $RestoreArgs @('exec','--interactive','--user','65534:65534',$CandidateId,'/bin/sh','/usr/local/bin/h15-stage.sh') $AgentBytes -CandidateId $CandidateId -CandidateImage $CandidateImage
+    }
+    $verifier64=[Convert]::ToBase64String($verifier)
+    Require-H454 ((Invoke-H454BrokerTrialDocker $RestoreArgs @('exec','--interactive','--user','65534:65534',$CandidateId,'node','-e',$bootstrap,$verifier64) $AgentBytes) -ceq 'H454_STAGED_CREDENTIAL_MATCH') 'H454_TRIAL_STAGE_VERIFY'
+    $state=Get-H454BrokerTrialState $RestoreArgs $CandidateId $CandidateImage -Pending
+    Require-H454 ((Get-FileHash -LiteralPath $RestoreArgs.VerifierPath -Algorithm SHA256).Hash -ceq $RestoreArgs.VerifierSha256) 'H454_TRIAL_VERIFIER'
+    Require-H454 ((Invoke-H454BrokerTrialDocker $RestoreArgs @('exec','--interactive','--user','65534:65534',$state.Original.Broker.Id,'node','/opt/hermes-rollback/stage.cjs') $TokenBytes -CandidateId $CandidateId -CandidateImage $CandidateImage -BrokerId $state.Original.Broker.Id) -ceq 'H454_BROKER_TOKEN_STAGED') 'H454_TRIAL_STAGE_BROKER'
+    $null=Get-H454BrokerTrialState $RestoreArgs $CandidateId $CandidateImage -Pending
+    return [pscustomobject]@{Status='CANDIDATE_MAINTAINED';CandidateId=$CandidateId}
+}
+
 function New-H454TrialRestoreMutation {
     # The callback runs synchronously within the recovery call that holds the pinned IDs.
     return {
@@ -518,6 +670,7 @@ function Complete-H454BrokerTrial([hashtable]$RestoreArgs,[string]$CandidateId,[
     [byte[]]$TokenBytes=$null,[byte[]]$AgentBytes=$null,[switch]$OriginalMcpObserved,[switch]$Apply,[switch]$OwnerApproved) {
     Require-H454 (-not $Apply -or ($OwnerApproved -and $OriginalMcpObserved)) 'H454_TRIAL_MCP_ACKNOWLEDGMENT'
     Assert-H454BrokerTrialMarker $RestoreArgs $CandidateId $CandidateImage
+    Require-H454 (-not (Test-Path -LiteralPath (Join-Path $RestoreArgs.StateDir 'h454-candidate-promotion.pending'))) 'H454_PROMOTION_ACTIVE'
     if($Apply){$null=Resolve-H454TrialRecordedOperation $RestoreArgs $CandidateId $CandidateImage}
     Assert-H454BrokerTrialSettled $RestoreArgs
     $state=Get-H454BrokerTrialState $RestoreArgs $CandidateId $CandidateImage -Pending

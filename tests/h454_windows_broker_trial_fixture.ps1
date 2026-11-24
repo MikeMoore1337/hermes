@@ -37,6 +37,9 @@ function Read-H454PinnedBytes([string]$Path,[string]$Hash){
     Require-H454 ((Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash -ceq $Hash) 'FIXTURE_VERIFIER'
     return ,[IO.File]::ReadAllBytes($Path)
 }
+function Assert-H454OriginalAutoRecoveryTask([hashtable]$RestoreArgs){
+    Require-H454 $script:originalTaskSafe 'H454_PROMOTION_TASK'
+}
 $script:originalId='a'*64;$script:candidateId='b'*64;$script:candidateImage='sha256:'+('c'*64)
 $script:bridgeId='d'*64;$script:privateId='e'*64;$script:brokerId='f'*64
 $script:events=@();$script:failure='';$script:failed=$false
@@ -44,6 +47,8 @@ function Reset-Fixture {
     $script:originalRunning=$true;$script:originalBridge=$false;$script:originalPrivate=$true
     $script:originalStaged=$true
     $script:candidateRunning=$false;$script:candidateStatus='created';$script:candidateBridge=$true;$script:candidatePrivate=$false
+    $script:candidateStaged=$false;$script:corruptStage=$false
+    $script:originalTaskSafe=$false
     $script:events=@();$script:failure='';$script:failed=$false
 }
 function Get-H454BrokerTrialState([hashtable]$RestoreArgs,[string]$CandidateId,[string]$CandidateImage,[switch]$Pending){
@@ -74,14 +79,18 @@ function Invoke-H454RecoveryDocker([string[]]$Arguments,[string]$DockerSha256,[b
         elseif($id -ceq $script:candidateId -and $network -ceq $script:privateId -and $op -ceq 'disconnect'){$event='candidate-disconnect-private';$script:candidatePrivate=$false}
         else{throw 'FIXTURE_NETWORK_OPERATION'}
     }elseif($Arguments[0] -ceq 'start' -and $Arguments[1] -ceq $script:originalId){$event='start-original';$script:originalRunning=$true}
-    elseif($Arguments[0] -ceq 'start' -and $Arguments[1] -ceq $script:candidateId){$event='start-candidate';$script:candidateRunning=$true;$script:candidateStatus='running'}
+    elseif($Arguments[0] -ceq 'start' -and $Arguments[1] -ceq $script:candidateId){$event='start-candidate';$script:candidateRunning=$true;$script:candidateStatus='running';$script:candidateStaged=$false}
     elseif($Arguments[0] -ceq 'exec' -and $Arguments -ccontains '/usr/local/bin/h15-stage.sh'){
-        $event=if($Arguments -ccontains $script:originalId){$script:originalStaged=$true;'stage-original'}else{'stage-candidate'}
+        $event=if($Arguments -ccontains $script:originalId){$script:originalStaged=$true;'stage-original'}else{$script:candidateStaged=$true;'stage-candidate'}
         Require-H454 ([Text.Encoding]::UTF8.GetString($InputBytes) -cnotmatch ('brc_dev_'+('a'*43))) 'FIXTURE_AGENT_SECRET'
     }elseif($Arguments[0] -ceq 'exec' -and $Arguments -ccontains '/opt/hermes-rollback/stage.cjs'){
         $event='stage-broker';Require-H454 ([Text.Encoding]::UTF8.GetString($InputBytes) -ceq ('brc_dev_'+('a'*43))) 'FIXTURE_BROKER_SECRET';$output='H454_BROKER_TOKEN_STAGED'
-    }elseif($Arguments[0] -ceq 'exec' -and $Arguments -ccontains '--interactive'){$event='verify-candidate';$output='H454_STAGED_CREDENTIAL_MATCH'}
-    elseif($Arguments[0] -ceq 'exec'){$event='verify-empty';$output='H454_STAGE_EMPTY'}
+    }elseif($Arguments[0] -ceq 'exec' -and $Arguments -ccontains '--interactive'){
+        $event='verify-candidate';Require-H454 $script:candidateStaged 'FIXTURE_CANDIDATE_NOT_STAGED';$output='H454_STAGED_CREDENTIAL_MATCH'
+    }elseif($Arguments[0] -ceq 'exec'){
+        $event='verify-empty';Require-H454 (-not $script:corruptStage) 'FIXTURE_CORRUPT_STAGE'
+        $output=if($script:candidateStaged){'H454_STAGE_PRESENT'}else{'H454_STAGE_EMPTY'}
+    }
     else{throw 'FIXTURE_DOCKER_OPERATION'}
     $script:events+=@($event)
     if($event -ceq $script:failure -and -not $script:failed){$script:failed=$true;throw 'H454_DOCKER_AMBIGUOUS'}
@@ -142,7 +151,7 @@ try{
     . ([scriptblock]::Create($enumerator[0].Extent.Text))
     $gateBlock=[scriptblock]::Create($gate[0].Extent.Text);$state=$dir;$trial=$false
     & $gateBlock
-    foreach($name in @('H454-BROKER-TRIAL.PENDING','h454-broker-trial.inflight')){
+    foreach($name in @('H454-BROKER-TRIAL.PENDING','h454-broker-trial.inflight','H454-CANDIDATE-PROMOTION.PENDING')){
         $entry=Join-Path $dir $name
         [IO.File]::WriteAllText($entry,'interrupted')
         try{
@@ -168,6 +177,73 @@ try{
         VerifierPath=$Verifier;VerifierSha256=(Get-FileHash -LiteralPath $Verifier -Algorithm SHA256).Hash}
     $start=@{RestoreArgs=$args;CandidateId=$script:candidateId;CandidateImage=$script:candidateImage;
         TokenBytes=$credential.TokenBytes;AgentBytes=$credential.AgentBytes;WindowStartUtc=[DateTime]::UtcNow.AddMinutes(-1);WindowEndUtc=[DateTime]::UtcNow.AddMinutes(10)}
+    $maintain=@{RestoreArgs=$args;CandidateId=$script:candidateId;CandidateImage=$script:candidateImage;
+        TokenBytes=$credential.TokenBytes;AgentBytes=$credential.AgentBytes}
+    Reset-Fixture;$script:originalRunning=$false;$script:originalBridge=$true;$script:originalPrivate=$false
+    $script:candidateRunning=$false;$script:candidateStatus='exited';$script:candidateBridge=$false;$script:candidatePrivate=$true
+    $pendingPath=Join-Path $dir 'h454-broker-trial.pending'
+    [IO.File]::WriteAllBytes($pendingPath,(Get-H454BrokerTrialMarker $args $script:candidateId $script:candidateImage))
+    $refused=$false;try{$null=Maintain-H454BrokerCandidate @maintain}catch{$refused=$true}
+    Require-H454 ($refused -and $script:events.Count -eq 0) 'FIXTURE_MAINTAIN_REQUIRES_PROMOTION'
+    $script:candidateRunning=$true;$script:candidateStatus='running';$script:candidateStaged=$true
+    $preview=Enable-H454CandidatePromotion $args $script:candidateId $script:candidateImage
+    Require-H454 ($preview.Status -ceq 'PROMOTION_PREFLIGHT') 'FIXTURE_PROMOTION_PREVIEW'
+    $refused=$false;try{$null=Enable-H454CandidatePromotion $args $script:candidateId $script:candidateImage -Apply -OwnerApproved}catch{$refused=$true}
+    Require-H454 ($refused -and -not (Test-Path -LiteralPath (Join-Path $dir 'h454-candidate-promotion.pending'))) 'FIXTURE_PROMOTION_MCP_REQUIRED'
+    $promoted=Enable-H454CandidatePromotion $args $script:candidateId $script:candidateImage -Apply -OwnerApproved -CandidateMcpObserved
+    Require-H454 ($promoted.Status -ceq 'CANDIDATE_PROMOTION_RECORDED') 'FIXTURE_PROMOTION_RECORD'
+    $promoted=Enable-H454CandidatePromotion $args $script:candidateId $script:candidateImage -Apply -OwnerApproved -CandidateMcpObserved
+    Require-H454 ($promoted.Status -ceq 'CANDIDATE_PROMOTION_RECORDED') 'FIXTURE_PROMOTION_IDEMPOTENT'
+    $script:candidateRunning=$false;$script:candidateStatus='exited';$script:candidateStaged=$false
+    $preview=Maintain-H454BrokerCandidate @maintain
+    Require-H454 ($preview.Status -ceq 'MAINTAIN_PREFLIGHT' -and $script:events.Count -eq 0) 'FIXTURE_MAINTAIN_PREVIEW'
+    $maintained=Maintain-H454BrokerCandidate @maintain -Apply -OwnerApproved
+    Require-H454 ($maintained.Status -ceq 'CANDIDATE_MAINTAINED' -and $script:candidateRunning -and
+        -not $script:originalRunning -and ($script:events -join ',') -ceq 'start-candidate,verify-empty,stage-candidate,verify-candidate,stage-broker') 'FIXTURE_MAINTAIN_RESTART'
+    $script:events=@()
+    $maintained=Maintain-H454BrokerCandidate @maintain -Apply -OwnerApproved
+    Require-H454 ($maintained.Status -ceq 'CANDIDATE_MAINTAINED' -and
+        ($script:events -join ',') -ceq 'verify-empty,verify-candidate,stage-broker') 'FIXTURE_MAINTAIN_IDEMPOTENT'
+    $script:events=@();$refused=$false
+    try{$null=Maintain-H454BrokerCandidate @maintain -Apply}catch{$refused=$true}
+    Require-H454 ($refused -and $script:events.Count -eq 0) 'FIXTURE_MAINTAIN_APPROVAL'
+    $script:originalRunning=$true;$script:originalPrivate=$true;$script:originalBridge=$false;$refused=$false
+    try{$null=Maintain-H454BrokerCandidate @maintain -Apply -OwnerApproved}catch{$refused=$true}
+    Require-H454 ($refused -and $script:events.Count -eq 0) 'FIXTURE_MAINTAIN_TWO_AGENTS'
+    $script:originalRunning=$false;$script:originalPrivate=$false;$script:originalBridge=$true
+    $script:corruptStage=$true;$refused=$false
+    try{$null=Maintain-H454BrokerCandidate @maintain -Apply -OwnerApproved}catch{$refused=$true}
+    Require-H454 ($refused -and (Test-Path -LiteralPath (Join-Path $dir 'h454-broker-trial.inflight')) -and
+        $script:events -cnotcontains 'stage-candidate' -and $script:events -cnotcontains 'stage-broker') 'FIXTURE_MAINTAIN_PARTIAL_STAGE'
+    $script:corruptStage=$false;$refused=$false
+    try{$null=Maintain-H454BrokerCandidate @maintain -Apply -OwnerApproved}catch{$refused=$true}
+    Require-H454 $refused 'FIXTURE_MAINTAIN_PARTIAL_REPLAY'
+    [IO.File]::Delete((Join-Path $dir 'h454-broker-trial.inflight'))
+    $script:candidateRunning=$false;$script:candidateStatus='exited';$script:candidateStaged=$false
+    $script:failure='start-candidate';$script:failed=$false;$script:events=@();$refused=$false
+    try{$null=Maintain-H454BrokerCandidate @maintain -Apply -OwnerApproved}catch{$refused=$_.Exception.Message -ceq 'H454_DOCKER_AMBIGUOUS'}
+    Require-H454 ($refused -and (Test-Path -LiteralPath (Join-Path $dir 'h454-broker-trial.inflight'))) 'FIXTURE_MAINTAIN_AMBIGUOUS_START'
+    $script:failure='';$refused=$false
+    try{$null=Maintain-H454BrokerCandidate @maintain -Apply -OwnerApproved}catch{$refused=$true}
+    Require-H454 $refused 'FIXTURE_MAINTAIN_AMBIGUOUS_REPLAY'
+    [IO.File]::Delete((Join-Path $dir 'h454-broker-trial.inflight'))
+    $script:originalRunning=$true;$script:originalPrivate=$true;$script:originalBridge=$false
+    $script:candidateRunning=$false;$script:candidateStatus='exited';$script:candidatePrivate=$false;$script:candidateBridge=$true
+    $script:events=@();$refused=$false
+    try{$null=Complete-H454BrokerTrial @maintain -Apply -OwnerApproved -OriginalMcpObserved}catch{$refused=$_.Exception.Message -ceq 'H454_PROMOTION_ACTIVE'}
+    Require-H454 ($refused -and $script:events.Count -eq 0) 'FIXTURE_COMPLETE_PROMOTION_ACTIVE'
+    $refused=$false;try{$null=Disable-H454CandidatePromotion $args $script:candidateId $script:candidateImage -Apply -OwnerApproved -OriginalMcpObserved}catch{$refused=$true}
+    Require-H454 ($refused -and (Test-Path -LiteralPath (Join-Path $dir 'h454-candidate-promotion.pending'))) 'FIXTURE_DEMOTION_REQUIRES_ORIGINAL_TASK'
+    $script:originalTaskSafe=$true;$refused=$false
+    try{$null=Disable-H454CandidatePromotion $args $script:candidateId $script:candidateImage -Apply -OwnerApproved}catch{$refused=$true}
+    Require-H454 ($refused -and (Test-Path -LiteralPath (Join-Path $dir 'h454-candidate-promotion.pending'))) 'FIXTURE_DEMOTION_REQUIRES_MCP'
+    $demoted=Disable-H454CandidatePromotion $args $script:candidateId $script:candidateImage -Apply -OwnerApproved -OriginalMcpObserved
+    Require-H454 ($demoted.Status -ceq 'CANDIDATE_PROMOTION_CLEARED' -and
+        -not (Test-Path -LiteralPath (Join-Path $dir 'h454-candidate-promotion.pending'))) 'FIXTURE_DEMOTION'
+    [IO.File]::Delete($pendingPath)
+    $refused=$false;try{$null=Maintain-H454BrokerCandidate @maintain}catch{$refused=$true}
+    Require-H454 $refused 'FIXTURE_MAINTAIN_REQUIRES_MARKER'
+    Reset-Fixture
     $recorded=Get-H454TrialRecordedOperation $args $script:candidateId 'STOP_CANDIDATE' ([Guid]::NewGuid().ToString('N')) $script:candidateId '-' 0 0
     Start-H454TrialRecordedOperation $args $recorded
     Require-H454 ($null -eq (Resolve-H454TrialRecordedOperation $args $script:candidateId)) 'FIXTURE_RECEIPT_MISSING'

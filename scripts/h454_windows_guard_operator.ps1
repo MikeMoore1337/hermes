@@ -10,7 +10,8 @@ param(
     [Parameter(Mandatory=$true)][ValidatePattern('^[A-F0-9]{64}$')][string]$RecoverySourceSha256,
     [switch]$PrepareWss,[switch]$StartWss,[switch]$CheckOriginal,[switch]$PrepareRecoveryRoute,[switch]$PrepareRecoveryBroker,
     [switch]$RestoreOriginal,[switch]$RestageOnly,[switch]$AutoRecover,[switch]$InstallBrokerMonitor,[switch]$PrepareBrokerCandidate,
-    [switch]$BeginBrokerTrial,[switch]$RecoverBrokerTrial,[switch]$CompleteBrokerTrial,[switch]$OriginalMcpObserved,[switch]$ProcessCandidate,
+    [switch]$BeginBrokerTrial,[switch]$RecoverBrokerTrial,[switch]$CompleteBrokerTrial,[switch]$MaintainBrokerTrial,[switch]$PromoteBrokerCandidate,[switch]$DemoteBrokerCandidate,
+    [switch]$OriginalMcpObserved,[switch]$CandidateMcpObserved,[switch]$ProcessCandidate,
     [string]$FilesSourceSha256,[string]$SupervisorSha256,[string]$IdentitySha256,
     [string]$ModuleSha256,[string]$CaSha256,[string]$NodeSha256,[string]$PublicKeySha256,
     [string]$PublicCaPath,[string]$OriginalProfileSourceSha256,[string]$RecoveryDockerSourceSha256,[string]$DockerSha256,
@@ -147,14 +148,18 @@ try{
     Require-H454 (-not $RestageOnly -or ($RestoreOriginal -and $Apply -and $OwnerApproved)) 'H454_GUARD_OPERATOR_MONITOR_MODE'
     Require-H454 (-not $AutoRecover -or ($RestoreOriginal -and $Apply -and $OwnerApproved -and -not $RestageOnly -and
         -not $InstallBrokerMonitor -and -not $PrepareBrokerCandidate -and -not $BeginBrokerTrial -and
-        -not $RecoverBrokerTrial -and -not $CompleteBrokerTrial)) 'H454_GUARD_OPERATOR_AUTO_MODE'
+        -not $RecoverBrokerTrial -and -not $CompleteBrokerTrial -and -not $PromoteBrokerCandidate -and -not $DemoteBrokerCandidate)) 'H454_GUARD_OPERATOR_AUTO_MODE'
     Require-H454 (-not $InstallBrokerMonitor -or ($RestoreOriginal -and -not $RestageOnly)) 'H454_GUARD_OPERATOR_MONITOR_MODE'
     Require-H454 (-not $PrepareBrokerCandidate -or ($RestoreOriginal -and -not $RestageOnly -and -not $InstallBrokerMonitor)) 'H454_GUARD_OPERATOR_CANDIDATE_MODE'
     Require-H454 (-not $ProcessCandidate -or $PrepareBrokerCandidate) 'H454_GUARD_OPERATOR_CANDIDATE_MODE'
-    $trial=($BeginBrokerTrial -or $RecoverBrokerTrial -or $CompleteBrokerTrial)
+    $trial=($BeginBrokerTrial -or $RecoverBrokerTrial -or $CompleteBrokerTrial -or $MaintainBrokerTrial -or $PromoteBrokerCandidate -or $DemoteBrokerCandidate)
     Require-H454 (-not $trial -or ($RestoreOriginal -and -not $RestageOnly -and -not $InstallBrokerMonitor -and
-        -not $PrepareBrokerCandidate -and @(@($BeginBrokerTrial,$RecoverBrokerTrial,$CompleteBrokerTrial)|Where-Object {$_}).Count -eq 1)) 'H454_GUARD_OPERATOR_TRIAL_MODE'
-    Require-H454 (-not $OriginalMcpObserved -or ($CompleteBrokerTrial -and $Apply)) 'H454_GUARD_OPERATOR_TRIAL_MODE'
+        -not $PrepareBrokerCandidate -and @(@($BeginBrokerTrial,$RecoverBrokerTrial,$CompleteBrokerTrial,$MaintainBrokerTrial,$PromoteBrokerCandidate,$DemoteBrokerCandidate)|Where-Object {$_}).Count -eq 1)) 'H454_GUARD_OPERATOR_TRIAL_MODE'
+    Require-H454 (-not $MaintainBrokerTrial -or -not $Apply -or $AutoRecover) 'H454_GUARD_OPERATOR_AUTO_MODE'
+    Require-H454 (-not $OriginalMcpObserved -or (($CompleteBrokerTrial -or $DemoteBrokerCandidate) -and $Apply)) 'H454_GUARD_OPERATOR_TRIAL_MODE'
+    Require-H454 (-not ($DemoteBrokerCandidate -and $Apply) -or $OriginalMcpObserved) 'H454_PROMOTION_MCP_ACKNOWLEDGMENT'
+    Require-H454 (-not $CandidateMcpObserved -or ($PromoteBrokerCandidate -and $Apply)) 'H454_GUARD_OPERATOR_TRIAL_MODE'
+    Require-H454 (-not ($PromoteBrokerCandidate -and $Apply) -or $CandidateMcpObserved) 'H454_PROMOTION_MCP_ACKNOWLEDGMENT'
     Require-H454 (-not ($CompleteBrokerTrial -and $Apply) -or $OriginalMcpObserved) 'H454_TRIAL_MCP_ACKNOWLEDGMENT'
     if($PrepareBrokerCandidate -or $trial){
         Require-H454 ($CandidateSourceSha256 -cmatch '^[A-F0-9]{64}$' -and
@@ -236,7 +241,7 @@ try{
     }
     if(-not $trial){
         Assert-H454RecoveryLock $state $lock
-        foreach($name in @('h454-broker-trial.pending','h454-broker-trial.inflight')){
+        foreach($name in @('h454-broker-trial.pending','h454-broker-trial.inflight','h454-candidate-promotion.pending')){
             Require-H454 (-not (Test-H454WssStateEntry $state $name)) 'H454_BROKER_TRIAL_PENDING'
         }
     }
@@ -326,7 +331,7 @@ try{
                     AgentName='hermes-h15-windows-permanent';DeviceId='h15-win-05be75515428';
                     OldImage=$ProxyImageId;BrokerImage=$BrokerImageId;CaSha256=$CaSha256;DockerSha256=$DockerSha256;
                     VerifierPath=$verifierSource;VerifierSha256=$VerifierSourceSha256}
-                if(-not $RecoverBrokerTrial){$result=Restore-H454Original @restoreArgs}
+                if(-not $RecoverBrokerTrial -and -not $MaintainBrokerTrial -and -not $PromoteBrokerCandidate -and -not $DemoteBrokerCandidate){$result=Restore-H454Original @restoreArgs}
                 if($trial){
                     $candidateSource=Join-Path $PSScriptRoot 'h454_windows_candidate_prepare.ps1'
                     $trialSource=Join-Path $PSScriptRoot 'h454_windows_broker_trial.ps1'
@@ -362,9 +367,14 @@ try{
                         [pscustomobject]@{Name=$name;Hash=$sourceSpec[$name];Bytes=(Read-H454PinnedBytes $path $sourceSpec[$name])}})
                     $result=Install-H454BrokerMonitor $state $lock $markerHash $safetyCheck $pins $sourceFiles -Apply:$Apply -OwnerApproved:$OwnerApproved
                     Require-H454 ((Get-FileHash -LiteralPath $monitorSource -Algorithm SHA256).Hash -ceq $MonitorSourceSha256) 'H454_GUARD_OPERATOR_SOURCE_DRIFT'
+                }elseif($PromoteBrokerCandidate){
+                    $result=Enable-H454CandidatePromotion $restoreArgs $CandidateId $CandidateImageId -CandidateMcpObserved:$CandidateMcpObserved -Apply:$Apply -OwnerApproved:$OwnerApproved
+                }elseif($DemoteBrokerCandidate){
+                    $result=Disable-H454CandidatePromotion $restoreArgs $CandidateId $CandidateImageId -OriginalMcpObserved:$OriginalMcpObserved -Apply:$Apply -OwnerApproved:$OwnerApproved
                 }elseif($trial -and -not $Apply){
                     if($BeginBrokerTrial){$result=Start-H454BrokerTrial $restoreArgs $CandidateId $CandidateImageId}
                     elseif($RecoverBrokerTrial){$result=Restore-H454BrokerTrial $restoreArgs $CandidateId $CandidateImageId}
+                    elseif($MaintainBrokerTrial){$result=Maintain-H454BrokerCandidate $restoreArgs $CandidateId $CandidateImageId}
                     else{$result=Complete-H454BrokerTrial $restoreArgs $CandidateId $CandidateImageId}
                 }elseif($Apply -and ($trial -or -not $RestageOnly -or $result.Running)){
                     $launcherText=Read-H454PinnedSource $backup $OriginalLauncherSha256
@@ -388,6 +398,9 @@ try{
                         }elseif($CompleteBrokerTrial){
                             $result=Complete-H454BrokerTrial $restoreArgs $CandidateId $CandidateImageId $credential.TokenBytes $credential.AgentBytes `
                                 -Apply -OwnerApproved:$OwnerApproved -OriginalMcpObserved:$OriginalMcpObserved
+                        }elseif($MaintainBrokerTrial){
+                            $result=Maintain-H454BrokerCandidate $restoreArgs $CandidateId $CandidateImageId $credential.TokenBytes $credential.AgentBytes `
+                                -Apply -OwnerApproved:$OwnerApproved
                         }else{
                             $result=Restore-H454Original @restoreArgs -TokenBytes $credential.TokenBytes -AgentBytes $credential.AgentBytes `
                                 -Apply -OwnerApproved:$OwnerApproved -RestageOnly:$RestageOnly -AutoRecover:$AutoRecover
