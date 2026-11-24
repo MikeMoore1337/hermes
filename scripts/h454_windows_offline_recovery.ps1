@@ -148,7 +148,7 @@ function Assert-H454MutationSettled([string]$StateDir,[IO.FileStream]$Lock) {
     Assert-H454RecoveryLock $StateDir $Lock
     Assert-H454PrivateAcl $StateDir
     $names=@('h454-original-restore.inflight','h454-broker-route.inflight',
-        'h454-recovery-route.inflight','h454-broker-trial.pending','h454-broker-trial.inflight')
+        'h454-recovery-route.inflight','h454-broker-trial.pending','h454-broker-trial.inflight','h454-candidate-promotion.pending')
     $count=0
     foreach($entry in [IO.Directory]::EnumerateFileSystemEntries($StateDir)){
         $count++
