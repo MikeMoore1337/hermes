@@ -29,6 +29,7 @@ from device_fabric.linux_native_search import (
 )
 from device_fabric.native_effect_grants import DEVICE
 from device_fabric.native_brc_enrollment import IDENTITY
+from device_fabric.native_list_pages import parse_cursor, validate_next
 
 MAX_FRAME_BYTES = 4096
 MAX_SESSION_CALLS = 64
@@ -75,8 +76,11 @@ def parse_call(frame: bytes) -> tuple[str, str, dict[str, str]]:
             expected = {"project", "relative"}
         else:
             expected = {"project", "query", "mode", "relative_root"}
-        if set(args) != expected or any(type(v) is not str for v in args.values()):
+        paged = data["tool"] == LIST and set(args) == expected | {"cursor"}
+        if (set(args) != expected and not paged) or any(type(v) is not str for v in args.values()):
             raise NativeLinuxReadDenied("native_linux_read_denied")
+        if paged:
+            parse_cursor(args["cursor"])
         if type(args["project"]) is not str:
             raise NativeLinuxReadDenied("native_linux_read_denied")
         if data["tool"] in {STAT, READ, LIST}:
@@ -126,14 +130,18 @@ def _check_result(out: object, *, project: str,
             or hashlib.sha256(data).hexdigest() != out["sha256"]):
             raise NativeLinuxReadDenied("native_linux_read_denied")
     elif tool == LIST:
-        if (set(out) != {"status", "project", "relative", "action",
-                         "kind", "entries", "truncated"}
+        expected = {"status", "project", "relative", "action", "kind", "entries", "truncated"}
+        if "cursor" in args:
+            expected.add("next_cursor")
+        if (set(out) != expected
             or out["action"] != "list" or out["kind"] != "directory"
             or out["relative"] != args["relative"]
             or type(out["truncated"]) is not bool
             or type(out["entries"]) is not list
             or len(out["entries"]) > MAX_LIST_ENTRIES):
             raise NativeLinuxReadDenied("native_linux_read_denied")
+        if "cursor" in args:
+            validate_next(args["cursor"], out["next_cursor"], out["entries"], out["truncated"])
         names: set[str] = set()
         for entry in out["entries"]:
             if (type(entry) is not dict or set(entry) != {"name", "kind"}
@@ -249,7 +257,7 @@ class LinuxOriginalReadDispatcher:
                 elif tool == READ:
                     result = files.read_file(args["relative"])
                 elif tool == LIST:
-                    result = files.list_directory(args["relative"])
+                    result = files.list_directory(args["relative"], cursor=args.get("cursor"))
                 else:
                     result = LinuxNativeSearch(files).search(
                         args["query"], mode=args["mode"],

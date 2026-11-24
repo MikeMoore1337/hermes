@@ -70,6 +70,8 @@ TOOLS = (
             "properties": {
                 "project": {"type": "string", "enum": sorted(native.READ_ROOTS)},
                 "relative": {"type": "string", "enum": [""]},
+                "cursor": {"type": "string", "maxLength": 68,
+                           "description": "Empty for first page; pass next_cursor until empty. Directory changes require restart; scan limit is 256."},
             },
             "required": ["project", "relative"],
             "additionalProperties": False,
@@ -159,13 +161,15 @@ def _params_exact(params: dict[str, Any], *keys: str) -> bool:
 
 
 def _sanitized_result(value: object, project: str, relative: str,
-                      operation: str) -> dict[str, Any]:
+                      operation: str, cursor: str | None = None) -> dict[str, Any]:
     """Output validation prevents a buggy native adapter widening tool scope."""
     if not isinstance(value, dict):
         raise ProtocolRefused("invalid_native_output")
     if operation == "list":
-        if (set(value) != {"status", "project", "relative", "action", "kind",
-                           "entries", "truncated"}
+        expected = {"status", "project", "relative", "action", "kind", "entries", "truncated"}
+        if cursor is not None:
+            expected.add("next_cursor")
+        if (set(value) != expected
             or value["status"] != "ok" or value["project"] != project
             or relative != "" or value["relative"] != ""
             or value["action"] != "list" or value["kind"] != "directory"
@@ -173,6 +177,12 @@ def _sanitized_result(value: object, project: str, relative: str,
             or type(value["entries"]) is not list
             or len(value["entries"]) > native.MAX_LIST_ENTRIES):
             raise ProtocolRefused("invalid_native_list")
+        if cursor is not None:
+            from device_fabric.native_list_pages import validate_next
+            try:
+                validate_next(cursor, value["next_cursor"], value["entries"], value["truncated"])
+            except ValueError as exc:
+                raise ProtocolRefused("invalid_native_list") from exc
         seen = set()
         for entry in value["entries"]:
             if type(entry) is not dict or set(entry) != {"name", "kind"}:
@@ -309,11 +319,18 @@ class McpSession:
                 return _tool_error(identifier)
             return _ok(identifier, {"content": [{"type": "text", "text": json.dumps(
                 result, separators=(",", ":"), ensure_ascii=True)}], "isError": False})
-        if not _params_exact(args, "project", "relative"):
+        paged = name == "native_file_list" and _params_exact(args, "project", "relative", "cursor")
+        if not _params_exact(args, "project", "relative") and not paged:
             return _tool_error(identifier)
         project, relative = args["project"], args["relative"]
         if type(project) is not str or type(relative) is not str:
             return _tool_error(identifier)
+        if paged:
+            from device_fabric.native_list_pages import parse_cursor
+            try:
+                parse_cursor(args["cursor"])
+            except ValueError:
+                return _tool_error(identifier)
         if name == "native_file_list" and relative != "":
             return _tool_error(identifier)
         if self.read_calls >= MAX_READS:
@@ -324,10 +341,11 @@ class McpSession:
         try:
             # Win32 handles are the scope check. No shell/pathlib content
             # fallback and no Windows process execution.
-            result = (native.handle_native_list(project, relative)
+            result = ((native.handle_native_list(project, relative, cursor=args["cursor"])
+                       if paged else native.handle_native_list(project, relative))
                       if operation == "list" else
                       native.handle_native_request(project, relative, operation))
-            result = _sanitized_result(result, project, relative, operation)
+            result = _sanitized_result(result, project, relative, operation, args.get("cursor") if paged else None)
         except native.NativeReadRefused as exc:
             return _tool_error(identifier, busy=operation == "read" and str(exc) == "file_busy")
         except (ProtocolRefused, OSError, ValueError):

@@ -168,10 +168,17 @@ def safe_call(session: McpSession, message: dict[str, Any],
     if (type(ident) is not str or not 1 <= len(ident) <= 128
         or type(name) is not str or name not in READONLY_NAMES
         or not isinstance(args, dict)
-        or set(args) != ({"project", "query", "mode", "relative_root"} if name == "native_file_search"
-                         else {"project", "relative"})
+        or (set(args) != ({"project", "query", "mode", "relative_root"} if name == "native_file_search"
+                          else {"project", "relative"})
+            and not (name == "native_file_list" and set(args) == {"project", "relative", "cursor"}))
         or not all(type(v) is str for v in args.values())):
         return None
+    if name == "native_file_list" and "cursor" in args:
+        from device_fabric.native_list_pages import parse_cursor
+        try:
+            parse_cursor(args["cursor"])
+        except ValueError:
+            return None
     if name == "native_file_list" and args["relative"] != "":
         return None
     if ident in seen or len(seen) >= MAX_SEEN_IDS:

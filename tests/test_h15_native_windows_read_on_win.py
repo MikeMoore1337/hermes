@@ -261,6 +261,20 @@ class NativeWindowsReadOnRunnerTests(unittest.TestCase):
             with self.assertRaises(broker.NativeReadRefused):
                 broker.handle_native_request("hermes", "src\\safe.py", "read")
 
+    def test_actual_win32_paged_listing_rejects_changes(self):
+        for i in range(129):
+            (self.root / f"file-{i:03}.py").write_text("safe")
+        (self.root / ".env").write_text("not visible")
+        first = broker.handle_native_list("hermes", "", cursor="")
+        second = broker.handle_native_list("hermes", "", cursor=first["next_cursor"])
+        third = broker.handle_native_list("hermes", "", cursor=second["next_cursor"])
+        self.assertEqual([len(x["entries"]) for x in (first, second, third)], [64, 64, 2])
+        self.assertEqual(third["next_cursor"], "")
+        self.assertNotIn(".env", repr((first, second, third)))
+        (self.root / "new.py").write_text("safe")
+        with self.assertRaisesRegex(broker.NativeReadRefused, "invalid_page"):
+            broker.handle_native_list("hermes", "", cursor=first["next_cursor"])
+
 
     def test_real_win32_bounded_project_root_listing_without_private_names(self):
         (self.root / "README.md").write_text("# synthetic")

@@ -87,14 +87,15 @@ def local_config(*, target: str, device_id: str, token: str,
     return LocalLinuxDeviceConfig(target, device_id, token, url)
 
 
-def _tool(name: str, summary: str, fields: dict[str, dict[str, Any]]) -> dict[str, Any]:
+def _tool(name: str, summary: str, fields: dict[str, dict[str, Any]],
+          *, optional: tuple[str, ...] = ()) -> dict[str, Any]:
     return {
         "name": name,
         "description": summary,
         "inputSchema": {
             "type": "object",
             "properties": fields,
-            "required": list(fields),
+            "required": [field for field in fields if field not in optional],
             "additionalProperties": False,
         },
         "annotations": {
@@ -112,8 +113,10 @@ _TOOL_CATALOG = (
           {"project": _PROJECT, "relative": _RELATIVE}),
     _tool(READ, "Read at most 256 KiB from one approved original Linux source file.",
           {"project": _PROJECT, "relative": _RELATIVE}),
-    _tool(LIST, "List at most 64 safe entries from an approved Linux directory.",
-          {"project": _PROJECT, "relative": _RELATIVE}),
+    _tool(LIST, "List up to 64 safe entries; cursor enables bounded pages.",
+          {"project": _PROJECT, "relative": _RELATIVE,
+           "cursor": {"type": "string", "maxLength": 68,
+                      "description": "Empty for first page; pass next_cursor until empty. Directory changes require restart; scan limit is 256."}}, optional=("cursor",)),
     _tool(SEARCH, "Bounded literal source search; relative paths/line numbers only.",
           {"project": _PROJECT, "query": _QUERY,
            "mode": {"type": "string", "enum": ["names", "content"]},
