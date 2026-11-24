@@ -70,6 +70,7 @@ on:
       - scripts/h454_agent_edit_image_smoke.mjs
       - tests/test_h454_agent_edit_image.py
       - tests/test_h454_windows_candidate_contract.py
+      - tests/test_h454_windows_stage_inspector.py
       - tests/test_h454_windows_prepare_init_candidate.py
       - docs/operations/h454-windows-candidate-contract.md
       - docs/operations/h454-windows-candidate-preparer.md
@@ -145,6 +146,7 @@ on:
       - scripts/h454_agent_edit_image_smoke.mjs
       - tests/test_h454_agent_edit_image.py
       - tests/test_h454_windows_candidate_contract.py
+      - tests/test_h454_windows_stage_inspector.py
       - tests/test_h454_windows_prepare_init_candidate.py
       - docs/operations/h454-windows-candidate-contract.md
       - docs/operations/h454-windows-candidate-preparer.md
@@ -171,6 +173,9 @@ jobs:
         run: python -m py_compile scripts/h454_windows_candidate_contract.py scripts/h454_windows_prepare_init_candidate.py
       - name: Synthetic contract tests
         run: python -B -m unittest discover -s tests -p "test_h454_windows_candidate_contract.py" -v
+      - name: Runtime stage inspection contracts
+        if: runner.os == 'Linux'
+        run: python -B -m unittest discover -s tests -p "test_h454_windows_stage_inspector.py" -v
       - name: Synthetic candidate preparer tests
         run: python -B -m unittest discover -s tests -p "test_h454_windows_prepare_init_candidate.py" -v
       - name: Launcher preparation never modifies live source

@@ -487,6 +487,13 @@ function Invoke-H454BrokerTrialDocker([hashtable]$RestoreArgs,[string[]]$Argumen
     }
     Start-H454BrokerTrialOperation $RestoreArgs $phase
     $result=Invoke-H454RecoveryDocker -Arguments $Arguments -DockerSha256 $RestoreArgs.DockerSha256 -InputBytes $InputBytes
+    # A completed read-only check may fail validation without leaving an
+    # ambiguous Docker mutation. Timeouts still throw before this point.
+    if($phase -ceq 'CHECK_CANDIDATE' -and $result.Code -ne 0 -and $CandidateId -cmatch '^[a-f0-9]{64}$' -and
+        $Arguments.Count -eq 8 -and $Arguments[1] -ceq '--user' -and $Arguments[2] -ceq '65534:65534' -and
+        $Arguments[3] -ceq $CandidateId -and $Arguments[4] -ceq 'node' -and $Arguments[5] -ceq '-e'){
+        Complete-H454BrokerTrialOperation $RestoreArgs $phase
+    }
     Require-H454 ($result.Code -eq 0) 'H454_TRIAL_DOCKER_HOLD'
     Complete-H454BrokerTrialOperation $RestoreArgs $phase
     return $result.Output
@@ -593,7 +600,9 @@ try{
   for(const n of ['ready','device.json','config.json']){
     try{
       const s=f.lstatSync('/run/brc/'+n,{bigint:true});
-      if(!s.isFile()||s.isSymbolicLink()||s.uid!==65534n||s.gid!==65534n||(s.mode&511n)!==384n||s.nlink!==1n)throw 0;
+      const mode=s.mode&511n;
+      if(!s.isFile()||s.isSymbolicLink()||s.uid!==65534n||s.gid!==65534n||s.nlink!==1n||
+         (n==='config.json'?(mode!==384n&&mode!==420n):mode!==384n))throw 0;
       files[n]=s;
     }catch(e){if(e.code!=='ENOENT')throw 0}
   }
@@ -604,12 +613,19 @@ try{
   const original=files['config.json'];
   if(before.dev!==original.dev||before.ino!==original.ino||before.size!==original.size||before.mtimeNs!==original.mtimeNs||before.ctimeNs!==original.ctimeNs||
      after.dev!==before.dev||after.ino!==before.ino||after.size!==before.size||after.mtimeNs!==before.mtimeNs||after.ctimeNs!==before.ctimeNs||after.nlink!==1n||
-     contents!=='{"allowedDirectories":["/workspace"],"telemetryEnabled":false}\n')throw 0;
+     after.uid!==before.uid||after.gid!==before.gid||after.mode!==before.mode)throw 0;
+  const config=JSON.parse(contents),allowed=new Set(['allowedDirectories','telemetryEnabled','pendingWelcomeOnboarding','welcomeOnboardingEligible','usageStats']);
+  if(!config||typeof config!=='object'||Array.isArray(config)||Object.keys(config).some(k=>!allowed.has(k))||
+     !Array.isArray(config.allowedDirectories)||config.allowedDirectories.length!==1||config.allowedDirectories[0]!=='/workspace'||
+     config.telemetryEnabled!==false||
+     ('pendingWelcomeOnboarding'in config&&typeof config.pendingWelcomeOnboarding!=='boolean')||
+     ('welcomeOnboardingEligible'in config&&typeof config.welcomeOnboardingEligible!=='boolean')||
+     ('usageStats'in config&&(!config.usageStats||typeof config.usageStats!=='object'||Array.isArray(config.usageStats))))throw 0;
   process.stdout.write('H454_STAGE_PRESENT');
 }catch{process.exit(2)}
 '@
     $inspect64=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($inspect))
-    $stage=Invoke-H454BrokerTrialDocker $RestoreArgs @('exec','--user','65534:65534',$CandidateId,'node','-e',$bootstrap,$inspect64)
+    $stage=Invoke-H454BrokerTrialDocker $RestoreArgs @('exec','--user','65534:65534',$CandidateId,'node','-e',$bootstrap,$inspect64) -CandidateId $CandidateId -CandidateImage $CandidateImage
     Require-H454 ($stage -cin @('H454_STAGE_EMPTY','H454_STAGE_PRESENT')) 'H454_TRIAL_STAGE_DRIFT'
     if($stage -ceq 'H454_STAGE_EMPTY'){
         $null=Invoke-H454BrokerTrialDocker $RestoreArgs @('exec','--interactive','--user','65534:65534',$CandidateId,'/bin/sh','/usr/local/bin/h15-stage.sh') $AgentBytes -CandidateId $CandidateId -CandidateImage $CandidateImage
