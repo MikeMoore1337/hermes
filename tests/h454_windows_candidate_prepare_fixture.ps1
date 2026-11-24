@@ -1,6 +1,7 @@
 #requires -Version 5.1
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
+Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Utility\Microsoft.PowerShell.Utility.psd1') -ErrorAction Stop
 . (Join-Path $PSScriptRoot '..\scripts\h454_windows_candidate_prepare.ps1')
 function Require-H454([bool]$Condition,[string]$Reason){if(-not $Condition){throw $Reason}}
 $script:agentId='a'*64;$script:baseId='sha256:'+('b'*64);$script:imageId='sha256:'+('c'*64)
@@ -14,7 +15,7 @@ $tmpfs=[pscustomobject]@{'/run/brc'='rw,nosuid,nodev,noexec,uid=65534,gid=65534,
 $mount=[pscustomobject]@{Type='bind';Destination='/workspace';RW=$true}
 $script:original=[pscustomobject]@{Id=$script:agentId;Config=[pscustomobject]@{Labels=[pscustomobject]@{'com.hermes.scope'='fixture'}};
     State=[pscustomobject]@{Running=$true};HostConfig=[pscustomobject]@{Tmpfs=$tmpfs};Mounts=@($mount)}
-$script:candidate=$null;$script:creates=0;$script:checks=0;$script:failAt=0;$script:ambiguous=$false
+$script:candidate=$null;$script:processCandidate=$null;$script:creates=0;$script:checks=0;$script:failAt=0;$script:ambiguous=$false
 function Get-H454OriginalRestoreState {
     param($StateDir,$Lock,$MarkerSha256,$SafetyCheck,$Launcher,$LauncherSha256,$AgentId,$AgentImage,$AgentName,
         $OldImage,$BrokerImage,$CaSha256,$DockerSha256)
@@ -31,7 +32,8 @@ function Get-H454CandidateImage($Image,$DockerSha256){
     throw 'FIXTURE_IMAGE'
 }
 function Find-H454RecoveryObject($Kind,$Name,$DockerSha256){
-    Require-H454 ($Kind -ceq 'container' -and $Name -ceq 'hermes-h454-broker-candidate') 'FIXTURE_LOOKUP'
+    Require-H454 ($Kind -ceq 'container' -and $Name -cin @('hermes-h454-broker-candidate','hermes-h454-process-candidate')) 'FIXTURE_LOOKUP'
+    if($Name -ceq 'hermes-h454-process-candidate'){return $script:processCandidate}
     return $script:candidate
 }
 function Invoke-H454RecoveryDocker {
@@ -40,7 +42,9 @@ function Invoke-H454RecoveryDocker {
         $Arguments -ccontains 'bridge' -and $Arguments -ccontains '--volumes-from' -and
         $Arguments -ccontains $script:agentId -and $Arguments -ccontains $script:imageId) 'FIXTURE_CREATE_ARGUMENTS'
     $script:creates++
-    $script:candidate=[pscustomobject]@{Id=$script:candidateId;Name='/hermes-h454-broker-candidate';Image=$script:imageId;
+    $index=[Array]::IndexOf($Arguments,'--name');Require-H454 ($index -ge 0 -and $index+1 -lt $Arguments.Count) 'FIXTURE_NAME'
+    $name=$Arguments[$index+1];$id=if($name -ceq 'hermes-h454-process-candidate'){'4'*64}else{$script:candidateId}
+    $created=[pscustomobject]@{Id=$id;Name=('/'+$name);Image=$script:imageId;
         State=[pscustomobject]@{Running=$false;Status='created';Paused=$false;Restarting=$false;Dead=$false};
         Config=[pscustomobject]@{User='65534:65534';WorkingDir='/workspace';Entrypoint=$config.Entrypoint;Cmd=$config.Cmd;Env=$config.Env;
             Labels=[pscustomobject]@{'com.hermes.scope'='fixture';'com.hermes.h454.candidate'=$script:label}};
@@ -51,8 +55,9 @@ function Invoke-H454RecoveryDocker {
             Tmpfs=(ConvertFrom-Json -InputObject (ConvertTo-Json -Compress -InputObject $tmpfs))};
         NetworkSettings=[pscustomobject]@{Networks=[pscustomobject]@{bridge=[pscustomobject]@{NetworkID=$script:bridgeId;Aliases=@()}}};
         Mounts=@([pscustomobject]@{Type='bind';Destination='/workspace';RW=$true})}
+    if($name -ceq 'hermes-h454-process-candidate'){$script:processCandidate=$created}else{$script:candidate=$created}
     if($script:ambiguous){$script:ambiguous=$false;throw 'H454_DOCKER_AMBIGUOUS'}
-    return [pscustomobject]@{Code=0;Output=$script:candidateId}
+    return [pscustomobject]@{Code=0;Output=$id}
 }
 $params=@{StateDir='fixture';Lock=$null;MarkerSha256=$script:marker;SafetyCheck={return $true};Launcher='fixture';
     LauncherSha256=('A'*64);AgentId=$script:agentId;AgentImage=$script:baseId;AgentName='fixture';
@@ -130,4 +135,17 @@ $script:candidate.Config.PSObject.Properties.Remove('Cmd')
 $script:image.RootFS.Layers=@('foreign','layer2','layer3');$refused=$false
 try{$null=Prepare-H454BrokerCandidate $params $script:imageId -Apply -OwnerApproved}catch{$refused=$true}
 Require-H454 ($refused -and $script:creates -eq 1) 'FIXTURE_IMAGE_DRIFT'
+$script:image.RootFS.Layers=@('layer1','layer2','layer3')
+$script:image.Config|Add-Member -NotePropertyName 'Cmd' -NotePropertyValue @()
+$retained=$script:candidate
+$retained.Image='sha256:'+('9'*64)
+$preview=Prepare-H454BrokerCandidate $params $script:imageId -ProcessCandidate
+Require-H454 ($preview.Status -ceq 'PREFLIGHT' -and -not $preview.Present -and $script:creates -eq 1) 'FIXTURE_PROCESS_PREVIEW'
+$created=Prepare-H454BrokerCandidate $params $script:imageId -ProcessCandidate -Apply -OwnerApproved
+Require-H454 ($created.Status -ceq 'CANDIDATE_CREATED_STOPPED' -and $created.CandidateId -ceq ('4'*64) -and
+    $script:creates -eq 2 -and [Object]::ReferenceEquals($retained,$script:candidate) -and
+    $retained.Image -ceq ('sha256:'+('9'*64)) -and
+    $script:processCandidate.Name -ceq '/hermes-h454-process-candidate') 'FIXTURE_PROCESS_RETAINED'
+$again=Prepare-H454BrokerCandidate $params $script:imageId -ProcessCandidate -Apply -OwnerApproved
+Require-H454 ($again.CandidateId -ceq ('4'*64) -and $script:creates -eq 2) 'FIXTURE_PROCESS_IDEMPOTENT'
 'PS51_SYNTHETIC_CANDIDATE_PREPARE=PASS'

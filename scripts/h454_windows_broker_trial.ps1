@@ -12,6 +12,16 @@ function Assert-H454BrokerTrialMarker([hashtable]$RestoreArgs,[string]$Candidate
     Assert-H454WssTaskFile (Join-Path $RestoreArgs.StateDir 'h454-broker-trial.pending') (Hash-H454Bytes $bytes) 4096
 }
 
+function Find-H454BrokerTrialCandidate([string]$CandidateId,[string]$DockerSha256) {
+    Require-H454 ($CandidateId -cmatch '^[a-f0-9]{64}$') 'H454_TRIAL_IDENTITY'
+    $candidateMatches=@(foreach($name in @('hermes-h454-broker-candidate','hermes-h454-process-candidate')){
+        $item=Find-H454RecoveryObject 'container' $name $DockerSha256
+        if($null -ne $item -and $item.Id -ceq $CandidateId){[pscustomobject]@{Name=$name;Container=$item}}
+    })
+    Require-H454 ($candidateMatches.Count -eq 1) 'H454_TRIAL_IDENTITY'
+    return $candidateMatches[0]
+}
+
 function Get-H454BrokerTrialState([hashtable]$RestoreArgs,[string]$CandidateId,[string]$CandidateImage,[switch]$Pending) {
     if($Pending){Assert-H454BrokerTrialMarker $RestoreArgs $CandidateId $CandidateImage}
     $s=@{StateDir=$RestoreArgs.StateDir;Lock=$RestoreArgs.Lock;MarkerSha256=$RestoreArgs.MarkerSha256;
@@ -24,7 +34,8 @@ function Get-H454BrokerTrialState([hashtable]$RestoreArgs,[string]$CandidateId,[
     $network=Find-H454RecoveryObject 'network' $networkName $s.DockerSha256
     $plan=Assert-H454RecoveryNetwork $network $networkName $label
     $original=Find-H454RecoveryObject 'container' $s.AgentName $s.DockerSha256
-    $candidate=Find-H454RecoveryObject 'container' 'hermes-h454-broker-candidate' $s.DockerSha256
+    $selected=Find-H454BrokerTrialCandidate $CandidateId $s.DockerSha256
+    $candidate=$selected.Container;$candidateName=[string]$selected.Name
     Require-H454 ($null -ne $original -and $original.Id -ceq $s.AgentId -and
         $null -ne $candidate -and $candidate.Id -ceq $CandidateId) 'H454_TRIAL_IDENTITY'
     $base=Get-H454CandidateImage $s.AgentImage $s.DockerSha256
@@ -32,7 +43,7 @@ function Get-H454BrokerTrialState([hashtable]$RestoreArgs,[string]$CandidateId,[
     Assert-H454CandidateImage $base $image $s.AgentImage $CandidateImage
     $bridge=Find-H454RecoveryObject 'network' 'bridge' $s.DockerSha256
     Require-H454 ($null -ne $bridge -and $bridge.Driver -ceq 'bridge') 'H454_TRIAL_NETWORK'
-    Assert-H454PreparedCandidate $candidate $original $image 'hermes-h454-broker-candidate' `
+    Assert-H454PreparedCandidate $candidate $original $image $candidateName `
         $CandidateImage $s.AgentId $label $bridge.Id $networkName $plan.Id
     $names=@($candidate.NetworkSettings.Networks.PSObject.Properties.Name)
     $onPrivate=$names -ccontains $networkName;$onBridge=$names -ccontains 'bridge'

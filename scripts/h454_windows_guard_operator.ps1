@@ -10,7 +10,7 @@ param(
     [Parameter(Mandatory=$true)][ValidatePattern('^[A-F0-9]{64}$')][string]$RecoverySourceSha256,
     [switch]$PrepareWss,[switch]$StartWss,[switch]$CheckOriginal,[switch]$PrepareRecoveryRoute,[switch]$PrepareRecoveryBroker,
     [switch]$RestoreOriginal,[switch]$RestageOnly,[switch]$AutoRecover,[switch]$InstallBrokerMonitor,[switch]$PrepareBrokerCandidate,
-    [switch]$BeginBrokerTrial,[switch]$RecoverBrokerTrial,[switch]$CompleteBrokerTrial,[switch]$OriginalMcpObserved,
+    [switch]$BeginBrokerTrial,[switch]$RecoverBrokerTrial,[switch]$CompleteBrokerTrial,[switch]$OriginalMcpObserved,[switch]$ProcessCandidate,
     [string]$FilesSourceSha256,[string]$SupervisorSha256,[string]$IdentitySha256,
     [string]$ModuleSha256,[string]$CaSha256,[string]$NodeSha256,[string]$PublicKeySha256,
     [string]$PublicCaPath,[string]$OriginalProfileSourceSha256,[string]$RecoveryDockerSourceSha256,[string]$DockerSha256,
@@ -150,6 +150,7 @@ try{
         -not $RecoverBrokerTrial -and -not $CompleteBrokerTrial)) 'H454_GUARD_OPERATOR_AUTO_MODE'
     Require-H454 (-not $InstallBrokerMonitor -or ($RestoreOriginal -and -not $RestageOnly)) 'H454_GUARD_OPERATOR_MONITOR_MODE'
     Require-H454 (-not $PrepareBrokerCandidate -or ($RestoreOriginal -and -not $RestageOnly -and -not $InstallBrokerMonitor)) 'H454_GUARD_OPERATOR_CANDIDATE_MODE'
+    Require-H454 (-not $ProcessCandidate -or $PrepareBrokerCandidate) 'H454_GUARD_OPERATOR_CANDIDATE_MODE'
     $trial=($BeginBrokerTrial -or $RecoverBrokerTrial -or $CompleteBrokerTrial)
     Require-H454 (-not $trial -or ($RestoreOriginal -and -not $RestageOnly -and -not $InstallBrokerMonitor -and
         -not $PrepareBrokerCandidate -and @(@($BeginBrokerTrial,$RecoverBrokerTrial,$CompleteBrokerTrial)|Where-Object {$_}).Count -eq 1)) 'H454_GUARD_OPERATOR_TRIAL_MODE'
@@ -335,7 +336,7 @@ try{
                 if($PrepareBrokerCandidate){
                     $candidateSource=Join-Path $PSScriptRoot 'h454_windows_candidate_prepare.ps1'
                     . ([scriptblock]::Create((Read-H454PinnedSource $candidateSource $CandidateSourceSha256)))
-                    $result=Prepare-H454BrokerCandidate $restoreArgs $CandidateImageId -Apply:$Apply -OwnerApproved:$OwnerApproved
+                    $result=Prepare-H454BrokerCandidate $restoreArgs $CandidateImageId -ProcessCandidate:$ProcessCandidate -Apply:$Apply -OwnerApproved:$OwnerApproved
                     Require-H454 ((Get-FileHash -LiteralPath $candidateSource -Algorithm SHA256).Hash -ceq $CandidateSourceSha256 -and
                         (Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash -ceq $GuardOperatorSourceSha256) 'H454_GUARD_OPERATOR_SOURCE_DRIFT'
                 }elseif($InstallBrokerMonitor){
