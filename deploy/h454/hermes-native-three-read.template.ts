@@ -100,7 +100,6 @@ function safeArgs(method:Tool, raw:unknown):{host:Host;args:SafeArgs}|null {
   if (Object.keys(o).sort().join(',')!==(paged?'cursor,host,project,relative':'host,project,relative')
       || typeof o.relative!=='string'
       || (paged&&!cursorParts(o.cursor))
-      || (method==='native_file_list'&&target==='windows'&&o.relative!=='')
       || !safePath(o.relative,target,method!=='native_file_read')
       || (method==='native_file_read'&&!READ_EXT.test(o.relative)))return null;
   return {host:target,args:paged?{project:o.project,relative:o.relative,cursor:o.cursor as string}

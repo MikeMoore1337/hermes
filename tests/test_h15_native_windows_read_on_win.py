@@ -11,6 +11,7 @@ import json
 import mmap
 import os
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -297,9 +298,11 @@ class NativeWindowsReadOnRunnerTests(unittest.TestCase):
         self.assertTrue(all(set(item) == {"name", "kind"}
                             for item in listing["entries"]))
         self.assertNotIn("DO_NOT_EXPOSE", json.dumps(listing))
-        with self.assertRaisesRegex(broker.NativeReadRefused,
-                                    "listing_only_approved_root"):
-            broker.handle_native_list("hermes", "src")
+        nested = broker.handle_native_list("hermes", "src")
+        self.assertEqual(nested['relative'], 'src')
+        self.assertEqual([entry['name'] for entry in nested['entries']], ['safe.py'])
+        with self.assertRaises(broker.NativeReadRefused):
+            broker.handle_native_list("hermes", ".git")
 
     def test_win32_list_excludes_junction_and_hardlink(self):
         (self.root / "safe.md").write_text("# safe")
@@ -312,6 +315,48 @@ class NativeWindowsReadOnRunnerTests(unittest.TestCase):
         self.assertNotIn("linked", names)
         self.assertNotIn("alias.md", names)
         self.assertNotIn("safe.md", names)
+
+    def test_nested_listing_locks_all_ancestors_during_enumeration(self):
+        actual_scandir = broker.os.scandir
+        attempted = []
+        def checked_scandir(path):
+            for original in (self.code, self.root, self.root.parent):
+                moved=original.with_name(original.name+'-moved')
+                try:
+                    with self.assertRaises(OSError) as denied:
+                        os.rename(original,moved)
+                    self.assertIn(denied.exception.winerror,(5,32))
+                    attempted.append(True)
+                finally:
+                    if moved.exists():os.rename(moved,original)
+            return actual_scandir(path)
+        with patch.object(broker.os,'scandir',side_effect=checked_scandir):
+            result=broker.handle_native_list('hermes','src')
+        self.assertEqual(attempted,[True,True,True])
+        self.assertEqual([entry['name'] for entry in result['entries']],['safe.py'])
+
+    def test_nested_pages_reject_cursor_for_other_directory_and_changed_entries(self):
+        for i in range(65):(self.code / f'nested-{i:03}.py').write_text('safe')
+        first=broker.handle_native_list('hermes','src',cursor='')
+        second=broker.handle_native_list('hermes','src',cursor=first['next_cursor'])
+        self.assertEqual([len(first['entries']),len(second['entries'])],[64,2])
+        with self.assertRaises(broker.NativeReadRefused):
+            broker.handle_native_list('hermes','',cursor=first['next_cursor'])
+        (self.code/'new.py').write_text('safe')
+        with self.assertRaises(broker.NativeReadRefused):
+            broker.handle_native_list('hermes','src',cursor=first['next_cursor'])
+
+    def test_nested_junction_cannot_redirect_listing_outside_project(self):
+        junction=self.code/'outside-link'
+        result=subprocess.run([os.environ.get('COMSPEC',r'C:\Windows\System32\cmd.exe'),'/d','/c',
+            'mklink','/J',str(junction),str(self.outside)],stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=10,
+            creationflags=subprocess.CREATE_NO_WINDOW)
+        self.assertEqual(result.returncode,0,'disposable junction fixture unavailable')
+        names={entry['name'] for entry in broker.handle_native_list('hermes','src')['entries']}
+        self.assertNotIn('outside-link',names)
+        with self.assertRaises(broker.NativeReadRefused):
+            broker.handle_native_list('hermes',r'src\outside-link')
 
     def test_real_win32_mcp_and_wss_readonly_list(self):
         session = mcp.McpSession()
@@ -326,12 +371,15 @@ class NativeWindowsReadOnRunnerTests(unittest.TestCase):
         self.assertFalse(answer["result"]["isError"])
         payload = json.loads(answer["result"]["content"][0]["text"])
         self.assertEqual({x["name"] for x in payload["entries"]}, {"src"})
-        denied = session.handle({
+        nested = session.handle({
             "jsonrpc": "2.0", "id": 3, "method": "tools/call",
             "params": {"name": "native_file_list",
                        "arguments": {"project": "hermes", "relative": "src"}}
         })
-        self.assertTrue(denied["result"]["isError"])
+        self.assertFalse(nested["result"]["isError"])
+        nested_payload=json.loads(nested['result']['content'][0]['text'])
+        self.assertEqual(nested_payload['relative'],'src')
+        self.assertEqual([entry['name'] for entry in nested_payload['entries']],['safe.py'])
         class MockSocket:
             def __init__(self):
                 self.events = [

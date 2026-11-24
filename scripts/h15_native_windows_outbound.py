@@ -179,8 +179,6 @@ def safe_call(session: McpSession, message: dict[str, Any],
             parse_cursor(args["cursor"])
         except ValueError:
             return None
-    if name == "native_file_list" and args["relative"] != "":
-        return None
     if ident in seen or len(seen) >= MAX_SEEN_IDS:
         return None
     if claim_call is not None:
