@@ -81,6 +81,20 @@ class WindowsSearchTests(unittest.TestCase):
         self.assertTrue(result["truncated"])
         self.assertEqual(len(result["matches"]), search.MAX_MATCHES)
 
+    def test_skipped_oversize_file_does_not_hide_queued_directory(self):
+        (self.root / "a-oversize.txt").write_bytes(b"x" * (native.MAX_FILE_BYTES + 1))
+        result = search.search("hermes", "needle", mode="content", relative_root="")
+        self.assertTrue(result["truncated"])
+        self.assertIn({"path": r"src\safe.py", "line": 2}, result["matches"])
+
+    def test_depth_truncation_does_not_hide_other_queued_directories(self):
+        (self.root / "aaa").mkdir()
+        (self.root / "aaa" / "deep").mkdir()
+        with patch.object(search, "MAX_DEPTH", 1):
+            result = search.search("hermes", "needle", mode="content", relative_root="")
+        self.assertTrue(result["truncated"])
+        self.assertIn({"path": r"src\safe.py", "line": 2}, result["matches"])
+
     def test_ancestor_cannot_be_renamed_during_content_read(self):
         original = native.handle_native_request
         moved = self.root.with_name("moved-code")

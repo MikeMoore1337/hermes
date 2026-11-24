@@ -62,7 +62,8 @@ def search(project: str, query: str, *, mode: str, relative_root: str) -> dict:
         matches = []
         entries_scanned = bytes_scanned = 0
         truncated = False
-        while queue and not truncated:
+        halted = False
+        while queue and not halted:
             directory, depth = queue.popleft()
             with _locked_directory(project, directory) as (api, path, root):
                 names = []
@@ -70,6 +71,7 @@ def search(project: str, query: str, *, mode: str, relative_root: str) -> dict:
                     for entry in iterator:
                         if entries_scanned >= MAX_ENTRIES:
                             truncated = True
+                            halted = True
                             break
                         entries_scanned += 1
                         names.append(entry.name)
@@ -109,6 +111,7 @@ def search(project: str, query: str, *, mode: str, relative_root: str) -> dict:
                                 except (native.NativeReadRefused, OSError, ValueError):
                                     # A failed read may already have consumed bytes; stop the search.
                                     truncated = True
+                                    halted = True
                                     break
                                 bytes_scanned += len(data)
                                 if b"\x00" not in data:
@@ -121,6 +124,7 @@ def search(project: str, query: str, *, mode: str, relative_root: str) -> dict:
                                             matches.append({"path": relative, "line": number})
                                             if len(matches) > MAX_MATCHES:
                                                 truncated = True
+                                                halted = True
                                                 break
                         finally:
                             api.CloseHandle(child)
@@ -128,6 +132,7 @@ def search(project: str, query: str, *, mode: str, relative_root: str) -> dict:
                         continue
                     if len(matches) > MAX_MATCHES:
                         truncated = True
+                        halted = True
                         break
         return {"status": "ok", "project": project, "relative_root": relative_root,
                 "mode": mode, "matches": matches[:MAX_MATCHES], "truncated": truncated,

@@ -74,8 +74,9 @@ class LinuxNativeSearch:
         entries_scanned = 0
         bytes_scanned = 0
         truncated = False
+        halted = False
         queue: deque[tuple[str, int]] = deque([(relative_root, 0)])
-        while queue and not truncated:
+        while queue and not halted:
             directory, depth = queue.popleft()
             # Verify the subdirectory is really under the locally pinned root.
             fd = self._files._open(directory, directory=True)
@@ -88,6 +89,7 @@ class LinuxNativeSearch:
                         entries_scanned += 1
                         if entries_scanned > MAX_ENTRIES:
                             truncated = True
+                            halted = True
                             break
                         names.append(entry.name)
             finally:
@@ -134,6 +136,7 @@ class LinuxNativeSearch:
                             # growth/IO error. Stop rather than repeatedly
                             # reading unaccounted bytes from unstable files.
                             truncated = True
+                            halted = True
                             break
                         # EVERY successful read counts, including binary and
                         # invalid UTF-8 that will not produce a match.
@@ -149,9 +152,11 @@ class LinuxNativeSearch:
                                 found.append({"path": relative, "line": line_number})
                                 if len(found) > MAX_MATCHES:
                                     truncated = True
+                                    halted = True
                                     break
                 if len(found) > MAX_MATCHES:
                     truncated = True
+                    halted = True
                     break
             # A scan that hits the cap may show only the first MAX_MATCHES.
         return {
