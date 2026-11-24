@@ -144,6 +144,19 @@ class LinuxNativeSearchContracts(unittest.TestCase):
         self.assertNotIn("huge.txt", str(out["matches"]))
         self.assertTrue(out["truncated"])
 
+    def test_skipped_oversize_file_does_not_hide_queued_directory(self):
+        (self.root / "a-oversize.txt").write_bytes(b"x" * (MAX_READ_BYTES + 1))
+        result = self.search.search("TODO", mode="content")
+        self.assertTrue(result["truncated"])
+        self.assertIn({"path": "src/app.py", "line": 2}, result["matches"])
+
+    def test_depth_truncation_does_not_hide_other_queued_directories(self):
+        with patch("device_fabric.linux_native_search.MAX_DEPTH", 1):
+            (self.root / "docs" / "deep").mkdir()
+            result = self.search.search("TODO", mode="content")
+        self.assertTrue(result["truncated"])
+        self.assertIn({"path": "src/app.py", "line": 2}, result["matches"])
+
     def test_binary_source_reads_are_charged_to_aggregate_budget(self):
         for index in range(10):
             (self.root / ("binary%03d.txt" % index)).write_bytes(
