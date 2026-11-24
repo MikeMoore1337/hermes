@@ -15,8 +15,8 @@ import tempfile
 from device_fabric.linux_native_files import MAX_READ_BYTES, READ_EXTENSIONS, _relative
 from device_fabric.linux_native_landlock import PRIVATE_DIRECTORIES
 
-COMMIT = '17c5f29921f379d1f5229eede40c88d5183ddcf9'
-ARCHIVE_SHA256 = '6ae46df006ad321238761b900b64cd1e410a53ff09561da0e16d491ed67201a2'
+COMMIT = 'f6076967aac9705ec2cf00ef40545b66c49d53d5'
+ARCHIVE_SHA256 = '1b1f206c4db8c493b35b91c057bf9bab47ddf088524320a0152f3b0cd270444e'
 SNAPSHOT_ROOT = Path('/opt/hermes-commander-yfc-snapshots')
 MAX_ARCHIVE = 8 * 1024 * 1024
 MAX_TOTAL = 40 * 1024 * 1024
@@ -115,7 +115,7 @@ def main() -> None:
         with args.archive.open('rb') as stream:
             raw = stream.read(MAX_ARCHIVE + 1)
         files = read_archive(raw, ARCHIVE_SHA256)
-        if len(files) != 2671:
+        if len(files) != 2721:
             raise SnapshotDenied('snapshot_denied')
         install(files)
         print('YFC_DEV_SNAPSHOT_INSTALLED_READ_ONLY_SOURCE_ONLY')
