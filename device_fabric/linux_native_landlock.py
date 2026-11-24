@@ -190,7 +190,7 @@ class ReadSnapshot:
             self.close()
             raise NativeLinuxDenied('native_linux_denied') from None
 
-    def seal(self) -> None:
+    def seal(self, *, replay_ledger=None) -> None:
         if self._attempted or self._closed or self.files._root_fd < 0:
             raise NativeLinuxDenied('native_linux_denied')
         self._attempted = True
@@ -199,7 +199,8 @@ class ReadSnapshot:
             for name in ('/proc/self/status', '/proc/self/cgroup', '/proc/self/mountinfo'):
                 proc_fds.append(os.open(name, os.O_PATH | os.O_CLOEXEC | os.O_NOFOLLOW))
             restrict_to_open_files(file_fds=tuple(self.file_fds + proc_fds),
-                directory_fds=tuple(v[0] for v in self.directories.values()))
+                directory_fds=tuple(v[0] for v in self.directories.values()),
+                replay_ledger=replay_ledger)
             self._sealed = True
             self.files._landlock_snapshot = self
         finally:
@@ -221,7 +222,8 @@ class ReadSnapshot:
         self.close()
 
 
-def restrict_to_open_files(*, file_fds: tuple[int, ...], directory_fds: tuple[int, ...]) -> None:
+def restrict_to_open_files(*, file_fds: tuple[int, ...], directory_fds: tuple[int, ...],
+                           replay_ledger=None) -> None:
     """Restrict this process; unlisted files and newly opened directories fail.
 
     Existing readable directory FDs are intentionally retained for bounded
@@ -236,6 +238,18 @@ def restrict_to_open_files(*, file_fds: tuple[int, ...], directory_fds: tuple[in
             any(type(fd) is not int or fd < 3 for fd in file_fds + directory_fds) or
             len(set(file_fds + directory_fds)) != len(file_fds) + len(directory_fds)):
             raise NativeLinuxDenied('native_linux_denied')
+        replay_fds = ()
+        if replay_ledger is not None:
+            from device_fabric.linux_native_replay import LinuxReadReplay
+            if type(replay_ledger) is not LinuxReadReplay:
+                raise NativeLinuxDenied('native_linux_denied')
+            replay_ledger._check_file()
+            ledger_fd = replay_ledger.fd
+            flags = fcntl.fcntl(ledger_fd, fcntl.F_GETFL)
+            if (ledger_fd < 3 or ledger_fd in file_fds + directory_fds
+                    or flags & os.O_ACCMODE != os.O_RDWR or not flags & os.O_APPEND):
+                raise NativeLinuxDenied('native_linux_denied')
+            replay_fds = (ledger_fd,)
         for fd in file_fds:
             node = os.fstat(fd)
             if (not stat.S_ISREG(node.st_mode) or node.st_nlink != 1 or
@@ -264,7 +278,7 @@ def restrict_to_open_files(*, file_fds: tuple[int, ...], directory_fds: tuple[in
             path = _PathBeneath(READ_FILE, fd, 0)
             if libc.syscall(445, ruleset_fd, 1, ctypes.byref(path), 0) < 0:
                 raise NativeLinuxDenied('native_linux_denied')
-        admitted = set(file_fds + directory_fds + (0, 1, 2, ruleset_fd))
+        admitted = set(file_fds + directory_fds + replay_fds + (0, 1, 2, ruleset_fd))
         for name in os.listdir('/proc/self/fd'):
             fd = int(name)
             if fd in admitted:

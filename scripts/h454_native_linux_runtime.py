@@ -230,7 +230,8 @@ def local_preflight(prepared: PreparedRuntime) -> dict[str, object]:
 def _run_yfc_sessions(prepared: PreparedRuntime, roots: dict[str, LinuxNativeFiles],
                       connector: Connector, is_device_revoked: Callable[[], bool],
                       is_os_isolation_verified: Callable[[], bool],
-                      *, monotonic: Callable[[], float] = time.monotonic) -> str:
+                      *, monotonic: Callable[[], float] = time.monotonic,
+                      replay_ledger=None) -> str:
     """Rotate at most three read-only sessions within the existing time budget."""
     deadline = monotonic() + MAX_SESSION_SECONDS
     seen_ids: set[str] = set()
@@ -244,7 +245,8 @@ def _run_yfc_sessions(prepared: PreparedRuntime, roots: dict[str, LinuxNativeFil
             local_roots=roots, is_device_revoked=is_device_revoked)
         outcome = run_session(prepared.device, dispatcher, connector,
                               max_seconds=min(remaining, MAX_SESSION_SECONDS),
-                              seen_ids=seen_ids, monotonic=monotonic)
+                              seen_ids=seen_ids, monotonic=monotonic,
+                              **({'claim_call': replay_ledger.claim} if replay_ledger is not None else {}))
         if outcome != "session_call_budget":
             return outcome
     return "session_call_budget"
@@ -253,7 +255,8 @@ def _run_yfc_sessions(prepared: PreparedRuntime, roots: dict[str, LinuxNativeFil
 def run_once(prepared: PreparedRuntime, *, connector: Connector,
              is_device_revoked: Callable[[], bool],
              is_os_isolation_verified: Callable[[], bool],
-             landlock_read: bool = False, allow_session_rotation: bool = False) -> str:
+             landlock_read: bool = False, allow_session_rotation: bool = False,
+             replay_ledger=None) -> str:
     """Source-only injectable bounded runner. NOT exposed as a CLI/service.
 
     The trusted host installer is responsible for actual OS enforcement,
@@ -281,15 +284,16 @@ def run_once(prepared: PreparedRuntime, *, connector: Connector,
                 if len(roots) != 1:
                     raise RuntimeDenied("native_linux_runtime_denied")
                 snapshot = stack.enter_context(ReadSnapshot(next(iter(roots.values()))))
-                snapshot.seal()
+                snapshot.seal(**({'replay_ledger': replay_ledger} if replay_ledger is not None else {}))
                 print('H454_NATIVE_OS_READ_ISOLATION=PASS', flush=True)
             if allow_session_rotation:
                 return _run_yfc_sessions(prepared, roots, connector, is_device_revoked,
-                                         is_os_isolation_verified)
+                                         is_os_isolation_verified, replay_ledger=replay_ledger)
             dispatcher = LinuxOriginalReadDispatcher(
                 device_id=prepared.device.device_id, local_roots=roots,
                 is_device_revoked=is_device_revoked)
-            return run_session(prepared.device, dispatcher, connector)
+            return run_session(prepared.device, dispatcher, connector,
+                               **({'claim_call': replay_ledger.claim} if replay_ledger is not None else {}))
     except Exception:
         # A failing trusted revocation or OS-isolation callback may contain
         # private server names/paths in its exception. Deny without leaking.

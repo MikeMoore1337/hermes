@@ -247,7 +247,8 @@ def run_session(config: LocalLinuxDeviceConfig,
                 connector: Callable[..., WebSocket],
                 *, monotonic: Callable[[], float] = time.monotonic,
                 max_seconds: float = MAX_SESSION_SECONDS,
-                seen_ids: set[str] | None = None) -> str:
+                seen_ids: set[str] | None = None,
+                claim_call: Callable[[str], bool] | None = None) -> str:
     """One bounded outbound owner-paired WSS session, no reconnect or replay.
 
     External code must enforce OS isolation and supply an independently
@@ -263,6 +264,7 @@ def run_session(config: LocalLinuxDeviceConfig,
         or type(config.token) is not str or TOKEN.fullmatch(config.token) is None
         or dispatcher.device_id != config.device_id
         or not callable(connector) or not callable(monotonic)
+        or (claim_call is not None and not callable(claim_call))
         or type(max_seconds) not in (int, float) or not math.isfinite(max_seconds)
         or not 0 < max_seconds <= MAX_SESSION_SECONDS
         or (seen_ids is not None and (type(seen_ids) is not set
@@ -334,6 +336,15 @@ def run_session(config: LocalLinuxDeviceConfig,
                     if msg_id in seen or len(seen) >= MAX_SEEN_IDS:
                         continue
                     seen.add(msg_id)
+                    if claim_call is not None:
+                        try:
+                            claimed = claim_call(msg_id)
+                        except Exception:
+                            raise LinuxOutboundDenied('native_linux_transport_denied') from None
+                        if type(claimed) is not bool:
+                            raise LinuxOutboundDenied('native_linux_transport_denied')
+                        if claimed is not True:
+                            continue
                     try:
                         out = dispatcher.call(frame)
                         # Dispatcher already verified native adapter result.

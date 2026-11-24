@@ -99,7 +99,11 @@ class RealLinuxUnitRenderTests(unittest.TestCase):
                 self.assertIn("RuntimeMaxSec=300s", text)
                 self.assertIn("[Install]\nWantedBy=multi-user.target", text)
                 self.assertNotIn("ExecStartPre=/bin/sh", text)
-                self.assertNotIn("ReadWritePaths=", text)
+                self.assertEqual([line for line in text.splitlines() if line.startswith("ReadWritePaths=")],
+                                 ["ReadWritePaths=/var/lib/hermes-commander-replay"])
+                self.assertIn("StateDirectory=hermes-commander-replay\n", text)
+                self.assertIn("StateDirectoryMode=0700\n", text)
+                self.assertIn("AssertPathExists=/var/lib/hermes-commander-replay/claims\n", text)
                 self.assertNotIn("ExecStart=/bin/bash", text)
 
     def test_openat2_requires_seccomp_compatible_fixed_service_identity(self):
@@ -349,10 +353,21 @@ class OSIsolationKernelTests(unittest.TestCase):
     def test_hermes_gate_rechecks_identity_and_uses_only_audit_socket(self):
         values=dict(service.EXPECTED_HARDENING,LimitNOFILE='32768',StandardInput='null',
             StandardOutput='journal',StandardError='journal',TemporaryFileSystem='/run:ro',
+            ReadWritePaths='/var/lib/hermes-commander-replay', StateDirectory='hermes-commander-replay',
+            StateDirectoryMode='0700',
             BindPaths='',BindReadOnlyPaths=service.AUDIT_DIRECTORY+':'+service.AUDIT_DIRECTORY+':rbind',
             RestrictAddressFamilies='AF_INET AF_INET6 AF_UNIX',IPAddressDeny='any',
             IPAddressAllow='172.29.251.2/32',CapabilityBoundingSet='')
         properties='\n'.join(k+'='+v for k,v in values.items())
+        self.assertTrue(service._properties_are_hardened(
+            properties, private_relay_ip='172.29.251.2', target='hermes-vps'))
+        for bad in (
+            properties.replace('ReadWritePaths=/var/lib/hermes-commander-replay', 'ReadWritePaths=/'),
+            properties.replace('ReadWritePaths=/var/lib/hermes-commander-replay', 'ReadWritePaths=/var/lib/hermes-commander-replay /tmp'),
+            properties.replace('StateDirectoryMode=0700', 'StateDirectoryMode=0755'),
+        ):
+            self.assertFalse(service._properties_are_hardened(
+                bad, private_relay_ip='172.29.251.2', target='hermes-vps'))
         with patch.object(service.sys,'platform','linux'), \
              patch.object(service.os,'geteuid',return_value=1234), \
              patch.object(service.os,'getegid',return_value=1234), \
@@ -453,6 +468,7 @@ class LiveWorkerLifecycleTests(unittest.TestCase):
              patch.object(service, "load_local_runtime", return_value=self.fake), \
              patch.object(service, "private_revoked_provider", return_value=revoked), \
              patch.object(service, "_pinned_websocket_dependency", return_value=True), \
+             patch('device_fabric.linux_native_replay.LinuxReadReplay') as ledger, \
              patch.object(service, "private_websocket_connector", return_value=self.transport), \
              patch.object(service, "run_once", return_value="session_deadline") as session:
             self.assertEqual(service.main(args), 0)
@@ -464,6 +480,7 @@ class LiveWorkerLifecycleTests(unittest.TestCase):
                 "git_roots": ("/srv/hermes/source",), "expected_identity": (1234,1234)}
                 for call in gate.call_args_list[1:]))
             self.assertTrue(session.call_args.kwargs['landlock_read'])
+            self.assertIs(session.call_args.kwargs['replay_ledger'], ledger.return_value.__enter__.return_value)
             self.assertNotIn('allow_session_rotation', session.call_args.kwargs)
             self.assertIs(session.call_args.kwargs["connector"], self.transport)
             self.assertFalse(session.call_args.kwargs["is_device_revoked"]())
@@ -503,6 +520,7 @@ class LiveWorkerLifecycleTests(unittest.TestCase):
              patch.object(service,'load_local_runtime',return_value=prepared), \
              patch.object(service,'private_revoked_provider',return_value=lambda:False), \
              patch.object(service,'_pinned_websocket_dependency',return_value=True) as pinned, \
+             patch('device_fabric.linux_native_replay.LinuxReadReplay') as ledger, \
              patch.object(service,'sync_adapter',return_value=Mock()) as adapter, \
              patch.object(service,'private_websocket_connector',return_value=self.transport) as private_connector, \
              patch.object(service,'run_once',return_value='session_deadline') as session:
@@ -512,6 +530,7 @@ class LiveWorkerLifecycleTests(unittest.TestCase):
             private_connector.assert_called_once_with(private,adapter.return_value)
             identity_check.assert_called_once_with('yfc-vps')
             self.assertTrue(session.call_args.kwargs['landlock_read'])
+            self.assertIs(session.call_args.kwargs['replay_ledger'], ledger.return_value.__enter__.return_value)
             self.assertIs(session.call_args.kwargs['allow_session_rotation'], True)
             self.assertTrue(all(c.kwargs['expected_identity']==(1234,1234) for c in gate.call_args_list))
 

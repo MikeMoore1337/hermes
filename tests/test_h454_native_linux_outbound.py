@@ -229,6 +229,31 @@ class NativeLinuxOutboundRealKernelTests(unittest.TestCase):
         self.assertEqual(seen, {'request-1', 'request-2'})
         self.assertEqual([item.get('id') for item in second.socket.outgoing if item['type']=='result'], ['request-2'])
 
+    def test_durable_claim_denies_replay_with_fresh_session_state(self):
+        from device_fabric.linux_native_replay import LinuxReadReplay, _MAGIC
+        state = Path(self.temp.name) / 'state'
+        state.mkdir(mode=0o700)
+        journal = state / 'claims'
+        journal.write_bytes(_MAGIC)
+        journal.chmod(0o600)
+        first = FakeConnector([welcome(), call(ident='request-1')])
+        second = FakeConnector([welcome(), call(ident='request-1'), call(ident='request-2')])
+        with patch.object(native, 'MAX_TOOL_CALLS', 1):
+            with LinuxReadReplay(journal) as ledger:
+                native.run_session(config(), self.broker, first, claim_call=ledger.claim)
+            with LinuxReadReplay(journal) as ledger:
+                native.run_session(config(), self.broker, second, claim_call=ledger.claim)
+        self.assertEqual([x.get('id') for x in first.socket.outgoing if x['type'] == 'result'], ['request-1'])
+        self.assertEqual([x.get('id') for x in second.socket.outgoing if x['type'] == 'result'], ['request-2'])
+
+    def test_failed_durable_claim_never_reaches_dispatcher(self):
+        conn = FakeConnector([welcome(), call(ident='request-1')])
+        with patch.object(self.broker, 'call', wraps=self.broker.call) as dispatch:
+            with self.assertRaises(native.LinuxOutboundDenied):
+                native.run_session(config(), self.broker, conn,
+                                   claim_call=lambda _: (_ for _ in ()).throw(ValueError()))
+            dispatch.assert_not_called()
+
     def test_invalid_rotation_budgets_fail_before_connecting(self):
         for seconds in (0, -1, float('nan'), float('inf'), native.MAX_SESSION_SECONDS+1):
             with self.subTest(seconds=seconds):

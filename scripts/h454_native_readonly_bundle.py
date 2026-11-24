@@ -42,6 +42,7 @@ SOURCE_FILES: Final = tuple(sorted((
     "device_fabric/linux_native_files.py",
     "device_fabric/linux_native_landlock.py",
     "device_fabric/linux_native_outbound.py",
+    "device_fabric/linux_native_replay.py",
     "device_fabric/linux_native_read_dispatch.py",
     "device_fabric/linux_native_search.py",
     "device_fabric/native_brc_enrollment.py",
@@ -52,6 +53,7 @@ SOURCE_FILES: Final = tuple(sorted((
     "device_fabric/native_install_preview.py",
     "scripts/h454_native_install_preflight.py",
     "scripts/h454_native_linux_runtime.py",
+    "scripts/h454_native_linux_replay_provision.py",
     "scripts/h454_native_linux_service.py",
     "scripts/h454_native_linux_unit_candidate.py",
 )))
