@@ -105,6 +105,7 @@ def render_active_unit(
                "After=hermes-commander-tunnel.service") if unix_relay else ()),
             "AssertPathExists=" + MANIFEST_PATH,
             "AssertPathExists=" + CONFIG_PATH,
+            "AssertPathExists=/var/lib/hermes-commander-replay/claims",
             "AssertPathExists=" + deps + "/websockets/asyncio/client.py",
             *(("AssertPathExists=" + str(TRUST / name) for name in (CONFIG, CA)) if private_relay else ()),
             "StartLimitIntervalSec=" + ("60" if unix_relay else "300"),
@@ -119,6 +120,8 @@ def render_active_unit(
             "Environment=PYTHONPATH=" + deps
             + " PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1",
             "UMask=0077",
+            "StateDirectory=hermes-commander-replay",
+            "StateDirectoryMode=0700",
             "Restart=" + ("always" if unix_relay else "on-success"),
             "RestartSec=" + ("10s" if unix_relay else "5s"),
             "RuntimeMaxSec=300s",
@@ -168,6 +171,7 @@ def render_active_unit(
             "ReadOnlyPaths=" + source,
             "ReadOnlyPaths=" + deps,
             "ReadOnlyPaths=/var/lib/hermes-commander-native",
+            "ReadWritePaths=/var/lib/hermes-commander-replay",
             *((("ReadOnlyPaths=" + str(TRUST),)) if private_relay else ()),
             "StandardInput=null",
         ]

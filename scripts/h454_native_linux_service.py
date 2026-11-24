@@ -36,6 +36,7 @@ from scripts.h454_native_linux_unit_candidate import (
 )
 
 UNIT = "hermes-commander-native.service"
+REPLAY_PATH = Path('/var/lib/hermes-commander-replay/claims')
 STATUS = Path("/proc/self/status")
 CGROUP = Path("/proc/self/cgroup")
 EXPECTED_SHA = re.compile(r"[0-9a-f]{40}\Z")
@@ -62,7 +63,8 @@ PROC_CAPS = ("CapEff", "CapPrm", "CapBnd", "CapAmb")
 SHOW_KEYS = (*EXPECTED_HARDENING, "LimitNOFILE", "StandardInput", "StandardOutput", "StandardError",
              "RestrictAddressFamilies", "TemporaryFileSystem",
              "BindPaths", "BindReadOnlyPaths", "IPAddressDeny", "IPAddressAllow",
-             "CapabilityBoundingSet", "InaccessiblePaths")
+             "CapabilityBoundingSet", "InaccessiblePaths", "ReadWritePaths", "StateDirectory",
+             "StateDirectoryMode")
 
 
 class NativeLinuxServiceDenied(ValueError):
@@ -129,6 +131,9 @@ def _properties_are_hardened(text: str, *, private_relay_ip: str | None = None,
             expected['StandardError'] = 'journal'
             expected['TemporaryFileSystem'] = '/run:ro'
             expected['BindPaths'] = ''
+            expected['ReadWritePaths'] = '/var/lib/hermes-commander-replay'
+            expected['StateDirectory'] = 'hermes-commander-replay'
+            expected['StateDirectoryMode'] = '0700'
         if unix_relay:
             expected['PrivateNetwork'] = 'yes'
             expected['RestrictAddressFamilies'] = 'AF_UNIX'
@@ -412,14 +417,22 @@ def run_trusted_once(*, target: str, release_sha: str,
             connector = private_websocket_connector(private, sync_adapter(connect))
         if os_gate() is not True:
             _deny()
+        options = ({'landlock_read': True, 'allow_session_rotation': True}
+                   if landlock_read and target == 'yfc-vps'
+                   else {'landlock_read': True} if landlock_read else {})
+        if landlock_read:
+            # Provisioning is separate and explicit. A missing or damaged
+            # journal must never silently reset already consumed request IDs.
+            from device_fabric.linux_native_replay import LinuxReadReplay
+            with LinuxReadReplay(REPLAY_PATH) as ledger:
+                return run_once(
+                    prepared, connector=connector,
+                    is_device_revoked=lambda: os_gate() is not True or revoked() is not False,
+                    is_os_isolation_verified=os_gate, replay_ledger=ledger, **options)
         return run_once(
             prepared, connector=connector,
             is_device_revoked=lambda: os_gate() is not True or revoked() is not False,
-            is_os_isolation_verified=os_gate,
-            **({'landlock_read': True, 'allow_session_rotation': True}
-               if landlock_read and target == 'yfc-vps'
-               else {'landlock_read': True} if landlock_read else {}),
-        )
+            is_os_isolation_verified=os_gate, **options)
     except Exception:
         raise NativeLinuxServiceDenied("native_linux_service_denied") from None
 
