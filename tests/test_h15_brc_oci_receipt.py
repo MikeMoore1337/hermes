@@ -56,7 +56,7 @@ class OCIReceiptTests(unittest.TestCase):
         self.assertEqual(len(actual["cyclonedx_sha256"]), 64)
 
     def test_unpinned_second_base_denied(self):
-        self.dockerfile.write_text("FROM " + BASE_REF + " AS builder\nFROM node:24-bookworm-slim AS runtime")
+        self.dockerfile.write_text("FROM " + BASE_REF + " AS builder\nFROM node:24-trixie-slim AS runtime")
         with self.assertRaisesRegex(ReceiptDenied, "unapproved_or_unpinned_oci_base"):
             self.check()
 

@@ -625,16 +625,25 @@ jobs:
             --security-opt no-new-privileges --user 65534:65534 \
             --memory 128m --pids-limit 32 --entrypoint dpkg-query \
             "$image" -W '-f=${Version}' perl-base)"
-          test "$package" = "5.36.0-7+deb12u4"
+          test "$package" = "5.40.1-6+deb13u1"
           echo "H15_RUNTIME_PERL_BASE_FIXED_VERSION=PASS" >> "$GITHUB_STEP_SUMMARY"
-          for name in apt libapt-pkg6.0; do
+          for name in apt libapt-pkg7.0; do
             package="$(docker run --rm --network none --read-only --cap-drop ALL \
               --security-opt no-new-privileges --user 65534:65534 \
               --memory 128m --pids-limit 32 --entrypoint dpkg-query \
               "$image" -W '-f=${Version}' "$name")"
-            test "$package" = "2.6.2"
+            test "$package" = "3.0.4"
           done
           echo 'H15_RUNTIME_APT_FIXED_VERSION=PASS' >> "$GITHUB_STEP_SUMMARY"
+          for pair in 'libpam0g=1.7.0-5' 'zlib1g=1:1.3.dfsg+really1.3.1-1+deb13u1'; do
+            name="${pair%%=*}"; expected="${pair#*=}"
+            package="$(docker run --rm --network none --read-only --cap-drop ALL \
+              --security-opt no-new-privileges --user 65534:65534 \
+              --memory 128m --pids-limit 32 --entrypoint dpkg-query \
+              "$image" -W '-f=${Version}' "$name")"
+            test "$package" = "$expected"
+          done
+          echo 'H15_RUNTIME_PAM_ZLIB_FIXED_VERSIONS=PASS' >> "$GITHUB_STEP_SUMMARY"
           # BRC runtime does not need npm/npx (and npm's bundled undici).
           # Prove the non-root Node interpreter and upgraded sharp native module
           # remain usable inside the ACTUAL built image, with no network/mounts.
@@ -1051,7 +1060,7 @@ jobs:
             --git-sha "$GITHUB_SHA" \
             --out "$evidence/OCI_RECEIPT.json"
           cp "$RUNNER_TEMP/brc-audit.json" "$evidence/UPSTREAM_AUDIT.json"
-          printf 'sha256:873f586f3794f52281bd039bf02c048a0be08fde619338f9941bad1eb6b34530\n' > "$evidence/NODE_BASE_DIGEST"
+          printf 'sha256:4d00acb4bcc42c454c4eb801526f7ad7f772ea3bd4fd168c5cc2e384abcbb9d4\n' > "$evidence/NODE_BASE_DIGEST"
           (
             cd "$evidence"
             sha256sum OCI_RECEIPT.json sbom.cdx.json UPSTREAM_AUDIT.json NODE_BASE_DIGEST > SHA256SUMS

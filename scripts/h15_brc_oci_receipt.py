@@ -12,9 +12,9 @@ from pathlib import Path
 import re
 
 UPSTREAM_SHA = "cbe511702dd0147650353c29ac6ab1decd8afda1"
-BASE_DIGEST = "sha256:873f586f3794f52281bd039bf02c048a0be08fde619338f9941bad1eb6b34530"
+BASE_DIGEST = "sha256:4d00acb4bcc42c454c4eb801526f7ad7f772ea3bd4fd168c5cc2e384abcbb9d4"
 IMAGE_PATTERN = re.compile(r"^sha256:[a-f0-9]{64}$")
-BASE_REF = "node:24-bookworm-slim@" + BASE_DIGEST
+BASE_REF = "node:24-trixie-slim@" + BASE_DIGEST
 UNSAFE_IMAGE_ENV = ("BRC_ADMIN_PASSWORD", "BRC_SESSION_SECRET", "BRC_TOKEN",
                     "BRC_DEVICE_ID", "GITHUB_TOKEN", "GH_TOKEN")
 
