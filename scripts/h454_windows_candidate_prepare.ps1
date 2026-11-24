@@ -57,7 +57,24 @@ function Assert-H454PreparedCandidate([object]$Candidate,[object]$Original,[obje
             (ConvertTo-Json -Compress -Depth 10 -InputObject $imageValue)) 'H454_CANDIDATE_PROFILE'
     }
     $oldLabels=@($Original.Config.Labels.PSObject.Properties);$newLabels=@($cfg.Labels.PSObject.Properties)
-    Require-H454 ($newLabels.Count -eq $oldLabels.Count+1) 'H454_CANDIDATE_LABELS'
+    $revisionName='org.opencontainers.image.revision'
+    $oldRevision=$Original.Config.Labels.PSObject.Properties[$revisionName]
+    $newRevision=$cfg.Labels.PSObject.Properties[$revisionName]
+    $imageLabels=$Image.Config.PSObject.Properties['Labels']
+    $imageRevision=if($null -ne $imageLabels -and $null -ne $imageLabels.Value){
+        $imageLabels.Value.PSObject.Properties[$revisionName]
+    }else{$null}
+    $extraRevision=0
+    if($null -eq $oldRevision -and $null -ne $imageRevision){
+        Require-H454 ($imageRevision.Value -is [string] -and $imageRevision.Value -cmatch '^[a-f0-9]{40}$' -and
+            $null -ne $newRevision -and $newRevision.Value -ceq $imageRevision.Value) 'H454_CANDIDATE_LABELS'
+        $extraRevision=1
+    }elseif($null -eq $oldRevision){
+        Require-H454 ($null -eq $newRevision) 'H454_CANDIDATE_LABELS'
+    }elseif($null -ne $imageRevision){
+        Require-H454 ($imageRevision.Value -ceq $oldRevision.Value) 'H454_CANDIDATE_LABELS'
+    }
+    Require-H454 ($newLabels.Count -eq $oldLabels.Count+1+$extraRevision) 'H454_CANDIDATE_LABELS'
     foreach($entry in $oldLabels){
         $other=$cfg.Labels.PSObject.Properties[$entry.Name]
         Require-H454 ($null -ne $other -and $other.Value -ceq $entry.Value) 'H454_CANDIDATE_LABELS'
