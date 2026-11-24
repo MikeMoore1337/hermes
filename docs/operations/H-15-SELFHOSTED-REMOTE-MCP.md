@@ -288,10 +288,10 @@ agents keep operating unchanged.
 
 The evaluation-only image is now built from a **fixed Docker Official
 Node 24 OCI manifest digest** in both stages:
-`node:24-trixie-slim@sha256:4d00acb4bcc42c454c4eb801526f7ad7f772ea3bd4fd168c5cc2e384abcbb9d4`.
-The amd64 base contains Debian trixie fixes for CVE-2026-109518,
-CVE-2025-6020 and CVE-2026-85091. The image build verifies exact APT,
-Perl, PAM and zlib versions without downloading or upgrading OS packages.
+`node:24-bookworm-slim@sha256:873f586f3794f52281bd039bf02c048a0be08fde619338f9941bad1eb6b34530`.
+The amd64 base contains Debian bookworm APT 2.6.2 (CVE-2026-109518 fix)
+and perl-base 5.36.0-7+deb12u4; the image build verifies those versions
+without downloading or upgrading OS packages.
 This digest is an immutable pointer to the reviewed base (not a
 guarantee that the base is free of vulnerabilities). Updating it
 requires code review and exact-head CI; a mutable `latest` base is
