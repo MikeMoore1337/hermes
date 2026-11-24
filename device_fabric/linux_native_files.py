@@ -24,10 +24,11 @@ import sys
 from device_fabric.native_effect_grants import (
     GrantDenied, validate_native_file_relative,
 )
+from device_fabric.native_list_pages import PAGE_SIZE, SCAN_LIMIT, page
 
 MAX_READ_BYTES = 256 * 1024
-MAX_LIST_ENTRIES = 64
-MAX_SCAN_ENTRIES = 256
+MAX_LIST_ENTRIES = PAGE_SIZE
+MAX_SCAN_ENTRIES = SCAN_LIMIT
 RESOLVE_NO_XDEV = 0x01
 RESOLVE_NO_MAGICLINKS = 0x02
 RESOLVE_NO_SYMLINKS = 0x04
@@ -273,7 +274,7 @@ class LinuxNativeFiles:
         except (OSError, ValueError, UnicodeError) as exc:
             raise NativeLinuxDenied("native_linux_denied") from None
 
-    def list_directory(self, relative: str = "") -> dict[str, object]:
+    def list_directory(self, relative: str = "", *, cursor: str | None = None) -> dict[str, object]:
         """At most 64 safe entries; bounded scan; no symlink disclosure."""
         try:
             fd = self._open(relative, directory=True)
@@ -299,6 +300,12 @@ class LinuxNativeFiles:
                         except (NativeLinuxDenied, OSError, ValueError):
                             continue
                 entries.sort(key=lambda x: (x["name"].casefold(), x["name"]))
+                if cursor is not None:
+                    selected, next_cursor = page(entries, self.project, relative, cursor)
+                    return {"status": "ok", "project": self.project,
+                            "relative": relative, "action": "list", "kind": "directory",
+                            "entries": selected, "truncated": bool(next_cursor),
+                            "next_cursor": next_cursor}
                 return {"status": "ok", "project": self.project,
                         "relative": relative, "action": "list",
                         "kind": "directory", "entries": entries[:MAX_LIST_ENTRIES],

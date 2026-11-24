@@ -14,7 +14,7 @@ import type { InvokeContext } from './invoke.js';
 type Host = 'windows' | 'hermes-vps' | 'yfc-vps';
 type Tool = 'native_file_stat' | 'native_file_read' |
             'native_file_list' | 'native_file_search';
-type SafeArgs = { project: string; relative: string } |
+type SafeArgs = { project: string; relative: string; cursor?:string } |
                 { project: string; query: string; mode: string; relative_root: string };
 const READ: Tool[] = ['native_file_stat','native_file_read','native_file_list'];
 const ALL: Tool[] = [...READ,'native_file_search'];
@@ -46,8 +46,10 @@ function schema(name:Tool) {
         mode:{type:'string',enum:['names','content']},
         relative_root:{type:'string',maxLength:1024}}
     : {host,project,relative:{type:'string',maxLength:1024}};
+  if(name==='native_file_list')fields.cursor={type:'string',maxLength:68,
+    description:'Set to empty string for first page, then pass next_cursor until empty. Directory changes require restarting; at most 256 entries are scanned.'};
   return {name,description:'Original Windows or Linux host source READ only; owner-paired native device required',
-    inputSchema:{type:'object',properties:fields,required:Object.keys(fields),
+    inputSchema:{type:'object',properties:fields,required:Object.keys(fields).filter(x=>x!=='cursor'),
                  additionalProperties:false},
     annotations:{title:name,readOnlyHint:true,destructiveHint:false,openWorldHint:false}};
 }
@@ -71,6 +73,12 @@ function safePath(path:string, host:Host, root:boolean):boolean {
     && !/(?:\.pem|\.key|\.p12|\.pfx|\.kdbx|\.sqlite3?|\.db)$/i.test(part)
     && (host!=='windows' || !/^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i.test(part)));
 }
+function cursorParts(value:unknown):{offset:number;hash:string}|null {
+  if(value==='')return {offset:0,hash:''};
+  if(typeof value!=='string')return null;
+  const match=/^(64|128|192):([a-f0-9]{64})$/.exec(value);
+  return match&&match[0]===value?{offset:Number(match[1]),hash:match[2]}:null;
+}
 function safeArgs(method:Tool, raw:unknown):{host:Host;args:SafeArgs}|null {
   if (!raw || typeof raw!=='object'||Array.isArray(raw))return null;
   const o=raw as Record<string,unknown>;
@@ -88,12 +96,15 @@ function safeArgs(method:Tool, raw:unknown):{host:Host;args:SafeArgs}|null {
     return {host:target,args:{project:o.project,query:o.query,
       mode:o.mode,relative_root:o.relative_root}};
   }
-  if (Object.keys(o).sort().join(',')!=='host,project,relative'
+  const paged=method==='native_file_list' && Object.hasOwn(o,'cursor');
+  if (Object.keys(o).sort().join(',')!==(paged?'cursor,host,project,relative':'host,project,relative')
       || typeof o.relative!=='string'
+      || (paged&&!cursorParts(o.cursor))
       || (method==='native_file_list'&&target==='windows'&&o.relative!=='')
       || !safePath(o.relative,target,method!=='native_file_read')
       || (method==='native_file_read'&&!READ_EXT.test(o.relative)))return null;
-  return {host:target,args:{project:o.project,relative:o.relative}};
+  return {host:target,args:paged?{project:o.project,relative:o.relative,cursor:o.cursor as string}
+                              :{project:o.project,relative:o.relative}};
 }
 
 function ownerRecord(store:SqliteStore, owner:string, host:Host):{id:string;tokenHash:string}|null {
@@ -205,7 +216,8 @@ function validResult(value:unknown, method:Tool, args:SafeArgs, host:Host):boole
     ...common,'relative_root','mode','matches','truncated',
     'entries_scanned','bytes_scanned']))return false;
   if(method==='native_file_list'&&!exactKeys(v,[
-    ...common,'relative','action','kind','entries','truncated']))return false;
+    ...common,'relative','action','kind','entries','truncated',
+    ...('cursor' in args?['next_cursor']:[])]))return false;
   if(method==='native_file_stat'&&!exactKeys(v,[
     ...common,'relative','action','kind','size_bytes']))return false;
   if(method==='native_file_read'&&!exactKeys(v,[
@@ -238,6 +250,12 @@ function validResult(value:unknown, method:Tool, args:SafeArgs, host:Host):boole
   if(method==='native_file_list') {
     if(v.kind!=='directory'||typeof v.truncated!=='boolean'
       ||!Array.isArray(v.entries)||v.entries.length>64)return false;
+    if('cursor' in args){
+      const before=cursorParts(args.cursor),after=cursorParts(v.next_cursor);
+      if(!before||!after||v.truncated!==Boolean(v.next_cursor))return false;
+      if(v.next_cursor && (after.offset!==before.offset+64||v.entries.length!==64
+          ||(before.hash!==''&&before.hash!==after.hash)))return false;
+    }
     const seen=new Set<string>();
     for(const item of v.entries){
       if(!item||typeof item!=='object'||Array.isArray(item))return false;

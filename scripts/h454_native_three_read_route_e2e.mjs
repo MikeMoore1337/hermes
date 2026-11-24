@@ -51,6 +51,7 @@ const store={
   },
 };
 let calls=0, revokeNext=false, rotateNext=false, malformed=false, escapeSearch=false, failCall=false;
+let invalidNext=false;
 const hub={
   get(id){return devices.get(id);},
   async call(id,tool,args,opts){
@@ -66,6 +67,13 @@ const hub={
       payload={status:'ok',project:args.project,relative:args.relative,
         action:'read',kind:'file',size_bytes:3,
         encoding:'base64',data:'YWJj',sha256:SHA};
+    } else if(tool==='native_file_list'){
+      const paging=Object.hasOwn(args,'cursor');
+      const second=paging&&args.cursor!=='';
+      const entries=Array.from({length:second?1:64},(_,i)=>({name:`file-${i}.py`,kind:'file'}));
+      payload={status:'ok',project:args.project,relative:args.relative,
+        action:'list',kind:'directory',entries,truncated:paging&&!second};
+      if(paging)payload.next_cursor=second?(invalidNext?'128:'+'b'.repeat(64):''):'64:'+'a'.repeat(64);
     } else if(tool==='native_file_search'){
       const child=args.relative_root+(row.host==='windows'?'\\':'/')+'safe.py';
       payload={status:'ok',project:args.project,relative_root:args.relative_root,
@@ -136,6 +144,22 @@ for(const p of profiles){
     assert(denied(await invokeOwnerNativeThreeRead(hub,store,ctx,
       'native_file_search',nested)), 'SEARCH_ROOT_ESCAPE_ACCEPTED');
     escapeSearch=false;
+  }
+  {
+    const list={host:p.host,project:'hermes',relative:'',cursor:''};
+    const first=await invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_list',list);
+    assert(!first.isError,'PAGED_LIST_FIRST_REFUSED_'+p.host);
+    const cursor=JSON.parse(first.content[0].text).next_cursor;
+    assert(cursor==='64:'+'a'.repeat(64),'PAGED_LIST_CURSOR_NOT_RETURNED');
+    const second=await invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_list',{...list,cursor});
+    assert(!second.isError&&JSON.parse(second.content[0].text).next_cursor==='', 'PAGED_LIST_LAST_REFUSED');
+    invalidNext=true;
+    assert(denied(await invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_list',{...list,cursor})),
+      'INVALID_NEXT_CURSOR_ACCEPTED');
+    invalidNext=false;
+    assert(denied(await invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_list',{...list,cursor:'65:'+'a'.repeat(64)})),
+      'INVALID_INPUT_CURSOR_ACCEPTED');
+    if(p.host==='yfc-vps')devices.set(p.id,{...devices.get(p.id),socket:{...devices.get(p.id).socket}});
   }
 }
 

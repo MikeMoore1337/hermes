@@ -26,13 +26,14 @@ import re
 import sys
 
 from device_fabric.native_effect_grants import windows_reserved_component
+from device_fabric.native_list_pages import PAGE_SIZE, SCAN_LIMIT, page
 from control_center.native_windows_policy import (READ_ROOTS, SENSITIVE_STEM,
                                                   classify_native_request)
 
 MAX_FILE_BYTES = 256 * 1024
 MAX_PATH_LENGTH = 1024
-MAX_LIST_ENTRIES = 64
-MAX_SCAN_ENTRIES = 256
+MAX_LIST_ENTRIES = PAGE_SIZE
+MAX_SCAN_ENTRIES = SCAN_LIMIT
 ALLOWED_EXTENSIONS = frozenset({
     ".py", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs",
     ".md", ".mdx", ".txt", ".json", ".toml", ".yaml", ".yml",
@@ -251,7 +252,7 @@ def handle_native_request(project: str, relative: str, operation: str) -> dict:
 
 
 
-def handle_native_list(project: str, relative: str = "") -> dict:
+def handle_native_list(project: str, relative: str = "", *, cursor: str | None = None) -> dict:
     """Enumerate safe immediate code names at ONE pinned approved root.
 
     No recursive walk, no file contents, no alternate host directories.
@@ -313,6 +314,14 @@ def handle_native_list(project: str, relative: str = "") -> dict:
         except (OSError, UnicodeError) as exc:
             raise NativeReadRefused("enumeration_unavailable") from exc
         visible.sort(key=lambda item: (item["name"].casefold(), item["name"]))
+        if cursor is not None:
+            try:
+                selected, next_cursor = page(visible, project, relative, cursor)
+            except ValueError as exc:
+                raise NativeReadRefused("invalid_page") from exc
+            return {"status": "ok", "project": project, "relative": "",
+                    "action": "list", "kind": "directory", "entries": selected,
+                    "truncated": bool(next_cursor), "next_cursor": next_cursor}
         return {
             "status": "ok", "project": project, "relative": "",
             "action": "list", "kind": "directory",
