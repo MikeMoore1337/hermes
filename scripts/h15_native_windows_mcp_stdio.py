@@ -64,12 +64,12 @@ TOOLS = (
     },
     {
         "name": "native_file_list",
-        "description": "List up to 64 safe source files/subdirectories at approved ORIGINAL Windows repository root; no recursion or file contents.",
+        "description": "List up to 64 safe source files/subdirectories within an approved ORIGINAL Windows repository; no recursion or file contents.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "project": {"type": "string", "enum": sorted(native.READ_ROOTS)},
-                "relative": {"type": "string", "enum": [""]},
+                "relative": {"type": "string", "maxLength": native.MAX_PATH_LENGTH},
                 "cursor": {"type": "string", "maxLength": 68,
                            "description": "Empty for first page; pass next_cursor until empty. Directory changes require restart; scan limit is 256."},
             },
@@ -171,7 +171,7 @@ def _sanitized_result(value: object, project: str, relative: str,
             expected.add("next_cursor")
         if (set(value) != expected
             or value["status"] != "ok" or value["project"] != project
-            or relative != "" or value["relative"] != ""
+            or value["relative"] != relative
             or value["action"] != "list" or value["kind"] != "directory"
             or type(value["truncated"]) is not bool
             or type(value["entries"]) is not list
@@ -188,11 +188,13 @@ def _sanitized_result(value: object, project: str, relative: str,
             if type(entry) is not dict or set(entry) != {"name", "kind"}:
                 raise ProtocolRefused("invalid_native_list")
             name = entry["name"]
-            if (type(name) is not str or entry["kind"] not in ("file", "directory")
+            if (type(name) is not str or '\\' in name or '/' in name
+                or entry["kind"] not in ("file", "directory")
                 or name.casefold() in seen):
                 raise ProtocolRefused("invalid_native_list")
             try:
-                native.build_request(project, name, "stat")
+                child_relative = relative + '\\' + name if relative else name
+                native.build_request(project, child_relative, "stat")
             except native.NativeReadRefused as exc:
                 raise ProtocolRefused("invalid_native_list") from exc
             if (entry["kind"] == "file"
@@ -331,8 +333,11 @@ class McpSession:
                 parse_cursor(args["cursor"])
             except ValueError:
                 return _tool_error(identifier)
-        if name == "native_file_list" and relative != "":
-            return _tool_error(identifier)
+        if name == "native_file_list":
+            try:
+                native.build_request(project, relative, "stat")
+            except native.NativeReadRefused:
+                return _tool_error(identifier)
         if self.read_calls >= MAX_READS:
             return _tool_error(identifier)
         self.read_calls += 1

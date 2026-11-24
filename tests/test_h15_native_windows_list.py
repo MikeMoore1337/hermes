@@ -44,7 +44,7 @@ class NativeListContract(unittest.TestCase):
         self.assertEqual({tool["name"] for tool in tools},
                          {"native_file_read", "native_file_stat", "native_file_list", "native_file_search"})
         definition = next(t for t in tools if t["name"] == "native_file_list")
-        self.assertEqual(definition["inputSchema"]["properties"]["relative"]["enum"], [""])
+        self.assertEqual(definition["inputSchema"]["properties"]["relative"]["type"], "string")
         self.assertTrue(definition["annotations"]["readOnlyHint"])
         self.assertFalse(definition["annotations"]["destructiveHint"])
         self.assertFalse(definition["annotations"]["openWorldHint"])
@@ -58,14 +58,23 @@ class NativeListContract(unittest.TestCase):
                          list_payload())
         listing.assert_called_once_with("hermes", "")
 
-    def test_relative_directory_and_new_privilege_are_refused(self):
+    def test_protected_directory_and_new_privilege_are_refused(self):
         sess = self.session()
         with patch.object(mcp.native, "handle_native_list") as listing:
-            self.assertTrue(sess.handle(call("src"))["result"]["isError"])
+            for path in ('.git', r'src\..\private', r'src\.env', '/outside'):
+                self.assertTrue(sess.handle(call(path))["result"]["isError"])
             attack = call()
             attack["params"]["arguments"]["ownerApproved"] = True
             self.assertTrue(sess.handle(attack)["result"]["isError"])
             listing.assert_not_called()
+
+    def test_approved_nested_directory_is_dispatched_and_bound_to_result(self):
+        session = self.session()
+        result = dict(list_payload(), relative='src')
+        with patch.object(mcp.native, 'handle_native_list', return_value=result) as listing:
+            answer = session.handle(call('src'))
+        self.assertFalse(answer['result']['isError'])
+        listing.assert_called_once_with('hermes', 'src')
 
     def test_sanitizer_refuses_secret_names_wrong_kind_and_metadata(self):
         invalid = [
@@ -75,6 +84,7 @@ class NativeListContract(unittest.TestCase):
             list_payload([{"name": "README.md", "kind": "command"}]),
             list_payload([{"name": "binary.exe", "kind": "file"}]),
             list_payload([{"name": "..\\private.md", "kind": "file"}]),
+            list_payload([{"name": "src\\file.py", "kind": "file"}]),
             list_payload([{"name": "src", "kind": "directory"},
                           {"name": "SRC", "kind": "directory"}]),
             dict(list_payload(), data="secret"),
@@ -93,18 +103,19 @@ class NativeListContract(unittest.TestCase):
                     self.assertNotIn("private", json.dumps(result).lower())
         self.assertEqual(listing.call_count, len(invalid))
 
-    def test_transport_rejects_nonroot_and_preserves_replay_id(self):
+    def test_transport_accepts_nested_and_preserves_replay_id(self):
         seen = set()
         session = self.session()
         request = {"type": "call", "id": "root-1", "tool": "native_file_list",
                    "args": {"project": "hermes", "relative": ""}}
-        with patch.object(mcp.native, "handle_native_list", return_value=list_payload()) as listing:
+        nested = dict(list_payload(), relative='src')
+        with patch.object(mcp.native, "handle_native_list", side_effect=[list_payload(), nested]) as listing:
             self.assertIsNotNone(outbound.safe_call(session, request, seen))
             self.assertIsNone(outbound.safe_call(session, request, seen))
-            self.assertIsNone(outbound.safe_call(session, dict(request, id="root-2",
-                            args={"project": "hermes", "relative": "src"}), seen))
-        listing.assert_called_once()
-        self.assertEqual(seen, {"root-1"})
+            self.assertIsNotNone(outbound.safe_call(session, dict(request, id="root-2",
+                               args={"project": "hermes", "relative": "src"}), seen))
+        self.assertEqual(listing.call_count, 2)
+        self.assertEqual(seen, {"root-1", "root-2"})
 
     def test_readonly_reconnect_catalog_still_refuses_effectful_tool(self):
         for catalog in [

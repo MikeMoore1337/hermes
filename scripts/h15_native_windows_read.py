@@ -34,6 +34,7 @@ MAX_FILE_BYTES = 256 * 1024
 MAX_PATH_LENGTH = 1024
 MAX_LIST_ENTRIES = PAGE_SIZE
 MAX_SCAN_ENTRIES = SCAN_LIMIT
+MAX_LIST_ANCESTORS = 32
 ALLOWED_EXTENSIONS = frozenset({
     ".py", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs",
     ".md", ".mdx", ".txt", ".json", ".toml", ".yaml", ".yml",
@@ -253,29 +254,43 @@ def handle_native_request(project: str, relative: str, operation: str) -> dict:
 
 
 def handle_native_list(project: str, relative: str = "", *, cursor: str | None = None) -> dict:
-    """Enumerate safe immediate code names at ONE pinned approved root.
+    """Enumerate safe immediate code names within one approved project.
 
     No recursive walk, no file contents, no alternate host directories.
-    The root is held open WITHOUT FILE_SHARE_DELETE until enumeration ends,
-    preventing its rename during this call. Each returned entry is also
-    opened and handle-verified before release. Win32 OS ACLs still apply.
+    Every ancestor, from the drive root through the requested directory, is
+    held without FILE_SHARE_DELETE while the path-based iterator is open.
+    Every returned entry is independently opened and handle-verified.
     """
-    if relative != "":
-        raise NativeReadRefused("listing_only_approved_root")
-    root, _ = build_request(project, "", "stat")
+    root, requested = build_request(project, relative, "stat")
+    drive, tail = ntpath.splitdrive(root)
+    if (len(drive) != 2 or drive[1] != ':' or not ntpath.isabs(root)
+        or ntpath.normpath(root) != root):
+        raise NativeReadRefused("unsafe_project_root")
+    parts = [part for part in tail.split('\\') if part]
+    if relative:
+        parts.extend(relative.split('\\'))
+    if len(parts) + 1 > MAX_LIST_ANCESTORS:
+        raise NativeReadRefused("directory_depth_limit")
     api = _winapi()
-    handle = _opened(api, root, content=False, lock_rename=True)
+    handles = []
     try:
-        info = _metadata(api, handle)
-        if not info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY:
-            raise NativeReadRefused("root_not_directory")
-        resolved_root = _final_path(api, handle)
-        if resolved_root != ntpath.normcase(ntpath.normpath(root)):
-            raise NativeReadRefused("root_redirected")
+        path = drive + '\\'
+        for part in [None, *parts]:
+            if part is not None:
+                path = ntpath.join(path, part)
+            handle = _opened(api, path, content=False, lock_rename=True)
+            handles.append(handle)
+            info = _metadata(api, handle)
+            if (not info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY
+                or _final_path(api, handle) != ntpath.normcase(ntpath.normpath(path))):
+                raise NativeReadRefused("directory_redirected")
+        if ntpath.normcase(ntpath.normpath(path)) != ntpath.normcase(ntpath.normpath(requested)):
+            raise NativeReadRefused("directory_redirected")
+        resolved_root = ntpath.normcase(ntpath.normpath(root))
         visible = []
         scanned = 0
         try:
-            with os.scandir(root) as iterator:
+            with os.scandir(requested) as iterator:
                 for entry in iterator:
                     scanned += 1
                     if scanned > MAX_SCAN_ENTRIES:
@@ -286,7 +301,8 @@ def handle_native_list(project: str, relative: str = "", *, cursor: str | None =
                     try:
                         # Reuse the EXACT path restrictions of the native
                         # read broker for each disclosed file or directory.
-                        _, path = build_request(project, name, "stat")
+                        child_relative = relative + '\\' + name if relative else name
+                        _, path = build_request(project, child_relative, "stat")
                         if entry.is_symlink() or (
                             hasattr(entry, "is_junction") and entry.is_junction()
                         ):
@@ -319,17 +335,18 @@ def handle_native_list(project: str, relative: str = "", *, cursor: str | None =
                 selected, next_cursor = page(visible, project, relative, cursor)
             except ValueError as exc:
                 raise NativeReadRefused("invalid_page") from exc
-            return {"status": "ok", "project": project, "relative": "",
+            return {"status": "ok", "project": project, "relative": relative,
                     "action": "list", "kind": "directory", "entries": selected,
                     "truncated": bool(next_cursor), "next_cursor": next_cursor}
         return {
-            "status": "ok", "project": project, "relative": "",
+            "status": "ok", "project": project, "relative": relative,
             "action": "list", "kind": "directory",
             "entries": visible[:MAX_LIST_ENTRIES],
             "truncated": len(visible) > MAX_LIST_ENTRIES,
         }
     finally:
-        api.CloseHandle(handle)
+        for handle in reversed(handles):
+            api.CloseHandle(handle)
 
 
 

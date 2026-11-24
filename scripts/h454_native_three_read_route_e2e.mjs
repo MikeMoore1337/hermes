@@ -159,6 +159,14 @@ for(const p of profiles){
     invalidNext=false;
     assert(denied(await invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_list',{...list,cursor:'65:'+'a'.repeat(64)})),
       'INVALID_INPUT_CURSOR_ACCEPTED');
+    if(p.host==='windows'){
+      const nested={...list,relative:'src\\nested'};
+      assert(!(await invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_list',nested)).isError,
+        'WINDOWS_NESTED_LIST_REFUSED');
+      for(const relative of ['..\\private','.git','src\\.env','src/escape'])
+        assert(denied(await invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_list',{...list,relative})),
+          'WINDOWS_UNSAFE_LIST_ACCEPTED');
+    }
     if(p.host==='yfc-vps')devices.set(p.id,{...devices.get(p.id),socket:{...devices.get(p.id).socket}});
   }
 }
