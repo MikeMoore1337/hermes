@@ -288,7 +288,10 @@ agents keep operating unchanged.
 
 The evaluation-only image is now built from a **fixed Docker Official
 Node 24 OCI manifest digest** in both stages:
-`node:24-bookworm-slim@sha256:a5f4366e834695d5f363b920c104953a535d3a9864d1bdf74566a0ebe01daee5`.
+`node:24-bookworm-slim@sha256:873f586f3794f52281bd039bf02c048a0be08fde619338f9941bad1eb6b34530`.
+The amd64 base contains Debian bookworm APT 2.6.2 (CVE-2026-109518 fix)
+and perl-base 5.36.0-7+deb12u4; the image build verifies those versions
+without downloading or upgrading OS packages.
 This digest is an immutable pointer to the reviewed base (not a
 guarantee that the base is free of vulnerabilities). Updating it
 requires code review and exact-head CI; a mutable `latest` base is

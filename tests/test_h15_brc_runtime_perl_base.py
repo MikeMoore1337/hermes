@@ -1,4 +1,4 @@
-"""H-15: pinned Debian perl security update only inside the evaluation OCI runtime."""
+"""H-15: pinned Debian security-fixed APT and Perl in the OCI runtime."""
 from pathlib import Path
 import unittest
 
@@ -6,24 +6,27 @@ ROOT = Path(__file__).resolve().parents[1]
 DOCKERFILE = ROOT / "deploy/h15/Dockerfile.brc-relay"
 WORKFLOW = ROOT / ".github/workflows/h15-remote-commander-candidate.yml"
 FIXED = "5.36.0-7+deb12u4"
+BASE = "873f586f3794f52281bd039bf02c048a0be08fde619338f9941bad1eb6b34530"
 
 
 class RuntimePerlSecurityTests(unittest.TestCase):
-    def test_exact_debian_security_package_in_runtime_only(self):
+    def test_exact_debian_security_packages_in_pinned_runtime(self):
         dockerfile = DOCKERFILE.read_text()
         builder, runtime = dockerfile.split("\nFROM node:24-bookworm-slim@", 1)
         self.assertNotIn("apt-get", builder)
         self.assertIn(" AS runtime", runtime)
-        self.assertIn("perl-base=" + FIXED, runtime)
-        self.assertIn("apt-get install --yes --no-install-recommends", runtime)
-        self.assertIn("apt-get update", runtime)
+        self.assertEqual(dockerfile.count("node:24-bookworm-slim@sha256:" + BASE), 2)
         self.assertIn("dpkg-query -W '-f=${Version}' perl-base", runtime)
-        self.assertIn("rm -rf /var/lib/apt/lists/*", runtime)
+        self.assertIn("= '" + FIXED + "'", runtime)
+        for package in ("apt", "libapt-pkg6.0"):
+            self.assertIn("dpkg-query -W '-f=${Version}' " + package, runtime)
+        self.assertEqual(runtime.count("= '2.6.2'"), 2)
+        self.assertNotIn("apt-get", runtime)
         self.assertIn("USER 65534:65534", runtime)
         self.assertNotIn("upgrade -y", runtime)
         self.assertNotIn("dist-upgrade", runtime)
         self.assertNotIn("apt-get autoremove", runtime)
-        self.assertIn("a5f4366e834695d5f363b920c104953a535d3a9864d1bdf74566a0ebe01daee5", runtime)
+        self.assertIn(BASE, runtime)
 
     def test_exact_image_proof_in_full_h15_ci(self):
         workflow = WORKFLOW.read_text()
@@ -37,6 +40,9 @@ class RuntimePerlSecurityTests(unittest.TestCase):
         self.assertIn('--cap-drop ALL', section)
         self.assertIn('--user 65534:65534', section)
         self.assertIn('test "$package" = "' + FIXED + '"', section)
+        self.assertIn('for name in apt libapt-pkg6.0', section)
+        self.assertIn('test "$package" = "2.6.2"', section)
+        self.assertIn('H15_RUNTIME_APT_FIXED_VERSION=PASS', section)
         for forbidden in ("--privileged", "--network host", "/var/run/docker.sock"):
             self.assertNotIn(forbidden, section)
 
