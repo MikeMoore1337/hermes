@@ -68,6 +68,50 @@ class LandlockTests(unittest.TestCase):
                 self.assertEqual(proc.returncode,0,proc.stderr)
                 self.assertIn('REPLAY_RESTART_LANDLOCK=PASS',proc.stdout)
 
+    @unittest.skipUnless(getattr(os, 'geteuid', lambda: -1)() == 0,
+                         'root-owned source and isolated provisioning fixture required')
+    def test_replay_provision_once_and_landlock_file_denials(self):
+        from device_fabric.linux_native_replay import _MAGIC
+        from scripts.h454_native_linux_replay_provision import provision
+        with tempfile.TemporaryDirectory(dir='/var/lib') as folder:
+            parent=Path(folder);os.chmod(parent,0o755)
+            source=parent/'source';source.mkdir(mode=0o755)
+            (source/'safe.py').write_bytes(b'safe')
+            (source/'.env').write_bytes(b'secret')
+            os.chmod(source/'safe.py',0o644);os.chmod(source/'.env',0o644)
+            provision(parent=parent,uid=65534,gid=65534)
+            state=parent/'hermes-commander-replay';journal=state/'claims'
+            self.assertEqual((state.stat().st_uid,state.stat().st_mode&0o777),(65534,0o700))
+            self.assertEqual((journal.stat().st_uid,journal.stat().st_mode&0o777),(65534,0o600))
+            self.assertEqual(journal.read_bytes(),_MAGIC)
+            with self.assertRaises(FileExistsError):provision(parent=parent,uid=65534,gid=65534)
+            self.assertEqual(journal.read_bytes(),_MAGIC)
+            script=textwrap.dedent('''
+                import resource,sys
+                from pathlib import Path
+                from device_fabric.linux_native_files import LinuxNativeFiles
+                from device_fabric.linux_native_landlock import ReadSnapshot
+                from device_fabric import linux_native_landlock as boundary
+                from device_fabric.linux_native_replay import LinuxReadReplay
+                boundary._trusted_source_fs=lambda _fd:True
+                resource.setrlimit(resource.RLIMIT_NOFILE,(32768,resource.getrlimit(resource.RLIMIT_NOFILE)[1]))
+                with LinuxReadReplay(Path(sys.argv[1])) as ledger, LinuxNativeFiles(root=Path(sys.argv[2]),project='hermes') as files:
+                    with ReadSnapshot(files) as snap:
+                        snap.seal(replay_ledger=ledger)
+                        assert ledger.claim('test-id') is True
+                        assert ledger.claim('test-id') is False
+                        assert files.read_file('safe.py')['size_bytes']==4
+                        for path in (sys.argv[1],str(Path(sys.argv[2])/'.env')):
+                            try:open(path,'rb')
+                            except PermissionError:pass
+                            else:raise AssertionError('landlock path opened')
+                print('LANDLOCK_REPLAY=PASS')
+            ''')
+            proc=subprocess.run(['runuser','-u','nobody','--',sys.executable,'-B','-c',
+                script,str(journal),str(source)],capture_output=True,text=True,timeout=15)
+            self.assertEqual(proc.returncode,0,proc.stderr)
+            self.assertIn('LANDLOCK_REPLAY=PASS',proc.stdout)
+
     def test_only_local_ext_filesystem_magic_is_accepted(self):
         import ctypes
         from device_fabric import linux_native_landlock as boundary

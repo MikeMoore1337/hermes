@@ -51,11 +51,6 @@ jobs:
             tests.test_h454_linux_native_replay \
             tests.test_h454_native_linux_outbound
           echo 'H454_REAL_LINUX_READ_RUNTIME_AND_BUNDLE=PASS'
-      - name: Real Landlock replay and private provisioning on disposable files
-        shell: bash
-        run: |
-          set -euo pipefail
-          sudo -n env PYTHONPATH="$GITHUB_WORKSPACE" python3 -B -m unittest -v tests.test_h454_linux_native_replay
       - name: Prove no owner-host deployment or agent pairing
         shell: bash
         run: |
