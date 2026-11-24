@@ -85,6 +85,8 @@ class TrustLoading(unittest.TestCase):
                     direct.load_private_relay('yfc-vps', RELEASE)
         lines='\n'.join([f'{k}={"yes" if k == "PrivateNetwork" else v}' for k,v in service.EXPECTED_HARDENING.items()]+[
             'LimitNOFILE=32768','StandardInput=null','StandardOutput=journal','StandardError=journal',
+            'ReadWritePaths=/var/lib/hermes-commander-replay',
+            'StateDirectory=hermes-commander-replay','StateDirectoryMode=0700',
             'RestrictAddressFamilies=AF_UNIX','IPAddressDeny=any','IPAddressAllow=','CapabilityBoundingSet=',
             'TemporaryFileSystem=/run:ro','BindPaths=','BindReadOnlyPaths='+' '.join(
                 f'{p}:{p}:rbind' for p in (direct.UNIX_DIRECTORY,direct.AUDIT_DIRECTORY))])
@@ -101,6 +103,8 @@ class TrustLoading(unittest.TestCase):
     def test_hermes_landlock_requires_private_run_and_only_audit_socket(self):
         values = dict(service.EXPECTED_HARDENING, LimitNOFILE='32768',
             StandardInput='null', StandardOutput='journal', StandardError='journal',
+            ReadWritePaths='/var/lib/hermes-commander-replay',
+            StateDirectory='hermes-commander-replay',StateDirectoryMode='0700',
             TemporaryFileSystem='/run:ro', BindPaths='',
             RestrictAddressFamilies='AF_INET AF_INET6 AF_UNIX',
             BindReadOnlyPaths=direct.AUDIT_DIRECTORY+':'+direct.AUDIT_DIRECTORY+':rbind',
