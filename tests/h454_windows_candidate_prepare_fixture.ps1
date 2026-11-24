@@ -148,4 +148,21 @@ Require-H454 ($created.Status -ceq 'CANDIDATE_CREATED_STOPPED' -and $created.Can
     $script:processCandidate.Name -ceq '/hermes-h454-process-candidate') 'FIXTURE_PROCESS_RETAINED'
 $again=Prepare-H454BrokerCandidate $params $script:imageId -ProcessCandidate -Apply -OwnerApproved
 Require-H454 ($again.CandidateId -ceq ('4'*64) -and $script:creates -eq 2) 'FIXTURE_PROCESS_IDEMPOTENT'
+$revision='1'*40
+$script:image.Config|Add-Member -NotePropertyName 'Labels' -NotePropertyValue ([pscustomobject]@{'org.opencontainers.image.revision'=$revision})
+$script:processCandidate.Config.Labels|Add-Member -NotePropertyName 'org.opencontainers.image.revision' -NotePropertyValue $revision
+$valid=Prepare-H454BrokerCandidate $params $script:imageId -ProcessCandidate -Apply -OwnerApproved
+Require-H454 ($valid.CandidateId -ceq ('4'*64) -and $script:creates -eq 2) 'FIXTURE_PROCESS_REVISION'
+foreach($bad in @('different','malformed','extra')){
+    switch($bad){
+        'different'{$script:processCandidate.Config.Labels.'org.opencontainers.image.revision'='2'*40}
+        'malformed'{$script:image.Config.Labels.'org.opencontainers.image.revision'='bad';$script:processCandidate.Config.Labels.'org.opencontainers.image.revision'='bad'}
+        'extra'{$script:processCandidate.Config.Labels|Add-Member -NotePropertyName 'foreign.label' -NotePropertyValue 'no'}
+    }
+    $refused=$false;try{$null=Prepare-H454BrokerCandidate $params $script:imageId -ProcessCandidate -Apply -OwnerApproved}catch{$refused=$true}
+    Require-H454 ($refused -and $script:creates -eq 2) 'FIXTURE_PROCESS_LABEL_REFUSAL'
+    $script:image.Config.Labels.'org.opencontainers.image.revision'=$revision
+    $script:processCandidate.Config.Labels.'org.opencontainers.image.revision'=$revision
+    $script:processCandidate.Config.Labels.PSObject.Properties.Remove('foreign.label')
+}
 'PS51_SYNTHETIC_CANDIDATE_PREPARE=PASS'
