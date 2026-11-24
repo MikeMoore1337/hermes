@@ -158,6 +158,7 @@ public class TestCurl {
                                   (['-OwnerApproved', '-RestoreOriginal', '-AutoRecover', '-RestageOnly'], 'H454_GUARD_OPERATOR_AUTO_MODE'),
                                   (['-OwnerApproved', '-InstallBrokerMonitor'], 'H454_GUARD_OPERATOR_MONITOR_MODE'),
                                   (['-OwnerApproved', '-PrepareBrokerCandidate'], 'H454_GUARD_OPERATOR_CANDIDATE_MODE'),
+                                  (['-OwnerApproved', '-ProcessCandidate'], 'H454_GUARD_OPERATOR_CANDIDATE_MODE'),
                                   (['-OwnerApproved', '-BeginBrokerTrial'], 'H454_GUARD_OPERATOR_TRIAL_MODE'),
                                   (['-OwnerApproved', '-OriginalMcpObserved'], 'H454_GUARD_OPERATOR_TRIAL_MODE'),
                                   (['-OwnerApproved', '-RestoreOriginal', '-CompleteBrokerTrial'], 'H454_TRIAL_MCP_ACKNOWLEDGMENT'),

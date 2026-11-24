@@ -115,7 +115,7 @@ function Assert-H454PreparedCandidate([object]$Candidate,[object]$Original,[obje
 }
 
 function Prepare-H454BrokerCandidate([hashtable]$RestoreArgs,[string]$CandidateImage,
-    [switch]$Apply,[switch]$OwnerApproved) {
+    [switch]$ProcessCandidate,[switch]$Apply,[switch]$OwnerApproved) {
     Require-H454 (-not $Apply -or $OwnerApproved) 'H454_CANDIDATE_APPROVAL'
     Require-H454 ($null -ne $RestoreArgs -and $CandidateImage -cmatch '^sha256:[a-f0-9]{64}$' -and
         $CandidateImage -cne $RestoreArgs.AgentImage) 'H454_CANDIDATE_PINS'
@@ -129,7 +129,8 @@ function Prepare-H454BrokerCandidate([hashtable]$RestoreArgs,[string]$CandidateI
     $base=Get-H454CandidateImage $s.AgentImage $s.DockerSha256
     $image=Get-H454CandidateImage $CandidateImage $s.DockerSha256
     Assert-H454CandidateImage $base $image $s.AgentImage $CandidateImage
-    $name='hermes-h454-broker-candidate';$label=$s.MarkerSha256.Substring(0,32).ToLowerInvariant()
+    $name=if($ProcessCandidate){'hermes-h454-process-candidate'}else{'hermes-h454-broker-candidate'}
+    $label=$s.MarkerSha256.Substring(0,32).ToLowerInvariant()
     $scope=[string]$snapshot.Agent.Config.Labels.'com.hermes.scope'
     Require-H454 ($scope -cmatch '^[A-Za-z0-9_.-]{1,100}$' -and
         $null -eq $snapshot.Agent.Config.Labels.PSObject.Properties['com.hermes.h454.candidate']) 'H454_CANDIDATE_LABELS'
