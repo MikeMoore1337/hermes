@@ -88,7 +88,8 @@ function Invoke-H454RecoveryDocker([string[]]$Arguments,[string]$DockerSha256,[b
     }elseif($Arguments[0] -ceq 'exec' -and $Arguments -ccontains '--interactive'){
         $event='verify-candidate';Require-H454 $script:candidateStaged 'FIXTURE_CANDIDATE_NOT_STAGED';$output='H454_STAGED_CREDENTIAL_MATCH'
     }elseif($Arguments[0] -ceq 'exec'){
-        $event='verify-empty';Require-H454 (-not $script:corruptStage) 'FIXTURE_CORRUPT_STAGE'
+        $event='verify-empty'
+        if($script:corruptStage){$script:events+=@($event);return [pscustomobject]@{Code=2;Output=''}}
         $output=if($script:candidateStaged){'H454_STAGE_PRESENT'}else{'H454_STAGE_EMPTY'}
     }
     else{throw 'FIXTURE_DOCKER_OPERATION'}
@@ -213,11 +214,15 @@ try{
     $script:originalRunning=$false;$script:originalPrivate=$false;$script:originalBridge=$true
     $script:corruptStage=$true;$refused=$false
     try{$null=Maintain-H454BrokerCandidate @maintain -Apply -OwnerApproved}catch{$refused=$true}
-    Require-H454 ($refused -and (Test-Path -LiteralPath (Join-Path $dir 'h454-broker-trial.inflight')) -and
+    Require-H454 ($refused -and -not (Test-Path -LiteralPath (Join-Path $dir 'h454-broker-trial.inflight')) -and
         $script:events -cnotcontains 'stage-candidate' -and $script:events -cnotcontains 'stage-broker') 'FIXTURE_MAINTAIN_PARTIAL_STAGE'
-    $script:corruptStage=$false;$refused=$false
+    $script:corruptStage=$false
+    $script:failure='verify-empty';$script:failed=$false;$script:events=@();$refused=$false
+    try{$null=Maintain-H454BrokerCandidate @maintain -Apply -OwnerApproved}catch{$refused=$_.Exception.Message -ceq 'H454_DOCKER_AMBIGUOUS'}
+    Require-H454 ($refused -and (Test-Path -LiteralPath (Join-Path $dir 'h454-broker-trial.inflight'))) 'FIXTURE_MAINTAIN_AMBIGUOUS_CHECK'
+    $script:failure='';$refused=$false
     try{$null=Maintain-H454BrokerCandidate @maintain -Apply -OwnerApproved}catch{$refused=$true}
-    Require-H454 $refused 'FIXTURE_MAINTAIN_PARTIAL_REPLAY'
+    Require-H454 $refused 'FIXTURE_MAINTAIN_AMBIGUOUS_CHECK_REPLAY'
     [IO.File]::Delete((Join-Path $dir 'h454-broker-trial.inflight'))
     $script:candidateRunning=$false;$script:candidateStatus='exited';$script:candidateStaged=$false
     $script:failure='start-candidate';$script:failed=$false;$script:events=@();$refused=$false
