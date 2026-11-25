@@ -81,6 +81,47 @@ class WindowsSearchTests(unittest.TestCase):
         self.assertTrue(result["truncated"])
         self.assertEqual(len(result["matches"]), search.MAX_MATCHES)
 
+    def test_search_reaches_a_safe_file_beyond_four_levels(self):
+        current = self.code
+        for index in range(7):
+            current = current / f"level{index}"
+            current.mkdir()
+        (current / "deep-match.py").write_text("deep-needle\n", encoding="utf-8")
+        result = search.search("hermes", "deep-needle", mode="content", relative_root="src")
+        expected = str((current / "deep-match.py").relative_to(self.root))
+        self.assertEqual(result["matches"], [{"path": expected, "line": 1}])
+        self.assertFalse(result["truncated"])
+
+    def test_deep_junction_does_not_escape_project(self):
+        current = self.code
+        for index in range(7):
+            current = current / f"level{index}"
+            current.mkdir()
+        outside = Path(self.tmp.name) / "outside-dir"
+        outside.mkdir()
+        (outside / "leak.py").write_text("outside-needle", encoding="utf-8")
+        subprocess.run(["cmd.exe", "/d", "/c", "mklink", "/J", str(current / "linked"), str(outside)],
+                       check=True, capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
+        result = search.search("hermes", "outside-needle", mode="content", relative_root="src")
+        self.assertEqual(result["matches"], [])
+        self.assertNotIn("leak.py", repr(result))
+
+    def test_directory_handle_budget_stops_before_descending(self):
+        with patch.object(search, "MAX_DIRECTORY_HANDLES", 1):
+            result = search.search("hermes", "safe", mode="names", relative_root="")
+        self.assertTrue(result["truncated"])
+        self.assertEqual(result["matches"], [])
+
+    def test_sixty_nested_directories_fit_the_handle_budget(self):
+        current = self.code
+        for _ in range(60):
+            current = current / "a"
+            current.mkdir()
+        (current / "deep-marker.py").write_text("safe", encoding="utf-8")
+        result = search.search("hermes", "deep-marker", mode="names", relative_root="src")
+        self.assertEqual(result["matches"], [{"path": str((current / "deep-marker.py").relative_to(self.root)), "kind": "file"}])
+        self.assertFalse(result["truncated"])
+
     def test_skipped_oversize_file_does_not_hide_queued_directory(self):
         (self.root / "a-oversize.txt").write_bytes(b"x" * (native.MAX_FILE_BYTES + 1))
         result = search.search("hermes", "needle", mode="content", relative_root="")

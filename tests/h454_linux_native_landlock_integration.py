@@ -221,6 +221,11 @@ class LandlockTests(unittest.TestCase):
             (root/'.env.example').write_text('synthetic secret')
             (root/'unreadable.py').write_text('synthetic secret');os.chmod(root/'unreadable.py',0o600)
             (root/'src').mkdir();(root/'src'/'child.py').write_text('needle')
+            deep=root/'src'
+            for _ in range(7):
+                deep=deep/'level';deep.mkdir(mode=0o755)
+            (deep/'deep-file.py').write_text('synthetic')
+            os.chmod(deep/'deep-file.py',0o644)
             (root/'data').mkdir();(root/'data'/'private.md').write_text('synthetic private')
             script=textwrap.dedent('''
                 import os,resource,sys
@@ -239,6 +244,9 @@ class LandlockTests(unittest.TestCase):
                     assert [e['name'] for e in files.list_directory()['entries']] == ['read.md','src']
                     assert [e['name'] for e in files.list_directory()['entries']] == ['read.md','src']
                     assert LinuxNativeSearch(files).search('child',mode='names')['matches'][0]['path'] == 'src/child.py'
+                    found=LinuxNativeSearch(files).search('deep-file',mode='names',relative_root='src')
+                    assert found['matches'] == [{'path':'src/'+'level/'*7+'deep-file.py','kind':'file'}]
+                    assert found['truncated'] is False
                     assert Path('/proc/self/status').read_text().startswith('Name:')
                     for name in ('.env.example','data/private.md','unreadable.py'):
                         try: files.read_file(name)

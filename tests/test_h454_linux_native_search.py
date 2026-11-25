@@ -138,6 +138,26 @@ class LinuxNativeSearchContracts(unittest.TestCase):
         self.assertEqual(out["matches"], [])
         self.assertTrue(out["truncated"])
 
+    def test_search_reaches_a_safe_file_beyond_four_levels(self):
+        current = self.root / "src"
+        for index in range(7):
+            current = current / f"level{index}"
+            current.mkdir()
+        (current / "deep-match.py").write_text("deep-needle\n", encoding="utf-8")
+        result = self.search.search("deep-needle", mode="content", relative_root="src")
+        self.assertEqual(result["matches"], [{"path": (current / "deep-match.py").relative_to(self.root).as_posix(), "line": 1}])
+        self.assertFalse(result["truncated"])
+
+    def test_deep_symlink_does_not_escape_project(self):
+        current = self.root / "src"
+        for index in range(7):
+            current = current / f"level{index}"
+            current.mkdir()
+        (current / "linked").symlink_to(self.outside, target_is_directory=True)
+        result = self.search.search("SECRET CONTENT", mode="content", relative_root="src")
+        self.assertEqual(result["matches"], [])
+        self.assertNotIn("private.md", repr(result))
+
     def test_oversize_source_file_skipped_with_budget(self):
         (self.root / "huge.txt").write_bytes(b"T" * (MAX_READ_BYTES + 1))
         out = self.search.search("T",mode="content")
