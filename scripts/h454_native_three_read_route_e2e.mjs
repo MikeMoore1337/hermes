@@ -388,6 +388,11 @@ await new Promise(resolve=>setTimeout(resolve,50));
 assert(calls===before+16,'HERMES_EXHAUSTED_SOCKET_DISPATCHED');
 devices.set(hermes.id,freshHermes());
 assert(!(await afterHermesBudget).isError&&calls===before+17,'HERMES_RECONNECT_FAILED');
+devices.delete(hermes.id);
+before=calls;
+const slowHermes=invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_read',hermesRequest);
+setTimeout(()=>devices.set(hermes.id,freshHermes()),10500);
+assert(!(await slowHermes).isError&&calls===before+1,'HERMES_MEASURED_RECONNECT_REFUSED');
 
 assert(audited.length>=profiles.length,'NO_AUDIT');
 assert(audited.every(x=>x.user_id===ctx.userId&&
