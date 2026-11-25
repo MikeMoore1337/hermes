@@ -14,6 +14,8 @@ on:
       - device_fabric/linux_native_async_transport.py
       - device_fabric/linux_native_files.py
       - device_fabric/linux_native_read_dispatch.py
+      - device_fabric/native_search_pages.py
+      - tests/test_h454_native_search_pages.py
       - device_fabric/native_private_tls.py
       - scripts/h454_native_linux_runtime.py
       - deploy/h454/native-linux/requirements.lock
@@ -37,7 +39,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -B -m unittest -v tests.test_h454_native_linux_wheel tests.test_h454_native_linux_service
+          python3 -B -m unittest -v tests.test_h454_native_linux_wheel tests.test_h454_native_linux_service tests.test_h454_native_search_pages
           echo 'H454_NATIVE_LINUX_OFFLINE_WHEEL_UNIT_TESTS=PASS'
       - name: Fetch only official pure-Python websockets 17.2 wheel with exact PyPI SHA256
         shell: bash

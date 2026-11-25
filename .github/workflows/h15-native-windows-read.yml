@@ -5,6 +5,8 @@ on:
     paths:
       - device_fabric/native_effect_grants.py
       - device_fabric/native_list_pages.py
+      - device_fabric/native_search_pages.py
+      - tests/test_h454_native_search_pages.py
       - tests/test_h454_native_list_pages.py
       - tests/test_native_effect_grants.py
       - scripts/h15_native_windows_read.py
@@ -94,7 +96,7 @@ jobs:
           $ErrorActionPreference = "Stop"
           if ($env:RUNNER_OS -ne "Windows") { throw "WINDOWS_RUNNER_REQUIRED" }
           python --version
-          python -B -m unittest -v tests.test_h15_native_windows_read_on_win tests.test_h454_native_windows_search tests.test_h454_native_list_pages
+          python -B -m unittest -v tests.test_h15_native_windows_read_on_win tests.test_h454_native_windows_search tests.test_h454_native_list_pages tests.test_h454_native_search_pages
           if ($LASTEXITCODE -ne 0) { throw "WIN32_HANDLE_E2E_FAIL" }
           Write-Output "H454_NATIVE_WIN32_SYNTHETIC=PASS"
       - name: Assert native Windows kernel ACL boundaries using disposable LocalService task

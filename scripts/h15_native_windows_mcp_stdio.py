@@ -90,6 +90,8 @@ TOOLS = (
                 "query": {"type": "string", "minLength": 1, "maxLength": search.MAX_QUERY_BYTES},
                 "mode": {"type": "string", "enum": ["names", "content"]},
                 "relative_root": {"type": "string", "maxLength": native.MAX_PATH_LENGTH},
+                "cursor": {"type": "string", "maxLength": 2048,
+                           "description": "Empty for the first page; pass next_cursor until empty. incomplete means some content was omitted."},
             },
             "required": ["project", "query", "mode", "relative_root"],
             "additionalProperties": False,
@@ -231,9 +233,13 @@ def _sanitized_result(value: object, project: str, relative: str,
     return value
 
 
-def _sanitized_search(value: object, project: str, root: str, mode: str) -> dict[str, Any]:
-    if (type(value) is not dict or set(value) != {"status", "project", "relative_root", "mode",
-            "matches", "truncated", "entries_scanned", "bytes_scanned"}
+def _sanitized_search(value: object, project: str, root: str, mode: str,
+                      cursor: str | None = None) -> dict[str, Any]:
+    expected = {"status", "project", "relative_root", "mode",
+                "matches", "truncated", "entries_scanned", "bytes_scanned"}
+    if cursor is not None:
+        expected.update(('next_cursor', 'incomplete'))
+    if (type(value) is not dict or set(value) != expected
         or value["status"] != "ok" or value["project"] != project
         or value["relative_root"] != root or value["mode"] != mode
         or type(value["truncated"]) is not bool or type(value["matches"]) is not list
@@ -241,6 +247,11 @@ def _sanitized_search(value: object, project: str, root: str, mode: str) -> dict
         or type(value["entries_scanned"]) is not int or not 0 <= value["entries_scanned"] <= search.MAX_ENTRIES
         or type(value["bytes_scanned"]) is not int or not 0 <= value["bytes_scanned"] <= search.MAX_CONTENT_BYTES):
         raise ProtocolRefused("invalid_native_search")
+    if cursor is not None:
+        from device_fabric.native_search_pages import parse_search_cursor
+        parse_search_cursor(value['next_cursor'])
+        if type(value['incomplete']) is not bool or value['truncated'] != bool(value['next_cursor']):
+            raise ProtocolRefused('invalid_native_search')
     seen = set()
     for row in value["matches"]:
         if type(row) is not dict or set(row) != ({"path", "kind"} if mode == "names" else {"path", "line"}):
@@ -308,15 +319,18 @@ class McpSession:
         if name not in ("native_file_stat", "native_file_read", "native_file_list", "native_file_search") or not isinstance(args, dict):
             return _tool_error(identifier)
         if name == "native_file_search":
-            if (not _params_exact(args, "project", "query", "mode", "relative_root")
+            paged = _params_exact(args, "project", "query", "mode", "relative_root", "cursor")
+            if ((not _params_exact(args, "project", "query", "mode", "relative_root") and not paged)
                 or not all(type(value) is str for value in args.values())
                 or self.read_calls >= MAX_READS):
                 return _tool_error(identifier)
             self.read_calls += 1
             try:
+                options = {'cursor': args['cursor']} if paged else {}
                 result = search.search(args["project"], args["query"], mode=args["mode"],
-                                       relative_root=args["relative_root"])
-                result = _sanitized_search(result, args["project"], args["relative_root"], args["mode"])
+                                       relative_root=args["relative_root"], **options)
+                result = _sanitized_search(result, args["project"], args["relative_root"], args["mode"],
+                                           args.get('cursor') if paged else None)
             except (native.NativeReadRefused, ProtocolRefused, OSError, ValueError):
                 return _tool_error(identifier)
             return _ok(identifier, {"content": [{"type": "text", "text": json.dumps(

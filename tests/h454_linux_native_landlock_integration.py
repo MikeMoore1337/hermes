@@ -39,6 +39,7 @@ class LandlockTests(unittest.TestCase):
                 import resource,sys
                 from pathlib import Path
                 from device_fabric.linux_native_files import LinuxNativeFiles
+                from device_fabric.linux_native_search import LinuxNativeSearch
                 from device_fabric.linux_native_landlock import ReadSnapshot
                 from device_fabric import linux_native_landlock as boundary
                 boundary._trusted_source_fs=lambda _fd: True
@@ -52,6 +53,13 @@ class LandlockTests(unittest.TestCase):
                             cursor=page['next_cursor']
                             if not cursor:break
                         assert len(names)==300 and len(set(names))==300
+                        search=LinuxNativeSearch(files); cursor=''; matches=[]
+                        while True:
+                            page=search.search('item-',mode='names',relative_root='',cursor=cursor)
+                            matches.extend(item['path'] for item in page['matches'])
+                            cursor=page['next_cursor']
+                            if not cursor:break
+                        assert len(matches)==300 and len(set(matches))==300
                 print('LARGE_LANDLOCK_LIST=PASS')
             ''')
             proc=subprocess.run(['runuser','-u','nobody','--',sys.executable,'-B','-c',script,folder],

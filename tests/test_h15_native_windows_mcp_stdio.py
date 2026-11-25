@@ -251,7 +251,7 @@ class NativeWindowsMcpStdioTests(unittest.TestCase):
                          {"native_file_read", "native_file_stat", "native_file_list", "native_file_search"})
         self.assertTrue(all(t["name"] not in ("execute", "write", "start_process")
                             and set(t["inputSchema"]["properties"]) == (
-                                {"project", "query", "mode", "relative_root"}
+                                {"project", "query", "mode", "relative_root", "cursor"}
                                 if t["name"] == "native_file_search" else
                                 {"project", "relative", "cursor"}
                                 if t["name"] == "native_file_list" else {"project", "relative"})

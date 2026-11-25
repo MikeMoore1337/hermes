@@ -120,7 +120,9 @@ _TOOL_CATALOG = (
     _tool(SEARCH, "Bounded literal source search; relative paths/line numbers only.",
           {"project": _PROJECT, "query": _QUERY,
            "mode": {"type": "string", "enum": ["names", "content"]},
-           "relative_root": _RELATIVE}),
+           "relative_root": _RELATIVE,
+           "cursor": {"type": "string", "maxLength": 2048,
+                      "description": "Empty for the first page; pass next_cursor until empty. incomplete means some content was omitted."}}, optional=("cursor",)),
 )
 _CATALOG_NAMES = frozenset(x["name"] for x in _TOOL_CATALOG)
 

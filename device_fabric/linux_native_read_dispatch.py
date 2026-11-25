@@ -30,6 +30,7 @@ from device_fabric.linux_native_search import (
 from device_fabric.native_effect_grants import DEVICE
 from device_fabric.native_brc_enrollment import IDENTITY
 from device_fabric.native_list_pages import parse_cursor, validate_next
+from device_fabric.native_search_pages import parse_search_cursor
 
 MAX_FRAME_BYTES = 4096
 MAX_SESSION_CALLS = 64
@@ -76,11 +77,11 @@ def parse_call(frame: bytes) -> tuple[str, str, dict[str, str]]:
             expected = {"project", "relative"}
         else:
             expected = {"project", "query", "mode", "relative_root"}
-        paged = data["tool"] == LIST and set(args) == expected | {"cursor"}
+        paged = data["tool"] in (LIST, SEARCH) and set(args) == expected | {"cursor"}
         if (set(args) != expected and not paged) or any(type(v) is not str for v in args.values()):
             raise NativeLinuxReadDenied("native_linux_read_denied")
         if paged:
-            parse_cursor(args["cursor"])
+            (parse_cursor if data["tool"] == LIST else parse_search_cursor)(args["cursor"])
         if type(args["project"]) is not str:
             raise NativeLinuxReadDenied("native_linux_read_denied")
         if data["tool"] in {STAT, READ, LIST}:
@@ -162,9 +163,12 @@ def _check_result(out: object, *, project: str,
             # readme.md are two legitimate distinct entries.
             names.add(entry["name"])
     else:
-        if (set(out) != {"status", "project", "relative_root", "mode",
+        expected = {"status", "project", "relative_root", "mode",
                          "matches", "truncated", "entries_scanned",
                          "bytes_scanned"}
+        if 'cursor' in args:
+            expected.update(('next_cursor', 'incomplete'))
+        if (set(out) != expected
             or out["relative_root"] != args["relative_root"]
             or out["mode"] != args["mode"]
             or type(out["truncated"]) is not bool
@@ -175,6 +179,10 @@ def _check_result(out: object, *, project: str,
             or type(out["matches"]) is not list
             or len(out["matches"]) > MAX_MATCHES):
             raise NativeLinuxReadDenied("native_linux_read_denied")
+        if 'cursor' in args:
+            parse_search_cursor(out['next_cursor'])
+            if type(out['incomplete']) is not bool or out['truncated'] != bool(out['next_cursor']):
+                raise NativeLinuxReadDenied('native_linux_read_denied')
         for match in out["matches"]:
             if (type(match) is not dict or type(match.get("path")) is not str):
                 raise NativeLinuxReadDenied("native_linux_read_denied")
@@ -243,8 +251,10 @@ class LinuxOriginalReadDispatcher:
                 if self._reads > MAX_SESSION_READS:
                     raise NativeLinuxReadDenied("native_linux_read_denied")
             if tool == SEARCH:
-                self._searches += 1
-                if self._searches > MAX_SESSION_SEARCHES:
+                # A paged call reads at most one quarter of the legacy byte
+                # budget. Preserve the same aggregate session ceiling.
+                self._searches += 1 if 'cursor' in args else 4
+                if self._searches > MAX_SESSION_SEARCHES * 4:
                     raise NativeLinuxReadDenied("native_linux_read_denied")
         files = self._roots.get(args["project"])
         if files is None:
@@ -261,7 +271,7 @@ class LinuxOriginalReadDispatcher:
                 else:
                     result = LinuxNativeSearch(files).search(
                         args["query"], mode=args["mode"],
-                        relative_root=args["relative_root"])
+                        relative_root=args["relative_root"], cursor=args.get('cursor'))
                 safe = _check_result(result, project=args["project"],
                                      tool=tool, args=args)
                 self._active()

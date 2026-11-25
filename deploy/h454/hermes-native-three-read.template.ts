@@ -15,7 +15,7 @@ type Host = 'windows' | 'hermes-vps' | 'yfc-vps';
 type Tool = 'native_file_stat' | 'native_file_read' |
             'native_file_list' | 'native_file_search';
 type SafeArgs = { project: string; relative: string; cursor?:string } |
-                { project: string; query: string; mode: string; relative_root: string };
+                { project: string; query: string; mode: string; relative_root: string; cursor?:string };
 const READ: Tool[] = ['native_file_stat','native_file_read','native_file_list'];
 const ALL: Tool[] = [...READ,'native_file_search'];
 const PROJECTS = ['hermes','your-fitness-coach','ai-development-toolkit',
@@ -48,6 +48,8 @@ function schema(name:Tool) {
     : {host,project,relative:{type:'string',maxLength:1024}};
   if(name==='native_file_list')fields.cursor={type:'string',maxLength:70,
     description:'Set to empty string for first page, then pass next_cursor until empty. Directory changes require restarting; scans are bounded by size and time.'};
+  if(search)fields.cursor={type:'string',maxLength:2048,
+    description:'Set to empty string for first page, then pass next_cursor until empty. incomplete means some content was omitted.'};
   return {name,description:'Original Windows or Linux host source READ only; owner-paired native device required',
     inputSchema:{type:'object',properties:fields,required:Object.keys(fields).filter(x=>x!=='cursor'),
                  additionalProperties:false},
@@ -81,6 +83,9 @@ function cursorParts(value:unknown):{offset:number;hash:string}|null {
   const offset=Number(match[1]);
   return offset%64===0&&offset<16384?{offset,hash:match[2]}:null;
 }
+function searchCursor(value:unknown):boolean {
+  return typeof value==='string' && value.length<=2048 && (value===''||/^[A-Za-z0-9_-]+$/.test(value));
+}
 function safeArgs(method:Tool, raw:unknown):{host:Host;args:SafeArgs}|null {
   if (!raw || typeof raw!=='object'||Array.isArray(raw))return null;
   const o=raw as Record<string,unknown>;
@@ -90,13 +95,15 @@ function safeArgs(method:Tool, raw:unknown):{host:Host;args:SafeArgs}|null {
   if (!HOSTS[target].tools.includes(method)||typeof o.project!=='string'
       || !PROJECTS.includes(o.project))return null;
   if (method==='native_file_search') {
-    if (Object.keys(o).sort().join(',')!=='host,mode,project,query,relative_root'
+    const paged=Object.hasOwn(o,'cursor');
+    if (Object.keys(o).sort().join(',')!==(paged?'cursor,host,mode,project,query,relative_root':'host,mode,project,query,relative_root')
+        || (paged&&!searchCursor(o.cursor))
         || typeof o.query!=='string'||o.query.length<1||o.query.length>96
         || typeof o.mode!=='string'||!['names','content'].includes(o.mode)
         || typeof o.relative_root!=='string'||!safePath(o.relative_root,target,true)
         || [...o.query].some(c=>c.charCodeAt(0)<32))return null;
-    return {host:target,args:{project:o.project,query:o.query,
-      mode:o.mode,relative_root:o.relative_root}};
+    const args={project:o.project,query:o.query,mode:o.mode,relative_root:o.relative_root};
+    return {host:target,args:paged?{...args,cursor:o.cursor as string}:args};
   }
   const paged=method==='native_file_list' && Object.hasOwn(o,'cursor');
   if (Object.keys(o).sort().join(',')!==(paged?'cursor,host,project,relative':'host,project,relative')
@@ -140,9 +147,9 @@ function ownerDevice(hub:DeviceHub, store:SqliteStore, owner:string, host:Host):
 const MAX_WAITING = 16, MAX_WAITING_PER_OWNER = 4;
 // Allow the measured YFC service restart and TLS reconnection to complete.
 const WAIT_INTERVAL_MS = 200, WAIT_DEADLINE_MS = 7000;
-// The pinned YFC reader retires a connection after 16 dispatched calls.
+// Both pinned Linux readers retire a connection after 16 dispatched calls.
 // Count per socket, not per device: every fresh connection gets a new budget.
-const YFC_SESSION_CALLS = 16;
+const LINUX_SESSION_CALLS = 16;
 const socketCalls = new WeakMap<object,number>();
 let waiting = 0;
 const waitingByOwner = new Map<string,number>();
@@ -156,9 +163,9 @@ function stillAuthorized(hub:DeviceHub,store:SqliteStore,owner:string,host:Host,
 function reserveReady(hub:DeviceHub,store:SqliteStore,owner:string,host:Host,record:OwnerRecord):Reservation|null {
   try {
     if(!stillAuthorized(hub,store,owner,host,record))return null;
-    if(host!=='yfc-vps')return {identity:record,socket:null};
+    if(host==='windows')return {identity:record,socket:null};
     const socket=hub.get(record.id)?.socket;
-    if(!socket || (socketCalls.get(socket)??0)>=YFC_SESSION_CALLS)return null;
+    if(!socket || (socketCalls.get(socket)??0)>=LINUX_SESSION_CALLS)return null;
     socketCalls.set(socket,(socketCalls.get(socket)??0)+1);
     return {identity:record,socket};
   }catch{return null;}
@@ -176,7 +183,7 @@ async function resolveOwnerDevice(hub:DeviceHub,store:SqliteStore,owner:string,h
     const slot=reserveReady(hub,store,owner,host,record);
     if(slot)return slot;
   }
-  if(host!=='yfc-vps')return null;
+  if(host==='windows')return null;
   const record=ownerRecord(store,owner,host);
   if(!record)return null;
   try { if(hub.get(record.id) && !stillAuthorized(hub,store,owner,host,record))return null; }
@@ -215,7 +222,7 @@ function validResult(value:unknown, method:Tool, args:SafeArgs, host:Host):boole
   const common=['status','project'];
   if(method==='native_file_search'&&!exactKeys(v,[
     ...common,'relative_root','mode','matches','truncated',
-    'entries_scanned','bytes_scanned']))return false;
+    'entries_scanned','bytes_scanned',...('cursor' in args?['next_cursor','incomplete']:[])]))return false;
   if(method==='native_file_list'&&!exactKeys(v,[
     ...common,'relative','action','kind','entries','truncated',
     ...('cursor' in args?['next_cursor']:[])]))return false;
@@ -232,6 +239,8 @@ function validResult(value:unknown, method:Tool, args:SafeArgs, host:Host):boole
         ||!Number.isInteger(v.bytes_scanned)||(v.bytes_scanned as number)>2097152
         ||(v.bytes_scanned as number)<0
         ||!Array.isArray(v.matches)||v.matches.length>64)return false;
+    if('cursor' in args&&(!searchCursor(v.next_cursor)||typeof v.incomplete!=='boolean'||
+        v.truncated!==Boolean(v.next_cursor)))return false;
     return v.matches.every((m:unknown)=>{
       if(!m||typeof m!=='object'||Array.isArray(m))return false;
       const row=m as Record<string,unknown>;
