@@ -12,7 +12,7 @@ BASE = Path("packages/relay/src/mcp")
 IMP = "import { pinnedToolCatalog } from './hermes-tool-catalog.js';"
 LIST = "      ...pinnedToolCatalog().map(t => ({ ...t, inputSchema: withDeviceId(t.inputSchema) }))] };"
 CALL = "    const out = await invokeTool(hub, store, ctx, name, args as Record<string, unknown> | undefined);"
-NEWIMP = "import { LIST_WORKSPACES_TOOL, RESOLVE_WORKSPACE_TOOL, CONNECT_SANDBOX_TOOL, listApprovedWorkspaces, resolveApprovedWorkspace, sandboxProjectAction } from './hermes-workspaces.js';"
+NEWIMP = "import { LIST_WORKSPACES_TOOL, RESOLVE_WORKSPACE_TOOL, CONNECT_SANDBOX_TOOL, listApprovedWorkspaces, resolveApprovedWorkspace, addDiscoveredWorkspaces, sandboxProjectAction } from './hermes-workspaces.js';"
 NEWLIST = ("      ...pinnedToolCatalog().map(t => ({ ...t, inputSchema: withDeviceId(t.inputSchema) })),\n"
            "      LIST_WORKSPACES_TOOL, RESOLVE_WORKSPACE_TOOL, CONNECT_SANDBOX_TOOL] };")
 NEWCALL = """    if (name === 'list_workspaces' || name === 'resolve_workspace' || name === 'connect_sandbox_project') {
@@ -20,6 +20,9 @@ NEWCALL = """    if (name === 'list_workspaces' || name === 'resolve_workspace' 
       const devices = listUserDevices(hub, store, ctx.userId);
       let result: Record<string, unknown> = name === 'list_workspaces'
         ? listApprovedWorkspaces(devices) : resolveApprovedWorkspace(args, devices);
+      if (name === 'list_workspaces') {
+        result = await addDiscoveredWorkspaces(result, devices, (tool, input) => invokeTool(hub, store, ctx, tool, input));
+      }
       if (name === 'connect_sandbox_project' || (name === 'resolve_workspace'
           && result.status === 'refused' && result.reason === 'unknown_workspace')) {
         result = await sandboxProjectAction(args, devices, (tool, input) => invokeTool(hub, store, ctx, tool, input));

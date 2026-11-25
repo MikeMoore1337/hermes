@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.h15_sandbox_projects import ProjectError, inspect
+from scripts.h15_sandbox_projects import ProjectError, discover, inspect
 
 
 class SandboxProjectTests(unittest.TestCase):
@@ -56,6 +56,31 @@ class SandboxProjectTests(unittest.TestCase):
                         'https://example.invalid/new-project.git'], check=True)
         with self.assertRaisesRegex(ProjectError, 'origin_mismatch'):
             inspect('new-project', self.root)
+
+    def test_discover_returns_verified_repositories_and_skips_other_folders(self):
+        self.repository('first-project')
+        self.repository('second-project')
+        (self.root / 'not-a-repo').mkdir()
+        result = discover(self.root)
+        self.assertFalse(result['incomplete'])
+        self.assertEqual([item['workspace'] for item in result['projects']],
+                         ['first-project', 'second-project'])
+        self.assertTrue(all(item['status'] == 'verified' for item in result['projects']))
+
+    def test_discover_reports_bounded_enumeration(self):
+        self.repository('first-project')
+        self.repository('second-project')
+        result = discover(self.root, max_entries=1)
+        self.assertTrue(result['incomplete'])
+        self.assertLessEqual(len(result['projects']), 1)
+
+    def test_discover_reports_unexamined_worktree(self):
+        project = self.root / 'linked-project'
+        project.mkdir()
+        (project / '.git').write_text('gitdir: /elsewhere', encoding='utf-8')
+        result = discover(self.root)
+        self.assertTrue(result['incomplete'])
+        self.assertEqual(result['projects'], [])
 
 
 if __name__ == '__main__':
