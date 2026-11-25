@@ -8,7 +8,6 @@ from pathlib import Path
 import sqlite3
 import stat
 
-MAX_RECORDS = 50_000
 MAX_BYTES = 32 * 1024 * 1024
 REPARSE = 0x400
 APPLICATION_ID = 0x48343534
@@ -71,11 +70,18 @@ class PersonalReplay:
             with closing(sqlite3.connect(self.path.as_uri() + "?mode=rw", uri=True, timeout=2, isolation_level=None)) as db:
                 db.execute("PRAGMA synchronous=FULL")
                 db.execute("BEGIN IMMEDIATE")
+                page_size = db.execute("PRAGMA page_size").fetchone()[0]
+                if (type(page_size) is not int or page_size < 512 or page_size > 65536
+                    or page_size & (page_size - 1)):
+                    raise ValueError()
+                max_pages = MAX_BYTES // page_size
+                if max_pages < 1 or db.execute("PRAGMA page_count").fetchone()[0] > max_pages:
+                    raise ValueError()
+                if db.execute(f"PRAGMA max_page_count={max_pages}").fetchone() != (max_pages,):
+                    raise ValueError()
                 if db.execute("SELECT 1 FROM claimed WHERE id=?", (digest,)).fetchone():
                     db.execute("ROLLBACK")
                     return False
-                if db.execute("SELECT COUNT(*) FROM claimed").fetchone()[0] >= MAX_RECORDS:
-                    raise ValueError()
                 db.execute("INSERT INTO claimed(id) VALUES(?)", (digest,))
                 db.execute("COMMIT")
             self._check_file()
