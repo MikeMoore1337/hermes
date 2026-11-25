@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import json
 import subprocess
 from pathlib import Path
 import tempfile
@@ -45,6 +46,42 @@ class WindowsSearchTests(unittest.TestCase):
         self.assertEqual(content["matches"], [{"path": r"src\safe.py", "line": 2}])
         self.assertEqual(content["bytes_scanned"], len(b"first\nFind-Needle\nlast\n") + len(b"\x00Needle"))
         self.assertNotIn("private", repr(content))
+
+    def test_paged_search_reaches_more_than_512_entries(self):
+        for index in range(550):
+            (self.code / f'needle-{index:04}.py').write_bytes(b'')
+        cursor = ''
+        seen = set()
+        session = mcp.McpSession()
+        session.handle({'jsonrpc':'2.0', 'id':0, 'method':'initialize', 'params':{
+            'protocolVersion':mcp.PROTOCOL, 'capabilities':{}, 'clientInfo':{}}})
+        ids = set()
+        for index in range(15):
+            message = {'type':'call', 'id':f'page-{index}', 'tool':'native_file_search',
+                'args':{'project':'hermes', 'query':'needle', 'mode':'names',
+                        'relative_root':'src', 'cursor':cursor}}
+            response = outbound.safe_call(session, message, ids)
+            self.assertFalse(response['result']['isError'])
+            result = json.loads(response['result']['content'][0]['text'])
+            seen.update(row['path'] for row in result['matches'])
+            cursor = result['next_cursor']
+            if not cursor:
+                break
+        self.assertEqual(cursor, '')
+        self.assertEqual(len(seen), 550)
+
+    def test_paged_content_search_resumes_inside_one_file(self):
+        (self.code / 'many.py').write_text('needle\n' * 150, encoding='utf-8')
+        cursor = ''
+        lines = []
+        for _ in range(10):
+            result = search.search('hermes', 'needle', mode='content', relative_root='src', cursor=cursor)
+            lines.extend(row['line'] for row in result['matches'] if row['path'] == r'src\many.py')
+            cursor = result['next_cursor']
+            if not cursor:
+                break
+        self.assertEqual(cursor, '')
+        self.assertEqual(lines, list(range(1, 151)))
 
     def test_invalid_roots_and_queries_are_refused(self):
         for query, mode, root in (("", "names", ""), ("a\n", "names", ""),
@@ -121,6 +158,16 @@ class WindowsSearchTests(unittest.TestCase):
         result = search.search("hermes", "deep-marker", mode="names", relative_root="src")
         self.assertEqual(result["matches"], [{"path": str((current / "deep-marker.py").relative_to(self.root)), "kind": "file"}])
         self.assertFalse(result["truncated"])
+        cursor = ''
+        matches = []
+        for _ in range(40):
+            result = search.search("hermes", "deep-marker", mode="names", relative_root="src", cursor=cursor)
+            matches.extend(result['matches'])
+            cursor = result['next_cursor']
+            if not cursor:
+                break
+        self.assertEqual(cursor, '')
+        self.assertEqual(matches, [{"path": str((current / "deep-marker.py").relative_to(self.root)), "kind": "file"}])
 
     def test_skipped_oversize_file_does_not_hide_queued_directory(self):
         (self.root / "a-oversize.txt").write_bytes(b"x" * (native.MAX_FILE_BYTES + 1))

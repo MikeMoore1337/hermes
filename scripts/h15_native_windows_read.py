@@ -35,7 +35,8 @@ MAX_FILE_BYTES = 256 * 1024
 MAX_PATH_LENGTH = 1024
 MAX_LIST_ENTRIES = PAGE_SIZE
 MAX_SCAN_ENTRIES = SCAN_LIMIT
-MAX_LIST_ANCESTORS = 32
+# The project root's own ancestors plus up to 64 search path components.
+MAX_LIST_ANCESTORS = 80
 ALLOWED_EXTENSIONS = frozenset({
     ".py", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs",
     ".md", ".mdx", ".txt", ".json", ".toml", ".yaml", ".yml",

@@ -80,6 +80,11 @@ const hub={
         mode:'names',matches:[{path:args.relative_root&&!escapeSearch?child:'src',
           kind:args.relative_root&&!escapeSearch?'file':'directory'}],
         entries_scanned:1,bytes_scanned:0,truncated:false};
+      if(Object.hasOwn(args,'cursor')){
+        payload.next_cursor=args.cursor===''?'YWJj':'';
+        payload.truncated=Boolean(payload.next_cursor);
+        payload.incomplete=false;
+      }
     }else throw Error('UNEXPECTED_TOOL');
     if(malformed)payload.secret='should-not-leak';
     if(revokeNext) rows.find(r=>r.device_id===id).paused=1;
@@ -137,6 +142,15 @@ for(const p of profiles){
       'native_file_search',{host:p.host,project:'hermes',query:'src',
          mode:'names',relative_root:''});
     assert(!found.isError,'NATIVE_SEARCH_REFUSED_'+p.host);
+    const pageArgs={host:p.host,project:'hermes',query:'src',mode:'names',relative_root:'',cursor:''};
+    const firstSearch=await invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_search',pageArgs);
+    assert(!firstSearch.isError,'PAGED_SEARCH_FIRST_REFUSED');
+    const searchCursor=JSON.parse(firstSearch.content[0].text).next_cursor;
+    assert(searchCursor==='YWJj','PAGED_SEARCH_CURSOR_MISSING');
+    const nextSearch=await invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_search',{...pageArgs,cursor:searchCursor});
+    assert(!nextSearch.isError&&JSON.parse(nextSearch.content[0].text).next_cursor==='', 'PAGED_SEARCH_LAST_REFUSED');
+    assert(denied(await invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_search',{...pageArgs,cursor:'bad!'})),
+      'PAGED_SEARCH_INVALID_CURSOR_ACCEPTED');
     const nested={host:p.host,project:'hermes',query:'safe',mode:'names',relative_root:'different'};
     assert(!(await invokeOwnerNativeThreeRead(hub,store,ctx,
       'native_file_search',nested)).isError, 'NESTED_SEARCH_REFUSED_'+p.host);
@@ -172,7 +186,7 @@ for(const p of profiles){
         assert(denied(await invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_list',{...list,relative})),
           'WINDOWS_UNSAFE_LIST_ACCEPTED');
     }
-    if(p.host==='yfc-vps')devices.set(p.id,{...devices.get(p.id),socket:{...devices.get(p.id).socket}});
+    if(p.host!=='windows')devices.set(p.id,{...devices.get(p.id),socket:{...devices.get(p.id).socket}});
   }
 }
 
@@ -357,6 +371,23 @@ devices.set(yfc.id,newYfcSocket());
 assert((await Promise.all(simultaneous)).every(result=>!result.isError),
   'CONCURRENT_SESSION_RECONNECT_FAILED');
 assert(calls===before+17,'CONCURRENT_DISPATCH_COUNT');
+
+// Hermes has the same 16-call worker lifecycle as YFC.
+const hermes=profiles.find(p=>p.host==='hermes-vps');
+const hermesLive=devices.get(hermes.id);
+const freshHermes=()=>({...hermesLive,socket:{...hermesLive.socket}});
+const hermesRequest={host:'hermes-vps',project:'hermes',relative:'README.md'};
+devices.set(hermes.id,freshHermes());
+before=calls;
+for(let i=0;i<16;i++){
+  assert(!(await invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_read',hermesRequest)).isError,
+    'HERMES_SESSION_CALL_REFUSED_'+i);
+}
+const afterHermesBudget=invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_read',hermesRequest);
+await new Promise(resolve=>setTimeout(resolve,50));
+assert(calls===before+16,'HERMES_EXHAUSTED_SOCKET_DISPATCHED');
+devices.set(hermes.id,freshHermes());
+assert(!(await afterHermesBudget).isError&&calls===before+17,'HERMES_RECONNECT_FAILED');
 
 assert(audited.length>=profiles.length,'NO_AUDIT');
 assert(audited.every(x=>x.user_id===ctx.userId&&

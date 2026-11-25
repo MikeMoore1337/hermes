@@ -21,6 +21,7 @@ from device_fabric.linux_native_files import (
     LinuxNativeFiles, NativeLinuxDenied, READ_EXTENSIONS, MAX_READ_BYTES,
     _relative,
 )
+from device_fabric.native_search_pages import search_page
 
 MAX_PATTERN_BYTES = 96
 MAX_ENTRIES = 512
@@ -38,9 +39,18 @@ class LinuxNativeSearch:
         self._files = files
 
     def search(self, query: str, *, mode: str = "names",
-               relative_root: str = "") -> dict[str, object]:
+               relative_root: str = "", cursor: str | None = None) -> dict[str, object]:
         """Sanitize all source-filesystem errors before returning to MCP."""
         try:
+            if cursor is not None:
+                if relative_root:
+                    _relative(relative_root)
+                elif relative_root != '':
+                    raise NativeLinuxDenied('native_linux_denied')
+                return search_page(project=self._files.project, query=query, mode=mode,
+                    relative_root=relative_root, cursor=cursor, separator='/',
+                    list_dir=lambda path, page: self._files.list_directory(path, cursor=page),
+                    stat_file=self._files.stat_file, read_file=self._files.read_file)
             return self._search(query, mode=mode, relative_root=relative_root)
         except (OSError, UnicodeError, ValueError, binascii.Error):
             raise NativeLinuxDenied("native_linux_denied") from None

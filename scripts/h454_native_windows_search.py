@@ -49,7 +49,8 @@ def _locked_directory(project: str, relative: str):
             api.CloseHandle(handle)
 
 
-def search(project: str, query: str, *, mode: str, relative_root: str) -> dict:
+def search(project: str, query: str, *, mode: str, relative_root: str,
+           cursor: str | None = None) -> dict:
     try:
         if (type(query) is not str or type(mode) is not str or type(relative_root) is not str
             or mode not in ("names", "content") or not query.strip()
@@ -58,6 +59,13 @@ def search(project: str, query: str, *, mode: str, relative_root: str) -> dict:
             or any(unicodedata.category(char).startswith("C") for char in query)):
             raise native.NativeReadRefused("search_input_denied")
         native.build_request(project, relative_root, "stat")
+        if cursor is not None:
+            from device_fabric.native_search_pages import search_page
+            return search_page(project=project, query=query, mode=mode,
+                relative_root=relative_root, cursor=cursor, separator='\\',
+                list_dir=lambda path, page: native.handle_native_list(project, path, cursor=page),
+                stat_file=lambda path: native.handle_native_request(project, path, 'stat'),
+                read_file=lambda path: native.handle_native_request(project, path, 'read'))
         wanted = query.casefold()
         queue = deque([(relative_root, 0)])
         matches = []
