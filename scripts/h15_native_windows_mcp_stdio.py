@@ -70,8 +70,8 @@ TOOLS = (
             "properties": {
                 "project": {"type": "string", "enum": sorted(native.READ_ROOTS)},
                 "relative": {"type": "string", "maxLength": native.MAX_PATH_LENGTH},
-                "cursor": {"type": "string", "maxLength": 68,
-                           "description": "Empty for first page; pass next_cursor until empty. Directory changes require restart; scan limit is 256."},
+                "cursor": {"type": "string", "maxLength": 70,
+                           "description": "Empty for first page; pass next_cursor until empty. Directory changes require restart; scans are bounded by size and time."},
             },
             "required": ["project", "relative"],
             "additionalProperties": False,

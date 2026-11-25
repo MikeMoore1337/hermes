@@ -6,8 +6,10 @@ import json
 import re
 
 PAGE_SIZE = 64
-SCAN_LIMIT = 256
-_CURSOR = re.compile(r'(64|128|192):([a-f0-9]{64})\Z')
+SCAN_LIMIT = 16_384
+SCAN_SECONDS = 2.0
+MAX_SNAPSHOT_BYTES = 4 * 1024 * 1024
+_CURSOR = re.compile(r'([1-9][0-9]{0,4}):([a-f0-9]{64})\Z')
 
 
 class NativePageDenied(ValueError):
@@ -22,7 +24,10 @@ def parse_cursor(cursor: str) -> tuple[int, str]:
     match = _CURSOR.fullmatch(cursor)
     if match is None:
         raise NativePageDenied('native_page_denied')
-    return int(match.group(1)), match.group(2)
+    offset = int(match.group(1))
+    if offset % PAGE_SIZE or offset >= SCAN_LIMIT:
+        raise NativePageDenied('native_page_denied')
+    return offset, match.group(2)
 
 
 def validate_next(cursor: str, next_cursor: str, entries: list[object], truncated: bool) -> None:
@@ -48,8 +53,18 @@ def page(entries: list[dict[str, str]], project: str, relative: str,
         or type(project) is not str or type(relative) is not str
         or type(cursor) is not str):
         raise NativePageDenied('native_page_denied')
+    size = len(json.dumps([project, relative], ensure_ascii=True).encode('ascii')) + 4
+    for entry in entries:
+        if (type(entry) is not dict or set(entry) != {'name', 'kind'}
+                or type(entry['name']) is not str or entry['kind'] not in ('file', 'directory')):
+            raise NativePageDenied('native_page_denied')
+        size += len(json.dumps(entry, ensure_ascii=True, separators=(',', ':')).encode('ascii')) + 1
+        if size > MAX_SNAPSHOT_BYTES:
+            raise NativePageDenied('native_page_denied')
     raw = json.dumps([project, relative, entries], ensure_ascii=True,
                      separators=(',', ':')).encode('ascii')
+    if len(raw) > MAX_SNAPSHOT_BYTES:
+        raise NativePageDenied('native_page_denied')
     fingerprint = hashlib.sha256(raw).hexdigest()
     offset, claimed = parse_cursor(cursor)
     if cursor:
