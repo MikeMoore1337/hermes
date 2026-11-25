@@ -13,8 +13,8 @@ from scripts.h15_brc_harden_gateway import GRANT_PATCH
 from scripts.h15_remote_commander_candidate_audit import UPSTREAM_SHA, AuditError, evaluate
 
 MCP = Path("packages/relay/src/mcp")
-IMPORT = "import { LIST_WORKSPACES_TOOL, RESOLVE_WORKSPACE_TOOL, listApprovedWorkspaces, resolveApprovedWorkspace } from './hermes-workspaces.js';"
-LIST = ("      LIST_WORKSPACES_TOOL, RESOLVE_WORKSPACE_TOOL] };")
+from scripts.h15_brc_workspace_gateway import NEWIMP as IMPORT
+LIST = ("      LIST_WORKSPACES_TOOL, RESOLVE_WORKSPACE_TOOL, CONNECT_SANDBOX_TOOL] };")
 CALL = "    const out = await invokeTool(hub, store, ctx, name, args as Record<string, unknown> | undefined);"
 NATIVE_IMPORT = "import { NATIVE_TOOLS, invokeOwnerNativeRead } from './hermes-native-read.js';"
 NATIVE_CALL = """    if (name === 'native_file_read' || name === 'native_file_stat' || name === 'native_file_list') {
@@ -22,7 +22,7 @@ NATIVE_CALL = """    if (name === 'native_file_read' || name === 'native_file_st
       return await invokeOwnerNativeRead(hub, store, ctx, name, args);
     }
 """
-NATIVE_LIST = "      LIST_WORKSPACES_TOOL, RESOLVE_WORKSPACE_TOOL, ...NATIVE_TOOLS] };"
+NATIVE_LIST = "      LIST_WORKSPACES_TOOL, RESOLVE_WORKSPACE_TOOL, CONNECT_SANDBOX_TOOL, ...NATIVE_TOOLS] };"
 INVOKE_ANCHOR = "  const started = Date.now();"
 NATIVE_GENERIC_GUARD = """  // Stored classification and live platform use different Linux formats.
   if (grant.device_id !== deviceId || dev.info.deviceId !== deviceId
