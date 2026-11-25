@@ -79,6 +79,7 @@ class H15WorkspaceMcpTests(unittest.TestCase):
         self.assertEqual(comp.returncode, 0, comp.stderr + comp.stdout)
         js = """
 const assert=require('node:assert/strict'),api=require(process.argv[1]);
+(async () => {
 const win={name:'H15 Windows permanent sandbox',deviceId:'h15-win-05be75515428',online:true,paused:false};
 const other={name:'H15 YFC VPS sandbox',deviceId:'h15-yfc-c6ee0d53e858',online:true,paused:false};
 assert.equal(api.listApprovedWorkspaces([win,other]).workspaces.length,5);
@@ -94,7 +95,26 @@ for (const args of [{project:'../../private'}, {project:'random'}, {project:'yfc
 for (const devices of [[],[other],[{...win,online:false}],[{...win,paused:true}],[win,win]])
  assert.equal(api.resolveApprovedWorkspace({project:'yfc'},devices).status,'refused');
 assert.equal(api.listApprovedWorkspaces([other]).workspaces.length,0);
+let dispatched=[];
+const output={status:'verified',workspace:'new-project',root:'/workspace/projects/new-project',
+ origin:'https://github.com/MikeMoore1337/new-project.git',branch:'main',head:'a'.repeat(40)};
+const invoke=async (tool,args) => { dispatched.push({tool,args}); return {ok:true,result:{content:[{type:'text',text:'Process started with PID 42 (shell: /bin/sh)\\nInitial output:\\n'+JSON.stringify(output)}]}}; };
+const added=await api.sandboxProjectAction({project:'new-project'},[win],invoke);
+assert.equal(added.status,'resolved'); assert.equal(added.git_verified,true);
+assert.equal(dispatched[0].tool,'start_process'); assert.equal(dispatched[0].args.deviceId,win.deviceId);
+const resolved=await api.sandboxProjectAction({project:'new-project'},[win],invoke);
+assert.equal(resolved.workspace,'new-project');
+assert.equal((await api.sandboxProjectAction({project:'../escape'},[win],invoke)).status,'refused');
+assert.equal((await api.sandboxProjectAction({project:'new-project'},[other],invoke)).status,'refused');
+assert.equal(dispatched.length,2);
+const waiting=await api.sandboxProjectAction({project:'new-project'},[win],async()=>({ok:true,result:{content:[{type:'text',text:'Process started with PID 42 (shell: /bin/sh)'}]}}));
+assert.equal(waiting.status,'pending'); assert.equal(waiting.process_id,42);
+const missing=await api.sandboxProjectAction({project:'new-project'},[win],async()=>({ok:true,result:{isError:true,content:[{type:'text',text:'Process 42 exited with code 2\\nOutput:\\n'+JSON.stringify({status:'refused',reason:'project_not_found'})}]}}));
+assert.equal(missing.reason,'project_not_found');
+const exited=await api.sandboxProjectAction({project:'new-project'},[win],async()=>({ok:true,result:{content:[{type:'text',text:'Process 42 exited with code 0\\nOutput:\\n'+JSON.stringify(output)}]}}));
+assert.equal(exited.status,'resolved');
 console.log('H15_454_TS_RUNTIME=PASS');
+})().catch(e=>{console.error(e);process.exit(1)});
 """
         proc = subprocess.run(["node", "-e", js, str(dest / "hermes-workspaces.js")],
                               capture_output=True, text=True, timeout=15)

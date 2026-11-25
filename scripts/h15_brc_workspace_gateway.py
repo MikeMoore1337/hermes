@@ -1,6 +1,7 @@
 """Patch an already-hardened pinned BRC relay, in a disposable checkout only (#454)."""
 from __future__ import annotations
 import argparse
+import base64
 import json
 from pathlib import Path
 import sys
@@ -11,14 +12,18 @@ BASE = Path("packages/relay/src/mcp")
 IMP = "import { pinnedToolCatalog } from './hermes-tool-catalog.js';"
 LIST = "      ...pinnedToolCatalog().map(t => ({ ...t, inputSchema: withDeviceId(t.inputSchema) }))] };"
 CALL = "    const out = await invokeTool(hub, store, ctx, name, args as Record<string, unknown> | undefined);"
-NEWIMP = "import { LIST_WORKSPACES_TOOL, RESOLVE_WORKSPACE_TOOL, listApprovedWorkspaces, resolveApprovedWorkspace } from './hermes-workspaces.js';"
+NEWIMP = "import { LIST_WORKSPACES_TOOL, RESOLVE_WORKSPACE_TOOL, CONNECT_SANDBOX_TOOL, listApprovedWorkspaces, resolveApprovedWorkspace, sandboxProjectAction } from './hermes-workspaces.js';"
 NEWLIST = ("      ...pinnedToolCatalog().map(t => ({ ...t, inputSchema: withDeviceId(t.inputSchema) })),\n"
-           "      LIST_WORKSPACES_TOOL, RESOLVE_WORKSPACE_TOOL] };")
-NEWCALL = """    if (name === 'list_workspaces' || name === 'resolve_workspace') {
+           "      LIST_WORKSPACES_TOOL, RESOLVE_WORKSPACE_TOOL, CONNECT_SANDBOX_TOOL] };")
+NEWCALL = """    if (name === 'list_workspaces' || name === 'resolve_workspace' || name === 'connect_sandbox_project') {
       // Owner-authenticated relay only; never dispatch these tools to an agent.
       const devices = listUserDevices(hub, store, ctx.userId);
-      const result = name === 'list_workspaces'
+      let result: Record<string, unknown> = name === 'list_workspaces'
         ? listApprovedWorkspaces(devices) : resolveApprovedWorkspace(args, devices);
+      if (name === 'connect_sandbox_project' || (name === 'resolve_workspace'
+          && result.status === 'refused' && result.reason === 'unknown_workspace')) {
+        result = await sandboxProjectAction(args, devices, (tool, input) => invokeTool(hub, store, ctx, tool, input));
+      }
       return { content: [{ type: 'text', text: JSON.stringify(result) }],
                isError: result.status === 'refused' };
     }
@@ -55,17 +60,22 @@ def apply(root: Path, registry: Path, sha: str = UPSTREAM_SHA) -> dict:
     if template_file.is_symlink() or not template_file.is_file() or template_file.stat().st_size > 20000:
         raise AuditError("unsafe_workspace_template")
     template = template_file.read_text(encoding="utf-8")
-    if template.count("__HERMES_CATALOG__") != 1 or template.count("__HERMES_DEVICE_NAME__") != 1:
+    if any(template.count(marker) != 1 for marker in ("__HERMES_CATALOG__", "__HERMES_DEVICE_NAME__", "__HERMES_SANDBOX_HELPER__")):
         raise AuditError("workspace_template_drift")
+    helper_file = Path(__file__).resolve().parents[1] / "scripts/h15_sandbox_projects.py"
+    if helper_file.is_symlink() or not helper_file.is_file() or helper_file.stat().st_size > 20000:
+        raise AuditError("unsafe_sandbox_project_helper")
+    helper = base64.b64encode(helper_file.read_bytes()).decode('ascii')
     rows = [{"name": x["name"], "aliases": x["aliases"], "branch": x["branch"],
              "root": cfg["workspace_root"] + "/" + x["name"],
              "origin": "https://github.com/MikeMoore1337/" + x["repository"] + ".git"}
             for x in cfg["workspaces"]]
     code = template.replace("__HERMES_CATALOG__", json.dumps(rows, ensure_ascii=True))
     code = code.replace("__HERMES_DEVICE_NAME__", json.dumps(cfg["device_name"], ensure_ascii=True))
+    code = code.replace("__HERMES_SANDBOX_HELPER__", json.dumps(helper))
     patched = (original.replace(IMP, IMP + "\n" + NEWIMP)
                .replace(LIST, NEWLIST).replace(CALL, NEWCALL + CALL))
-    if patched == original or patched.count("name === 'resolve_workspace'") != 1:
+    if patched == original or patched.count("name === 'resolve_workspace'") != 2:
         raise AuditError("patch_failed")
     mod.write_text(code, encoding="utf-8")
     sp.write_text(patched, encoding="utf-8")
