@@ -12,7 +12,8 @@ from scripts import h15_native_windows_read as native
 
 MAX_QUERY_BYTES = 96
 MAX_ENTRIES = 512
-MAX_DEPTH = 4
+MAX_DEPTH = 64
+MAX_DIRECTORY_HANDLES = 4096
 MAX_MATCHES = 64
 MAX_CONTENT_BYTES = 2 * 1024 * 1024
 
@@ -60,11 +61,16 @@ def search(project: str, query: str, *, mode: str, relative_root: str) -> dict:
         wanted = query.casefold()
         queue = deque([(relative_root, 0)])
         matches = []
-        entries_scanned = bytes_scanned = 0
+        entries_scanned = bytes_scanned = handles_opened = 0
         truncated = False
         halted = False
         while queue and not halted:
             directory, depth = queue.popleft()
+            handles_needed = len(directory.split("\\")) + 1 if directory else 1
+            if handles_opened + handles_needed > MAX_DIRECTORY_HANDLES:
+                truncated = True
+                break
+            handles_opened += handles_needed
             with _locked_directory(project, directory) as (api, path, root):
                 names = []
                 with os.scandir(path) as iterator:
@@ -92,7 +98,7 @@ def search(project: str, query: str, *, mode: str, relative_root: str) -> dict:
                             if is_dir:
                                 if mode == "names" and wanted in name.casefold():
                                     matches.append({"path": relative, "kind": "directory"})
-                                if depth < MAX_DEPTH:
+                                if depth < MAX_DEPTH and len(relative.split("\\")) <= MAX_DEPTH:
                                     queue.append((relative, depth + 1))
                                 else:
                                     truncated = True

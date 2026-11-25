@@ -24,7 +24,7 @@ from device_fabric.linux_native_files import (
 
 MAX_PATTERN_BYTES = 96
 MAX_ENTRIES = 512
-MAX_DEPTH = 4
+MAX_DEPTH = 64
 MAX_MATCHES = 64
 MAX_CONTENT_BYTES = 2 * 1024 * 1024
 
@@ -108,7 +108,7 @@ class LinuxNativeSearch:
                 if kind == "directory":
                     if mode == "names" and wanted in name.casefold():
                         found.append({"path": relative, "kind": "directory"})
-                    if depth < MAX_DEPTH:
+                    if depth < MAX_DEPTH and len(relative.split('/')) <= MAX_DEPTH:
                         queue.append((relative, depth + 1))
                     else:
                         truncated = True
