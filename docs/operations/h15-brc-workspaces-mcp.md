@@ -17,8 +17,9 @@ Actual **ChatGPT and Codex clients both called** `list_workspaces` and
 and [Codex](https://github.com/MikeMoore1337/hermes/issues/454#issuecomment-6349223554).
 
 The previous live acceptance covered four public **sandbox** projects.
-The source catalog now adds **Financial Horizon** as a fifth. Its live
-availability remains unverified pending controlled deployment and Git checks:
+The source catalog adds **Financial Horizon** as a fifth. An offline import
+subsequently made its public repository available in the live Windows sandbox;
+Codex and ChatGPT both resolved and verified its Git state on 2026-11-25:
 
 | Workspace | Branch | Approved root |
 | --- | --- | --- |
@@ -28,12 +29,30 @@ availability remains unverified pending controlled deployment and Git checks:
 | ai-development-toolkit (Toolkit) | main | `/workspace/projects/ai-development-toolkit` |
 | financial-horizon (FH) | main | `/workspace/projects/financial-horizon` |
 
+## Offline import of another public project
+
+On the Windows owner host, Codex can use
+`scripts/h15_offline_project_import.py <repository-name>` to prepare a
+verified Git bundle of a public `MikeMoore1337` repository and install it in
+the existing Windows sandbox. It selects the public repository's default
+branch, refuses to overwrite an existing project, and leaves sandbox networking
+unchanged. Subprocesses do not create Windows console windows. A failed import
+can leave its marked staging directory or an incomplete new target for operator
+inspection; it does not delete an existing checkout. It does not support private
+repositories or automatic import initiated solely by the ChatGPT MCP client.
+
+The live import of `reminder-bot` on 2026-11-25 returned a clean `master` at
+`4e89a2ab2f0c3070f6ab873cb3651556d2dfb57b`; both clients subsequently
+resolved that same commit. This is an owner-host helper, not a new resident
+service or complete cross-client onboarding.
+
 The authenticated MCP tools select the unique online, unpaused
 `H15 Windows permanent sandbox` from live user-owned device discovery.
 They do **not** grant extra filesystem permissions, mount Windows-native
 folders or reach either production VPS host. The returned
-`git_verified=false` and `verification_required_before_write=true`
-are deliberate: a catalog entry does not attest the current Git tree.
+`git_verified` may be true for a dynamically inspected repository, while
+`verification_required_before_write=true` remains deliberate: a catalog
+entry alone does not attest the current working-tree state.
 
 ## Safe use in ChatGPT or Codex
 
@@ -82,8 +101,8 @@ live PASS, partial coverage and untested scenarios by device and tool.
   unapproved reboot).
 - Original Windows read-only access was separately owner-approved for
   exactly four specified project roots and **live E2E PASS in both clients**.
-  Its one-shot bearer was then revoked and native device paused/offline.
-  Re-enabling requires fresh owner authorization. Native Windows writes,
+  The original one-shot bearer was revoked and its device paused; a later
+  separately authorized native device is in service. Native Windows writes,
   commands, private vault, production credentials and Docker socket remain
   denied without individual scoped approval.
 
