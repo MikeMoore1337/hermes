@@ -6,12 +6,13 @@ from unittest.mock import patch
 
 from scripts.h15_brc_harden_relay import (
     apply, VULNERABLE, PATCHED, RELAY, ROTATE_MARKER, ROTATE_PATCH,
-    ATTACH_MARKER, ATTACH_PATCH,
+    ATTACH_MARKER, ATTACH_PATCH, APP_MARKER, ZSTD_GUARD,
 )
 from scripts.h15_remote_commander_candidate_audit import AuditError
 
 SOURCE = ("import { WebSocketServer } from 'ws';\nhttp.on('upgrade', (req, socket, head) => {\n"
-          + VULNERABLE + "\n" + ROTATE_MARKER + "\n" + ATTACH_MARKER + "\n});\n")
+          + APP_MARKER + "\n  app.use(express.urlencoded());\n" + VULNERABLE + "\n"
+          + ROTATE_MARKER + "\n" + ATTACH_MARKER + "\n});\n")
 
 
 class RelayAuthTests(unittest.TestCase):
@@ -39,6 +40,8 @@ class RelayAuthTests(unittest.TestCase):
         self.assertIn("h?.startsWith('Bearer ')", source)
         self.assertIn(ROTATE_PATCH, source)
         self.assertIn(ATTACH_PATCH, source)
+        self.assertEqual(result['http_zstd_content_encoding'], 'DENIED_BEFORE_PARSING')
+        self.assertLess(source.index(ZSTD_GUARD), source.index('app.use(express.urlencoded())'))
         self.assertIn("writable: false, configurable: false, enumerable: false", source)
         self.assertNotIn("value: token", source)
         self.assertFalse(result["production_ready"])
@@ -75,6 +78,13 @@ class RelayAuthTests(unittest.TestCase):
 
     def test_missing_rotation_marker_fails_atomically(self):
         altered = SOURCE.replace(ROTATE_MARKER, 'unreviewedPairing()')
+        self.target.write_text(altered, encoding='utf-8')
+        with self.assertRaisesRegex(AuditError, 'unreviewed_ws_auth_source'):
+            apply(self.root)
+        self.assertEqual(self.target.read_text(encoding='utf-8'), altered)
+
+    def test_missing_http_app_marker_fails_atomically(self):
+        altered = SOURCE.replace(APP_MARKER, '  const app = unreviewedApp();')
         self.target.write_text(altered, encoding='utf-8')
         with self.assertRaisesRegex(AuditError, 'unreviewed_ws_auth_source'):
             apply(self.root)

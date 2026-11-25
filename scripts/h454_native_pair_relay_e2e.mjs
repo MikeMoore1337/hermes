@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { randomBytes } from 'node:crypto';
+import { gzipSync, zstdCompressSync } from 'node:zlib';
 
 const root = process.cwd();
 const { buildRelay } = await import(pathToFileURL(
@@ -47,6 +48,29 @@ try {
   });
   const address = relay.http.address();
   if (!address || typeof address === 'string') throw Error('NO_LOOPBACK_PORT');
+  // Reject zstd before ANY body parser, including unauthenticated endpoints
+  // and the global form parser; preserve ordinary JSON and gzip clients.
+  const origin = 'http://127.0.0.1:' + address.port;
+  for (const [route, contentType, encoding] of [
+    ['/device/start','application/json','zstd'],
+    ['/device/poll','application/json','ZsTd'],
+    ['/no-such-route','application/x-www-form-urlencoded','zstd'],
+    ['/device/start','application/json','gzip, zstd'],
+  ]) {
+    const response = await fetch(origin + route, {method:'POST',
+      headers:{'content-type':contentType,'content-encoding':encoding},
+      body:zstdCompressSync(Buffer.from('{}'))});
+    if (response.status !== 415) throw Error('ZSTD_HTTP_NOT_REJECTED');
+    const result = await response.json();
+    if (result.error !== 'unsupported_content_encoding') throw Error('ZSTD_HTTP_ERROR_DISCLOSURE');
+  }
+  for (const encoding of ['identity','gzip']) {
+    const body = Buffer.from('{}');
+    const response = await fetch(origin + '/device/start', {method:'POST',
+      headers:{'content-type':'application/json','content-encoding':encoding},
+      body:encoding === 'gzip' ? gzipSync(body) : body});
+    if (response.status !== 200) throw Error('ORDINARY_HTTP_ENCODING_REGRESSION');
+  }
   const owner = relay.store.getUserByName('unit-only');
   if (!owner) throw Error('NO_SYNTHETIC_OWNER');
   for (const profile of PROFILES) {

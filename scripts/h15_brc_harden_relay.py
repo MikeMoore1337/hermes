@@ -15,6 +15,19 @@ from scripts.h15_remote_commander_candidate_audit import (
 )
 
 RELAY = Path("packages/relay/src/app.ts")
+APP_MARKER = "  const app = express();"
+ZSTD_GUARD = """  // CVE-2026-124851: reject zstd before every JSON or form parser.
+  // Node bundles an affected decoder; never feed it untrusted HTTP bodies.
+  app.use((req, res, next) => {
+    const encoding = req.headers['content-encoding'];
+    if (encoding !== undefined && (typeof encoding !== 'string' ||
+        encoding.split(',').some(value => value.trim().toLowerCase() === 'zstd'))) {
+      res.set('Cache-Control', 'no-store');
+      res.status(415).json({ error: 'unsupported_content_encoding' });
+      return;
+    }
+    next();
+  });"""
 VULNERABLE = """    const h = req.headers.authorization;
     const token = h?.startsWith('Bearer ') ? h.slice(7).trim() : url.searchParams.get('token');
     const dev = token ? store.getDeviceByToken(token) : undefined;"""
@@ -62,10 +75,12 @@ def apply(root: Path, *, sha: str = UPSTREAM_SHA) -> dict[str, object]:
         raise AuditError("relay_source_unsafe")
     original = path.read_text(encoding="utf-8")
     if (original.count(VULNERABLE) != 1 or PATCHED in original
+            or original.count(APP_MARKER) != 1 or ZSTD_GUARD in original
             or original.count(ROTATE_MARKER) != 1 or original.count(ATTACH_MARKER) != 1
             or 'hermesAuthTokenHash' in original):
         raise AuditError("unreviewed_ws_auth_source")
-    replacement = original.replace(VULNERABLE, PATCHED)
+    replacement = original.replace(APP_MARKER, APP_MARKER + '\n' + ZSTD_GUARD, 1)
+    replacement = replacement.replace(VULNERABLE, PATCHED)
     replacement = replacement.replace(ROTATE_MARKER, ROTATE_PATCH, 1)
     replacement = replacement.replace(ATTACH_MARKER, ATTACH_PATCH, 1)
     if "url.searchParams.get('token')" in replacement:
@@ -80,6 +95,7 @@ def apply(root: Path, *, sha: str = UPSTREAM_SHA) -> dict[str, object]:
         "ws_bearer_header": "REQUIRED",
         "device_credential_rotation": "RETIRES_OLD_SOCKET",
         "socket_credential_binding": "IMMUTABLE_AUTHENTICATED_HASH",
+        "http_zstd_content_encoding": "DENIED_BEFORE_PARSING",
         "production_ready": False,
         "owner_agents_modified": False,
     }
