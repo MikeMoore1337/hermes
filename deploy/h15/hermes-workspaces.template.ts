@@ -74,6 +74,54 @@ export function resolveApprovedWorkspace(args: unknown, devices: unknown) {
     process_execution_verified: false, verification_required_before_write: true };
 }
 
+// Keep the built-in catalog available even if the sandbox is offline or slow.
+export async function addDiscoveredWorkspaces(catalog: Record<string, unknown>,
+  devices: unknown, invoke: (tool: string, input: Record<string, unknown>) => Promise<unknown>
+): Promise<Record<string, unknown>> {
+  const d = ownerDevice(devices);
+  const fallback = (reason: string) => ({ ...catalog, discovery_status: reason });
+  if (!isReady(d) || !Array.isArray(catalog.workspaces)) return fallback('unavailable');
+  const command = `python3 -c 'import base64;exec(compile(base64.b64decode("${SANDBOX_HELPER}"),"sandbox_projects","exec"))' list`;
+  let response: unknown;
+  try { response = await invoke('start_process', { deviceId: d!.deviceId, command, timeout_ms: 5000 }); }
+  catch { return fallback('unavailable'); }
+  const outer = response as { ok?: unknown; result?: { isError?: unknown; content?: unknown } };
+  if (!outer || outer.ok !== true || !outer.result || outer.result.isError === true || !Array.isArray(outer.result.content))
+    return fallback('unavailable');
+  const first = outer.result.content[0] as { type?: unknown; text?: unknown } | undefined;
+  if (!first || first.type !== 'text' || typeof first.text !== 'string' || first.text.length > 8192)
+    return fallback('unavailable');
+  const marker = first.text.includes('Initial output:\n') ? 'Initial output:\n' : 'Output:\n';
+  const offset = first.text.indexOf(marker);
+  let data: Record<string, unknown> | undefined;
+  if (offset >= 0) {
+    try { data = JSON.parse(first.text.slice(offset + marker.length).trim()); } catch { /* still running */ }
+  }
+  if (!data) return fallback(/^Process started with PID \d+\b/.test(first.text) ? 'pending' : 'unavailable');
+  if (data.status !== 'catalog' || !Array.isArray(data.projects) || data.projects.length > 16 || typeof data.incomplete !== 'boolean')
+    return fallback('unavailable');
+  const entries = [...catalog.workspaces];
+  const known = new Set(entries.map((value: unknown) => (value as { name?: unknown }).name));
+  let incomplete = data.incomplete;
+  for (const value of data.projects) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) { incomplete = true; continue; }
+    const row = value as Record<string, unknown>;
+    const name = row.workspace;
+    if (typeof name !== 'string' || !PROJECT_NAME.test(name) || row.status !== 'verified'
+        || row.root !== `/workspace/projects/${name}` || row.origin !== `https://github.com/MikeMoore1337/${name}.git`
+        || typeof row.branch !== 'string' || !row.branch || row.branch.length > 255
+        || typeof row.head !== 'string' || !/^[a-f0-9]{40}$/.test(row.head)) {
+      incomplete = true; continue;
+    }
+    if (known.has(name)) continue;
+    known.add(name);
+    entries.push({ name, aliases: [name], root: row.root, origin: row.origin, branch: row.branch,
+      head: row.head, scope: 'sandbox', deviceId: d!.deviceId, device_status: 'online',
+      git_verified: true, process_execution_verified: true, verification_required_before_write: true });
+  }
+  return { ...catalog, workspaces: entries, discovery_status: incomplete ? 'incomplete' : 'complete' };
+}
+
 // A sandbox project lives on the existing sandbox volume, so discovery is
 // checked against the actual Git repository on every resolution and does not
 // depend on relay process memory or an unverified guessed path.

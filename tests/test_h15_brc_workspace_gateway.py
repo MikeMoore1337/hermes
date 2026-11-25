@@ -113,6 +113,15 @@ const missing=await api.sandboxProjectAction({project:'new-project'},[win],async
 assert.equal(missing.reason,'project_not_found');
 const exited=await api.sandboxProjectAction({project:'new-project'},[win],async()=>({ok:true,result:{content:[{type:'text',text:'Process 42 exited with code 0\\nOutput:\\n'+JSON.stringify(output)}]}}));
 assert.equal(exited.status,'resolved');
+const listPayload={status:'catalog',projects:[output],incomplete:false};
+const listInvoke=async()=>({ok:true,result:{content:[{type:'text',text:'Process 42 exited with code 0\\nOutput:\\n'+JSON.stringify(listPayload)}]}});
+const withExtra=await api.addDiscoveredWorkspaces(api.listApprovedWorkspaces([win]),[win],listInvoke);
+assert.equal(withExtra.discovery_status,'complete'); assert.equal(withExtra.workspaces.length,6);
+assert.equal(withExtra.workspaces[5].name,'new-project'); assert.equal(withExtra.workspaces[5].git_verified,true);
+const partial=await api.addDiscoveredWorkspaces(api.listApprovedWorkspaces([win]),[win],async()=>({ok:true,result:{content:[{type:'text',text:'Process started with PID 42 (shell: /bin/sh)'}]}}));
+assert.equal(partial.discovery_status,'pending'); assert.equal(partial.workspaces.length,5);
+const offline=await api.addDiscoveredWorkspaces(api.listApprovedWorkspaces([{...win,online:false}]),[{...win,online:false}],async()=>{throw Error('unexpected call')});
+assert.equal(offline.discovery_status,'unavailable'); assert.equal(offline.workspaces.length,5);
 console.log('H15_454_TS_RUNTIME=PASS');
 })().catch(e=>{console.error(e);process.exit(1)});
 """
