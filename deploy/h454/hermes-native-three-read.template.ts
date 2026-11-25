@@ -46,8 +46,8 @@ function schema(name:Tool) {
         mode:{type:'string',enum:['names','content']},
         relative_root:{type:'string',maxLength:1024}}
     : {host,project,relative:{type:'string',maxLength:1024}};
-  if(name==='native_file_list')fields.cursor={type:'string',maxLength:68,
-    description:'Set to empty string for first page, then pass next_cursor until empty. Directory changes require restarting; at most 256 entries are scanned.'};
+  if(name==='native_file_list')fields.cursor={type:'string',maxLength:70,
+    description:'Set to empty string for first page, then pass next_cursor until empty. Directory changes require restarting; scans are bounded by size and time.'};
   return {name,description:'Original Windows or Linux host source READ only; owner-paired native device required',
     inputSchema:{type:'object',properties:fields,required:Object.keys(fields).filter(x=>x!=='cursor'),
                  additionalProperties:false},
@@ -76,8 +76,10 @@ function safePath(path:string, host:Host, root:boolean):boolean {
 function cursorParts(value:unknown):{offset:number;hash:string}|null {
   if(value==='')return {offset:0,hash:''};
   if(typeof value!=='string')return null;
-  const match=/^(64|128|192):([a-f0-9]{64})$/.exec(value);
-  return match&&match[0]===value?{offset:Number(match[1]),hash:match[2]}:null;
+  const match=/^([1-9][0-9]{0,4}):([a-f0-9]{64})$/.exec(value);
+  if(!match||match[0]!==value)return null;
+  const offset=Number(match[1]);
+  return offset%64===0&&offset<16384?{offset,hash:match[2]}:null;
 }
 function safeArgs(method:Tool, raw:unknown):{host:Host;args:SafeArgs}|null {
   if (!raw || typeof raw!=='object'||Array.isArray(raw))return null;

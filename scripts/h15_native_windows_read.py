@@ -24,9 +24,10 @@ import ntpath
 import os
 import re
 import sys
+import time
 
 from device_fabric.native_effect_grants import windows_reserved_component
-from device_fabric.native_list_pages import PAGE_SIZE, SCAN_LIMIT, page
+from device_fabric.native_list_pages import PAGE_SIZE, SCAN_LIMIT, SCAN_SECONDS, page
 from control_center.native_windows_policy import (READ_ROOTS, SENSITIVE_STEM,
                                                   classify_native_request)
 
@@ -147,6 +148,37 @@ def _winapi():
         wintypes.DWORD, ctypes.POINTER(wintypes.DWORD), ctypes.c_void_p]
     api.ReadFile.restype = wintypes.BOOL
     return api
+
+
+class _DirectoryWatch:
+    """Fail a pathname-based scan if its directory changes while scanning."""
+
+    def __init__(self, path: str):
+        api = ctypes.WinDLL("kernel32", use_last_error=True)
+        api.FindFirstChangeNotificationW.argtypes = [wintypes.LPCWSTR, wintypes.BOOL, wintypes.DWORD]
+        api.FindFirstChangeNotificationW.restype = wintypes.HANDLE
+        api.FindCloseChangeNotification.argtypes = [wintypes.HANDLE]
+        api.FindCloseChangeNotification.restype = wintypes.BOOL
+        api.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+        api.WaitForSingleObject.restype = wintypes.DWORD
+        # The listing exposes names and kinds, not file contents or metadata.
+        # Name events catch create, delete and rename without spurious delayed
+        # file-write notifications from changes completed before this scan.
+        handle = api.FindFirstChangeNotificationW(path, False, 0x1 | 0x2)
+        if handle == ctypes.c_void_p(-1).value or not handle:
+            raise NativeReadRefused("directory_watch_unavailable")
+        self._api, self._handle = api, handle
+
+    def unchanged(self) -> bool:
+        # WAIT_TIMEOUT is the only successful no-change result; all other
+        # statuses, including errors and signalled notifications, deny.
+        return self._api.WaitForSingleObject(self._handle, 0) == 258
+
+    def close(self) -> None:
+        if self._handle is not None:
+            handle, self._handle = self._handle, None
+            if not self._api.FindCloseChangeNotification(handle):
+                raise NativeReadRefused("directory_watch_unavailable")
 
 
 def _opened(api, path: str, *, content: bool, lock_rename: bool = False):
@@ -273,6 +305,7 @@ def handle_native_list(project: str, relative: str = "", *, cursor: str | None =
         raise NativeReadRefused("directory_depth_limit")
     api = _winapi()
     handles = []
+    watch = None
     try:
         path = drive + '\\'
         for part in [None, *parts]:
@@ -287,13 +320,15 @@ def handle_native_list(project: str, relative: str = "", *, cursor: str | None =
         if ntpath.normcase(ntpath.normpath(path)) != ntpath.normcase(ntpath.normpath(requested)):
             raise NativeReadRefused("directory_redirected")
         resolved_root = ntpath.normcase(ntpath.normpath(root))
+        watch = _DirectoryWatch(requested)
         visible = []
         scanned = 0
+        deadline = time.monotonic() + SCAN_SECONDS
         try:
             with os.scandir(requested) as iterator:
                 for entry in iterator:
                     scanned += 1
-                    if scanned > MAX_SCAN_ENTRIES:
+                    if scanned > MAX_SCAN_ENTRIES or time.monotonic() >= deadline:
                         raise NativeReadRefused("directory_too_large")
                     name = entry.name
                     if not isinstance(name, str):
@@ -330,6 +365,8 @@ def handle_native_list(project: str, relative: str = "", *, cursor: str | None =
         except (OSError, UnicodeError) as exc:
             raise NativeReadRefused("enumeration_unavailable") from exc
         visible.sort(key=lambda item: (item["name"].casefold(), item["name"]))
+        if not watch.unchanged():
+            raise NativeReadRefused("directory_changed")
         if cursor is not None:
             try:
                 selected, next_cursor = page(visible, project, relative, cursor)
@@ -345,8 +382,12 @@ def handle_native_list(project: str, relative: str = "", *, cursor: str | None =
             "truncated": len(visible) > MAX_LIST_ENTRIES,
         }
     finally:
-        for handle in reversed(handles):
-            api.CloseHandle(handle)
+        try:
+            if watch is not None:
+                watch.close()
+        finally:
+            for handle in reversed(handles):
+                api.CloseHandle(handle)
 
 
 

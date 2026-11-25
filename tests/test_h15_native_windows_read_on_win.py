@@ -276,6 +276,39 @@ class NativeWindowsReadOnRunnerTests(unittest.TestCase):
         with self.assertRaisesRegex(broker.NativeReadRefused, "invalid_page"):
             broker.handle_native_list("hermes", "", cursor=first["next_cursor"])
 
+    def test_actual_win32_listing_continues_after_256_entries(self):
+        for index in range(300):
+            (self.root / f"item-{index:03}.py").write_text("safe")
+        cursor = ""
+        names = []
+        while True:
+            result = broker.handle_native_list("hermes", "", cursor=cursor)
+            names.extend(entry["name"] for entry in result["entries"] if entry["name"].startswith("item-"))
+            cursor = result["next_cursor"]
+            if not cursor:
+                break
+        self.assertEqual(len(names), 300)
+        self.assertEqual(len(set(names)), 300)
+
+    def test_actual_win32_listing_deadline_fails_closed(self):
+        with patch('scripts.h15_native_windows_read.time.monotonic', side_effect=[0.0, 3.0]):
+            with self.assertRaises(broker.NativeReadRefused):
+                broker.handle_native_list('hermes', '', cursor='')
+
+    def test_actual_win32_directory_change_during_scan_is_denied(self):
+        original = os.scandir
+        changed = []
+        def mutate(path):
+            iterator = original(path)
+            if not changed:
+                changed.append(True)
+                (self.root / 'added-during-scan.py').write_text('safe')
+            return iterator
+        with patch('scripts.h15_native_windows_read.os.scandir', side_effect=mutate):
+            with self.assertRaisesRegex(broker.NativeReadRefused, 'directory_changed'):
+                broker.handle_native_list('hermes', '', cursor='')
+        self.assertTrue(changed)
+
 
     def test_real_win32_bounded_project_root_listing_without_private_names(self):
         (self.root / "README.md").write_text("# synthetic")

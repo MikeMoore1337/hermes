@@ -29,6 +29,37 @@ class LandlockTests(unittest.TestCase):
             raise unittest.SkipTest('Landlock ABI 3 unavailable')
 
     @unittest.skipUnless(getattr(os, 'geteuid', lambda: -1)() == 0,
+                         'root-owned source and service identity required')
+    def test_large_directory_pages_under_landlock(self):
+        with tempfile.TemporaryDirectory(dir='/var/lib') as folder:
+            root=Path(folder);os.chmod(root,0o755)
+            for index in range(300):
+                path=root/f'item-{index:03}.py';path.write_bytes(b'safe');os.chmod(path,0o644)
+            script=textwrap.dedent('''
+                import resource,sys
+                from pathlib import Path
+                from device_fabric.linux_native_files import LinuxNativeFiles
+                from device_fabric.linux_native_landlock import ReadSnapshot
+                from device_fabric import linux_native_landlock as boundary
+                boundary._trusted_source_fs=lambda _fd: True
+                resource.setrlimit(resource.RLIMIT_NOFILE,(32768,resource.getrlimit(resource.RLIMIT_NOFILE)[1]))
+                with LinuxNativeFiles(root=Path(sys.argv[1]),project='hermes') as files:
+                    with ReadSnapshot(files) as snap:
+                        snap.seal(); cursor=''; names=[]
+                        while True:
+                            page=files.list_directory(cursor=cursor)
+                            names.extend(item['name'] for item in page['entries'])
+                            cursor=page['next_cursor']
+                            if not cursor:break
+                        assert len(names)==300 and len(set(names))==300
+                print('LARGE_LANDLOCK_LIST=PASS')
+            ''')
+            proc=subprocess.run(['runuser','-u','nobody','--',sys.executable,'-B','-c',script,folder],
+                                capture_output=True,text=True,timeout=20)
+            self.assertEqual(proc.returncode,0,proc.stderr)
+            self.assertIn('LARGE_LANDLOCK_LIST=PASS',proc.stdout)
+
+    @unittest.skipUnless(getattr(os, 'geteuid', lambda: -1)() == 0,
                          'root-owned immutable source and service identity required')
     def test_replay_survives_worker_restart_under_landlock(self):
         with tempfile.TemporaryDirectory(dir='/var/lib') as folder:

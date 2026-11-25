@@ -20,11 +20,12 @@ import platform
 import re
 import stat
 import sys
+import time
 
 from device_fabric.native_effect_grants import (
     GrantDenied, validate_native_file_relative,
 )
-from device_fabric.native_list_pages import PAGE_SIZE, SCAN_LIMIT, page
+from device_fabric.native_list_pages import PAGE_SIZE, SCAN_LIMIT, SCAN_SECONDS, page
 
 MAX_READ_BYTES = 256 * 1024
 MAX_LIST_ENTRIES = PAGE_SIZE
@@ -279,12 +280,14 @@ class LinuxNativeFiles:
         try:
             fd = self._open(relative, directory=True)
             try:
+                before = os.fstat(fd)
                 entries: list[dict[str, str]] = []
                 scanned = 0
+                deadline = time.monotonic() + SCAN_SECONDS
                 with os.scandir(fd) as listing:
                     for entry in listing:
                         scanned += 1
-                        if scanned > MAX_SCAN_ENTRIES:
+                        if scanned > MAX_SCAN_ENTRIES or time.monotonic() >= deadline:
                             raise NativeLinuxDenied("native_linux_denied")
                         full = relative + "/" + entry.name if relative else entry.name
                         try:
@@ -300,6 +303,11 @@ class LinuxNativeFiles:
                         except (NativeLinuxDenied, OSError, ValueError):
                             continue
                 entries.sort(key=lambda x: (x["name"].casefold(), x["name"]))
+                after = os.fstat(fd)
+                stamp = lambda item: (item.st_dev, item.st_ino, item.st_size,
+                                      item.st_mtime_ns, item.st_ctime_ns)
+                if stamp(before) != stamp(after):
+                    raise NativeLinuxDenied("native_linux_denied")
                 if cursor is not None:
                     selected, next_cursor = page(entries, self.project, relative, cursor)
                     return {"status": "ok", "project": self.project,

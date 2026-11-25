@@ -133,11 +133,30 @@ class OriginalLinuxHandleContracts(unittest.TestCase):
                          key=lambda x: (x["name"].casefold(), x["name"])))
 
     def test_too_large_directory_fails_closed(self):
-        for i in range(MAX_SCAN_ENTRIES + 1):
+        for i in range(5):
             (self.root / ("c%03d.txt" % i)).write_text("x")
-        with self.open() as adapter:
+        with patch('device_fabric.linux_native_files.MAX_SCAN_ENTRIES', 4), self.open() as adapter:
             with self.assertRaises(NativeLinuxDenied):
                 adapter.list_directory()
+
+    def test_listing_deadline_fails_closed(self):
+        with self.open() as adapter, patch('device_fabric.linux_native_files.time.monotonic', side_effect=[0.0, 3.0]):
+            with self.assertRaises(NativeLinuxDenied):
+                adapter.list_directory()
+
+    def test_directory_change_during_scan_is_denied(self):
+        original = os.scandir
+        changed = []
+        def mutate(path):
+            iterator = original(path)
+            if not changed:
+                changed.append(True)
+                (self.root / 'added-during-scan.py').write_text('safe')
+            return iterator
+        with self.open() as adapter, patch('device_fabric.linux_native_files.os.scandir', side_effect=mutate):
+            with self.assertRaises(NativeLinuxDenied):
+                adapter.list_directory()
+        self.assertTrue(changed)
 
     def test_root_symlink_and_parent_symlink_denied(self):
         alias = Path(self.temp.name) / "redirected"

@@ -153,12 +153,17 @@ for(const p of profiles){
     assert(cursor==='64:'+'a'.repeat(64),'PAGED_LIST_CURSOR_NOT_RETURNED');
     const second=await invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_list',{...list,cursor});
     assert(!second.isError&&JSON.parse(second.content[0].text).next_cursor==='', 'PAGED_LIST_LAST_REFUSED');
+    const later=await invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_list',
+      {...list,cursor:'1024:'+'a'.repeat(64)});
+    assert(!later.isError,'PAGED_LIST_LARGE_CURSOR_REFUSED');
     invalidNext=true;
     assert(denied(await invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_list',{...list,cursor})),
       'INVALID_NEXT_CURSOR_ACCEPTED');
     invalidNext=false;
     assert(denied(await invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_list',{...list,cursor:'65:'+'a'.repeat(64)})),
       'INVALID_INPUT_CURSOR_ACCEPTED');
+    assert(denied(await invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_list',{...list,cursor:'16384:'+'a'.repeat(64)})),
+      'OVER_BUDGET_CURSOR_ACCEPTED');
     if(p.host==='windows'){
       const nested={...list,relative:'src\\nested'};
       assert(!(await invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_list',nested)).isError,

@@ -2,6 +2,7 @@
 import json
 from pathlib import Path
 import platform
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -18,6 +19,19 @@ def entries(count):
 
 
 class NativePageContracts(unittest.TestCase):
+    def test_more_than_256_entries_continue_across_pages(self):
+        original = entries(300)
+        cursor = ''
+        result = []
+        while True:
+            batch, following = page(original, 'hermes', 'src', cursor)
+            validate_next(cursor, following, batch, bool(following))
+            result.extend(batch)
+            if not following:
+                break
+            cursor = following
+        self.assertEqual(result, original)
+
     def test_three_pages_cover_every_authorized_entry_once(self):
         original = entries(173)
         cursor = ''
@@ -39,11 +53,21 @@ class NativePageContracts(unittest.TestCase):
                                            (original, 'hermes', 'different')):
             with self.subTest(project=project, relative=relative), self.assertRaises(NativePageDenied):
                 page(values, project, relative, cursor)
-        for bad in ('1:' + 'a'*64, '256:' + 'a'*64, '64:' + 'G'*64, '64:' + 'a'*65, '64', None):
+        for bad in ('1:' + 'a'*64, '16384:' + 'a'*64, '64:' + 'G'*64, '64:' + 'a'*65, '64', None):
             with self.subTest(cursor=bad), self.assertRaises(NativePageDenied):
                 parse_cursor(bad)
-        with self.assertRaises(NativePageDenied):
+        with patch('device_fabric.native_list_pages.SCAN_LIMIT', 256), self.assertRaises(NativePageDenied):
             page(entries(257), 'hermes', '', '')
+
+    def test_large_and_misaligned_cursor_validation(self):
+        self.assertEqual(parse_cursor('1024:' + 'a'*64)[0], 1024)
+        with self.assertRaises(NativePageDenied):
+            parse_cursor('1025:' + 'a'*64)
+
+    def test_snapshot_memory_budget_fails_closed(self):
+        with patch('device_fabric.native_list_pages.MAX_SNAPSHOT_BYTES', 100):
+            with self.assertRaises(NativePageDenied):
+                page(entries(10), 'hermes', '', '')
 
     def test_false_or_malformed_next_page_is_rejected(self):
         for nxt, batch, truncated in (('64:'+'a'*64, entries(1), True),
@@ -89,6 +113,31 @@ class NativePageContracts(unittest.TestCase):
 @unittest.skipUnless(sys.platform == 'linux' and platform.machine().lower() in ('x86_64','aarch64'),
                      'real Linux openat2 fixture')
 class NativeLinuxPageContracts(unittest.TestCase):
+    def test_more_than_256_real_entries_continue_across_pages(self):
+        from device_fabric.linux_native_files import LinuxNativeFiles
+        with tempfile.TemporaryDirectory(prefix='h454-large-page-') as temp:
+            root = Path(temp)
+            for index in range(300):
+                (root / f'file-{index:03}.py').write_text('safe')
+            with LinuxNativeFiles(root=root, project='hermes') as files:
+                cursor = ''
+                all_entries = []
+                for _ in range(4):
+                    result = files.list_directory(cursor=cursor)
+                    all_entries.extend(result['entries'])
+                    cursor = result['next_cursor']
+                self.assertTrue(cursor.startswith('256:'))
+            code = ('import json,sys; from pathlib import Path; '
+                    'from device_fabric.linux_native_files import LinuxNativeFiles; '
+                    'f=LinuxNativeFiles(root=Path(sys.argv[1]),project="hermes"); '
+                    'print(json.dumps(f.list_directory(cursor=sys.argv[2]))); f.close()')
+            result = json.loads(subprocess.run([sys.executable, '-B', '-c', code, str(root), cursor],
+                                capture_output=True, text=True, check=True).stdout)
+            all_entries.extend(result['entries'])
+            self.assertEqual(result['next_cursor'], '')
+            self.assertEqual(len(all_entries), 300)
+            self.assertEqual(len({entry['name'] for entry in all_entries}), 300)
+
     def test_real_handles_page_and_reject_mutated_directory(self):
         from device_fabric.linux_native_files import LinuxNativeFiles, NativeLinuxDenied
         from device_fabric.linux_native_read_dispatch import LinuxOriginalReadDispatcher
