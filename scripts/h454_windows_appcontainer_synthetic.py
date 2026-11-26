@@ -58,6 +58,9 @@ adv.ConvertSidToStringSidW.argtypes = [ctypes.c_void_p, ctypes.POINTER(wintypes.
 adv.OpenProcessToken.argtypes = [wintypes.HANDLE, wintypes.DWORD, ctypes.POINTER(wintypes.HANDLE)]
 adv.GetTokenInformation.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p,
     wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)]
+adv.DuplicateToken.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.POINTER(wintypes.HANDLE)]
+adv.ImpersonateLoggedOnUser.argtypes = [wintypes.HANDLE]
+adv.RevertToSelf.argtypes = []
 adv.GetFileSecurityW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, ctypes.c_void_p,
                                  wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)]
 adv.ConvertSecurityDescriptorToStringSecurityDescriptorW.argtypes = [ctypes.c_void_p,
@@ -112,6 +115,36 @@ def security_descriptor(path, requested):
         return str(sddl.value)
     finally:
         kernel.LocalFree(ctypes.cast(sddl, ctypes.c_void_p))
+
+
+def synthetic_token_diagnostic(token, path):
+    """CI-only: inspect access to our synthetic path without reporting names."""
+    impersonation = wintypes.HANDLE()
+    if not adv.DuplicateToken(token, 2, ctypes.byref(impersonation)):
+        return {"stage": "duplicate", "winerror": ctypes.get_last_error()}
+    try:
+        if not adv.ImpersonateLoggedOnUser(impersonation):
+            return {"stage": "impersonate", "winerror": ctypes.get_last_error()}
+        try:
+            failures = []
+            for depth, item in enumerate((path, *path.parents)):
+                try:
+                    item.stat()
+                except OSError as error:
+                    failures.append({"depth": depth, "winerror": error.winerror})
+            try:
+                fd = os.open(path, os.O_RDONLY)
+            except OSError as error:
+                read_error = error.winerror
+            else:
+                os.close(fd)
+                read_error = 0
+            return {"stage": "checked", "stat_failures": failures, "read_winerror": read_error}
+        finally:
+            if not adv.RevertToSelf():
+                os._exit(1)
+    finally:
+        kernel.CloseHandle(impersonation)
 
 
 try:
@@ -268,12 +301,14 @@ try:
         raise OSError(ctypes.get_last_error(), "CreateProcessW")
     out["process_started"] = True
     token = wintypes.HANDLE()
-    if adv.OpenProcessToken(process.process, 0x0008, ctypes.byref(token)):
+    if adv.OpenProcessToken(process.process, 0x000A, ctypes.byref(token)):
         try:
             is_container, returned = wintypes.DWORD(), wintypes.DWORD()
             if adv.GetTokenInformation(token, 29, ctypes.byref(is_container),
                                        ctypes.sizeof(is_container), ctypes.byref(returned)):
                 out["is_appcontainer"] = bool(is_container.value)
+            if interactive_test and os.environ.get("GITHUB_ACTIONS") == "true":
+                out["synthetic_token_access"] = synthetic_token_diagnostic(token, allowed_file)
         finally:
             kernel.CloseHandle(token)
     if interactive_test:
