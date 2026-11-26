@@ -27,11 +27,11 @@ class PsecSpecificationTests(unittest.TestCase):
             with self.subTest(root=root), self.assertRaises(TerminalDenied):
                 build_spec(root)
 
-    @unittest.skipUnless(os.name == "nt", "Windows path semantics required")
-    def test_original_project_cannot_be_used_as_a_synthetic_fixture(self):
-        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        with self.assertRaises(TerminalDenied):
-            SyntheticPsecTerminal(root, command="exit /b 0")
+    if os.name == "nt":
+        def test_original_project_cannot_be_used_as_a_synthetic_fixture(self):
+            root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            with self.assertRaises(TerminalDenied):
+                SyntheticPsecTerminal(root, command="exit /b 0")
 
 
 if __name__ == "__main__":
