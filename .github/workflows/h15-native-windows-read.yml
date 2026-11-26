@@ -191,6 +191,8 @@ jobs:
           $failed = $false
           python -B scripts/h454_windows_appcontainer_synthetic.py --interactive-test
           if ($LASTEXITCODE -ne 0) { $failed = $true }
+          python -B scripts/h454_windows_appcontainer_synthetic.py --node-test
+          if ($LASTEXITCODE -ne 0) { $failed = $true }
           python -B scripts/h454_windows_appcontainer_synthetic.py --node-child-test
           if ($LASTEXITCODE -ne 0) { $failed = $true }
           if ($failed) { throw 'H454_APPCONTAINER_SYNTHETIC_TEST_FAILED' }

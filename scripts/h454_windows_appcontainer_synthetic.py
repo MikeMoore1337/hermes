@@ -75,6 +75,8 @@ kernel.CreateProcessW.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, ctypes.c_vo
     ctypes.POINTER(STARTUPINFO), ctypes.POINTER(PROCESSINFO)]
 kernel.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
 kernel.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+kernel.GetCurrentProcessId.restype = wintypes.DWORD
+kernel.ProcessIdToSessionId.argtypes = [wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)]
 kernel.TerminateProcess.argtypes = [wintypes.HANDLE, wintypes.UINT]
 kernel.CloseHandle.argtypes = [wintypes.HANDLE]
 kernel.LocalFree.argtypes = [ctypes.c_void_p]
@@ -148,8 +150,11 @@ def synthetic_token_diagnostic(token, path):
 
 
 try:
-    if sys.argv[1:] not in (["--interactive-test"], ["--node-child-test"]):
+    if sys.argv[1:] not in (["--interactive-test"], ["--node-test"], ["--node-child-test"]):
         raise ValueError("INVALID_SYNTHETIC_TEST")
+    session = wintypes.DWORD()
+    if kernel.ProcessIdToSessionId(kernel.GetCurrentProcessId(), ctypes.byref(session)):
+        out["session_zero"] = session.value == 0
     interactive_test = sys.argv[1:] == ["--interactive-test"]
     shell_test = sys.argv[1:] == ["--node-shell-test"]
     child_test = sys.argv[1:] == ["--node-child-test"] or shell_test
@@ -247,9 +252,9 @@ try:
             if not executable:
                 raise RuntimeError("NODE_UNAVAILABLE")
             js = ("const fs=require('node:fs');"
-                  + "try{fs.readFileSync(" + json.dumps(str(allowed_file)) + ");"
-                  + "fs.writeFileSync(" + json.dumps(str(allowed_output)) + ",'synthetic')}"
-                  + "catch{process.exit(2)};"
+                  + "try{fs.readFileSync(" + json.dumps(str(allowed_file)) + ")}catch{process.exit(2)};"
+                  + "try{fs.writeFileSync(" + json.dumps(str(allowed_output)) + ",'synthetic')}"
+                  + "catch{process.exit(6)};"
                   + "try{fs.readFileSync(" + json.dumps(str(private_file)) + ");process.exit(3)}catch{};"
                   + "try{fs.writeFileSync(" + json.dumps(str(private_output)) + ",'bad');process.exit(4)}catch{};")
             if child_test:
