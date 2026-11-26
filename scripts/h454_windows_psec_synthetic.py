@@ -63,16 +63,21 @@ def wait_output(terminal):
 
 with tempfile.TemporaryDirectory(prefix="h454-psec-synthetic-") as tmp:
     root = Path(tmp)
-    project, private = root / "project", root / "private"
+    project, private, runtime, state = (root / name for name in ("project", "private", "runtime", "state"))
     project.mkdir()
     private.mkdir()
+    runtime.mkdir()
+    state.mkdir()
+    runtime_asset = runtime / "asset.txt"
+    runtime_asset.write_text("H454_RUNTIME", encoding="ascii")
     original, outside = project / "existing.txt", private / "outside.txt"
     original.write_text("original", encoding="ascii")
     outside.write_text("private-synthetic", encoding="ascii")
     alias = project / "external-hardlink.txt"
     os.link(outside, alias)
     before = {(name, info): security(path, info) for name, path in
-              (("project", project), ("original", original), ("outside", outside)) for info in (4, 16)}
+              (("project", project), ("original", original), ("outside", outside),
+               ("runtime", runtime), ("runtime_asset", runtime_asset)) for info in (4, 16)}
     result = {}
     interactive = SyntheticPsecTerminal(str(project), command="set /p H454=H454_READY & set H454")
     try:
@@ -82,6 +87,20 @@ with tempfile.TemporaryDirectory(prefix="h454-psec-synthetic-") as tmp:
     finally:
         interactive.close()
     result["policy_closed"] = interactive._environment is None
+    state_file, runtime_denied = state / "state.txt", runtime / "denied.txt"
+    policy_command = ('(type "' + str(runtime_asset) + '") || exit /b 10 & '
+        + '(echo state>"' + str(state_file) + '") || exit /b 11 & '
+        + '(echo bad>"' + str(runtime_denied) + '") && exit /b 12 & '
+        + '(echo bad>"' + str(runtime_asset) + '") && exit /b 13 & exit /b 0')
+    policy = SyntheticPsecTerminal(str(project), command=policy_command,
+        writable=(str(state),), readonly=(str(runtime),))
+    try:
+        code, output = wait_output(policy)
+        result["separate_policy_roots"] = (code == 0 and b"H454_RUNTIME" in output
+            and state_file.is_file() and not runtime_denied.exists()
+            and runtime_asset.read_text(encoding="ascii") == "H454_RUNTIME")
+    finally:
+        policy.close()
     node = shutil.which("node")
     if not node:
         raise RuntimeError("SYNTHETIC_NODE_UNAVAILABLE")
@@ -123,7 +142,8 @@ with tempfile.TemporaryDirectory(prefix="h454-psec-synthetic-") as tmp:
     result.update({"created": created.is_file(), "existing_updated": original.read_text().strip() == "updated",
         "outside_path_denied": not denied.exists(), "hardlink_alias_writable": outside.read_text().strip() == "alias",
         "descriptors_unchanged": all(before[(name, info)] == security(path, info) for name, path in
-            (("project", project), ("original", original), ("outside", outside)) for info in (4, 16)),
+            (("project", project), ("original", original), ("outside", outside),
+             ("runtime", runtime), ("runtime_asset", runtime_asset)) for info in (4, 16)),
         "exit_code": exit_code})
     running = SyntheticPsecTerminal(str(project), command="for /L %i in (1,0,2) do @rem")
     duplicate = wintypes.HANDLE()
@@ -140,7 +160,7 @@ with tempfile.TemporaryDirectory(prefix="h454-psec-synthetic-") as tmp:
         if duplicate:
             kernel.CloseHandle(duplicate)
     alias.unlink()
-    if (not all(result[name] for name in ("interactive", "node_child_interactive", "manager_interactive", "policy_closed", "created", "existing_updated",
+    if (not all(result[name] for name in ("interactive", "node_child_interactive", "manager_interactive", "separate_policy_roots", "policy_closed", "created", "existing_updated",
         "outside_path_denied", "descriptors_unchanged", "job_process_was_running", "job_process_stopped"))
         or exit_code not in (0, 13) or result["hardlink_alias_writable"] != (exit_code == 13)):
         raise SystemExit("PSEC_SYNTHETIC_FAILED " + json.dumps(result))
