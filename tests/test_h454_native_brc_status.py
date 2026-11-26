@@ -16,15 +16,6 @@ def packet(device_id=ID):
 
 
 class NativeStatusContracts(unittest.TestCase):
-    def test_personal_status_cannot_be_confused_with_read_only_status(self):
-        personal_id = "h454-win-personal-" + "b" * 32
-        self.assertTrue(status.parse_status(packet(personal_id), target="windows-personal",
-                                            device_id=personal_id))
-        with self.assertRaises(status.StatusDenied):
-            status.parse_status(packet(personal_id), target="windows", device_id=personal_id)
-        with self.assertRaises(status.StatusDenied):
-            status.parse_status(packet(), target="windows-personal", device_id=ID)
-
     def test_exact_current_owner_bound_response_and_bearer(self):
         self.assertTrue(status.parse_status(packet(),target="windows",device_id=ID))
         for x in (

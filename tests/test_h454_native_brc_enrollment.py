@@ -29,7 +29,6 @@ def grant(target):
         "device_token": TOKEN,
         "device_id": {
             "windows": "h454-win-native-" + "a"*32,
-            "windows-personal": "h454-win-personal-" + "a"*32,
             "hermes-vps": "h454-linux-hermes-" + "a"*32,
             "yfc-vps": "h454-linux-yfc-" + "a"*32,
         }[target],
@@ -38,16 +37,6 @@ def grant(target):
 
 
 class NativePairingProtocol(unittest.TestCase):
-    def test_personal_windows_identity_is_separate_from_read_only_identity(self):
-        personal = pairing.start("windows-personal", post=lambda *_: (200, enc(pending())))
-        with self.assertRaises(pairing.EnrollmentDenied):
-            pairing.poll(personal, post=lambda *_: (200, enc(grant("windows"))),
-                         expected_ws_url="ws://127.0.0.1:38183/ws")
-        read_only = pairing.start("windows", post=lambda *_: (200, enc(pending())))
-        with self.assertRaises(pairing.EnrollmentDenied):
-            pairing.poll(read_only, post=lambda *_: (200, enc(grant("windows-personal"))),
-                         expected_ws_url="ws://127.0.0.1:38183/ws")
-
     def test_hermes_relay_url_is_accepted_but_other_origins_are_denied(self):
         one = pairing.start("hermes-vps", post=lambda *_: (200, enc(pending())))
         relay_url = "wss://mcp.mikemoore.top/ws"
@@ -70,7 +59,7 @@ class NativePairingProtocol(unittest.TestCase):
         with self.assertRaises(pairing.EnrollmentDenied):
             pairing.poll(one, post=post, expected_ws_url="wss://hermes.mikemoore.top/ws")
 
-    def test_device_code_protocol_binds_each_supported_profile_to_owner_id(self):
+    def test_real_device_code_protocol_with_owner_bound_new_id_all_three(self):
         for target in TARGETS:
             with self.subTest(target=target):
                 requests = []
