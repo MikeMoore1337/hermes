@@ -56,6 +56,10 @@ adv.ConvertSidToStringSidW.argtypes = [ctypes.c_void_p, ctypes.POINTER(wintypes.
 adv.OpenProcessToken.argtypes = [wintypes.HANDLE, wintypes.DWORD, ctypes.POINTER(wintypes.HANDLE)]
 adv.GetTokenInformation.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p,
     wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)]
+adv.GetFileSecurityW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, ctypes.c_void_p,
+                                 wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)]
+adv.ConvertSecurityDescriptorToStringSecurityDescriptorW.argtypes = [ctypes.c_void_p,
+    wintypes.DWORD, wintypes.DWORD, ctypes.POINTER(wintypes.LPWSTR), ctypes.POINTER(wintypes.DWORD)]
 kernel.InitializeProcThreadAttributeList.argtypes = [ctypes.c_void_p, wintypes.DWORD,
                                                       wintypes.DWORD, ctypes.POINTER(ctypes.c_size_t)]
 kernel.UpdateProcThreadAttribute.argtypes = [ctypes.c_void_p, wintypes.DWORD, ctypes.c_size_t,
@@ -87,6 +91,27 @@ profile_created = False
 test_root = allowed = private = allowed_file = private_file = allowed_output = private_output = node_copy = diagnostic = None
 pipe_handles = []
 interactive_test = False
+
+
+def acl_contains(path, sid_text):
+    """Inspect only the test file's ACL; return no path or ACL contents."""
+    size = wintypes.DWORD()
+    adv.GetFileSecurityW(str(path), 4, None, 0, ctypes.byref(size))
+    if not 0 < size.value <= 65536:
+        return None
+    descriptor = ctypes.create_string_buffer(size.value)
+    if not adv.GetFileSecurityW(str(path), 4, descriptor, size, ctypes.byref(size)):
+        return None
+    sddl = wintypes.LPWSTR()
+    if not adv.ConvertSecurityDescriptorToStringSecurityDescriptorW(
+        descriptor, 1, 4, ctypes.byref(sddl), None):
+        return None
+    try:
+        return sid_text in sddl.value
+    finally:
+        kernel.LocalFree(ctypes.cast(sddl, ctypes.c_void_p))
+
+
 try:
     if sys.argv[1:] not in (["--interactive-test"], ["--node-child-test"]):
         raise ValueError("INVALID_SYNTHETIC_TEST")
@@ -135,6 +160,7 @@ try:
         text_sid = wintypes.LPWSTR()
         if not adv.ConvertSidToStringSidW(sid, ctypes.byref(text_sid)):
             raise OSError(ctypes.get_last_error(), "ConvertSidToStringSidW")
+        sid_text = str(text_sid.value)
         try:
             for target, rights in ((test_root, ":RX"), (allowed, ":(OI)(CI)M")):
                 acl = subprocess.run([os.path.join(os.environ["WINDIR"], "System32", "icacls.exe"),
@@ -148,7 +174,8 @@ try:
         allowed_output, private_output = allowed / "written.txt", private / "attempted.txt"
         allowed_file.write_text("synthetic-allowed", encoding="ascii")
         private_file.write_text("synthetic-private", encoding="ascii")
-        shell_command = ('(type "' + str(allowed_file) + '" >nul 2>&1) || exit /b 2 & '
+        out["allowed_file_acl_has_sid"] = acl_contains(allowed_file, sid_text)
+        shell_command = ('(type "' + str(allowed_file) + '" >nul) || exit /b 2 & '
             + '(echo synthetic>"' + str(allowed_output) + '" 2>nul) || exit /b 3 & '
             + '(type "' + str(private_file) + '" >nul 2>&1) && exit /b 4 & '
             + '(echo bad>"' + str(private_output) + '" 2>nul) && exit /b 5 & exit /b 0')
@@ -244,7 +271,12 @@ try:
     if interactive_test:
         data, count = ctypes.create_string_buffer(4096), wintypes.DWORD()
         if kernel.ReadFile(output_read, data, len(data), ctypes.byref(count), None):
-            out["interactive_output"] = b"H454_INTERACTIVE_OK" in data.raw[:count.value]
+            content = data.raw[:count.value]
+            out["interactive_output"] = b"H454_INTERACTIVE_OK" in content
+            if code.value != 0:
+                lower = content.lower()
+                out["synthetic_error"] = ("access_denied" if b"access is denied" in lower else
+                    "not_found" if b"cannot find" in lower else "other")
     if filesystem_test:
         out["allowed_write"] = allowed_output.is_file()
         out["private_write_blocked"] = not private_output.exists()
