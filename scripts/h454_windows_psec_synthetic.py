@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import sys
 import tempfile
 import time
@@ -81,6 +82,21 @@ with tempfile.TemporaryDirectory(prefix="h454-psec-synthetic-") as tmp:
     finally:
         interactive.close()
     result["policy_closed"] = interactive._environment is None
+    node = shutil.which("node")
+    if not node:
+        raise RuntimeError("SYNTHETIC_NODE_UNAVAILABLE")
+    node_copy = project / "synthetic-node.exe"
+    shutil.copyfile(node, node_copy)
+    node_command = ('"' + str(node_copy) + '" -e "process.stdin.once(\'data\',d=>'
+                    'process.stdout.write(\'H454_NODE=\'+d,()=>process.exit(0)))"')
+    node_process = SyntheticPsecTerminal(str(project), command=node_command)
+    try:
+        node_process.write(b"synthetic\n")
+        code, output = wait_output(node_process)
+        result["node_child_interactive"] = code == 0 and b"H454_NODE=synthetic" in output
+    finally:
+        node_process.close()
+        node_copy.unlink(missing_ok=True)
     manager = PersonalTerminalSessions(1, str(project),
         factory=lambda _sid, cwd, command: SyntheticPsecTerminal(cwd, command=command))
     try:
@@ -124,7 +140,7 @@ with tempfile.TemporaryDirectory(prefix="h454-psec-synthetic-") as tmp:
         if duplicate:
             kernel.CloseHandle(duplicate)
     alias.unlink()
-    if (not all(result[name] for name in ("interactive", "manager_interactive", "policy_closed", "created", "existing_updated",
+    if (not all(result[name] for name in ("interactive", "node_child_interactive", "manager_interactive", "policy_closed", "created", "existing_updated",
         "outside_path_denied", "descriptors_unchanged", "job_process_was_running", "job_process_stopped"))
         or exit_code not in (0, 13) or result["hardlink_alias_writable"] != (exit_code == 13)):
         raise SystemExit("PSEC_SYNTHETIC_FAILED " + json.dumps(result))
