@@ -105,6 +105,14 @@ class _BrokerComplete(Exception):
     pass
 
 
+def _encodable(value, encoding):
+    try:
+        value.encode(encoding)
+        return True
+    except UnicodeEncodeError:
+        return False
+
+
 def security_descriptor(path, requested):
     """Read only the synthetic test file's descriptor."""
     size = wintypes.DWORD()
@@ -321,6 +329,20 @@ try:
                     "pid": int(match.group(1)), "input": "synthetic", "timeout_ms": 3000})
                 terminated = manager.dispatch("force_terminate", {"pid": int(second_match.group(1))})
                 out["session_terminated"] = not terminated["isError"]
+                sample = next(value for value in ("Привет", "é", "A")
+                              if _encodable(value, manager._encoding))
+                encoded_output = manager.dispatch("start_process", {
+                    "command": "echo " + sample, "timeout_ms": 3000})
+                encoded_input = manager.dispatch("start_process", {
+                    "command": "set /p H454=H454_ENCODING & set H454", "timeout_ms": 3000})
+                encoding_match = re.search(r"Process ([0-9]+) ", encoded_input["content"][0]["text"])
+                if not encoding_match:
+                    raise RuntimeError("ENCODING_SESSION_START_FAILED")
+                encoded_reply = manager.dispatch("interact_with_process", {
+                    "pid": int(encoding_match.group(1)), "input": sample, "timeout_ms": 3000})
+                out["local_encoding_roundtrip"] = (not encoded_output["isError"]
+                    and sample in encoded_output["content"][0]["text"]
+                    and not encoded_reply["isError"] and sample in encoded_reply["content"][0]["text"])
                 revoke = manager.dispatch("start_process", {
                     "command": 'set /p H454=H454_REVOKE & type "' + str(allowed_file) + '"',
                     "timeout_ms": 3000})
@@ -511,5 +533,5 @@ if (out.get("exit_code") != 0 or any(out.get(name) is not True for name in requi
     or (sys.argv[1:] == ["--sessions-test"] and
         any(out.get(name) is not True for name in ("session_interaction", "nonzero_is_error",
                                                    "multiple_sessions", "session_terminated",
-                                                   "revocation_denied")))):
+                                                   "revocation_denied", "local_encoding_roundtrip")))):
     raise SystemExit(1)

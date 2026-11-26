@@ -6,6 +6,7 @@ This class does not install, pair, grant access, or expose a network listener.
 from __future__ import annotations
 
 import codecs
+import os
 import time
 from typing import Callable
 
@@ -29,11 +30,11 @@ def _integer(value, minimum: int, maximum: int) -> bool:
 
 
 class _Session:
-    def __init__(self, terminal):
+    def __init__(self, terminal, encoding: str):
         self.terminal = terminal
         self.data = ""
         self.bytes_seen = 0
-        self.decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+        self.decoder = codecs.getincrementaldecoder(encoding)(errors="replace")
         self.finalized = False
         self.cursor = 0
         self.overflow = False
@@ -43,10 +44,17 @@ class PersonalTerminalSessions:
     """Dispatch a narrow BRC terminal subset to separately job-owned shells."""
 
     def __init__(self, sid: int, root: str, *, factory: Callable = AppContainerTerminal,
-                 clock: Callable = time.monotonic, pause: Callable = time.sleep):
+                 clock: Callable = time.monotonic, pause: Callable = time.sleep,
+                 encoding: str | None = None):
         if (type(sid) is not int or sid <= 0 or type(root) is not str or not root
             or not all(callable(value) for value in (factory, clock, pause))):
             raise ValueError("personal_terminal_denied")
+        if encoding is not None and (type(encoding) is not str or not 1 <= len(encoding) <= 40):
+            raise ValueError("personal_terminal_denied")
+        try:
+            self._encoding = codecs.lookup(encoding or ("oem" if os.name == "nt" else "utf-8")).name
+        except LookupError:
+            raise ValueError("personal_terminal_denied") from None
         self._sid, self._root, self._factory = sid, root, factory
         self._clock, self._pause = clock, pause
         self._sessions: dict[int, _Session] = {}
@@ -139,7 +147,7 @@ class PersonalTerminalSessions:
                 if not _integer(pid, 1, 2_147_483_647) or pid in self._sessions:
                     terminal.close()
                     raise ValueError()
-                session = _Session(terminal)
+                session = _Session(terminal, self._encoding)
                 self._sessions[pid] = session
                 try:
                     status = self._wait(session, timeout)
@@ -167,7 +175,7 @@ class PersonalTerminalSessions:
                 if (type(value) is not str or "\x00" in value or type(wait) is not bool
                     or not _integer(timeout, 0, MAX_WAIT_MS) or session.terminal.poll() is not None):
                     raise ValueError()
-                payload = (value if value.endswith("\n") else value + "\n").encode("utf-8")
+                payload = (value if value.endswith("\n") else value + "\n").encode(self._encoding)
                 if not 0 < len(payload) <= 4096:
                     raise ValueError()
                 session.terminal.write(payload)

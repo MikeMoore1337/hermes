@@ -41,7 +41,7 @@ class TerminalSessionsTests(unittest.TestCase):
             terminal = Terminal(*args, **kwargs)
             self.created.append(terminal)
             return terminal
-        self.broker = sessions.PersonalTerminalSessions(1, "synthetic", factory=factory)
+        self.broker = sessions.PersonalTerminalSessions(1, "synthetic", factory=factory, encoding="utf-8")
 
     def tearDown(self):
         self.broker.close()
@@ -118,6 +118,21 @@ class TerminalSessionsTests(unittest.TestCase):
         two = second["content"][0]["text"]
         self.assertEqual(len(one), sessions.MAX_RESPONSE_CHARS)
         self.assertEqual(one + two, "x" * 65536 + "y" * 34464)
+
+    def test_configured_windows_encoding_applies_to_input_and_output(self):
+        terminal = Terminal(1, "synthetic", command="interactive")
+        broker = sessions.PersonalTerminalSessions(1, "synthetic", factory=lambda *_a, **_k: terminal,
+                                                   encoding="cp866")
+        try:
+            result = broker.dispatch("start_process", {"command": "interactive", "timeout_ms": 0})
+            self.assertFalse(result["isError"])
+            terminal.chunks = ["Привет\n".encode("cp866")]
+            result = broker.dispatch("read_process_output", {"pid": terminal.pid, "timeout_ms": 0})
+            self.assertEqual(result["content"][0]["text"], "Привет\n")
+            broker.dispatch("interact_with_process", {"pid": terminal.pid, "input": "Привет", "timeout_ms": 0})
+            self.assertEqual(terminal.writes[-1], "Привет\n".encode("cp866"))
+        finally:
+            broker.close()
 
 
 if __name__ == "__main__":
