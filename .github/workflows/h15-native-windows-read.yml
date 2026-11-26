@@ -34,6 +34,7 @@ on:
       - device_fabric/windows_personal_commander_pipe.py
       - device_fabric/windows_personal_appcontainer_pipe.py
       - device_fabric/windows_personal_psec_terminal.py
+      - device_fabric/windows_personal_project_scan.py
       - device_fabric/windows_personal_commander_status.py
       - device_fabric/windows_personal_commander_worker.py
       - device_fabric/windows_appcontainer_terminal.py
@@ -58,6 +59,7 @@ on:
       - tests/test_windows_personal_commander_worker.py
       - tests/test_windows_personal_appcontainer_pipe.py
       - tests/test_windows_personal_psec_terminal.py
+      - tests/test_windows_personal_project_scan.py
       - tests/test_windows_personal_terminal_sessions.py
       - tests/test_h454_windows_personal_dispatcher.py
       - tests/test_h454_windows_personal_adapter_launcher.py
@@ -191,7 +193,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          python -B -m unittest -v tests.test_h454_windows_native_dpapi tests.test_h454_windows_personal_session tests.test_h454_personal_replay tests.test_windows_personal_commander_config tests.test_windows_personal_commander_bundle tests.test_windows_personal_commander_transport tests.test_windows_personal_commander_status tests.test_windows_personal_commander_worker tests.test_windows_personal_appcontainer_pipe tests.test_windows_personal_psec_terminal tests.test_windows_personal_terminal_sessions tests.test_h454_windows_personal_dispatcher tests.test_h454_windows_personal_adapter_launcher tests.test_h454_windows_personal_job
+          python -B -m unittest -v tests.test_h454_windows_native_dpapi tests.test_h454_windows_personal_session tests.test_h454_personal_replay tests.test_windows_personal_commander_config tests.test_windows_personal_commander_bundle tests.test_windows_personal_commander_transport tests.test_windows_personal_commander_status tests.test_windows_personal_commander_worker tests.test_windows_personal_appcontainer_pipe tests.test_windows_personal_psec_terminal tests.test_windows_personal_project_scan tests.test_windows_personal_terminal_sessions tests.test_h454_windows_personal_dispatcher tests.test_h454_windows_personal_adapter_launcher tests.test_h454_windows_personal_job
           if ($LASTEXITCODE -ne 0) { throw 'H454_WIN32_DPAPI_CURRENT_USER_DENIED' }
           Write-Output 'H454_WIN32_DPAPI_CURRENT_USER=PASS'
           Write-Output 'H454_WINDOWS_OWNER_DEVICE_ACCESS=NOT_RUN'
