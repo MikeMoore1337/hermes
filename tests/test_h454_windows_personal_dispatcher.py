@@ -15,7 +15,8 @@ ROOT = Path(__file__).resolve().parents[1]
 ADAPTER = ROOT / "scripts/h454_windows_personal_dispatcher.mjs"
 TOOLS = ["read_file", "read_multiple_files", "write_file", "edit_block", "create_directory",
          "list_directory", "move_file", "get_file_info", "start_process", "read_process_output",
-         "interact_with_process", "force_terminate", "list_sessions"]
+         "interact_with_process", "force_terminate", "list_sessions", "start_search",
+         "get_more_search_results", "stop_search", "list_searches"]
 
 
 class PersonalDispatcherTests(unittest.TestCase):
@@ -102,6 +103,29 @@ class PersonalDispatcherTests(unittest.TestCase):
             finally:
                 bridge.close()
             self.assertEqual(process.returncode, 0)
+
+    def test_search_is_bounded_and_only_uses_approved_root(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary).resolve()
+            project, outside = base / "project", base / "outside"
+            project.mkdir()
+            outside.mkdir()
+            frames = [{"type": "initialize", "roots": [str(project)]}]
+            for ident, args in (
+                ("good", {"path":str(project), "pattern":"sample", "searchType":"content"}),
+                ("foreign", {"path":str(outside), "pattern":"sample"}),
+                ("secret", {"path":str(project / '.env'), "pattern":"sample"}),
+                ("unbounded", {"path":str(project), "pattern":"sample", "timeout_ms":999999}),
+                ("office", {"path":str(project), "pattern":"sample", "searchType":"content", "filePattern":"*.xlsx"}),
+            ):
+                frames.append({"type":"call", "id":ident, "name":"start_search", "args":args})
+            frames.append({"type":"call", "id":"bad-session", "name":"get_more_search_results",
+                           "args":{"sessionId":"../foreign"}})
+            result = self.run_adapter(base, frames)
+            by_id = {item["id"]: item["result"] for item in result[1:]}
+            self.assertFalse(by_id["good"]["isError"])
+            for name in ("foreign", "secret", "unbounded", "office", "bad-session"):
+                self.assertTrue(by_id[name]["isError"], name)
 
     def test_process_call_can_wait_longer_than_default_pipe_timeout(self):
         with tempfile.TemporaryDirectory() as temporary:

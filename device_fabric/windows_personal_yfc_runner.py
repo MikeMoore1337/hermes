@@ -5,6 +5,7 @@ journal. Project scans are point-in-time checks, not a lock against changes.
 """
 from __future__ import annotations
 
+import hashlib
 import os
 from pathlib import Path
 import time
@@ -17,6 +18,8 @@ from device_fabric.windows_personal_appcontainer_pipe import PersonalAppContaine
 from device_fabric.windows_personal_project_scan import scan
 from device_fabric.windows_personal_terminal_sessions import PersonalTerminalSessions
 from device_fabric.windows_personal_yfc_psec import APP_NAME, GIT_ROOT, YFC_DEV, YfcDevPsecTerminal
+
+SEARCH_MANAGER_SHA256 = "14bd3140d7e239d2e84f80d2dbe987cc86755243ca9f59590fb5dad816097f5f"
 
 
 class YfcRunnerDenied(ValueError):
@@ -67,6 +70,10 @@ def run(raw_config: bytes, *, ca: bytes, expected_manifest: bytes,
             return bundle.verify(release, expected_manifest, candidate.bundle_sha256)
         # Verify executable bytes before launching even the no-op probe.
         verify_bundle()
+        search = release / "bundle" / "packages" / "agent" / "dist" / "core" / "search-manager.js"
+        if (not search.is_file() or search.stat().st_size > 1024 * 1024
+            or hashlib.sha256(search.read_bytes()).hexdigest() != SEARCH_MANAGER_SHA256):
+            raise ValueError()
         def terminal(command_value: str | None):
             return YfcDevPsecTerminal(str(YFC_DEV), command=command_value,
                 writable=(str(state),), readonly=(str(release), str(GIT_ROOT)))
