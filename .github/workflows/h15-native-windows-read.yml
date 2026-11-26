@@ -45,6 +45,7 @@ on:
       - scripts/h454_windows_personal_dispatcher.mjs
       - scripts/h454_windows_personal_adapter_launcher.mjs
       - scripts/h454_windows_appcontainer_synthetic.py
+      - scripts/h454_windows_nonprop_acl_probe.py
       - scripts/h454_windows_personal_owner_pair.py
       - tests/test_h454_windows_personal_session.py
       - tests/test_windows_personal_commander_config.py
@@ -207,6 +208,8 @@ jobs:
           python -B scripts/h454_windows_appcontainer_synthetic.py --broker-command-test
           if ($LASTEXITCODE -ne 0) { $failed = $true }
           python -B scripts/h454_windows_appcontainer_synthetic.py --sessions-test
+          if ($LASTEXITCODE -ne 0) { $failed = $true }
+          python -B scripts/h454_windows_appcontainer_synthetic.py --nonprop-test
           if ($LASTEXITCODE -ne 0) { $failed = $true }
           if ($failed) { throw 'H454_APPCONTAINER_SYNTHETIC_TEST_FAILED' }
           Write-Output 'H454_APPCONTAINER_SYNTHETIC=PASS'

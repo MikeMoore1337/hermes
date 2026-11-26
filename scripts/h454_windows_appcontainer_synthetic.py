@@ -98,6 +98,7 @@ out = {"sid_derived": False, "process_started": False, "exit_code": None}
 profile_name = "HermesSyntheticProbe" + uuid.uuid4().hex
 profile_created = False
 test_root = allowed = private = allowed_file = private_file = allowed_output = private_output = node_copy = diagnostic = stdio_file = gui = None
+outside_hard = None
 pipe_handles = []
 interactive_test = False
 
@@ -164,7 +165,7 @@ def synthetic_token_diagnostic(token, path):
 
 
 try:
-    if sys.argv[1:] not in (["--interactive-test"], ["--broker-test"], ["--broker-command-test"], ["--sessions-test"],
+    if sys.argv[1:] not in (["--interactive-test"], ["--broker-test"], ["--broker-command-test"], ["--sessions-test"], ["--nonprop-test"],
                             ["--node-test"], ["--node-child-test"]):
         raise ValueError("INVALID_SYNTHETIC_TEST")
     session = wintypes.DWORD()
@@ -173,7 +174,8 @@ try:
     interactive_test = sys.argv[1:] == ["--interactive-test"]
     broker_test = sys.argv[1:] == ["--broker-test"]
     broker_command_test = sys.argv[1:] == ["--broker-command-test"]
-    sessions_test = sys.argv[1:] == ["--sessions-test"]
+    nonprop_test = sys.argv[1:] == ["--nonprop-test"]
+    sessions_test = sys.argv[1:] in (["--sessions-test"], ["--nonprop-test"])
     shell_test = sys.argv[1:] == ["--node-shell-test"]
     child_test = sys.argv[1:] == ["--node-child-test"] or shell_test
     node_test = sys.argv[1:] == ["--node-test"] or child_test
@@ -241,17 +243,27 @@ try:
         allowed_output, private_output = allowed / "written.txt", private / "attempted.txt"
         allowed_file.write_text("synthetic-allowed", encoding="ascii")
         private_file.write_text("synthetic-private", encoding="ascii")
+        if nonprop_test:
+            outside_hard = allowed / "outside-hard.txt"
+            os.link(private_file, outside_hard)
+            outside_before = security_descriptor(private_file, 4)
         text_sid = wintypes.LPWSTR()
         if not adv.ConvertSidToStringSidW(sid, ctypes.byref(text_sid)):
             raise OSError(ctypes.get_last_error(), "ConvertSidToStringSidW")
         sid_text = str(text_sid.value)
         try:
-            for target, rights in ((test_root, ":RX"), (allowed, ":(OI)(CI)M")):
-                acl = subprocess.run([os.path.join(os.environ["WINDIR"], "System32", "icacls.exe"),
-                    str(target), "/grant", "*" + text_sid.value + rights],
-                    capture_output=True, timeout=10, creationflags=subprocess.CREATE_NO_WINDOW)
-                if acl.returncode:
-                    raise RuntimeError("SYNTHETIC_ACL_FAILED")
+            if nonprop_test:
+                from h454_windows_nonprop_acl_probe import change_acl
+                change_acl(test_root, sid, read_only=True)
+                change_acl(allowed, sid, inherit=True)
+                change_acl(allowed_file, sid)
+            else:
+                for target, rights in ((test_root, ":RX"), (allowed, ":(OI)(CI)M")):
+                    acl = subprocess.run([os.path.join(os.environ["WINDIR"], "System32", "icacls.exe"),
+                        str(target), "/grant", "*" + text_sid.value + rights],
+                        capture_output=True, timeout=10, creationflags=subprocess.CREATE_NO_WINDOW)
+                    if acl.returncode:
+                        raise RuntimeError("SYNTHETIC_ACL_FAILED")
         finally:
             kernel.LocalFree(ctypes.cast(text_sid, ctypes.c_void_p))
         dacl = security_descriptor(allowed_file, 4)
@@ -366,7 +378,19 @@ try:
                 with bulk_session.lock:
                     out["background_drain_completed"] = (bulk_session.terminal.poll() == 0
                         and bulk_session.bytes_seen > 65536 and not bulk_session.overflow)
+                if nonprop_test:
+                    hard = manager.dispatch("start_process", {
+                        "command": 'type "' + str(outside_hard) + '"', "timeout_ms": 3000})
+                    out["nonpropagating_hardlink_blocked"] = hard["isError"]
+                    out["external_synthetic_acl_unchanged"] = bool(outside_before) and (
+                        outside_before == security_descriptor(private_file, 4))
                 finished = manager.dispatch("start_process", {"command": shell_command, "timeout_ms": 3000})
+                if nonprop_test:
+                    reopen = manager.dispatch("start_process", {
+                        "command": 'type "' + str(allowed_output) + '"', "timeout_ms": 3000})
+                    new_dacl = security_descriptor(allowed_output, 4)
+                    out["new_file_reopen"] = not reopen["isError"]
+                    out["new_file_inherited_sid"] = bool(new_dacl) and sid_text in new_dacl
                 failed = manager.dispatch("start_process", {"command": "exit /b 7", "timeout_ms": 3000})
                 started = manager.dispatch("start_process", {
                     "command": "set /p H454=H454_READY & echo H454_DONE", "timeout_ms": 3000})
@@ -407,14 +431,28 @@ try:
                 revoke_match = re.search(r"Process ([0-9]+) ", revoke_text)
                 if revoke["isError"] or not revoke_match or "H454_REVOKE" not in revoke_text:
                     raise RuntimeError("REVOCATION_SESSION_START_FAILED")
-                revoke_acl = subprocess.run([os.path.join(os.environ["WINDIR"], "System32", "icacls.exe"),
-                    str(allowed), "/remove:g", "*" + sid_text], capture_output=True,
-                    timeout=10, creationflags=subprocess.CREATE_NO_WINDOW)
-                if revoke_acl.returncode:
-                    raise RuntimeError("SYNTHETIC_REVOKE_FAILED")
-                revoked = manager.dispatch("interact_with_process", {
-                    "pid": int(revoke_match.group(1)), "input": "synthetic", "timeout_ms": 3000})
-                remaining_dacl = security_descriptor(allowed_file, 4)
+                if nonprop_test:
+                    manager.close()
+                    change_acl(allowed, sid, revoke=True)
+                    change_acl(allowed_file, sid, revoke=True)
+                    change_acl(allowed_output, sid, revoke=True)
+                    out["new_file_ace_removed"] = sid_text not in (security_descriptor(allowed_output, 4) or "")
+                    remaining_dacl = security_descriptor(allowed_file, 4)
+                    probe = PersonalTerminalSessions(int(sid.value), str(test_root))
+                    try:
+                        revoked = probe.dispatch("start_process", {
+                            "command": 'type "' + str(allowed_file) + '"', "timeout_ms": 3000})
+                    finally:
+                        probe.close()
+                else:
+                    revoke_acl = subprocess.run([os.path.join(os.environ["WINDIR"], "System32", "icacls.exe"),
+                        str(allowed), "/remove:g", "*" + sid_text], capture_output=True,
+                        timeout=10, creationflags=subprocess.CREATE_NO_WINDOW)
+                    if revoke_acl.returncode:
+                        raise RuntimeError("SYNTHETIC_REVOKE_FAILED")
+                    revoked = manager.dispatch("interact_with_process", {
+                        "pid": int(revoke_match.group(1)), "input": "synthetic", "timeout_ms": 3000})
+                    remaining_dacl = security_descriptor(allowed_file, 4)
                 out["revocation_denied"] = (bool(remaining_dacl) and sid_text not in remaining_dacl
                                              and revoked["isError"])
                 out["process_started"] = not finished["isError"]
@@ -573,6 +611,8 @@ finally:
         adv.FreeSid(sid)
     if profile_created:
         out["temporary_profile_deleted"] = userenv.DeleteAppContainerProfile(profile_name) == 0
+    if outside_hard is not None:
+        outside_hard.unlink(missing_ok=True)
     for path in (allowed_file, private_file, allowed_output, private_output, node_copy, diagnostic, stdio_file, gui):
         if path is not None:
             path.unlink(missing_ok=True)
@@ -587,10 +627,14 @@ if (out.get("exit_code") != 0 or any(out.get(name) is not True for name in requi
     or ((interactive_test or sys.argv[1:] == ["--broker-test"]) and out.get("interactive_output") is not True)
     or (sys.argv[1:] == ["--broker-test"] and out.get("interactive_roundtrip") is not True)
     or (sys.argv[1:] in (["--broker-test"], ["--broker-command-test"]) and out.get("exit_259") is not True)
-    or (sys.argv[1:] == ["--sessions-test"] and
+    or (sys.argv[1:] in (["--sessions-test"], ["--nonprop-test"]) and
         any(out.get(name) is not True for name in ("session_interaction", "nonzero_is_error",
                                                    "multiple_sessions", "session_terminated",
                                                    "revocation_denied", "local_encoding_roundtrip",
                                                    "child_started", "child_job_terminated",
-                                                   "exited_shell_child_tracked", "background_drain_completed")))):
+                                                   "exited_shell_child_tracked", "background_drain_completed")))
+    or (sys.argv[1:] == ["--nonprop-test"] and
+        any(out.get(name) is not True for name in ("nonpropagating_hardlink_blocked",
+            "external_synthetic_acl_unchanged", "new_file_reopen", "new_file_inherited_sid",
+            "new_file_ace_removed")))):
     raise SystemExit(1)
