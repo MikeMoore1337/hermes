@@ -112,7 +112,11 @@ def serve(raw_config: bytes, *, current_sid: Callable[[], str], ca: bytes,
             bridge.close()
         elif process is not None:
             try:
-                process.kill()
-                process.wait(timeout=5)
+                closer = getattr(process, "close", None)
+                if callable(closer):
+                    closer()
+                else:
+                    process.kill()
+                    process.wait(timeout=5)
             except Exception:
                 pass

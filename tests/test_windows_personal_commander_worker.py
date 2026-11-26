@@ -152,6 +152,18 @@ class PersonalWorkerTests(unittest.TestCase):
         self.assertEqual(calls[0][1], list(config.PERSONAL_ROOTS.values()))
         self.assertTrue(self.bridge.closed)
 
+    def test_failed_bridge_construction_closes_owned_isolated_process(self):
+        class OwnedProcess:
+            closed = False
+            def close(self):
+                self.closed = True
+        process = OwnedProcess()
+        self.args["start_dispatcher"] = lambda: process
+        self.args["bridge_factory"] = lambda *_args: (_ for _ in ()).throw(ValueError("synthetic"))
+        with self.assertRaises(worker.PersonalWorkerDenied):
+            worker.serve(self.raw, **self.args)
+        self.assertTrue(process.closed)
+
 
 if __name__ == "__main__":
     unittest.main()
