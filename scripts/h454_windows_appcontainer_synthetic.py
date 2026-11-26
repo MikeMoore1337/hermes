@@ -136,13 +136,14 @@ try:
         if not adv.ConvertSidToStringSidW(sid, ctypes.byref(text_sid)):
             raise OSError(ctypes.get_last_error(), "ConvertSidToStringSidW")
         try:
-            acl = subprocess.run([os.path.join(os.environ["WINDIR"], "System32", "icacls.exe"),
-                str(allowed), "/grant", "*" + text_sid.value + ":(OI)(CI)M"],
-                capture_output=True, timeout=10, creationflags=subprocess.CREATE_NO_WINDOW)
+            for target, rights in ((test_root, ":RX"), (allowed, ":(OI)(CI)M")):
+                acl = subprocess.run([os.path.join(os.environ["WINDIR"], "System32", "icacls.exe"),
+                    str(target), "/grant", "*" + text_sid.value + rights],
+                    capture_output=True, timeout=10, creationflags=subprocess.CREATE_NO_WINDOW)
+                if acl.returncode:
+                    raise RuntimeError("SYNTHETIC_ACL_FAILED")
         finally:
             kernel.LocalFree(ctypes.cast(text_sid, ctypes.c_void_p))
-        if acl.returncode:
-            raise RuntimeError("SYNTHETIC_ACL_FAILED")
         allowed_file, private_file = allowed / "allowed.txt", private / "sentinel.txt"
         allowed_output, private_output = allowed / "written.txt", private / "attempted.txt"
         allowed_file.write_text("synthetic-allowed", encoding="ascii")
