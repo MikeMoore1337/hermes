@@ -1,6 +1,7 @@
 from contextlib import contextmanager
 import os
 from pathlib import Path
+import subprocess
 import tempfile
 from types import SimpleNamespace
 import unittest
@@ -53,6 +54,26 @@ class ProjectScanTests(unittest.TestCase):
             (self.root / "src" / "link").symlink_to(self.root / "src" / "one.txt")
             with self.assertRaises(ProjectScanDenied):
                 scan(self.root)
+    else:
+        def test_windows_junction_is_not_followed(self):
+            junction = self.root / "src" / "junction"
+            with tempfile.TemporaryDirectory(prefix="h454-junction-outside-") as outside:
+                command = [os.path.join(os.environ["WINDIR"], "System32", "cmd.exe"),
+                           "/d", "/c", "mklink", "/J", str(junction), outside]
+                created = subprocess.run(command, capture_output=True, timeout=5,
+                                         creationflags=subprocess.CREATE_NO_WINDOW)
+                try:
+                    if created.returncode != 0:
+                        self.fail("synthetic junction creation failed")
+                    self.assertTrue(junction.lstat().st_file_attributes & 0x400)
+                    with self.assertRaises(ProjectScanDenied):
+                        scan(self.root)
+                finally:
+                    # Remove the verified link itself, never its target tree.
+                    if os.path.lexists(junction):
+                        if not junction.lstat().st_file_attributes & 0x400:
+                            raise AssertionError("synthetic junction identity changed")
+                        os.rmdir(junction)
 
 
 if __name__ == "__main__":
