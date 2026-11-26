@@ -82,6 +82,21 @@ const assert=require('node:assert/strict'),api=require(process.argv[1]);
 (async () => {
 const win={name:'H15 Windows permanent sandbox',deviceId:'h15-win-05be75515428',online:true,paused:false};
 const other={name:'H15 YFC VPS sandbox',deviceId:'h15-yfc-c6ee0d53e858',online:true,paused:false};
+const personal={name:'H454 Windows personal Commander',deviceId:'h454-win-personal-'+'a'.repeat(32),platform:'win32',online:true,paused:false};
+const resolvedPersonal=api.resolveApprovedWorkspace({project:'YFC dev'},[win,personal]);
+assert.equal(resolvedPersonal.status,'resolved');
+assert.equal(resolvedPersonal.root,'D:\\\\Pet-projects\\\\yfc-dev');
+assert.equal(resolvedPersonal.scope,'native-personal');
+assert.equal(resolvedPersonal.deviceId,personal.deviceId);
+assert.equal(resolvedPersonal.git_verified,false);
+assert.equal(resolvedPersonal.verification_required_before_write,true);
+assert.equal(api.resolveApprovedWorkspace({project:'yfc'},[win,personal]).scope,'sandbox');
+assert.equal(api.listApprovedWorkspaces([win,personal]).workspaces.find(w=>w.name==='yfc-dev').deviceId,personal.deviceId);
+assert.equal(api.listApprovedWorkspaces([personal]).workspaces.length,1);
+for (const devices of [[],[{...personal,online:false}],[{...personal,paused:true}],
+  [{...personal,platform:'linux'}],[{...personal,deviceId:'h454-win-native-'+'a'.repeat(32)}],
+  [personal,personal]])
+  assert.equal(api.resolveApprovedWorkspace({project:'yfc-dev'},devices).reason,'personal_device_unavailable');
 assert.equal(api.listApprovedWorkspaces([win,other]).workspaces.length,5);
 assert.equal(api.listApprovedWorkspaces([win,other]).workspaces.every(w=>w.process_execution_verified===false),true);
 assert.equal(api.resolveApprovedWorkspace({project:'YFC'},[win]).root,'/workspace/projects/your-fitness-coach');

@@ -338,6 +338,14 @@ jobs:
           echo "UPSTREAM_ISOLATED_E2E=PASS" >> "$GITHUB_STEP_SUMMARY"
           echo "PRODUCTION_ACTIVATION=NOT_EXECUTED" >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Verify native personal workspace routing with TypeScript
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$RUNNER_TEMP/brc-upstream/node_modules/.bin:$PATH"
+          command -v tsc >/dev/null
+          python3 -m unittest -v tests.test_h15_brc_workspace_gateway
+
       - name: Test the already-paired Windows agent variant without activating it
         shell: bash
         run: |
