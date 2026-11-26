@@ -96,7 +96,7 @@ process = PROCESSINFO()
 out = {"sid_derived": False, "process_started": False, "exit_code": None}
 profile_name = "HermesSyntheticProbe" + uuid.uuid4().hex
 profile_created = False
-test_root = allowed = private = allowed_file = private_file = allowed_output = private_output = node_copy = diagnostic = None
+test_root = allowed = private = allowed_file = private_file = allowed_output = private_output = node_copy = diagnostic = stdio_file = None
 pipe_handles = []
 interactive_test = False
 
@@ -267,6 +267,7 @@ try:
                   + "try{fs.writeFileSync(" + json.dumps(str(private_output)) + ",'bad');process.exit(4)}catch{};")
             if child_test:
                 diagnostic = allowed / "diagnostic.json"
+                stdio_file = allowed / "stdio.txt"
                 if shell_test:
                     child_executable = os.path.join(os.environ["WINDIR"], "System32", "cmd.exe")
                     child_args = ["/d", "/c", shell_command]
@@ -275,9 +276,13 @@ try:
                     shutil.copyfile(executable, node_copy)
                     child_executable = str(node_copy)
                     child_args = ["-e", js]
-                js = ("const c=require('node:child_process').spawnSync(" + json.dumps(child_executable) + ","
-                      + json.dumps(child_args) + ",{windowsHide:true,timeout:3000,stdio:'ignore',cwd:"
+                js = ("const fs=require('node:fs');"
+                      + "const input=fs.openSync(" + json.dumps(str(allowed_file)) + ",'r');"
+                      + "const output=fs.openSync(" + json.dumps(str(stdio_file)) + ",'w');"
+                      + "const c=require('node:child_process').spawnSync(" + json.dumps(child_executable) + ","
+                      + json.dumps(child_args) + ",{windowsHide:true,timeout:3000,stdio:[input,output,output],cwd:"
                       + json.dumps(str(allowed)) + "});"
+                      + "fs.closeSync(input);fs.closeSync(output);"
                       + "require('node:fs').writeFileSync(" + json.dumps(str(diagnostic))
                       + ",JSON.stringify({status:c.status,code:c.error?.code||null,signal:c.signal}));"
                       + "process.exit(c.status===0?0:c.error?.code==='EACCES'?21:"
@@ -427,7 +432,7 @@ finally:
         adv.FreeSid(sid)
     if profile_created:
         out["temporary_profile_deleted"] = userenv.DeleteAppContainerProfile(profile_name) == 0
-    for path in (allowed_file, private_file, allowed_output, private_output, node_copy, diagnostic):
+    for path in (allowed_file, private_file, allowed_output, private_output, node_copy, diagnostic, stdio_file):
         if path is not None:
             path.unlink(missing_ok=True)
     for path in (allowed, private, test_root):
