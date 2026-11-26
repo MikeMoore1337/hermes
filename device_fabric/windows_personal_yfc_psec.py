@@ -34,6 +34,23 @@ class YfcDevPsecTerminal(SyntheticPsecTerminal):
     before launch. A metadata scan alone does not establish ongoing isolation.
     """
 
+    def _environment_variables(self) -> dict[str, str]:
+        env = super()._environment_variables()
+        system_root = env.get("SYSTEMROOT", "")
+        app_data = env.get("LOCALAPPDATA", "")
+        if not os.path.isabs(system_root) or not os.path.isabs(app_data):
+            raise ValueError()
+        node = Path(app_data) / APP_NAME / "release" / "runner"
+        env.update({
+            "PATH": os.pathsep.join((str(Path(system_root) / "System32"), str(GIT_ROOT / "cmd"), str(node))),
+            "GIT_CONFIG_GLOBAL": "NUL",
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": "safe.directory",
+            "GIT_CONFIG_VALUE_0": str(YFC_DEV).replace("\\", "/"),
+        })
+        return env
+
     def _validate_paths(self, root: str, writable: tuple[str, ...], readonly: tuple[str, ...]) -> None:
         app_data = os.environ.get("LOCALAPPDATA", "")
         if os.name != "nt" or not os.path.isabs(app_data):
