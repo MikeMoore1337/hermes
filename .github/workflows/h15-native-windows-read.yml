@@ -40,6 +40,7 @@ on:
       - scripts/h454_windows_personal_worker.py
       - scripts/h454_windows_personal_state.py
       - scripts/h454_windows_personal_dispatcher.mjs
+      - scripts/h454_windows_appcontainer_synthetic.py
       - scripts/h454_windows_personal_owner_pair.py
       - tests/test_h454_windows_personal_session.py
       - tests/test_windows_personal_commander_config.py
@@ -182,6 +183,16 @@ jobs:
           python -B -m unittest -v tests.test_h454_windows_native_dpapi tests.test_h454_windows_personal_session tests.test_h454_personal_replay tests.test_windows_personal_commander_config tests.test_windows_personal_commander_bundle tests.test_windows_personal_commander_transport tests.test_windows_personal_commander_status tests.test_windows_personal_commander_worker tests.test_h454_windows_personal_dispatcher tests.test_h454_windows_personal_job
           if ($LASTEXITCODE -ne 0) { throw 'H454_WIN32_DPAPI_CURRENT_USER_DENIED' }
           Write-Output 'H454_WIN32_DPAPI_CURRENT_USER=PASS'
+          Write-Output 'H454_WINDOWS_OWNER_DEVICE_ACCESS=NOT_RUN'
+      - name: Verify hidden AppContainer shell and child filesystem isolation
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -B scripts/h454_windows_appcontainer_synthetic.py --interactive-test
+          if ($LASTEXITCODE -ne 0) { throw 'H454_APPCONTAINER_SHELL_TEST_FAILED' }
+          python -B scripts/h454_windows_appcontainer_synthetic.py --node-child-test
+          if ($LASTEXITCODE -ne 0) { throw 'H454_APPCONTAINER_CHILD_TEST_FAILED' }
+          Write-Output 'H454_APPCONTAINER_SYNTHETIC=PASS'
           Write-Output 'H454_WINDOWS_OWNER_DEVICE_ACCESS=NOT_RUN'
       - name: Compile native relay gate and verify owner/device fail closed
         shell: pwsh

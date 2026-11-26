@@ -1,0 +1,283 @@
+"""Synthetic Windows AppContainer proof; never access real projects or vaults."""
+import ctypes
+from ctypes import wintypes
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import uuid
+
+kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+userenv = ctypes.WinDLL("userenv", use_last_error=True)
+adv = ctypes.WinDLL("advapi32", use_last_error=True)
+
+
+class STARTUPINFO(ctypes.Structure):
+    _fields_ = [("cb", wintypes.DWORD), ("reserved", wintypes.LPWSTR),
+        ("desktop", wintypes.LPWSTR), ("title", wintypes.LPWSTR),
+        ("x", wintypes.DWORD), ("y", wintypes.DWORD), ("x_size", wintypes.DWORD),
+        ("y_size", wintypes.DWORD), ("x_count", wintypes.DWORD), ("y_count", wintypes.DWORD),
+        ("fill", wintypes.DWORD), ("flags", wintypes.DWORD), ("show", wintypes.WORD),
+        ("reserved2_len", wintypes.WORD), ("reserved2", ctypes.c_void_p),
+        ("stdin", wintypes.HANDLE), ("stdout", wintypes.HANDLE), ("stderr", wintypes.HANDLE)]
+
+
+class STARTUPINFOEX(ctypes.Structure):
+    _fields_ = [("startup", STARTUPINFO), ("attributes", ctypes.c_void_p)]
+
+
+class SECURITY_CAPABILITIES(ctypes.Structure):
+    _fields_ = [("sid", ctypes.c_void_p), ("capabilities", ctypes.c_void_p),
+                ("count", wintypes.DWORD), ("reserved", wintypes.DWORD)]
+
+
+class PROCESSINFO(ctypes.Structure):
+    _fields_ = [("process", wintypes.HANDLE), ("thread", wintypes.HANDLE),
+                ("pid", wintypes.DWORD), ("tid", wintypes.DWORD)]
+
+
+class SECURITY_ATTRIBUTES(ctypes.Structure):
+    _fields_ = [("length", wintypes.DWORD), ("descriptor", ctypes.c_void_p),
+                ("inherit", wintypes.BOOL)]
+
+
+userenv.DeriveAppContainerSidFromAppContainerName.argtypes = [wintypes.LPCWSTR,
+                                                              ctypes.POINTER(ctypes.c_void_p)]
+userenv.DeriveAppContainerSidFromAppContainerName.restype = ctypes.c_long
+userenv.CreateAppContainerProfile.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR,
+    wintypes.LPCWSTR, ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(ctypes.c_void_p)]
+userenv.CreateAppContainerProfile.restype = ctypes.c_long
+userenv.DeleteAppContainerProfile.argtypes = [wintypes.LPCWSTR]
+userenv.DeleteAppContainerProfile.restype = ctypes.c_long
+adv.FreeSid.argtypes = [ctypes.c_void_p]
+adv.ConvertSidToStringSidW.argtypes = [ctypes.c_void_p, ctypes.POINTER(wintypes.LPWSTR)]
+adv.OpenProcessToken.argtypes = [wintypes.HANDLE, wintypes.DWORD, ctypes.POINTER(wintypes.HANDLE)]
+adv.GetTokenInformation.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p,
+    wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)]
+kernel.InitializeProcThreadAttributeList.argtypes = [ctypes.c_void_p, wintypes.DWORD,
+                                                      wintypes.DWORD, ctypes.POINTER(ctypes.c_size_t)]
+kernel.UpdateProcThreadAttribute.argtypes = [ctypes.c_void_p, wintypes.DWORD, ctypes.c_size_t,
+    ctypes.c_void_p, ctypes.c_size_t, ctypes.c_void_p, ctypes.c_void_p]
+kernel.DeleteProcThreadAttributeList.argtypes = [ctypes.c_void_p]
+kernel.CreateProcessW.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, ctypes.c_void_p,
+    ctypes.c_void_p, wintypes.BOOL, wintypes.DWORD, ctypes.c_void_p, wintypes.LPCWSTR,
+    ctypes.POINTER(STARTUPINFO), ctypes.POINTER(PROCESSINFO)]
+kernel.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+kernel.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+kernel.TerminateProcess.argtypes = [wintypes.HANDLE, wintypes.UINT]
+kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+kernel.LocalFree.argtypes = [ctypes.c_void_p]
+kernel.CreatePipe.argtypes = [ctypes.POINTER(wintypes.HANDLE), ctypes.POINTER(wintypes.HANDLE),
+                              ctypes.POINTER(SECURITY_ATTRIBUTES), wintypes.DWORD]
+kernel.SetHandleInformation.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.DWORD]
+kernel.WriteFile.argtypes = [wintypes.HANDLE, ctypes.c_void_p, wintypes.DWORD,
+                             ctypes.POINTER(wintypes.DWORD), ctypes.c_void_p]
+kernel.ReadFile.argtypes = [wintypes.HANDLE, ctypes.c_void_p, wintypes.DWORD,
+                            ctypes.POINTER(wintypes.DWORD), ctypes.c_void_p]
+
+sid = ctypes.c_void_p()
+attributes_initialized = False
+attributes = None
+process = PROCESSINFO()
+out = {"sid_derived": False, "process_started": False, "exit_code": None}
+profile_name = "HermesSyntheticProbe" + uuid.uuid4().hex
+profile_created = False
+test_root = allowed = private = allowed_file = private_file = allowed_output = private_output = node_copy = diagnostic = None
+pipe_handles = []
+interactive_test = False
+try:
+    if sys.argv[1:] not in (["--interactive-test"], ["--node-child-test"]):
+        raise ValueError("INVALID_SYNTHETIC_TEST")
+    interactive_test = sys.argv[1:] == ["--interactive-test"]
+    shell_test = sys.argv[1:] == ["--node-shell-test"]
+    child_test = sys.argv[1:] == ["--node-child-test"] or shell_test
+    node_test = sys.argv[1:] == ["--node-test"] or child_test
+    filesystem_test = sys.argv[1:] == ["--filesystem-test"] or node_test or interactive_test
+    if sys.argv[1:] == ["--temporary-profile"] or filesystem_test:
+        result = userenv.CreateAppContainerProfile(profile_name, "Hermes synthetic probe",
+            "Temporary isolated process test", None, 0, ctypes.byref(sid))
+        profile_created = result == 0
+    else:
+        result = userenv.DeriveAppContainerSidFromAppContainerName(profile_name, ctypes.byref(sid))
+    if result != 0:
+        raise OSError(result & 0xffffffff, "DeriveAppContainerSid")
+    out["sid_derived"] = True
+    size = ctypes.c_size_t()
+    attribute_count = 2 if interactive_test else 1
+    kernel.InitializeProcThreadAttributeList(None, attribute_count, 0, ctypes.byref(size))
+    if not size.value or size.value > 65536:
+        raise OSError(ctypes.get_last_error(), "AttributeListSize")
+    attributes = ctypes.create_string_buffer(size.value)
+    if not kernel.InitializeProcThreadAttributeList(attributes, attribute_count, 0, ctypes.byref(size)):
+        raise OSError(ctypes.get_last_error(), "InitializeAttributes")
+    attributes_initialized = True
+    capabilities = SECURITY_CAPABILITIES(sid, None, 0, 0)
+    if not kernel.UpdateProcThreadAttribute(attributes, 0, 0x00020009,
+        ctypes.byref(capabilities), ctypes.sizeof(capabilities), None, None):
+        raise OSError(ctypes.get_last_error(), "UpdateAttributes")
+    startup = STARTUPINFOEX()
+    startup.startup.cb = ctypes.sizeof(startup)
+    startup.startup.flags = 1
+    startup.attributes = ctypes.cast(attributes, ctypes.c_void_p)
+    executable = os.path.join(os.environ["WINDIR"], "System32", "cmd.exe")
+    command_text = '"' + executable + '" /d /c exit 0'
+    if filesystem_test:
+        base = Path(__file__).resolve().parent
+        test_root = base / ("h454-appcontainer-synthetic-" + uuid.uuid4().hex)
+        allowed, private = test_root / "allowed", test_root / "private"
+        allowed.mkdir(parents=True)
+        private.mkdir()
+        text_sid = wintypes.LPWSTR()
+        if not adv.ConvertSidToStringSidW(sid, ctypes.byref(text_sid)):
+            raise OSError(ctypes.get_last_error(), "ConvertSidToStringSidW")
+        try:
+            acl = subprocess.run([os.path.join(os.environ["WINDIR"], "System32", "icacls.exe"),
+                str(allowed), "/grant", "*" + text_sid.value + ":(OI)(CI)M"],
+                capture_output=True, timeout=10, creationflags=subprocess.CREATE_NO_WINDOW)
+        finally:
+            kernel.LocalFree(ctypes.cast(text_sid, ctypes.c_void_p))
+        if acl.returncode:
+            raise RuntimeError("SYNTHETIC_ACL_FAILED")
+        allowed_file, private_file = allowed / "allowed.txt", private / "sentinel.txt"
+        allowed_output, private_output = allowed / "written.txt", private / "attempted.txt"
+        allowed_file.write_text("synthetic-allowed", encoding="ascii")
+        private_file.write_text("synthetic-private", encoding="ascii")
+        shell_command = ('(type "' + str(allowed_file) + '" >nul 2>&1) || exit /b 2 & '
+            + '(echo synthetic>"' + str(allowed_output) + '" 2>nul) || exit /b 3 & '
+            + '(type "' + str(private_file) + '" >nul 2>&1) && exit /b 4 & '
+            + '(echo bad>"' + str(private_output) + '" 2>nul) && exit /b 5 & exit /b 0')
+        command_text = '"' + executable + '" /d /c ' + shell_command
+        if interactive_test:
+            command_text = '"' + executable + '" /d /q'
+        if node_test:
+            executable = shutil.which("node")
+            if not executable:
+                raise RuntimeError("NODE_UNAVAILABLE")
+            js = ("const fs=require('node:fs');"
+                  + "try{fs.readFileSync(" + json.dumps(str(allowed_file)) + ");"
+                  + "fs.writeFileSync(" + json.dumps(str(allowed_output)) + ",'synthetic')}"
+                  + "catch{process.exit(2)};"
+                  + "try{fs.readFileSync(" + json.dumps(str(private_file)) + ");process.exit(3)}catch{};"
+                  + "try{fs.writeFileSync(" + json.dumps(str(private_output)) + ",'bad');process.exit(4)}catch{};")
+            if child_test:
+                diagnostic = allowed / "diagnostic.json"
+                if shell_test:
+                    child_executable = os.path.join(os.environ["WINDIR"], "System32", "cmd.exe")
+                    child_args = ["/d", "/c", shell_command]
+                else:
+                    node_copy = allowed / "node.exe"
+                    shutil.copyfile(executable, node_copy)
+                    child_executable = str(node_copy)
+                    child_args = ["-e", js]
+                js = ("const c=require('node:child_process').spawnSync(" + json.dumps(child_executable) + ","
+                      + json.dumps(child_args) + ",{windowsHide:true,timeout:10000,stdio:'ignore',cwd:"
+                      + json.dumps(str(allowed)) + "});"
+                      + "require('node:fs').writeFileSync(" + json.dumps(str(diagnostic))
+                      + ",JSON.stringify({status:c.status,code:c.error?.code||null,signal:c.signal}));"
+                      + "process.exit(c.status===0?0:c.error?.code==='EACCES'?21:"
+                      + "c.error?.code==='EPERM'?22:c.error?.code==='ENOENT'?23:"
+                      + "c.error?24:c.status===null?25:c.status===3221225794?42:"
+                      + "c.status>0&&c.status<20?c.status:26)")
+            js = "Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,200);" + js
+            command_text = subprocess.list2cmdline([executable, "-e", js])
+    if interactive_test:
+        input_read, input_write, output_read, output_write = (wintypes.HANDLE() for _ in range(4))
+        security = SECURITY_ATTRIBUTES(ctypes.sizeof(SECURITY_ATTRIBUTES), None, True)
+        if not kernel.CreatePipe(ctypes.byref(input_read), ctypes.byref(input_write), ctypes.byref(security), 0):
+            raise OSError(ctypes.get_last_error(), "CreateInputPipe")
+        pipe_handles.extend((input_read, input_write))
+        if not kernel.CreatePipe(ctypes.byref(output_read), ctypes.byref(output_write), ctypes.byref(security), 0):
+            raise OSError(ctypes.get_last_error(), "CreateOutputPipe")
+        pipe_handles.extend((output_read, output_write))
+        if not kernel.SetHandleInformation(input_write, 1, 0) or not kernel.SetHandleInformation(output_read, 1, 0):
+            raise OSError(ctypes.get_last_error(), "SetHandleInformation")
+        inherited = (wintypes.HANDLE * 2)(input_read, output_write)
+        if not kernel.UpdateProcThreadAttribute(attributes, 0, 0x00020002, inherited,
+            ctypes.sizeof(inherited), None, None):
+            raise OSError(ctypes.get_last_error(), "HandleList")
+        startup.startup.flags |= 0x100
+        startup.startup.stdin, startup.startup.stdout, startup.startup.stderr = input_read, output_write, output_write
+    command = ctypes.create_unicode_buffer(command_text)
+    env_names = ("SYSTEMROOT", "WINDIR", "USERPROFILE", "LOCALAPPDATA", "TEMP", "TMP")
+    environment = ctypes.create_unicode_buffer("\0".join(
+        name + "=" + os.environ[name] for name in env_names if name in os.environ) + "\0\0")
+    flags = 0x08000000 | 0x00080000 | 0x00000400
+    if not kernel.CreateProcessW(executable, command, None, None, interactive_test, flags,
+        environment, str(allowed) if interactive_test else os.path.dirname(executable),
+        ctypes.byref(startup.startup), ctypes.byref(process)):
+        raise OSError(ctypes.get_last_error(), "CreateProcessW")
+    out["process_started"] = True
+    token = wintypes.HANDLE()
+    if adv.OpenProcessToken(process.process, 0x0008, ctypes.byref(token)):
+        try:
+            is_container, returned = wintypes.DWORD(), wintypes.DWORD()
+            if adv.GetTokenInformation(token, 29, ctypes.byref(is_container),
+                                       ctypes.sizeof(is_container), ctypes.byref(returned)):
+                out["is_appcontainer"] = bool(is_container.value)
+        finally:
+            kernel.CloseHandle(token)
+    if interactive_test:
+        for h in (input_read, output_write):
+            kernel.CloseHandle(h)
+            pipe_handles.remove(h)
+        commands = ("echo H454_INTERACTIVE_OK\r\n" + shell_command + "\r\n").encode("ascii")
+        written = wintypes.DWORD()
+        buf = ctypes.create_string_buffer(commands)
+        if not kernel.WriteFile(input_write, buf, len(commands), ctypes.byref(written), None) or written.value != len(commands):
+            raise OSError(ctypes.get_last_error(), "WriteInput")
+        kernel.CloseHandle(input_write)
+        pipe_handles.remove(input_write)
+    if kernel.WaitForSingleObject(process.process, 10000) != 0:
+        kernel.TerminateProcess(process.process, 1)
+        kernel.WaitForSingleObject(process.process, 5000)
+        raise RuntimeError("PROCESS_TIMEOUT")
+    code = wintypes.DWORD()
+    if not kernel.GetExitCodeProcess(process.process, ctypes.byref(code)):
+        raise OSError(ctypes.get_last_error(), "GetExitCodeProcess")
+    out["exit_code"] = code.value
+    if interactive_test:
+        data, count = ctypes.create_string_buffer(4096), wintypes.DWORD()
+        if kernel.ReadFile(output_read, data, len(data), ctypes.byref(count), None):
+            out["interactive_output"] = b"H454_INTERACTIVE_OK" in data.raw[:count.value]
+    if filesystem_test:
+        out["allowed_write"] = allowed_output.is_file()
+        out["private_write_blocked"] = not private_output.exists()
+        if diagnostic is not None and diagnostic.is_file():
+            out["child_status"] = json.loads(diagnostic.read_text(encoding="utf-8"))
+except OSError as exc:
+    out["error"] = {"api": exc.strerror, "code": exc.errno}
+except Exception as exc:
+    out["error"] = type(exc).__name__
+finally:
+    if process.process:
+        running_code = wintypes.DWORD()
+        if kernel.GetExitCodeProcess(process.process, ctypes.byref(running_code)) and running_code.value == 259:
+            kernel.TerminateProcess(process.process, 1)
+            kernel.WaitForSingleObject(process.process, 5000)
+    for handle in (process.thread, process.process):
+        if handle:
+            kernel.CloseHandle(handle)
+    for handle in pipe_handles:
+        if handle:
+            kernel.CloseHandle(handle)
+    if attributes_initialized:
+        kernel.DeleteProcThreadAttributeList(attributes)
+    if sid:
+        adv.FreeSid(sid)
+    if profile_created:
+        out["temporary_profile_deleted"] = userenv.DeleteAppContainerProfile(profile_name) == 0
+    for path in (allowed_file, private_file, allowed_output, private_output, node_copy, diagnostic):
+        if path is not None:
+            path.unlink(missing_ok=True)
+    for path in (allowed, private, test_root):
+        if path is not None and path.exists():
+            path.rmdir()
+print(json.dumps(out))
+
+required = ("sid_derived", "process_started", "is_appcontainer", "allowed_write",
+            "private_write_blocked", "temporary_profile_deleted")
+if (out.get("exit_code") != 0 or any(out.get(name) is not True for name in required)
+    or (interactive_test and out.get("interactive_output") is not True)):
+    raise SystemExit(1)
