@@ -1,5 +1,6 @@
 """Offline tests of pinned H-15 native READ gateway (#454); no live relay changes."""
 from pathlib import Path
+import os
 import shutil
 import subprocess
 import tempfile
@@ -95,6 +96,40 @@ class NativeReadGatewayTests(unittest.TestCase):
         with self.assertRaisesRegex(AuditError, "native_relay_source_symlink"):
             apply(self.root)
         self.assertEqual(outside.read_text(), "SECRET_SENTINEL")
+
+    def test_personal_windows_guard_accepts_only_its_separate_bound_identity(self):
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node is required to exercise the relay guard")
+        program = r"""
+const assert = require('node:assert/strict');
+function gate(deviceId, grant, dev) {
+GUARD
+  return {ok:true};
+}
+const id='h454-win-personal-'+'a'.repeat(32);
+const name='H454 Windows personal Commander';
+const grant={device_id:id,name,platform:'win32'};
+const info={deviceId:id,name,platform:'win32',arch:'x64'};
+assert.equal(gate(id,grant,{info}).ok,true);
+for (const [g,d] of [
+  [{name:'wrong'},{}], [{platform:'linux/docker'},{}],
+  [{device_id:'other'},{}], [{},{name:'wrong'}],
+  [{},{platform:'linux'}], [{},{arch:'riscv64'}],
+  [{},{deviceId:'other'}],
+]) assert.equal(gate(id,{...grant,...g},{info:{...info,...d}}).ok,false);
+const old='h454-win-native-'+'b'.repeat(32);
+assert.equal(gate(old,{...grant,device_id:old},{info:{...info,deviceId:old}}).ok,false);
+assert.equal(gate(id,{...grant,platform:'linux/docker'},
+  {info:{...info,platform:'linux'}}).ok,false);
+const sandbox='h15-test';
+assert.equal(gate(sandbox,{device_id:sandbox,platform:'linux/docker'},
+  {info:{deviceId:sandbox,platform:'linux',arch:'x64'}}).ok,true);
+""".replace("GUARD", NATIVE_GENERIC_GUARD)
+        result = subprocess.run([node, "--eval", program], capture_output=True,
+                                text=True, timeout=15,
+                                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_typescript_native_route_runtime(self):
         if not shutil.which("tsc") or not shutil.which("node"):

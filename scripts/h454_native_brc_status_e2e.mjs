@@ -18,6 +18,7 @@ const relay=buildRelay({
 },()=>{});
 const profiles=[
  {name:'H454 Windows native read-only',platform:'win32',id:'h454-win-native-'+'a'.repeat(32)},
+ {name:'H454 Windows personal Commander',platform:'win32',id:'h454-win-personal-'+'d'.repeat(32)},
  {name:'H454 Hermes VPS native read-only',platform:'linux',id:'h454-linux-hermes-'+'b'.repeat(32)},
  {name:'H454 YFC VPS native read-only',platform:'linux',id:'h454-linux-yfc-'+'c'.repeat(32)},
 ];

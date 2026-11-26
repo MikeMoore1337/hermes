@@ -23,12 +23,15 @@ from typing import Callable, Any
 
 NAME = {
     "windows": "H454 Windows native read-only",
+    "windows-personal": "H454 Windows personal Commander",
     "hermes-vps": "H454 Hermes VPS native read-only",
     "yfc-vps": "H454 YFC VPS native read-only",
 }
-PLATFORM = {"windows": "win32", "hermes-vps": "linux", "yfc-vps": "linux"}
+PLATFORM = {"windows": "win32", "windows-personal": "win32",
+            "hermes-vps": "linux", "yfc-vps": "linux"}
 IDENTITY = {
     "windows": re.compile(r"h454-win-native-[a-f0-9]{32}\Z"),
+    "windows-personal": re.compile(r"h454-win-personal-[a-f0-9]{32}\Z"),
     "hermes-vps": re.compile(r"h454-linux-hermes-[a-f0-9]{32}\Z"),
     "yfc-vps": re.compile(r"h454-linux-yfc-[a-f0-9]{32}\Z"),
 }

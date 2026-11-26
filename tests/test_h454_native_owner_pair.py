@@ -59,8 +59,8 @@ class NewOwnerNativePairing(unittest.TestCase):
                 "SELECT * FROM users ORDER BY id")],
         }
 
-    def test_new_win_and_both_linux_are_approved_without_any_existing_device_change(self):
-        for target in ("windows", "hermes-vps", "yfc-vps"):
+    def test_new_windows_profiles_and_both_linux_are_approved_without_existing_changes(self):
+        for target in ("windows", "windows-personal", "hermes-vps", "yfc-vps"):
             with self.subTest(target=target):
                 self._create(target)
                 before = self._snapshot()

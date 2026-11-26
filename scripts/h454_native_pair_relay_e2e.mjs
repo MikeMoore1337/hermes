@@ -36,6 +36,7 @@ async function attempt(port, device_code, profile, extra) {
 
 const PROFILES = [
   {name:'H454 Windows native read-only', platform:'win32', id:'h454-win-native-'+ 'a'.repeat(32)},
+  {name:'H454 Windows personal Commander', platform:'win32', id:'h454-win-personal-'+ 'b'.repeat(32)},
   {name:'H454 Hermes VPS native read-only', platform:'linux', id:'h454-linux-hermes-'+ 'b'.repeat(32)},
   {name:'H454 YFC VPS native read-only', platform:'linux', id:'h454-linux-yfc-'+ 'c'.repeat(32)},
 ];
@@ -84,6 +85,7 @@ try {
   }
   for (const native of [
     {name:'H454 Windows native read-only',platform:'win32',id:'h454-win-native-'+ 'd'.repeat(32)},
+    {name:'H454 Windows personal Commander',platform:'win32',id:'h454-win-personal-'+ 'e'.repeat(32)},
   ]) {
     // Generic BRC approvals are insufficient: require an owner-selected
     // H454 native ID in the pending row.

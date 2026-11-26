@@ -24,6 +24,7 @@ from scripts.h15_brc_owner_private_pair import (
 
 PREFIX = {
     "windows": "h454-win-native-",
+    "windows-personal": "h454-win-personal-",
     "hermes-vps": "h454-linux-hermes-",
     "yfc-vps": "h454-linux-yfc-",
 }

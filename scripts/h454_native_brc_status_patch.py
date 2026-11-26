@@ -28,6 +28,8 @@ ROUTE = """  // H454: owner-paired status introspection for native agent revocat
     const profiles = [
       {name:'H454 Windows native read-only',platform:'win32',
        id:/^h454-win-native-[a-f0-9]{32}$/},
+      {name:'H454 Windows personal Commander',platform:'win32',
+       id:/^h454-win-personal-[a-f0-9]{32}$/},
       {name:'H454 Hermes VPS native read-only',platform:'linux',
        id:/^h454-linux-hermes-[a-f0-9]{32}$/},
       {name:'H454 YFC VPS native read-only',platform:'linux',
