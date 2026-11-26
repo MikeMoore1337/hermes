@@ -247,6 +247,8 @@ try:
             outside_hard = allowed / "outside-hard.txt"
             os.link(private_file, outside_hard)
             outside_before = security_descriptor(private_file, 4)
+            directory_before = security_descriptor(allowed, 4)
+            file_before = security_descriptor(allowed_file, 4)
         text_sid = wintypes.LPWSTR()
         if not adv.ConvertSidToStringSidW(sid, ctypes.byref(text_sid)):
             raise OSError(ctypes.get_last_error(), "ConvertSidToStringSidW")
@@ -436,6 +438,10 @@ try:
                     change_acl(allowed, sid, revoke=True)
                     change_acl(allowed_file, sid, revoke=True)
                     change_acl(allowed_output, sid, revoke=True)
+                    out["original_directory_acl_restored"] = bool(directory_before) and (
+                        directory_before == security_descriptor(allowed, 4))
+                    out["original_file_acl_restored"] = bool(file_before) and (
+                        file_before == security_descriptor(allowed_file, 4))
                     out["new_file_ace_removed"] = sid_text not in (security_descriptor(allowed_output, 4) or "")
                     remaining_dacl = security_descriptor(allowed_file, 4)
                     probe = PersonalTerminalSessions(int(sid.value), str(test_root))
@@ -636,5 +642,5 @@ if (out.get("exit_code") != 0 or any(out.get(name) is not True for name in requi
     or (sys.argv[1:] == ["--nonprop-test"] and
         any(out.get(name) is not True for name in ("nonpropagating_hardlink_blocked",
             "external_synthetic_acl_unchanged", "new_file_reopen", "new_file_inherited_sid",
-            "new_file_ace_removed")))):
+            "new_file_ace_removed", "original_directory_acl_restored", "original_file_acl_restored")))):
     raise SystemExit(1)
