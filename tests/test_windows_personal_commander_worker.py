@@ -66,6 +66,12 @@ class PersonalWorkerTests(unittest.TestCase):
             worker.serve(self.raw, **self.args)
         self.assertNotIn("job", self.events)
 
+    def test_initial_status_outage_requests_retry_without_starting_dispatcher(self):
+        self.args["status_factory"] = lambda _id, _token: lambda: None
+        self.assertEqual(worker.serve(self.raw, **self.args), "reconnect_exhausted")
+        self.assertNotIn("job", self.events)
+        self.assertNotIn("start", self.events)
+
     def test_missing_os_confinement_never_unseals_or_starts(self):
         self.args["isolation_verified"] = lambda: False
         with self.assertRaises(worker.PersonalWorkerDenied):
