@@ -1,4 +1,5 @@
 import os
+import ctypes
 from pathlib import Path
 import shutil
 import subprocess
@@ -51,6 +52,11 @@ if os.name == "nt":
             self.assertEqual(env["GIT_CONFIG_VALUE_0"], str(self.project).replace("\\", "/"))
 
         def test_plain_git_status_runs_in_the_restricted_terminal(self):
+            try:
+                getattr(ctypes.WinDLL("processmodel", use_last_error=True, winmode=0x800),
+                        "CreateProcessSecurityEnvironment")
+            except (OSError, AttributeError):
+                self.skipTest("Windows runner does not expose the PSEC API")
             git = shutil.which("git")
             if not git:
                 self.skipTest("Git is unavailable")
