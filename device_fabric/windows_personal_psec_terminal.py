@@ -21,41 +21,66 @@ from device_fabric.windows_appcontainer_terminal import (
 from device_fabric.windows_personal_job import _Extended
 
 
-def build_spec(root: str) -> bytes:
-    """Encode PSEC schema 1.0 with a single writable directory."""
-    if (type(root) is not str or not 3 <= len(root) <= 2048 or "\0" in root
-        or not ntpath.isabs(root) or ntpath.normpath(root) != root):
+def build_spec(root: str, *, writable: tuple[str, ...] = (), readonly: tuple[str, ...] = ()) -> bytes:
+    """Encode PSEC schema 1.0 with distinct writable and read-only roots."""
+    if type(writable) is not tuple or type(readonly) is not tuple or len(writable) + len(readonly) > 7:
         raise TerminalDenied("psec_terminal_denied")
-    drive, tail = ntpath.splitdrive(root)
-    if (len(drive) != 2 or not drive[0].isascii() or not drive[0].isalpha() or drive[1] != ":"
-        or tail in ("", "\\") or any(ch in tail for ch in ':*?"<>|')
-        or any(ord(ch) < 32 for ch in root)):
-        raise TerminalDenied("psec_terminal_denied")
-    try:
-        encoded = root.encode("utf-8")
-    except UnicodeEncodeError:
-        raise TerminalDenied("psec_terminal_denied") from None
+    paths = (root, *writable, *readonly)
+    for index, path in enumerate(paths):
+        if (type(path) is not str or not 3 <= len(path) <= 2048 or "\0" in path
+            or not ntpath.isabs(path) or ntpath.normpath(path) != path):
+            raise TerminalDenied("psec_terminal_denied")
+        drive, tail = ntpath.splitdrive(path)
+        if (len(drive) != 2 or not drive[0].isascii() or not drive[0].isalpha() or drive[1] != ":"
+            or tail in ("", "\\") or any(ch in tail for ch in ':*?"<>|')
+            or any(ord(ch) < 32 for ch in path)):
+            raise TerminalDenied("psec_terminal_denied")
+        try:
+            path.encode("utf-8")
+        except UnicodeEncodeError:
+            raise TerminalDenied("psec_terminal_denied") from None
+        normalized = ntpath.normcase(path)
+        for other in paths[:index]:
+            prior = ntpath.normcase(other)
+            if normalized == prior or normalized.startswith(prior + "\\") or prior.startswith(normalized + "\\"):
+                raise TerminalDenied("psec_terminal_denied")
     # Microsoft/mxc ProcessSecurityEnvironment.fbs at
     # 383933e9dd4a6b068670767f5926adbdba2de6c9, version 1.0 subset.
-    data = bytearray(44)
+    data = bytearray(48)
     struct.pack_into("<I4s", data, 0, 32, b"PSEC")
-    struct.pack_into("<HH", data, 8, 22, 12)
+    struct.pack_into("<HH", data, 8, 22, 16)
     struct.pack_into("<H", data, 12, 4)  # version struct
     struct.pack_into("<H", data, 20, 8)  # fs_read_write
+    if readonly:
+        struct.pack_into("<H", data, 22, 12)  # fs_read_only
     struct.pack_into("<iHH", data, 32, 24, 1, 0)
-    vector = len(data)
-    data.extend(struct.pack("<II", 1, 0))
-    path_offset = len(data)
-    data.extend(struct.pack("<I", len(encoded)) + encoded + b"\0")
-    struct.pack_into("<I", data, vector + 4, path_offset - (vector + 4))
-    struct.pack_into("<I", data, 40, vector - 40)
+
+    def vector(values: tuple[str, ...], field: int) -> None:
+        while len(data) % 4:
+            data.append(0)
+        offset = len(data)
+        data.extend(struct.pack("<I", len(values)) + bytes(4 * len(values)))
+        struct.pack_into("<I", data, field, offset - field)
+        for index, value in enumerate(values):
+            while len(data) % 4:
+                data.append(0)
+            slot = offset + 4 + index * 4
+            encoded = value.encode("utf-8")
+            target = len(data)
+            data.extend(struct.pack("<I", len(encoded)) + encoded + b"\0")
+            struct.pack_into("<I", data, slot, target - slot)
+
+    vector((root, *writable), 40)
+    if readonly:
+        vector(readonly, 44)
     return bytes(data)
 
 
 class SyntheticPsecTerminal(AppContainerTerminal):
     """A hidden process with inherited stdio and a kill-on-close job."""
 
-    def __init__(self, root: str, *, command: str | None = None):
+    def __init__(self, root: str, *, command: str | None = None,
+                 writable: tuple[str, ...] = (), readonly: tuple[str, ...] = ()):
         self._k = self._model = self._environment = None
         self._process = self._input = self._output = self._job = None
         self.pid = 0
@@ -66,15 +91,23 @@ class SyntheticPsecTerminal(AppContainerTerminal):
         attributes = None
         initialized = False
         try:
-            data = build_spec(root)
+            data = build_spec(root, writable=writable, readonly=readonly)
             if (os.name != "nt" or (command is not None and (type(command) is not str
                 or not 0 < len(command) <= 4096 or "\0" in command))):
                 raise ValueError()
-            resolved = Path(root).resolve(strict=True)
-            relative = resolved.relative_to(Path(tempfile.gettempdir()).resolve(strict=True))
-            if (not resolved.is_dir() or not relative.parts
-                or not relative.parts[0].startswith("h454-psec-synthetic-")):
-                raise ValueError()
+            fixture_name = None
+            temp = Path(tempfile.gettempdir()).resolve(strict=True)
+            for path in (root, *writable, *readonly):
+                resolved = Path(path).resolve(strict=True)
+                relative = resolved.relative_to(temp)
+                if (not resolved.is_dir() or not relative.parts
+                    or not relative.parts[0].startswith("h454-psec-synthetic-")
+                    or os.path.normcase(str(resolved)) != os.path.normcase(path)):
+                    raise ValueError()
+                if fixture_name is None:
+                    fixture_name = relative.parts[0]
+                elif relative.parts[0] != fixture_name:
+                    raise ValueError()
             kernel, adv = _apis()
             model = ctypes.WinDLL("processmodel", use_last_error=True, winmode=0x800)
             create = model.CreateProcessSecurityEnvironment

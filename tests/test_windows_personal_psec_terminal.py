@@ -27,6 +27,28 @@ class PsecSpecificationTests(unittest.TestCase):
             with self.subTest(root=root), self.assertRaises(TerminalDenied):
                 build_spec(root)
 
+    def test_project_state_and_readonly_runtime_are_separate_policy_roots(self):
+        root, state, runtime = r"D:\fixture\project", r"D:\fixture\state", r"D:\fixture\runtime"
+        data = build_spec(root, writable=(state,), readonly=(runtime,))
+        table = struct.unpack_from("<I", data)[0]
+        def vector(field):
+            pointer = table + field
+            offset = pointer + struct.unpack_from("<I", data, pointer)[0]
+            count = struct.unpack_from("<I", data, offset)[0]
+            values = []
+            for index in range(count):
+                slot = offset + 4 + index * 4
+                pos = slot + struct.unpack_from("<I", data, slot)[0]
+                length = struct.unpack_from("<I", data, pos)[0]
+                values.append(data[pos + 4:pos + 4 + length].decode("utf-8"))
+            return values
+        self.assertEqual(vector(8), [root, state])
+        self.assertEqual(vector(12), [runtime])
+        for kw in ({"readonly": (root,)}, {"readonly": (root + r"\child",)},
+                   {"writable": (r"D:\fixture",)}, {"writable": (state,), "readonly": (state,)}):
+            with self.subTest(kw=kw), self.assertRaises(TerminalDenied):
+                build_spec(root, **kw)
+
     if os.name == "nt":
         def test_original_project_cannot_be_used_as_a_synthetic_fixture(self):
             root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
