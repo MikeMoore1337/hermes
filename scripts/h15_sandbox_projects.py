@@ -38,23 +38,54 @@ def git(root: Path, *args: str, timeout: int = 10) -> str:
     return result.stdout.decode('utf-8', 'strict').strip()
 
 
+def worktree_repository(root: Path, target: Path) -> str:
+    """Accept only a reciprocal Git worktree link within this sandbox root."""
+    link = target / '.git'
+    if link.is_symlink() or not link.is_file() or link.stat().st_size > 4096:
+        raise ProjectError('invalid_project')
+    raw = link.read_text(encoding='utf-8').strip()
+    if not raw.startswith('gitdir: '):
+        raise ProjectError('invalid_project')
+    path = Path(raw[8:])
+    if not path.is_absolute():
+        path = target / path
+    metadata = path.resolve(strict=True)
+    # Reject indirections in the repository, .git, worktrees, and entry.
+    if (metadata != path.absolute() or metadata.name in ('', '.', '..') or metadata.parent.name != 'worktrees'
+            or metadata.parent.parent.name != '.git'):
+        raise ProjectError('invalid_project')
+    base = metadata.parent.parent.parent
+    if (base.parent != root.resolve() or not NAME.fullmatch(base.name)
+            or base.is_symlink() or (base / '.git').is_symlink()
+            or (base / '.git' / 'worktrees').is_symlink() or path.is_symlink()):
+        raise ProjectError('invalid_project')
+    backlink, common = metadata / 'gitdir', metadata / 'commondir'
+    if (backlink.is_symlink() or common.is_symlink() or not backlink.is_file()
+            or not common.is_file() or backlink.stat().st_size > 4096 or common.stat().st_size > 4096
+            or common.read_text(encoding='utf-8').strip() != '../..'
+            or Path(backlink.read_text(encoding='utf-8').strip()).resolve() != link.resolve()):
+        raise ProjectError('invalid_project')
+    return base.name
+
+
 def inspect(name: str, root: Path = ROOT, *, git_timeout: float = 10) -> dict:
     if not isinstance(name, str) or not NAME.fullmatch(name):
         raise ProjectError('invalid_name')
     target = root / name
     if root.is_symlink() or not root.is_dir() or target.is_symlink() or not target.is_dir():
         raise ProjectError('project_not_found')
-    if target.resolve().parent != root.resolve() or (target / '.git').is_symlink() or not (target / '.git').is_dir():
+    if target.resolve().parent != root.resolve() or (target / '.git').is_symlink():
         raise ProjectError('invalid_project')
+    repository = name if (target / '.git').is_dir() else worktree_repository(root, target)
     origin = git(target, 'remote', 'get-url', 'origin', timeout=git_timeout)
-    if origin != ORIGIN_PREFIX + name + '.git':
+    if origin != ORIGIN_PREFIX + repository + '.git':
         raise ProjectError('origin_mismatch')
     branch = git(target, 'branch', '--show-current', timeout=git_timeout)
     head = git(target, 'rev-parse', '--verify', 'HEAD', timeout=git_timeout)
-    if not branch or len(branch) > 255 or not re.fullmatch(r'[0-9a-f]{40}', head):
+    if len(branch) > 255 or not re.fullmatch(r'[0-9a-f]{40}', head):
         raise ProjectError('invalid_git_state')
-    return {'status': 'verified', 'workspace': name, 'scope': 'sandbox',
-            'root': str(target), 'origin': origin, 'branch': branch, 'head': head,
+    return {'status': 'verified', 'workspace': name, 'repository': repository, 'scope': 'sandbox',
+            'root': str(target), 'origin': origin, 'branch': branch or None, 'detached': not branch, 'head': head,
             'verification_required_before_write': True}
 
 
@@ -75,16 +106,12 @@ def discover(root: Path = ROOT, *, max_entries: int = 128, max_projects: int = 1
             if len(projects) >= max_projects:
                 incomplete = True
                 break
-            gitdir = root / entry.name / '.git'
-            if gitdir.is_file() or gitdir.is_symlink():
-                # Worktrees and indirections need separate verification.
-                incomplete = True
-                continue
             try:
                 remaining = max(0.05, min(1.0, deadline - time.monotonic()))
                 projects.append(inspect(entry.name, root, git_timeout=remaining))
             except ProjectError as exc:
-                if str(exc) in ('git_unavailable', 'git_failed'):
+                gitdir = root / entry.name / '.git'
+                if str(exc) in ('git_unavailable', 'git_failed') or gitdir.is_file() or gitdir.is_symlink():
                     incomplete = True
                 continue
             except (OSError, UnicodeError):

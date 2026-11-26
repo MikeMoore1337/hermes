@@ -118,6 +118,18 @@ const listInvoke=async()=>({ok:true,result:{content:[{type:'text',text:'Process 
 const withExtra=await api.addDiscoveredWorkspaces(api.listApprovedWorkspaces([win]),[win],listInvoke);
 assert.equal(withExtra.discovery_status,'complete'); assert.equal(withExtra.workspaces.length,6);
 assert.equal(withExtra.workspaces[5].name,'new-project'); assert.equal(withExtra.workspaces[5].git_verified,true);
+const worktree={...output,workspace:'feature-worktree',repository:'new-project',root:'/workspace/projects/feature-worktree',branch:'feature'};
+const worktreeInvoke=async()=>({ok:true,result:{content:[{type:'text',text:'Process 42 exited with code 0\\nOutput:\\n'+JSON.stringify(worktree)}]}});
+assert.equal((await api.sandboxProjectAction({project:'feature-worktree'},[win],worktreeInvoke)).status,'resolved');
+const worktreeList=async()=>({ok:true,result:{content:[{type:'text',text:'Process 42 exited with code 0\\nOutput:\\n'+JSON.stringify({status:'catalog',projects:[worktree],incomplete:false})}]}});
+const worktreeResult=await api.addDiscoveredWorkspaces(api.listApprovedWorkspaces([win]),[win],worktreeList);
+assert.equal(worktreeResult.discovery_status,'complete'); assert.equal(worktreeResult.workspaces[5].name,'feature-worktree');
+const detached={...worktree,branch:null,detached:true};
+const detachedInvoke=async()=>({ok:true,result:{content:[{type:'text',text:'Process 42 exited with code 0\\nOutput:\\n'+JSON.stringify(detached)}]}});
+assert.equal((await api.sandboxProjectAction({project:'feature-worktree'},[win],detachedInvoke)).detached,true);
+const fakeDetached={...detached,detached:false};
+const fakeInvoke=async()=>({ok:true,result:{content:[{type:'text',text:'Process 42 exited with code 0\\nOutput:\\n'+JSON.stringify(fakeDetached)}]}});
+assert.equal((await api.sandboxProjectAction({project:'feature-worktree'},[win],fakeInvoke)).status,'refused');
 const partial=await api.addDiscoveredWorkspaces(api.listApprovedWorkspaces([win]),[win],async()=>({ok:true,result:{content:[{type:'text',text:'Process started with PID 42 (shell: /bin/sh)'}]}}));
 assert.equal(partial.discovery_status,'pending'); assert.equal(partial.workspaces.length,5);
 const offline=await api.addDiscoveredWorkspaces(api.listApprovedWorkspaces([{...win,online:false}]),[{...win,online:false}],async()=>{throw Error('unexpected call')});

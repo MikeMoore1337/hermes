@@ -82,6 +82,42 @@ class SandboxProjectTests(unittest.TestCase):
         self.assertTrue(result['incomplete'])
         self.assertEqual(result['projects'], [])
 
+    def test_discovers_real_sibling_worktree_and_its_source_repository(self):
+        project = self.repository('main-project')
+        linked = self.root / 'feature-worktree'
+        subprocess.run(['git', '-C', str(project), 'worktree', 'add', '-b',
+                        'feature', str(linked)], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        row = inspect('feature-worktree', self.root)
+        self.assertEqual(row['repository'], 'main-project')
+        self.assertEqual(row['branch'], 'feature')
+        self.assertEqual(row['origin'], 'https://github.com/MikeMoore1337/main-project.git')
+        result = discover(self.root, seconds=10)
+        self.assertFalse(result['incomplete'])
+        self.assertEqual([row['workspace'] for row in result['projects']],
+                         ['feature-worktree', 'main-project'])
+
+    def test_worktree_with_wrong_backlink_is_rejected(self):
+        project = self.repository('main-project')
+        linked = self.root / 'feature-worktree'
+        subprocess.run(['git', '-C', str(project), 'worktree', 'add', '-b',
+                        'feature', str(linked)], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        metadata = project / '.git' / 'worktrees' / 'feature-worktree'
+        (metadata / 'gitdir').write_text(str(project / '.git'), encoding='utf-8')
+        with self.assertRaisesRegex(ProjectError, 'invalid_project'):
+            inspect('feature-worktree', self.root)
+
+    def test_detached_worktree_is_reported_without_inventing_a_branch(self):
+        project = self.repository('main-project')
+        linked = self.root / 'detached-worktree'
+        subprocess.run(['git', '-C', str(project), 'worktree', 'add', '--detach', str(linked)],
+                       check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        row = inspect('detached-worktree', self.root)
+        self.assertIsNone(row['branch'])
+        self.assertTrue(row['detached'])
+        self.assertFalse(discover(self.root, seconds=10)['incomplete'])
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -41,6 +41,11 @@ function isReady(d: Device | null): boolean {
 function norm(s: string): string {
   return s.trim().toLowerCase().replace(/_/g, ' ').replace(/\s+/g, ' ');
 }
+function validGitBranch(row: Record<string, unknown>): boolean {
+  return (typeof row.branch === 'string' && row.branch.length > 0 && row.branch.length <= 255
+          && (row.detached === undefined || row.detached === false))
+    || (row.branch === null && row.detached === true);
+}
 export function listApprovedWorkspaces(devices: unknown) {
   const d = ownerDevice(devices);
   if (!d) return { schema: 1, status: 'not_connected', workspaces: [] };
@@ -107,16 +112,18 @@ export async function addDiscoveredWorkspaces(catalog: Record<string, unknown>,
     if (!value || typeof value !== 'object' || Array.isArray(value)) { incomplete = true; continue; }
     const row = value as Record<string, unknown>;
     const name = row.workspace;
+    const repository = row.repository ?? name;
     if (typeof name !== 'string' || !PROJECT_NAME.test(name) || row.status !== 'verified'
-        || row.root !== `/workspace/projects/${name}` || row.origin !== `https://github.com/MikeMoore1337/${name}.git`
-        || typeof row.branch !== 'string' || !row.branch || row.branch.length > 255
+        || typeof repository !== 'string' || !PROJECT_NAME.test(repository)
+        || row.root !== `/workspace/projects/${name}` || row.origin !== `https://github.com/MikeMoore1337/${repository}.git`
+        || !validGitBranch(row)
         || typeof row.head !== 'string' || !/^[a-f0-9]{40}$/.test(row.head)) {
       incomplete = true; continue;
     }
     if (known.has(name)) continue;
     known.add(name);
     entries.push({ name, aliases: [name], root: row.root, origin: row.origin, branch: row.branch,
-      head: row.head, scope: 'sandbox', deviceId: d!.deviceId, device_status: 'online',
+      head: row.head, detached: row.detached === true, scope: 'sandbox', deviceId: d!.deviceId, device_status: 'online',
       git_verified: true, process_execution_verified: true, verification_required_before_write: true });
   }
   return { ...catalog, workspaces: entries, discovery_status: incomplete ? 'incomplete' : 'complete' };
@@ -166,9 +173,11 @@ export async function sandboxProjectAction(args: unknown,
     return { schema: 1, status: 'refused', reason };
   }
   if (outer.result.isError === true) return { schema: 1, status: 'refused', reason: 'sandbox_call_failed' };
+  const repository = data.repository ?? name;
   if (data.workspace !== name || data.root !== `/workspace/projects/${name}`
-      || data.origin !== `https://github.com/MikeMoore1337/${name}.git`
-      || typeof data.branch !== 'string' || typeof data.head !== 'string' || !/^[a-f0-9]{40}$/.test(data.head))
+      || typeof repository !== 'string' || !PROJECT_NAME.test(repository)
+      || data.origin !== `https://github.com/MikeMoore1337/${repository}.git`
+      || !validGitBranch(data) || typeof data.head !== 'string' || !/^[a-f0-9]{40}$/.test(data.head))
     return { schema: 1, status: 'refused', reason: 'sandbox_response_invalid' };
   return { schema: 1, ...data, status: 'resolved', deviceId: d!.deviceId,
     device_status: 'online', git_verified: true, process_execution_verified: true };
