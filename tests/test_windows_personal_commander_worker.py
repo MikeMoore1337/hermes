@@ -152,6 +152,18 @@ class PersonalWorkerTests(unittest.TestCase):
         self.assertEqual(calls[0][1], list(config.PERSONAL_ROOTS.values()))
         self.assertTrue(self.bridge.closed)
 
+    def test_yfc_profile_supplies_only_its_bound_root_to_the_bridge(self):
+        self.raw = config.prepare_config(Paired("windows-personal", DEVICE, TOKEN,
+            "wss://hermes.mikemoore.top/ws"), owner_sid=SID, release_sha="d" * 40,
+            ca=CA, bundle_sha256=BUNDLE, now=1000, profile="yfc-dev", seal=lambda *_a, **_k: b"s" * 64)
+        calls = []
+        self.args["bridge_factory"] = lambda _process, roots: calls.append(roots) or self.bridge
+        states = iter((True, False))
+        self.args["isolation_verified"] = lambda: next(states)
+        with patch.object(worker, "run_session", side_effect=PersonalTransportDenied("synthetic")):
+            self.assertEqual(worker.serve(self.raw, **self.args), "isolation_lost")
+        self.assertEqual(calls, [[r"D:\Pet-projects\yfc-dev"]])
+
     def test_failed_bridge_construction_closes_owned_isolated_process(self):
         class OwnedProcess:
             closed = False

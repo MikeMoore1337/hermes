@@ -53,6 +53,33 @@ class PersonalCommanderConfigTests(unittest.TestCase):
             with self.subTest(target=other.target), self.assertRaises(config.PersonalCommanderDenied):
                 self.prepare(other)
 
+    def test_yfc_profile_binds_only_the_owner_approved_dev_root(self):
+        calls = []
+        def seal(_token, **scope):
+            calls.append(scope)
+            return bytes.fromhex(scope["manifest_sha256"]) + b"s" * 32
+        raw = config.prepare_config(paired(), owner_sid=SID, release_sha=RELEASE,
+            ca=CA, bundle_sha256=BUNDLE, now=1000, profile="yfc-dev", seal=seal)
+        parsed = config.parse_config(raw)
+        self.assertEqual(parsed.profile, "yfc-dev")
+        self.assertEqual(config.roots_for(parsed.profile), (r"D:\Pet-projects\yfc-dev",))
+        self.assertNotEqual(calls[0]["manifest_sha256"], config.policy_digest(parsed.ca_sha256, BUNDLE))
+        def decrypt(ciphertext, **scope):
+            if ciphertext[:32] != bytes.fromhex(scope["manifest_sha256"]):
+                raise ValueError("wrong scope")
+            return TOKEN
+        self.assertEqual(config.unseal(parsed, owner_sid=SID, ca=CA, bundle_sha256=BUNDLE, decrypt=decrypt), TOKEN)
+        altered = json.loads(raw)
+        altered["schema"] = config.SCHEMA
+        with self.assertRaises(config.PersonalCommanderDenied):
+            config.unseal(config.parse_config(config._encode(altered)), owner_sid=SID, ca=CA,
+                          bundle_sha256=BUNDLE, decrypt=decrypt)
+
+    def test_unknown_profile_is_denied(self):
+        with self.assertRaises(config.PersonalCommanderDenied):
+            config.prepare_config(paired(), owner_sid=SID, release_sha=RELEASE, ca=CA,
+                bundle_sha256=BUNDLE, now=1000, profile="arbitrary", seal=lambda *_a, **_k: SEALED)
+
     def test_wrong_owner_ca_or_bundle_never_calls_decrypt(self):
         parsed = config.parse_config(self.prepare())
         for owner, ca, bundle in (("S-1-5-99", CA, BUNDLE),
@@ -95,10 +122,20 @@ class PersonalCommanderConfigTests(unittest.TestCase):
             dpapi.unseal_for_current_user(parsed.sealed_bearer,
                 manifest_sha256=config.policy_digest(parsed.ca_sha256, BUNDLE), device_id=DEVICE)
 
+    def _real_yfc_profile_dpapi_rejects_legacy_scope(self):
+        raw = config.prepare_config(paired(), owner_sid=SID, release_sha=RELEASE,
+            ca=CA, bundle_sha256=BUNDLE, now=1000, profile="yfc-dev")
+        parsed = config.parse_config(raw)
+        self.assertEqual(config.unseal(parsed, owner_sid=SID, ca=CA, bundle_sha256=BUNDLE), TOKEN)
+        with self.assertRaises(config.PersonalCommanderDenied):
+            config.unseal(replace(parsed, profile="legacy"), owner_sid=SID, ca=CA, bundle_sha256=BUNDLE)
+
 
 if os.name == "nt":
     PersonalCommanderConfigTests.test_real_current_user_dpapi_round_trip_and_domain_separation = (
         PersonalCommanderConfigTests._real_current_user_dpapi_round_trip_and_domain_separation)
+    PersonalCommanderConfigTests.test_real_yfc_profile_dpapi_rejects_legacy_scope = (
+        PersonalCommanderConfigTests._real_yfc_profile_dpapi_rejects_legacy_scope)
 
 if __name__ == "__main__":
     unittest.main()
