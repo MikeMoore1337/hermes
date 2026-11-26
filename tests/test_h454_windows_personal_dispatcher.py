@@ -134,7 +134,7 @@ class PersonalDispatcherTests(unittest.TestCase):
                                           str(link), str(outside)], capture_output=True,
                                          timeout=10, creationflags=subprocess.CREATE_NO_WINDOW)
                 if created.returncode != 0:
-                    self.skipTest("directory link creation unavailable")
+                    self.fail("directory link creation unavailable")
             target = link / "foreign.txt"
             frames = [{"type": "initialize", "roots": [str(project)]},
                       {"type": "call", "id": "link", "name": "write_file",
@@ -144,7 +144,7 @@ class PersonalDispatcherTests(unittest.TestCase):
             self.assertFalse((outside / "foreign.txt").exists())
 
 
-if os.name != "nt" or not shutil.which("node"):
+if os.name != "nt":
     del PersonalDispatcherTests
 
 if __name__ == "__main__":

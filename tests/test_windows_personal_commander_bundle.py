@@ -57,7 +57,7 @@ class PersonalBundleTests(unittest.TestCase):
                                           str(root / "redirect"), str(target)], capture_output=True,
                                          timeout=10, creationflags=subprocess.CREATE_NO_WINDOW)
                 if created.returncode != 0:
-                    self.skipTest("directory link creation unavailable")
+                    self.fail("directory link creation unavailable")
             original_lstat = Path.lstat
             def confined_lstat(path):
                 if path == target or target in path.parents:
