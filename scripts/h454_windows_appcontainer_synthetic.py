@@ -321,6 +321,23 @@ try:
                     "pid": int(match.group(1)), "input": "synthetic", "timeout_ms": 3000})
                 terminated = manager.dispatch("force_terminate", {"pid": int(second_match.group(1))})
                 out["session_terminated"] = not terminated["isError"]
+                revoke = manager.dispatch("start_process", {
+                    "command": 'set /p H454=H454_REVOKE & type "' + str(allowed_file) + '"',
+                    "timeout_ms": 3000})
+                revoke_text = revoke["content"][0]["text"]
+                revoke_match = re.search(r"Process ([0-9]+) ", revoke_text)
+                if revoke["isError"] or not revoke_match or "H454_REVOKE" not in revoke_text:
+                    raise RuntimeError("REVOCATION_SESSION_START_FAILED")
+                revoke_acl = subprocess.run([os.path.join(os.environ["WINDIR"], "System32", "icacls.exe"),
+                    str(allowed), "/remove:g", "*" + sid_text], capture_output=True,
+                    timeout=10, creationflags=subprocess.CREATE_NO_WINDOW)
+                if revoke_acl.returncode:
+                    raise RuntimeError("SYNTHETIC_REVOKE_FAILED")
+                revoked = manager.dispatch("interact_with_process", {
+                    "pid": int(revoke_match.group(1)), "input": "synthetic", "timeout_ms": 3000})
+                remaining_dacl = security_descriptor(allowed_file, 4)
+                out["revocation_denied"] = (bool(remaining_dacl) and sid_text not in remaining_dacl
+                                             and revoked["isError"])
                 out["process_started"] = not finished["isError"]
                 out["is_appcontainer"] = out["process_started"]
                 out["exit_code"] = 0 if out["process_started"] else 1
@@ -493,5 +510,6 @@ if (out.get("exit_code") != 0 or any(out.get(name) is not True for name in requi
     or (sys.argv[1:] in (["--broker-test"], ["--broker-command-test"]) and out.get("exit_259") is not True)
     or (sys.argv[1:] == ["--sessions-test"] and
         any(out.get(name) is not True for name in ("session_interaction", "nonzero_is_error",
-                                                   "multiple_sessions", "session_terminated")))):
+                                                   "multiple_sessions", "session_terminated",
+                                                   "revocation_denied")))):
     raise SystemExit(1)
