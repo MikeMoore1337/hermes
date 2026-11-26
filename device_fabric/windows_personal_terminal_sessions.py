@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import codecs
 import os
+import threading
 import time
 from typing import Callable
 
@@ -38,6 +39,9 @@ class _Session:
         self.finalized = False
         self.cursor = 0
         self.overflow = False
+        self.failed = False
+        self.lock = threading.RLock()
+        self.stop = threading.Event()
 
 
 class PersonalTerminalSessions:
@@ -72,23 +76,48 @@ class PersonalTerminalSessions:
             session.bytes_seen += len(chunk)
             session.data += session.decoder.decode(chunk, final=False)
 
+    def _drain(self, session: _Session) -> None:
+        """Drain bounded output even when the client is not polling."""
+        while not session.stop.is_set():
+            try:
+                with session.lock:
+                    if session.stop.is_set() or session.overflow:
+                        return
+                    self._collect(session)
+                    if session.terminal.poll() is not None:
+                        self._collect(session)
+                        if not session.finalized:
+                            session.data += session.decoder.decode(b"", final=True)
+                            session.finalized = True
+                        return
+            except Exception:
+                with session.lock:
+                    session.failed = True
+                    session.terminal.close()
+                return
+            session.stop.wait(0.05)
+
     def _wait(self, session: _Session, timeout_ms: int) -> int | None:
         deadline = self._clock() + timeout_ms / 1000
-        previous = len(session.data)
-        quiet_until = None
+        with session.lock:
+            previous = len(session.data)
+            quiet_until = self._clock() + 0.2 if session.cursor < previous else None
         while True:
-            self._collect(session)
-            status = session.terminal.poll()
-            if status is not None:
+            with session.lock:
+                if session.failed:
+                    raise ValueError()
                 self._collect(session)
-                if not session.finalized:
-                    session.data += session.decoder.decode(b"", final=True)
-                    session.finalized = True
-                return status
-            now = self._clock()
-            if len(session.data) > previous:
-                quiet_until = now + 0.2
-                previous = len(session.data)
+                status = session.terminal.poll()
+                if status is not None:
+                    self._collect(session)
+                    if not session.finalized:
+                        session.data += session.decoder.decode(b"", final=True)
+                        session.finalized = True
+                    return status
+                now = self._clock()
+                if len(session.data) > previous:
+                    quiet_until = now + 0.2
+                    previous = len(session.data)
             if now >= deadline or (quiet_until is not None and now >= quiet_until):
                 return None
             self._pause(min(0.05, max(0.0, deadline - now)))
@@ -99,19 +128,18 @@ class PersonalTerminalSessions:
         return value, self._sessions[value]
 
     def _output(self, session: _Session, offset: int, length: int) -> str:
-        if offset == 0:
-            pending = session.data[session.cursor:]
-            lines = pending.splitlines(keepends=True)
-            # JSON ASCII encoding can expand an astral character to 12 bytes;
-            # bound each reply independently of the larger retained buffer.
-            selected = "".join(lines[:length])[:MAX_RESPONSE_CHARS]
-            # Advance only what was returned, including line endings.
-            session.cursor += len(selected)
-            session.cursor = min(session.cursor, len(session.data))
-            return selected
-        lines = session.data.splitlines(keepends=True)
-        start = max(0, len(lines) + offset) if offset < 0 else offset
-        return "".join(lines[start:start + length])[:MAX_RESPONSE_CHARS]
+        with session.lock:
+            if offset == 0:
+                pending = session.data[session.cursor:]
+                lines = pending.splitlines(keepends=True)
+                # JSON ASCII encoding can expand an astral character to 12 bytes;
+                # bound each reply independently of the larger retained buffer.
+                selected = "".join(lines[:length])[:MAX_RESPONSE_CHARS]
+                session.cursor += len(selected)
+                return selected
+            lines = session.data.splitlines(keepends=True)
+            start = max(0, len(lines) + offset) if offset < 0 else offset
+            return "".join(lines[start:start + length])[:MAX_RESPONSE_CHARS]
 
     def dispatch(self, name: str, args: dict) -> dict:
         try:
@@ -120,8 +148,11 @@ class PersonalTerminalSessions:
             if name == "list_sessions":
                 if args:
                     raise ValueError()
-                active = [str(pid) for pid, session in self._sessions.items()
-                          if not session.overflow and session.terminal.poll() is None]
+                active = []
+                for pid, session in self._sessions.items():
+                    with session.lock:
+                        if not session.overflow and not session.failed and session.terminal.poll() is None:
+                            active.append(str(pid))
                 return _result("Active sessions: " + ", ".join(active) if active else "No active sessions")
             if name == "start_process":
                 if set(args) - {"command", "timeout_ms", "shell", "origin", "verbose_timing"}:
@@ -131,15 +162,20 @@ class PersonalTerminalSessions:
                     or not _integer(timeout, 0, MAX_WAIT_MS)
                     or args.get("shell") not in (None, "cmd", "cmd.exe")):
                     raise ValueError()
-                if sum(not item.overflow and item.terminal.poll() is None
-                       for item in self._sessions.values()) >= MAX_SESSIONS:
+                active_count = 0
+                for item in self._sessions.values():
+                    with item.lock:
+                        active_count += int(not item.overflow and not item.failed and item.terminal.poll() is None)
+                if active_count >= MAX_SESSIONS:
                     raise ValueError()
                 if len(self._sessions) >= MAX_RETAINED:
                     for old_pid, old in self._sessions.items():
-                        if old.overflow or old.terminal.poll() is not None:
-                            old.terminal.close()
-                            del self._sessions[old_pid]
-                            break
+                        with old.lock:
+                            if old.overflow or old.failed or old.terminal.poll() is not None:
+                                old.stop.set()
+                                old.terminal.close()
+                                del self._sessions[old_pid]
+                                break
                     else:
                         raise ValueError()
                 terminal = self._factory(self._sid, self._root, command=command)
@@ -149,11 +185,13 @@ class PersonalTerminalSessions:
                     raise ValueError()
                 session = _Session(terminal, self._encoding)
                 self._sessions[pid] = session
+                threading.Thread(target=self._drain, args=(session,), daemon=True).start()
                 try:
                     status = self._wait(session, timeout)
                     output = self._output(session, 0, 1000)
                 except Exception:
                     del self._sessions[pid]
+                    session.stop.set()
                     terminal.close()
                     raise
                 state = "running" if status is None else "exited with code " + str(status)
@@ -162,10 +200,12 @@ class PersonalTerminalSessions:
             if name == "force_terminate":
                 if set(args) != {"pid"}:
                     raise ValueError()
-                session.terminal.close()
+                session.stop.set()
+                with session.lock:
+                    session.terminal.close()
                 del self._sessions[pid]
                 return _result(f"Terminated session {pid}")
-            if session.overflow:
+            if session.overflow or session.failed:
                 raise ValueError()
             if name == "interact_with_process":
                 if set(args) - {"pid", "input", "timeout_ms", "wait_for_prompt", "verbose_timing"}:
@@ -206,7 +246,9 @@ class PersonalTerminalSessions:
         try:
             for session in self._sessions.values():
                 try:
-                    session.terminal.close()
+                    session.stop.set()
+                    with session.lock:
+                        session.terminal.close()
                 except Exception:
                     pass
         finally:

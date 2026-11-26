@@ -329,7 +329,7 @@ try:
                     image.seek(-2, 1)
                     image.write(b"\x02\x00")
                 child_js = "console.log('H454_CHILD_PID='+process.pid);setInterval(()=>{},60000)"
-                child_command = '"' + str(gui) + '" -e "' + child_js + '"'
+                child_command = 'start "" /b "' + str(gui) + '" -e "' + child_js + '"'
                 child = manager.dispatch("start_process", {"command": child_command, "timeout_ms": 5000})
                 child_text = child["content"][0]["text"]
                 parent_match = re.search(r"Process ([0-9]+) ", child_text)
@@ -342,6 +342,9 @@ try:
                     if not child_handle:
                         raise RuntimeError("SYNTHETIC_CHILD_HANDLE_FAILED")
                     try:
+                        parent = manager._sessions[int(parent_match.group(1))].terminal
+                        out["exited_shell_child_tracked"] = (kernel.WaitForSingleObject(parent._process, 0) == 0
+                                                             and parent.poll() is None)
                         stopped = manager.dispatch("force_terminate", {"pid": int(parent_match.group(1))})
                         out["child_job_terminated"] = (not stopped["isError"] and
                                                        kernel.WaitForSingleObject(child_handle, 5000) == 0)
@@ -350,6 +353,19 @@ try:
                             kernel.TerminateProcess(child_handle, 1)
                             kernel.WaitForSingleObject(child_handle, 5000)
                         kernel.CloseHandle(child_handle)
+                bulk = manager.dispatch("start_process", {
+                    "command": "for /L %i in (1,1,2000) do @echo H454_012345678901234567890123456789",
+                    "timeout_ms": 0})
+                bulk_match = re.search(r"Process ([0-9]+) ", bulk["content"][0]["text"])
+                if bulk["isError"] or not bulk_match:
+                    raise RuntimeError("BULK_SESSION_START_FAILED")
+                bulk_session = manager._sessions[int(bulk_match.group(1))]
+                deadline = time.monotonic() + 10
+                while time.monotonic() < deadline and bulk_session.terminal.poll() is None:
+                    time.sleep(0.05)
+                with bulk_session.lock:
+                    out["background_drain_completed"] = (bulk_session.terminal.poll() == 0
+                        and bulk_session.bytes_seen > 65536 and not bulk_session.overflow)
                 finished = manager.dispatch("start_process", {"command": shell_command, "timeout_ms": 3000})
                 failed = manager.dispatch("start_process", {"command": "exit /b 7", "timeout_ms": 3000})
                 started = manager.dispatch("start_process", {
@@ -575,5 +591,6 @@ if (out.get("exit_code") != 0 or any(out.get(name) is not True for name in requi
         any(out.get(name) is not True for name in ("session_interaction", "nonzero_is_error",
                                                    "multiple_sessions", "session_terminated",
                                                    "revocation_denied", "local_encoding_roundtrip",
-                                                   "child_started", "child_job_terminated")))):
+                                                   "child_started", "child_job_terminated",
+                                                   "exited_shell_child_tracked", "background_drain_completed")))):
     raise SystemExit(1)

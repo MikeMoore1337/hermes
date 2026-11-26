@@ -51,6 +51,13 @@ class _SecurityAttributes(ctypes.Structure):
                 ("inherit", wintypes.BOOL)]
 
 
+class _Accounting(ctypes.Structure):
+    _fields_ = [("user_time", ctypes.c_int64), ("kernel_time", ctypes.c_int64),
+                ("period_user", ctypes.c_int64), ("period_kernel", ctypes.c_int64),
+                ("faults", wintypes.DWORD), ("total", wintypes.DWORD),
+                ("active", wintypes.DWORD), ("terminated", wintypes.DWORD)]
+
+
 def _apis():
     if os.name != "nt":
         raise TerminalDenied("appcontainer_terminal_denied")
@@ -71,6 +78,8 @@ def _apis():
     k.CreateJobObjectW.restype = wintypes.HANDLE
     k.SetInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
     k.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+    k.QueryInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p,
+                                             wintypes.DWORD, ctypes.c_void_p]
     k.ResumeThread.argtypes = [wintypes.HANDLE]
     k.ResumeThread.restype = wintypes.DWORD
     k.CloseHandle.argtypes = [wintypes.HANDLE]
@@ -237,7 +246,7 @@ class AppContainerTerminal:
             raise TerminalDenied("appcontainer_terminal_denied")
         available = wintypes.DWORD()
         if not self._k.PeekNamedPipe(self._output, None, 0, None, ctypes.byref(available), None):
-            if self.poll() is not None:
+            if ctypes.get_last_error() in (109, 232) or self.poll() is not None:
                 return b""
             raise TerminalDenied("appcontainer_terminal_denied")
         count = min(available.value, MAX_READ)
@@ -256,6 +265,12 @@ class AppContainerTerminal:
             return None
         if state != 0:
             raise TerminalDenied("appcontainer_terminal_denied")
+        accounting = _Accounting()
+        if not self._k.QueryInformationJobObject(self._job, 1, ctypes.byref(accounting),
+                                                 ctypes.sizeof(accounting), None):
+            raise TerminalDenied("appcontainer_terminal_denied")
+        if accounting.active:
+            return None
         code = wintypes.DWORD()
         if not self._k.GetExitCodeProcess(self._process, ctypes.byref(code)):
             raise TerminalDenied("appcontainer_terminal_denied")

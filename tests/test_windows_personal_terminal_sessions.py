@@ -1,5 +1,6 @@
 """Terminal session behavior with disposable, deterministic process doubles."""
 import unittest
+import time
 
 from device_fabric import windows_personal_terminal_sessions as sessions
 
@@ -94,11 +95,23 @@ class TerminalSessionsTests(unittest.TestCase):
         terminal = self.start()
         terminal.chunks = [b"x" * 65536 for _ in range(9)]
         result = self.broker.dispatch("read_process_output", {"pid": terminal.pid, "timeout_ms": 0})
-        self.assertFalse(result["isError"])
-        result = self.broker.dispatch("read_process_output", {"pid": terminal.pid, "timeout_ms": 0})
+        if not result["isError"]:
+            result = self.broker.dispatch("read_process_output", {"pid": terminal.pid, "timeout_ms": 0})
         self.assertTrue(result["isError"])
         self.assertTrue(terminal.closed)
         self.assertFalse(self.broker.dispatch("force_terminate", {"pid": terminal.pid})["isError"])
+
+    def test_background_drains_output_without_a_client_read(self):
+        terminal = self.start()
+        terminal.chunks = [b"x" * 65536]
+        session = self.broker._sessions[terminal.pid]
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            with session.lock:
+                if session.bytes_seen == 65536:
+                    break
+            time.sleep(0.01)
+        self.assertEqual(session.bytes_seen, 65536)
 
     def test_finished_processes_do_not_exhaust_active_session_limit(self):
         for _ in range(sessions.MAX_RETAINED + 1):
