@@ -9,6 +9,7 @@ function Require-H454([bool]$Condition,[string]$Reason){if(-not $Condition){thro
 $script:fakeCandidates=@{
     'hermes-h454-broker-candidate'=[pscustomobject]@{Id=('1'*64)}
     'hermes-h454-process-candidate'=[pscustomobject]@{Id=('2'*64)}
+    'hermes-h454-terminal-candidate'=[pscustomobject]@{Id=('3'*64)}
 }
 function Find-H454RecoveryObject($Kind,$Name,$DockerSha256){
     Require-H454 ($Kind -ceq 'container' -and $script:fakeCandidates.ContainsKey($Name)) 'FIXTURE_CANDIDATE_LOOKUP'
@@ -18,7 +19,13 @@ $selected=Find-H454BrokerTrialCandidate ('1'*64) ('A'*64)
 Require-H454 ($selected.Name -ceq 'hermes-h454-broker-candidate') 'FIXTURE_LEGACY_SELECT'
 $selected=Find-H454BrokerTrialCandidate ('2'*64) ('A'*64)
 Require-H454 ($selected.Name -ceq 'hermes-h454-process-candidate') 'FIXTURE_PROCESS_SELECT'
-$refused=$false;try{$null=Find-H454BrokerTrialCandidate ('3'*64) ('A'*64)}catch{$refused=$true}
+$selected=Find-H454BrokerTrialCandidate ('3'*64) ('A'*64)
+Require-H454 ($selected.Name -ceq 'hermes-h454-terminal-candidate') 'FIXTURE_TERMINAL_SELECT'
+$script:fakeCandidates['hermes-h454-terminal-candidate'].Id='2'*64
+$refused=$false;try{$null=Find-H454BrokerTrialCandidate ('2'*64) ('A'*64)}catch{$refused=$true}
+Require-H454 $refused 'FIXTURE_TERMINAL_DUPLICATE'
+$script:fakeCandidates['hermes-h454-terminal-candidate'].Id='3'*64
+$refused=$false;try{$null=Find-H454BrokerTrialCandidate ('4'*64) ('A'*64)}catch{$refused=$true}
 Require-H454 $refused 'FIXTURE_UNKNOWN_CANDIDATE'
 $script:fakeCandidates['hermes-h454-process-candidate'].Id='1'*64
 $refused=$false;try{$null=Find-H454BrokerTrialCandidate ('1'*64) ('A'*64)}catch{$refused=$true}
