@@ -107,7 +107,7 @@ function Disable-H454CandidatePromotion([hashtable]$RestoreArgs,[string]$Candida
 
 function Find-H454BrokerTrialCandidate([string]$CandidateId,[string]$DockerSha256) {
     Require-H454 ($CandidateId -cmatch '^[a-f0-9]{64}$') 'H454_TRIAL_IDENTITY'
-    $candidateMatches=@(foreach($name in @('hermes-h454-broker-candidate','hermes-h454-process-candidate')){
+    $candidateMatches=@(foreach($name in @('hermes-h454-broker-candidate','hermes-h454-process-candidate','hermes-h454-terminal-candidate')){
         $item=Find-H454RecoveryObject 'container' $name $DockerSha256
         if($null -ne $item -and $item.Id -ceq $CandidateId){[pscustomobject]@{Name=$name;Container=$item}}
     })

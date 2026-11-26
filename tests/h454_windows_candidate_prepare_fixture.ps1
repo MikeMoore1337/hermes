@@ -15,7 +15,7 @@ $tmpfs=[pscustomobject]@{'/run/brc'='rw,nosuid,nodev,noexec,uid=65534,gid=65534,
 $mount=[pscustomobject]@{Type='bind';Destination='/workspace';RW=$true}
 $script:original=[pscustomobject]@{Id=$script:agentId;Config=[pscustomobject]@{Labels=[pscustomobject]@{'com.hermes.scope'='fixture'}};
     State=[pscustomobject]@{Running=$true};HostConfig=[pscustomobject]@{Tmpfs=$tmpfs};Mounts=@($mount)}
-$script:candidate=$null;$script:processCandidate=$null;$script:creates=0;$script:checks=0;$script:failAt=0;$script:ambiguous=$false
+$script:candidate=$null;$script:processCandidate=$null;$script:terminalCandidate=$null;$script:creates=0;$script:checks=0;$script:failAt=0;$script:ambiguous=$false
 function Get-H454OriginalRestoreState {
     param($StateDir,$Lock,$MarkerSha256,$SafetyCheck,$Launcher,$LauncherSha256,$AgentId,$AgentImage,$AgentName,
         $OldImage,$BrokerImage,$CaSha256,$DockerSha256)
@@ -32,8 +32,9 @@ function Get-H454CandidateImage($Image,$DockerSha256){
     throw 'FIXTURE_IMAGE'
 }
 function Find-H454RecoveryObject($Kind,$Name,$DockerSha256){
-    Require-H454 ($Kind -ceq 'container' -and $Name -cin @('hermes-h454-broker-candidate','hermes-h454-process-candidate')) 'FIXTURE_LOOKUP'
+    Require-H454 ($Kind -ceq 'container' -and $Name -cin @('hermes-h454-broker-candidate','hermes-h454-process-candidate','hermes-h454-terminal-candidate')) 'FIXTURE_LOOKUP'
     if($Name -ceq 'hermes-h454-process-candidate'){return $script:processCandidate}
+    if($Name -ceq 'hermes-h454-terminal-candidate'){return $script:terminalCandidate}
     return $script:candidate
 }
 function Invoke-H454RecoveryDocker {
@@ -43,7 +44,7 @@ function Invoke-H454RecoveryDocker {
         $Arguments -ccontains $script:agentId -and $Arguments -ccontains $script:imageId) 'FIXTURE_CREATE_ARGUMENTS'
     $script:creates++
     $index=[Array]::IndexOf($Arguments,'--name');Require-H454 ($index -ge 0 -and $index+1 -lt $Arguments.Count) 'FIXTURE_NAME'
-    $name=$Arguments[$index+1];$id=if($name -ceq 'hermes-h454-process-candidate'){'4'*64}else{$script:candidateId}
+    $name=$Arguments[$index+1];$id=if($name -ceq 'hermes-h454-terminal-candidate'){'5'*64}elseif($name -ceq 'hermes-h454-process-candidate'){'4'*64}else{$script:candidateId}
     $created=[pscustomobject]@{Id=$id;Name=('/'+$name);Image=$script:imageId;
         State=[pscustomobject]@{Running=$false;Status='created';Paused=$false;Restarting=$false;Dead=$false};
         Config=[pscustomobject]@{User='65534:65534';WorkingDir='/workspace';Entrypoint=$config.Entrypoint;Cmd=$config.Cmd;Env=$config.Env;
@@ -55,7 +56,7 @@ function Invoke-H454RecoveryDocker {
             Tmpfs=(ConvertFrom-Json -InputObject (ConvertTo-Json -Compress -InputObject $tmpfs))};
         NetworkSettings=[pscustomobject]@{Networks=[pscustomobject]@{bridge=[pscustomobject]@{NetworkID=$script:bridgeId;Aliases=@()}}};
         Mounts=@([pscustomobject]@{Type='bind';Destination='/workspace';RW=$true})}
-    if($name -ceq 'hermes-h454-process-candidate'){$script:processCandidate=$created}else{$script:candidate=$created}
+    if($name -ceq 'hermes-h454-terminal-candidate'){$script:terminalCandidate=$created}elseif($name -ceq 'hermes-h454-process-candidate'){$script:processCandidate=$created}else{$script:candidate=$created}
     if($script:ambiguous){$script:ambiguous=$false;throw 'H454_DOCKER_AMBIGUOUS'}
     return [pscustomobject]@{Code=0;Output=$id}
 }
@@ -165,4 +166,15 @@ foreach($bad in @('different','malformed','extra')){
     $script:processCandidate.Config.Labels.'org.opencontainers.image.revision'=$revision
     $script:processCandidate.Config.Labels.PSObject.Properties.Remove('foreign.label')
 }
+$script:image.Config.PSObject.Properties.Remove('Labels')
+$before=$script:creates
+$refused=$false;try{$null=Prepare-H454BrokerCandidate $params $script:imageId -ProcessCandidate -TerminalCandidate}catch{$refused=$true}
+Require-H454 ($refused -and $script:creates -eq $before) 'FIXTURE_CANDIDATE_MODE'
+$preview=Prepare-H454BrokerCandidate $params $script:imageId -TerminalCandidate
+Require-H454 ($preview.Status -ceq 'PREFLIGHT' -and -not $preview.Present) 'FIXTURE_TERMINAL_PREVIEW'
+$created=Prepare-H454BrokerCandidate $params $script:imageId -TerminalCandidate -Apply -OwnerApproved
+Require-H454 ($created.CandidateId -ceq ('5'*64) -and $script:creates -eq $before+1 -and
+    $script:processCandidate.Id -ceq ('4'*64) -and $script:terminalCandidate.Name -ceq '/hermes-h454-terminal-candidate') 'FIXTURE_TERMINAL_RETAINED'
+$again=Prepare-H454BrokerCandidate $params $script:imageId -TerminalCandidate -Apply -OwnerApproved
+Require-H454 ($again.CandidateId -ceq ('5'*64) -and $script:creates -eq $before+1) 'FIXTURE_TERMINAL_IDEMPOTENT'
 'PS51_SYNTHETIC_CANDIDATE_PREPARE=PASS'
