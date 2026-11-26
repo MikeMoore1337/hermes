@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import struct
 import subprocess
 import sys
 import time
@@ -96,13 +97,21 @@ process = PROCESSINFO()
 out = {"sid_derived": False, "process_started": False, "exit_code": None}
 profile_name = "HermesSyntheticProbe" + uuid.uuid4().hex
 profile_created = False
-test_root = allowed = private = allowed_file = private_file = allowed_output = private_output = node_copy = diagnostic = stdio_file = None
+test_root = allowed = private = allowed_file = private_file = allowed_output = private_output = node_copy = diagnostic = stdio_file = gui = None
 pipe_handles = []
 interactive_test = False
 
 
 class _BrokerComplete(Exception):
     pass
+
+
+def _encodable(value, encoding):
+    try:
+        value.encode(encoding)
+        return True
+    except UnicodeEncodeError:
+        return False
 
 
 def security_descriptor(path, requested):
@@ -155,17 +164,21 @@ def synthetic_token_diagnostic(token, path):
 
 
 try:
-    if sys.argv[1:] not in (["--interactive-test"], ["--broker-test"], ["--node-test"], ["--node-child-test"]):
+    if sys.argv[1:] not in (["--interactive-test"], ["--broker-test"], ["--broker-command-test"], ["--sessions-test"],
+                            ["--node-test"], ["--node-child-test"]):
         raise ValueError("INVALID_SYNTHETIC_TEST")
     session = wintypes.DWORD()
     if kernel.ProcessIdToSessionId(kernel.GetCurrentProcessId(), ctypes.byref(session)):
         out["session_zero"] = session.value == 0
     interactive_test = sys.argv[1:] == ["--interactive-test"]
     broker_test = sys.argv[1:] == ["--broker-test"]
+    broker_command_test = sys.argv[1:] == ["--broker-command-test"]
+    sessions_test = sys.argv[1:] == ["--sessions-test"]
     shell_test = sys.argv[1:] == ["--node-shell-test"]
     child_test = sys.argv[1:] == ["--node-child-test"] or shell_test
     node_test = sys.argv[1:] == ["--node-test"] or child_test
-    filesystem_test = sys.argv[1:] == ["--filesystem-test"] or node_test or interactive_test or broker_test
+    filesystem_test = (sys.argv[1:] == ["--filesystem-test"] or node_test or interactive_test
+                       or broker_test or broker_command_test or sessions_test)
     if sys.argv[1:] == ["--temporary-profile"] or filesystem_test:
         result = userenv.CreateAppContainerProfile(profile_name, "Hermes synthetic probe",
             "Temporary isolated process test", None, 0, ctypes.byref(sid))
@@ -223,6 +236,11 @@ try:
             raise RuntimeError("SYNTHETIC_INTEGRITY_FAILED")
         allowed.mkdir()
         private.mkdir()
+        # These files predate the AppContainer grant, like an existing project.
+        allowed_file, private_file = allowed / "allowed.txt", private / "sentinel.txt"
+        allowed_output, private_output = allowed / "written.txt", private / "attempted.txt"
+        allowed_file.write_text("synthetic-allowed", encoding="ascii")
+        private_file.write_text("synthetic-private", encoding="ascii")
         text_sid = wintypes.LPWSTR()
         if not adv.ConvertSidToStringSidW(sid, ctypes.byref(text_sid)):
             raise OSError(ctypes.get_last_error(), "ConvertSidToStringSidW")
@@ -236,10 +254,6 @@ try:
                     raise RuntimeError("SYNTHETIC_ACL_FAILED")
         finally:
             kernel.LocalFree(ctypes.cast(text_sid, ctypes.c_void_p))
-        allowed_file, private_file = allowed / "allowed.txt", private / "sentinel.txt"
-        allowed_output, private_output = allowed / "written.txt", private / "attempted.txt"
-        allowed_file.write_text("synthetic-allowed", encoding="ascii")
-        private_file.write_text("synthetic-private", encoding="ascii")
         dacl = security_descriptor(allowed_file, 4)
         out["allowed_file_acl_has_sid"] = sid_text in dacl if dacl else None
         label = security_descriptor(allowed_file, 16)
@@ -291,26 +305,151 @@ try:
                       + "c.status>0&&c.status<20?c.status:26)")
             js = "Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,200);" + js
             command_text = subprocess.list2cmdline([executable, "-e", js])
-        if broker_test:
+        if sessions_test:
+            sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+            from device_fabric.windows_personal_terminal_sessions import PersonalTerminalSessions
+            manager = PersonalTerminalSessions(int(sid.value), str(allowed))
+            try:
+                # Give a disposable Node copy the GUI subsystem so this child
+                # cannot create a console window on the developer's desktop.
+                node = shutil.which("node")
+                if not node:
+                    raise RuntimeError("NODE_UNAVAILABLE")
+                gui = allowed / "synthetic-gui.exe"
+                shutil.copyfile(node, gui)
+                with gui.open("r+b") as image:
+                    image.seek(0x3c)
+                    pe = struct.unpack("<I", image.read(4))[0]
+                    image.seek(pe)
+                    if image.read(4) != b"PE\0\0":
+                        raise RuntimeError("SYNTHETIC_PE_INVALID")
+                    image.seek(pe + 4 + 20 + 68)
+                    if image.read(2) != b"\x03\x00":
+                        raise RuntimeError("SYNTHETIC_SUBSYSTEM_INVALID")
+                    image.seek(-2, 1)
+                    image.write(b"\x02\x00")
+                child_js = "console.log('H454_CHILD_PID='+process.pid);setInterval(()=>{},60000)"
+                child_command = 'start "" /b "' + str(gui) + '" -e "' + child_js + '"'
+                child = manager.dispatch("start_process", {"command": child_command, "timeout_ms": 5000})
+                child_text = child["content"][0]["text"]
+                parent_match = re.search(r"Process ([0-9]+) ", child_text)
+                child_match = re.search(r"H454_CHILD_PID=([0-9]+)", child_text)
+                out["child_started"] = bool(parent_match and child_match and not child["isError"])
+                if out["child_started"]:
+                    kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+                    kernel.OpenProcess.restype = wintypes.HANDLE
+                    child_handle = kernel.OpenProcess(0x100001, False, int(child_match.group(1)))
+                    if not child_handle:
+                        raise RuntimeError("SYNTHETIC_CHILD_HANDLE_FAILED")
+                    try:
+                        parent = manager._sessions[int(parent_match.group(1))].terminal
+                        out["exited_shell_child_tracked"] = (kernel.WaitForSingleObject(parent._process, 0) == 0
+                                                             and parent.poll() is None)
+                        stopped = manager.dispatch("force_terminate", {"pid": int(parent_match.group(1))})
+                        out["child_job_terminated"] = (not stopped["isError"] and
+                                                       kernel.WaitForSingleObject(child_handle, 5000) == 0)
+                    finally:
+                        if kernel.WaitForSingleObject(child_handle, 0) != 0:
+                            kernel.TerminateProcess(child_handle, 1)
+                            kernel.WaitForSingleObject(child_handle, 5000)
+                        kernel.CloseHandle(child_handle)
+                bulk = manager.dispatch("start_process", {
+                    "command": "for /L %i in (1,1,2000) do @echo H454_012345678901234567890123456789",
+                    "timeout_ms": 0})
+                bulk_match = re.search(r"Process ([0-9]+) ", bulk["content"][0]["text"])
+                if bulk["isError"] or not bulk_match:
+                    raise RuntimeError("BULK_SESSION_START_FAILED")
+                bulk_session = manager._sessions[int(bulk_match.group(1))]
+                deadline = time.monotonic() + 10
+                while time.monotonic() < deadline and bulk_session.terminal.poll() is None:
+                    time.sleep(0.05)
+                with bulk_session.lock:
+                    out["background_drain_completed"] = (bulk_session.terminal.poll() == 0
+                        and bulk_session.bytes_seen > 65536 and not bulk_session.overflow)
+                finished = manager.dispatch("start_process", {"command": shell_command, "timeout_ms": 3000})
+                failed = manager.dispatch("start_process", {"command": "exit /b 7", "timeout_ms": 3000})
+                started = manager.dispatch("start_process", {
+                    "command": "set /p H454=H454_READY & echo H454_DONE", "timeout_ms": 3000})
+                started_text = started["content"][0]["text"]
+                match = re.search(r"Process ([0-9]+) ", started_text)
+                if not match:
+                    raise RuntimeError("SESSION_START_FAILED")
+                second = manager.dispatch("start_process", {
+                    "command": "set /p H454=H454_SECOND", "timeout_ms": 3000})
+                second_match = re.search(r"Process ([0-9]+) ", second["content"][0]["text"])
+                if not second_match:
+                    raise RuntimeError("SECOND_SESSION_START_FAILED")
+                listing = manager.dispatch("list_sessions", {})["content"][0]["text"]
+                out["multiple_sessions"] = (not second["isError"] and match.group(1) in listing
+                                            and second_match.group(1) in listing)
+                reply = manager.dispatch("interact_with_process", {
+                    "pid": int(match.group(1)), "input": "synthetic", "timeout_ms": 3000})
+                terminated = manager.dispatch("force_terminate", {"pid": int(second_match.group(1))})
+                out["session_terminated"] = not terminated["isError"]
+                sample = next(value for value in ("Привет", "é", "A")
+                              if _encodable(value, manager._encoding))
+                encoded_output = manager.dispatch("start_process", {
+                    "command": "echo " + sample, "timeout_ms": 3000})
+                encoded_input = manager.dispatch("start_process", {
+                    "command": "set /p H454=H454_ENCODING & set H454", "timeout_ms": 3000})
+                encoding_match = re.search(r"Process ([0-9]+) ", encoded_input["content"][0]["text"])
+                if not encoding_match:
+                    raise RuntimeError("ENCODING_SESSION_START_FAILED")
+                encoded_reply = manager.dispatch("interact_with_process", {
+                    "pid": int(encoding_match.group(1)), "input": sample, "timeout_ms": 3000})
+                out["local_encoding_roundtrip"] = (not encoded_output["isError"]
+                    and sample in encoded_output["content"][0]["text"]
+                    and not encoded_reply["isError"] and sample in encoded_reply["content"][0]["text"])
+                revoke = manager.dispatch("start_process", {
+                    "command": 'set /p H454=H454_REVOKE & type "' + str(allowed_file) + '"',
+                    "timeout_ms": 3000})
+                revoke_text = revoke["content"][0]["text"]
+                revoke_match = re.search(r"Process ([0-9]+) ", revoke_text)
+                if revoke["isError"] or not revoke_match or "H454_REVOKE" not in revoke_text:
+                    raise RuntimeError("REVOCATION_SESSION_START_FAILED")
+                revoke_acl = subprocess.run([os.path.join(os.environ["WINDIR"], "System32", "icacls.exe"),
+                    str(allowed), "/remove:g", "*" + sid_text], capture_output=True,
+                    timeout=10, creationflags=subprocess.CREATE_NO_WINDOW)
+                if revoke_acl.returncode:
+                    raise RuntimeError("SYNTHETIC_REVOKE_FAILED")
+                revoked = manager.dispatch("interact_with_process", {
+                    "pid": int(revoke_match.group(1)), "input": "synthetic", "timeout_ms": 3000})
+                remaining_dacl = security_descriptor(allowed_file, 4)
+                out["revocation_denied"] = (bool(remaining_dacl) and sid_text not in remaining_dacl
+                                             and revoked["isError"])
+                out["process_started"] = not finished["isError"]
+                out["is_appcontainer"] = out["process_started"]
+                out["exit_code"] = 0 if out["process_started"] else 1
+                out["allowed_write"] = allowed_output.is_file()
+                out["private_write_blocked"] = not private_output.exists()
+                out["nonzero_is_error"] = failed["isError"] and "code 7" in failed["content"][0]["text"]
+                out["session_interaction"] = (not started["isError"] and "H454_READY" in started_text
+                    and not reply["isError"] and "H454_DONE" in reply["content"][0]["text"])
+            finally:
+                manager.close()
+            raise _BrokerComplete()
+        if broker_test or broker_command_test:
             # Load the trusted repository module, not any project or vault.
             sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
             from device_fabric.windows_appcontainer_terminal import AppContainerTerminal
-            terminal = AppContainerTerminal(int(sid.value), str(allowed))
+            terminal = AppContainerTerminal(int(sid.value), str(allowed),
+                                             command=shell_command if broker_command_test else None)
             try:
                 out["process_started"] = True
                 # The broker has verified both TokenIsAppContainer and the
                 # exact AppContainer SID before resuming the shell.
                 out["is_appcontainer"] = True
                 output = bytearray()
-                terminal.write(b"echo H454_INTERACTIVE_OK\r\n")
-                deadline = time.monotonic() + 5
-                while time.monotonic() < deadline and b"H454_INTERACTIVE_OK" not in output:
-                    output.extend(terminal.read())
-                    time.sleep(0.05)
-                out["interactive_roundtrip"] = (b"H454_INTERACTIVE_OK" in output and terminal.poll() is None)
-                if not out["interactive_roundtrip"]:
-                    raise RuntimeError("BROKER_INTERACTION_FAILED")
-                terminal.write((shell_command + "\r\n").encode("ascii"))
+                if broker_test:
+                    terminal.write(b"echo H454_INTERACTIVE_OK\r\n")
+                    deadline = time.monotonic() + 5
+                    while time.monotonic() < deadline and b"H454_INTERACTIVE_OK" not in output:
+                        output.extend(terminal.read())
+                        time.sleep(0.05)
+                    out["interactive_roundtrip"] = (b"H454_INTERACTIVE_OK" in output and terminal.poll() is None)
+                    if not out["interactive_roundtrip"]:
+                        raise RuntimeError("BROKER_INTERACTION_FAILED")
+                    terminal.write((shell_command + "\r\n").encode("ascii"))
                 deadline = time.monotonic() + 10
                 while time.monotonic() < deadline:
                     output.extend(terminal.read())
@@ -327,9 +466,11 @@ try:
                 out["private_write_blocked"] = not private_output.exists()
             finally:
                 terminal.close()
-            terminal = AppContainerTerminal(int(sid.value), str(allowed))
+            terminal = AppContainerTerminal(int(sid.value), str(allowed),
+                                             command="exit /b 259" if broker_command_test else None)
             try:
-                terminal.write(b"exit /b 259\r\n")
+                if broker_test:
+                    terminal.write(b"exit /b 259\r\n")
                 deadline = time.monotonic() + 5
                 while time.monotonic() < deadline and terminal.poll() is None:
                     time.sleep(0.05)
@@ -432,7 +573,7 @@ finally:
         adv.FreeSid(sid)
     if profile_created:
         out["temporary_profile_deleted"] = userenv.DeleteAppContainerProfile(profile_name) == 0
-    for path in (allowed_file, private_file, allowed_output, private_output, node_copy, diagnostic, stdio_file):
+    for path in (allowed_file, private_file, allowed_output, private_output, node_copy, diagnostic, stdio_file, gui):
         if path is not None:
             path.unlink(missing_ok=True)
     for path in (allowed, private, test_root):
@@ -444,6 +585,12 @@ required = ("sid_derived", "process_started", "is_appcontainer", "allowed_write"
             "private_write_blocked", "temporary_profile_deleted")
 if (out.get("exit_code") != 0 or any(out.get(name) is not True for name in required)
     or ((interactive_test or sys.argv[1:] == ["--broker-test"]) and out.get("interactive_output") is not True)
-    or (sys.argv[1:] == ["--broker-test"] and
-        (out.get("interactive_roundtrip") is not True or out.get("exit_259") is not True))):
+    or (sys.argv[1:] == ["--broker-test"] and out.get("interactive_roundtrip") is not True)
+    or (sys.argv[1:] in (["--broker-test"], ["--broker-command-test"]) and out.get("exit_259") is not True)
+    or (sys.argv[1:] == ["--sessions-test"] and
+        any(out.get(name) is not True for name in ("session_interaction", "nonzero_is_error",
+                                                   "multiple_sessions", "session_terminated",
+                                                   "revocation_denied", "local_encoding_roundtrip",
+                                                   "child_started", "child_job_terminated",
+                                                   "exited_shell_child_tracked", "background_drain_completed")))):
     raise SystemExit(1)

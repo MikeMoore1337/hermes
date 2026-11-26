@@ -98,6 +98,46 @@ class PersonalWorkerTests(unittest.TestCase):
         self.assertEqual(run.call_count, 1)
         self.assertTrue(self.bridge.closed)
 
+    def test_terminal_calls_use_only_the_owned_broker_and_close_it(self):
+        class Broker:
+            def __init__(self):
+                self.calls = []
+                self.closed = False
+            def dispatch(self, name, args):
+                self.calls.append((name, args))
+                return {"content": [{"type": "text", "text": "broker"}], "isError": False}
+            def close(self):
+                self.closed = True
+        broker = Broker()
+        self.args["terminal_broker"] = broker
+        states = iter((True, False))
+        self.args["isolation_verified"] = lambda: next(states)
+        observed = []
+        def session(**kwargs):
+            observed.append(kwargs["dispatch"]("start_process", {"command": "synthetic", "timeout_ms": 0}))
+            observed.append(kwargs["dispatch"]("write_file", {}))
+            raise PersonalTransportDenied("synthetic")
+        with patch.object(worker, "PersonalCommanderPipe", return_value=self.bridge), \
+             patch.object(worker, "run_session", side_effect=session):
+            self.assertEqual(worker.serve(self.raw, **self.args), "isolation_lost")
+        self.assertEqual(broker.calls, [("start_process", {"command": "synthetic", "timeout_ms": 0})])
+        self.assertEqual(observed[0]["content"][0]["text"], "broker")
+        self.assertEqual(observed[1], {"content": []})
+        self.assertTrue(broker.closed)
+
+    def test_terminal_without_broker_is_denied_without_fallback(self):
+        states = iter((True, False))
+        self.args["isolation_verified"] = lambda: next(states)
+        observed = []
+        def session(**kwargs):
+            observed.append(kwargs["dispatch"]("start_process", {"command": "synthetic", "timeout_ms": 0}))
+            raise PersonalTransportDenied("synthetic")
+        with patch.object(worker, "PersonalCommanderPipe", return_value=self.bridge), \
+             patch.object(worker, "run_session", side_effect=session):
+            self.assertEqual(worker.serve(self.raw, **self.args), "isolation_lost")
+        self.assertTrue(observed[0]["isError"])
+        self.assertEqual(observed[0]["content"][0]["text"], "H454_PERSONAL_TERMINAL_UNAVAILABLE")
+
 
 if __name__ == "__main__":
     unittest.main()
