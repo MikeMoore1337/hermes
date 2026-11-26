@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import struct
 import subprocess
 import sys
 import time
@@ -96,7 +97,7 @@ process = PROCESSINFO()
 out = {"sid_derived": False, "process_started": False, "exit_code": None}
 profile_name = "HermesSyntheticProbe" + uuid.uuid4().hex
 profile_created = False
-test_root = allowed = private = allowed_file = private_file = allowed_output = private_output = node_copy = diagnostic = stdio_file = None
+test_root = allowed = private = allowed_file = private_file = allowed_output = private_output = node_copy = diagnostic = stdio_file = gui = None
 pipe_handles = []
 interactive_test = False
 
@@ -309,6 +310,46 @@ try:
             from device_fabric.windows_personal_terminal_sessions import PersonalTerminalSessions
             manager = PersonalTerminalSessions(int(sid.value), str(allowed))
             try:
+                # Give a disposable Node copy the GUI subsystem so this child
+                # cannot create a console window on the developer's desktop.
+                node = shutil.which("node")
+                if not node:
+                    raise RuntimeError("NODE_UNAVAILABLE")
+                gui = allowed / "synthetic-gui.exe"
+                shutil.copyfile(node, gui)
+                with gui.open("r+b") as image:
+                    image.seek(0x3c)
+                    pe = struct.unpack("<I", image.read(4))[0]
+                    image.seek(pe)
+                    if image.read(4) != b"PE\0\0":
+                        raise RuntimeError("SYNTHETIC_PE_INVALID")
+                    image.seek(pe + 4 + 20 + 68)
+                    if image.read(2) != b"\x03\x00":
+                        raise RuntimeError("SYNTHETIC_SUBSYSTEM_INVALID")
+                    image.seek(-2, 1)
+                    image.write(b"\x02\x00")
+                child_js = "console.log('H454_CHILD_PID='+process.pid);setInterval(()=>{},60000)"
+                child_command = '"' + str(gui) + '" -e "' + child_js + '"'
+                child = manager.dispatch("start_process", {"command": child_command, "timeout_ms": 5000})
+                child_text = child["content"][0]["text"]
+                parent_match = re.search(r"Process ([0-9]+) ", child_text)
+                child_match = re.search(r"H454_CHILD_PID=([0-9]+)", child_text)
+                out["child_started"] = bool(parent_match and child_match and not child["isError"])
+                if out["child_started"]:
+                    kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+                    kernel.OpenProcess.restype = wintypes.HANDLE
+                    child_handle = kernel.OpenProcess(0x100001, False, int(child_match.group(1)))
+                    if not child_handle:
+                        raise RuntimeError("SYNTHETIC_CHILD_HANDLE_FAILED")
+                    try:
+                        stopped = manager.dispatch("force_terminate", {"pid": int(parent_match.group(1))})
+                        out["child_job_terminated"] = (not stopped["isError"] and
+                                                       kernel.WaitForSingleObject(child_handle, 5000) == 0)
+                    finally:
+                        if kernel.WaitForSingleObject(child_handle, 0) != 0:
+                            kernel.TerminateProcess(child_handle, 1)
+                            kernel.WaitForSingleObject(child_handle, 5000)
+                        kernel.CloseHandle(child_handle)
                 finished = manager.dispatch("start_process", {"command": shell_command, "timeout_ms": 3000})
                 failed = manager.dispatch("start_process", {"command": "exit /b 7", "timeout_ms": 3000})
                 started = manager.dispatch("start_process", {
@@ -516,7 +557,7 @@ finally:
         adv.FreeSid(sid)
     if profile_created:
         out["temporary_profile_deleted"] = userenv.DeleteAppContainerProfile(profile_name) == 0
-    for path in (allowed_file, private_file, allowed_output, private_output, node_copy, diagnostic, stdio_file):
+    for path in (allowed_file, private_file, allowed_output, private_output, node_copy, diagnostic, stdio_file, gui):
         if path is not None:
             path.unlink(missing_ok=True)
     for path in (allowed, private, test_root):
@@ -533,5 +574,6 @@ if (out.get("exit_code") != 0 or any(out.get(name) is not True for name in requi
     or (sys.argv[1:] == ["--sessions-test"] and
         any(out.get(name) is not True for name in ("session_interaction", "nonzero_is_error",
                                                    "multiple_sessions", "session_terminated",
-                                                   "revocation_denied", "local_encoding_roundtrip")))):
+                                                   "revocation_denied", "local_encoding_roundtrip",
+                                                   "child_started", "child_job_terminated")))):
     raise SystemExit(1)
