@@ -9,6 +9,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 import uuid
 
 kernel = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -100,6 +101,10 @@ pipe_handles = []
 interactive_test = False
 
 
+class _BrokerComplete(Exception):
+    pass
+
+
 def security_descriptor(path, requested):
     """Read only the synthetic test file's descriptor."""
     size = wintypes.DWORD()
@@ -150,16 +155,17 @@ def synthetic_token_diagnostic(token, path):
 
 
 try:
-    if sys.argv[1:] not in (["--interactive-test"], ["--node-test"], ["--node-child-test"]):
+    if sys.argv[1:] not in (["--interactive-test"], ["--broker-test"], ["--node-test"], ["--node-child-test"]):
         raise ValueError("INVALID_SYNTHETIC_TEST")
     session = wintypes.DWORD()
     if kernel.ProcessIdToSessionId(kernel.GetCurrentProcessId(), ctypes.byref(session)):
         out["session_zero"] = session.value == 0
     interactive_test = sys.argv[1:] == ["--interactive-test"]
+    broker_test = sys.argv[1:] == ["--broker-test"]
     shell_test = sys.argv[1:] == ["--node-shell-test"]
     child_test = sys.argv[1:] == ["--node-child-test"] or shell_test
     node_test = sys.argv[1:] == ["--node-test"] or child_test
-    filesystem_test = sys.argv[1:] == ["--filesystem-test"] or node_test or interactive_test
+    filesystem_test = sys.argv[1:] == ["--filesystem-test"] or node_test or interactive_test or broker_test
     if sys.argv[1:] == ["--temporary-profile"] or filesystem_test:
         result = userenv.CreateAppContainerProfile(profile_name, "Hermes synthetic probe",
             "Temporary isolated process test", None, 0, ctypes.byref(sid))
@@ -240,10 +246,12 @@ try:
         out["synthetic_file_label"] = ("high" if label and ";;;HI)" in label else
             "medium" if label and ";;;ME)" in label else "low" if label and ";;;LW)" in label else
             "other" if label else "none_or_unavailable")
-        shell_command = ('(type "' + str(allowed_file) + '" >nul) || exit /b 2 & '
-            + '(echo synthetic>"' + str(allowed_output) + '" 2>nul) || exit /b 3 & '
-            + '(type "' + str(private_file) + '" >nul 2>&1) && exit /b 4 & '
-            + '(echo bad>"' + str(private_output) + '" 2>nul) && exit /b 5 & exit /b 0')
+        # Keep output in the explicitly inherited private pipe: an AppContainer
+        # on Server runners may be unable to open the NUL device for redirection.
+        shell_command = ('(type "' + str(allowed_file) + '") || exit /b 2 & '
+            + '(echo synthetic>"' + str(allowed_output) + '") || exit /b 3 & '
+            + '(type "' + str(private_file) + '") && exit /b 4 & '
+            + '(echo bad>"' + str(private_output) + '") && exit /b 5 & exit /b 0')
         command_text = '"' + executable + '" /d /c ' + shell_command
         if interactive_test:
             command_text = '"' + executable + '" /d /q'
@@ -268,16 +276,62 @@ try:
                     child_executable = str(node_copy)
                     child_args = ["-e", js]
                 js = ("const c=require('node:child_process').spawnSync(" + json.dumps(child_executable) + ","
-                      + json.dumps(child_args) + ",{windowsHide:true,timeout:10000,stdio:'ignore',cwd:"
+                      + json.dumps(child_args) + ",{windowsHide:true,timeout:3000,stdio:'ignore',cwd:"
                       + json.dumps(str(allowed)) + "});"
                       + "require('node:fs').writeFileSync(" + json.dumps(str(diagnostic))
                       + ",JSON.stringify({status:c.status,code:c.error?.code||null,signal:c.signal}));"
                       + "process.exit(c.status===0?0:c.error?.code==='EACCES'?21:"
-                      + "c.error?.code==='EPERM'?22:c.error?.code==='ENOENT'?23:"
+                      + "c.error?.code==='EPERM'?22:c.error?.code==='ENOENT'?23:c.error?.code==='ETIMEDOUT'?27:"
                       + "c.error?24:c.status===null?25:c.status===3221225794?42:"
                       + "c.status>0&&c.status<20?c.status:26)")
             js = "Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,200);" + js
             command_text = subprocess.list2cmdline([executable, "-e", js])
+        if broker_test:
+            # Load the trusted repository module, not any project or vault.
+            sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+            from device_fabric.windows_appcontainer_terminal import AppContainerTerminal
+            terminal = AppContainerTerminal(int(sid.value), str(allowed))
+            try:
+                out["process_started"] = True
+                # The broker has verified both TokenIsAppContainer and the
+                # exact AppContainer SID before resuming the shell.
+                out["is_appcontainer"] = True
+                output = bytearray()
+                terminal.write(b"echo H454_INTERACTIVE_OK\r\n")
+                deadline = time.monotonic() + 5
+                while time.monotonic() < deadline and b"H454_INTERACTIVE_OK" not in output:
+                    output.extend(terminal.read())
+                    time.sleep(0.05)
+                out["interactive_roundtrip"] = (b"H454_INTERACTIVE_OK" in output and terminal.poll() is None)
+                if not out["interactive_roundtrip"]:
+                    raise RuntimeError("BROKER_INTERACTION_FAILED")
+                terminal.write((shell_command + "\r\n").encode("ascii"))
+                deadline = time.monotonic() + 10
+                while time.monotonic() < deadline:
+                    output.extend(terminal.read())
+                    status = terminal.poll()
+                    if status is not None:
+                        output.extend(terminal.read())
+                        break
+                    time.sleep(0.05)
+                else:
+                    raise RuntimeError("BROKER_TIMEOUT")
+                out["exit_code"] = status
+                out["interactive_output"] = b"H454_INTERACTIVE_OK" in output
+                out["allowed_write"] = allowed_output.is_file()
+                out["private_write_blocked"] = not private_output.exists()
+            finally:
+                terminal.close()
+            terminal = AppContainerTerminal(int(sid.value), str(allowed))
+            try:
+                terminal.write(b"exit /b 259\r\n")
+                deadline = time.monotonic() + 5
+                while time.monotonic() < deadline and terminal.poll() is None:
+                    time.sleep(0.05)
+                out["exit_259"] = terminal.poll() == 259
+            finally:
+                terminal.close()
+            raise _BrokerComplete()
     if interactive_test:
         input_read, input_write, output_read, output_write = (wintypes.HANDLE() for _ in range(4))
         security = SECURITY_ATTRIBUTES(ctypes.sizeof(SECURITY_ATTRIBUTES), None, True)
@@ -349,6 +403,8 @@ try:
         out["private_write_blocked"] = not private_output.exists()
         if diagnostic is not None and diagnostic.is_file():
             out["child_status"] = json.loads(diagnostic.read_text(encoding="utf-8"))
+except _BrokerComplete:
+    pass
 except OSError as exc:
     out["error"] = {"api": exc.strerror, "code": exc.errno}
 except Exception as exc:
@@ -382,5 +438,7 @@ print(json.dumps(out))
 required = ("sid_derived", "process_started", "is_appcontainer", "allowed_write",
             "private_write_blocked", "temporary_profile_deleted")
 if (out.get("exit_code") != 0 or any(out.get(name) is not True for name in required)
-    or (interactive_test and out.get("interactive_output") is not True)):
+    or ((interactive_test or sys.argv[1:] == ["--broker-test"]) and out.get("interactive_output") is not True)
+    or (sys.argv[1:] == ["--broker-test"] and
+        (out.get("interactive_roundtrip") is not True or out.get("exit_259") is not True))):
     raise SystemExit(1)
