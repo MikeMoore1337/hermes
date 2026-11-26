@@ -25,10 +25,17 @@ NATIVE_CALL = """    if (name === 'native_file_read' || name === 'native_file_st
 NATIVE_LIST = "      LIST_WORKSPACES_TOOL, RESOLVE_WORKSPACE_TOOL, CONNECT_SANDBOX_TOOL, ...NATIVE_TOOLS] };"
 INVOKE_ANCHOR = "  const started = Date.now();"
 NATIVE_GENERIC_GUARD = """  // Stored classification and live platform use different Linux formats.
+  const validLinuxSandbox = !deviceId.startsWith('h454-') && dev.info.platform === 'linux'
+    && typeof dev.info.arch === 'string' && /^(?:x64|arm64)$/.test(dev.info.arch)
+    && (grant.platform === 'linux/docker' || grant.platform === `linux/${dev.info.arch}`);
+  // A separate owner-bound identity opts into personal Windows permissions.
+  // Existing read-only Windows credentials never gain generic capabilities.
+  const validPersonalWindows = /^h454-win-personal-[0-9a-f]{32}$/.test(deviceId)
+    && grant.name === 'H454 Windows personal Commander' && grant.platform === 'win32'
+    && dev.info.name === grant.name && dev.info.platform === 'win32'
+    && typeof dev.info.arch === 'string' && /^(?:x64|arm64)$/.test(dev.info.arch);
   if (grant.device_id !== deviceId || dev.info.deviceId !== deviceId
-      || dev.info.platform !== 'linux' || typeof dev.info.arch !== 'string'
-      || !/^(?:x64|arm64)$/.test(dev.info.arch)
-      || (grant.platform !== 'linux/docker' && grant.platform !== `linux/${dev.info.arch}`)) {
+      || (!validLinuxSandbox && !validPersonalWindows)) {
     return { ok: false, status: 403, message: 'HERMES_NATIVE_GENERIC_TOOL_DENIED' };
   }
 """

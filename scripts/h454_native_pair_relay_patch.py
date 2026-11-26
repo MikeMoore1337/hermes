@@ -19,6 +19,8 @@ BLOCK = """    // H454: native ID comes from the authenticated owner's bound dev
     const nativeProfile = [
       { name: 'H454 Windows native read-only', platform: 'win32',
         id: /^h454-win-native-[0-9a-f]{32}$/ },
+      { name: 'H454 Windows personal Commander', platform: 'win32',
+        id: /^h454-win-personal-[0-9a-f]{32}$/ },
       { name: 'H454 Hermes VPS native read-only', platform: 'linux',
         id: /^h454-linux-hermes-[0-9a-f]{32}$/ },
       { name: 'H454 YFC VPS native read-only', platform: 'linux',
@@ -63,7 +65,7 @@ def apply(root: Path, *, sha: str = UPSTREAM_SHA) -> dict[str, object]:
         "status": "H454_NATIVE_OWNER_ID_RELAY_PATCHED_SOURCE_ONLY",
         "owner_bound_native_id": True,
         "agent_override": "DENIED",
-        "native_devices": 3, "production_modified": False,
+        "native_devices": 4, "production_modified": False,
     }
 
 

@@ -77,6 +77,8 @@ on:
       - scripts/h454_native_three_read_route_e2e.mjs
       - scripts/h454_native_pair_relay_e2e.mjs
       - device_fabric/native_brc_enrollment.py
+      - device_fabric/windows_personal_commander_enrollment.py
+      - tests/test_windows_personal_commander_enrollment.py
       - scripts/h454_native_owner_pair.py
       - tests/test_h454_native_brc_enrollment.py
       - tests/test_h454_native_owner_pair.py
@@ -177,6 +179,8 @@ on:
       - scripts/h454_native_three_read_route_e2e.mjs
       - scripts/h454_native_pair_relay_e2e.mjs
       - device_fabric/native_brc_enrollment.py
+      - device_fabric/windows_personal_commander_enrollment.py
+      - tests/test_windows_personal_commander_enrollment.py
       - scripts/h454_native_owner_pair.py
       - tests/test_h454_native_brc_enrollment.py
       - tests/test_h454_native_owner_pair.py
@@ -277,7 +281,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m unittest -v tests.test_h15_workspace_router tests.test_h15_brc_workspace_gateway tests.test_h15_sandbox_projects tests.test_h15_brc_upgrade_preflight tests.test_h15_brc_transactional_upgrade tests.test_h15_brc_owner_artifact_stage tests.test_h15_brc_owner_handoff tests.test_h15_brc_native_read_gateway tests.test_h15_native_windows_relay_contract tests.test_h454_brc_native_three_tool_cutover tests.test_h454_native_brc_enrollment tests.test_h454_native_owner_pair tests.test_h454_native_pair_relay_patch tests.test_h454_native_three_read_route_patch tests.test_h454_native_brc_status tests.test_h454_native_brc_status_patch
+          python3 -m unittest -v tests.test_h15_workspace_router tests.test_h15_brc_workspace_gateway tests.test_h15_sandbox_projects tests.test_h15_brc_upgrade_preflight tests.test_h15_brc_transactional_upgrade tests.test_h15_brc_owner_artifact_stage tests.test_h15_brc_owner_handoff tests.test_h15_brc_native_read_gateway tests.test_h15_native_windows_relay_contract tests.test_h454_brc_native_three_tool_cutover tests.test_h454_native_brc_enrollment tests.test_windows_personal_commander_enrollment tests.test_h454_native_owner_pair tests.test_h454_native_pair_relay_patch tests.test_h454_native_three_read_route_patch tests.test_h454_native_brc_status tests.test_h454_native_brc_status_patch
 
       - name: WSS relay watchdog failure and recovery contract
         run: node scripts/h454_wss_relay_watchdog_e2e.mjs

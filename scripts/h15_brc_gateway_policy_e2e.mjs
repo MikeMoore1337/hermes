@@ -116,6 +116,53 @@ for (const [stored, live, arch] of [
   if (result.ok || result.status !== 403 || result.message !== 'HERMES_NATIVE_GENERIC_TOOL_DENIED'
       || forwarded !== before) throw Error('PLATFORM_MISMATCH_FORWARDED:' + String(stored) + ':' + live);
 }
+
+// Personal Windows is a separately owner-paired identity. It must never
+// upgrade the existing original-host READ token or accept a forged hello.
+const oldHubGet = hub.get;
+const personalId = 'h454-win-personal-' + 'a'.repeat(32);
+const personalName = 'H454 Windows personal Commander';
+const personalGrant = { ...validGrant, device_id: personalId, name: personalName, platform: 'win32' };
+const personalInfo = { deviceId: personalId, name: personalName, platform: 'win32', arch: 'x64' };
+hub.get = (id) => id === personalId ? device : undefined;
+grant = { ...personalGrant };
+device.info = { ...personalInfo };
+for (const tool of ['write_file', 'start_process']) {
+  const before = forwarded;
+  const result = await invokeTool(hub, store, ctx, tool, {deviceId:personalId});
+  if (!result.ok || forwarded !== before + 1) throw Error('PERSONAL_WINDOWS_REFUSED:' + tool);
+}
+for (const [label, changeGrant, changeInfo] of [
+  ['wrong-stored-name', {name:'other'}, {}],
+  ['wrong-stored-platform', {platform:'linux/docker'}, {}],
+  ['wrong-live-name', {}, {name:'other'}],
+  ['wrong-live-platform', {}, {platform:'linux'}],
+  ['wrong-live-arch', {}, {arch:'riscv64'}],
+  ['wrong-live-id', {}, {deviceId:'other'}],
+  ['wrong-stored-id', {device_id:'other'}, {}],
+  ['revoked', {token_hash:'rotated'}, {}],
+  ['foreign-owner', {user_id:'other-owner'}, {}],
+  ['paused', {paused:true}, {}],
+]) {
+  grant = { ...personalGrant, ...changeGrant };
+  device.info = { ...personalInfo, ...changeInfo };
+  const before = forwarded;
+  const result = await invokeTool(hub, store, ctx, 'start_process', {deviceId:personalId});
+  if (result.ok || forwarded !== before) throw Error('PERSONAL_WINDOWS_BOUNDARY_BYPASS:' + label);
+}
+grant = {...personalGrant, platform:'linux/docker'};
+device.info = {...personalInfo, platform:'linux'};
+if ((await invokeTool(hub, store, ctx, 'start_process', {deviceId:personalId})).ok)
+  throw Error('PERSONAL_ID_CANNOT_IMPERSONATE_SANDBOX');
+const readOnlyId = 'h454-win-native-' + 'b'.repeat(32);
+hub.get = id => id === readOnlyId ? device : undefined;
+grant = {...personalGrant, device_id:readOnlyId, name:'H454 Windows native read-only'};
+device.info = {...personalInfo, deviceId:readOnlyId, name:'H454 Windows native read-only'};
+if ((await invokeTool(hub, store, ctx, 'start_process', {deviceId:readOnlyId})).ok)
+  throw Error('READ_ONLY_WINDOWS_GRANTED_PROCESS');
+hub.get = oldHubGet;
+console.log('H454_PERSONAL_WINDOWS_OWNER_SCOPED_GENERIC_ROUTE=PASS');
+
 device.info = { ...device.info, platform: 'linux', arch: 'x64' };
 for (const mismatch of ['stored-device', 'live-device', 'live-owner']) {
   grant = { ...validGrant, device_id: mismatch === 'stored-device' ? 'other' : 'd-test' };
