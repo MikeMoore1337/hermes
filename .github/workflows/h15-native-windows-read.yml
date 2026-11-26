@@ -27,11 +27,30 @@ on:
       - tests/test_h15_native_windows_read_on_win.py
       - device_fabric/windows_native_reenrollment.py
       - device_fabric/windows_personal_session.py
+      - device_fabric/windows_personal_commander_config.py
+      - device_fabric/windows_personal_commander_bundle.py
+      - device_fabric/windows_personal_commander_enrollment.py
+      - device_fabric/windows_personal_commander_transport.py
+      - device_fabric/windows_personal_commander_pipe.py
+      - device_fabric/windows_personal_commander_status.py
+      - device_fabric/windows_personal_commander_worker.py
+      - device_fabric/windows_personal_job.py
       - device_fabric/personal_replay.py
       - device_fabric/native_private_tls.py
       - scripts/h454_windows_personal_worker.py
       - scripts/h454_windows_personal_state.py
+      - scripts/h454_windows_personal_dispatcher.mjs
+      - scripts/h454_windows_personal_owner_pair.py
       - tests/test_h454_windows_personal_session.py
+      - tests/test_windows_personal_commander_config.py
+      - tests/test_windows_personal_commander_bundle.py
+      - tests/test_windows_personal_commander_enrollment.py
+      - tests/test_windows_personal_commander_transport.py
+      - tests/test_windows_personal_commander_status.py
+      - tests/test_windows_personal_commander_worker.py
+      - tests/test_h454_windows_personal_dispatcher.py
+      - tests/test_h454_windows_personal_owner_pair.py
+      - tests/test_h454_windows_personal_job.py
       - tests/test_h454_personal_replay.py
       - scripts/h454_native_win32_worker.py
       - tests/test_h454_native_win32_worker.py
@@ -160,7 +179,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          python -B -m unittest -v tests.test_h454_windows_native_dpapi tests.test_h454_windows_personal_session tests.test_h454_personal_replay
+          python -B -m unittest -v tests.test_h454_windows_native_dpapi tests.test_h454_windows_personal_session tests.test_h454_personal_replay tests.test_windows_personal_commander_config tests.test_windows_personal_commander_bundle tests.test_windows_personal_commander_transport tests.test_windows_personal_commander_status tests.test_windows_personal_commander_worker tests.test_h454_windows_personal_dispatcher tests.test_h454_windows_personal_job
           if ($LASTEXITCODE -ne 0) { throw 'H454_WIN32_DPAPI_CURRENT_USER_DENIED' }
           Write-Output 'H454_WIN32_DPAPI_CURRENT_USER=PASS'
           Write-Output 'H454_WINDOWS_OWNER_DEVICE_ACCESS=NOT_RUN'
