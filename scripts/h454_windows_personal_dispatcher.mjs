@@ -14,6 +14,7 @@ const MAX_FRAME = 1024 * 1024;
 const allowed = new Set([
   'read_file', 'read_multiple_files', 'write_file', 'edit_block',
   'create_directory', 'list_directory', 'move_file', 'get_file_info',
+  'start_search', 'get_more_search_results', 'stop_search', 'list_searches',
   'start_process', 'read_process_output', 'interact_with_process',
   'force_terminate', 'list_sessions',
 ]);
@@ -89,15 +90,42 @@ async function checkPath(value, roots) {
 async function authorize(name, args, roots) {
   if (!allowed.has(name) || !args || typeof args !== 'object' || Array.isArray(args)) throw new Error('CALL_DENIED');
   let paths = [];
-  if (['read_file', 'write_file', 'create_directory', 'list_directory', 'get_file_info'].includes(name)) paths = [args.path];
+  if (['read_file', 'write_file', 'create_directory', 'list_directory', 'get_file_info', 'start_search'].includes(name)) paths = [args.path];
   if (name === 'read_multiple_files') paths = args.paths;
   if (name === 'edit_block') paths = [args.file_path];
   if (name === 'move_file') paths = [args.source, args.destination];
   if (!Array.isArray(paths) || paths.length > 32) throw new Error('CALL_DENIED');
   if (name === 'read_file' && args.isUrl === true) throw new Error('CALL_DENIED');
   if (name === 'list_directory' && args.depth !== undefined && args.depth !== 1) throw new Error('CALL_DENIED');
+  if (name === 'start_search') {
+    const keys = new Set(['path', 'pattern', 'searchType', 'filePattern', 'ignoreCase', 'maxResults',
+      'includeHidden', 'contextLines', 'timeout_ms', 'earlyTermination', 'literalSearch', 'origin']);
+    if (Object.keys(args).some(key => !keys.has(key)) || typeof args.pattern !== 'string'
+        || !args.pattern.length || args.pattern.length > 256 || args.pattern.includes('\0')
+        || !['files', 'content'].includes(args.searchType ?? 'files')
+        || (args.filePattern !== undefined && (typeof args.filePattern !== 'string' || args.filePattern.length > 256))
+        || ['ignoreCase', 'includeHidden', 'earlyTermination', 'literalSearch'].some(key =>
+          args[key] !== undefined && typeof args[key] !== 'boolean')
+        || (args.maxResults !== undefined && (!Number.isInteger(args.maxResults) || args.maxResults < 1 || args.maxResults > 128))
+        || (args.timeout_ms !== undefined && (!Number.isInteger(args.timeout_ms) || args.timeout_ms < 100 || args.timeout_ms > 10000))
+        || (args.contextLines !== undefined && (!Number.isInteger(args.contextLines) || args.contextLines < 0 || args.contextLines > 3))
+        || (args.origin !== undefined && !['ui', 'llm'].includes(args.origin))
+        || (args.searchType === 'content' && /\.(?:xlsx|xlsm|xlsb|xls|docx)/i.test((args.filePattern ?? '') + '|' + args.path)))
+      throw new Error('CALL_DENIED');
+  }
+  if (name === 'get_more_search_results' || name === 'stop_search') {
+    const keys = name === 'stop_search' ? ['sessionId'] : ['sessionId', 'offset', 'length'];
+    if (Object.keys(args).some(key => !keys.includes(key)) || typeof args.sessionId !== 'string'
+        || !/^[A-Za-z0-9_-]{1,128}$/.test(args.sessionId)
+        || (args.offset !== undefined && (!Number.isInteger(args.offset) || Math.abs(args.offset) > 10000))
+        || (args.length !== undefined && (!Number.isInteger(args.length) || args.length < 1 || args.length > 128)))
+      throw new Error('CALL_DENIED');
+  }
+  if (name === 'list_searches' && Object.keys(args).length) throw new Error('CALL_DENIED');
   for (const value of paths) await checkPath(value, roots);
   if (name === 'move_file' && !(await lstat(args.source)).isFile()) throw new Error('CALL_DENIED');
+  if (name === 'start_search') return { ...args, maxResults: args.maxResults ?? 128,
+    timeout_ms: args.timeout_ms ?? 10000, contextLines: args.contextLines ?? 0 };
   return name === 'list_directory' ? { ...args, depth: 1 } : args;
 }
 

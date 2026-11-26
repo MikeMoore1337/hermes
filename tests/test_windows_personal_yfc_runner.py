@@ -1,3 +1,4 @@
+import hashlib
 import os
 from pathlib import Path
 import tempfile
@@ -28,10 +29,14 @@ if os.name == "nt":
             state = self.base / runner.APP_NAME / "adapter-state"
             state.mkdir(parents=True)
             for name in ("runner/node.exe", "runner/h454_windows_personal_adapter_launcher.mjs",
-                         "bundle/packages/agent/dist/dispatcher.js"):
+                         "bundle/packages/agent/dist/dispatcher.js",
+                         "bundle/packages/agent/dist/core/search-manager.js"):
                 path = release / name
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text("synthetic", encoding="ascii")
+            search_pin = patch.object(runner, "SEARCH_MANAGER_SHA256", hashlib.sha256(b"synthetic").hexdigest())
+            search_pin.start()
+            self.addCleanup(search_pin.stop)
             self.paired = Paired("windows-personal", DEVICE, TOKEN, "wss://hermes.mikemoore.top/ws")
             self.raw = config.prepare_config(self.paired, owner_sid=SID, release_sha="d" * 40,
                 ca=CA, bundle_sha256=DIGEST, now=1000, profile="yfc-dev", seal=lambda *_a, **_k: b"s" * 64)
@@ -98,6 +103,14 @@ if os.name == "nt":
                     runner.run(self.raw, **self.args)
                 self.assertTrue(probe.closed)
                 serve.assert_not_called()
+
+        def test_unpatched_search_manager_never_starts_the_probe(self):
+            with patch.object(runner.bundle, "verify", return_value=DIGEST), \
+                 patch.object(runner, "SEARCH_MANAGER_SHA256", "0" * 64), \
+                 patch.object(runner, "YfcDevPsecTerminal") as process:
+                with self.assertRaises(runner.YfcRunnerDenied):
+                    runner.run(self.raw, **self.args)
+                process.assert_not_called()
 
         def test_unsafe_shell_path_is_rejected(self):
             with self.assertRaises(runner.YfcRunnerDenied):
