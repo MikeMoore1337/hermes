@@ -36,6 +36,7 @@ class PersonalWorkerTests(unittest.TestCase):
         self.bridge = Bridge()
         self.args = {"current_sid": lambda: SID, "ca": CA,
             "verify_bundle": lambda: self.events.append("verify") or BUNDLE,
+            "isolation_verified": lambda: self.events.append("isolation") or True,
             "attach_job": lambda: self.events.append("job"),
             "start_dispatcher": lambda: self.events.append("start") or object(),
             "connector": lambda *_a, **_k: None,
@@ -49,7 +50,7 @@ class PersonalWorkerTests(unittest.TestCase):
              patch.object(worker, "run_session", side_effect=PersonalTransportDenied("synthetic")):
             outcome = worker.serve(self.raw, **self.args)
         self.assertEqual(outcome, "reconnect_exhausted")
-        self.assertEqual(self.events[:4], ["verify", "decrypt", "job", "start"])
+        self.assertEqual(self.events[:5], ["verify", "isolation", "decrypt", "job", "start"])
         self.assertEqual(len([item for item in self.events if isinstance(item, tuple)]), worker.MAX_RECONNECTS)
         self.assertTrue(self.bridge.closed)
 
@@ -65,6 +66,13 @@ class PersonalWorkerTests(unittest.TestCase):
             worker.serve(self.raw, **self.args)
         self.assertNotIn("job", self.events)
 
+    def test_missing_os_confinement_never_unseals_or_starts(self):
+        self.args["isolation_verified"] = lambda: False
+        with self.assertRaises(worker.PersonalWorkerDenied):
+            worker.serve(self.raw, **self.args)
+        self.assertNotIn("decrypt", self.events)
+        self.assertNotIn("job", self.events)
+
     def test_failed_pipe_stops_worker_without_retrying_an_effect(self):
         def broken(*_args):
             raise PersonalPipeDenied("synthetic")
@@ -77,6 +85,15 @@ class PersonalWorkerTests(unittest.TestCase):
         with patch.object(worker, "PersonalCommanderPipe", return_value=self.bridge), \
              patch.object(worker, "run_session", side_effect=session) as run:
             self.assertEqual(worker.serve(self.raw, **self.args), "dispatcher_failed")
+        self.assertEqual(run.call_count, 1)
+        self.assertTrue(self.bridge.closed)
+
+    def test_lost_os_confinement_stops_without_reconnect(self):
+        states = iter((True, False))
+        self.args["isolation_verified"] = lambda: next(states)
+        with patch.object(worker, "PersonalCommanderPipe", return_value=self.bridge), \
+             patch.object(worker, "run_session", side_effect=PersonalTransportDenied("synthetic")) as run:
+            self.assertEqual(worker.serve(self.raw, **self.args), "isolation_lost")
         self.assertEqual(run.call_count, 1)
         self.assertTrue(self.bridge.closed)
 

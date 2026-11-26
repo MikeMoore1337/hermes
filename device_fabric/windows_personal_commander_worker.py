@@ -22,26 +22,31 @@ class PersonalWorkerDenied(ValueError):
 
 
 def serve(raw_config: bytes, *, current_sid: Callable[[], str], ca: bytes,
-          verify_bundle: Callable[[], str], attach_job: Callable[[], None],
+          verify_bundle: Callable[[], str], isolation_verified: Callable[[], bool],
+          attach_job: Callable[[], None],
           start_dispatcher: Callable[[], subprocess.Popen],
           connector: Callable[..., Any], status_factory: Callable[[str, str], Callable[[], bool | None]],
           claim_call: Callable[[str], bool], pause: Callable[[float], Any] = time.sleep,
           decrypt: Callable[..., str] | None = None) -> str:
     """Run bounded sessions in a dedicated, job-owned worker process.
 
-    Owner, CA and installed bundle are checked before unsealing. A local pipe
-    failure ends this worker so closing its job reaps any remaining processes.
+    Owner, CA, installed bundle and independently enforced OS confinement are
+    checked before unsealing. The confinement callback must inspect the actual
+    worker environment; a flag supplied by the relay or MCP caller is not proof.
+    A local pipe failure ends this worker so its job reaps remaining processes.
     """
     bridge = None
     process = None
     try:
-        if (not all(callable(value) for value in (current_sid, verify_bundle, attach_job,
+        if (not all(callable(value) for value in (current_sid, verify_bundle, isolation_verified, attach_job,
                 start_dispatcher, connector, status_factory, claim_call, pause))
             or (decrypt is not None and not callable(decrypt))):
             raise ValueError()
         candidate = config.parse_config(raw_config)
         owner = current_sid()
         bundle = verify_bundle()
+        if isolation_verified() is not True:
+            raise ValueError()
         options = {"decrypt": decrypt} if decrypt is not None else {}
         bearer = config.unseal(candidate, owner_sid=owner, ca=ca, bundle_sha256=bundle, **options)
         status = status_factory(candidate.device_id, bearer)
@@ -65,7 +70,8 @@ def serve(raw_config: bytes, *, current_sid: Callable[[], str], ca: bytes,
             try:
                 outcome = run_session(device_id=candidate.device_id, bearer=bearer,
                     tools=bridge.tools, connector=connector, dispatch=dispatch,
-                    is_active=lambda: status() is True, claim_call=claim_call)
+                    is_active=lambda: isolation_verified() is True and status() is True,
+                    claim_call=claim_call)
                 if outcome not in ("idle_timeout", "call_budget_exhausted"):
                     raise ValueError()
                 failures = 0
@@ -73,6 +79,8 @@ def serve(raw_config: bytes, *, current_sid: Callable[[], str], ca: bytes,
             except PersonalTransportDenied:
                 if failed:
                     return "dispatcher_failed"
+                if isolation_verified() is not True:
+                    return "isolation_lost"
                 state = status()
                 if state is False:
                     return "grant_inactive"
