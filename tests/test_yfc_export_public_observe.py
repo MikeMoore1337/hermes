@@ -1,5 +1,6 @@
 """YFC exporter is the only source used by the existing project watcher."""
 from datetime import UTC, datetime, timedelta
+import copy
 import json
 import unittest
 from unittest.mock import MagicMock
@@ -74,6 +75,30 @@ class YfcExportObserveTests(unittest.TestCase):
         result = obs._read_runs(REPO, WORKFLOW_ID, {"workflow_runs": rows}, NOW)
         self.assertEqual([(x["number"], x["candidate"]) for x in result["events"]],
                          [(101, "REVIEW_CI_FAILURE")])
+
+    def test_conflicting_run_identity_is_rejected_but_consistent_repeats_collapse(self):
+        first = run(7, subject=1366)
+        conflict = run(7, subject=1427)
+        with self.assertRaisesRegex(obs.PublicObserveError, "event_identity_conflict"):
+            obs._read_runs(REPO, WORKFLOW_ID, {"workflow_runs": [first, conflict]}, NOW)
+        repeated = obs._read_runs(REPO, WORKFLOW_ID, {"workflow_runs": [first, first]}, NOW)
+        self.assertEqual(len(repeated["events"]), 1)
+        distinct = obs._read_runs(REPO, WORKFLOW_ID,
+                                  {"workflow_runs": [first, run(8, subject=1366)]}, NOW)
+        self.assertEqual([(x["number"], x["run_id"]) for x in distinct["events"]], [(1366, 8)])
+
+    def test_both_snapshot_validators_refuse_reused_run_id(self):
+        def reader(path, *, token, timeout):
+            return {"workflow_runs": [run(7)]} if path == PATH else {"workflow_runs": []}
+        feed = obs.poll(now=NOW, reader=reader)
+        bad = copy.deepcopy(feed)
+        record = bad["sources"]["yfc"]
+        record["inspected_count"] = 2
+        record["events"].append({**record["events"][0], "number": 1427})
+        for validator, error in ((obs.validate, obs.PublicObserveError),
+                                 (github_projects_view.validate, github_projects_view.ProjectFeedRefused)):
+            with self.subTest(validator=validator.__module__), self.assertRaises(error):
+                validator(bad)
 
     def test_untrusted_metadata_refused_or_not_promoted(self):
         for changes in (

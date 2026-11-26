@@ -56,6 +56,7 @@ def _read_runs(repo, workflow_id, data, now):
     if len(rows) > MAX_RUNS:
         raise PublicObserveError("unbounded_runs")
     found = []
+    run_identities = {}
     for run in rows:
         if type(run) is not dict:
             raise PublicObserveError("invalid_run")
@@ -87,6 +88,10 @@ def _read_runs(repo, workflow_id, data, now):
             raise PublicObserveError("event_invalid") from None
         if stamp > now + SKEW:
             raise PublicObserveError("event_in_future")
+        identity = (kind, action, number, outcome, stamp)
+        if run_id in run_identities and run_identities[run_id] != identity:
+            raise PublicObserveError("event_identity_conflict")
+        run_identities[run_id] = identity
         if now - stamp > EVENT_WINDOW or candidate == "NONE":
             continue
         found.append({
@@ -152,6 +157,7 @@ def validate(record):
         if entry["status"] == "PARTIAL" and configured_id == 0:
             raise PublicObserveError("unconfigured_source")
         seen = set()
+        seen_runs = set()
         for x in entry["events"]:
             if type(x) is not dict or set(x) != {
                 "kind", "number", "run_id", "candidate", "occurred_at",
@@ -164,14 +170,15 @@ def validate(record):
                     "REVIEW_CI_FAILURE", "REVIEW_CI_UNCERTAIN"):
                 raise PublicObserveError("event_candidate_invalid")
             _integer(x["number"])
-            _integer(x["run_id"])
+            run_id = _integer(x["run_id"])
             dt = utc(x["occurred_at"])
             if dt > captured + SKEW or captured - dt > EVENT_WINDOW:
                 raise PublicObserveError("event_time_invalid")
             identity = (x["kind"], x["number"])
-            if identity in seen:
+            if identity in seen or run_id in seen_runs:
                 raise PublicObserveError("event_duplicate")
             seen.add(identity)
+            seen_runs.add(run_id)
     return record
 
 

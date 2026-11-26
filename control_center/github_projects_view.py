@@ -89,6 +89,7 @@ def validate(value):
         if record["status"] != "PARTIAL" and (record["inspected_count"] or record["events"]):
             raise ProjectFeedRefused("unverified_events")
         seen = set()
+        seen_runs = set()
         for item in record["events"]:
             if type(item) is not dict or set(item) != {
                 "kind", "number", "run_id", "candidate", "occurred_at",
@@ -104,9 +105,10 @@ def validate(value):
             if when > observed + SKEW or observed - when > WINDOW:
                 raise ProjectFeedRefused("event_timestamp_invalid")
             key2 = (kind, number)
-            if key2 in seen:
+            if key2 in seen or run_id in seen_runs:
                 raise ProjectFeedRefused("duplicate")
             seen.add(key2)
+            seen_runs.add(run_id)
     return value
 
 
