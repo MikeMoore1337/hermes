@@ -13,6 +13,7 @@ from typing import Any, Callable
 from device_fabric import windows_personal_commander_config as config
 from device_fabric.windows_personal_commander_pipe import PersonalCommanderPipe, PersonalPipeDenied
 from device_fabric.windows_personal_commander_transport import PersonalTransportDenied, run_session
+from device_fabric.windows_personal_terminal_sessions import TOOLS as TERMINAL_TOOLS
 
 MAX_RECONNECTS = 5
 
@@ -27,7 +28,7 @@ def serve(raw_config: bytes, *, current_sid: Callable[[], str], ca: bytes,
           start_dispatcher: Callable[[], subprocess.Popen],
           connector: Callable[..., Any], status_factory: Callable[[str, str], Callable[[], bool | None]],
           claim_call: Callable[[str], bool], pause: Callable[[float], Any] = time.sleep,
-          decrypt: Callable[..., str] | None = None) -> str:
+          decrypt: Callable[..., str] | None = None, terminal_broker: Any | None = None) -> str:
     """Run bounded sessions in a dedicated, job-owned worker process.
 
     Owner, CA, installed bundle and independently enforced OS confinement are
@@ -41,6 +42,9 @@ def serve(raw_config: bytes, *, current_sid: Callable[[], str], ca: bytes,
         if (not all(callable(value) for value in (current_sid, verify_bundle, isolation_verified, attach_job,
                 start_dispatcher, connector, status_factory, claim_call, pause))
             or (decrypt is not None and not callable(decrypt))):
+            raise ValueError()
+        if terminal_broker is not None and (not callable(getattr(terminal_broker, "dispatch", None))
+                                            or not callable(getattr(terminal_broker, "close", None))):
             raise ValueError()
         candidate = config.parse_config(raw_config)
         owner = current_sid()
@@ -59,10 +63,15 @@ def serve(raw_config: bytes, *, current_sid: Callable[[], str], ca: bytes,
         def dispatch(name: str, args: dict) -> dict:
             nonlocal failed
             try:
+                if name in TERMINAL_TOOLS:
+                    if terminal_broker is None:
+                        return {"content": [{"type": "text", "text": "H454_PERSONAL_TERMINAL_UNAVAILABLE"}],
+                                "isError": True}
+                    return terminal_broker.dispatch(name, args)
                 return bridge.dispatch(name, args)
-            except PersonalPipeDenied:
+            except Exception:
                 failed = True
-                raise
+                raise PersonalPipeDenied("personal_pipe_denied") from None
         failures = 0
         while failures < MAX_RECONNECTS:
             if current_sid() != owner:
@@ -92,6 +101,11 @@ def serve(raw_config: bytes, *, current_sid: Callable[[], str], ca: bytes,
     except Exception:
         raise PersonalWorkerDenied("personal_worker_denied") from None
     finally:
+        if terminal_broker is not None:
+            try:
+                terminal_broker.close()
+            except Exception:
+                pass
         if bridge is not None:
             bridge.close()
         elif process is not None:

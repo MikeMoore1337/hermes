@@ -155,17 +155,21 @@ def synthetic_token_diagnostic(token, path):
 
 
 try:
-    if sys.argv[1:] not in (["--interactive-test"], ["--broker-test"], ["--node-test"], ["--node-child-test"]):
+    if sys.argv[1:] not in (["--interactive-test"], ["--broker-test"], ["--broker-command-test"], ["--sessions-test"],
+                            ["--node-test"], ["--node-child-test"]):
         raise ValueError("INVALID_SYNTHETIC_TEST")
     session = wintypes.DWORD()
     if kernel.ProcessIdToSessionId(kernel.GetCurrentProcessId(), ctypes.byref(session)):
         out["session_zero"] = session.value == 0
     interactive_test = sys.argv[1:] == ["--interactive-test"]
     broker_test = sys.argv[1:] == ["--broker-test"]
+    broker_command_test = sys.argv[1:] == ["--broker-command-test"]
+    sessions_test = sys.argv[1:] == ["--sessions-test"]
     shell_test = sys.argv[1:] == ["--node-shell-test"]
     child_test = sys.argv[1:] == ["--node-child-test"] or shell_test
     node_test = sys.argv[1:] == ["--node-test"] or child_test
-    filesystem_test = sys.argv[1:] == ["--filesystem-test"] or node_test or interactive_test or broker_test
+    filesystem_test = (sys.argv[1:] == ["--filesystem-test"] or node_test or interactive_test
+                       or broker_test or broker_command_test or sessions_test)
     if sys.argv[1:] == ["--temporary-profile"] or filesystem_test:
         result = userenv.CreateAppContainerProfile(profile_name, "Hermes synthetic probe",
             "Temporary isolated process test", None, 0, ctypes.byref(sid))
@@ -291,26 +295,64 @@ try:
                       + "c.status>0&&c.status<20?c.status:26)")
             js = "Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,200);" + js
             command_text = subprocess.list2cmdline([executable, "-e", js])
-        if broker_test:
+        if sessions_test:
+            sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+            from device_fabric.windows_personal_terminal_sessions import PersonalTerminalSessions
+            manager = PersonalTerminalSessions(int(sid.value), str(allowed))
+            try:
+                finished = manager.dispatch("start_process", {"command": shell_command, "timeout_ms": 3000})
+                failed = manager.dispatch("start_process", {"command": "exit /b 7", "timeout_ms": 3000})
+                started = manager.dispatch("start_process", {
+                    "command": "set /p H454=H454_READY & echo H454_DONE", "timeout_ms": 3000})
+                started_text = started["content"][0]["text"]
+                match = re.search(r"Process ([0-9]+) ", started_text)
+                if not match:
+                    raise RuntimeError("SESSION_START_FAILED")
+                second = manager.dispatch("start_process", {
+                    "command": "set /p H454=H454_SECOND", "timeout_ms": 3000})
+                second_match = re.search(r"Process ([0-9]+) ", second["content"][0]["text"])
+                if not second_match:
+                    raise RuntimeError("SECOND_SESSION_START_FAILED")
+                listing = manager.dispatch("list_sessions", {})["content"][0]["text"]
+                out["multiple_sessions"] = (not second["isError"] and match.group(1) in listing
+                                            and second_match.group(1) in listing)
+                reply = manager.dispatch("interact_with_process", {
+                    "pid": int(match.group(1)), "input": "synthetic", "timeout_ms": 3000})
+                terminated = manager.dispatch("force_terminate", {"pid": int(second_match.group(1))})
+                out["session_terminated"] = not terminated["isError"]
+                out["process_started"] = not finished["isError"]
+                out["is_appcontainer"] = out["process_started"]
+                out["exit_code"] = 0 if out["process_started"] else 1
+                out["allowed_write"] = allowed_output.is_file()
+                out["private_write_blocked"] = not private_output.exists()
+                out["nonzero_is_error"] = failed["isError"] and "code 7" in failed["content"][0]["text"]
+                out["session_interaction"] = (not started["isError"] and "H454_READY" in started_text
+                    and not reply["isError"] and "H454_DONE" in reply["content"][0]["text"])
+            finally:
+                manager.close()
+            raise _BrokerComplete()
+        if broker_test or broker_command_test:
             # Load the trusted repository module, not any project or vault.
             sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
             from device_fabric.windows_appcontainer_terminal import AppContainerTerminal
-            terminal = AppContainerTerminal(int(sid.value), str(allowed))
+            terminal = AppContainerTerminal(int(sid.value), str(allowed),
+                                             command=shell_command if broker_command_test else None)
             try:
                 out["process_started"] = True
                 # The broker has verified both TokenIsAppContainer and the
                 # exact AppContainer SID before resuming the shell.
                 out["is_appcontainer"] = True
                 output = bytearray()
-                terminal.write(b"echo H454_INTERACTIVE_OK\r\n")
-                deadline = time.monotonic() + 5
-                while time.monotonic() < deadline and b"H454_INTERACTIVE_OK" not in output:
-                    output.extend(terminal.read())
-                    time.sleep(0.05)
-                out["interactive_roundtrip"] = (b"H454_INTERACTIVE_OK" in output and terminal.poll() is None)
-                if not out["interactive_roundtrip"]:
-                    raise RuntimeError("BROKER_INTERACTION_FAILED")
-                terminal.write((shell_command + "\r\n").encode("ascii"))
+                if broker_test:
+                    terminal.write(b"echo H454_INTERACTIVE_OK\r\n")
+                    deadline = time.monotonic() + 5
+                    while time.monotonic() < deadline and b"H454_INTERACTIVE_OK" not in output:
+                        output.extend(terminal.read())
+                        time.sleep(0.05)
+                    out["interactive_roundtrip"] = (b"H454_INTERACTIVE_OK" in output and terminal.poll() is None)
+                    if not out["interactive_roundtrip"]:
+                        raise RuntimeError("BROKER_INTERACTION_FAILED")
+                    terminal.write((shell_command + "\r\n").encode("ascii"))
                 deadline = time.monotonic() + 10
                 while time.monotonic() < deadline:
                     output.extend(terminal.read())
@@ -327,9 +369,11 @@ try:
                 out["private_write_blocked"] = not private_output.exists()
             finally:
                 terminal.close()
-            terminal = AppContainerTerminal(int(sid.value), str(allowed))
+            terminal = AppContainerTerminal(int(sid.value), str(allowed),
+                                             command="exit /b 259" if broker_command_test else None)
             try:
-                terminal.write(b"exit /b 259\r\n")
+                if broker_test:
+                    terminal.write(b"exit /b 259\r\n")
                 deadline = time.monotonic() + 5
                 while time.monotonic() < deadline and terminal.poll() is None:
                     time.sleep(0.05)
@@ -444,6 +488,9 @@ required = ("sid_derived", "process_started", "is_appcontainer", "allowed_write"
             "private_write_blocked", "temporary_profile_deleted")
 if (out.get("exit_code") != 0 or any(out.get(name) is not True for name in required)
     or ((interactive_test or sys.argv[1:] == ["--broker-test"]) and out.get("interactive_output") is not True)
-    or (sys.argv[1:] == ["--broker-test"] and
-        (out.get("interactive_roundtrip") is not True or out.get("exit_259") is not True))):
+    or (sys.argv[1:] == ["--broker-test"] and out.get("interactive_roundtrip") is not True)
+    or (sys.argv[1:] in (["--broker-test"], ["--broker-command-test"]) and out.get("exit_259") is not True)
+    or (sys.argv[1:] == ["--sessions-test"] and
+        any(out.get(name) is not True for name in ("session_interaction", "nonzero_is_error",
+                                                   "multiple_sessions", "session_terminated")))):
     raise SystemExit(1)

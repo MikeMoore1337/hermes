@@ -35,6 +35,7 @@ on:
       - device_fabric/windows_personal_commander_status.py
       - device_fabric/windows_personal_commander_worker.py
       - device_fabric/windows_appcontainer_terminal.py
+      - device_fabric/windows_personal_terminal_sessions.py
       - device_fabric/windows_personal_job.py
       - device_fabric/personal_replay.py
       - device_fabric/native_private_tls.py
@@ -50,6 +51,7 @@ on:
       - tests/test_windows_personal_commander_transport.py
       - tests/test_windows_personal_commander_status.py
       - tests/test_windows_personal_commander_worker.py
+      - tests/test_windows_personal_terminal_sessions.py
       - tests/test_h454_windows_personal_dispatcher.py
       - tests/test_h454_windows_personal_owner_pair.py
       - tests/test_h454_windows_personal_job.py
@@ -181,7 +183,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          python -B -m unittest -v tests.test_h454_windows_native_dpapi tests.test_h454_windows_personal_session tests.test_h454_personal_replay tests.test_windows_personal_commander_config tests.test_windows_personal_commander_bundle tests.test_windows_personal_commander_transport tests.test_windows_personal_commander_status tests.test_windows_personal_commander_worker tests.test_h454_windows_personal_dispatcher tests.test_h454_windows_personal_job
+          python -B -m unittest -v tests.test_h454_windows_native_dpapi tests.test_h454_windows_personal_session tests.test_h454_personal_replay tests.test_windows_personal_commander_config tests.test_windows_personal_commander_bundle tests.test_windows_personal_commander_transport tests.test_windows_personal_commander_status tests.test_windows_personal_commander_worker tests.test_windows_personal_terminal_sessions tests.test_h454_windows_personal_dispatcher tests.test_h454_windows_personal_job
           if ($LASTEXITCODE -ne 0) { throw 'H454_WIN32_DPAPI_CURRENT_USER_DENIED' }
           Write-Output 'H454_WIN32_DPAPI_CURRENT_USER=PASS'
           Write-Output 'H454_WINDOWS_OWNER_DEVICE_ACCESS=NOT_RUN'
@@ -197,6 +199,10 @@ jobs:
           python -B scripts/h454_windows_appcontainer_synthetic.py --node-child-test
           if ($LASTEXITCODE -ne 0) { $failed = $true }
           python -B scripts/h454_windows_appcontainer_synthetic.py --broker-test
+          if ($LASTEXITCODE -ne 0) { $failed = $true }
+          python -B scripts/h454_windows_appcontainer_synthetic.py --broker-command-test
+          if ($LASTEXITCODE -ne 0) { $failed = $true }
+          python -B scripts/h454_windows_appcontainer_synthetic.py --sessions-test
           if ($LASTEXITCODE -ne 0) { $failed = $true }
           if ($failed) { throw 'H454_APPCONTAINER_SYNTHETIC_TEST_FAILED' }
           Write-Output 'H454_APPCONTAINER_SYNTHETIC=PASS'

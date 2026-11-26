@@ -93,9 +93,10 @@ def _apis():
 class AppContainerTerminal:
     """One broker-owned shell and its job; no policy or installation implied."""
 
-    def __init__(self, appcontainer_sid: int, working_directory: str):
+    def __init__(self, appcontainer_sid: int, working_directory: str, *, command: str | None = None):
         self._k = None
         self._process = self._input = self._output = self._job = None
+        self.pid = 0
         self._write_lock = threading.Lock()
         self._closed = False
         handles = []
@@ -105,7 +106,9 @@ class AppContainerTerminal:
         try:
             if (type(appcontainer_sid) is not int or appcontainer_sid <= 0
                 or type(working_directory) is not str or not os.path.isabs(working_directory)
-                or len(working_directory) > 2048 or "\x00" in working_directory):
+                or len(working_directory) > 2048 or "\x00" in working_directory
+                or (command is not None and (type(command) is not str or not 0 < len(command) <= 4096
+                                             or "\x00" in command))):
                 raise ValueError()
             k, a = _apis()
             self._k = k
@@ -151,14 +154,18 @@ class AppContainerTerminal:
             if not os.path.isabs(system_root):
                 raise ValueError()
             shell = os.path.join(system_root, "System32", "cmd.exe")
-            command = ctypes.create_unicode_buffer(subprocess.list2cmdline([shell, "/d", "/q"]))
+            # cmd.exe parses /S /C itself; C-runtime quote escaping from
+            # list2cmdline would change embedded quoted file paths.
+            arguments = (subprocess.list2cmdline([shell, "/d", "/q"]) if command is None else
+                         '"' + shell + '" /d /s /c "' + command + '"')
+            command_line = ctypes.create_unicode_buffer(arguments)
             names = ("SYSTEMROOT", "WINDIR", "USERPROFILE", "LOCALAPPDATA", "TEMP", "TMP")
             environment = ctypes.create_unicode_buffer("\0".join(
                 name + "=" + os.environ[name] for name in names if name in os.environ) + "\0\0")
             # CREATE_SUSPENDED ensures the shell cannot run before assignment
             # to the dedicated kill-on-close job and token verification.
             flags = 0x08000000 | 0x00080000 | 0x00000400 | 0x00000004
-            if not k.CreateProcessW(shell, command, None, None, True, flags, environment,
+            if not k.CreateProcessW(shell, command_line, None, None, True, flags, environment,
                                     working_directory, ctypes.byref(startup.startup), ctypes.byref(info)):
                 raise ValueError()
             self._process = info.process
@@ -187,6 +194,9 @@ class AppContainerTerminal:
                 k.CloseHandle(token)
             if k.ResumeThread(info.thread) == 0xFFFFFFFF:
                 raise ValueError()
+            if info.pid <= 0:
+                raise ValueError()
+            self.pid = int(info.pid)
             self._input, self._output = write_in, read_out
             handles.remove(write_in)
             handles.remove(read_out)
