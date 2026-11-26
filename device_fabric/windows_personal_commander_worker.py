@@ -56,7 +56,12 @@ def serve(raw_config: bytes, *, current_sid: Callable[[], str], ca: bytes,
         options = {"decrypt": decrypt} if decrypt is not None else {}
         bearer = config.unseal(candidate, owner_sid=owner, ca=ca, bundle_sha256=bundle, **options)
         status = status_factory(candidate.device_id, bearer)
-        if not callable(status) or status() is not True:
+        if not callable(status):
+            raise ValueError()
+        initial_status = status()
+        if initial_status is None:
+            return "reconnect_exhausted"
+        if initial_status is not True:
             raise ValueError()
         attach_job()
         process = start_dispatcher()
