@@ -18,7 +18,6 @@ TOOLS = ["read_file", "read_multiple_files", "write_file", "edit_block", "create
          "interact_with_process", "force_terminate", "list_sessions"]
 
 
-@unittest.skipUnless(os.name == "nt" and shutil.which("node"), "Windows and Node required")
 class PersonalDispatcherTests(unittest.TestCase):
     def make_bundle(self, base: Path):
         bundle = base / "bundle"
@@ -51,7 +50,7 @@ class PersonalDispatcherTests(unittest.TestCase):
 
     def test_write_is_confined_and_sensitive_paths_are_denied(self):
         with tempfile.TemporaryDirectory() as temporary:
-            base = Path(temporary)
+            base = Path(temporary).resolve()
             project = base / "project"
             outside = base / "outside"
             project.mkdir()
@@ -84,7 +83,7 @@ class PersonalDispatcherTests(unittest.TestCase):
 
     def test_persistent_pipe_dispatches_and_closes(self):
         with tempfile.TemporaryDirectory() as temporary:
-            base = Path(temporary)
+            base = Path(temporary).resolve()
             project = base / "project"
             project.mkdir()
             entry = self.make_bundle(base)
@@ -106,7 +105,7 @@ class PersonalDispatcherTests(unittest.TestCase):
 
     def test_process_call_can_wait_longer_than_default_pipe_timeout(self):
         with tempfile.TemporaryDirectory() as temporary:
-            base = Path(temporary)
+            base = Path(temporary).resolve()
             project = base / "project"
             project.mkdir()
             entry = self.make_bundle(base)
@@ -122,7 +121,7 @@ class PersonalDispatcherTests(unittest.TestCase):
 
     def test_resolved_link_cannot_redirect_writes_to_an_unapproved_directory(self):
         with tempfile.TemporaryDirectory() as temporary:
-            base = Path(temporary)
+            base = Path(temporary).resolve()
             project = base / "project"
             outside = base / "outside"
             project.mkdir()
@@ -144,6 +143,9 @@ class PersonalDispatcherTests(unittest.TestCase):
             self.assertTrue(result[1]["result"]["isError"])
             self.assertFalse((outside / "foreign.txt").exists())
 
+
+if os.name != "nt" or not shutil.which("node"):
+    del PersonalDispatcherTests
 
 if __name__ == "__main__":
     unittest.main()

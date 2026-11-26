@@ -11,13 +11,11 @@ from device_fabric import windows_personal_job as jobs
 
 
 class PersonalJobTests(unittest.TestCase):
-    @unittest.skipIf(os.name == "nt", "non-Windows refusal")
-    def test_refuses_non_windows(self):
+    def _refuses_non_windows(self):
         with self.assertRaises(jobs.PersonalJobDenied):
             jobs.attach_current_worker()
 
-    @unittest.skipUnless(os.name == "nt", "Windows job-object integration")
-    def test_worker_exit_terminates_its_child_without_a_console(self):
+    def _worker_exit_terminates_its_child_without_a_console(self):
         worker = r'''
 import subprocess,sys
 from device_fabric.windows_personal_job import attach_current_worker
@@ -67,6 +65,12 @@ sys.stdin.readline()
                 if stream:
                     stream.close()
 
+
+if os.name == "nt":
+    PersonalJobTests.test_worker_exit_terminates_its_child_without_a_console = (
+        PersonalJobTests._worker_exit_terminates_its_child_without_a_console)
+else:
+    PersonalJobTests.test_refuses_non_windows = PersonalJobTests._refuses_non_windows
 
 if __name__ == "__main__":
     unittest.main()

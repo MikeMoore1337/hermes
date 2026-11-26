@@ -84,8 +84,7 @@ class PersonalCommanderConfigTests(unittest.TestCase):
             with self.subTest(value=value[:30]), self.assertRaises(config.PersonalCommanderDenied):
                 config.parse_config(value)
 
-    @unittest.skipUnless(os.name == "nt", "Windows DPAPI integration")
-    def test_real_current_user_dpapi_round_trip_and_domain_separation(self):
+    def _real_current_user_dpapi_round_trip_and_domain_separation(self):
         raw = config.prepare_config(paired(), owner_sid=SID, release_sha=RELEASE,
                                     ca=CA, bundle_sha256=BUNDLE, now=1000)
         parsed = config.parse_config(raw)
@@ -96,6 +95,10 @@ class PersonalCommanderConfigTests(unittest.TestCase):
             dpapi.unseal_for_current_user(parsed.sealed_bearer,
                 manifest_sha256=config.policy_digest(parsed.ca_sha256, BUNDLE), device_id=DEVICE)
 
+
+if os.name == "nt":
+    PersonalCommanderConfigTests.test_real_current_user_dpapi_round_trip_and_domain_separation = (
+        PersonalCommanderConfigTests._real_current_user_dpapi_round_trip_and_domain_separation)
 
 if __name__ == "__main__":
     unittest.main()
