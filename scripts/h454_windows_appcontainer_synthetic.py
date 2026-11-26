@@ -1,9 +1,11 @@
 """Synthetic Windows AppContainer proof; never access real projects or vaults."""
 import ctypes
 from ctypes import wintypes
+import csv
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -155,7 +157,19 @@ try:
         base = (Path(os.environ["LOCALAPPDATA"]) / "Temp").resolve(strict=True)
         test_root = base / ("h454-appcontainer-synthetic-" + uuid.uuid4().hex)
         allowed, private = test_root / "allowed", test_root / "private"
-        allowed.mkdir(parents=True)
+        test_root.mkdir()
+        identity = subprocess.run([os.path.join(os.environ["WINDIR"], "System32", "whoami.exe"),
+            "/user", "/fo", "csv", "/nh"], capture_output=True, text=True, timeout=10,
+            creationflags=subprocess.CREATE_NO_WINDOW, check=True)
+        user_sid = next(csv.reader(identity.stdout.splitlines()))[1]
+        if re.fullmatch(r"S-1-(?:[0-9]+-){1,14}[0-9]+", user_sid) is None:
+            raise RuntimeError("SYNTHETIC_USER_SID_INVALID")
+        user_acl = subprocess.run([os.path.join(os.environ["WINDIR"], "System32", "icacls.exe"),
+            str(test_root), "/grant", "*" + user_sid + ":(OI)(CI)M"],
+            capture_output=True, timeout=10, creationflags=subprocess.CREATE_NO_WINDOW)
+        if user_acl.returncode:
+            raise RuntimeError("SYNTHETIC_USER_ACL_FAILED")
+        allowed.mkdir()
         private.mkdir()
         text_sid = wintypes.LPWSTR()
         if not adv.ConvertSidToStringSidW(sid, ctypes.byref(text_sid)):
