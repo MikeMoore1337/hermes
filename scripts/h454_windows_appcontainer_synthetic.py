@@ -124,7 +124,10 @@ try:
     executable = os.path.join(os.environ["WINDIR"], "System32", "cmd.exe")
     command_text = '"' + executable + '" /d /c exit 0'
     if filesystem_test:
-        base = Path(__file__).resolve().parent
+        # GitHub's checkout can live on a drive whose ancestor ACLs deny
+        # AppContainer traversal even when the test directory grants access.
+        # Use the normal Windows per-user temporary directory instead.
+        base = (Path(os.environ["LOCALAPPDATA"]) / "Temp").resolve(strict=True)
         test_root = base / ("h454-appcontainer-synthetic-" + uuid.uuid4().hex)
         allowed, private = test_root / "allowed", test_root / "private"
         allowed.mkdir(parents=True)
