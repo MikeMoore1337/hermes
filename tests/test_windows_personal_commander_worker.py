@@ -138,6 +138,32 @@ class PersonalWorkerTests(unittest.TestCase):
         self.assertTrue(observed[0]["isError"])
         self.assertEqual(observed[0]["content"][0]["text"], "H454_PERSONAL_TERMINAL_UNAVAILABLE")
 
+    def test_trusted_isolated_bridge_factory_is_used_and_closed(self):
+        calls = []
+        def factory(process, roots):
+            calls.append((process, roots))
+            return self.bridge
+        self.args["bridge_factory"] = factory
+        states = iter((True, False))
+        self.args["isolation_verified"] = lambda: next(states)
+        with patch.object(worker, "run_session", side_effect=PersonalTransportDenied("synthetic")):
+            self.assertEqual(worker.serve(self.raw, **self.args), "isolation_lost")
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][1], list(config.PERSONAL_ROOTS.values()))
+        self.assertTrue(self.bridge.closed)
+
+    def test_failed_bridge_construction_closes_owned_isolated_process(self):
+        class OwnedProcess:
+            closed = False
+            def close(self):
+                self.closed = True
+        process = OwnedProcess()
+        self.args["start_dispatcher"] = lambda: process
+        self.args["bridge_factory"] = lambda *_args: (_ for _ in ()).throw(ValueError("synthetic"))
+        with self.assertRaises(worker.PersonalWorkerDenied):
+            worker.serve(self.raw, **self.args)
+        self.assertTrue(process.closed)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -28,7 +28,8 @@ def serve(raw_config: bytes, *, current_sid: Callable[[], str], ca: bytes,
           start_dispatcher: Callable[[], subprocess.Popen],
           connector: Callable[..., Any], status_factory: Callable[[str, str], Callable[[], bool | None]],
           claim_call: Callable[[str], bool], pause: Callable[[float], Any] = time.sleep,
-          decrypt: Callable[..., str] | None = None, terminal_broker: Any | None = None) -> str:
+          decrypt: Callable[..., str] | None = None, terminal_broker: Any | None = None,
+          bridge_factory: Callable[..., Any] | None = None) -> str:
     """Run bounded sessions in a dedicated, job-owned worker process.
 
     Owner, CA, installed bundle and independently enforced OS confinement are
@@ -41,7 +42,8 @@ def serve(raw_config: bytes, *, current_sid: Callable[[], str], ca: bytes,
     try:
         if (not all(callable(value) for value in (current_sid, verify_bundle, isolation_verified, attach_job,
                 start_dispatcher, connector, status_factory, claim_call, pause))
-            or (decrypt is not None and not callable(decrypt))):
+            or (decrypt is not None and not callable(decrypt))
+            or (bridge_factory is not None and not callable(bridge_factory))):
             raise ValueError()
         if terminal_broker is not None and (not callable(getattr(terminal_broker, "dispatch", None))
                                             or not callable(getattr(terminal_broker, "close", None))):
@@ -58,7 +60,7 @@ def serve(raw_config: bytes, *, current_sid: Callable[[], str], ca: bytes,
             raise ValueError()
         attach_job()
         process = start_dispatcher()
-        bridge = PersonalCommanderPipe(process, list(config.PERSONAL_ROOTS.values()))
+        bridge = (bridge_factory or PersonalCommanderPipe)(process, list(config.PERSONAL_ROOTS.values()))
         failed = False
         def dispatch(name: str, args: dict) -> dict:
             nonlocal failed
@@ -110,7 +112,11 @@ def serve(raw_config: bytes, *, current_sid: Callable[[], str], ca: bytes,
             bridge.close()
         elif process is not None:
             try:
-                process.kill()
-                process.wait(timeout=5)
+                closer = getattr(process, "close", None)
+                if callable(closer):
+                    closer()
+                else:
+                    process.kill()
+                    process.wait(timeout=5)
             except Exception:
                 pass
