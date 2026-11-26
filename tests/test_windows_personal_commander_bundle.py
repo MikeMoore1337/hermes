@@ -11,6 +11,37 @@ from device_fabric import windows_personal_commander_bundle as bundle
 
 
 class PersonalBundleTests(unittest.TestCase):
+    def test_external_hardlink_is_denied_before_opening_the_file(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary).resolve()
+            root = base / "bundle"
+            root.mkdir()
+            outside = base / "outside.txt"
+            outside.write_text("synthetic", encoding="ascii")
+            os.link(outside, root / "linked.txt")
+            original_open = Path.open
+            def guarded_open(path, *args, **kwargs):
+                if path == root / "linked.txt":
+                    self.fail("hardlinked bundle file was opened")
+                return original_open(path, *args, **kwargs)
+            with patch.object(Path, "open", guarded_open), self.assertRaises(bundle.PersonalBundleDenied):
+                bundle.manifest(root)
+
+    def test_hardlink_added_before_file_handle_read_is_denied(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary).resolve()
+            root = base / "bundle"
+            root.mkdir()
+            item = root / "code.js"
+            item.write_text("synthetic", encoding="ascii")
+            original_open = Path.open
+            def racing_open(path, *args, **kwargs):
+                if path == item:
+                    os.link(item, base / "outside-link")
+                return original_open(path, *args, **kwargs)
+            with patch.object(Path, "open", racing_open), self.assertRaises(bundle.PersonalBundleDenied):
+                bundle.manifest(root)
+
     def test_file_content_addition_and_removal_change_the_pinned_bundle(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary).resolve() / "bundle"

@@ -105,18 +105,24 @@ def manifest(root: Path) -> bytes:
                     entries.append({"path": relative, "kind": "directory"})
                     stack.append(path)
                 elif stat.S_ISREG(entry.st_mode) and 0 <= entry.st_size <= MAX_FILE:
+                    # A hard link may refer to an object outside this bundle;
+                    # propagating an ACL to it can change that external object.
+                    if entry.st_nlink != 1:
+                        raise ValueError()
                     total += entry.st_size
                     if total > MAX_BYTES:
                         raise ValueError()
                     digest = hashlib.sha256()
                     with path.open("rb") as stream:
                         before = os.fstat(stream.fileno())
+                        if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:
+                            raise ValueError()
                         while block := stream.read(1024 * 1024):
                             digest.update(block)
                         after = os.fstat(stream.fileno())
                     # Windows path stat and handle stat may report different
                     # synthetic execute bits for the same regular file.
-                    fields = ("st_dev", "st_ino", "st_size", "st_mtime_ns")
+                    fields = ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_nlink")
                     if (not stat.S_ISREG(before.st_mode) or not stat.S_ISREG(after.st_mode)
                         or before.st_mode != after.st_mode
                         or any(getattr(entry, key) != getattr(before, key) or
