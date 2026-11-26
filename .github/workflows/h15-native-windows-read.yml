@@ -35,6 +35,8 @@ on:
       - device_fabric/windows_personal_appcontainer_pipe.py
       - device_fabric/windows_personal_psec_terminal.py
       - device_fabric/windows_personal_project_scan.py
+      - device_fabric/windows_personal_yfc_psec.py
+      - device_fabric/windows_personal_yfc_runner.py
       - device_fabric/windows_personal_commander_status.py
       - device_fabric/windows_personal_commander_worker.py
       - device_fabric/windows_appcontainer_terminal.py
@@ -43,6 +45,14 @@ on:
       - device_fabric/personal_replay.py
       - device_fabric/native_private_tls.py
       - scripts/h454_windows_personal_worker.py
+      - scripts/h454_windows_personal_yfc_entry.py
+      - scripts/h454_windows_personal_yfc_bootstrap.py
+      - scripts/h454_windows_personal_yfc_state.py
+      - scripts/h454_windows_personal_yfc_action.py
+      - scripts/h454_wss_relay_proxy.mjs
+      - scripts/h454_wss_personal_status_patch.py
+      - scripts/h454_wss_personal_status_e2e.mjs
+      - scripts/h454_wss_fixture_certificates.sh
       - scripts/h454_windows_personal_state.py
       - scripts/h454_windows_personal_dispatcher.mjs
       - scripts/h454_windows_personal_adapter_launcher.mjs
@@ -60,6 +70,13 @@ on:
       - tests/test_windows_personal_appcontainer_pipe.py
       - tests/test_windows_personal_psec_terminal.py
       - tests/test_windows_personal_project_scan.py
+      - tests/test_windows_personal_yfc_psec.py
+      - tests/test_windows_personal_yfc_runner.py
+      - tests/test_windows_personal_yfc_entry.py
+      - tests/test_windows_personal_yfc_bootstrap.py
+      - tests/test_windows_personal_yfc_state.py
+      - tests/test_windows_personal_yfc_action.py
+      - tests/test_h454_wss_personal_status_patch.py
       - tests/test_windows_personal_terminal_sessions.py
       - tests/test_h454_windows_personal_dispatcher.py
       - tests/test_h454_windows_personal_adapter_launcher.py
@@ -193,10 +210,27 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          python -B -m unittest -v tests.test_h454_windows_native_dpapi tests.test_h454_windows_personal_session tests.test_h454_personal_replay tests.test_windows_personal_commander_config tests.test_windows_personal_commander_bundle tests.test_windows_personal_commander_transport tests.test_windows_personal_commander_status tests.test_windows_personal_commander_worker tests.test_windows_personal_appcontainer_pipe tests.test_windows_personal_psec_terminal tests.test_windows_personal_project_scan tests.test_windows_personal_terminal_sessions tests.test_h454_windows_personal_dispatcher tests.test_h454_windows_personal_adapter_launcher tests.test_h454_windows_personal_job
+          python -B -m unittest -v tests.test_h454_windows_native_dpapi tests.test_h454_windows_personal_session tests.test_h454_personal_replay tests.test_windows_personal_commander_config tests.test_windows_personal_commander_bundle tests.test_windows_personal_commander_transport tests.test_windows_personal_commander_status tests.test_windows_personal_commander_worker tests.test_windows_personal_appcontainer_pipe tests.test_windows_personal_psec_terminal tests.test_windows_personal_project_scan tests.test_windows_personal_yfc_psec tests.test_windows_personal_yfc_runner tests.test_windows_personal_yfc_entry tests.test_windows_personal_yfc_bootstrap tests.test_windows_personal_yfc_state tests.test_windows_personal_yfc_action tests.test_windows_personal_terminal_sessions tests.test_h454_windows_personal_dispatcher tests.test_h454_windows_personal_adapter_launcher tests.test_h454_windows_personal_job
           if ($LASTEXITCODE -ne 0) { throw 'H454_WIN32_DPAPI_CURRENT_USER_DENIED' }
           Write-Output 'H454_WIN32_DPAPI_CURRENT_USER=PASS'
           Write-Output 'H454_WINDOWS_OWNER_DEVICE_ACCESS=NOT_RUN'
+      - name: Verify personal status proxy and legacy identities on synthetic relay
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -B -m unittest -v tests.test_h454_wss_personal_status_patch
+          if ($LASTEXITCODE -ne 0) { throw 'H454_PERSONAL_PROXY_PATCH_FAIL' }
+          $target = Join-Path $env:RUNNER_TEMP 'h454-personal-proxy.mjs'
+          python -B -c "import pathlib,sys; from scripts.h454_wss_personal_status_patch import patch; p=pathlib.Path('scripts/h454_wss_relay_proxy.mjs').read_bytes().replace(b'\r\n',b'\n'); pathlib.Path(sys.argv[1]).write_bytes(patch(p))" $target
+          if ($LASTEXITCODE -ne 0) { throw 'H454_PERSONAL_PROXY_GENERATE_FAIL' }
+          node scripts/h454_wss_personal_status_e2e.mjs $target
+          if ($LASTEXITCODE -ne 0) { throw 'H454_PERSONAL_PROXY_E2E_FAIL' }
+          $fixture = Join-Path $env:RUNNER_TEMP 'h454-personal-status-tls'
+          New-Item -ItemType Directory -Path $fixture | Out-Null
+          & "$env:ProgramFiles\Git\bin\bash.exe" scripts/h454_wss_fixture_certificates.sh ($fixture -replace '\\', '/')
+          if ($LASTEXITCODE -ne 0) { throw 'H454_PERSONAL_PROXY_CERT_FIXTURE_FAIL' }
+          node scripts/h454_wss_personal_status_e2e.mjs $target $fixture
+          if ($LASTEXITCODE -ne 0) { throw 'H454_PERSONAL_PROXY_TLS_FAIL' }
       - name: Verify hidden AppContainer shell and child filesystem isolation
         shell: pwsh
         run: |

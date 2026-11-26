@@ -79,6 +79,21 @@ def build_spec(root: str, *, writable: tuple[str, ...] = (), readonly: tuple[str
 class SyntheticPsecTerminal(AppContainerTerminal):
     """A hidden process with inherited stdio and a kill-on-close job."""
 
+    def _validate_paths(self, root: str, writable: tuple[str, ...], readonly: tuple[str, ...]) -> None:
+        fixture_name = None
+        temp = Path(tempfile.gettempdir()).resolve(strict=True)
+        for path in (root, *writable, *readonly):
+            resolved = Path(path).resolve(strict=True)
+            relative = resolved.relative_to(temp)
+            if (not resolved.is_dir() or not relative.parts
+                or not relative.parts[0].startswith("h454-psec-synthetic-")
+                or os.path.normcase(str(resolved)) != os.path.normcase(path)):
+                raise ValueError()
+            if fixture_name is None:
+                fixture_name = relative.parts[0]
+            elif relative.parts[0] != fixture_name:
+                raise ValueError()
+
     def __init__(self, root: str, *, command: str | None = None,
                  writable: tuple[str, ...] = (), readonly: tuple[str, ...] = ()):
         self._k = self._model = self._environment = None
@@ -95,19 +110,7 @@ class SyntheticPsecTerminal(AppContainerTerminal):
             if (os.name != "nt" or (command is not None and (type(command) is not str
                 or not 0 < len(command) <= 4096 or "\0" in command))):
                 raise ValueError()
-            fixture_name = None
-            temp = Path(tempfile.gettempdir()).resolve(strict=True)
-            for path in (root, *writable, *readonly):
-                resolved = Path(path).resolve(strict=True)
-                relative = resolved.relative_to(temp)
-                if (not resolved.is_dir() or not relative.parts
-                    or not relative.parts[0].startswith("h454-psec-synthetic-")
-                    or os.path.normcase(str(resolved)) != os.path.normcase(path)):
-                    raise ValueError()
-                if fixture_name is None:
-                    fixture_name = relative.parts[0]
-                elif relative.parts[0] != fixture_name:
-                    raise ValueError()
+            self._validate_paths(root, writable, readonly)
             kernel, adv = _apis()
             model = ctypes.WinDLL("processmodel", use_last_error=True, winmode=0x800)
             create = model.CreateProcessSecurityEnvironment
