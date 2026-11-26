@@ -50,7 +50,7 @@ class PersonalWorkerTests(unittest.TestCase):
              patch.object(worker, "run_session", side_effect=PersonalTransportDenied("synthetic")):
             outcome = worker.serve(self.raw, **self.args)
         self.assertEqual(outcome, "reconnect_exhausted")
-        self.assertEqual(self.events[:5], ["verify", "isolation", "decrypt", "job", "start"])
+        self.assertEqual(self.events[:5], ["isolation", "verify", "decrypt", "job", "start"])
         self.assertEqual(len([item for item in self.events if isinstance(item, tuple)]), worker.MAX_RECONNECTS)
         self.assertTrue(self.bridge.closed)
 
@@ -70,6 +70,7 @@ class PersonalWorkerTests(unittest.TestCase):
         self.args["isolation_verified"] = lambda: False
         with self.assertRaises(worker.PersonalWorkerDenied):
             worker.serve(self.raw, **self.args)
+        self.assertNotIn("verify", self.events)
         self.assertNotIn("decrypt", self.events)
         self.assertNotIn("job", self.events)
 

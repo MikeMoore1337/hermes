@@ -1,7 +1,8 @@
 """Deterministic local bundle manifest for a personal Windows Commander.
 
-Only an already selected bundle directory is inspected. This module never
-downloads, extracts, executes, installs, or reads a project or credential.
+Only an already selected bundle directory is inspected. The trusted caller
+must select an isolated bundle, never a project or credential directory. This
+module does not download, extract, execute, or install files.
 """
 from __future__ import annotations
 

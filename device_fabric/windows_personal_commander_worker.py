@@ -44,9 +44,9 @@ def serve(raw_config: bytes, *, current_sid: Callable[[], str], ca: bytes,
             raise ValueError()
         candidate = config.parse_config(raw_config)
         owner = current_sid()
-        bundle = verify_bundle()
         if isolation_verified() is not True:
             raise ValueError()
+        bundle = verify_bundle()
         options = {"decrypt": decrypt} if decrypt is not None else {}
         bearer = config.unseal(candidate, owner_sid=owner, ca=ca, bundle_sha256=bundle, **options)
         status = status_factory(candidate.device_id, bearer)
