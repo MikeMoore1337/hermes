@@ -95,21 +95,21 @@ pipe_handles = []
 interactive_test = False
 
 
-def acl_contains(path, sid_text):
-    """Inspect only the test file's ACL; return no path or ACL contents."""
+def security_descriptor(path, requested):
+    """Read only the synthetic test file's descriptor."""
     size = wintypes.DWORD()
-    adv.GetFileSecurityW(str(path), 4, None, 0, ctypes.byref(size))
+    adv.GetFileSecurityW(str(path), requested, None, 0, ctypes.byref(size))
     if not 0 < size.value <= 65536:
         return None
     descriptor = ctypes.create_string_buffer(size.value)
-    if not adv.GetFileSecurityW(str(path), 4, descriptor, size, ctypes.byref(size)):
+    if not adv.GetFileSecurityW(str(path), requested, descriptor, size, ctypes.byref(size)):
         return None
     sddl = wintypes.LPWSTR()
     if not adv.ConvertSecurityDescriptorToStringSecurityDescriptorW(
-        descriptor, 1, 4, ctypes.byref(sddl), None):
+        descriptor, 1, requested, ctypes.byref(sddl), None):
         return None
     try:
-        return sid_text in sddl.value
+        return str(sddl.value)
     finally:
         kernel.LocalFree(ctypes.cast(sddl, ctypes.c_void_p))
 
@@ -169,6 +169,14 @@ try:
             capture_output=True, timeout=10, creationflags=subprocess.CREATE_NO_WINDOW)
         if user_acl.returncode:
             raise RuntimeError("SYNTHETIC_USER_ACL_FAILED")
+        # AppContainers run at low integrity. The disposable root and its
+        # children must explicitly accept low-integrity writes on runners
+        # whose temporary directories inherit a higher integrity label.
+        label_result = subprocess.run([os.path.join(os.environ["WINDIR"], "System32", "icacls.exe"),
+            str(test_root), "/setintegritylevel", "(OI)(CI)L"], capture_output=True,
+            timeout=10, creationflags=subprocess.CREATE_NO_WINDOW)
+        if label_result.returncode:
+            raise RuntimeError("SYNTHETIC_INTEGRITY_FAILED")
         allowed.mkdir()
         private.mkdir()
         text_sid = wintypes.LPWSTR()
@@ -188,7 +196,12 @@ try:
         allowed_output, private_output = allowed / "written.txt", private / "attempted.txt"
         allowed_file.write_text("synthetic-allowed", encoding="ascii")
         private_file.write_text("synthetic-private", encoding="ascii")
-        out["allowed_file_acl_has_sid"] = acl_contains(allowed_file, sid_text)
+        dacl = security_descriptor(allowed_file, 4)
+        out["allowed_file_acl_has_sid"] = sid_text in dacl if dacl else None
+        label = security_descriptor(allowed_file, 16)
+        out["synthetic_file_label"] = ("high" if label and ";;;HI)" in label else
+            "medium" if label and ";;;ME)" in label else "low" if label and ";;;LW)" in label else
+            "other" if label else "none_or_unavailable")
         shell_command = ('(type "' + str(allowed_file) + '" >nul) || exit /b 2 & '
             + '(echo synthetic>"' + str(allowed_output) + '" 2>nul) || exit /b 3 & '
             + '(type "' + str(private_file) + '" >nul 2>&1) && exit /b 4 & '
