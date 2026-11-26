@@ -17,7 +17,8 @@ MAX_FRAME = 1024 * 1024
 MAX_CALLS = 64
 ID = re.compile(r"[A-Za-z0-9_-]{1,128}\Z")
 TOOLS = frozenset({"read_file", "read_multiple_files", "write_file", "edit_block",
-    "create_directory", "list_directory", "move_file", "get_file_info", "start_process",
+    "create_directory", "list_directory", "move_file", "get_file_info", "start_search",
+    "get_more_search_results", "stop_search", "list_searches", "start_process",
     "read_process_output", "interact_with_process", "force_terminate", "list_sessions"})
 
 
