@@ -79,6 +79,10 @@ def build_spec(root: str, *, writable: tuple[str, ...] = (), readonly: tuple[str
 class SyntheticPsecTerminal(AppContainerTerminal):
     """A hidden process with inherited stdio and a kill-on-close job."""
 
+    def _environment_variables(self) -> dict[str, str]:
+        names = ("SYSTEMROOT", "WINDIR", "USERPROFILE", "LOCALAPPDATA", "TEMP", "TMP")
+        return {name: os.environ[name] for name in names if name in os.environ}
+
     def _validate_paths(self, root: str, writable: tuple[str, ...], readonly: tuple[str, ...]) -> None:
         fixture_name = None
         temp = Path(tempfile.gettempdir()).resolve(strict=True)
@@ -169,9 +173,9 @@ class SyntheticPsecTerminal(AppContainerTerminal):
             arguments = ('"' + shell + '" /d /q' if command is None else
                          '"' + shell + '" /d /s /c "' + command + '"')
             command_line = ctypes.create_unicode_buffer(arguments)
-            names = ("SYSTEMROOT", "WINDIR", "USERPROFILE", "LOCALAPPDATA", "TEMP", "TMP")
+            variables = self._environment_variables()
             environment = ctypes.create_unicode_buffer("\0".join(
-                name + "=" + os.environ[name] for name in names if name in os.environ) + "\0\0")
+                name + "=" + value for name, value in sorted(variables.items())) + "\0\0")
             launched = kernel.CreateProcessW(shell, command_line, None, None, True, 0x08080404,
                 environment, root, ctypes.byref(startup.startup), ctypes.byref(info))
             self._process = info.process or None
