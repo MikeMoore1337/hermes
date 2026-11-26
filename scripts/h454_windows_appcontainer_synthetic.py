@@ -227,6 +227,11 @@ try:
             raise RuntimeError("SYNTHETIC_INTEGRITY_FAILED")
         allowed.mkdir()
         private.mkdir()
+        # These files predate the AppContainer grant, like an existing project.
+        allowed_file, private_file = allowed / "allowed.txt", private / "sentinel.txt"
+        allowed_output, private_output = allowed / "written.txt", private / "attempted.txt"
+        allowed_file.write_text("synthetic-allowed", encoding="ascii")
+        private_file.write_text("synthetic-private", encoding="ascii")
         text_sid = wintypes.LPWSTR()
         if not adv.ConvertSidToStringSidW(sid, ctypes.byref(text_sid)):
             raise OSError(ctypes.get_last_error(), "ConvertSidToStringSidW")
@@ -240,10 +245,6 @@ try:
                     raise RuntimeError("SYNTHETIC_ACL_FAILED")
         finally:
             kernel.LocalFree(ctypes.cast(text_sid, ctypes.c_void_p))
-        allowed_file, private_file = allowed / "allowed.txt", private / "sentinel.txt"
-        allowed_output, private_output = allowed / "written.txt", private / "attempted.txt"
-        allowed_file.write_text("synthetic-allowed", encoding="ascii")
-        private_file.write_text("synthetic-private", encoding="ascii")
         dacl = security_descriptor(allowed_file, 4)
         out["allowed_file_acl_has_sid"] = sid_text in dacl if dacl else None
         label = security_descriptor(allowed_file, 16)
