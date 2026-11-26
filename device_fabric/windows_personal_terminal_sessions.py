@@ -14,6 +14,7 @@ from device_fabric.windows_appcontainer_terminal import AppContainerTerminal
 MAX_SESSIONS = 8
 MAX_RETAINED = 32
 MAX_OUTPUT = 512 * 1024
+MAX_RESPONSE_CHARS = 60_000
 MAX_WAIT_MS = 30_000
 TOOLS = frozenset({"start_process", "read_process_output", "interact_with_process",
                    "force_terminate", "list_sessions"})
@@ -93,14 +94,16 @@ class PersonalTerminalSessions:
         if offset == 0:
             pending = session.data[session.cursor:]
             lines = pending.splitlines(keepends=True)
-            selected = "".join(lines[:length])
+            # JSON ASCII encoding can expand an astral character to 12 bytes;
+            # bound each reply independently of the larger retained buffer.
+            selected = "".join(lines[:length])[:MAX_RESPONSE_CHARS]
             # Advance only what was returned, including line endings.
             session.cursor += len(selected)
             session.cursor = min(session.cursor, len(session.data))
             return selected
         lines = session.data.splitlines(keepends=True)
         start = max(0, len(lines) + offset) if offset < 0 else offset
-        return "".join(lines[start:start + length])
+        return "".join(lines[start:start + length])[:MAX_RESPONSE_CHARS]
 
     def dispatch(self, name: str, args: dict) -> dict:
         try:

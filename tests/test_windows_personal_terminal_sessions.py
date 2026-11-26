@@ -109,6 +109,16 @@ class TerminalSessionsTests(unittest.TestCase):
         self.assertTrue(self.created[0].closed)
         self.assertFalse(self.created[-1].closed)
 
+    def test_large_line_is_returned_in_bounded_chunks_without_loss(self):
+        terminal = self.start()
+        terminal.chunks = [b"x" * 65536, b"y" * 34464]
+        first = self.broker.dispatch("read_process_output", {"pid": terminal.pid, "timeout_ms": 0})
+        second = self.broker.dispatch("read_process_output", {"pid": terminal.pid, "timeout_ms": 0})
+        one = first["content"][0]["text"]
+        two = second["content"][0]["text"]
+        self.assertEqual(len(one), sessions.MAX_RESPONSE_CHARS)
+        self.assertEqual(one + two, "x" * 65536 + "y" * 34464)
+
 
 if __name__ == "__main__":
     unittest.main()
