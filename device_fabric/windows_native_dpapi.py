@@ -20,6 +20,8 @@ SCHEMA = b"H454\0WIN32\0NATIVE_READ\0DPAPI_CURRENT_USER\0V1\0"
 MAX_CIPHERTEXT = 4096
 MAX_PLAINTEXT = 256
 DEVICE = re.compile(r"h454-win-native-[0-9a-f]{32}\Z")
+PERSONAL_DEVICE = re.compile(r"h454-win-personal-[0-9a-f]{32}\Z")
+PERSONAL_SCHEMA = b"H454\0WIN32\0PERSONAL_COMMANDER\0DPAPI_CURRENT_USER\0V1\0"
 SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 TOKEN = re.compile(r"[A-Za-z0-9_.~-]{40,256}\Z")
 CRYPTPROTECT_UI_FORBIDDEN = 0x01
@@ -46,6 +48,15 @@ def _entropy(*, manifest_sha256: str, device_id: str) -> bytes:
         SCHEMA + manifest_sha256.encode("ascii") +
         b"\0" + device_id.encode("ascii")
     ).digest()
+
+
+def _personal_entropy(*, manifest_sha256: str, device_id: str) -> bytes:
+    """Keep the write/process identity cryptographically distinct from READ."""
+    if (type(manifest_sha256) is not str or SHA256.fullmatch(manifest_sha256) is None
+        or type(device_id) is not str or PERSONAL_DEVICE.fullmatch(device_id) is None):
+        raise NativeDpapiDenied("native_dpapi_denied")
+    return hashlib.sha256(PERSONAL_SCHEMA + manifest_sha256.encode("ascii") +
+                          b"\0" + device_id.encode("ascii")).digest()
 
 
 def _input_blob(value: bytes) -> tuple[_Blob, object]:
@@ -154,4 +165,28 @@ def unseal_for_current_user(
             raise NativeDpapiDenied("native_dpapi_denied")
         return token
     except Exception:
+        raise NativeDpapiDenied("native_dpapi_denied") from None
+
+
+def seal_personal_commander(bearer: str, *, manifest_sha256: str, device_id: str) -> bytes:
+    """Seal a separately enrolled personal Commander bearer for this user."""
+    if type(bearer) is not str or TOKEN.fullmatch(bearer) is None:
+        raise NativeDpapiDenied("native_dpapi_denied")
+    return _crypt(bearer.encode("ascii"),
+                  _personal_entropy(manifest_sha256=manifest_sha256, device_id=device_id),
+                  decrypt=False)
+
+
+def unseal_personal_commander(sealed: bytes, *, manifest_sha256: str, device_id: str) -> str:
+    """Unseal only the separate personal identity under the current user."""
+    if type(sealed) is not bytes or not 32 <= len(sealed) <= MAX_CIPHERTEXT:
+        raise NativeDpapiDenied("native_dpapi_denied")
+    raw = _crypt(sealed, _personal_entropy(manifest_sha256=manifest_sha256,
+                                           device_id=device_id), decrypt=True)
+    try:
+        value = raw.decode("ascii")
+        if TOKEN.fullmatch(value) is None:
+            raise ValueError()
+        return value
+    except (UnicodeError, ValueError):
         raise NativeDpapiDenied("native_dpapi_denied") from None
