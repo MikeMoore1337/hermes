@@ -19,11 +19,14 @@ from device_fabric.windows_native_dpapi import (
     MAX_CIPHERTEXT, seal_personal_commander, unseal_personal_commander,
 )
 from device_fabric.windows_personal_session import SHA40, SHA64, SID
+from device_fabric.windows_personal_yfc_psec import YFC_DEV
 
 SCHEMA = "h454-windows-personal-commander-v1"
+YFC_SCHEMA = "h454-windows-personal-commander-yfc-dev-v1"
 MAX_CONFIG_BYTES = 8192
 PERSONAL_ROOTS = {name: WINDOWS_ROOTS[name] for name in
                   ("hermes", "your-fitness-coach", "financial-horizon")}
+YFC_ROOTS = {"yfc-dev": str(YFC_DEV)}
 FIELDS = frozenset({"schema", "release_sha", "owner_sid", "ca_sha256",
                     "bundle_sha256", "device_id", "sealed_bearer_b64", "created_at"})
 
@@ -41,6 +44,7 @@ class PersonalCommanderConfig:
     device_id: str
     sealed_bearer: bytes
     created_at: int
+    profile: str
 
     def __repr__(self) -> str:
         return "PersonalCommanderConfig([REDACTED])"
@@ -60,17 +64,28 @@ def _unique(pairs):
     return result
 
 
-def policy_digest(ca_sha256: str, bundle_sha256: str) -> str:
+def roots_for(profile: str) -> tuple[str, ...]:
+    if profile == "legacy":
+        return tuple(PERSONAL_ROOTS.values())
+    if profile == "yfc-dev":
+        return tuple(YFC_ROOTS.values())
+    raise PersonalCommanderDenied("personal_commander_denied")
+
+
+def policy_digest(ca_sha256: str, bundle_sha256: str, *, profile: str = "legacy") -> str:
     if (type(ca_sha256) is not str or SHA64.fullmatch(ca_sha256) is None
-        or type(bundle_sha256) is not str or SHA64.fullmatch(bundle_sha256) is None):
+        or type(bundle_sha256) is not str or SHA64.fullmatch(bundle_sha256) is None
+        or type(profile) is not str or profile not in ("legacy", "yfc-dev")):
         raise PersonalCommanderDenied("personal_commander_denied")
-    return hashlib.sha256(_encode({"schema": SCHEMA, "access": "PERSONAL_WRITE_PROCESS",
-        "roots": PERSONAL_ROOTS, "ca_sha256": ca_sha256,
+    schema, roots = (SCHEMA, PERSONAL_ROOTS) if profile == "legacy" else (YFC_SCHEMA, YFC_ROOTS)
+    return hashlib.sha256(_encode({"schema": schema, "access": "PERSONAL_WRITE_PROCESS",
+        "roots": roots, "ca_sha256": ca_sha256,
         "bundle_sha256": bundle_sha256})).hexdigest()
 
 
 def prepare_config(paired: Paired, *, owner_sid: str, release_sha: str,
                    ca: bytes, bundle_sha256: str, now: int,
+                   profile: str = "legacy",
                    seal: Callable[..., bytes] = seal_personal_commander) -> bytes:
     """Bind a newly paired personal bearer to owner, code, CA and roots."""
     try:
@@ -88,11 +103,12 @@ def prepare_config(paired: Paired, *, owner_sid: str, release_sha: str,
             or type(now) is not int or not 0 < now < 2**53 or not callable(seal)):
             raise ValueError()
         ca_hash = hashlib.sha256(ca).hexdigest()
-        digest = policy_digest(ca_hash, bundle_sha256)
+        digest = policy_digest(ca_hash, bundle_sha256, profile=profile)
         sealed = seal(paired.token, manifest_sha256=digest, device_id=paired.device_id)
         if type(sealed) is not bytes or not 32 <= len(sealed) <= MAX_CIPHERTEXT:
             raise ValueError()
-        raw = _encode({"schema": SCHEMA, "release_sha": release_sha, "owner_sid": owner_sid,
+        raw = _encode({"schema": SCHEMA if profile == "legacy" else YFC_SCHEMA,
+            "release_sha": release_sha, "owner_sid": owner_sid,
             "ca_sha256": ca_hash, "bundle_sha256": bundle_sha256, "device_id": paired.device_id,
             "sealed_bearer_b64": base64.b64encode(sealed).decode("ascii"), "created_at": now})
         parse_config(raw)
@@ -107,7 +123,7 @@ def parse_config(raw: bytes) -> PersonalCommanderConfig:
             raise ValueError()
         obj = json.loads(raw.decode("ascii"), object_pairs_hook=_unique,
                          parse_constant=lambda _: (_ for _ in ()).throw(ValueError()))
-        if (type(obj) is not dict or set(obj) != FIELDS or obj["schema"] != SCHEMA
+        if (type(obj) is not dict or set(obj) != FIELDS or obj["schema"] not in (SCHEMA, YFC_SCHEMA)
             or type(obj["release_sha"]) is not str or SHA40.fullmatch(obj["release_sha"]) is None
             or type(obj["owner_sid"]) is not str or len(obj["owner_sid"]) > 184
             or SID.fullmatch(obj["owner_sid"]) is None
@@ -117,12 +133,13 @@ def parse_config(raw: bytes) -> PersonalCommanderConfig:
             or type(obj["created_at"]) is not int or not 0 < obj["created_at"] < 2**53
             or _encode(obj) != raw):
             raise ValueError()
-        policy_digest(obj["ca_sha256"], obj["bundle_sha256"])
+        profile = "legacy" if obj["schema"] == SCHEMA else "yfc-dev"
+        policy_digest(obj["ca_sha256"], obj["bundle_sha256"], profile=profile)
         sealed = base64.b64decode(obj["sealed_bearer_b64"], validate=True)
         if not 32 <= len(sealed) <= MAX_CIPHERTEXT:
             raise ValueError()
         return PersonalCommanderConfig(obj["release_sha"], obj["owner_sid"], obj["ca_sha256"],
-            obj["bundle_sha256"], obj["device_id"], sealed, obj["created_at"])
+            obj["bundle_sha256"], obj["device_id"], sealed, obj["created_at"], profile)
     except Exception:
         raise PersonalCommanderDenied("personal_commander_denied") from None
 
@@ -141,10 +158,11 @@ def unseal(config: PersonalCommanderConfig, *, owner_sid: str, ca: bytes,
             or not 32 <= len(config.sealed_bearer) <= MAX_CIPHERTEXT
             or type(ca) is not bytes or hashlib.sha256(ca).hexdigest() != config.ca_sha256
             or type(bundle_sha256) is not str or bundle_sha256 != config.bundle_sha256
+            or type(config.profile) is not str or config.profile not in ("legacy", "yfc-dev")
             or not callable(decrypt)):
             raise ValueError()
         bearer = decrypt(config.sealed_bearer,
-            manifest_sha256=policy_digest(config.ca_sha256, config.bundle_sha256),
+            manifest_sha256=policy_digest(config.ca_sha256, config.bundle_sha256, profile=config.profile),
             device_id=config.device_id)
         if type(bearer) is not str or TOKEN.fullmatch(bearer) is None:
             raise ValueError()
