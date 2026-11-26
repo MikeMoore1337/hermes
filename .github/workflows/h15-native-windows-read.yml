@@ -188,10 +188,12 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          $failed = $false
           python -B scripts/h454_windows_appcontainer_synthetic.py --interactive-test
-          if ($LASTEXITCODE -ne 0) { throw 'H454_APPCONTAINER_SHELL_TEST_FAILED' }
+          if ($LASTEXITCODE -ne 0) { $failed = $true }
           python -B scripts/h454_windows_appcontainer_synthetic.py --node-child-test
-          if ($LASTEXITCODE -ne 0) { throw 'H454_APPCONTAINER_CHILD_TEST_FAILED' }
+          if ($LASTEXITCODE -ne 0) { $failed = $true }
+          if ($failed) { throw 'H454_APPCONTAINER_SYNTHETIC_TEST_FAILED' }
           Write-Output 'H454_APPCONTAINER_SYNTHETIC=PASS'
           Write-Output 'H454_WINDOWS_OWNER_DEVICE_ACCESS=NOT_RUN'
       - name: Compile native relay gate and verify owner/device fail closed
