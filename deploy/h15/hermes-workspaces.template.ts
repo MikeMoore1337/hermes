@@ -7,6 +7,16 @@ const PERSONAL_ID = /^h454-win-personal-[a-f0-9]{32}$/;
 const PERSONAL_ALIASES = ['yfc-dev', 'yfc dev', 'your-fitness-coach dev'];
 const PERSONAL_ROOT = 'D:\\Pet-projects\\yfc-dev';
 const PERSONAL_ORIGIN = 'https://github.com/MikeMoore1337/your-fitness-coach.git';
+const VPS_WORKSPACES = [
+  { name:'hermes-vps-dev', aliases:['hermes-vps-dev','hermes vps dev'],
+    root:'/workspace/projects/hermes-vps-dev', origin:'https://github.com/MikeMoore1337/hermes.git',
+    branch:'main', deviceName:'H15 Hermes VPS sandbox', deviceId:/^h15-hermes-[a-f0-9]{12}$/,
+    sparse:false },
+  { name:'yfc-vps-dev', aliases:['yfc-vps-dev','yfc vps dev'],
+    root:'/workspace/projects/yfc-vps-dev', origin:'https://github.com/MikeMoore1337/your-fitness-coach.git',
+    branch:'dev', deviceName:'H15 YFC VPS sandbox', deviceId:/^h15-yfc-[a-f0-9]{12}$/,
+    sparse:true },
+];
 const WORKSPACES: Workspace[] = __HERMES_CATALOG__;
 const SANDBOX_HELPER = __HERMES_SANDBOX_HELPER__;
 const ID = /^[A-Za-z0-9_-]{8,128}$/;
@@ -19,7 +29,7 @@ export const LIST_WORKSPACES_TOOL = {
 };
 export const RESOLVE_WORKSPACE_TOOL = {
   name: 'resolve_workspace',
-  description: 'Find an approved project by name. YFC dev resolves to its separately authorized original Windows folder; other catalog projects resolve to the sandbox. Check Git before writing.',
+  description: 'Find an approved project by name. YFC dev is the authorized original Windows folder; VPS dev aliases are separate sandbox copies, and YFC VPS is sparse. Check Git before writing.',
   inputSchema: { type: 'object', properties: {
     project: { type: 'string', minLength: 1, maxLength: 100 } },
     required: ['project'], additionalProperties: false },
@@ -47,6 +57,13 @@ function personalDevice(devices: unknown): Device | null {
   const d: Device = matches[0];
   return d.platform === 'win32' && typeof d.deviceId === 'string' && PERSONAL_ID.test(d.deviceId) ? d : null;
 }
+function vpsDevice(devices: unknown, name: string, id: RegExp): Device | null {
+  if (!Array.isArray(devices) || devices.length > 25) return null;
+  const matches = devices.filter(d => d && typeof d === 'object' && d.name === name);
+  if (matches.length !== 1) return null;
+  const d: Device = matches[0];
+  return d.platform === 'linux/docker' && typeof d.deviceId === 'string' && id.test(d.deviceId) ? d : null;
+}
 function isReady(d: Device | null): boolean {
   return !!d && d.online === true && d.paused === false;
 }
@@ -61,7 +78,8 @@ function validGitBranch(row: Record<string, unknown>): boolean {
 export function listApprovedWorkspaces(devices: unknown) {
   const d = ownerDevice(devices);
   const personal = personalDevice(devices);
-  if (!d && !personal) return { schema: 1, status: 'not_connected', workspaces: [] };
+  const vps = VPS_WORKSPACES.map(w => ({workspace:w, device:vpsDevice(devices, w.deviceName, w.deviceId)}));
+  if (!d && !personal && !vps.some(v => v.device)) return { schema: 1, status: 'not_connected', workspaces: [] };
   const state = isReady(d) ? 'online' : d?.paused === true ? 'paused' : 'offline';
   const workspaces: Record<string, unknown>[] = d ? WORKSPACES.map(w => ({
     name: w.name, aliases: [...w.aliases], root: w.root, origin: w.origin,
@@ -76,6 +94,14 @@ export function listApprovedWorkspaces(devices: unknown) {
       origin:PERSONAL_ORIGIN, branch:null, scope:'native-personal',
       device_status:personalState, git_verified:false, process_execution_verified:false,
       ...(personalState === 'online' ? {deviceId:personal.deviceId} : {})});
+  }
+  for (const {workspace:w, device} of vps) {
+    if (!device) continue;
+    const vpsState = isReady(device) ? 'online' : device.paused === true ? 'paused' : 'offline';
+    workspaces.push({name:w.name, aliases:[...w.aliases], root:w.root, origin:w.origin,
+      branch:w.branch, scope:'sandbox', sparse:w.sparse, device_status:vpsState,
+      git_verified:false, process_execution_verified:false,
+      ...(vpsState === 'online' ? {deviceId:device.deviceId} : {})});
   }
   return { schema: 1, status: 'catalog', workspaces };
 }
@@ -92,6 +118,16 @@ export function resolveApprovedWorkspace(args: unknown, devices: unknown) {
     if (!isReady(d)) return { schema: 1, status: 'refused', reason: 'personal_device_unavailable' };
     return { schema: 1, status:'resolved', workspace:'yfc-dev', root:PERSONAL_ROOT,
       branch:null, origin:PERSONAL_ORIGIN, scope:'native-personal', deviceId:d!.deviceId,
+      device_status:'online', git_verified:false, process_execution_verified:false,
+      verification_required_before_write:true };
+  }
+  const vps = VPS_WORKSPACES.filter(w => w.aliases.some(alias => norm(alias) === norm(project)));
+  if (vps.length === 1) {
+    const w = vps[0];
+    const device = vpsDevice(devices, w.deviceName, w.deviceId);
+    if (!isReady(device)) return { schema:1, status:'refused', reason:'vps_device_unavailable' };
+    return { schema:1, status:'resolved', workspace:w.name, root:w.root, origin:w.origin,
+      branch:w.branch, scope:'sandbox', sparse:w.sparse, deviceId:device!.deviceId,
       device_status:'online', git_verified:false, process_execution_verified:false,
       verification_required_before_write:true };
   }

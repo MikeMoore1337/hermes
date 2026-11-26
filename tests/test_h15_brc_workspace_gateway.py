@@ -83,6 +83,23 @@ const assert=require('node:assert/strict'),api=require(process.argv[1]);
 const win={name:'H15 Windows permanent sandbox',deviceId:'h15-win-05be75515428',online:true,paused:false};
 const other={name:'H15 YFC VPS sandbox',deviceId:'h15-yfc-c6ee0d53e858',online:true,paused:false};
 const personal={name:'H454 Windows personal Commander',deviceId:'h454-win-personal-'+'a'.repeat(32),platform:'win32',online:true,paused:false};
+const hermesVps={name:'H15 Hermes VPS sandbox',deviceId:'h15-hermes-'+'b'.repeat(12),platform:'linux/docker',online:true,paused:false};
+const yfcVps={...other,platform:'linux/docker'};
+for (const [query,device,root,sparse] of [
+ ['hermes vps dev',hermesVps,'/workspace/projects/hermes-vps-dev',false],
+ ['yfc-vps-dev',yfcVps,'/workspace/projects/yfc-vps-dev',true]]) {
+ const out=api.resolveApprovedWorkspace({project:query},[device]);
+ assert.equal(out.status,'resolved'); assert.equal(out.root,root); assert.equal(out.scope,'sandbox');
+ assert.equal(out.deviceId,device.deviceId); assert.equal(out.sparse,sparse);
+ assert.equal(out.git_verified,false); assert.equal(out.verification_required_before_write,true);
+ for (const devices of [[],[{...device,online:false}],[{...device,paused:true}],
+   [{...device,platform:'linux'}],[{...device,deviceId:'h15-other-'+'b'.repeat(12)}],[device,device]])
+   assert.equal(api.resolveApprovedWorkspace({project:query},devices).reason,'vps_device_unavailable');
+}
+const vpsCatalog=api.listApprovedWorkspaces([hermesVps,yfcVps]);
+assert.equal(vpsCatalog.status,'catalog'); assert.equal(vpsCatalog.workspaces.length,2);
+assert.equal(vpsCatalog.workspaces.find(w=>w.name==='yfc-vps-dev').sparse,true);
+assert.equal(api.listApprovedWorkspaces([{...hermesVps,online:false}]).workspaces[0].device_status,'offline');
 const resolvedPersonal=api.resolveApprovedWorkspace({project:'YFC dev'},[win,personal]);
 assert.equal(resolvedPersonal.status,'resolved');
 assert.equal(resolvedPersonal.root,'D:\\\\Pet-projects\\\\yfc-dev');
