@@ -322,11 +322,19 @@ class EnrollmentBridgeTests(unittest.TestCase):
                 os.close(master); server.close()
 
         left,right=socket.socketpair()
+        child=subprocess.Popen(
+            [sys.executable,'-c','import sys; sys.stdin.buffer.read(1)'],
+            stdin=subprocess.PIPE,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,
+        )
         try:
-            with patch.object(owner.struct,'unpack',return_value=(os.getpid(),0,0)), \
-                 patch.object(owner.os,'isatty',return_value=False):
+            with patch.object(owner.struct,'unpack',return_value=(child.pid,0,0)):
                 with self.assertRaises(owner.Hold): owner._peer_root(right,tty=True)
-        finally: left.close(); right.close()
+        finally:
+            child.stdin.close()
+            if child.poll() is None:
+                child.terminate()
+            child.wait(timeout=5)
+            left.close(); right.close()
 
 
 if __name__=='__main__': unittest.main()
