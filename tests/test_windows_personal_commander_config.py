@@ -129,11 +129,12 @@ class PersonalCommanderConfigTests(unittest.TestCase):
             config.unseal(replace(updated, roots=roots), owner_sid=SID, ca=CA,
                           bundle_sha256=BUNDLE, decrypt=decrypt)
 
-    def test_add_project_rejects_duplicate_private_and_wrong_owner(self):
+    def test_add_project_is_idempotent_and_rejects_private_or_wrong_owner(self):
         raw = config.prepare_config(paired(), owner_sid=SID, release_sha=RELEASE,
             ca=CA, bundle_sha256=BUNDLE, now=1000, profile='yfc-dev', seal=lambda *_a, **_k: SEALED)
-        for project, owner in ((r'D:\Pet-projects\YFC-DEV', SID),
-                               (r'D:\Pet-projects\second-brain-workspace', SID),
+        self.assertEqual(config.add_project(raw, r'D:\Pet-projects\YFC-DEV', owner_sid=SID,
+            ca=CA, bundle_sha256=BUNDLE, decrypt=lambda *_a, **_k: TOKEN), raw)
+        for project, owner in ((r'D:\Pet-projects\second-brain-workspace', SID),
                                (r'C:\Windows', SID),
                                (r'D:\Pet-projects\hermes', 'S-1-5-99')):
             with self.subTest(project=project), self.assertRaises(config.PersonalCommanderDenied):

@@ -71,6 +71,10 @@ def main() -> int:
         else:
             updated = config.add_project(raw, args.project, owner_sid=owner, ca=ca,
                                          bundle_sha256=current.bundle_sha256)
+            if updated == raw:
+                print(json.dumps({'status': 'ALREADY_CONFIGURED', 'changed': False,
+                                  'remote_access': 'NOT_VERIFIED'}))
+                return 0
         next_config = config.parse_config(updated)
         config.unseal(next_config, owner_sid=owner, ca=ca, bundle_sha256=current.bundle_sha256)
         roots = config.roots_for(next_config.profile, roots=next_config.roots)
@@ -125,6 +129,12 @@ def main() -> int:
         _create_private_directory(backup, owner)
         def verify() -> bool:
             try:
+                # A scheduler "Running" state immediately after Start is not
+                # evidence that the worker survived its initial project scans.
+                # This is still not an end-to-end device invocation.
+                for _ in range(10):
+                    control('Check')
+                    time.sleep(3)
                 control('Check')
                 return status.bearer_state(relay, device_id=current.device_id, bearer=bearer) is True
             except Exception:

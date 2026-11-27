@@ -234,7 +234,9 @@ def add_project(raw: bytes, project: str, *, owner_sid: str, ca: bytes,
             raise ValueError()
         existing = roots_for(current.profile, roots=current.roots)
         if any(ntpath.normcase(project) == ntpath.normcase(root) for root in existing):
-            raise ValueError()
+            unseal(current, owner_sid=owner_sid, ca=ca,
+                   bundle_sha256=bundle_sha256, decrypt=decrypt)
+            return raw
         roots = (existing[0], *sorted((*existing[1:], project), key=ntpath.normcase))
         _validate_project_roots(roots)
         bearer = unseal(current, owner_sid=owner_sid, ca=ca,
