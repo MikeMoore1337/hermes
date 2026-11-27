@@ -11,6 +11,7 @@ import time
 from typing import Any, Callable
 
 from device_fabric import windows_personal_commander_config as config
+from device_fabric.personal_session_alias import advertised_tools, dispatch as dispatch_alias
 from device_fabric.windows_personal_commander_pipe import PersonalCommanderPipe, PersonalPipeDenied
 from device_fabric.windows_personal_commander_transport import PersonalTransportDenied, run_session
 from device_fabric.windows_personal_terminal_sessions import TOOLS as TERMINAL_TOOLS
@@ -71,7 +72,7 @@ def serve(raw_config: bytes, *, current_sid: Callable[[], str], ca: bytes,
         process = start_dispatcher()
         bridge = (bridge_factory or PersonalCommanderPipe)(process, list(config.roots_for(candidate.profile)))
         failed = False
-        def dispatch(name: str, args: dict) -> dict:
+        def dispatch_inner(name: str, args: dict) -> dict:
             nonlocal failed
             try:
                 if name == IMPORT_TOOL and import_broker is not None:
@@ -85,13 +86,15 @@ def serve(raw_config: bytes, *, current_sid: Callable[[], str], ca: bytes,
             except Exception:
                 failed = True
                 raise PersonalPipeDenied("personal_pipe_denied") from None
+        def dispatch(name: str, args: dict) -> dict:
+            return dispatch_alias(name, args, dispatch_inner)
         failures = 0
         while failures < MAX_RECONNECTS:
             if current_sid() != owner:
                 return "owner_changed"
             try:
                 outcome = run_session(device_id=candidate.device_id, bearer=bearer,
-                    tools=bridge.tools + ([IMPORT_SCHEMA] if import_broker is not None else []), connector=connector, dispatch=dispatch,
+                    tools=advertised_tools(bridge.tools) + ([IMPORT_SCHEMA] if import_broker is not None else []), connector=connector, dispatch=dispatch,
                     is_active=lambda: isolation_verified() is True and status() is True,
                     claim_call=claim_call)
                 if outcome not in ("idle_timeout", "call_budget_exhausted"):

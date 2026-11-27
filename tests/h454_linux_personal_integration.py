@@ -200,7 +200,7 @@ class LinuxPersonalSessionIntegrationTests(unittest.TestCase):
                     frame = {'type': 'call', 'id': 'input', 'tool': 'interact_with_process',
                              'args': {'pid': self.pid, 'input': "print('H454_INTERACTIVE_OK')", 'timeout_ms': 5000}}
                 elif self.step == 4:
-                    frame = {'type': 'call', 'id': 'stop', 'tool': 'force_terminate', 'args': {'pid': self.pid}}
+                    frame = {'type': 'call', 'id': 'stop', 'tool': 'kill_process', 'args': {'pid': self.pid}}
                 else:
                     raise TimeoutError()
                 return json.dumps(frame)

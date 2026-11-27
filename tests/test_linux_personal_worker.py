@@ -23,7 +23,7 @@ class LinuxPersonalWorkerTests(unittest.TestCase):
     def test_session_receives_sandbox_bridge_and_close_always_runs(self):
         events = []
         class Bridge:
-            tools = [{'name': 'fixture'}]
+            tools = [{'name': 'fixture'}, {'name': 'force_terminate', 'inputSchema': {'type': 'object'}}]
             def __init__(self, process, roots):
                 self.process = process
                 events.append(('bridge', roots))
@@ -33,7 +33,8 @@ class LinuxPersonalWorkerTests(unittest.TestCase):
                 events.append(('close',))
         process = object()
         def session(**kwargs):
-            events.append(('session', kwargs['target'], kwargs['tools'], kwargs['dispatch'].__self__))
+            events.append(('session', kwargs['target'], kwargs['tools'], kwargs['dispatch']))
+            self.assertEqual(kwargs['dispatch']('kill_process', {'pid': 123}), {'content': []})
             return 'idle_timeout'
         with patch.object(worker, 'start', return_value=process) as launch, \
              patch.object(worker, 'PersonalCommanderPipe', Bridge), \
@@ -41,8 +42,8 @@ class LinuxPersonalWorkerTests(unittest.TestCase):
             self.assertEqual(worker.serve_once(**self.options), 'idle_timeout')
         launch.assert_called_once_with('/tmp/project', '/tmp/bundle', ['/opt/commander/run'])
         self.assertEqual(events[0], ('bridge', ['/workspace']))
-        self.assertEqual(events[1][:3], ('session', 'yfc-vps', [{'name': 'fixture'}]))
-        self.assertIsInstance(events[1][3], Bridge)
+        self.assertEqual(events[1][1], 'yfc-vps')
+        self.assertEqual({tool['name'] for tool in events[1][2]}, {'fixture', 'force_terminate', 'kill_process'})
         self.assertEqual(events[2], ('close',))
 
     def test_unverified_bundle_never_starts_project_process(self):
@@ -71,6 +72,7 @@ class LinuxPersonalWorkerTests(unittest.TestCase):
         process = MagicMock()
         process.poll.return_value = None
         bridge = MagicMock()
+        bridge.tools = [{'name': 'force_terminate', 'inputSchema': {'type': 'object'}}]
         states = iter([None, True, False])
         delays = []
         self.options.update(grant_state=lambda: next(states), sleep=delays.append)
@@ -89,6 +91,7 @@ class LinuxPersonalWorkerTests(unittest.TestCase):
         process = MagicMock()
         process.poll.return_value = 1
         bridge = MagicMock()
+        bridge.tools = [{'name': 'force_terminate', 'inputSchema': {'type': 'object'}}]
         self.options.update(grant_state=lambda: True, sleep=lambda _delay: None)
         with patch.object(worker, 'start', return_value=process), \
              patch.object(worker, 'PersonalCommanderPipe', return_value=bridge), \

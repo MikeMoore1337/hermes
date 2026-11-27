@@ -17,7 +17,7 @@ BUNDLE = "c" * 64
 
 class Bridge:
     def __init__(self, *_args):
-        self.tools = []
+        self.tools = [{'name': 'force_terminate', 'inputSchema': {'type': 'object'}}]
         self.closed = False
 
     def dispatch(self, _name, _args):
@@ -142,14 +142,18 @@ class PersonalWorkerTests(unittest.TestCase):
         observed = []
         def session(**kwargs):
             observed.append(kwargs["dispatch"]("start_process", {"command": "synthetic", "timeout_ms": 0}))
+            self.assertIn('kill_process', {tool['name'] for tool in kwargs['tools']})
+            observed.append(kwargs['dispatch']('kill_process', {'pid': 123}))
             observed.append(kwargs["dispatch"]("write_file", {}))
             raise PersonalTransportDenied("synthetic")
         with patch.object(worker, "PersonalCommanderPipe", return_value=self.bridge), \
              patch.object(worker, "run_session", side_effect=session):
             self.assertEqual(worker.serve(self.raw, **self.args), "isolation_lost")
-        self.assertEqual(broker.calls, [("start_process", {"command": "synthetic", "timeout_ms": 0})])
+        self.assertEqual(broker.calls, [("start_process", {"command": "synthetic", "timeout_ms": 0}),
+                                        ('force_terminate', {'pid': 123})])
         self.assertEqual(observed[0]["content"][0]["text"], "broker")
-        self.assertEqual(observed[1], {"content": []})
+        self.assertEqual(observed[1]["content"][0]["text"], "broker")
+        self.assertEqual(observed[2], {"content": []})
         self.assertTrue(broker.closed)
 
     def test_terminal_without_broker_is_denied_without_fallback(self):

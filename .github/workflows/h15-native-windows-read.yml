@@ -43,6 +43,8 @@ on:
       - device_fabric/windows_personal_terminal_sessions.py
       - device_fabric/windows_personal_job.py
       - device_fabric/personal_replay.py
+      - device_fabric/personal_session_alias.py
+      - tests/test_personal_session_alias.py
       - device_fabric/native_private_tls.py
       - scripts/h454_windows_personal_worker.py
       - scripts/h454_windows_personal_yfc_entry.py
@@ -215,6 +217,8 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          python -B -m unittest -v tests.test_personal_session_alias
+          if ($LASTEXITCODE -ne 0) { throw 'H454_SESSION_ALIAS_DENIED' }
           python -B -m unittest -v tests.test_h454_windows_native_dpapi tests.test_h454_windows_personal_session tests.test_h454_personal_replay tests.test_windows_personal_commander_config tests.test_windows_personal_commander_bundle tests.test_windows_personal_commander_transport tests.test_windows_personal_commander_status tests.test_windows_personal_commander_worker tests.test_windows_personal_appcontainer_pipe tests.test_windows_personal_psec_terminal tests.test_windows_personal_project_scan tests.test_windows_personal_yfc_psec tests.test_windows_personal_yfc_runner tests.test_windows_personal_yfc_entry tests.test_windows_personal_yfc_bootstrap tests.test_windows_personal_yfc_state tests.test_windows_personal_yfc_action tests.test_h454_personal_search_patch tests.test_windows_personal_terminal_sessions tests.test_h454_windows_personal_dispatcher tests.test_h454_windows_personal_adapter_launcher tests.test_h454_windows_personal_job
           if ($LASTEXITCODE -ne 0) { throw 'H454_WIN32_DPAPI_CURRENT_USER_DENIED' }
           Write-Output 'H454_WIN32_DPAPI_CURRENT_USER=PASS'
