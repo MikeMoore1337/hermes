@@ -103,7 +103,7 @@ class NativeReadGatewayTests(unittest.TestCase):
             apply(self.root)
         self.assertEqual(outside.read_text(), "SECRET_SENTINEL")
 
-    def test_personal_windows_guard_accepts_only_its_separate_bound_identity(self):
+    def test_personal_guards_accept_only_separately_bound_identities(self):
         node = shutil.which("node")
         if not node:
             self.skipTest("node is required to exercise the relay guard")
@@ -131,6 +131,23 @@ assert.equal(gate(id,{...grant,platform:'linux/docker'},
 const sandbox='h15-test';
 assert.equal(gate(sandbox,{device_id:sandbox,platform:'linux/docker'},
   {info:{deviceId:sandbox,platform:'linux',arch:'x64'}}).ok,true);
+for (const [host,label] of [['hermes','Hermes'],['yfc','YFC']]) {
+ const native='h454-linux-personal-'+host+'-'+'c'.repeat(32);
+ const deviceName='H454 '+label+' VPS personal Commander';
+ const localGrant={device_id:native,name:deviceName,platform:'linux'};
+ const live={deviceId:native,name:deviceName,platform:'linux',arch:'x64'};
+ assert.equal(gate(native,localGrant,{info:live}).ok,true);
+ for (const [g,d] of [
+   [{name:'wrong'},{}], [{platform:'linux/docker'},{}],
+   [{device_id:'other'},{}], [{},{name:'wrong'}],
+   [{},{platform:'win32'}], [{},{arch:'riscv64'}], [{},{deviceId:'other'}],
+ ]) assert.equal(gate(native,{...localGrant,...g},{info:{...live,...d}}).ok,false);
+ const readonly='h454-linux-'+host+'-'+'d'.repeat(32);
+ assert.equal(gate(readonly,{...localGrant,device_id:readonly},
+   {info:{...live,deviceId:readonly}}).ok,false);
+ const otherName='H454 '+(host==='hermes'?'YFC':'Hermes')+' VPS personal Commander';
+ assert.equal(gate(native,{...localGrant,name:otherName},{info:{...live,name:otherName}}).ok,false);
+}
 """.replace("GUARD", NATIVE_GENERIC_GUARD)
         result = subprocess.run([node, "--eval", program], capture_output=True,
                                 text=True, timeout=15,

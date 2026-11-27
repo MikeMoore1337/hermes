@@ -34,8 +34,17 @@ NATIVE_GENERIC_GUARD = """  // Stored classification and live platform use diffe
     && grant.name === 'H454 Windows personal Commander' && grant.platform === 'win32'
     && dev.info.name === grant.name && dev.info.platform === 'win32'
     && typeof dev.info.arch === 'string' && /^(?:x64|arm64)$/.test(dev.info.arch);
+  // A separately paired Linux personal identity is never interchangeable with
+  // the existing read-only Linux device or either Docker sandbox.
+  const personalLinux = /^h454-linux-personal-(hermes|yfc)-[0-9a-f]{32}$/.exec(deviceId);
+  const personalLinuxName = personalLinux?.[1] === 'hermes'
+    ? 'H454 Hermes VPS personal Commander' : 'H454 YFC VPS personal Commander';
+  const validPersonalLinux = !!personalLinux && grant.name === personalLinuxName
+    && grant.platform === 'linux' && dev.info.name === personalLinuxName
+    && dev.info.platform === 'linux'
+    && typeof dev.info.arch === 'string' && /^(?:x64|arm64)$/.test(dev.info.arch);
   if (grant.device_id !== deviceId || dev.info.deviceId !== deviceId
-      || (!validLinuxSandbox && !validPersonalWindows)) {
+      || (!validLinuxSandbox && !validPersonalWindows && !validPersonalLinux)) {
     return { ok: false, status: 403, message: 'HERMES_NATIVE_GENERIC_TOOL_DENIED' };
   }
 """
