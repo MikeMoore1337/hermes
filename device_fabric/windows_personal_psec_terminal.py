@@ -21,9 +21,11 @@ from device_fabric.windows_appcontainer_terminal import (
 from device_fabric.windows_personal_job import _Extended
 
 
-def build_spec(root: str, *, writable: tuple[str, ...] = (), readonly: tuple[str, ...] = ()) -> bytes:
+def build_spec(root: str, *, writable: tuple[str, ...] = (), readonly: tuple[str, ...] = (),
+               denied: tuple[str, ...] = ()) -> bytes:
     """Encode PSEC schema 1.0 with distinct writable and read-only roots."""
-    if type(writable) is not tuple or type(readonly) is not tuple or len(writable) + len(readonly) > 7:
+    if (type(writable) is not tuple or type(readonly) is not tuple or type(denied) is not tuple
+            or len(writable) + len(readonly) > 7 or len(denied) > 5):
         raise TerminalDenied("psec_terminal_denied")
     paths = (root, *writable, *readonly)
     for index, path in enumerate(paths):
@@ -46,13 +48,23 @@ def build_spec(root: str, *, writable: tuple[str, ...] = (), readonly: tuple[str
                 raise TerminalDenied("psec_terminal_denied")
     # Microsoft/mxc ProcessSecurityEnvironment.fbs at
     # 383933e9dd4a6b068670767f5926adbdba2de6c9, version 1.0 subset.
-    data = bytearray(48)
+    for value in denied:
+        if (type(value) is not str or not ntpath.isabs(value) or ntpath.normpath(value) != value
+                or any(ord(ch) < 32 or ch in ':*?"<>|' for ch in value[2:])
+                or not any(ntpath.normcase(value).startswith(ntpath.normcase(parent) + '\\')
+                           for parent in (root, *writable))):
+            raise TerminalDenied('psec_terminal_denied')
+    if len({ntpath.normcase(value) for value in denied}) != len(denied):
+        raise TerminalDenied('psec_terminal_denied')
+    data = bytearray(52 if denied else 48)
     struct.pack_into("<I4s", data, 0, 32, b"PSEC")
-    struct.pack_into("<HH", data, 8, 22, 16)
+    struct.pack_into("<HH", data, 8, 22, 20 if denied else 16)
     struct.pack_into("<H", data, 12, 4)  # version struct
     struct.pack_into("<H", data, 20, 8)  # fs_read_write
     if readonly:
         struct.pack_into("<H", data, 22, 12)  # fs_read_only
+    if denied:
+        struct.pack_into('<H', data, 24, 16)  # fs_deny
     struct.pack_into("<iHH", data, 32, 24, 1, 0)
 
     def vector(values: tuple[str, ...], field: int) -> None:
@@ -73,6 +85,8 @@ def build_spec(root: str, *, writable: tuple[str, ...] = (), readonly: tuple[str
     vector((root, *writable), 40)
     if readonly:
         vector(readonly, 44)
+    if denied:
+        vector(denied, 48)
     return bytes(data)
 
 
@@ -98,8 +112,13 @@ class SyntheticPsecTerminal(AppContainerTerminal):
             elif relative.parts[0] != fixture_name:
                 raise ValueError()
 
+    def _validate_denied_paths(self, root: str, denied: tuple[str, ...]) -> None:
+        if any(not ntpath.normcase(path).startswith(ntpath.normcase(root) + '\\') for path in denied):
+            raise ValueError()
+
     def __init__(self, root: str, *, command: str | None = None,
-                 writable: tuple[str, ...] = (), readonly: tuple[str, ...] = ()):
+                 writable: tuple[str, ...] = (), readonly: tuple[str, ...] = (),
+                 denied: tuple[str, ...] = ()):
         self._k = self._model = self._environment = None
         self._process = self._input = self._output = self._job = None
         self.pid = 0
@@ -110,13 +129,21 @@ class SyntheticPsecTerminal(AppContainerTerminal):
         attributes = None
         initialized = False
         try:
-            data = build_spec(root, writable=writable, readonly=readonly)
+            data = build_spec(root, writable=writable, readonly=readonly, denied=denied)
             if (os.name != "nt" or (command is not None and (type(command) is not str
                 or not 0 < len(command) <= 4096 or "\0" in command))):
                 raise ValueError()
             self._validate_paths(root, writable, readonly)
+            self._validate_denied_paths(root, denied)
             kernel, adv = _apis()
             model = ctypes.WinDLL("processmodel", use_last_error=True, winmode=0x800)
+            if denied:
+                support = model.QueryProcessSecurityEnvironmentSupport
+                support.argtypes = [ctypes.POINTER(wintypes.DWORD)]
+                support.restype = ctypes.c_long
+                flags = wintypes.DWORD()
+                if support(ctypes.byref(flags)) != 0 or not flags.value & 1:
+                    raise ValueError()
             create = model.CreateProcessSecurityEnvironment
             create.argtypes = [ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD,
                                ctypes.POINTER(wintypes.HANDLE)]

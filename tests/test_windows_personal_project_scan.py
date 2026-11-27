@@ -49,6 +49,24 @@ class ProjectScanTests(unittest.TestCase):
         with self.assertRaises(ProjectScanDenied):
             scan(self.root, limit=1)
 
+    def test_only_the_exact_denied_artifacts_directory_may_be_skipped(self):
+        artifacts = self.root / '.artifacts'
+        artifacts.mkdir()
+        os.link(self.root / 'src' / 'one.txt', artifacts / 'alias.txt')
+        # An allowed file with an external alias must still be rejected.
+        with self.assertRaises(ProjectScanDenied):
+            scan(self.root, excluded=(artifacts,))
+        (artifacts / 'alias.txt').unlink()
+        external = self.root.parent / (self.root.name + '-outside-fixture.txt')
+        external.write_text('fixture', encoding='ascii')
+        self.addCleanup(external.unlink)
+        os.link(external, artifacts / 'alias.txt')
+        with self.assertRaises(ProjectScanDenied):
+            scan(self.root)
+        self.assertEqual(scan(self.root, excluded=(artifacts,)).files, 1)
+        with self.assertRaises(ProjectScanDenied):
+            scan(self.root, excluded=(self.root / 'src',))
+
     if os.name != "nt":
         def test_symlink_is_not_followed(self):
             (self.root / "src" / "link").symlink_to(self.root / "src" / "one.txt")

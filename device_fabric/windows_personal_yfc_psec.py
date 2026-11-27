@@ -71,9 +71,24 @@ class YfcDevPsecTerminal(SyntheticPsecTerminal):
     """
 
     def __init__(self, root: str, *, command: str | None = None,
-                 writable: tuple[str, ...] = (), readonly: tuple[str, ...] = ()):
-        super().__init__(root, command=_single_file_delete(command, root),
-                         writable=writable, readonly=readonly)
+                 writable: tuple[str, ...] = (), readonly: tuple[str, ...] = (),
+                 project_roots: tuple[str, ...] | None = None):
+        if project_roots is None:
+            self._project_roots = (str(YFC_DEV),)
+        else:
+            from device_fabric.windows_personal_commander_config import roots_for
+            self._project_roots = roots_for('owner-projects', roots=project_roots)
+        self._denied_paths = (() if project_roots is None else
+                              tuple(str(Path(value) / '.artifacts') for value in self._project_roots))
+        translated = _single_file_delete(command, root)
+        if translated == command:
+            for extra in self._project_roots[1:]:
+                translated = _single_file_delete(command, extra)
+                if translated != command:
+                    break
+        options = {'denied': self._denied_paths} if self._denied_paths else {}
+        super().__init__(root, command=translated,
+                         writable=writable, readonly=readonly, **options)
 
     def _environment_variables(self) -> dict[str, str]:
         env = super()._environment_variables()
@@ -86,10 +101,11 @@ class YfcDevPsecTerminal(SyntheticPsecTerminal):
             "PATH": os.pathsep.join((str(Path(system_root) / "System32"), str(GIT_ROOT / "cmd"), str(node))),
             "GIT_CONFIG_GLOBAL": "NUL",
             "GIT_CONFIG_NOSYSTEM": "1",
-            "GIT_CONFIG_COUNT": "1",
-            "GIT_CONFIG_KEY_0": "safe.directory",
-            "GIT_CONFIG_VALUE_0": str(YFC_DEV).replace("\\", "/"),
+            "GIT_CONFIG_COUNT": str(len(getattr(self, '_project_roots', (str(YFC_DEV),)))),
         })
+        for index, root in enumerate(getattr(self, '_project_roots', (str(YFC_DEV),))):
+            env['GIT_CONFIG_KEY_' + str(index)] = 'safe.directory'
+            env['GIT_CONFIG_VALUE_' + str(index)] = root.replace('\\', '/')
         return env
 
     def _validate_paths(self, root: str, writable: tuple[str, ...], readonly: tuple[str, ...]) -> None:
@@ -99,9 +115,26 @@ class YfcDevPsecTerminal(SyntheticPsecTerminal):
         base = Path(app_data) / APP_NAME
         state = base / "adapter-state"
         release = base / "release"
-        if (os.path.normcase(root) != os.path.normcase(str(YFC_DEV))
-            or writable != (str(state),) or readonly != (str(release), str(GIT_ROOT))):
+        roots = getattr(self, '_project_roots', (str(YFC_DEV),))
+        if (os.path.normcase(root) != os.path.normcase(roots[0])
+            or writable != (str(state), *roots[1:]) or readonly != (str(release), str(GIT_ROOT))):
             raise ValueError()
-        for path in (YFC_DEV, state, release, GIT_ROOT):
+        for path in (*(Path(value) for value in roots), state, release, GIT_ROOT):
             _real_directory(path)
-        self.project_snapshot = scan(YFC_DEV)
+        denied = getattr(self, '_denied_paths', ())
+        snapshots = tuple(scan(Path(value), excluded=(Path(value) / '.artifacts',)) if denied
+                          else scan(Path(value)) for value in roots)
+        self.project_snapshot = snapshots[0]
+        self.project_snapshots = snapshots
+
+    def _validate_denied_paths(self, root: str, denied: tuple[str, ...]) -> None:
+        roots = getattr(self, '_project_roots', (str(YFC_DEV),))
+        expected = tuple(str(Path(value) / '.artifacts') for value in roots)
+        if denied not in ((), expected):
+            raise ValueError()
+        for value in denied:
+            path = Path(value)
+            try:
+                _real_directory(path)
+            except FileNotFoundError:
+                pass

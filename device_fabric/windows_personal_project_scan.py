@@ -30,12 +30,14 @@ class ProjectSnapshot:
     root_id: int
 
 
-def scan(root: Path, *, limit: int = MAX_ENTRIES, seconds: float = MAX_SECONDS) -> ProjectSnapshot:
+def scan(root: Path, *, limit: int = MAX_ENTRIES, seconds: float = MAX_SECONDS,
+         excluded: tuple[Path, ...] = ()) -> ProjectSnapshot:
     """Reject links, reparse points, inaccessible entries and incomplete scans."""
     try:
         if (not isinstance(root, Path) or not root.is_absolute()
             or type(limit) is not int or not 1 <= limit <= MAX_ENTRIES
-            or type(seconds) not in (int, float) or not 0 < seconds <= MAX_SECONDS):
+            or type(seconds) not in (int, float) or not 0 < seconds <= MAX_SECONDS
+            or type(excluded) is not tuple or excluded not in ((), (root / '.artifacts',))):
             raise ValueError()
         if os.name == "nt":
             drive, _ = ntpath.splitdrive(str(root))
@@ -67,6 +69,12 @@ def scan(root: Path, *, limit: int = MAX_ENTRIES, seconds: float = MAX_SECONDS) 
                     info = entry.stat(follow_symlinks=False)
                     if stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & REPARSE:
                         raise ValueError()
+                    if excluded and Path(entry.path) == excluded[0]:
+                        actual = Path(entry.path).lstat()
+                        if (not stat.S_ISDIR(actual.st_mode) or actual.st_dev != initial.st_dev
+                                or getattr(actual, 'st_file_attributes', 0) & REPARSE):
+                            raise ValueError()
+                        continue
                     if stat.S_ISDIR(info.st_mode):
                         pending.append(Path(entry.path))
                     elif stat.S_ISREG(info.st_mode):

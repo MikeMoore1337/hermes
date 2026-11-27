@@ -67,7 +67,7 @@ def main(argv: list[str] | None = None) -> int:
         private, release = base / "worker-private", base / "release"
         raw = _read_private(private, "device.json", config.MAX_CONFIG_BYTES)
         candidate = config.parse_config(raw)
-        if candidate.profile != "yfc-dev":
+        if candidate.profile not in ("yfc-dev", "owner-projects"):
             raise ValueError()
         expected = _read_private(private, "release-manifest.json", bundle.MAX_MANIFEST)
         ca = load_ca(candidate.ca_sha256)

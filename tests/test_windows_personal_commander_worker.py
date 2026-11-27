@@ -195,6 +195,20 @@ class PersonalWorkerTests(unittest.TestCase):
             self.assertEqual(worker.serve(self.raw, **self.args), "isolation_lost")
         self.assertEqual(calls, [[r"D:\Pet-projects\yfc-dev"]])
 
+    def test_owner_project_roots_reach_the_bridge_only_after_unseal(self):
+        roots = (r'D:\Pet-projects\yfc-dev', r'D:\Pet-projects\hermes')
+        self.raw = config.prepare_config(Paired('windows-personal', DEVICE, TOKEN,
+            'wss://hermes.mikemoore.top/ws'), owner_sid=SID, release_sha='d' * 40,
+            ca=CA, bundle_sha256=BUNDLE, now=1000, profile='owner-projects', roots=roots,
+            seal=lambda *_args, **_kwargs: b's' * 64)
+        calls = []
+        self.args['bridge_factory'] = lambda _process, selected: calls.append(selected) or self.bridge
+        states = iter((True, False))
+        self.args['isolation_verified'] = lambda: next(states)
+        with patch.object(worker, 'run_session', side_effect=PersonalTransportDenied('synthetic')):
+            self.assertEqual(worker.serve(self.raw, **self.args), 'isolation_lost')
+        self.assertEqual(calls, [list(roots)])
+
     def test_failed_bridge_construction_closes_owned_isolated_process(self):
         class OwnedProcess:
             closed = False

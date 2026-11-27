@@ -80,6 +80,44 @@ class PersonalCommanderConfigTests(unittest.TestCase):
             config.prepare_config(paired(), owner_sid=SID, release_sha=RELEASE, ca=CA,
                 bundle_sha256=BUNDLE, now=1000, profile="arbitrary", seal=lambda *_a, **_k: SEALED)
 
+    def test_multiple_roots_are_bound_to_the_sealed_bearer(self):
+        roots = (r'D:\Pet-projects\yfc-dev', r'D:\Pet-projects\hermes')
+        def seal(_token, **scope):
+            return bytes.fromhex(scope['manifest_sha256']) + b's' * 32
+        def decrypt(value, **scope):
+            if value[:32] != bytes.fromhex(scope['manifest_sha256']):
+                raise ValueError('wrong scope')
+            return TOKEN
+        raw = config.prepare_config(paired(), owner_sid=SID, release_sha=RELEASE, ca=CA,
+            bundle_sha256=BUNDLE, now=1000, profile='owner-projects', roots=roots, seal=seal)
+        parsed = config.parse_config(raw)
+        self.assertEqual(config.roots_for(parsed.profile, roots=parsed.roots), roots)
+        self.assertEqual(config.unseal(parsed, owner_sid=SID, ca=CA, bundle_sha256=BUNDLE, decrypt=decrypt), TOKEN)
+        changed = replace(parsed, roots=(roots[0], r'D:\Pet-projects\another'))
+        with self.assertRaises(config.PersonalCommanderDenied):
+            config.unseal(changed, owner_sid=SID, ca=CA, bundle_sha256=BUNDLE, decrypt=decrypt)
+
+    def test_project_roots_reject_broad_nested_private_and_ambiguous_paths(self):
+        first = r'D:\Pet-projects\yfc-dev'
+        for extra in (r'D:\Pet-projects', r'C:\Windows', r'D:\Pet-projects\yfc-dev\nested',
+                      r'D:\Pet-projects\second-brain-workspace\code', r'D:\Pet-projects\vault',
+                      r'D:\Pet-projects\hermes\..\other', r'D:\Pet-projects\NUL',
+                      r'D:\Pet-projects\hermes:stream', r'\\server\share\project'):
+            with self.subTest(extra=extra), self.assertRaises(config.PersonalCommanderDenied):
+                config.roots_for('owner-projects', roots=(first, extra))
+        with self.assertRaises(config.PersonalCommanderDenied):
+            config.roots_for('owner-projects', roots=(first, r'D:\Pet-projects\z', r'D:\Pet-projects\a'))
+
+    def _real_owner_projects_dpapi_refuses_changed_scope(self):
+        roots = (r'D:\Pet-projects\yfc-dev', r'D:\Pet-projects\hermes')
+        raw = config.prepare_config(paired(), owner_sid=SID, release_sha=RELEASE, ca=CA,
+            bundle_sha256=BUNDLE, now=1000, profile='owner-projects', roots=roots)
+        parsed = config.parse_config(raw)
+        self.assertEqual(config.unseal(parsed, owner_sid=SID, ca=CA, bundle_sha256=BUNDLE), TOKEN)
+        with self.assertRaises(config.PersonalCommanderDenied):
+            config.unseal(replace(parsed, roots=(roots[0], r'D:\Pet-projects\another')),
+                          owner_sid=SID, ca=CA, bundle_sha256=BUNDLE)
+
     def test_wrong_owner_ca_or_bundle_never_calls_decrypt(self):
         parsed = config.parse_config(self.prepare())
         for owner, ca, bundle in (("S-1-5-99", CA, BUNDLE),
@@ -132,6 +170,8 @@ class PersonalCommanderConfigTests(unittest.TestCase):
 
 
 if os.name == "nt":
+    PersonalCommanderConfigTests.test_real_owner_projects_dpapi_refuses_changed_scope = (
+        PersonalCommanderConfigTests._real_owner_projects_dpapi_refuses_changed_scope)
     PersonalCommanderConfigTests.test_real_current_user_dpapi_round_trip_and_domain_separation = (
         PersonalCommanderConfigTests._real_current_user_dpapi_round_trip_and_domain_separation)
     PersonalCommanderConfigTests.test_real_yfc_profile_dpapi_rejects_legacy_scope = (

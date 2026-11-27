@@ -10,6 +10,8 @@ import base64
 from dataclasses import dataclass
 import hashlib
 import json
+import ntpath
+import re
 from typing import Callable
 
 from device_fabric.native_brc_enrollment import TOKEN, Paired
@@ -23,6 +25,7 @@ from device_fabric.windows_personal_yfc_psec import YFC_DEV
 
 SCHEMA = "h454-windows-personal-commander-v1"
 YFC_SCHEMA = "h454-windows-personal-commander-yfc-dev-v1"
+PROJECTS_SCHEMA = "h454-windows-personal-commander-projects-v1"
 MAX_CONFIG_BYTES = 8192
 PERSONAL_ROOTS = {name: WINDOWS_ROOTS[name] for name in
                   ("hermes", "your-fitness-coach", "financial-horizon")}
@@ -45,6 +48,7 @@ class PersonalCommanderConfig:
     sealed_bearer: bytes
     created_at: int
     profile: str
+    roots: tuple[str, ...] = ()
 
     def __repr__(self) -> str:
         return "PersonalCommanderConfig([REDACTED])"
@@ -64,28 +68,65 @@ def _unique(pairs):
     return result
 
 
-def roots_for(profile: str) -> tuple[str, ...]:
+def _validate_project_roots(roots: tuple[str, ...]) -> tuple[str, ...]:
+    """Validate a bounded explicit scope under the owner's project directory."""
+    if type(roots) is not tuple or not 2 <= len(roots) <= 5 or roots[0] != str(YFC_DEV):
+        raise PersonalCommanderDenied("personal_commander_denied")
+    parent = ntpath.normcase(r"D:\Pet-projects")
+    normalized = []
+    reserved = re.compile(r"^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$", re.I)
+    for value in roots:
+        if (type(value) is not str or not 3 <= len(value) <= 2048 or ntpath.normpath(value) != value
+            or not ntpath.isabs(value) or not ntpath.normcase(value).startswith(parent + "\\")
+            or any(ord(char) < 32 or char in ':*?"<>|' for char in value[2:])):
+            raise PersonalCommanderDenied("personal_commander_denied")
+        parts = value[3:].split("\\")
+        if any(not part or part in ('.', '..') or part.endswith((' ', '.')) or reserved.match(part)
+               or 'second-brain' in part.casefold() or 'vault' in part.casefold()
+               or part.casefold() in ('.ssh', '.aws', '.gnupg', '.kube', 'secrets', 'credentials')
+               for part in parts):
+            raise PersonalCommanderDenied("personal_commander_denied")
+        current = ntpath.normcase(value)
+        if any(current == other or current.startswith(other + "\\") or other.startswith(current + "\\")
+               for other in normalized):
+            raise PersonalCommanderDenied("personal_commander_denied")
+        normalized.append(current)
+    if normalized[1:] != sorted(normalized[1:]):
+        raise PersonalCommanderDenied("personal_commander_denied")
+    return roots
+
+
+def roots_for(profile: str, *, roots: tuple[str, ...] = ()) -> tuple[str, ...]:
     if profile == "legacy":
         return tuple(PERSONAL_ROOTS.values())
     if profile == "yfc-dev":
         return tuple(YFC_ROOTS.values())
+    if profile == "owner-projects":
+        return _validate_project_roots(roots)
     raise PersonalCommanderDenied("personal_commander_denied")
 
 
-def policy_digest(ca_sha256: str, bundle_sha256: str, *, profile: str = "legacy") -> str:
+def policy_digest(ca_sha256: str, bundle_sha256: str, *, profile: str = "legacy",
+                  roots: tuple[str, ...] = ()) -> str:
     if (type(ca_sha256) is not str or SHA64.fullmatch(ca_sha256) is None
         or type(bundle_sha256) is not str or SHA64.fullmatch(bundle_sha256) is None
-        or type(profile) is not str or profile not in ("legacy", "yfc-dev")):
+        or type(profile) is not str or profile not in ("legacy", "yfc-dev", "owner-projects")):
         raise PersonalCommanderDenied("personal_commander_denied")
-    schema, roots = (SCHEMA, PERSONAL_ROOTS) if profile == "legacy" else (YFC_SCHEMA, YFC_ROOTS)
+    if profile == "owner-projects":
+        schema, policy_roots = PROJECTS_SCHEMA, list(_validate_project_roots(roots))
+    else:
+        if roots:
+            raise PersonalCommanderDenied("personal_commander_denied")
+        schema, policy_roots = (SCHEMA, PERSONAL_ROOTS) if profile == "legacy" else (YFC_SCHEMA, YFC_ROOTS)
     return hashlib.sha256(_encode({"schema": schema, "access": "PERSONAL_WRITE_PROCESS",
-        "roots": roots, "ca_sha256": ca_sha256,
+        "roots": policy_roots, "ca_sha256": ca_sha256,
         "bundle_sha256": bundle_sha256})).hexdigest()
 
 
 def prepare_config(paired: Paired, *, owner_sid: str, release_sha: str,
                    ca: bytes, bundle_sha256: str, now: int,
                    profile: str = "legacy",
+                   roots: tuple[str, ...] = (),
                    seal: Callable[..., bytes] = seal_personal_commander) -> bytes:
     """Bind a newly paired personal bearer to owner, code, CA and roots."""
     try:
@@ -103,14 +144,17 @@ def prepare_config(paired: Paired, *, owner_sid: str, release_sha: str,
             or type(now) is not int or not 0 < now < 2**53 or not callable(seal)):
             raise ValueError()
         ca_hash = hashlib.sha256(ca).hexdigest()
-        digest = policy_digest(ca_hash, bundle_sha256, profile=profile)
+        digest = policy_digest(ca_hash, bundle_sha256, profile=profile, roots=roots)
         sealed = seal(paired.token, manifest_sha256=digest, device_id=paired.device_id)
         if type(sealed) is not bytes or not 32 <= len(sealed) <= MAX_CIPHERTEXT:
             raise ValueError()
-        raw = _encode({"schema": SCHEMA if profile == "legacy" else YFC_SCHEMA,
+        obj = {"schema": {"legacy": SCHEMA, "yfc-dev": YFC_SCHEMA, "owner-projects": PROJECTS_SCHEMA}[profile],
             "release_sha": release_sha, "owner_sid": owner_sid,
             "ca_sha256": ca_hash, "bundle_sha256": bundle_sha256, "device_id": paired.device_id,
-            "sealed_bearer_b64": base64.b64encode(sealed).decode("ascii"), "created_at": now})
+            "sealed_bearer_b64": base64.b64encode(sealed).decode("ascii"), "created_at": now}
+        if profile == "owner-projects":
+            obj["roots"] = list(roots)
+        raw = _encode(obj)
         parse_config(raw)
         return raw
     except Exception:
@@ -123,7 +167,8 @@ def parse_config(raw: bytes) -> PersonalCommanderConfig:
             raise ValueError()
         obj = json.loads(raw.decode("ascii"), object_pairs_hook=_unique,
                          parse_constant=lambda _: (_ for _ in ()).throw(ValueError()))
-        if (type(obj) is not dict or set(obj) != FIELDS or obj["schema"] not in (SCHEMA, YFC_SCHEMA)
+        if (type(obj) is not dict or obj.get("schema") not in (SCHEMA, YFC_SCHEMA, PROJECTS_SCHEMA)
+            or set(obj) != (FIELDS | {"roots"} if obj["schema"] == PROJECTS_SCHEMA else FIELDS)
             or type(obj["release_sha"]) is not str or SHA40.fullmatch(obj["release_sha"]) is None
             or type(obj["owner_sid"]) is not str or len(obj["owner_sid"]) > 184
             or SID.fullmatch(obj["owner_sid"]) is None
@@ -133,13 +178,16 @@ def parse_config(raw: bytes) -> PersonalCommanderConfig:
             or type(obj["created_at"]) is not int or not 0 < obj["created_at"] < 2**53
             or _encode(obj) != raw):
             raise ValueError()
-        profile = "legacy" if obj["schema"] == SCHEMA else "yfc-dev"
-        policy_digest(obj["ca_sha256"], obj["bundle_sha256"], profile=profile)
+        profile = {SCHEMA: "legacy", YFC_SCHEMA: "yfc-dev", PROJECTS_SCHEMA: "owner-projects"}[obj["schema"]]
+        if profile == "owner-projects" and type(obj["roots"]) is not list:
+            raise ValueError()
+        roots = tuple(obj["roots"]) if profile == "owner-projects" else ()
+        policy_digest(obj["ca_sha256"], obj["bundle_sha256"], profile=profile, roots=roots)
         sealed = base64.b64decode(obj["sealed_bearer_b64"], validate=True)
         if not 32 <= len(sealed) <= MAX_CIPHERTEXT:
             raise ValueError()
         return PersonalCommanderConfig(obj["release_sha"], obj["owner_sid"], obj["ca_sha256"],
-            obj["bundle_sha256"], obj["device_id"], sealed, obj["created_at"], profile)
+            obj["bundle_sha256"], obj["device_id"], sealed, obj["created_at"], profile, roots)
     except Exception:
         raise PersonalCommanderDenied("personal_commander_denied") from None
 
@@ -158,11 +206,11 @@ def unseal(config: PersonalCommanderConfig, *, owner_sid: str, ca: bytes,
             or not 32 <= len(config.sealed_bearer) <= MAX_CIPHERTEXT
             or type(ca) is not bytes or hashlib.sha256(ca).hexdigest() != config.ca_sha256
             or type(bundle_sha256) is not str or bundle_sha256 != config.bundle_sha256
-            or type(config.profile) is not str or config.profile not in ("legacy", "yfc-dev")
+            or type(config.profile) is not str or config.profile not in ("legacy", "yfc-dev", "owner-projects")
             or not callable(decrypt)):
             raise ValueError()
         bearer = decrypt(config.sealed_bearer,
-            manifest_sha256=policy_digest(config.ca_sha256, config.bundle_sha256, profile=config.profile),
+            manifest_sha256=policy_digest(config.ca_sha256, config.bundle_sha256, profile=config.profile, roots=config.roots),
             device_id=config.device_id)
         if type(bearer) is not str or TOKEN.fullmatch(bearer) is None:
             raise ValueError()

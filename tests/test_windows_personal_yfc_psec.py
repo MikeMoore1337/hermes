@@ -139,3 +139,45 @@ if os.name == "nt":
             os.link(self.project / "code.txt", self.project / "alias.txt")
             with self.assertRaises(ValueError):
                 self.validate()
+
+        def test_two_explicit_projects_allow_write_and_deny_an_unlisted_directory(self):
+            try:
+                getattr(ctypes.WinDLL('processmodel', use_last_error=True, winmode=0x800),
+                        'CreateProcessSecurityEnvironment')
+            except (OSError, AttributeError):
+                self.skipTest('Windows runner does not expose the PSEC API')
+            node = shutil.which('node')
+            if not node:
+                self.skipTest('Node is unavailable')
+            second, outside = self.base / 'second', self.base / 'outside'
+            second.mkdir(); outside.mkdir()
+            (outside / 'private.txt').write_text('fixture', encoding='ascii')
+            for project in (self.project, second):
+                (project / '.artifacts').mkdir()
+                (project / '.artifacts' / 'fixture.txt').write_text('fixture', encoding='ascii')
+            runner = self.release / 'runner'
+            runner.mkdir()
+            shutil.copyfile(node, runner / 'node.exe')
+            target = second / 'created.txt'
+            script = ("const f=require('fs');f.writeFileSync(process.argv[1],'fixture');"
+                      "for(let p of process.argv.slice(2)){try{f.readFileSync(p);process.exit(9)}"
+                      "catch(e){console.log('DENIED')}}")
+            command = (f'node -e "{script}" "{target}" "{outside / "private.txt"}" '
+                       f'"{self.project / ".artifacts" / "fixture.txt"}" '
+                       f'"{second / ".artifacts" / "fixture.txt"}"')
+            roots = (str(self.project), str(second))
+            with patch('device_fabric.windows_personal_commander_config.roots_for', return_value=roots):
+                terminal = yfc.YfcDevPsecTerminal(str(self.project), command=command, project_roots=roots,
+                    writable=(str(self.state), str(second)), readonly=(str(self.release), str(self.git)))
+            try:
+                deadline = time.monotonic() + 20
+                output = []
+                while terminal.poll() is None and time.monotonic() < deadline:
+                    output.append(terminal.read())
+                    time.sleep(0.02)
+                output.append(terminal.read())
+                self.assertEqual(terminal.poll(), 0)
+                self.assertEqual(b''.join(output).count(b'DENIED'), 3)
+                self.assertEqual(target.read_text(), 'fixture')
+            finally:
+                terminal.close()
