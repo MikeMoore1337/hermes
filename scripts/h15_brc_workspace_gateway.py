@@ -12,7 +12,7 @@ BASE = Path("packages/relay/src/mcp")
 IMP = "import { pinnedToolCatalog } from './hermes-tool-catalog.js';"
 LIST = "      ...pinnedToolCatalog().map(t => ({ ...t, inputSchema: withDeviceId(t.inputSchema) }))] };"
 CALL = "    const out = await invokeTool(hub, store, ctx, name, args as Record<string, unknown> | undefined);"
-NEWIMP = "import { LIST_WORKSPACES_TOOL, RESOLVE_WORKSPACE_TOOL, CONNECT_SANDBOX_TOOL, IMPORT_PUBLIC_TOOL, listApprovedWorkspaces, resolveApprovedWorkspace, addDiscoveredWorkspaces, sandboxProjectAction, importPublicProject, personalWindowsProjectAction } from './hermes-workspaces.js';"
+NEWIMP = "import { LIST_WORKSPACES_TOOL, RESOLVE_WORKSPACE_TOOL, CONNECT_SANDBOX_TOOL, IMPORT_PUBLIC_TOOL, listApprovedWorkspaces, resolveApprovedWorkspace, addDiscoveredWorkspaces, addPersonalWindowsWorkspaces, sandboxProjectAction, importPublicProject, personalWindowsProjectAction } from './hermes-workspaces.js';"
 NEWLIST = ("      ...pinnedToolCatalog().map(t => ({ ...t, inputSchema: withDeviceId(t.inputSchema) })),\n"
            "      LIST_WORKSPACES_TOOL, RESOLVE_WORKSPACE_TOOL, CONNECT_SANDBOX_TOOL, IMPORT_PUBLIC_TOOL] };")
 NEWCALL = """    if (name === 'list_workspaces' || name === 'resolve_workspace' || name === 'connect_sandbox_project' || name === 'import_public_project') {
@@ -24,6 +24,7 @@ NEWCALL = """    if (name === 'list_workspaces' || name === 'resolve_workspace' 
           : resolveApprovedWorkspace(args, devices);
       if (name === 'list_workspaces') {
         result = await addDiscoveredWorkspaces(result, devices, (tool, input) => invokeTool(hub, store, ctx, tool, input));
+        result = await addPersonalWindowsWorkspaces(result, devices, (tool, input) => invokeTool(hub, store, ctx, tool, input));
       }
       if (name === 'resolve_workspace' && result.status === 'refused' && result.reason === 'unknown_workspace') {
         result = await personalWindowsProjectAction(args, devices, (tool, input) => invokeTool(hub, store, ctx, tool, input));
@@ -65,7 +66,7 @@ def apply(root: Path, registry: Path, sha: str = UPSTREAM_SHA) -> dict:
     if "hermes-workspaces.js" in original:
         raise AuditError("already_patched")
     template_file = Path(__file__).resolve().parents[1] / "deploy/h15/hermes-workspaces.template.ts"
-    if template_file.is_symlink() or not template_file.is_file() or template_file.stat().st_size > 24576:
+    if template_file.is_symlink() or not template_file.is_file() or template_file.stat().st_size > 32768:
         raise AuditError("unsafe_workspace_template")
     template = template_file.read_text(encoding="utf-8")
     if any(template.count(marker) != 1 for marker in ("__HERMES_CATALOG__", "__HERMES_DEVICE_NAME__", "__HERMES_SANDBOX_HELPER__")):

@@ -7,8 +7,8 @@ const PERSONAL_ID = /^h454-win-personal-[a-f0-9]{32}$/;
 const PERSONAL_ALIASES = ['yfc-dev', 'yfc dev', 'your-fitness-coach dev'];
 const PERSONAL_ROOT = 'D:\\Pet-projects\\yfc-dev';
 const WINDOWS_ORIGINALS = [
-  {name:'hermes-windows-original', aliases:['hermes-windows', 'hermes windows'], root:'D:\\Pet-projects\\hermes'},
-  {name:'yfc-windows-original', aliases:['yfc-windows', 'yfc windows', 'your-fitness-coach-windows'], root:'D:\\Pet-projects\\your-fitness-coach'},
+  {name:'hermes-windows-original', aliases:['hermes-windows-original', 'hermes-windows', 'hermes windows'], root:'D:\\Pet-projects\\hermes'},
+  {name:'yfc-windows-original', aliases:['yfc-windows-original', 'yfc-windows', 'yfc windows', 'your-fitness-coach-windows'], root:'D:\\Pet-projects\\your-fitness-coach'},
 ];
 const PERSONAL_ORIGIN = 'https://github.com/MikeMoore1337/your-fitness-coach.git';
 const PERSONAL_VPS_WORKSPACES = [
@@ -260,6 +260,27 @@ export async function personalWindowsProjectAction(args: unknown, devices: unkno
       device_status:'online',git_verified:false,process_execution_verified:false,
       verification_required_before_write:true};
   } catch { return {schema:1,status:'refused',reason:'personal_project_unavailable'}; }
+}
+
+// Advertise a personal project only after the same live check used by resolve.
+// A sandbox discovery failure must not hide these independent projects.
+export async function addPersonalWindowsWorkspaces(catalog: Record<string, unknown>,
+  devices: unknown, invoke: (tool:string, input:Record<string, unknown>) => Promise<unknown>
+): Promise<Record<string, unknown>> {
+  if (!Array.isArray(catalog.workspaces) || !isReady(personalDevice(devices))) return catalog;
+  const checked = await Promise.all(WINDOWS_ORIGINALS.map(w =>
+    personalWindowsProjectAction({project:w.name}, devices, invoke)));
+  const entries = [...catalog.workspaces];
+  const known = new Set(entries.map((entry:unknown) => (entry as {name?:unknown})?.name));
+  for (let i=0; i<checked.length; i++) {
+    const result = checked[i], workspace = WINDOWS_ORIGINALS[i];
+    if (result.status !== 'resolved' || known.has(workspace.name)) continue;
+    entries.push({name:workspace.name, aliases:[...workspace.aliases], root:result.root,
+      branch:null, origin:null, scope:'native-personal', deviceId:result.deviceId,
+      device_status:'online', git_verified:false, process_execution_verified:false});
+    known.add(workspace.name);
+  }
+  return {...catalog, workspaces:entries};
 }
 
 // Keep the built-in catalog available even if the sandbox is offline or slow.
