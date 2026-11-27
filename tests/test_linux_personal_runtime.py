@@ -52,6 +52,38 @@ class PersonalLinuxRuntimeTests(unittest.TestCase):
         replay.close.assert_called_once_with()
         self.assertEqual(str(error.exception), 'personal_linux_runtime_denied')
 
+    def test_grant_loss_closes_session_and_waits_for_fresh_active_status(self):
+        replay = MagicMock()
+        delays, events = [], []
+        states = iter([True, False, None, True])
+        def serve(**kwargs):
+            events.append(('session', kwargs['claim_call']))
+            return 'grant_inactive' if len(events) == 1 else 'idle_timeout'
+        self.options.update(keep_available=True, sleep=delays.append)
+        with patch.object(runtime.private, 'load_private_relay'), \
+             patch.object(runtime.private, 'private_websocket_connector'), \
+             patch.object(runtime, 'LinuxReadReplay', return_value=replay), \
+             patch.object(runtime.linux_personal_status, 'bearer_state', side_effect=lambda *_a, **_k: next(states)), \
+             patch.object(runtime.linux_personal_worker, 'serve_once', side_effect=serve):
+            self.assertEqual(runtime.run_once(**self.options), 'idle_timeout')
+        self.assertEqual(len(events), 2)
+        self.assertTrue(all(event[1] is replay.claim for event in events))
+        self.assertEqual(delays, [5, 5, 5])
+        replay.close.assert_called_once()
+
+    def test_revoked_grant_does_not_launch_sandbox(self):
+        replay = MagicMock()
+        self.options.update(keep_available=True, sleep=lambda _delay: (_ for _ in ()).throw(StopIteration()))
+        with patch.object(runtime.private, 'load_private_relay'), \
+             patch.object(runtime.private, 'private_websocket_connector'), \
+             patch.object(runtime, 'LinuxReadReplay', return_value=replay), \
+             patch.object(runtime.linux_personal_status, 'bearer_state', return_value=False), \
+             patch.object(runtime.linux_personal_worker, 'serve_once') as serve:
+            with self.assertRaises(runtime.PersonalLinuxRuntimeDenied):
+                runtime.run_once(**self.options)
+        serve.assert_not_called()
+        replay.close.assert_called_once()
+
 
 if __name__ == '__main__':
     unittest.main()
