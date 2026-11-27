@@ -61,6 +61,23 @@ class OfflineProjectInstallTest(unittest.TestCase):
             install(**self.package)
         self.assertEqual((target / "existing").read_text(), "keep")
 
+    def test_external_public_origin_can_use_local_workspace_alias(self):
+        self.package['name'] = 'local-alias'
+        self.package['origin'] = 'https://github.com/Other-Owner/Repo_Name.v2.git'
+        result = install(**self.package)
+        target = self.package['parent'] / 'local-alias'
+        self.assertEqual(result['status'], 'INSTALLED')
+        self.assertEqual(git('-C', target, 'remote', 'get-url', 'origin'), self.package['origin'])
+
+    def test_invalid_origin_refused_before_target_creation(self):
+        for origin in ('https://token@github.com/Owner/repo.git',
+                       'https://github.com.evil.invalid/Owner/repo.git',
+                       'https://github.com/Owner/../repo.git',
+                       'https://github.com/Owner/repo.git?token=x'):
+            with self.subTest(origin=origin), self.assertRaisesRegex(ValueError, 'arguments_invalid'):
+                install(**dict(self.package, origin=origin))
+            self.assertFalse((self.package['parent'] / 'fixture').exists())
+
     def test_corrupt_bundle_rejected_before_target_created(self):
         self.package["checksum"] = "0" * 64
         with self.assertRaisesRegex(ValueError, "bundle_checksum_invalid"):
@@ -70,7 +87,8 @@ class OfflineProjectInstallTest(unittest.TestCase):
 
 class OfflineProjectImportTest(unittest.TestCase):
     def test_invalid_repository_names_rejected_without_network(self):
-        for name in ("../vault", "repo.git", "-bad", "has space"):
+        for name in ("../vault", "repo.git", "-bad", "has space", 'https://github.com/a/b',
+                     'a--b/repo', 'owner/repo/extra', 'owner/repo?token=x'):
             with self.subTest(name=name), self.assertRaisesRegex(ValueError, "invalid_repository_name"):
                 importer.public_repository(name)
 
@@ -79,6 +97,17 @@ class OfflineProjectImportTest(unittest.TestCase):
         with mock.patch.object(importer, "urlopen", return_value=io.BytesIO(json.dumps(payload).encode())):
             with self.assertRaisesRegex(ValueError, "repository_not_public_owner"):
                 importer.public_repository("fixture")
+
+    def test_public_repository_of_another_owner_and_local_alias(self):
+        payload = {'full_name': 'Other-Owner/Repo_Name.v2', 'private': False, 'default_branch': 'main'}
+        with mock.patch.object(importer, 'urlopen', return_value=io.BytesIO(json.dumps(payload).encode())):
+            origin, branch = importer.public_repository('Other-Owner/Repo_Name.v2')
+        self.assertEqual(origin, 'https://github.com/Other-Owner/Repo_Name.v2.git')
+        self.assertEqual(branch, 'main')
+        self.assertEqual(importer.workspace_name('Repo_Name.v2'), 'repo-name-v2')
+        self.assertEqual(importer.workspace_name('Repo_Name.v2', 'project-alias'), 'project-alias')
+        with self.assertRaisesRegex(ValueError, 'invalid_workspace_name'):
+            importer.workspace_name('repo', '../unsafe')
 
     def test_multiple_windows_sandboxes_are_rejected(self):
         with mock.patch.object(importer, "run", return_value="container1\ncontainer2"):

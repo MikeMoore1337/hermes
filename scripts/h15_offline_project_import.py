@@ -1,4 +1,4 @@
-"""Import one public owner repository into the Windows sandbox without sandbox egress."""
+"""Import one public GitHub repository into the Windows sandbox without sandbox egress."""
 from __future__ import annotations
 
 import argparse
@@ -29,18 +29,37 @@ def run(*args: str, timeout: int = 120) -> str:
     return p.stdout.decode("utf-8", "strict").strip()
 
 
-def public_repository(name: str) -> tuple[str, str]:
-    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}", name) or ".." in name or name.endswith(".git"):
+def repository_parts(value: str) -> tuple[str, str]:
+    parts = value.split('/') if isinstance(value, str) else []
+    if len(parts) == 1:
+        parts.insert(0, OWNER)
+    if (len(parts) != 2 or not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?", parts[0])
+            or '--' in parts[0] or not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9._-]{0,99}", parts[1])
+            or '..' in parts[1] or parts[1].lower().endswith('.git')):
         raise ValueError("invalid_repository_name")
-    request = Request(f"https://api.github.com/repos/{OWNER}/{name}", headers={"User-Agent": "Hermes-Commander-offline-import"})
+    return parts[0], parts[1]
+
+
+def workspace_name(repository: str, requested: str | None = None) -> str:
+    name = requested if requested is not None else re.sub(r'[^a-z0-9-]+', '-', repository.lower()).strip('-')
+    if requested is None and name and not name[0].isalpha():
+        name = 'project-' + name
+    if not re.fullmatch(r'[a-z][a-z0-9-]{1,79}', name):
+        raise ValueError('invalid_workspace_name')
+    return name
+
+
+def public_repository(value: str) -> tuple[str, str]:
+    owner, name = repository_parts(value)
+    request = Request(f"https://api.github.com/repos/{owner}/{name}", headers={"User-Agent": "Hermes-Commander-offline-import"})
     with urlopen(request, timeout=20) as response:
         metadata = json.loads(response.read(1024 * 1024))
-    if metadata.get("private") is not False or metadata.get("full_name", "").lower() != f"{OWNER}/{name}".lower():
+    if metadata.get("private") is not False or metadata.get("full_name", "").lower() != f"{owner}/{name}".lower():
         raise ValueError("repository_not_public_owner")
     branch = metadata.get("default_branch")
     if not isinstance(branch, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,199}", branch) or ".." in branch:
         raise ValueError("invalid_default_branch")
-    return f"https://github.com/{OWNER}/{name}.git", branch
+    return f"https://github.com/{owner}/{name}.git", branch
 
 
 def sandbox() -> str:
@@ -57,10 +76,13 @@ def sandbox() -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("repository", help="Public GitHub repository name owned by " + OWNER)
-    name = ap.parse_args().repository
+    ap.add_argument("repository", help="Public GitHub repository as owner/name (or existing owner repository name)")
+    ap.add_argument("--workspace", help="Optional sandbox workspace name")
+    args = ap.parse_args()
     try:
-        origin, branch = public_repository(name)
+        _owner, repository = repository_parts(args.repository)
+        name = workspace_name(repository, args.workspace)
+        origin, branch = public_repository(args.repository)
         container = sandbox()
         nonce = secrets.token_hex(16)
         stage = "/workspace/.h454-import-" + nonce
