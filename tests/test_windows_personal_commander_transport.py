@@ -86,6 +86,17 @@ class PersonalTransportTests(unittest.TestCase):
             self.run_session([WELCOME, {**frame, "tool": "set_config_value"}], dispatch=dispatch)
         self.assertEqual(len(called), 1)
 
+    def test_import_tool_is_refused_when_worker_does_not_advertise_it(self):
+        socket = Socket([WELCOME, {'type': 'call', 'id': 'call-import',
+                                   'tool': 'import_public_project', 'args': {'action': 'start'}}])
+        base = [tool for tool in TOOLS if tool['name'] != 'import_public_project']
+        calls = []
+        with self.assertRaises(transport.PersonalTransportDenied):
+            transport.run_session(device_id=DEVICE, bearer=TOKEN, tools=base,
+                connector=lambda *_a, **_k: socket, dispatch=lambda *_a: calls.append(True),
+                is_active=lambda: True, claim_call=lambda _id: True)
+        self.assertEqual(calls, [])
+
     def test_bearer_never_returns_in_an_agent_result(self):
         frame = {"type": "call", "id": "call-1", "tool": "read_file", "args": {}}
         with self.assertRaises(transport.PersonalTransportDenied) as error:

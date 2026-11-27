@@ -92,6 +92,18 @@ const assert=require('node:assert/strict'),api=require(process.argv[1]);
 const win={name:'H15 Windows permanent sandbox',deviceId:'h15-win-05be75515428',online:true,paused:false};
 const other={name:'H15 YFC VPS sandbox',deviceId:'h15-yfc-c6ee0d53e858',online:true,paused:false};
 const personal={name:'H454 Windows personal Commander',deviceId:'h454-win-personal-'+'a'.repeat(32),platform:'win32',online:true,paused:false};
+const job='a'.repeat(32), importCalls=[];
+const importInvoke=async(tool,args)=>{importCalls.push({tool,args}); return {ok:true,result:{content:[{type:'text',text:JSON.stringify({status:'started',job_id:job,workspace:'new-project',secret:'discard'})}]}};};
+const imported=await api.importPublicProject({action:'start',repository:'owner/repo',workspace:'new-project'},[personal],importInvoke);
+assert.equal(imported.status,'started'); assert.equal(imported.secret,undefined); assert.equal(importCalls[0].tool,'import_public_project');
+assert.equal(importCalls[0].args.deviceId,personal.deviceId);
+assert.equal((await api.importPublicProject({action:'start',repository:'owner/repo',workspace:'../escape'},[personal],importInvoke)).status,'refused');
+assert.equal((await api.importPublicProject({action:'status',job_id:job},[{...personal,online:false}],importInvoke)).reason,'personal_device_unavailable');
+assert.equal(importCalls.length,1);
+const statusInvoke=async()=>({ok:true,result:{content:[{type:'text',text:JSON.stringify({status:'installed',job_id:job,workspace:'new-project',head:'b'.repeat(40),branch:'main'})}]}});
+assert.equal((await api.importPublicProject({action:'status',job_id:job},[personal],statusInvoke)).status,'installed');
+const spoofInvoke=async()=>({ok:true,result:{content:[{type:'text',text:JSON.stringify({status:'installed',job_id:job,workspace:'../escape',head:'b'.repeat(40),branch:'main'})}]}});
+assert.equal((await api.importPublicProject({action:'status',job_id:job},[personal],spoofInvoke)).reason,'import_call_failed');
 const hermesVps={name:'H15 Hermes VPS sandbox',deviceId:'h15-hermes-'+'b'.repeat(12),platform:'linux/docker',online:true,paused:false};
 const yfcVps={...other,platform:'linux/docker'};
 for (const [query,device,root,sparse] of [

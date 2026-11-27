@@ -1,5 +1,7 @@
 """#371: MCP tool policy must be enforced at BOTH gateway boundaries."""
 from pathlib import Path
+import shutil
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -70,6 +72,22 @@ class GatewayPolicyTests(unittest.TestCase):
         apply(self.root)
         with self.assertRaisesRegex(AuditError, "policy_already_present"):
             apply(self.root)
+
+    def test_import_policy_accepts_only_personal_windows_device(self):
+        node = shutil.which('node')
+        if not node:
+            self.skipTest('Node unavailable')
+        version = subprocess.run([node, '--version'], capture_output=True, text=True, check=True).stdout.strip()
+        if int(version.removeprefix('v').split('.')[0]) < 24:
+            self.skipTest('Node 24 required')
+        apply(self.root)
+        code = """const assert=require('node:assert/strict'), p=require(process.argv[1]);
+assert.equal(p.isPermittedRemoteTool('import_public_project',{deviceId:'h454-win-personal-'+'a'.repeat(32)}),true);
+for(const args of [{},{deviceId:'h15-win-'+'a'.repeat(12)},{deviceId:'h454-win-native-'+'a'.repeat(32)}])
+  assert.equal(p.isPermittedRemoteTool('import_public_project',args),false);
+"""
+        result = subprocess.run([node, '-e', code, str(self.root / POLICY)], capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_source_drift_refused_without_changes(self):
         f = self.root / SERVER

@@ -12,7 +12,7 @@ import uuid
 from typing import Any
 
 from device_fabric.windows_appcontainer_terminal import AppContainerTerminal, MAX_WRITE
-from device_fabric.windows_personal_commander_transport import MAX_FRAME, TOOLS, _unique
+from device_fabric.windows_personal_commander_transport import MAX_FRAME, ADAPTER_TOOLS as TOOLS, _unique
 from device_fabric.windows_personal_commander_pipe import PersonalPipeDenied
 
 

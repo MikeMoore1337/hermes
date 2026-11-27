@@ -43,6 +43,15 @@ export const CONNECT_SANDBOX_TOOL = {
     required: ['project'], additionalProperties: false },
   annotations: { title: 'Connect an existing sandbox project', readOnlyHint: true },
 };
+export const IMPORT_PUBLIC_TOOL = {
+  name: 'import_public_project',
+  description: 'Start or check a public GitHub repository import into the Windows sandbox. Existing projects are never overwritten.',
+  inputSchema: { type:'object', properties:{
+    action:{type:'string',enum:['start','status']}, repository:{type:'string',maxLength:140},
+    workspace:{type:'string',maxLength:80}, job_id:{type:'string',maxLength:32},
+  }, required:['action'], additionalProperties:false },
+  annotations: { title:'Import public sandbox project', readOnlyHint:false },
+};
 function ownerDevice(devices: unknown): Device | null {
   if (!Array.isArray(devices) || devices.length > 25) return null;
   const matches = devices.filter(d => d && typeof d === 'object' && d.name === DEVICE_NAME);
@@ -66,6 +75,44 @@ function vpsDevice(devices: unknown, name: string, id: RegExp): Device | null {
 }
 function isReady(d: Device | null): boolean {
   return !!d && d.online === true && d.paused === false;
+}
+export async function importPublicProject(args: unknown, devices: unknown,
+  invoke: (tool:string, input:Record<string, unknown>) => Promise<unknown>
+): Promise<Record<string, unknown>> {
+  if (!args || typeof args !== 'object' || Array.isArray(args))
+    return {schema:1,status:'refused',reason:'invalid_arguments'};
+  const data = args as Record<string, unknown>, keys = Object.keys(data);
+  if (data.action === 'start') {
+    if (!keys.every(k => ['action','repository','workspace'].includes(k))
+        || typeof data.repository !== 'string' || data.repository.length > 140
+        || (data.workspace !== undefined && (typeof data.workspace !== 'string' || !PROJECT_NAME.test(data.workspace))))
+      return {schema:1,status:'refused',reason:'invalid_arguments'};
+  } else if (data.action === 'status') {
+    if (keys.length !== 2 || typeof data.job_id !== 'string' || !/^[a-f0-9]{32}$/.test(data.job_id))
+      return {schema:1,status:'refused',reason:'invalid_arguments'};
+  } else return {schema:1,status:'refused',reason:'invalid_arguments'};
+  const d = personalDevice(devices);
+  if (!isReady(d)) return {schema:1,status:'refused',reason:'personal_device_unavailable'};
+  try {
+    const response = await invoke('import_public_project', { ...data, deviceId:d!.deviceId });
+    const outer = response as {ok?:unknown; result?:{isError?:unknown; content?:unknown}};
+    if (!outer || outer.ok !== true || !outer.result || !Array.isArray(outer.result.content)) throw Error();
+    const first = outer.result.content[0] as {type?:unknown; text?:unknown};
+    if (!first || first.type !== 'text' || typeof first.text !== 'string' || first.text.length > 4096) throw Error();
+    const result = JSON.parse(first.text) as Record<string, unknown>;
+    if (!result || typeof result !== 'object' || Array.isArray(result)) throw Error();
+    if (result.status === 'busy' || result.status === 'refused') return {schema:1,status:result.status};
+    if (typeof result.job_id !== 'string' || !/^[a-f0-9]{32}$/.test(result.job_id)) throw Error();
+    if (result.status === 'running' || result.status === 'failed')
+      return {schema:1,status:result.status,job_id:result.job_id};
+    if ((result.status !== 'started' && result.status !== 'installed')
+        || typeof result.workspace !== 'string' || !PROJECT_NAME.test(result.workspace)) throw Error();
+    if (result.status === 'started') return {schema:1,status:'started',job_id:result.job_id,workspace:result.workspace};
+    if (typeof result.head !== 'string' || !/^[a-f0-9]{40}$/.test(result.head)
+        || typeof result.branch !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/.test(result.branch)
+        || result.branch.includes('..') || /[\r\n]/.test(result.branch)) throw Error();
+    return {schema:1,status:'installed',job_id:result.job_id,workspace:result.workspace,head:result.head,branch:result.branch};
+  } catch { return {schema:1,status:'refused',reason:'import_call_failed'}; }
 }
 function norm(s: string): string {
   return s.trim().toLowerCase().replace(/_/g, ' ').replace(/\s+/g, ' ');

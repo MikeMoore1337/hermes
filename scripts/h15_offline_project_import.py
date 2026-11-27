@@ -16,6 +16,7 @@ from urllib.request import Request, urlopen
 OWNER = "MikeMoore1337"
 SCOPE = "h15-windows-owner-permanent"
 MAX_BUNDLE = 100 * 1024 * 1024
+MAX_REPOSITORY_SIZE_KB = 100 * 1024
 
 
 def run(*args: str, timeout: int = 120) -> str:
@@ -56,6 +57,8 @@ def public_repository(value: str) -> tuple[str, str]:
         metadata = json.loads(response.read(1024 * 1024))
     if metadata.get("private") is not False or metadata.get("full_name", "").lower() != f"{owner}/{name}".lower():
         raise ValueError("repository_not_public_owner")
+    if (type(metadata.get('size')) is not int or not 0 <= metadata['size'] <= MAX_REPOSITORY_SIZE_KB):
+        raise ValueError('repository_size_not_allowed')
     branch = metadata.get("default_branch")
     if not isinstance(branch, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,199}", branch) or ".." in branch:
         raise ValueError("invalid_default_branch")

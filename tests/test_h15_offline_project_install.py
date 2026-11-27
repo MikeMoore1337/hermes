@@ -99,7 +99,7 @@ class OfflineProjectImportTest(unittest.TestCase):
                 importer.public_repository("fixture")
 
     def test_public_repository_of_another_owner_and_local_alias(self):
-        payload = {'full_name': 'Other-Owner/Repo_Name.v2', 'private': False, 'default_branch': 'main'}
+        payload = {'full_name': 'Other-Owner/Repo_Name.v2', 'private': False, 'default_branch': 'main', 'size': 5}
         with mock.patch.object(importer, 'urlopen', return_value=io.BytesIO(json.dumps(payload).encode())):
             origin, branch = importer.public_repository('Other-Owner/Repo_Name.v2')
         self.assertEqual(origin, 'https://github.com/Other-Owner/Repo_Name.v2.git')
@@ -108,6 +108,13 @@ class OfflineProjectImportTest(unittest.TestCase):
         self.assertEqual(importer.workspace_name('Repo_Name.v2', 'project-alias'), 'project-alias')
         with self.assertRaisesRegex(ValueError, 'invalid_workspace_name'):
             importer.workspace_name('repo', '../unsafe')
+
+    def test_oversized_or_unknown_repository_size_is_refused(self):
+        for size in (None, -1, importer.MAX_REPOSITORY_SIZE_KB + 1):
+            payload = {'full_name':'owner/repo', 'private':False, 'default_branch':'main', 'size':size}
+            with self.subTest(size=size), mock.patch.object(importer, 'urlopen', return_value=io.BytesIO(json.dumps(payload).encode())):
+                with self.assertRaisesRegex(ValueError, 'repository_size_not_allowed'):
+                    importer.public_repository('owner/repo')
 
     def test_multiple_windows_sandboxes_are_rejected(self):
         with mock.patch.object(importer, "run", return_value="container1\ncontainer2"):
