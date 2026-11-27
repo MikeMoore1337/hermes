@@ -37,7 +37,7 @@ export const RESOLVE_WORKSPACE_TOOL = {
 };
 export const CONNECT_SANDBOX_TOOL = {
   name: 'connect_sandbox_project',
-  description: 'Connect an existing named MikeMoore1337 Git repository already present in the Windows sandbox. Does not clone, modify the repository, or grant native host access.',
+  description: 'Connect an existing named GitHub repository already present in the Windows sandbox. Does not clone, modify the repository, or grant native host access.',
   inputSchema: { type: 'object', properties: {
     project: { type: 'string', minLength: 2, maxLength: 80 } },
     required: ['project'], additionalProperties: false },
@@ -74,6 +74,11 @@ function validGitBranch(row: Record<string, unknown>): boolean {
   return (typeof row.branch === 'string' && row.branch.length > 0 && row.branch.length <= 255
           && (row.detached === undefined || row.detached === false))
     || (row.branch === null && row.detached === true);
+}
+function validGitHubOrigin(origin: unknown, repository: unknown): boolean {
+  if (typeof origin !== 'string' || typeof repository !== 'string') return false;
+  const match = /^https:\/\/github\.com\/([A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?)\/([A-Za-z0-9_][A-Za-z0-9._-]{0,99})\.git$/.exec(origin);
+  return !!match && match[0] === origin && !match[1].includes('--') && !match[2].includes('..') && match[2] === repository;
 }
 export function listApprovedWorkspaces(devices: unknown) {
   const d = ownerDevice(devices);
@@ -179,8 +184,8 @@ export async function addDiscoveredWorkspaces(catalog: Record<string, unknown>,
     const name = row.workspace;
     const repository = row.repository ?? name;
     if (typeof name !== 'string' || !PROJECT_NAME.test(name) || row.status !== 'verified'
-        || typeof repository !== 'string' || !PROJECT_NAME.test(repository)
-        || row.root !== `/workspace/projects/${name}` || row.origin !== `https://github.com/MikeMoore1337/${repository}.git`
+        || !validGitHubOrigin(row.origin, repository)
+        || row.root !== `/workspace/projects/${name}`
         || !validGitBranch(row)
         || typeof row.head !== 'string' || !/^[a-f0-9]{40}$/.test(row.head)) {
       incomplete = true; continue;
@@ -240,8 +245,7 @@ export async function sandboxProjectAction(args: unknown,
   if (outer.result.isError === true) return { schema: 1, status: 'refused', reason: 'sandbox_call_failed' };
   const repository = data.repository ?? name;
   if (data.workspace !== name || data.root !== `/workspace/projects/${name}`
-      || typeof repository !== 'string' || !PROJECT_NAME.test(repository)
-      || data.origin !== `https://github.com/MikeMoore1337/${repository}.git`
+      || !validGitHubOrigin(data.origin, repository)
       || !validGitBranch(data) || typeof data.head !== 'string' || !/^[a-f0-9]{40}$/.test(data.head))
     return { schema: 1, status: 'refused', reason: 'sandbox_response_invalid' };
   return { schema: 1, ...data, status: 'resolved', deviceId: d!.deviceId,
