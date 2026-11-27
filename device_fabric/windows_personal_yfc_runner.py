@@ -53,8 +53,9 @@ def run(raw_config: bytes, *, ca: bytes, expected_manifest: bytes,
             or (decrypt is not None and not callable(decrypt))):
             raise ValueError()
         candidate = config.parse_config(raw_config)
-        if candidate.profile != "yfc-dev":
+        if candidate.profile not in ("yfc-dev", "owner-projects"):
             raise ValueError()
+        roots = config.roots_for(candidate.profile, roots=candidate.roots)
         app_data = os.environ.get("LOCALAPPDATA", "")
         if os.name != "nt" or not os.path.isabs(app_data):
             raise ValueError()
@@ -75,9 +76,17 @@ def run(raw_config: bytes, *, ca: bytes, expected_manifest: bytes,
         if (not search.is_file() or search.stat().st_size > 1024 * 1024
             or hashlib.sha256(search.read_bytes()).hexdigest() != SEARCH_MANAGER_SHA256):
             raise ValueError()
+        # A newly configurable root must be authenticated before any probe
+        # process or filesystem scan can use it. The worker separately
+        # unseals and checks the live grant before opening a session.
+        if candidate.profile == 'owner-projects':
+            unseal_options = {'decrypt': decrypt} if decrypt is not None else {}
+            config.unseal(candidate, owner_sid=current_sid(), ca=ca,
+                          bundle_sha256=candidate.bundle_sha256, **unseal_options)
         def terminal(command_value: str | None):
-            return YfcDevPsecTerminal(str(YFC_DEV), command=command_value,
-                writable=(str(state),), readonly=(str(release), str(GIT_ROOT)))
+            options = {'project_roots': roots} if candidate.profile == 'owner-projects' else {}
+            return YfcDevPsecTerminal(roots[0], command=command_value,
+                writable=(str(state), *roots[1:]), readonly=(str(release), str(GIT_ROOT)), **options)
         probe = terminal("exit /b 0")
         deadline = time.monotonic() + 10
         while probe.poll() is None and time.monotonic() < deadline:
@@ -93,13 +102,18 @@ def run(raw_config: bytes, *, ca: bytes, expected_manifest: bytes,
             return process
         def isolation_verified() -> bool:
             try:
-                scan(YFC_DEV)
+                for root in roots:
+                    path = Path(root)
+                    if candidate.profile == 'owner-projects':
+                        scan(path, excluded=(path / '.artifacts',))
+                    else:
+                        scan(path)
                 process = current["dispatcher"]
                 return process is None or (not process._closed and process._environment is not None
                                             and process._job is not None and process.poll() is None)
             except Exception:
                 return False
-        broker = PersonalTerminalSessions(1, str(YFC_DEV),
+        broker = PersonalTerminalSessions(1, roots[0],
             factory=lambda _sid, _root, command: terminal(command))
         importer = PublicProjectImport(release / 'code' / 'scripts' / 'h15_offline_project_import.py')
         options = {"decrypt": decrypt} if decrypt is not None else {}

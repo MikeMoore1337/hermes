@@ -18,7 +18,7 @@ const allowed = new Set([
   'start_process', 'read_process_output', 'interact_with_process',
   'force_terminate', 'list_sessions',
 ]);
-const blocked = new Set(['.git', '.hg', '.svn', '.ssh', '.aws', '.gnupg', '.kube',
+const blocked = new Set(['.git', '.hg', '.svn', '.ssh', '.aws', '.gnupg', '.kube', '.artifacts',
   '.terraform', '.next', '.cache', 'node_modules', '__pycache__', 'vault', '.vault',
   'private-vault', 'secrets', '.secrets', 'credentials', '.env', '.env.local', '.env.production']);
 const sensitive = /^\.?(?:secrets?|credentials?|tokens?|passwords?|api[-_]?keys?|service[-_]?accounts?|private[-_]?keys?|config[._-]local)(?:[._-]|$)/i;

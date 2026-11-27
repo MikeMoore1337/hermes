@@ -70,7 +70,8 @@ def serve(raw_config: bytes, *, current_sid: Callable[[], str], ca: bytes,
             raise ValueError()
         attach_job()
         process = start_dispatcher()
-        bridge = (bridge_factory or PersonalCommanderPipe)(process, list(config.roots_for(candidate.profile)))
+        bridge = (bridge_factory or PersonalCommanderPipe)(process,
+                    list(config.roots_for(candidate.profile, roots=candidate.roots)))
         failed = False
         def dispatch_inner(name: str, args: dict) -> dict:
             nonlocal failed

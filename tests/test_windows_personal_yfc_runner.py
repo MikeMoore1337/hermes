@@ -83,6 +83,58 @@ if os.name == "nt":
                     runner.run(raw, **self.args)
                 process.assert_not_called()
 
+        def test_owner_project_roots_reach_psec_and_are_checked_for_each_session(self):
+            roots = (r'D:\Pet-projects\yfc-dev', r'D:\Pet-projects\hermes')
+            raw = config.prepare_config(self.paired, owner_sid=SID, release_sha='d' * 40,
+                ca=CA, bundle_sha256=DIGEST, now=1000, profile='owner-projects', roots=roots,
+                seal=lambda *_a, **_k: b's' * 64)
+            calls = []
+            class Process:
+                def __init__(self, root, *, command, writable, readonly, project_roots):
+                    calls.append((root, command, writable, project_roots))
+                    self.command, self._closed = command, False
+                    self._environment = self._job = object()
+                def poll(self): return 0 if self.command == 'exit /b 0' else None
+                def close(self): self._closed = True
+            def serve(_raw, **kwargs):
+                self.assertTrue(kwargs['isolation_verified']())
+                kwargs['start_dispatcher']()
+                self.assertTrue(kwargs['isolation_verified']())
+                kwargs['import_broker'].close()
+                kwargs['terminal_broker'].close()
+                return 'synthetic'
+            with patch.object(runner.bundle, 'verify', return_value=DIGEST), \
+                 patch.object(runner, 'scan') as scan, \
+                 patch.object(runner, 'YfcDevPsecTerminal', Process), \
+                 patch.object(runner.worker, 'serve', side_effect=serve):
+                self.assertEqual(runner.run(raw, **self.args), 'synthetic')
+            self.assertEqual(len(calls), 2)
+            self.assertEqual(calls[0][0], roots[0])
+            self.assertEqual(calls[0][2][1:], roots[1:])
+            self.assertEqual(calls[0][3], roots)
+            self.assertEqual(scan.call_count, 4)
+
+        def test_changed_project_scope_cannot_start_probe_or_scan(self):
+            roots = (r'D:\Pet-projects\yfc-dev', r'D:\Pet-projects\hermes')
+            raw = config.prepare_config(self.paired, owner_sid=SID, release_sha='d' * 40,
+                ca=CA, bundle_sha256=DIGEST, now=1000, profile='owner-projects', roots=roots,
+                seal=lambda _token, **scope: bytes.fromhex(scope['manifest_sha256']) + b's' * 32)
+            import json
+            tampered = json.loads(raw)
+            tampered['roots'][1] = r'D:\Pet-projects\another'
+            def decrypt(value, **scope):
+                if value[:32] != bytes.fromhex(scope['manifest_sha256']):
+                    raise ValueError()
+                return TOKEN
+            self.args['decrypt'] = decrypt
+            with patch.object(runner.bundle, 'verify', return_value=DIGEST), \
+                 patch.object(runner, 'scan') as scan, \
+                 patch.object(runner, 'YfcDevPsecTerminal') as terminal:
+                with self.assertRaises(runner.YfcRunnerDenied):
+                    runner.run(config._encode(tampered), **self.args)
+            scan.assert_not_called()
+            terminal.assert_not_called()
+
         def test_unverified_bundle_never_starts_the_probe_or_unseals(self):
             with patch.object(runner.bundle, "verify", side_effect=ValueError("synthetic")), \
                  patch.object(runner, "YfcDevPsecTerminal") as process, \
