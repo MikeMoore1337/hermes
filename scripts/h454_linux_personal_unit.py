@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 
 from device_fabric.linux_personal_config import SHA40
-from device_fabric.linux_personal_sandbox import _project_path
+from device_fabric.linux_personal_sandbox import _project_path, validate_projects
 from device_fabric.native_private_tls import _private_ip
 from scripts.h454_linux_personal_service import UNITS
 
@@ -19,15 +19,23 @@ def _quote(value: str) -> str:
 
 
 def render(*, target: str, release_sha: str, dependency_sha: str, project: str,
-           project_group: str, relay_ip: str | None = None) -> str:
-    """Prepare a root-installed unit using exactly one owner-selected root."""
+           project_group: str, relay_ip: str | None = None,
+           additional_projects: tuple[tuple[str, str], ...] = (),
+           additional_groups: tuple[str, ...] = ()) -> str:
+    """Prepare a root-installed unit for explicitly selected project roots."""
     try:
         if (target not in UNITS or type(release_sha) is not str or SHA40.fullmatch(release_sha) is None or
             type(dependency_sha) is not str or SHA40.fullmatch(dependency_sha) is None or
             type(project_group) is not str or GROUP.fullmatch(project_group) is None):
             raise ValueError()
         _project_path(project)
-        project_arg = _quote(project)
+        validate_projects(project, additional_projects)
+        if (type(additional_groups) is not tuple or len(additional_groups) > 4 or
+                any(type(group) is not str or GROUP.fullmatch(group) is None for group in additional_groups) or
+                len(set(additional_groups)) != len(additional_groups) or project_group in additional_groups or
+                'hermes-commander-native' in additional_groups):
+            raise ValueError()
+        project_arg = ' '.join(_quote(value) for value in (project, *(p for _, p in additional_projects)))
         if target == 'yfc-vps':
             if relay_ip is not None:
                 raise ValueError()
@@ -39,6 +47,8 @@ def render(*, target: str, release_sha: str, dependency_sha: str, project: str,
             network = ('PrivateNetwork=no\nRestrictAddressFamilies=AF_UNIX AF_NETLINK AF_INET AF_INET6\n'
                        'IPAddressDeny=any\nIPAddressAllow=' + relay_ip + '/32\n')
             groups = project_group
+        if additional_groups:
+            groups += ' ' + ' '.join(additional_groups)
         release = '/opt/hermes-commander-personal/releases/main-' + release_sha
         deps = '/opt/hermes-commander-native/deps/main-' + dependency_sha
         return ('[Unit]\nDescription=Hermes personal Commander (' + target + ')\n'

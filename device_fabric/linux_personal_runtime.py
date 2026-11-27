@@ -14,6 +14,7 @@ from device_fabric import linux_personal_status, linux_personal_worker
 from device_fabric import native_private_tls as private
 from device_fabric import windows_personal_commander_bundle as bundle_check
 from device_fabric.linux_native_replay import LinuxReadReplay
+from device_fabric.linux_personal_sandbox import validate_projects
 
 
 class PersonalLinuxRuntimeDenied(ValueError):
@@ -36,7 +37,8 @@ def _grant_state_with_retry(check: Callable[[], bool | None], sleep: Callable[[f
 def run_once(*, target: str, device_id: str, bearer: str, project: str, bundle: str,
              expected_manifest: bytes, bundle_sha256: str, trust_release_sha: str,
              journal: Path, websocket_connect: Callable[..., Any],
-             keep_available: bool = False, sleep: Callable[[float], None] = time.sleep) -> str:
+             keep_available: bool = False, sleep: Callable[[float], None] = time.sleep,
+             additional_projects: tuple[tuple[str, str], ...] = ()) -> str:
     """Run one session using current-bearer status and a persistent call log.
 
     The caller must load these arguments from root-owned trusted local state,
@@ -50,6 +52,12 @@ def run_once(*, target: str, device_id: str, bearer: str, project: str, bundle: 
             not os.path.isabs(project) or not os.path.isabs(bundle) or
             os.path.commonpath((project, str(journal))) == project or
             os.path.commonpath((bundle, str(journal))) == bundle):
+            raise ValueError()
+        if type(additional_projects) is not tuple:
+            raise ValueError()
+        if additional_projects:
+            validate_projects(project, additional_projects)
+        if any(os.path.commonpath((path, str(journal))) == path for _, path in additional_projects):
             raise ValueError()
         trust = private.load_private_relay(target, trust_release_sha)
         connector = private.private_websocket_connector(trust, websocket_connect)
@@ -71,9 +79,10 @@ def run_once(*, target: str, device_id: str, bearer: str, project: str, bundle: 
                 if state is not True:
                     raise ValueError()
             try:
+                extra = {'additional_projects': additional_projects} if additional_projects else {}
                 result = linux_personal_worker.serve_once(target=target, device_id=device_id, bearer=bearer,
                     project=project, bundle=bundle, connector=connector, is_active=active,
-                    claim_call=replay.claim, verify_bundle=verified, grant_state=grant_state)
+                    claim_call=replay.claim, verify_bundle=verified, grant_state=grant_state, **extra)
             except linux_personal_worker.LinuxPersonalWorkerDenied:
                 state = grant_state() if keep_available else True
                 if state is not False and state is not None:
