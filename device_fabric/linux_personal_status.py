@@ -50,6 +50,9 @@ def bearer_state(config: private.PrivateRelay, *, target: str, device_id: str,
                 and obj['schema'] == SCHEMA and obj['device_id'] == device_id
                 and obj['active'] is True and obj['owner_bound'] is True
                 and json.dumps(obj, separators=(',', ':')).encode('ascii') == raw)
+    except ssl.SSLEOFError:
+        # An interrupted TLS stream is an outage, never evidence of a grant.
+        return None
     except ssl.SSLError:
         return False
     except (OSError, TimeoutError, http.client.RemoteDisconnected):
