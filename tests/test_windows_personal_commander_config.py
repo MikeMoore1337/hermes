@@ -108,6 +108,38 @@ class PersonalCommanderConfigTests(unittest.TestCase):
         with self.assertRaises(config.PersonalCommanderDenied):
             config.roots_for('owner-projects', roots=(first, r'D:\Pet-projects\z', r'D:\Pet-projects\a'))
 
+    def test_add_project_reseals_existing_grant_and_preserves_identity(self):
+        def seal(_token, **scope):
+            return bytes.fromhex(scope['manifest_sha256']) + b's' * 32
+        def decrypt(ciphertext, **scope):
+            if ciphertext[:32] != bytes.fromhex(scope['manifest_sha256']):
+                raise ValueError('wrong scope')
+            return TOKEN
+        roots = (r'D:\Pet-projects\yfc-dev', r'D:\Pet-projects\hermes')
+        raw = config.prepare_config(paired(), owner_sid=SID, release_sha=RELEASE, ca=CA,
+            bundle_sha256=BUNDLE, now=1000, profile='owner-projects', roots=roots, seal=seal)
+        result = config.add_project(raw, r'D:\Pet-projects\financial-horizon', owner_sid=SID,
+            ca=CA, bundle_sha256=BUNDLE, seal=seal, decrypt=decrypt)
+        current, updated = config.parse_config(raw), config.parse_config(result)
+        self.assertEqual(updated.roots, (roots[0], r'D:\Pet-projects\financial-horizon', roots[1]))
+        self.assertEqual((updated.device_id, updated.release_sha, updated.created_at),
+                         (current.device_id, current.release_sha, current.created_at))
+        self.assertEqual(config.unseal(updated, owner_sid=SID, ca=CA, bundle_sha256=BUNDLE, decrypt=decrypt), TOKEN)
+        with self.assertRaises(config.PersonalCommanderDenied):
+            config.unseal(replace(updated, roots=roots), owner_sid=SID, ca=CA,
+                          bundle_sha256=BUNDLE, decrypt=decrypt)
+
+    def test_add_project_rejects_duplicate_private_and_wrong_owner(self):
+        raw = config.prepare_config(paired(), owner_sid=SID, release_sha=RELEASE,
+            ca=CA, bundle_sha256=BUNDLE, now=1000, profile='yfc-dev', seal=lambda *_a, **_k: SEALED)
+        for project, owner in ((r'D:\Pet-projects\YFC-DEV', SID),
+                               (r'D:\Pet-projects\second-brain-workspace', SID),
+                               (r'C:\Windows', SID),
+                               (r'D:\Pet-projects\hermes', 'S-1-5-99')):
+            with self.subTest(project=project), self.assertRaises(config.PersonalCommanderDenied):
+                config.add_project(raw, project, owner_sid=owner, ca=CA, bundle_sha256=BUNDLE,
+                    decrypt=lambda *_a, **_k: self.fail('unexpected unseal'), seal=lambda *_a, **_k: SEALED)
+
     def _real_owner_projects_dpapi_refuses_changed_scope(self):
         roots = (r'D:\Pet-projects\yfc-dev', r'D:\Pet-projects\hermes')
         raw = config.prepare_config(paired(), owner_sid=SID, release_sha=RELEASE, ca=CA,
@@ -116,6 +148,17 @@ class PersonalCommanderConfigTests(unittest.TestCase):
         self.assertEqual(config.unseal(parsed, owner_sid=SID, ca=CA, bundle_sha256=BUNDLE), TOKEN)
         with self.assertRaises(config.PersonalCommanderDenied):
             config.unseal(replace(parsed, roots=(roots[0], r'D:\Pet-projects\another')),
+                          owner_sid=SID, ca=CA, bundle_sha256=BUNDLE)
+
+    def _real_add_project_reseals_for_current_user(self):
+        raw = config.prepare_config(paired(), owner_sid=SID, release_sha=RELEASE,
+            ca=CA, bundle_sha256=BUNDLE, now=1000, profile='yfc-dev')
+        result = config.add_project(raw, r'D:\Pet-projects\hermes', owner_sid=SID, ca=CA, bundle_sha256=BUNDLE)
+        updated = config.parse_config(result)
+        self.assertEqual(updated.roots, (r'D:\Pet-projects\yfc-dev', r'D:\Pet-projects\hermes'))
+        self.assertEqual(config.unseal(updated, owner_sid=SID, ca=CA, bundle_sha256=BUNDLE), TOKEN)
+        with self.assertRaises(config.PersonalCommanderDenied):
+            config.unseal(replace(updated, roots=(updated.roots[0], r'D:\Pet-projects\other')),
                           owner_sid=SID, ca=CA, bundle_sha256=BUNDLE)
 
     def test_wrong_owner_ca_or_bundle_never_calls_decrypt(self):
@@ -170,6 +213,8 @@ class PersonalCommanderConfigTests(unittest.TestCase):
 
 
 if os.name == "nt":
+    PersonalCommanderConfigTests.test_real_add_project_reseals_for_current_user = (
+        PersonalCommanderConfigTests._real_add_project_reseals_for_current_user)
     PersonalCommanderConfigTests.test_real_owner_projects_dpapi_refuses_changed_scope = (
         PersonalCommanderConfigTests._real_owner_projects_dpapi_refuses_changed_scope)
     PersonalCommanderConfigTests.test_real_current_user_dpapi_round_trip_and_domain_separation = (

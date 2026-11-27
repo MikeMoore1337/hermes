@@ -217,3 +217,35 @@ def unseal(config: PersonalCommanderConfig, *, owner_sid: str, ca: bytes,
         return bearer
     except Exception:
         raise PersonalCommanderDenied("personal_commander_denied") from None
+
+
+def add_project(raw: bytes, project: str, *, owner_sid: str, ca: bytes,
+                bundle_sha256: str,
+                decrypt: Callable[..., str] = unseal_personal_commander,
+                seal: Callable[..., bytes] = seal_personal_commander) -> bytes:
+    """Reseal an existing grant to include one explicit original project.
+
+    This only prepares bytes. The caller must validate the actual directory,
+    persist the result transactionally, restart and verify the live device.
+    """
+    try:
+        current = parse_config(raw)
+        if current.profile not in ("yfc-dev", "owner-projects") or type(project) is not str:
+            raise ValueError()
+        existing = roots_for(current.profile, roots=current.roots)
+        if any(ntpath.normcase(project) == ntpath.normcase(root) for root in existing):
+            raise ValueError()
+        roots = (existing[0], *sorted((*existing[1:], project), key=ntpath.normcase))
+        _validate_project_roots(roots)
+        bearer = unseal(current, owner_sid=owner_sid, ca=ca,
+                        bundle_sha256=bundle_sha256, decrypt=decrypt)
+        paired = Paired(TARGET, current.device_id, bearer, "wss://hermes.mikemoore.top/ws")
+        updated = prepare_config(paired, owner_sid=owner_sid, release_sha=current.release_sha,
+            ca=ca, bundle_sha256=bundle_sha256, now=current.created_at,
+            profile="owner-projects", roots=roots, seal=seal)
+        if unseal(parse_config(updated), owner_sid=owner_sid, ca=ca,
+                  bundle_sha256=bundle_sha256, decrypt=decrypt) != bearer:
+            raise ValueError()
+        return updated
+    except Exception:
+        raise PersonalCommanderDenied("personal_commander_denied") from None
