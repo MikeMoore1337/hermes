@@ -12,8 +12,14 @@ from scripts.h15_brc_native_read_gateway import (
     GRANT_PATCH, INVOKE_ANCHOR, NATIVE_GENERIC_GUARD,
 )
 from scripts.h15_remote_commander_candidate_audit import AuditError
+from scripts.h15_brc_workspace_gateway import NEWLIST
+from scripts.h15_brc_native_read_gate_patch import SERVER_LIST as ALTERNATIVE_LIST
 
 class NativeReadGatewayTests(unittest.TestCase):
+    def test_workspace_and_native_patches_share_the_same_list_marker(self):
+        self.assertIn(LIST, NEWLIST)
+        self.assertEqual(LIST, ALTERNATIVE_LIST)
+
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
