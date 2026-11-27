@@ -6,6 +6,10 @@ const PERSONAL_NAME = 'H454 Windows personal Commander';
 const PERSONAL_ID = /^h454-win-personal-[a-f0-9]{32}$/;
 const PERSONAL_ALIASES = ['yfc-dev', 'yfc dev', 'your-fitness-coach dev'];
 const PERSONAL_ROOT = 'D:\\Pet-projects\\yfc-dev';
+const WINDOWS_ORIGINALS = [
+  {name:'hermes-windows-original', aliases:['hermes-windows', 'hermes windows'], root:'D:\\Pet-projects\\hermes'},
+  {name:'yfc-windows-original', aliases:['yfc-windows', 'yfc windows', 'your-fitness-coach-windows'], root:'D:\\Pet-projects\\your-fitness-coach'},
+];
 const PERSONAL_ORIGIN = 'https://github.com/MikeMoore1337/your-fitness-coach.git';
 const PERSONAL_VPS_WORKSPACES = [
   { name:'reminder-bot-vps-original', aliases:['reminder-bot-vps-original','reminder bot vps','reminder-bot'],
@@ -35,7 +39,7 @@ export const LIST_WORKSPACES_TOOL = {
 };
 export const RESOLVE_WORKSPACE_TOOL = {
   name: 'resolve_workspace',
-  description: 'Find an approved project by name. Original VPS projects have explicit original aliases; VPS dev aliases are separate sandbox copies. Check Git before writing.',
+  description: 'Find an approved project by name. Original Windows aliases: hermes-windows and yfc-windows. Original VPS projects have explicit aliases; VPS dev aliases are separate sandbox copies. Check Git before writing.',
   inputSchema: { type: 'object', properties: {
     project: { type: 'string', minLength: 1, maxLength: 100 } },
     required: ['project'], additionalProperties: false },
@@ -226,6 +230,36 @@ export function resolveApprovedWorkspace(args: unknown, devices: unknown) {
     root: w.root, branch: w.branch, origin: w.origin, scope: 'sandbox',
     deviceId: d!.deviceId, device_status: 'online', git_verified: false,
     process_execution_verified: false, verification_required_before_write: true };
+}
+
+// A static name is not a grant: confirm the live device can access the
+// directory before advertising it, including after a configuration rollback.
+export async function personalWindowsProjectAction(args: unknown, devices: unknown,
+  invoke: (tool:string, input:Record<string, unknown>) => Promise<unknown>
+): Promise<Record<string, unknown>> {
+  if (!args || typeof args !== 'object' || Array.isArray(args))
+    return {schema:1,status:'refused',reason:'invalid_arguments'};
+  const row = args as Record<string, unknown>;
+  if (Object.keys(row).length !== 1 || typeof row.project !== 'string' || row.project.length > 100)
+    return {schema:1,status:'refused',reason:'invalid_arguments'};
+  const matches = WINDOWS_ORIGINALS.filter(w => w.aliases.some(alias => norm(alias) === norm(row.project as string)));
+  if (matches.length !== 1) return {schema:1,status:'refused',reason:'unknown_workspace'};
+  const device = personalDevice(devices);
+  if (!isReady(device)) return {schema:1,status:'refused',reason:'personal_device_unavailable'};
+  const workspace = matches[0];
+  try {
+    const reply = await invoke('get_file_info', {path:workspace.root, deviceId:device!.deviceId});
+    const outer = reply as {ok?:unknown; result?:{isError?:unknown; content?:unknown}};
+    if (!outer || outer.ok !== true || !outer.result || outer.result.isError === true ||
+        !Array.isArray(outer.result.content) || outer.result.content.length !== 1) throw Error();
+    const content = outer.result.content[0] as {type?:unknown; text?:unknown};
+    if (!content || content.type !== 'text' || typeof content.text !== 'string' ||
+        content.text.length > 4096 || !/(?:^|\n)isDirectory: true(?:\r?\n|$)/.test(content.text)) throw Error();
+    return {schema:1,status:'resolved',workspace:workspace.name,root:workspace.root,
+      branch:null,origin:null,scope:'native-personal',deviceId:device!.deviceId,
+      device_status:'online',git_verified:false,process_execution_verified:false,
+      verification_required_before_write:true};
+  } catch { return {schema:1,status:'refused',reason:'personal_project_unavailable'}; }
 }
 
 // Keep the built-in catalog available even if the sandbox is offline or slow.
