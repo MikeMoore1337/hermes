@@ -1,4 +1,4 @@
-"""Bounded BRC session for the separately paired personal Windows agent.
+"""Bounded BRC session for separately paired personal agents.
 
 The connector and local dispatcher are supplied by a trusted worker. This
 module does not launch a process, store a bearer, or install a service.
@@ -6,6 +6,7 @@ module does not launch a process, store a bearer, or install a service.
 from __future__ import annotations
 
 import json
+import platform
 import re
 from typing import Any, Callable
 
@@ -61,14 +62,30 @@ def _active(check: Callable[[], bool]) -> None:
 
 def run_session(*, device_id: str, bearer: str, tools: list[dict[str, Any]],
                 connector: Callable[..., Any], dispatch: Callable[[str, dict], dict],
-                is_active: Callable[[], bool], claim_call: Callable[[str], bool]) -> str:
+                is_active: Callable[[], bool], claim_call: Callable[[str], bool],
+                target: str = 'windows') -> str:
     """Run one authenticated session with durable pre-dispatch call claims.
 
-    The owner-status callback and claim journal must be independently trusted;
-    no network frame can supply either. An ambiguous effect is never retried.
+    The owner-status callback, local target and claim journal must be
+    independently trusted; no network frame can supply them. An ambiguous
+    effect is never retried. This transport does not provide OS isolation,
+    implement file or process operations, or install a Linux service.
     """
     try:
-        if (type(device_id) is not str or DEVICE.fullmatch(device_id) is None
+        profiles = {
+            'windows': (DEVICE, NAME, 'win32', 'x64', 'personal-windows'),
+            'hermes-vps': (re.compile(r'h454-linux-personal-hermes-[0-9a-f]{32}\Z'),
+                'H454 Hermes VPS personal Commander', 'linux', None, 'personal-hermes'),
+            'yfc-vps': (re.compile(r'h454-linux-personal-yfc-[0-9a-f]{32}\Z'),
+                'H454 YFC VPS personal Commander', 'linux', None, 'personal-yfc'),
+        }
+        if type(target) is not str or target not in profiles:
+            raise ValueError()
+        pattern, device_name, system, arch, hostname = profiles[target]
+        if system == 'linux':
+            arch = {'x86_64': 'x64', 'amd64': 'x64', 'aarch64': 'arm64',
+                    'arm64': 'arm64'}.get(platform.machine().lower())
+        if (arch not in ('x64', 'arm64') or type(device_id) is not str or pattern.fullmatch(device_id) is None
             or type(bearer) is not str or TOKEN.fullmatch(bearer) is None
             or type(tools) is not list
             or any(type(tool) is not dict or type(tool.get("name")) is not str for tool in tools)
@@ -79,7 +96,7 @@ def run_session(*, device_id: str, bearer: str, tools: list[dict[str, Any]],
             raise ValueError()
         _active(is_active)
         greeting = {"type": "hello", "protocol": 1, "device": {"deviceId": device_id,
-            "name": NAME, "platform": "win32", "arch": "x64", "hostname": "personal-windows",
+            "name": device_name, "platform": system, "arch": arch, "hostname": hostname,
             "agentVersion": "2.0.2", "coreVersion": "hermes-personal-1"}, "tools": tools}
         connection = connector(ENDPOINT, additional_headers={"Authorization": "Bearer " + bearer,
             "X-BRC-Protocol": "1"}, open_timeout=10, close_timeout=3, compression=None,
