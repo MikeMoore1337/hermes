@@ -91,7 +91,10 @@ def start(project: str, bundle: str, command: Sequence[str]) -> subprocess.Popen
                 '--ro-bind', bundle, '/opt/commander',
                 '--bind', f'/proc/self/fd/{fd}', '/workspace', '--chdir', '/workspace',
                 '--clearenv', '--setenv', 'HOME', '/tmp',
-                '--setenv', 'PATH', '/usr/bin:/bin', '--setenv', 'LANG', 'C.UTF-8', '--', *command]
+                '--setenv', 'PATH', '/usr/bin:/bin', '--setenv', 'LANG', 'C.UTF-8',
+                '--setenv', 'GIT_CONFIG_GLOBAL', '/dev/null', '--setenv', 'GIT_CONFIG_NOSYSTEM', '1',
+                '--setenv', 'GIT_CONFIG_COUNT', '1', '--setenv', 'GIT_CONFIG_KEY_0', 'safe.directory',
+                '--setenv', 'GIT_CONFIG_VALUE_0', '/workspace', '--', *command]
         return subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                 stderr=subprocess.DEVNULL, pass_fds=(fd,),
                                 start_new_session=True)

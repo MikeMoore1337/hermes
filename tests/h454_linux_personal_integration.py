@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import re
+import subprocess
 import tempfile
 import unittest
 
@@ -59,6 +60,27 @@ class SandboxIntegrationTests(unittest.TestCase):
             value.chmod(0o644)
             with self.assertRaises(ServiceDenied):
                 _read(value, owner=os.geteuid(), modes=(0o600,), maximum=32)
+
+    def test_git_trust_covers_only_the_mounted_project(self):
+        with tempfile.TemporaryDirectory(prefix='h454-git-scope-') as base:
+            project, bundle = Path(base) / 'project', Path(base) / 'bundle'
+            project.mkdir()
+            bundle.mkdir()
+            nested = project / 'nested'
+            nested.mkdir()
+            for root in (project, nested):
+                subprocess.run(['git', '-C', str(root), 'init', '-q'], check=True,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            executable = bundle / 'run'
+            executable.write_text('#!/bin/sh\n'
+                'GIT_TEST_ASSUME_DIFFERENT_OWNER=1 git -C /workspace status --short --branch || exit 2\n'
+                'if GIT_TEST_ASSUME_DIFFERENT_OWNER=1 git -C /workspace/nested status >/dev/null 2>&1; '
+                'then exit 3; fi\n')
+            executable.chmod(0o755)
+            process = start(str(project), str(bundle), ['/opt/commander/run'])
+            output, _ = process.communicate(timeout=10)
+            self.assertEqual(process.returncode, 0)
+            self.assertIn(b'## ', output)
 
 
 class LinuxPersonalSessionIntegrationTests(unittest.TestCase):
