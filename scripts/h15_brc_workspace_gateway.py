@@ -12,7 +12,7 @@ BASE = Path("packages/relay/src/mcp")
 IMP = "import { pinnedToolCatalog } from './hermes-tool-catalog.js';"
 LIST = "      ...pinnedToolCatalog().map(t => ({ ...t, inputSchema: withDeviceId(t.inputSchema) }))] };"
 CALL = "    const out = await invokeTool(hub, store, ctx, name, args as Record<string, unknown> | undefined);"
-NEWIMP = "import { LIST_WORKSPACES_TOOL, RESOLVE_WORKSPACE_TOOL, CONNECT_SANDBOX_TOOL, IMPORT_PUBLIC_TOOL, listApprovedWorkspaces, resolveApprovedWorkspace, addDiscoveredWorkspaces, sandboxProjectAction, importPublicProject } from './hermes-workspaces.js';"
+NEWIMP = "import { LIST_WORKSPACES_TOOL, RESOLVE_WORKSPACE_TOOL, CONNECT_SANDBOX_TOOL, IMPORT_PUBLIC_TOOL, listApprovedWorkspaces, resolveApprovedWorkspace, addDiscoveredWorkspaces, sandboxProjectAction, importPublicProject, personalWindowsProjectAction } from './hermes-workspaces.js';"
 NEWLIST = ("      ...pinnedToolCatalog().map(t => ({ ...t, inputSchema: withDeviceId(t.inputSchema) })),\n"
            "      LIST_WORKSPACES_TOOL, RESOLVE_WORKSPACE_TOOL, CONNECT_SANDBOX_TOOL, IMPORT_PUBLIC_TOOL] };")
 NEWCALL = """    if (name === 'list_workspaces' || name === 'resolve_workspace' || name === 'connect_sandbox_project' || name === 'import_public_project') {
@@ -24,6 +24,9 @@ NEWCALL = """    if (name === 'list_workspaces' || name === 'resolve_workspace' 
           : resolveApprovedWorkspace(args, devices);
       if (name === 'list_workspaces') {
         result = await addDiscoveredWorkspaces(result, devices, (tool, input) => invokeTool(hub, store, ctx, tool, input));
+      }
+      if (name === 'resolve_workspace' && result.status === 'refused' && result.reason === 'unknown_workspace') {
+        result = await personalWindowsProjectAction(args, devices, (tool, input) => invokeTool(hub, store, ctx, tool, input));
       }
       if (name === 'connect_sandbox_project' || (name === 'resolve_workspace'
           && result.status === 'refused' && result.reason === 'unknown_workspace')) {
@@ -80,7 +83,7 @@ def apply(root: Path, registry: Path, sha: str = UPSTREAM_SHA) -> dict:
     code = code.replace("__HERMES_SANDBOX_HELPER__", json.dumps(helper))
     patched = (original.replace(IMP, IMP + "\n" + NEWIMP)
                .replace(LIST, NEWLIST).replace(CALL, NEWCALL + CALL))
-    if patched == original or patched.count("name === 'resolve_workspace'") != 2:
+    if patched == original or patched.count("name === 'resolve_workspace'") != 3:
         raise AuditError("patch_failed")
     mod.write_text(code, encoding="utf-8")
     sp.write_text(patched, encoding="utf-8")

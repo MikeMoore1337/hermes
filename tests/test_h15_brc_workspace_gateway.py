@@ -92,6 +92,19 @@ const assert=require('node:assert/strict'),api=require(process.argv[1]);
 const win={name:'H15 Windows permanent sandbox',deviceId:'h15-win-05be75515428',online:true,paused:false};
 const other={name:'H15 YFC VPS sandbox',deviceId:'h15-yfc-c6ee0d53e858',online:true,paused:false};
 const personal={name:'H454 Windows personal Commander',deviceId:'h454-win-personal-'+'a'.repeat(32),platform:'win32',online:true,paused:false};
+let personalCalls=[];
+const personalInfo=async(tool,args)=>{personalCalls.push({tool,args});return {ok:true,result:{content:[{type:'text',text:'size: 0\\nisDirectory: true\\nisFile: false'}]}}};
+for (const [project,expected] of [['hermes windows','hermes-windows-original'],['yfc-windows','yfc-windows-original']]) {
+ const out=await api.personalWindowsProjectAction({project},[personal],personalInfo);
+ assert.equal(out.status,'resolved'); assert.equal(out.workspace,expected); assert.equal(out.git_verified,false);
+ assert.equal(out.origin,null); assert.equal(out.deviceId,personal.deviceId);
+}
+assert.equal(personalCalls.length,2); assert.equal(personalCalls[0].tool,'get_file_info');
+assert.equal((await api.personalWindowsProjectAction({project:'hermes-windows'},[personal],async()=>({ok:true,result:{isError:true,content:[{type:'text',text:'denied'}]}}))).reason,'personal_project_unavailable');
+assert.equal((await api.personalWindowsProjectAction({project:'hermes-windows'},[personal],async()=>({ok:true,result:{content:[{type:'text',text:'isDirectory: false'}]}}))).reason,'personal_project_unavailable');
+assert.equal((await api.personalWindowsProjectAction({project:'hermes-windows'},[{...personal,online:false}],personalInfo)).reason,'personal_device_unavailable');
+assert.equal((await api.personalWindowsProjectAction({project:'unknown'},[personal],personalInfo)).reason,'unknown_workspace');
+assert.equal(personalCalls.length,2);
 const job='a'.repeat(32), importCalls=[];
 const importInvoke=async(tool,args)=>{importCalls.push({tool,args}); return {ok:true,result:{content:[{type:'text',text:JSON.stringify({status:'started',job_id:job,workspace:'new-project',secret:'discard'})}]}};};
 const imported=await api.importPublicProject({action:'start',repository:'owner/repo',workspace:'new-project'},[personal],importInvoke);
