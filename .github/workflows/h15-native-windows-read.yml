@@ -53,6 +53,8 @@ on:
       - scripts/h454_wss_personal_status_patch.py
       - scripts/h454_wss_personal_status_e2e.mjs
       - scripts/h454_wss_capacity_e2e.mjs
+      - scripts/h454_wss_capacity_patch.py
+      - tests/test_h454_wss_capacity_patch.py
       - scripts/h454_wss_fixture_certificates.sh
       - scripts/h454_personal_search_patch.py
       - scripts/h454_windows_personal_state.py
@@ -234,6 +236,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'H454_PERSONAL_PROXY_CERT_FIXTURE_FAIL' }
           node scripts/h454_wss_personal_status_e2e.mjs $target $fixture
           if ($LASTEXITCODE -ne 0) { throw 'H454_PERSONAL_PROXY_TLS_FAIL' }
+          python -B -m unittest -v tests.test_h454_wss_capacity_patch
+          if ($LASTEXITCODE -ne 0) { throw 'H454_PERSONAL_PROXY_CAPACITY_PATCH_FAIL' }
+          python -B -c "import pathlib,sys; from scripts.h454_wss_capacity_patch import patch; p=pathlib.Path(sys.argv[1]); p.write_bytes(patch(p.read_bytes()))" $target
+          if ($LASTEXITCODE -ne 0) { throw 'H454_PERSONAL_PROXY_CAPACITY_GENERATE_FAIL' }
           node scripts/h454_wss_capacity_e2e.mjs $target $fixture
           if ($LASTEXITCODE -ne 0) { throw 'H454_PERSONAL_PROXY_CAPACITY_FAIL' }
       - name: Verify hidden AppContainer shell and child filesystem isolation
