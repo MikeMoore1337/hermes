@@ -11,6 +11,24 @@ from unittest.mock import patch
 from device_fabric import windows_personal_yfc_psec as yfc
 
 
+class SimpleDeleteCommandTests(unittest.TestCase):
+    def test_only_single_file_delete_inside_root_is_translated(self):
+        root = r'D:\project'
+        for command, suffix in ((r'del /q example.txt', r'D:\project\example.txt'),
+                                (r'erase "nested\file name.txt"', r'D:\project\nested\file name.txt'),
+                                (r'DEL /Q "D:\project\nested\file.txt"', r'D:\project\nested\file.txt')):
+            with self.subTest(command=command):
+                translated = yfc._single_file_delete(command, root)
+                self.assertTrue(translated.startswith('node -e '))
+                self.assertTrue(translated.endswith('"' + suffix + '"'))
+        for command in (r'del /q ..\other.txt', r'del /q D:\private\file.txt',
+                        r'del /q *.txt', r'del /q file.txt & echo unsafe',
+                        r'del /q %TEMP%\file.txt', r'del /q file.txt:stream',
+                        r'del /s /q nested', 'del\nfile.txt', r'echo file.txt'):
+            with self.subTest(command=command):
+                self.assertEqual(yfc._single_file_delete(command, root), command)
+
+
 if os.name == "nt":
     class YfcScopeTests(unittest.TestCase):
         def setUp(self):
@@ -83,6 +101,33 @@ if os.name == "nt":
                     self.assertIn(b"h454-test", b"".join(output))
                 finally:
                     terminal.close()
+
+        def test_simple_del_removes_only_a_file_in_restricted_terminal(self):
+            try:
+                getattr(ctypes.WinDLL("processmodel", use_last_error=True, winmode=0x800),
+                        "CreateProcessSecurityEnvironment")
+            except (OSError, AttributeError):
+                self.skipTest("Windows runner does not expose the PSEC API")
+            node = shutil.which("node")
+            if not node:
+                self.skipTest("Node is unavailable")
+            runner = self.release / "runner"
+            runner.mkdir()
+            shutil.copyfile(node, runner / "node.exe")
+            target = self.project / "delete-me.txt"
+            target.write_text("synthetic", encoding="ascii")
+            terminal = yfc.YfcDevPsecTerminal(str(self.project), command='del /q "delete-me.txt"',
+                writable=(str(self.state),), readonly=(str(self.release), str(self.git)))
+            try:
+                deadline = time.monotonic() + 20
+                while terminal.poll() is None and time.monotonic() < deadline:
+                    terminal.read()
+                    time.sleep(0.02)
+                self.assertEqual(terminal.poll(), 0)
+                self.assertFalse(target.exists())
+                self.assertTrue((self.project / "code.txt").is_file())
+            finally:
+                terminal.close()
 
         def test_other_project_state_or_readonly_path_is_denied(self):
             for args in ({"root": str(self.base)}, {"writable": (str(self.base),)},
