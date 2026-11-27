@@ -2,14 +2,12 @@
 import base64
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import unittest
 
 
-@unittest.skipUnless(os.name == 'nt' and shutil.which('pwsh'), 'requires Windows PowerShell 7')
 class RegistrationTaskTests(unittest.TestCase):
-    def test_check_stop_start_and_wrong_action(self):
+    def _check_stop_start_and_wrong_action(self):
         script = Path(__file__).resolve().parents[1] / 'scripts' / 'h454_windows_personal_registration_task.ps1'
         source = r'''
 $ErrorActionPreference = 'Stop'
@@ -49,6 +47,11 @@ try {
             creationflags=subprocess.CREATE_NO_WINDOW)
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
         self.assertIn('REGISTRATION_TASK_SYNTHETIC=PASS', result.stdout)
+
+
+if os.name == 'nt':
+    RegistrationTaskTests.test_check_stop_start_and_wrong_action = (
+        RegistrationTaskTests._check_stop_start_and_wrong_action)
 
 
 if __name__ == '__main__':
