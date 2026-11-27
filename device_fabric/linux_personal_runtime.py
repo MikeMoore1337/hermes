@@ -38,14 +38,16 @@ def run_once(*, target: str, device_id: str, bearer: str, project: str, bundle: 
         trust = private.load_private_relay(target, trust_release_sha)
         connector = private.private_websocket_connector(trust, websocket_connect)
         replay = LinuxReadReplay(journal)
-        def active() -> bool:
+        def grant_state() -> bool | None:
             return linux_personal_status.bearer_state(trust, target=target, device_id=device_id,
-                                                       bearer=bearer) is True
+                                                       bearer=bearer)
+        def active() -> bool:
+            return grant_state() is True
         def verified() -> bool:
             return bundle_check.verify(Path(bundle), expected_manifest, bundle_sha256) == bundle_sha256
         return linux_personal_worker.serve_once(target=target, device_id=device_id, bearer=bearer,
             project=project, bundle=bundle, connector=connector, is_active=active,
-            claim_call=replay.claim, verify_bundle=verified)
+            claim_call=replay.claim, verify_bundle=verified, grant_state=grant_state)
     except Exception:
         raise PersonalLinuxRuntimeDenied('personal_linux_runtime_denied') from None
     finally:

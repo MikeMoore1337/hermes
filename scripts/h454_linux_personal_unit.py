@@ -49,7 +49,7 @@ def render(*, target: str, release_sha: str, dependency_sha: str, project: str,
             'Environment=PYTHONPATH=' + deps + '\nEnvironment=PYTHONNOUSERSITE=1\n'
             'Environment=PYTHONDONTWRITEBYTECODE=1\n'
             'ExecStart=/usr/bin/python3 -B -m scripts.h454_linux_personal_service --target ' + target + '\n'
-            'Restart=always\nRestartSec=5\nNoNewPrivileges=yes\nCapabilityBoundingSet=\n'
+            'Restart=on-failure\nRestartSec=5\nNoNewPrivileges=yes\nCapabilityBoundingSet=\n'
             'ProtectSystem=strict\nPrivateTmp=yes\nPrivateDevices=yes\n'
             'RestrictNamespaces=user mnt pid net ipc uts cgroup\n' + network +
             'ReadWritePaths=' + project_arg + ' /var/lib/hermes-commander-personal/' + target + '\n'
