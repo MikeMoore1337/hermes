@@ -24,10 +24,14 @@ def git(*args: str) -> str:
 
 def install(stage: Path, parent: Path, name: str, branch: str, head: str,
             checksum: str, size: int, origin: str, nonce: str) -> dict:
-    if (not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}", name) or ".." in name
+    if any(type(value) is not str for value in (name, branch, head, checksum, origin, nonce)):
+        raise ValueError('arguments_invalid')
+    match = re.fullmatch(r'https://github\.com/([A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?)/'
+                         r'([A-Za-z0-9_][A-Za-z0-9._-]{0,99})\.git', origin)
+    if (not re.fullmatch(r'[a-z][a-z0-9-]{1,79}', name)
             or not re.fullmatch(r"[0-9a-f]{40}", head) or not re.fullmatch(r"[0-9a-f]{64}", checksum)
             or not re.fullmatch(r"[0-9a-f]{32}", nonce)
-            or origin != f"https://github.com/MikeMoore1337/{name}.git"):
+            or match is None or '--' in match.group(1) or '..' in match.group(2)):
         raise ValueError("arguments_invalid")
     if stage.is_symlink() or not stage.is_dir() or stage.parent.resolve() != parent.parent.resolve():
         raise ValueError("stage_invalid")
