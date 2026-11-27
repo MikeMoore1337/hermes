@@ -21,6 +21,8 @@ const profiles=[
  {name:'H454 Windows personal Commander',platform:'win32',id:'h454-win-personal-'+'d'.repeat(32)},
  {name:'H454 Hermes VPS native read-only',platform:'linux',id:'h454-linux-hermes-'+'b'.repeat(32)},
  {name:'H454 YFC VPS native read-only',platform:'linux',id:'h454-linux-yfc-'+'c'.repeat(32)},
+ {name:'H454 Hermes VPS personal Commander',platform:'linux',id:'h454-linux-personal-hermes-'+'e'.repeat(32)},
+ {name:'H454 YFC VPS personal Commander',platform:'linux',id:'h454-linux-personal-yfc-'+'f'.repeat(32)},
 ];
 async function inspect(port,token,extra=''){
   const r=await fetch('http://127.0.0.1:'+port+'/device/native-status'+extra,{
@@ -67,6 +69,11 @@ try {
     'h15-hermes-ab005bc0e0ea',admin.id,'Hermes sandbox','linux');
   if((await inspect(address.port,sandbox)).status!==403)
     throw Error('DOCKER_DEVICE_EXPOSED_TO_NATIVE_STATUS');
+  const mismatch=relay.store.issueDeviceToken(
+    'h454-linux-personal-yfc-'+'1'.repeat(32),admin.id,
+    'H454 Hermes VPS personal Commander','linux');
+  if((await inspect(address.port,mismatch)).status!==403)
+    throw Error('CROSS_HOST_PERSONAL_STATUS_ACCEPTED');
   const other=relay.store.upsertUser('foreign-owner',secret());
   const foreign=relay.store.issueDeviceToken(
     'h454-win-native-'+'f'.repeat(32),other.id,

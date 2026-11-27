@@ -25,6 +25,10 @@ BLOCK = """    // H454: native ID comes from the authenticated owner's bound dev
         id: /^h454-linux-hermes-[0-9a-f]{32}$/ },
       { name: 'H454 YFC VPS native read-only', platform: 'linux',
         id: /^h454-linux-yfc-[0-9a-f]{32}$/ },
+      { name: 'H454 Hermes VPS personal Commander', platform: 'linux',
+        id: /^h454-linux-personal-hermes-[0-9a-f]{32}$/ },
+      { name: 'H454 YFC VPS personal Commander', platform: 'linux',
+        id: /^h454-linux-personal-yfc-[0-9a-f]{32}$/ },
     ].find(p => p.name === row.client_name);
     const nativeReserved = !!nativeProfile
       || row.device_id?.startsWith('h454-')
@@ -65,7 +69,7 @@ def apply(root: Path, *, sha: str = UPSTREAM_SHA) -> dict[str, object]:
         "status": "H454_NATIVE_OWNER_ID_RELAY_PATCHED_SOURCE_ONLY",
         "owner_bound_native_id": True,
         "agent_override": "DENIED",
-        "native_devices": 4, "production_modified": False,
+        "native_devices": 6, "production_modified": False,
     }
 
 
