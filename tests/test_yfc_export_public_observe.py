@@ -53,6 +53,8 @@ class YfcExportObserveTests(unittest.TestCase):
                     "github_project_feed": feed}
         inbox = assemble(overview, None, now=NOW)
         self.assertEqual(inbox["sources"]["gh_yfc"]["status"], "PARTIAL")
+        self.assertEqual(inbox["sources"]["gh_yfc"]["details"],
+                         "Последние 6 запусков GitHub Observe, до 5 событий; история неполная")
         self.assertEqual(len([x for x in inbox["events"] if x["source"] == "gh_yfc"]), 1)
         self.assertFalse(inbox["actions_enabled"])
         self.assertNotIn("PRIVATE_CONTENT", json.dumps(inbox))

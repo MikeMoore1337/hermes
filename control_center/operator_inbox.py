@@ -176,7 +176,7 @@ def _add_public_projects(overview, now, coverage, events):
             continue
         coverage[source]["status"] = "PARTIAL"
         coverage[source]["details"] = (
-            "До 20 публичных событий GitHub и 6 запусков CI; история неполная"
+            "Последние 6 запусков GitHub Observe, до 5 событий; история неполная"
             if key == "yfc" else
             "Последние 6 запусков GitHub Actions; неполная история"
         )
