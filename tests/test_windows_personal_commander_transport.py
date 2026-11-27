@@ -1,6 +1,7 @@
 """Offline personal Commander session and durable call-claim contracts."""
 import json
 import unittest
+from unittest.mock import patch
 
 from device_fabric import windows_personal_commander_transport as transport
 
@@ -34,14 +35,14 @@ class Socket:
 class PersonalTransportTests(unittest.TestCase):
     def run_session(self, frames, *, active=lambda: True, claim=lambda _id: True,
                     dispatch=lambda name, args: {"content": [{"type": "text", "text": name}], "isError": False},
-                    device=DEVICE):
+                    device=DEVICE, target='windows'):
         socket = Socket(frames)
         def connector(url, **options):
             self.assertEqual(url, transport.ENDPOINT)
             self.assertEqual(options["additional_headers"]["Authorization"], "Bearer " + TOKEN)
             return socket
         outcome = transport.run_session(device_id=device, bearer=TOKEN, tools=TOOLS,
-            connector=connector, dispatch=dispatch, is_active=active, claim_call=claim)
+            connector=connector, dispatch=dispatch, is_active=active, claim_call=claim, target=target)
         return outcome, socket
 
     def test_claim_precedes_write_and_reply_is_sent_over_the_same_session(self):
@@ -103,6 +104,54 @@ class PersonalTransportTests(unittest.TestCase):
             self.run_session([WELCOME, frame], dispatch=lambda *_: {
                 "content": [{"type": "text", "text": TOKEN}]})
         self.assertNotIn(TOKEN, str(error.exception))
+
+    def test_separately_bound_linux_personal_sessions_claim_before_dispatch(self):
+        frame = {"type": "call", "id": "linux-call-1", "tool": "start_process",
+                 "args": {"command": "synthetic"}}
+        for target, host, name in (
+            ('hermes-vps', 'hermes', 'H454 Hermes VPS personal Commander'),
+            ('yfc-vps', 'yfc', 'H454 YFC VPS personal Commander'),
+        ):
+            with self.subTest(target=target):
+                device = 'h454-linux-personal-' + host + '-' + 'a' * 32
+                seen = []
+                outcome, socket = self.run_session([WELCOME, frame], target=target, device=device,
+                    claim=lambda ident: seen.append(('claim', ident)) or True,
+                    dispatch=lambda tool, args: seen.append(('dispatch', tool)) or {'content': []})
+                self.assertEqual(outcome, 'idle_timeout')
+                self.assertEqual(seen, [('claim', 'linux-call-1'), ('dispatch', 'start_process')])
+                self.assertEqual(socket.sent[0]['device']['deviceId'], device)
+                self.assertEqual(socket.sent[0]['device']['name'], name)
+                self.assertEqual(socket.sent[0]['device']['platform'], 'linux')
+                self.assertIn(socket.sent[0]['device']['arch'], ('x64', 'arm64'))
+
+    def test_linux_read_only_and_cross_host_identities_are_not_promoted(self):
+        for target, device in (
+            ('hermes-vps', 'h454-linux-hermes-' + 'a' * 32),
+            ('yfc-vps', 'h454-linux-personal-hermes-' + 'a' * 32),
+            ('hermes-vps', DEVICE),
+            ('windows', 'h454-linux-personal-yfc-' + 'a' * 32),
+        ):
+            with self.subTest(target=target, device=device), self.assertRaises(transport.PersonalTransportDenied):
+                self.run_session([WELCOME], target=target, device=device)
+
+    def test_linux_replay_revocation_and_unknown_architecture_are_refused(self):
+        device = 'h454-linux-personal-hermes-' + 'a' * 32
+        frame = {'type': 'call', 'id': 'linux-replay', 'tool': 'write_file', 'args': {}}
+        calls = []
+        def dispatch(*_args):
+            calls.append(True)
+            return {'content': []}
+        with self.assertRaises(transport.PersonalTransportDenied):
+            self.run_session([WELCOME, frame, frame], target='hermes-vps', device=device, dispatch=dispatch)
+        self.assertEqual(len(calls), 1)
+        with self.assertRaises(transport.PersonalTransportDenied):
+            self.run_session([WELCOME, frame], target='hermes-vps', device=device,
+                             active=lambda: False, dispatch=dispatch)
+        with patch.object(transport.platform, 'machine', return_value='unknown-cpu'):
+            with self.assertRaises(transport.PersonalTransportDenied):
+                self.run_session([WELCOME, frame], target='hermes-vps', device=device, dispatch=dispatch)
+        self.assertEqual(len(calls), 1)
 
 
 if __name__ == "__main__":
