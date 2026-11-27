@@ -20,6 +20,19 @@ class PersonalLinuxRuntimeDenied(ValueError):
     """Sanitized runtime failure without local state or credentials."""
 
 
+def _grant_state_with_retry(check: Callable[[], bool | None], sleep: Callable[[float], None]) -> bool | None:
+    """Retry only an unavailable status, never a command or a denied grant."""
+    for attempt in range(3):
+        state = check()
+        if state is True or state is False:
+            return state
+        if state is not None:
+            raise ValueError()
+        if attempt < 2:
+            sleep(0.2)
+    return None
+
+
 def run_once(*, target: str, device_id: str, bearer: str, project: str, bundle: str,
              expected_manifest: bytes, bundle_sha256: str, trust_release_sha: str,
              journal: Path, websocket_connect: Callable[..., Any],
@@ -42,8 +55,9 @@ def run_once(*, target: str, device_id: str, bearer: str, project: str, bundle: 
         connector = private.private_websocket_connector(trust, websocket_connect)
         replay = LinuxReadReplay(journal)
         def grant_state() -> bool | None:
-            return linux_personal_status.bearer_state(trust, target=target, device_id=device_id,
-                                                       bearer=bearer)
+            return _grant_state_with_retry(
+                lambda: linux_personal_status.bearer_state(trust, target=target, device_id=device_id,
+                                                           bearer=bearer), sleep)
         def active() -> bool:
             return grant_state() is True
         def verified() -> bool:

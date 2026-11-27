@@ -55,7 +55,7 @@ class PersonalLinuxRuntimeTests(unittest.TestCase):
     def test_grant_loss_closes_session_and_waits_for_fresh_active_status(self):
         replay = MagicMock()
         delays, events = [], []
-        states = iter([True, False, None, True])
+        states = iter([True, False, None, None, None, True])
         def serve(**kwargs):
             events.append(('session', kwargs['claim_call']))
             return 'grant_inactive' if len(events) == 1 else 'idle_timeout'
@@ -68,8 +68,19 @@ class PersonalLinuxRuntimeTests(unittest.TestCase):
             self.assertEqual(runtime.run_once(**self.options), 'idle_timeout')
         self.assertEqual(len(events), 2)
         self.assertTrue(all(event[1] is replay.claim for event in events))
-        self.assertEqual(delays, [5, 5, 5])
+        self.assertEqual(delays, [5, 5, 0.2, 0.2, 5])
         replay.close.assert_called_once()
+
+    def test_transient_status_retries_are_bounded_and_never_retry_denial(self):
+        for statuses, expected, count, delays in (([None, True], True, 2, [0.2]),
+                                                   ([False, True], False, 1, []),
+                                                   ([None, None, None], None, 3, [0.2, 0.2])):
+            with self.subTest(statuses=statuses):
+                check = MagicMock(side_effect=statuses)
+                pauses = []
+                self.assertIs(runtime._grant_state_with_retry(check, pauses.append), expected)
+                self.assertEqual(check.call_count, count)
+                self.assertEqual(pauses, delays)
 
     def test_revoked_grant_does_not_launch_sandbox(self):
         replay = MagicMock()

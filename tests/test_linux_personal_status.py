@@ -51,7 +51,8 @@ class PersonalLinuxStatusTests(unittest.TestCase):
             connect.assert_not_called()
 
     def test_tls_failure_and_temporary_network_failure_are_distinct(self):
-        for failure, expected in ((ssl.SSLError(), False), (OSError(), None)):
+        for failure, expected in ((ssl.SSLError(), False), (ssl.SSLCertVerificationError(), False),
+                                  (ssl.SSLEOFError(), None), (OSError(), None)):
             with self.subTest(failure=type(failure)), \
                  patch.object(status.private, '_connection', side_effect=failure):
                 self.assertIs(status.bearer_state(self.config, target='yfc-vps', device_id=self.ident,
