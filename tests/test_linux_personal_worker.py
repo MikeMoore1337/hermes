@@ -10,7 +10,8 @@ class LinuxPersonalWorkerTests(unittest.TestCase):
         self.options = dict(target='yfc-vps', device_id='device', bearer='bearer',
                             project='/tmp/project', bundle='/tmp/bundle',
                             connector=lambda *_args, **_kwargs: None,
-                            is_active=lambda: True, claim_call=lambda _id: True)
+                            is_active=lambda: True, claim_call=lambda _id: True,
+                            verify_bundle=lambda: True)
 
     def test_inactive_grant_never_starts_project_process(self):
         self.options['is_active'] = lambda: False
@@ -43,6 +44,13 @@ class LinuxPersonalWorkerTests(unittest.TestCase):
         self.assertEqual(events[1][:3], ('session', 'yfc-vps', [{'name': 'fixture'}]))
         self.assertIsInstance(events[1][3], Bridge)
         self.assertEqual(events[2], ('close',))
+
+    def test_unverified_bundle_never_starts_project_process(self):
+        self.options['verify_bundle'] = lambda: False
+        with patch.object(worker, 'start') as start:
+            with self.assertRaises(worker.LinuxPersonalWorkerDenied):
+                worker.serve_once(**self.options)
+        start.assert_not_called()
 
     def test_transport_failure_is_sanitized_and_closes_sandbox(self):
         closed = []
