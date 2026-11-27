@@ -22,6 +22,8 @@ ADAPTER_TOOLS = frozenset({"read_file", "read_multiple_files", "write_file", "ed
     "get_more_search_results", "stop_search", "list_searches", "start_process",
     "read_process_output", "interact_with_process", "force_terminate", "list_sessions"})
 TOOLS = ADAPTER_TOOLS | {"import_public_project"}
+ALIASED_TOOLS = ADAPTER_TOOLS | {"kill_process"}
+ALIASED_IMPORT_TOOLS = TOOLS | {"kill_process"}
 
 
 class PersonalTransportDenied(ValueError):
@@ -90,7 +92,7 @@ def run_session(*, device_id: str, bearer: str, tools: list[dict[str, Any]],
             or type(tools) is not list
             or any(type(tool) is not dict or type(tool.get("name")) is not str for tool in tools)
             or len({tool["name"] for tool in tools}) != len(tools)
-            or {tool["name"] for tool in tools} not in (ADAPTER_TOOLS, TOOLS)
+            or {tool["name"] for tool in tools} not in (ADAPTER_TOOLS, TOOLS, ALIASED_TOOLS, ALIASED_IMPORT_TOOLS)
             or len(json.dumps(tools, ensure_ascii=True).encode("ascii")) > MAX_FRAME
             or not all(callable(value) for value in (connector, dispatch, is_active, claim_call))):
             raise ValueError()

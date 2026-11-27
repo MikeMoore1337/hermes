@@ -10,6 +10,7 @@ import time
 from typing import Any, Callable
 
 from device_fabric.linux_personal_sandbox import start
+from device_fabric.personal_session_alias import advertised_tools, dispatch as dispatch_alias
 from device_fabric.windows_personal_commander_pipe import PersonalCommanderPipe
 from device_fabric.windows_personal_commander_transport import PersonalTransportDenied, run_session
 
@@ -41,8 +42,8 @@ def serve_once(*, target: str, device_id: str, bearer: str, project: str, bundle
         while True:
             try:
                 result = run_session(target=target, device_id=device_id, bearer=bearer,
-                                     tools=bridge.tools, connector=connector,
-                                     dispatch=bridge.dispatch, is_active=is_active,
+                                     tools=advertised_tools(bridge.tools), connector=connector,
+                                     dispatch=lambda name, args: dispatch_alias(name, args, bridge.dispatch), is_active=is_active,
                                      claim_call=claim_call)
             except PersonalTransportDenied:
                 if grant_state is None:

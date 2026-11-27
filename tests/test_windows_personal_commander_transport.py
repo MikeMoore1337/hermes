@@ -105,6 +105,27 @@ class PersonalTransportTests(unittest.TestCase):
                 "content": [{"type": "text", "text": TOKEN}]})
         self.assertNotIn(TOKEN, str(error.exception))
 
+    def test_alias_is_accepted_only_when_advertised_and_claimed_before_dispatch(self):
+        from device_fabric.personal_session_alias import advertised_tools
+        frame = {'type': 'call', 'id': 'terminate-1', 'tool': 'kill_process', 'args': {'pid': 123}}
+        for advertised in (False, True):
+            with self.subTest(advertised=advertised):
+                socket, calls = Socket([WELCOME, frame]), []
+                tools = advertised_tools(TOOLS) if advertised else TOOLS
+                def run():
+                    return transport.run_session(device_id=DEVICE, bearer=TOKEN, tools=tools,
+                        connector=lambda *_a, **_k: socket,
+                        dispatch=lambda name, args: calls.append(('dispatch', name, args)) or {'content': []},
+                        is_active=lambda: True,
+                        claim_call=lambda ident: calls.append(('claim', ident)) or True)
+                if advertised:
+                    self.assertEqual(run(), 'idle_timeout')
+                    self.assertEqual(calls, [('claim', 'terminate-1'), ('dispatch', 'kill_process', {'pid': 123})])
+                else:
+                    with self.assertRaises(transport.PersonalTransportDenied):
+                        run()
+                    self.assertEqual(calls, [])
+
     def test_separately_bound_linux_personal_sessions_claim_before_dispatch(self):
         frame = {"type": "call", "id": "linux-call-1", "tool": "start_process",
                  "args": {"command": "synthetic"}}
