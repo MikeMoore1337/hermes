@@ -57,6 +57,27 @@ class SandboxProjectTests(unittest.TestCase):
         with self.assertRaisesRegex(ProjectError, 'origin_mismatch'):
             inspect('new-project', self.root)
 
+    def test_accepts_other_github_owner_and_project_name(self):
+        project = self.repository('local-alias')
+        origin = 'https://github.com/Other-Owner/Project_Name.v2.git'
+        subprocess.run(['git', '-C', str(project), 'remote', 'set-url', 'origin', origin], check=True)
+        value = inspect('local-alias', self.root)
+        self.assertEqual((value['workspace'], value['repository'], value['origin']),
+                         ('local-alias', 'Project_Name.v2', origin))
+        self.assertEqual(discover(self.root, seconds=10)['projects'][0]['origin'], origin)
+
+    def test_invalid_or_credentialed_github_origins_are_refused(self):
+        project = self.repository('local-alias')
+        for origin in ('https://token@github.com/Owner/repo.git',
+                       'https://github.com.evil.invalid/Owner/repo.git',
+                       'https://github.com/Owner/../repo.git',
+                       'https://github.com/Owner/repo.git?token=abc',
+                       'https://github.com/a--b/repo.git'):
+            with self.subTest(origin=origin):
+                subprocess.run(['git', '-C', str(project), 'remote', 'set-url', 'origin', origin], check=True)
+                with self.assertRaisesRegex(ProjectError, 'origin_mismatch'):
+                    inspect('local-alias', self.root)
+
     def test_discover_returns_verified_repositories_and_skips_other_folders(self):
         self.repository('first-project')
         self.repository('second-project')

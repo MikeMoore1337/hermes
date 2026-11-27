@@ -68,15 +68,24 @@ class H15WorkspaceMcpTests(unittest.TestCase):
             apply(self.root, REGISTRY, "0" * 40)
 
     def test_real_typescript_runtime(self):
-        if not shutil.which("node") or not shutil.which("tsc"):
-            self.skipTest("Node/TypeScript compiler absent")
+        node = shutil.which("node")
+        compiler = shutil.which("tsc")
+        if not node:
+            self.skipTest("Node absent")
         apply(self.root, REGISTRY)
-        dest = self.root / "out"
-        comp = subprocess.run(
-            ["tsc", "--strict", "--target", "ES2022", "--module", "commonjs",
-             "--skipLibCheck", "--outDir", str(dest), str(self.module)],
-            capture_output=True, text=True, timeout=20)
-        self.assertEqual(comp.returncode, 0, comp.stderr + comp.stdout)
+        if compiler:
+            dest = self.root / "out"
+            comp = subprocess.run(
+                [compiler, "--strict", "--target", "ES2022", "--module", "commonjs",
+                 "--skipLibCheck", "--outDir", str(dest), str(self.module)],
+                capture_output=True, text=True, timeout=20)
+            self.assertEqual(comp.returncode, 0, comp.stderr + comp.stdout)
+            module = dest / "hermes-workspaces.js"
+        else:
+            version = subprocess.run([node, "--version"], capture_output=True, text=True, check=True).stdout.strip()
+            if int(version.removeprefix('v').split('.')[0]) < 24:
+                self.skipTest("TypeScript compiler or Node 24 required")
+            module = self.module
         js = """
 const assert=require('node:assert/strict'),api=require(process.argv[1]);
 (async () => {
@@ -156,6 +165,20 @@ assert.equal((await api.sandboxProjectAction({project:'feature-worktree'},[win],
 const worktreeList=async()=>({ok:true,result:{content:[{type:'text',text:'Process 42 exited with code 0\\nOutput:\\n'+JSON.stringify({status:'catalog',projects:[worktree],incomplete:false})}]}});
 const worktreeResult=await api.addDiscoveredWorkspaces(api.listApprovedWorkspaces([win]),[win],worktreeList);
 assert.equal(worktreeResult.discovery_status,'complete'); assert.equal(worktreeResult.workspaces[5].name,'feature-worktree');
+const external={...output,repository:'Project_Name.v2',origin:'https://github.com/Other-Owner/Project_Name.v2.git'};
+const wrap=row=>async()=>({ok:true,result:{content:[{type:'text',text:'Process 42 exited with code 0\\nOutput:\\n'+JSON.stringify(row)}]}});
+assert.equal((await api.sandboxProjectAction({project:'new-project'},[win],wrap(external))).status,'resolved');
+const externalCatalog=await api.addDiscoveredWorkspaces(api.listApprovedWorkspaces([win]),[win],wrap({status:'catalog',projects:[external],incomplete:false}));
+assert.equal(externalCatalog.workspaces[5].origin,external.origin);
+for (const bad of [
+ {...external,origin:'https://token@github.com/Other-Owner/Project_Name.v2.git'},
+ {...external,origin:'https://github.com.evil.invalid/Other-Owner/Project_Name.v2.git'},
+ {...external,origin:'https://github.com/Other-Owner/Project_Name.v2.git?token=x'},
+ {...external,repository:'different'}]) {
+ assert.equal((await api.sandboxProjectAction({project:'new-project'},[win],wrap(bad))).status,'refused');
+ const listed=await api.addDiscoveredWorkspaces(api.listApprovedWorkspaces([win]),[win],wrap({status:'catalog',projects:[bad],incomplete:false}));
+ assert.equal(listed.discovery_status,'incomplete'); assert.equal(listed.workspaces.length,5);
+}
 const detached={...worktree,branch:null,detached:true};
 const detachedInvoke=async()=>({ok:true,result:{content:[{type:'text',text:'Process 42 exited with code 0\\nOutput:\\n'+JSON.stringify(detached)}]}});
 assert.equal((await api.sandboxProjectAction({project:'feature-worktree'},[win],detachedInvoke)).detached,true);
@@ -169,7 +192,7 @@ assert.equal(offline.discovery_status,'unavailable'); assert.equal(offline.works
 console.log('H15_454_TS_RUNTIME=PASS');
 })().catch(e=>{console.error(e);process.exit(1)});
 """
-        proc = subprocess.run(["node", "-e", js, str(dest / "hermes-workspaces.js")],
+        proc = subprocess.run([node, "-e", js, str(module)],
                               capture_output=True, text=True, timeout=15)
         self.assertEqual(proc.returncode, 0, proc.stderr + proc.stdout)
         self.assertIn("H15_454_TS_RUNTIME=PASS", proc.stdout)

@@ -1,4 +1,4 @@
-"""Discover owner repositories inside the existing H-15 sandbox.
+"""Discover GitHub repositories inside the existing H-15 sandbox.
 
 This module runs on the sandbox device, never on a native host. Its caller is
 responsible for selecting the owner-paired sandbox and relaying the result.
@@ -15,7 +15,10 @@ import time
 
 ROOT = Path('/workspace/projects')
 NAME = re.compile(r'[a-z][a-z0-9-]{1,79}\Z')
-ORIGIN_PREFIX = 'https://github.com/MikeMoore1337/'
+GITHUB_ORIGIN = re.compile(
+    r'https://github\.com/([A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?)/'
+    r'([A-Za-z0-9_][A-Za-z0-9._-]{0,99})\.git\Z'
+)
 
 
 class ProjectError(Exception):
@@ -35,7 +38,12 @@ def git(root: Path, *args: str, timeout: int = 10) -> str:
         raise ProjectError('git_unavailable') from exc
     if result.returncode or len(result.stdout) > 1024:
         raise ProjectError('git_failed')
-    return result.stdout.decode('utf-8', 'strict').strip()
+    output = result.stdout.decode('utf-8', 'strict')
+    if not output:
+        return ''
+    if not output.endswith('\n') or '\n' in output[:-1] or '\r' in output:
+        raise ProjectError('git_failed')
+    return output[:-1]
 
 
 def worktree_repository(root: Path, target: Path) -> str:
@@ -76,10 +84,13 @@ def inspect(name: str, root: Path = ROOT, *, git_timeout: float = 10) -> dict:
         raise ProjectError('project_not_found')
     if target.resolve().parent != root.resolve() or (target / '.git').is_symlink():
         raise ProjectError('invalid_project')
-    repository = name if (target / '.git').is_dir() else worktree_repository(root, target)
+    if not (target / '.git').is_dir():
+        worktree_repository(root, target)
     origin = git(target, 'remote', 'get-url', 'origin', timeout=git_timeout)
-    if origin != ORIGIN_PREFIX + repository + '.git':
+    match = GITHUB_ORIGIN.fullmatch(origin)
+    if match is None or '..' in match.group(2) or '--' in match.group(1):
         raise ProjectError('origin_mismatch')
+    repository = match.group(2)
     branch = git(target, 'branch', '--show-current', timeout=git_timeout)
     head = git(target, 'rev-parse', '--verify', 'HEAD', timeout=git_timeout)
     if len(branch) > 255 or not re.fullmatch(r'[0-9a-f]{40}', head):
