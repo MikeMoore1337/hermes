@@ -91,6 +91,55 @@ class SearchPagesTests(unittest.TestCase):
         self.assertGreater(pages, 1)
         self.assertEqual(matches, [{'path': 'z-needle.py', 'kind': 'file'}])
 
+    def test_files_in_directory_page_are_searched_before_descending(self):
+        for sep in ('/', '\\'):
+            with self.subTest(separator=sep):
+                tree = MemoryTree(sep)
+                tree.directory('a-directory')
+                tree.file('a-directory' + sep + 'nested-needle.py')
+                tree.file('needle-root.py')
+                first = tree.search('needle')
+                self.assertEqual(first['matches'][0],
+                                 {'path': 'needle-root.py', 'kind': 'file'})
+                remaining, _ = self.collect(tree, 'needle')
+                self.assertEqual({row['path'] for row in remaining},
+                                 {'needle-root.py', 'a-directory' + sep + 'nested-needle.py'})
+
+    def test_cursor_from_previous_traversal_is_rejected(self):
+        tree = MemoryTree()
+        tree.directory('a')
+        tree.file('a/needle.py')
+        tree.directory('b')
+        first = tree.search('needle')
+        state = parse_search_cursor(first['next_cursor'])
+        legacy_identity = hashlib.sha256(json.dumps(
+            ['hermes', 'needle', 'names', '', '/'], ensure_ascii=True,
+            sort_keys=True, separators=(',', ':'), allow_nan=False).encode('ascii')).hexdigest()
+        state['q'] = legacy_identity
+        legacy_cursor = base64.urlsafe_b64encode(json.dumps(
+            state, ensure_ascii=True, sort_keys=True, separators=(',', ':'),
+            allow_nan=False).encode('ascii')).decode('ascii').rstrip('=')
+        with self.assertRaises(SearchPageDenied):
+            tree.search('needle', legacy_cursor)
+
+    def test_mixed_paged_directories_return_every_match_once(self):
+        tree = MemoryTree()
+        expected = set()
+        for index in range(75):
+            folder = f'dir-{index:03}'
+            tree.directory(folder)
+            path = folder + '/needle.py'
+            tree.file(path)
+            expected.add(path)
+            path = f'needle-{index:03}.py'
+            tree.file(path)
+            expected.add(path)
+        matches, pages = self.collect(tree, 'needle')
+        paths = [row['path'] for row in matches]
+        self.assertGreater(pages, 1)
+        self.assertEqual(len(paths), len(expected))
+        self.assertEqual(set(paths), expected)
+
     def test_nested_directories_and_partial_matching_file_are_resumed(self):
         for sep in ('/', '\\'):
             tree = MemoryTree(sep)

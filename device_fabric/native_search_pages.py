@@ -103,7 +103,9 @@ def search_page(*, project: str, query: str, mode: str, relative_root: str,
             or len(query.encode('utf-8')) > 96
             or any(unicodedata.category(c).startswith('C') for c in query)):
         raise SearchPageDenied('native_search_page_denied')
-    identity = _digest([project, query, mode, relative_root, separator])
+    # Traversal order is part of the cursor contract. Refuse continuations
+    # created by the earlier depth-first order instead of skipping entries.
+    identity = _digest(['files-first-v1', project, query, mode, relative_root, separator])
     state = parse_search_cursor(cursor) or {'v': 1, 'q': identity, 's': [_frame('')], 'o': False}
     if state['q'] != identity:
         raise SearchPageDenied('native_search_page_denied')
@@ -123,6 +125,14 @@ def search_page(*, project: str, query: str, mode: str, relative_root: str,
         if (type(listing) is not dict or type(listing.get('entries')) is not list
                 or len(listing['entries']) > 64 or type(listing.get('next_cursor')) is not str):
             raise SearchPageDenied('native_search_page_denied')
+        if any(type(entry) is not dict or set(entry) != {'name', 'kind'}
+               or not _name(entry['name']) or entry['kind'] not in ('file', 'directory')
+               for entry in listing['entries']):
+            raise SearchPageDenied('native_search_page_denied')
+        # Keep the adapter's ordering within each kind, but inspect files in
+        # this page before descending into potentially very deep directories.
+        listing = dict(listing, entries=sorted(
+            listing['entries'], key=lambda entry: entry['kind'] == 'directory'))
         fingerprint = _digest([listing['entries'], listing['next_cursor']])
         if frame['h'] and frame['h'] != fingerprint:
             raise SearchPageDenied('native_search_page_denied')
