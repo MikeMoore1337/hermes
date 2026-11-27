@@ -67,6 +67,9 @@ const hub={
       payload={status:'ok',project:args.project,relative:args.relative,
         action:'read',kind:'file',size_bytes:3,
         encoding:'base64',data:'YWJj',sha256:SHA};
+    } else if(tool==='native_file_stat'){
+      payload={status:'ok',project:args.project,relative:args.relative,
+        action:'stat',kind:'directory',size_bytes:null};
     } else if(tool==='native_file_list'){
       const paging=Object.hasOwn(args,'cursor');
       const second=paging&&args.cursor!=='';
@@ -140,15 +143,19 @@ for(const p of profiles){
   {
     const found=await invokeOwnerNativeThreeRead(hub,store,ctx,
       'native_file_search',{host:p.host,project:'hermes',query:'src',
-         mode:'names',relative_root:''});
+         mode:'names',relative_root:'.'});
     assert(!found.isError,'NATIVE_SEARCH_REFUSED_'+p.host);
-    const pageArgs={host:p.host,project:'hermes',query:'src',mode:'names',relative_root:'',cursor:''};
+    assert(JSON.parse(found.content[0].text).relative_root==='', 'ROOT_DOT_NOT_CANONICALIZED');
+    const pageArgs={host:p.host,project:'hermes',query:'src',mode:'names',relative_root:'.',cursor:''};
     const firstSearch=await invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_search',pageArgs);
     assert(!firstSearch.isError,'PAGED_SEARCH_FIRST_REFUSED');
     const searchCursor=JSON.parse(firstSearch.content[0].text).next_cursor;
     assert(searchCursor==='YWJj','PAGED_SEARCH_CURSOR_MISSING');
-    const nextSearch=await invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_search',{...pageArgs,cursor:searchCursor});
+    const nextSearch=await invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_search',{...pageArgs,relative_root:'',cursor:searchCursor});
     assert(!nextSearch.isError&&JSON.parse(nextSearch.content[0].text).next_cursor==='', 'PAGED_SEARCH_LAST_REFUSED');
+    for(const root of ['..','./','../outside','src/../outside'])
+      assert(denied(await invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_search',{...pageArgs,relative_root:root})),
+        'UNSAFE_SEARCH_ROOT_ACCEPTED');
     assert(denied(await invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_search',{...pageArgs,cursor:'bad!'})),
       'PAGED_SEARCH_INVALID_CURSOR_ACCEPTED');
     const nested={host:p.host,project:'hermes',query:'safe',mode:'names',relative_root:'different'};
@@ -160,12 +167,20 @@ for(const p of profiles){
     escapeSearch=false;
   }
   {
-    const list={host:p.host,project:'hermes',relative:'',cursor:''};
+    const stat=await invokeOwnerNativeThreeRead(hub,store,ctx,
+      'native_file_stat',{host:p.host,project:'hermes',relative:'.'});
+    assert(!stat.isError && JSON.parse(stat.content[0].text).relative==='',
+      'STAT_ROOT_DOT_NOT_CANONICALIZED_'+p.host);
+    assert(denied(await invokeOwnerNativeThreeRead(hub,store,ctx,
+      'native_file_read',{host:p.host,project:'hermes',relative:'.'})),
+      'READ_DIRECTORY_AS_FILE_ACCEPTED_'+p.host);
+    const list={host:p.host,project:'hermes',relative:'.',cursor:''};
     const first=await invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_list',list);
     assert(!first.isError,'PAGED_LIST_FIRST_REFUSED_'+p.host);
+    assert(JSON.parse(first.content[0].text).relative==='', 'LIST_ROOT_DOT_NOT_CANONICALIZED');
     const cursor=JSON.parse(first.content[0].text).next_cursor;
     assert(cursor==='64:'+'a'.repeat(64),'PAGED_LIST_CURSOR_NOT_RETURNED');
-    const second=await invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_list',{...list,cursor});
+    const second=await invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_list',{...list,relative:'',cursor});
     assert(!second.isError&&JSON.parse(second.content[0].text).next_cursor==='', 'PAGED_LIST_LAST_REFUSED');
     const later=await invokeOwnerNativeThreeRead(hub,store,ctx,'native_file_list',
       {...list,cursor:'1024:'+'a'.repeat(64)});

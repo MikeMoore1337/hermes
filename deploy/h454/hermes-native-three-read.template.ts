@@ -44,8 +44,11 @@ function schema(name:Tool) {
   const fields:Record<string,object> = search
     ? {host,project,query:{type:'string',minLength:1,maxLength:96},
         mode:{type:'string',enum:['names','content']},
-        relative_root:{type:'string',maxLength:1024}}
-    : {host,project,relative:{type:'string',maxLength:1024}};
+        relative_root:{type:'string',maxLength:1024,
+          description:'Project-relative directory; use an empty string or . for the project root.'}}
+    : {host,project,relative:{type:'string',maxLength:1024,
+        description:name==='native_file_read'?'Project-relative file path.':
+          'Project-relative path; use an empty string or . for the project root.'}};
   if(name==='native_file_list')fields.cursor={type:'string',maxLength:70,
     description:'Set to empty string for first page, then pass next_cursor until empty. Directory changes require restarting; scans are bounded by size and time.'};
   if(search)fields.cursor={type:'string',maxLength:2048,
@@ -96,23 +99,25 @@ function safeArgs(method:Tool, raw:unknown):{host:Host;args:SafeArgs}|null {
       || !PROJECTS.includes(o.project))return null;
   if (method==='native_file_search') {
     const paged=Object.hasOwn(o,'cursor');
+    const relativeRoot=o.relative_root==='.'?'':o.relative_root;
     if (Object.keys(o).sort().join(',')!==(paged?'cursor,host,mode,project,query,relative_root':'host,mode,project,query,relative_root')
         || (paged&&!searchCursor(o.cursor))
         || typeof o.query!=='string'||o.query.length<1||o.query.length>96
         || typeof o.mode!=='string'||!['names','content'].includes(o.mode)
-        || typeof o.relative_root!=='string'||!safePath(o.relative_root,target,true)
+        || typeof relativeRoot!=='string'||!safePath(relativeRoot,target,true)
         || [...o.query].some(c=>c.charCodeAt(0)<32))return null;
-    const args={project:o.project,query:o.query,mode:o.mode,relative_root:o.relative_root};
+    const args={project:o.project,query:o.query,mode:o.mode,relative_root:relativeRoot};
     return {host:target,args:paged?{...args,cursor:o.cursor as string}:args};
   }
   const paged=method==='native_file_list' && Object.hasOwn(o,'cursor');
+  const relative=method!=='native_file_read' && o.relative==='.'?'':o.relative;
   if (Object.keys(o).sort().join(',')!==(paged?'cursor,host,project,relative':'host,project,relative')
-      || typeof o.relative!=='string'
+      || typeof relative!=='string'
       || (paged&&!cursorParts(o.cursor))
-      || !safePath(o.relative,target,method!=='native_file_read')
-      || (method==='native_file_read'&&!READ_EXT.test(o.relative)))return null;
-  return {host:target,args:paged?{project:o.project,relative:o.relative,cursor:o.cursor as string}
-                              :{project:o.project,relative:o.relative}};
+      || !safePath(relative,target,method!=='native_file_read')
+      || (method==='native_file_read'&&!READ_EXT.test(relative)))return null;
+  return {host:target,args:paged?{project:o.project,relative,cursor:o.cursor as string}
+                              :{project:o.project,relative}};
 }
 
 function ownerRecord(store:SqliteStore, owner:string, host:Host):{id:string;tokenHash:string}|null {
