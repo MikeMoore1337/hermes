@@ -149,7 +149,7 @@ def main() -> int:
     args = parser.parse_args()
     try:
         result = run(args.target)
-        if result not in ('idle_timeout', 'call_budget_exhausted'):
+        if result not in ('idle_timeout', 'call_budget_exhausted', 'grant_inactive'):
             raise ValueError()
         print('H454_PERSONAL_SESSION=' + result.upper())
         return 0

@@ -1,6 +1,6 @@
 """The worker must bind the sandbox to one verified session and close it."""
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from device_fabric import linux_personal_worker as worker
 
@@ -66,6 +66,37 @@ class LinuxPersonalWorkerTests(unittest.TestCase):
                 worker.serve_once(**self.options)
         self.assertEqual(str(error.exception), 'linux_personal_worker_denied')
         self.assertEqual(closed, [True])
+
+    def test_transient_disconnect_reuses_sandbox_and_stops_after_revocation(self):
+        process = MagicMock()
+        process.poll.return_value = None
+        bridge = MagicMock()
+        states = iter([None, True, False])
+        delays = []
+        self.options.update(grant_state=lambda: next(states), sleep=delays.append)
+        with patch.object(worker, 'start', return_value=process) as launch, \
+             patch.object(worker, 'PersonalCommanderPipe', return_value=bridge) as create_bridge, \
+             patch.object(worker, 'run_session', side_effect=[
+                 worker.PersonalTransportDenied('fixture'), 'idle_timeout']) as session:
+            self.assertEqual(worker.serve_once(**self.options), 'grant_inactive')
+        launch.assert_called_once()
+        create_bridge.assert_called_once()
+        self.assertEqual(session.call_count, 2)
+        self.assertEqual(delays, [5, 5])
+        bridge.close.assert_called_once()
+
+    def test_dead_sandbox_is_not_reconnected(self):
+        process = MagicMock()
+        process.poll.return_value = 1
+        bridge = MagicMock()
+        self.options.update(grant_state=lambda: True, sleep=lambda _delay: None)
+        with patch.object(worker, 'start', return_value=process), \
+             patch.object(worker, 'PersonalCommanderPipe', return_value=bridge), \
+             patch.object(worker, 'run_session', side_effect=worker.PersonalTransportDenied('fixture')) as session:
+            with self.assertRaises(worker.LinuxPersonalWorkerDenied):
+                worker.serve_once(**self.options)
+        session.assert_called_once()
+        bridge.close.assert_called_once()
 
 
 if __name__ == '__main__':
