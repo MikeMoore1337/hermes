@@ -121,7 +121,9 @@ export function createProxy({ key, cert, upstreamPort, allowedPeer }) {
   const server = https.createServer({ key, cert, minVersion: 'TLSv1.2', maxHeaderSize: 8192,
     handshakeTimeout: 10000 },
     (req, res) => nativeStatusResponse(req, res, upstreamPort, allowedPeer));
-  server.maxConnections = 8;
+  // Device WebSockets stay open while status checks need separate TLS sockets.
+  // Leave bounded headroom for all paired devices and concurrent checks.
+  server.maxConnections = 32;
   server.prependListener('connection', socket => { if (socket.remoteAddress !== allowedPeer) socket.destroy(); });
   server.headersTimeout = 10000;
   server.requestTimeout = 15000;

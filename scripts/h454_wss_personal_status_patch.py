@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import hashlib
 
-SOURCE_SHA256 = "8a4c70a9e29aba4262a8a9730043d40c34f040bc65edf7bbd6c2355f4c51db4b"
+SOURCE_SHA256 = "7deee6926f823f75d9a30d83cb5be7a50acb48d12aa4cfd8a40a2b71f19fd8fb"
 BEFORE = b"/^h454-(?:linux-hermes|linux-yfc|win-native)-[a-f0-9]{32}$/"
 AFTER = b"/^h454-(?:linux-hermes|linux-yfc|linux-personal-hermes|linux-personal-yfc|win-native|win-personal)-[a-f0-9]{32}$/"
 
