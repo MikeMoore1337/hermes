@@ -7,6 +7,12 @@ const PERSONAL_ID = /^h454-win-personal-[a-f0-9]{32}$/;
 const PERSONAL_ALIASES = ['yfc-dev', 'yfc dev', 'your-fitness-coach dev'];
 const PERSONAL_ROOT = 'D:\\Pet-projects\\yfc-dev';
 const PERSONAL_ORIGIN = 'https://github.com/MikeMoore1337/your-fitness-coach.git';
+const PERSONAL_VPS_WORKSPACES = [
+  { name:'reminder-bot-vps-original', aliases:['reminder-bot-vps-original','reminder bot vps','reminder-bot'],
+    deviceName:'H454 Hermes VPS personal Commander', deviceId:/^h454-linux-personal-hermes-[a-f0-9]{32}$/ },
+  { name:'fit-mini-app-vps-original', aliases:['fit-mini-app-vps-original','fit mini app vps','fit-mini-app'],
+    deviceName:'H454 YFC VPS personal Commander', deviceId:/^h454-linux-personal-yfc-[a-f0-9]{32}$/ },
+];
 const VPS_WORKSPACES = [
   { name:'hermes-vps-dev', aliases:['hermes-vps-dev','hermes vps dev'],
     root:'/workspace/projects/hermes-vps-dev', origin:'https://github.com/MikeMoore1337/hermes.git',
@@ -29,7 +35,7 @@ export const LIST_WORKSPACES_TOOL = {
 };
 export const RESOLVE_WORKSPACE_TOOL = {
   name: 'resolve_workspace',
-  description: 'Find an approved project by name. YFC dev is the authorized original Windows folder; VPS dev aliases are separate sandbox copies, and YFC VPS is sparse. Check Git before writing.',
+  description: 'Find an approved project by name. Original VPS projects have explicit original aliases; VPS dev aliases are separate sandbox copies. Check Git before writing.',
   inputSchema: { type: 'object', properties: {
     project: { type: 'string', minLength: 1, maxLength: 100 } },
     required: ['project'], additionalProperties: false },
@@ -72,6 +78,13 @@ function vpsDevice(devices: unknown, name: string, id: RegExp): Device | null {
   if (matches.length !== 1) return null;
   const d: Device = matches[0];
   return d.platform === 'linux/docker' && typeof d.deviceId === 'string' && id.test(d.deviceId) ? d : null;
+}
+function personalVpsDevice(devices: unknown, name: string, id: RegExp): Device | null {
+  if (!Array.isArray(devices) || devices.length > 25) return null;
+  const matches = devices.filter(d => d && typeof d === 'object' && d.name === name);
+  if (matches.length !== 1) return null;
+  const d: Device = matches[0];
+  return d.platform === 'linux' && typeof d.deviceId === 'string' && id.test(d.deviceId) ? d : null;
 }
 function isReady(d: Device | null): boolean {
   return !!d && d.online === true && d.paused === false;
@@ -131,7 +144,9 @@ export function listApprovedWorkspaces(devices: unknown) {
   const d = ownerDevice(devices);
   const personal = personalDevice(devices);
   const vps = VPS_WORKSPACES.map(w => ({workspace:w, device:vpsDevice(devices, w.deviceName, w.deviceId)}));
-  if (!d && !personal && !vps.some(v => v.device)) return { schema: 1, status: 'not_connected', workspaces: [] };
+  const originalVps = PERSONAL_VPS_WORKSPACES.map(w => ({workspace:w, device:personalVpsDevice(devices, w.deviceName, w.deviceId)}));
+  if (!d && !personal && !vps.some(v => v.device) && !originalVps.some(v => v.device))
+    return { schema: 1, status: 'not_connected', workspaces: [] };
   const state = isReady(d) ? 'online' : d?.paused === true ? 'paused' : 'offline';
   const workspaces: Record<string, unknown>[] = d ? WORKSPACES.map(w => ({
     name: w.name, aliases: [...w.aliases], root: w.root, origin: w.origin,
@@ -155,6 +170,14 @@ export function listApprovedWorkspaces(devices: unknown) {
       git_verified:false, process_execution_verified:false,
       ...(vpsState === 'online' ? {deviceId:device.deviceId} : {})});
   }
+  for (const {workspace:w, device} of originalVps) {
+    if (!device) continue;
+    const deviceState = isReady(device) ? 'online' : device.paused === true ? 'paused' : 'offline';
+    workspaces.push({name:w.name, aliases:[...w.aliases], root:'/workspace', origin:null,
+      branch:null, scope:'native-personal', device_status:deviceState,
+      git_verified:false, process_execution_verified:false,
+      ...(deviceState === 'online' ? {deviceId:device.deviceId} : {})});
+  }
   return { schema: 1, status: 'catalog', workspaces };
 }
 export function resolveApprovedWorkspace(args: unknown, devices: unknown) {
@@ -172,6 +195,15 @@ export function resolveApprovedWorkspace(args: unknown, devices: unknown) {
       branch:null, origin:PERSONAL_ORIGIN, scope:'native-personal', deviceId:d!.deviceId,
       device_status:'online', git_verified:false, process_execution_verified:false,
       verification_required_before_write:true };
+  }
+  const originalVps = PERSONAL_VPS_WORKSPACES.filter(w => w.aliases.some(alias => norm(alias) === norm(project)));
+  if (originalVps.length === 1) {
+    const w = originalVps[0];
+    const device = personalVpsDevice(devices, w.deviceName, w.deviceId);
+    if (!isReady(device)) return {schema:1, status:'refused', reason:'personal_vps_device_unavailable'};
+    return {schema:1, status:'resolved', workspace:w.name, root:'/workspace', origin:null, branch:null,
+      scope:'native-personal', deviceId:device!.deviceId, device_status:'online',
+      git_verified:false, process_execution_verified:false, verification_required_before_write:true};
   }
   const vps = VPS_WORKSPACES.filter(w => w.aliases.some(alias => norm(alias) === norm(project)));
   if (vps.length === 1) {
