@@ -105,6 +105,20 @@ assert.equal((await api.personalWindowsProjectAction({project:'hermes-windows'},
 assert.equal((await api.personalWindowsProjectAction({project:'hermes-windows'},[{...personal,online:false}],personalInfo)).reason,'personal_device_unavailable');
 assert.equal((await api.personalWindowsProjectAction({project:'unknown'},[personal],personalInfo)).reason,'unknown_workspace');
 assert.equal(personalCalls.length,2);
+const personalCatalog=api.listApprovedWorkspaces([personal]);
+const enriched=await api.addPersonalWindowsWorkspaces(personalCatalog,[personal],personalInfo);
+assert.deepEqual(enriched.workspaces.map(w=>w.name),['yfc-dev','hermes-windows-original','yfc-windows-original']);
+assert.equal(enriched.workspaces[1].deviceId,personal.deviceId);
+assert.equal(enriched.workspaces[1].git_verified,false);
+assert.equal((await api.personalWindowsProjectAction({project:enriched.workspaces[1].name},[personal],personalInfo)).status,'resolved');
+const selective=async(_tool,args)=>args.path.endsWith('hermes')
+ ? {ok:true,result:{isError:true,content:[{type:'text',text:'denied'}]}} : personalInfo(_tool,args);
+const partialPersonal=await api.addPersonalWindowsWorkspaces(personalCatalog,[personal],selective);
+assert.deepEqual(partialPersonal.workspaces.map(w=>w.name),['yfc-dev','yfc-windows-original']);
+const unreachable=await api.addPersonalWindowsWorkspaces(personalCatalog,[{...personal,online:false}],async()=>{throw Error('unexpected')});
+assert.deepEqual(unreachable,personalCatalog);
+const deduped=await api.addPersonalWindowsWorkspaces(enriched,[personal],personalInfo);
+assert.equal(deduped.workspaces.length,3);
 const job='a'.repeat(32), importCalls=[];
 const importInvoke=async(tool,args)=>{importCalls.push({tool,args}); return {ok:true,result:{content:[{type:'text',text:JSON.stringify({status:'started',job_id:job,workspace:'new-project',secret:'discard'})}]}};};
 const imported=await api.importPublicProject({action:'start',repository:'owner/repo',workspace:'new-project'},[personal],importInvoke);
