@@ -34,6 +34,10 @@ ROUTE = """  // H454: owner-paired status introspection for native agent revocat
        id:/^h454-linux-hermes-[a-f0-9]{32}$/},
       {name:'H454 YFC VPS native read-only',platform:'linux',
        id:/^h454-linux-yfc-[a-f0-9]{32}$/},
+      {name:'H454 Hermes VPS personal Commander',platform:'linux',
+       id:/^h454-linux-personal-hermes-[a-f0-9]{32}$/},
+      {name:'H454 YFC VPS personal Commander',platform:'linux',
+       id:/^h454-linux-personal-yfc-[a-f0-9]{32}$/},
     ];
     const valid = row && owner && row.user_id === owner.id && row.paused === 0 &&
       profiles.some(p => row.name === p.name && row.platform === p.platform &&

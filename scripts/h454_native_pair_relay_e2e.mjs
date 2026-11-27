@@ -39,6 +39,8 @@ const PROFILES = [
   {name:'H454 Windows personal Commander', platform:'win32', id:'h454-win-personal-'+ 'b'.repeat(32)},
   {name:'H454 Hermes VPS native read-only', platform:'linux', id:'h454-linux-hermes-'+ 'b'.repeat(32)},
   {name:'H454 YFC VPS native read-only', platform:'linux', id:'h454-linux-yfc-'+ 'c'.repeat(32)},
+  {name:'H454 Hermes VPS personal Commander', platform:'linux', id:'h454-linux-personal-hermes-'+ 'd'.repeat(32)},
+  {name:'H454 YFC VPS personal Commander', platform:'linux', id:'h454-linux-personal-yfc-'+ 'e'.repeat(32)},
 ];
 
 try {

@@ -31,7 +31,7 @@ class NativePairingRelayPatchTests(unittest.TestCase):
         before = self.app.read_text()
         result = apply(self.root)
         self.assertFalse(result["production_modified"])
-        self.assertEqual(result["native_devices"], 4)
+        self.assertEqual(result["native_devices"], 6)
         after = self.app.read_text()
         self.assertNotEqual(after, before)
         self.assertEqual(after.count(BLOCK), 1)
@@ -44,6 +44,8 @@ class NativePairingRelayPatchTests(unittest.TestCase):
         self.assertIn("h454-win-personal-", after)
         self.assertIn("h454-linux-hermes-", after)
         self.assertIn("h454-linux-yfc-", after)
+        self.assertIn("h454-linux-personal-hermes-", after)
+        self.assertIn("h454-linux-personal-yfc-", after)
         self.assertIn(ROTATE_PATCH, after)
 
     def test_double_patch_and_drift_never_apply_partial_modification(self):

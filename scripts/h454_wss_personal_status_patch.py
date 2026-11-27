@@ -8,7 +8,7 @@ import hashlib
 
 SOURCE_SHA256 = "8a4c70a9e29aba4262a8a9730043d40c34f040bc65edf7bbd6c2355f4c51db4b"
 BEFORE = b"/^h454-(?:linux-hermes|linux-yfc|win-native)-[a-f0-9]{32}$/"
-AFTER = b"/^h454-(?:linux-hermes|linux-yfc|win-native|win-personal)-[a-f0-9]{32}$/"
+AFTER = b"/^h454-(?:linux-hermes|linux-yfc|linux-personal-hermes|linux-personal-yfc|win-native|win-personal)-[a-f0-9]{32}$/"
 
 
 def patch(source: bytes) -> bytes:

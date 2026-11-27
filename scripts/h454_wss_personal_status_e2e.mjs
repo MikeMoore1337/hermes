@@ -43,13 +43,17 @@ try {
   assert.equal((await probe()).status, 200);
   identity = 'h454-linux-yfc-' + 'd'.repeat(32);
   assert.equal((await probe()).status, 200);
+  identity = 'h454-linux-personal-hermes-' + 'e'.repeat(32);
+  assert.equal((await probe()).status, 200);
+  identity = 'h454-linux-personal-yfc-' + 'f'.repeat(32);
+  assert.equal((await probe()).status, 200);
   identity = 'h454-win-personal-' + 'x'.repeat(32);
   assert.equal((await probe()).status, 502);
   identity = 'h454-win-personal-' + 'b'.repeat(32);
   active = false;
   assert.equal((await probe()).status, 502);
   assert.equal((await probe('/device/start')).status, 404);
-  assert.equal(forwarded, 5);
+  assert.equal(forwarded, 7);
   if (process.argv[3]) {
     const read = name => readFileSync(process.argv[3] + '/' + name);
     active = true;
