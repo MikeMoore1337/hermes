@@ -1,5 +1,5 @@
 // Stdio adapter for the pinned Commander bundle inside the Linux sandbox.
-// The trusted parent supplies a single mounted project; no bearer reaches here.
+// The trusted parent supplies mounted projects; no bearer reaches here.
 import path from 'node:path';
 import { realpath } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
@@ -10,6 +10,7 @@ console.log = () => {};
 console.error = () => {};
 const MAX_FRAME = 1024 * 1024;
 const ROOT = '/workspace';
+let roots = null;
 const allowed = new Set([
   'read_file', 'read_multiple_files', 'write_file', 'edit_block',
   'create_directory', 'list_directory', 'move_file', 'get_file_info',
@@ -26,7 +27,7 @@ function send(frame) {
 }
 
 function within(value) {
-  return value === ROOT || value.startsWith(ROOT + '/');
+  return roots.some(root => value === root || value.startsWith(root + '/'));
 }
 
 async function checkPath(value) {
@@ -39,7 +40,7 @@ async function checkPath(value) {
       if (!within(await realpath(current))) throw Error('PATH_DENIED');
       return;
     } catch (error) {
-      if (error.code !== 'ENOENT' || current === ROOT) throw error;
+      if (error.code !== 'ENOENT' || roots.includes(current)) throw error;
       current = path.posix.dirname(current);
     }
   }
@@ -75,10 +76,15 @@ async function main() {
     if (!initialized) {
       if (!frame || Object.keys(frame).sort().join(',') !== 'roots,type' ||
           frame.type !== 'initialize' || !Array.isArray(frame.roots) ||
-          frame.roots.length !== 1 || frame.roots[0] !== ROOT) throw Error('INIT_DENIED');
+          frame.roots.length < 1 || frame.roots.length > 5 || frame.roots[0] !== ROOT ||
+          frame.roots.slice(1).some(root => typeof root !== 'string' ||
+            !/^\/projects\/[a-z][a-z0-9-]{0,63}$/.test(root)) ||
+          new Set(frame.roots).size !== frame.roots.length) throw Error('INIT_DENIED');
+      roots = frame.roots;
+      for (const root of roots) if (await realpath(root) !== root) throw Error('INIT_DENIED');
       await configManager.init();
       await configManager.setValue('telemetryEnabled', false);
-      await configManager.setValue('allowedDirectories', [ROOT]);
+      await configManager.setValue('allowedDirectories', roots);
       const tools = listTools().filter(tool => allowed.has(tool.name));
       if (tools.length !== allowed.size || new Set(tools.map(tool => tool.name)).size !== tools.length)
         throw Error('TOOLS_DENIED');

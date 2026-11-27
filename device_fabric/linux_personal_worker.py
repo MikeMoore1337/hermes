@@ -22,6 +22,7 @@ class LinuxPersonalWorkerDenied(ValueError):
 def serve_once(*, target: str, device_id: str, bearer: str, project: str, bundle: str,
                connector: Callable[..., Any], is_active: Callable[[], bool],
                claim_call: Callable[[str], bool], verify_bundle: Callable[[], bool],
+               additional_projects: tuple[tuple[str, str], ...] = (),
                grant_state: Callable[[], bool | None] | None = None,
                sleep: Callable[[float], None] = time.sleep) -> str:
     """Run one bounded session; an external supervisor may reconnect later.
@@ -37,8 +38,11 @@ def serve_once(*, target: str, device_id: str, bearer: str, project: str, bundle
                 (grant_state is not None and not callable(grant_state)) or not callable(sleep) or
                 is_active() is not True or verify_bundle() is not True):
             raise ValueError()
-        process = start(project, bundle, ['/opt/commander/run'])
-        bridge = PersonalCommanderPipe(process, ['/workspace'])
+        if additional_projects:
+            process = start(project, bundle, ['/opt/commander/run'], additional_projects=additional_projects)
+        else:
+            process = start(project, bundle, ['/opt/commander/run'])
+        bridge = PersonalCommanderPipe(process, ['/workspace'] + ['/projects/' + name for name, _ in additional_projects])
         while True:
             try:
                 result = run_session(target=target, device_id=device_id, bearer=bearer,

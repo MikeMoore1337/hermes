@@ -17,6 +17,28 @@ from scripts.h454_linux_personal_service import ServiceDenied, _read
 
 
 class SandboxIntegrationTests(unittest.TestCase):
+    def test_additional_project_mounts_original_directory_without_widening_host_root(self):
+        with tempfile.TemporaryDirectory(prefix='h454-personal-multi-') as base:
+            root, second, bundle = (Path(base) / name for name in ('first', 'second', 'bundle'))
+            for directory in (root, second, bundle):
+                directory.mkdir()
+            executable = bundle / 'run'
+            subprocess.run(['git', '-C', str(second), 'init', '-q'], check=True,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            executable.write_text('#!/bin/sh\n'
+                'printf first > /workspace/first.txt\n'
+                'printf second > /projects/alpha/second.txt\n'
+                'GIT_TEST_ASSUME_DIFFERENT_OWNER=1 git -C /projects/alpha status --short --branch || exit 4\n'
+                'test ! -e /projects/other || exit 2\n'
+                '! cat /etc/shadow >/dev/null 2>&1 || exit 3\n')
+            executable.chmod(0o755)
+            process = start(str(root), str(bundle), ['/opt/commander/run'],
+                            additional_projects=(('alpha', str(second)),))
+            process.communicate(timeout=10)
+            self.assertEqual(process.returncode, 0)
+            self.assertEqual((root / 'first.txt').read_text(), 'first')
+            self.assertEqual((second / 'second.txt').read_text(), 'second')
+
     def test_original_directory_write_and_outside_symlink_denial(self):
         self.assertNotEqual(os.geteuid(), 0)
         with tempfile.TemporaryDirectory(prefix='h454-personal-test-') as base:
@@ -85,6 +107,42 @@ class SandboxIntegrationTests(unittest.TestCase):
 
 
 class LinuxPersonalSessionIntegrationTests(unittest.TestCase):
+    def test_second_original_project_is_read_write_via_the_real_dispatcher(self):
+        class Socket:
+            def __init__(self):
+                self.sent = []
+                self.frames = [
+                    {'type': 'welcome', 'protocol': 1, 'relayVersion': 'fixture', 'serverTime': 1},
+                    {'type': 'call', 'id': 'write-second', 'tool': 'write_file', 'args': {
+                        'path': '/projects/alpha/fixture.txt', 'content': 'second-project', 'mode': 'rewrite'}},
+                    {'type': 'call', 'id': 'read-second', 'tool': 'read_file', 'args': {
+                        'path': '/projects/alpha/fixture.txt'}},
+                    {'type': 'call', 'id': 'foreign', 'tool': 'write_file', 'args': {
+                        'path': '/projects/other/fixture.txt', 'content': 'denied', 'mode': 'rewrite'}},
+                ]
+            def __enter__(self): return self
+            def __exit__(self, *_args): return None
+            def send(self, data): self.sent.append(json.loads(data))
+            def recv(self, *, timeout):
+                if not self.frames: raise TimeoutError()
+                return json.dumps(self.frames.pop(0))
+
+        runtime, socket = os.environ['H454_TEST_BRC_RUNTIME'], Socket()
+        with tempfile.TemporaryDirectory(prefix='h454-project-multi-') as base:
+            first, second = Path(base) / 'first', Path(base) / 'second'
+            first.mkdir(); second.mkdir()
+            outcome = worker.serve_once(target='yfc-vps',
+                device_id='h454-linux-personal-yfc-' + 'a' * 32, bearer='brc_dev_' + 'b' * 64,
+                project=str(first), bundle=runtime, additional_projects=(('alpha', str(second)),),
+                connector=lambda *_a, **_k: socket, is_active=lambda: True,
+                claim_call=lambda _ident: True, verify_bundle=lambda: True)
+            self.assertEqual(outcome, 'idle_timeout')
+            self.assertEqual((second / 'fixture.txt').read_text(), 'second-project')
+        results = {frame['id']: frame['result'] for frame in socket.sent if frame['type'] == 'result'}
+        self.assertIsNot(results['write-second'].get('isError'), True)
+        self.assertIn('second-project', json.dumps(results['read-second']))
+        self.assertIs(results['foreign'].get('isError'), True)
+
     def test_real_dispatcher_write_terminal_and_denial_via_fixture_relay(self):
         class Socket:
             def __init__(self):

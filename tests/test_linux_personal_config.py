@@ -35,6 +35,21 @@ class PersonalLinuxConfigTests(unittest.TestCase):
             with self.subTest(length=len(value)), self.assertRaises(config.PersonalLinuxConfigDenied):
                 config.parse(value, target='yfc-vps')
 
+    def test_multiple_projects_are_explicit_nonoverlapping_and_ordered(self):
+        data = {**self.data, 'schema': config.MULTI_SCHEMA,
+                'projects': [{'name': 'alpha', 'path': '/srv/alpha/code'},
+                             {'name': 'beta', 'path': '/opt/beta/code'}]}
+        result = config.parse(encode(data), target='yfc-vps')
+        self.assertEqual(result.additional_projects, (('alpha', '/srv/alpha/code'), ('beta', '/opt/beta/code')))
+        for projects in ([], list(reversed(data['projects'])),
+                         [{'name': 'alpha', 'path': '/srv/yfc/project/subdir'}],
+                         [{'name': 'alpha', 'path': '/srv/second-brain'}],
+                         [{'name': '../x', 'path': '/srv/alpha/code'}],
+                         [{'name': 'alpha', 'path': '/srv/alpha/code'},
+                          {'name': 'alpha', 'path': '/srv/beta/code'}]):
+            with self.subTest(projects=projects), self.assertRaises(config.PersonalLinuxConfigDenied):
+                config.parse(encode({**data, 'projects': projects}), target='yfc-vps')
+
 
 if __name__ == '__main__':
     unittest.main()

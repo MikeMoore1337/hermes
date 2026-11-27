@@ -37,6 +37,15 @@ class PersonalLinuxUnitTests(unittest.TestCase):
         unit = render(**self.options)
         self.assertIn('ReadWritePaths="/srv/yfc/proj%%t \\"x\\"" ', unit)
 
+    def test_additional_project_requires_an_explicit_unit_path_and_group(self):
+        unit = render(**self.options, additional_projects=(('alpha', '/srv/alpha/code'),),
+                      additional_groups=('alpha-dev',))
+        self.assertIn('ReadWritePaths="/srv/yfc/project with spaces" "/srv/alpha/code" ', unit)
+        self.assertIn('SupplementaryGroups=hermes-commander-native yfc-deploy alpha-dev\n', unit)
+        for groups in (('wheel\nUser=root',), ('yfc-deploy',), ('alpha-dev', 'alpha-dev')):
+            with self.subTest(groups=groups), self.assertRaises(ValueError):
+                render(**self.options, additional_groups=groups)
+
 
 if __name__ == '__main__':
     unittest.main()

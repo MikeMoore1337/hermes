@@ -53,6 +53,19 @@ class LinuxPersonalWorkerTests(unittest.TestCase):
                 worker.serve_once(**self.options)
         start.assert_not_called()
 
+    def test_additional_project_is_mounted_and_advertised_to_the_same_bridge(self):
+        self.options['additional_projects'] = (('alpha', '/tmp/alpha'),)
+        bridge = MagicMock()
+        bridge.tools = [{'name': 'force_terminate', 'inputSchema': {'type': 'object'}}]
+        with patch.object(worker, 'start', return_value=object()) as launch, \
+             patch.object(worker, 'PersonalCommanderPipe', return_value=bridge) as create, \
+             patch.object(worker, 'run_session', return_value='idle_timeout'):
+            self.assertEqual(worker.serve_once(**self.options), 'idle_timeout')
+        launch.assert_called_once_with('/tmp/project', '/tmp/bundle', ['/opt/commander/run'],
+                                       additional_projects=(('alpha', '/tmp/alpha'),))
+        self.assertEqual(create.call_args.args[1], ['/workspace', '/projects/alpha'])
+        bridge.close.assert_called_once()
+
     def test_transport_failure_is_sanitized_and_closes_sandbox(self):
         closed = []
         class Bridge:

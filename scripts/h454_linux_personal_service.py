@@ -138,7 +138,8 @@ def run(target: str) -> str:
         return linux_personal_runtime.run_once(target=target, device_id=config.device_id, bearer=bearer,
             project=config.project, bundle=config.bundle, expected_manifest=manifest,
             bundle_sha256=config.bundle_sha256, trust_release_sha=config.trust_release_sha,
-            journal=state / 'claims', websocket_connect=sync_adapter(connect), keep_available=True)
+            journal=state / 'claims', websocket_connect=sync_adapter(connect), keep_available=True,
+            additional_projects=config.additional_projects)
     except Exception:
         raise ServiceDenied('personal_linux_service_denied') from None
 
