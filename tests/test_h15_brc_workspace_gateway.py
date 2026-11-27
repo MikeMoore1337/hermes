@@ -106,6 +106,24 @@ const spoofInvoke=async()=>({ok:true,result:{content:[{type:'text',text:JSON.str
 assert.equal((await api.importPublicProject({action:'status',job_id:job},[personal],spoofInvoke)).reason,'import_call_failed');
 const hermesVps={name:'H15 Hermes VPS sandbox',deviceId:'h15-hermes-'+'b'.repeat(12),platform:'linux/docker',online:true,paused:false};
 const yfcVps={...other,platform:'linux/docker'};
+const hermesOriginal={name:'H454 Hermes VPS personal Commander',deviceId:'h454-linux-personal-hermes-'+'c'.repeat(32),platform:'linux',online:true,paused:false};
+const yfcOriginal={name:'H454 YFC VPS personal Commander',deviceId:'h454-linux-personal-yfc-'+'d'.repeat(32),platform:'linux',online:true,paused:false};
+for (const [alias,device,workspace] of [
+ ['reminder-bot',hermesOriginal,'reminder-bot-vps-original'],
+ ['fit-mini-app',yfcOriginal,'fit-mini-app-vps-original']]) {
+ const out=api.resolveApprovedWorkspace({project:alias},[device]);
+ assert.equal(out.status,'resolved'); assert.equal(out.workspace,workspace); assert.equal(out.root,'/workspace');
+ assert.equal(out.deviceId,device.deviceId); assert.equal(out.scope,'native-personal');
+ assert.equal(out.git_verified,false); assert.equal(out.origin,null); assert.equal(out.verification_required_before_write,true);
+ for (const devices of [[],[{...device,online:false}],[{...device,paused:true}],
+   [{...device,platform:'linux/docker'}],[{...device,deviceId:'h454-linux-native-'+'e'.repeat(32)}],[device,device]]) {
+   assert.equal(api.resolveApprovedWorkspace({project:alias},devices).reason,'personal_vps_device_unavailable');
+ }
+}
+const originalCatalog=api.listApprovedWorkspaces([hermesOriginal,yfcOriginal]);
+assert.equal(originalCatalog.status,'catalog'); assert.equal(originalCatalog.workspaces.length,2);
+assert.equal(originalCatalog.workspaces.find(w=>w.name==='reminder-bot-vps-original').deviceId,hermesOriginal.deviceId);
+assert.equal(api.listApprovedWorkspaces([{...yfcOriginal,online:false}]).workspaces[0].device_status,'offline');
 for (const [query,device,root,sparse] of [
  ['hermes vps dev',hermesVps,'/workspace/projects/hermes-vps-dev',false],
  ['yfc-vps-dev',yfcVps,'/workspace/projects/yfc-vps-dev',true]]) {

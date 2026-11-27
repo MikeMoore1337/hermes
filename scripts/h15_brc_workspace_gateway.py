@@ -62,7 +62,7 @@ def apply(root: Path, registry: Path, sha: str = UPSTREAM_SHA) -> dict:
     if "hermes-workspaces.js" in original:
         raise AuditError("already_patched")
     template_file = Path(__file__).resolve().parents[1] / "deploy/h15/hermes-workspaces.template.ts"
-    if template_file.is_symlink() or not template_file.is_file() or template_file.stat().st_size > 20000:
+    if template_file.is_symlink() or not template_file.is_file() or template_file.stat().st_size > 24576:
         raise AuditError("unsafe_workspace_template")
     template = template_file.read_text(encoding="utf-8")
     if any(template.count(marker) != 1 for marker in ("__HERMES_CATALOG__", "__HERMES_DEVICE_NAME__", "__HERMES_SANDBOX_HELPER__")):
