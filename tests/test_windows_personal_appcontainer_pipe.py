@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 from device_fabric import windows_personal_appcontainer_pipe as channel
 from device_fabric.windows_personal_commander_pipe import PersonalPipeDenied
-from device_fabric.windows_personal_commander_transport import TOOLS
+from device_fabric.windows_personal_commander_transport import ADAPTER_TOOLS as TOOLS
 
 
 class Terminal:

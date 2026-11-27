@@ -30,7 +30,8 @@ if os.name == "nt":
             state.mkdir(parents=True)
             for name in ("runner/node.exe", "runner/h454_windows_personal_adapter_launcher.mjs",
                          "bundle/packages/agent/dist/dispatcher.js",
-                         "bundle/packages/agent/dist/core/search-manager.js"):
+                         "bundle/packages/agent/dist/core/search-manager.js",
+                         "code/scripts/h15_offline_project_import.py"):
                 path = release / name
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text("synthetic", encoding="ascii")
@@ -62,6 +63,8 @@ if os.name == "nt":
                 self.assertTrue(kwargs["isolation_verified"]())
                 child.close()
                 self.assertFalse(kwargs["isolation_verified"]())
+                self.assertIsNotNone(kwargs["import_broker"])
+                kwargs["import_broker"].close()
                 kwargs["terminal_broker"].close()
                 return "synthetic"
             with patch.object(runner.bundle, "verify", return_value=DIGEST), \

@@ -16,10 +16,11 @@ ENDPOINT = "wss://hermes.mikemoore.top/ws"
 MAX_FRAME = 1024 * 1024
 MAX_CALLS = 64
 ID = re.compile(r"[A-Za-z0-9_-]{1,128}\Z")
-TOOLS = frozenset({"read_file", "read_multiple_files", "write_file", "edit_block",
+ADAPTER_TOOLS = frozenset({"read_file", "read_multiple_files", "write_file", "edit_block",
     "create_directory", "list_directory", "move_file", "get_file_info", "start_search",
     "get_more_search_results", "stop_search", "list_searches", "start_process",
     "read_process_output", "interact_with_process", "force_terminate", "list_sessions"})
+TOOLS = ADAPTER_TOOLS | {"import_public_project"}
 
 
 class PersonalTransportDenied(ValueError):
@@ -69,9 +70,10 @@ def run_session(*, device_id: str, bearer: str, tools: list[dict[str, Any]],
     try:
         if (type(device_id) is not str or DEVICE.fullmatch(device_id) is None
             or type(bearer) is not str or TOKEN.fullmatch(bearer) is None
-            or type(tools) is not list or len(tools) != len(TOOLS)
+            or type(tools) is not list
             or any(type(tool) is not dict or type(tool.get("name")) is not str for tool in tools)
-            or {tool["name"] for tool in tools} != TOOLS
+            or len({tool["name"] for tool in tools}) != len(tools)
+            or {tool["name"] for tool in tools} not in (ADAPTER_TOOLS, TOOLS)
             or len(json.dumps(tools, ensure_ascii=True).encode("ascii")) > MAX_FRAME
             or not all(callable(value) for value in (connector, dispatch, is_active, claim_call))):
             raise ValueError()
@@ -113,7 +115,7 @@ def run_session(*, device_id: str, bearer: str, tools: list[dict[str, Any]],
                     raise ValueError()
                 ident, name, args = message.get("id"), message.get("tool"), message.get("args")
                 if (type(ident) is not str or ID.fullmatch(ident) is None
-                    or type(name) is not str or name not in TOOLS or type(args) is not dict):
+                    or type(name) is not str or name not in {tool['name'] for tool in tools} or type(args) is not dict):
                     raise ValueError()
                 if ident in seen:
                     raise ValueError()

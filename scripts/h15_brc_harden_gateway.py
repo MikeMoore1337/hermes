@@ -78,12 +78,14 @@ const ALLOWED = new Set([
   'read_file', 'read_multiple_files', 'write_file', 'write_pdf',
   'create_directory', 'list_directory', 'move_file', 'get_file_info',
   'edit_block', 'start_search', 'get_more_search_results',
-  'stop_search', 'list_searches',
+  'stop_search', 'list_searches', 'import_public_project',
 ]);
 
 export function isPermittedRemoteTool(name: string, args: Record<string, unknown>): boolean {
   if (!ALLOWED.has(name)) return false;
   if (name === 'read_file' && args.isUrl === true) return false;
+  if (name === 'import_public_project' &&
+      (typeof args.deviceId !== 'string' || !/^h454-win-personal-[a-f0-9]{32}$/.test(args.deviceId))) return false;
   return true;
 }
 """

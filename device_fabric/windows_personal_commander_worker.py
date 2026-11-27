@@ -14,6 +14,7 @@ from device_fabric import windows_personal_commander_config as config
 from device_fabric.windows_personal_commander_pipe import PersonalCommanderPipe, PersonalPipeDenied
 from device_fabric.windows_personal_commander_transport import PersonalTransportDenied, run_session
 from device_fabric.windows_personal_terminal_sessions import TOOLS as TERMINAL_TOOLS
+from device_fabric.windows_personal_project_import import NAME as IMPORT_TOOL, SCHEMA as IMPORT_SCHEMA
 
 MAX_RECONNECTS = 5
 
@@ -29,7 +30,7 @@ def serve(raw_config: bytes, *, current_sid: Callable[[], str], ca: bytes,
           connector: Callable[..., Any], status_factory: Callable[[str, str], Callable[[], bool | None]],
           claim_call: Callable[[str], bool], pause: Callable[[float], Any] = time.sleep,
           decrypt: Callable[..., str] | None = None, terminal_broker: Any | None = None,
-          bridge_factory: Callable[..., Any] | None = None) -> str:
+          bridge_factory: Callable[..., Any] | None = None, import_broker: Any | None = None) -> str:
     """Run bounded sessions in a dedicated, job-owned worker process.
 
     Owner, CA, installed bundle and independently enforced OS confinement are
@@ -47,6 +48,9 @@ def serve(raw_config: bytes, *, current_sid: Callable[[], str], ca: bytes,
             raise ValueError()
         if terminal_broker is not None and (not callable(getattr(terminal_broker, "dispatch", None))
                                             or not callable(getattr(terminal_broker, "close", None))):
+            raise ValueError()
+        if import_broker is not None and (not callable(getattr(import_broker, "dispatch", None))
+                                          or not callable(getattr(import_broker, "close", None))):
             raise ValueError()
         candidate = config.parse_config(raw_config)
         owner = current_sid()
@@ -70,6 +74,8 @@ def serve(raw_config: bytes, *, current_sid: Callable[[], str], ca: bytes,
         def dispatch(name: str, args: dict) -> dict:
             nonlocal failed
             try:
+                if name == IMPORT_TOOL and import_broker is not None:
+                    return import_broker.dispatch(args)
                 if name in TERMINAL_TOOLS:
                     if terminal_broker is None:
                         return {"content": [{"type": "text", "text": "H454_PERSONAL_TERMINAL_UNAVAILABLE"}],
@@ -85,7 +91,7 @@ def serve(raw_config: bytes, *, current_sid: Callable[[], str], ca: bytes,
                 return "owner_changed"
             try:
                 outcome = run_session(device_id=candidate.device_id, bearer=bearer,
-                    tools=bridge.tools, connector=connector, dispatch=dispatch,
+                    tools=bridge.tools + ([IMPORT_SCHEMA] if import_broker is not None else []), connector=connector, dispatch=dispatch,
                     is_active=lambda: isolation_verified() is True and status() is True,
                     claim_call=claim_call)
                 if outcome not in ("idle_timeout", "call_budget_exhausted"):
@@ -108,6 +114,11 @@ def serve(raw_config: bytes, *, current_sid: Callable[[], str], ca: bytes,
     except Exception:
         raise PersonalWorkerDenied("personal_worker_denied") from None
     finally:
+        if import_broker is not None:
+            try:
+                import_broker.close()
+            except Exception:
+                pass
         if terminal_broker is not None:
             try:
                 terminal_broker.close()
