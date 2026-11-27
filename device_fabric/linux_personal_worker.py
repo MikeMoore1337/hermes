@@ -19,7 +19,7 @@ class LinuxPersonalWorkerDenied(ValueError):
 
 def serve_once(*, target: str, device_id: str, bearer: str, project: str, bundle: str,
                connector: Callable[..., Any], is_active: Callable[[], bool],
-               claim_call: Callable[[str], bool]) -> str:
+               claim_call: Callable[[str], bool], verify_bundle: Callable[[], bool]) -> str:
     """Run one bounded session; an external supervisor may reconnect later.
 
     The supplied callbacks and arguments must come from protected local state,
@@ -29,8 +29,8 @@ def serve_once(*, target: str, device_id: str, bearer: str, project: str, bundle
     bridge = None
     try:
         if (target not in ('hermes-vps', 'yfc-vps') or
-                not all(callable(value) for value in (connector, is_active, claim_call)) or
-                is_active() is not True):
+                not all(callable(value) for value in (connector, is_active, claim_call, verify_bundle)) or
+                is_active() is not True or verify_bundle() is not True):
             raise ValueError()
         process = start(project, bundle, ['/opt/commander/run'])
         bridge = PersonalCommanderPipe(process, ['/workspace'])
