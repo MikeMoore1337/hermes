@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 import subprocess
 import tempfile
+import time
 import unittest
 
 from device_fabric import linux_personal_worker as worker
@@ -121,6 +122,58 @@ class LinuxPersonalSessionIntegrationTests(unittest.TestCase):
         self.assertIsNot(results['w'].get('isError'), True)
         self.assertIn('/workspace', json.dumps(results['t']))
         self.assertIs(results['x'].get('isError'), True)
+
+    def test_content_search_uses_bundled_linux_ripgrep(self):
+        class Socket:
+            def __init__(self):
+                self.sent, self.step, self.session = [], 0, None
+            def __enter__(self): return self
+            def __exit__(self, *_args): return None
+            def send(self, data): self.sent.append(json.loads(data))
+            def recv(self, *, timeout):
+                self.step += 1
+                if self.step == 1:
+                    frame = {'type': 'welcome', 'protocol': 1, 'relayVersion': 'fixture', 'serverTime': 1}
+                elif self.step == 2:
+                    frame = {'type': 'call', 'id': 'search', 'tool': 'start_search', 'args': {
+                        'path': '/workspace', 'pattern': 'fixture-search-marker',
+                        'searchType': 'content', 'literalSearch': True, 'timeout_ms': 5000}}
+                elif self.step == 3:
+                    result = self.sent[-1].get('result', {})
+                    if result.get('isError') is True:
+                        raise ValueError('search failed to start')
+                    text = '\n'.join(item.get('text', '') for item in result.get('content', []))
+                    match = re.search(r'session: (\S+)', text)
+                    if not match:
+                        raise ValueError('search session absent')
+                    self.session = match.group(1)
+                    frame = {'type': 'call', 'id': 'results-1', 'tool': 'get_more_search_results',
+                             'args': {'sessionId': self.session, 'offset': 0, 'length': 10}}
+                elif self.step <= 32:
+                    previous = '\n'.join(item.get('text', '') for item in
+                                         self.sent[-1].get('result', {}).get('content', []))
+                    if 'Status: COMPLETED' in previous or 'Status: INCOMPLETE' in previous:
+                        raise TimeoutError()
+                    time.sleep(0.05)
+                    frame = {'type': 'call', 'id': 'results-' + str(self.step),
+                             'tool': 'get_more_search_results',
+                             'args': {'sessionId': self.session, 'offset': 0, 'length': 10}}
+                else:
+                    raise ValueError('search fixture timed out')
+                return json.dumps(frame)
+
+        runtime, socket = os.environ['H454_TEST_BRC_RUNTIME'], Socket()
+        with tempfile.TemporaryDirectory(prefix='h454-search-e2e-') as project:
+            (Path(project) / 'fixture.txt').write_text('fixture-search-marker\n')
+            outcome = worker.serve_once(target='yfc-vps',
+                device_id='h454-linux-personal-yfc-' + 'a' * 32, bearer='brc_dev_' + 'b' * 64,
+                project=project, bundle=runtime, connector=lambda *_a, **_k: socket,
+                is_active=lambda: True, claim_call=lambda _ident: True, verify_bundle=lambda: True)
+        self.assertEqual(outcome, 'idle_timeout')
+        result = socket.sent[-1]['result']
+        self.assertIsNot(result.get('isError'), True)
+        self.assertIn('Status: COMPLETED', json.dumps(result))
+        self.assertIn('fixture-search-marker', json.dumps(result))
 
     def test_interactive_terminal_accepts_input_and_can_be_terminated(self):
         class Socket:
