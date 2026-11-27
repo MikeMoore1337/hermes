@@ -28,6 +28,7 @@ on:
       - device_fabric/windows_native_reenrollment.py
       - device_fabric/windows_personal_session.py
       - device_fabric/windows_personal_commander_config.py
+      - device_fabric/windows_personal_project_registration.py
       - device_fabric/windows_personal_commander_bundle.py
       - device_fabric/windows_personal_commander_enrollment.py
       - device_fabric/windows_personal_commander_transport.py
@@ -51,6 +52,8 @@ on:
       - scripts/h454_windows_personal_yfc_bootstrap.py
       - scripts/h454_windows_personal_yfc_state.py
       - scripts/h454_windows_personal_yfc_action.py
+      - scripts/h454_windows_personal_add_project.py
+      - scripts/h454_windows_personal_registration_task.ps1
       - scripts/h454_wss_relay_proxy.mjs
       - scripts/h454_wss_personal_status_patch.py
       - scripts/h454_wss_personal_status_e2e.mjs
@@ -68,6 +71,8 @@ on:
       - scripts/h454_windows_personal_owner_pair.py
       - tests/test_h454_windows_personal_session.py
       - tests/test_windows_personal_commander_config.py
+      - tests/test_windows_personal_project_registration.py
+      - tests/test_windows_personal_registration_task.py
       - tests/test_windows_personal_commander_bundle.py
       - tests/test_windows_personal_commander_enrollment.py
       - tests/test_windows_personal_commander_transport.py
@@ -219,6 +224,8 @@ jobs:
           $ErrorActionPreference = 'Stop'
           python -B -m unittest -v tests.test_personal_session_alias
           if ($LASTEXITCODE -ne 0) { throw 'H454_SESSION_ALIAS_DENIED' }
+          python -B -m unittest -v tests.test_windows_personal_project_registration tests.test_windows_personal_registration_task
+          if ($LASTEXITCODE -ne 0) { throw 'H454_PROJECT_REGISTRATION_DENIED' }
           python -B -m unittest -v tests.test_h454_windows_native_dpapi tests.test_h454_windows_personal_session tests.test_h454_personal_replay tests.test_windows_personal_commander_config tests.test_windows_personal_commander_bundle tests.test_windows_personal_commander_transport tests.test_windows_personal_commander_status tests.test_windows_personal_commander_worker tests.test_windows_personal_appcontainer_pipe tests.test_windows_personal_psec_terminal tests.test_windows_personal_project_scan tests.test_windows_personal_yfc_psec tests.test_windows_personal_yfc_runner tests.test_windows_personal_yfc_entry tests.test_windows_personal_yfc_bootstrap tests.test_windows_personal_yfc_state tests.test_windows_personal_yfc_action tests.test_h454_personal_search_patch tests.test_windows_personal_terminal_sessions tests.test_h454_windows_personal_dispatcher tests.test_h454_windows_personal_adapter_launcher tests.test_h454_windows_personal_job
           if ($LASTEXITCODE -ne 0) { throw 'H454_WIN32_DPAPI_CURRENT_USER_DENIED' }
           Write-Output 'H454_WIN32_DPAPI_CURRENT_USER=PASS'
