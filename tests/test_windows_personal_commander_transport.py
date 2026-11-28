@@ -62,6 +62,19 @@ class PersonalTransportTests(unittest.TestCase):
         self.assertEqual(socket.sent[1], {"type": "pong", "ts": 3})
         self.assertEqual(socket.sent[2]["result"]["content"][0]["text"], "done")
 
+    def test_local_reload_occurs_only_after_result_is_sent(self):
+        frame = {'type': 'call', 'id': 'call-1', 'tool': 'write_file', 'args': {}}
+        socket, called = Socket([WELCOME, frame]), []
+        def pending():
+            called.append(len(socket.sent))
+            return True
+        outcome = transport.run_session(device_id=DEVICE, bearer=TOKEN, tools=TOOLS,
+            connector=lambda *_a, **_k: socket, dispatch=lambda *_a: {'content': []},
+            is_active=lambda: True, claim_call=lambda _id: True, reload_pending=pending)
+        self.assertEqual(outcome, 'reload_requested')
+        self.assertEqual(called, [2])
+        self.assertEqual(socket.sent[-1]['id'], 'call-1')
+
     def test_read_only_identity_replay_or_revocation_cannot_dispatch(self):
         frame = {"type": "call", "id": "call-1", "tool": "start_process", "args": {"command": "synthetic"}}
         called = []
@@ -101,6 +114,26 @@ class PersonalTransportTests(unittest.TestCase):
     def test_vps_registration_can_only_be_advertised_by_windows_personal_device(self):
         from device_fabric.windows_personal_vps_registration import SCHEMA
         tools = TOOLS + [SCHEMA]
+        frame = {'type': 'call', 'id': 'project-1', 'tool': SCHEMA['name'], 'args': {}}
+        for target, device in (('windows', DEVICE),
+                               ('yfc-vps', 'h454-linux-personal-yfc-' + 'a' * 32)):
+            calls, socket = [], Socket([WELCOME, frame])
+            def run():
+                return transport.run_session(target=target, device_id=device, bearer=TOKEN, tools=tools,
+                    connector=lambda *_a, **_k: socket,
+                    dispatch=lambda name, args: calls.append(name) or {'content': []},
+                    is_active=lambda: True, claim_call=lambda _id: True)
+            if target == 'windows':
+                self.assertEqual(run(), 'idle_timeout')
+                self.assertEqual(calls, [SCHEMA['name']])
+            else:
+                with self.assertRaises(transport.PersonalTransportDenied): run()
+                self.assertEqual(calls, [])
+
+    def test_windows_registration_is_only_advertised_by_windows_personal_device(self):
+        from device_fabric.windows_personal_project_hot_registration import SCHEMA
+        from device_fabric.windows_personal_vps_registration import SCHEMA as VPS_SCHEMA
+        tools = TOOLS + [SCHEMA, VPS_SCHEMA]
         frame = {'type': 'call', 'id': 'project-1', 'tool': SCHEMA['name'], 'args': {}}
         for target, device in (('windows', DEVICE),
                                ('yfc-vps', 'h454-linux-personal-yfc-' + 'a' * 32)):

@@ -22,6 +22,7 @@ from device_fabric.personal_replay import PersonalReplay
 from device_fabric.windows_personal_job import attach_current_worker
 from device_fabric.windows_personal_yfc_psec import APP_NAME, _real_directory
 from device_fabric.windows_personal_yfc_runner import run
+from device_fabric.windows_personal_project_hot_registration import commit_config
 from scripts.h454_windows_personal_worker import current_sid, load_ca
 
 REPARSE = 0x400
@@ -86,10 +87,35 @@ def main(argv: list[str] | None = None) -> int:
             return lambda: status.bearer_state(relay, device_id=device_id, bearer=bearer)
         # The process must be dedicated: closing its job terminates all members.
         attach_current_worker()
+        previous_raw = None
         while True:
-            outcome = run(raw, ca=ca, expected_manifest=expected, current_sid=current_sid,
-                connector=connector, status_factory=status_factory, claim_call=replay.claim,
-                attach_job=lambda: None)
+            try:
+                outcome = run(raw, ca=ca, expected_manifest=expected, current_sid=current_sid,
+                    connector=connector, status_factory=status_factory, claim_call=replay.claim,
+                    attach_job=lambda: None)
+            except Exception:
+                if previous_raw is None:
+                    raise
+                # The new worker failed before reaching a session. Restore only
+                # if the on-disk config still equals exactly what was loaded.
+                commit_config(private, current_sid(), raw, previous_raw)
+                raw, previous_raw = previous_raw, None
+                time.sleep(1)
+                continue
+            if outcome == 'reload_requested':
+                next_raw = _read_private(private, 'device.json', config.MAX_CONFIG_BYTES)
+                if next_raw == raw:
+                    # A failed commit with an ambiguous response changed nothing.
+                    time.sleep(1)
+                    continue
+                proposed = config.parse_config(next_raw)
+                if (proposed.device_id != candidate.device_id or proposed.release_sha != candidate.release_sha
+                    or proposed.bundle_sha256 != candidate.bundle_sha256 or proposed.ca_sha256 != candidate.ca_sha256):
+                    raise ValueError()
+                config.unseal(proposed, owner_sid=current_sid(), ca=ca, bundle_sha256=candidate.bundle_sha256)
+                previous_raw, raw = raw, next_raw
+                continue
+            previous_raw = None
             # A dead dispatcher cannot be reused. Its job-owned process and
             # active sessions were closed by run(); start a fresh worker after
             # the same bounded delay used for relay outages. Replay claims are

@@ -157,6 +157,30 @@ class PersonalWorkerTests(unittest.TestCase):
         self.assertEqual(len(broker.calls), worker.MAX_RECONNECTS)
         self.assertTrue(broker.closed)
 
+    def test_committed_registration_reloads_after_lost_response_without_replay(self):
+        class Broker:
+            pending = False
+            closed = False
+            calls = 0
+            def dispatch(self, args):
+                self.calls += 1
+                self.pending = True
+                return {'content': [], 'isError': False}
+            def reload_pending(self): return self.pending
+            def close(self): self.closed = True
+        broker = Broker()
+        self.args['project_broker'] = broker
+        def interrupted_session(**kwargs):
+            self.assertIn('connect_original_windows_project', {tool['name'] for tool in kwargs['tools']})
+            kwargs['dispatch']('connect_original_windows_project', {'path': 'synthetic', 'mode': 'execute'})
+            raise PersonalTransportDenied('response lost')
+        with patch.object(worker, 'PersonalCommanderPipe', return_value=self.bridge), \
+             patch.object(worker, 'run_session', side_effect=interrupted_session) as session:
+            self.assertEqual(worker.serve(self.raw, **self.args), 'reload_requested')
+        self.assertEqual(session.call_count, 1)
+        self.assertEqual(broker.calls, 1)
+        self.assertTrue(broker.closed)
+
     def test_terminal_calls_use_only_the_owned_broker_and_close_it(self):
         class Broker:
             def __init__(self):

@@ -83,8 +83,17 @@ Windows source supports up to sixteen selected roots; an installed release may
 still have the previous five-root limit until it is updated. The VPS operator accepts at most four
 additional roots and refuses directories the service identity cannot already
 traverse and write; it does not grant ACLs or change owners. Private Second
-Brain vault access remains excluded. These host operators are not currently a
-ChatGPT-only self-service registration flow.
+Brain vault access remains excluded. The local host operators do not themselves
+provide a ChatGPT-only self-service registration flow.
+
+The source includes `connect_original_windows_project` for owner-selected
+existing Windows project folders. A plan checks the proposed policy and
+confined process before changes. Execution refuses active terminal sessions,
+stores protected old and new configurations, and reloads the worker after its
+reply. If that reply is lost, the result is unknown and must not be repeated
+automatically. The caller verifies reconnection and the intended project after
+execution; a newly built source or passing local tests alone does not prove that
+the tool is installed or available in ChatGPT.
 
 The source includes an optional `connect_original_vps_project` MCP tool for
 owner-selected existing VPS directories. It uses the personal Windows worker

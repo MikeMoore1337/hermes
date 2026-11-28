@@ -25,6 +25,7 @@ TOOLS = ADAPTER_TOOLS | {"import_public_project"}
 ALIASED_TOOLS = ADAPTER_TOOLS | {"kill_process"}
 ALIASED_IMPORT_TOOLS = TOOLS | {"kill_process"}
 VPS_REGISTRATION_TOOL = "connect_original_vps_project"
+WINDOWS_REGISTRATION_TOOL = "connect_original_windows_project"
 
 
 class PersonalTransportDenied(ValueError):
@@ -66,7 +67,7 @@ def _active(check: Callable[[], bool]) -> None:
 def run_session(*, device_id: str, bearer: str, tools: list[dict[str, Any]],
                 connector: Callable[..., Any], dispatch: Callable[[str, dict], dict],
                 is_active: Callable[[], bool], claim_call: Callable[[str], bool],
-                target: str = 'windows') -> str:
+                target: str = 'windows', reload_pending: Callable[[], bool] | None = None) -> str:
     """Run one authenticated session with durable pre-dispatch call claims.
 
     The owner-status callback, local target and claim journal must be
@@ -90,7 +91,10 @@ def run_session(*, device_id: str, bearer: str, tools: list[dict[str, Any]],
                     'arm64': 'arm64'}.get(platform.machine().lower())
         allowed_tool_sets = (ADAPTER_TOOLS, TOOLS, ALIASED_TOOLS, ALIASED_IMPORT_TOOLS)
         if target == 'windows':
-            allowed_tool_sets += tuple(group | {VPS_REGISTRATION_TOOL} for group in allowed_tool_sets)
+            base = allowed_tool_sets
+            allowed_tool_sets += tuple(group | extra for group in base for extra in (
+                {VPS_REGISTRATION_TOOL}, {WINDOWS_REGISTRATION_TOOL},
+                {VPS_REGISTRATION_TOOL, WINDOWS_REGISTRATION_TOOL}))
         if (arch not in ('x64', 'arm64') or type(device_id) is not str or pattern.fullmatch(device_id) is None
             or type(bearer) is not str or TOKEN.fullmatch(bearer) is None
             or type(tools) is not list
@@ -98,7 +102,8 @@ def run_session(*, device_id: str, bearer: str, tools: list[dict[str, Any]],
             or len({tool["name"] for tool in tools}) != len(tools)
             or {tool["name"] for tool in tools} not in allowed_tool_sets
             or len(json.dumps(tools, ensure_ascii=True).encode("ascii")) > MAX_FRAME
-            or not all(callable(value) for value in (connector, dispatch, is_active, claim_call))):
+            or not all(callable(value) for value in (connector, dispatch, is_active, claim_call))
+            or (reload_pending is not None and not callable(reload_pending))):
             raise ValueError()
         _active(is_active)
         greeting = {"type": "hello", "protocol": 1, "device": {"deviceId": device_id,
@@ -157,6 +162,10 @@ def run_session(*, device_id: str, bearer: str, tools: list[dict[str, Any]],
                 if len(raw.encode("ascii")) > MAX_FRAME or bearer in raw:
                     raise ValueError()
                 ws.send(raw)
+                # Emit the result of a committed local config change before
+                # closing this worker and reloading the updated scope.
+                if reload_pending is not None and reload_pending() is True:
+                    return 'reload_requested'
             return "call_budget_exhausted"
     except PersonalTransportDenied:
         raise
