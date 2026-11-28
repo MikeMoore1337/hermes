@@ -361,12 +361,12 @@ function rootsFromTerminal(target:PersonalTarget, reply:unknown): string[] | nul
     if (target.kind==='windows') {
       const fields:Record<string,string>={};
       for (const line of content.text.split(/\r?\n/)) {
-        const match=/^GIT_CONFIG_(COUNT|KEY_[0-4]|VALUE_[0-4])=(.*)$/.exec(line);
+        const match=/^GIT_CONFIG_(COUNT|KEY_(?:[0-9]|1[0-5])|VALUE_(?:[0-9]|1[0-5]))=(.*)$/.exec(line);
         if (!match) continue;
         if (Object.prototype.hasOwnProperty.call(fields,match[1])) throw Error();
         fields[match[1]]=match[2];
       }
-      if (!/^[1-5]$/.test(fields.COUNT ?? '')) throw Error();
+      if (!/^(?:[1-9]|1[0-6])$/.test(fields.COUNT ?? '')) throw Error();
       for (let i=0;i<Number(fields.COUNT);i++) {
         if (fields['KEY_'+i]!=='safe.directory') throw Error();
         const root=windowsOriginalRoot(fields['VALUE_'+i] ?? '');

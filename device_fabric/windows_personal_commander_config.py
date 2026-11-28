@@ -16,6 +16,7 @@ from typing import Callable
 
 from device_fabric.native_brc_enrollment import TOKEN, Paired
 from device_fabric.native_install_preview import WINDOWS_ROOTS
+from device_fabric.windows_personal_project_limits import MAX_PROJECT_ROOTS
 from device_fabric.windows_personal_commander_enrollment import DEVICE, TARGET
 from device_fabric.windows_native_dpapi import (
     MAX_CIPHERTEXT, seal_personal_commander, unseal_personal_commander,
@@ -70,7 +71,7 @@ def _unique(pairs):
 
 def _validate_project_roots(roots: tuple[str, ...]) -> tuple[str, ...]:
     """Validate a bounded explicit scope under the owner's project directory."""
-    if type(roots) is not tuple or not 2 <= len(roots) <= 5 or roots[0] != str(YFC_DEV):
+    if type(roots) is not tuple or not 2 <= len(roots) <= MAX_PROJECT_ROOTS or roots[0] != str(YFC_DEV):
         raise PersonalCommanderDenied("personal_commander_denied")
     parent = ntpath.normcase(r"D:\Pet-projects")
     normalized = []

@@ -14,6 +14,7 @@ import uuid
 from typing import Any
 
 from device_fabric.windows_personal_commander_transport import MAX_FRAME, ADAPTER_TOOLS as TOOLS, _unique
+from device_fabric.windows_personal_project_limits import MAX_PROJECT_ROOTS
 
 
 class PersonalPipeDenied(ValueError):
@@ -23,7 +24,7 @@ class PersonalPipeDenied(ValueError):
 class PersonalCommanderPipe:
     def __init__(self, process: subprocess.Popen, roots: list[str], *, timeout: float = 15.0):
         if (not isinstance(process, subprocess.Popen) or process.stdin is None or process.stdout is None
-            or type(roots) is not list or not 1 <= len(roots) <= 5
+            or type(roots) is not list or not 1 <= len(roots) <= MAX_PROJECT_ROOTS
             or any(type(root) is not str or not 1 <= len(root) <= 2048 for root in roots)
             or type(timeout) not in (int, float) or not 1 <= timeout <= 120):
             raise PersonalPipeDenied("personal_pipe_denied")

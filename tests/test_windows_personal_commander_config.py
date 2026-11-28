@@ -108,6 +108,15 @@ class PersonalCommanderConfigTests(unittest.TestCase):
         with self.assertRaises(config.PersonalCommanderDenied):
             config.roots_for('owner-projects', roots=(first, r'D:\Pet-projects\z', r'D:\Pet-projects\a'))
 
+    def test_sixteen_explicit_projects_fit_but_seventeenth_is_denied(self):
+        roots = (r'D:\Pet-projects\yfc-dev', *(rf'D:\Pet-projects\project-{i:02}' for i in range(15)))
+        raw = config.prepare_config(paired(), owner_sid=SID, release_sha=RELEASE, ca=CA,
+            bundle_sha256=BUNDLE, now=1000, profile='owner-projects', roots=roots,
+            seal=lambda *_a, **_k: SEALED)
+        self.assertEqual(config.parse_config(raw).roots, roots)
+        with self.assertRaises(config.PersonalCommanderDenied):
+            config.roots_for('owner-projects', roots=(*roots, r'D:\Pet-projects\project-15'))
+
     def test_add_project_reseals_existing_grant_and_preserves_identity(self):
         def seal(_token, **scope):
             return bytes.fromhex(scope['manifest_sha256']) + b's' * 32

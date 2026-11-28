@@ -11,6 +11,20 @@ from device_fabric.windows_personal_psec_terminal import SyntheticPsecTerminal, 
 
 
 class PsecSpecificationTests(unittest.TestCase):
+    def test_sixteen_project_roots_fit_with_state_and_runtime_and_deny_paths(self):
+        roots = tuple(rf'D:\fixture\project-{i:02}' for i in range(16))
+        state, runtime, git = r'D:\fixture\state', r'D:\fixture\runtime', r'D:\fixture\git'
+        denied = tuple(root + r'\.artifacts' for root in roots)
+        data = build_spec(roots[0], writable=(state, *roots[1:]), readonly=(runtime, git), denied=denied)
+        table = struct.unpack_from('<I', data)[0]
+        def count(field):
+            pointer = table + field
+            return struct.unpack_from('<I', data, pointer + struct.unpack_from('<I', data, pointer)[0])[0]
+        self.assertEqual((count(8), count(12), count(16)), (17, 2, 16))
+        with self.assertRaises(TerminalDenied):
+            build_spec(roots[0], writable=(state, *roots[1:], r'D:\fixture\extra'),
+                       readonly=(runtime, git), denied=denied)
+
     def test_unicode_path_is_encoded_in_version_one_writable_policy(self):
         root = "D:\\projects\\Тест"
         data = build_spec(root)
@@ -69,6 +83,47 @@ class PsecSpecificationTests(unittest.TestCase):
                 build_spec(root, denied=(value,))
 
     if os.name == "nt":
+        def test_native_sixteen_writable_roots_and_denied_child(self):
+            try:
+                model = ctypes.WinDLL('processmodel', use_last_error=True, winmode=0x800)
+                query = model.QueryProcessSecurityEnvironmentSupport
+                query.argtypes = [ctypes.POINTER(ctypes.c_ulong)]
+                query.restype = ctypes.c_long
+                flags = ctypes.c_ulong()
+                if query(ctypes.byref(flags)) != 0 or not flags.value & 1:
+                    self.skipTest('PSEC deny paths unavailable')
+            except (OSError, AttributeError):
+                self.skipTest('PSEC deny paths unavailable')
+            with tempfile.TemporaryDirectory(prefix='h454-psec-synthetic-many-') as directory:
+                roots = tuple(Path(directory) / f'project-{i:02}' for i in range(16))
+                for root in roots:
+                    (root / '.artifacts').mkdir(parents=True)
+                state, runtime, git = (Path(directory) / name for name in ('state', 'runtime', 'git'))
+                for path in (state, runtime, git):
+                    path.mkdir()
+                secret = roots[-1] / '.artifacts' / 'fixture.txt'
+                secret.write_text('synthetic', encoding='ascii')
+                first, last = roots[0] / 'ok.txt', roots[-1] / 'ok.txt'
+                command = f'(echo ok>"{first}") && (echo ok>"{last}") && (type "{secret}" >nul 2>&1 && exit /b 9 || exit /b 0)'
+                class ManyRootsTerminal(SyntheticPsecTerminal):
+                    def _validate_denied_paths(self, root, denied):
+                        if denied != tuple(str(p / '.artifacts') for p in roots):
+                            raise ValueError()
+                terminal = ManyRootsTerminal(str(roots[0]), command=command,
+                    writable=(str(state), *map(str, roots[1:])), readonly=(str(runtime), str(git)),
+                    denied=tuple(str(p / '.artifacts') for p in roots))
+                try:
+                    deadline = time.monotonic() + 20
+                    while terminal.poll() is None and time.monotonic() < deadline:
+                        terminal.read()
+                        time.sleep(0.02)
+                    self.assertEqual(terminal.poll(), 0)
+                    self.assertTrue(first.is_file())
+                    self.assertTrue(last.is_file())
+                    self.assertEqual(secret.read_text(encoding='ascii'), 'synthetic')
+                finally:
+                    terminal.close()
+
         def test_native_denied_child_is_not_readable_in_a_writable_root(self):
             try:
                 model = ctypes.WinDLL('processmodel', use_last_error=True, winmode=0x800)
