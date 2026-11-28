@@ -114,6 +114,34 @@ class LinuxPersonalWorkerTests(unittest.TestCase):
         session.assert_called_once()
         bridge.close.assert_called_once()
 
+    def test_failed_dispatcher_is_closed_without_replaying_the_call(self):
+        process = MagicMock()
+        process.poll.return_value = None
+        bridge = MagicMock()
+        bridge.tools = [{'name': 'write_file', 'inputSchema': {'type': 'object'}},
+                        {'name': 'force_terminate', 'inputSchema': {'type': 'object'}}]
+        bridge.dispatch.side_effect = ValueError('pipe broke after an ambiguous write')
+        claimed = []
+        self.options.update(grant_state=lambda: True, sleep=lambda _delay: None,
+                            claim_call=lambda ident: claimed.append(ident) or True)
+        def session(**kwargs):
+            if claimed:
+                raise AssertionError('failed dispatcher was reconnected')
+            kwargs['claim_call']('call-1')
+            try:
+                kwargs['dispatch']('write_file', {'path': '/workspace/test'})
+            except ValueError:
+                raise worker.PersonalTransportDenied('sanitized') from None
+        with patch.object(worker, 'start', return_value=process), \
+             patch.object(worker, 'PersonalCommanderPipe', return_value=bridge), \
+             patch.object(worker, 'run_session', side_effect=session) as run_session:
+            with self.assertRaises(worker.LinuxPersonalWorkerDenied):
+                worker.serve_once(**self.options)
+        run_session.assert_called_once()
+        bridge.dispatch.assert_called_once()
+        bridge.close.assert_called_once()
+        self.assertEqual(claimed, ['call-1'])
+
 
 if __name__ == '__main__':
     unittest.main()
