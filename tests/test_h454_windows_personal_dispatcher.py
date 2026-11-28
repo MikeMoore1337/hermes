@@ -20,7 +20,7 @@ TOOLS = ["read_file", "read_multiple_files", "write_file", "write_pdf", "edit_bl
 
 
 class PersonalDispatcherTests(unittest.TestCase):
-    def test_pdf_rejects_unapproved_output_and_unsupported_markup(self):
+    def test_pdf_rejects_unapproved_output_and_unavailable_image(self):
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary).resolve()
             project, outside = base / 'project', base / 'outside'
@@ -36,7 +36,6 @@ class PersonalDispatcherTests(unittest.TestCase):
             by_id = {item['id']: item['result'] for item in result[1:]}
             self.assertTrue(by_id['foreign']['isError'])
             self.assertTrue(by_id['image']['isError'])
-            self.assertIn('H454_PDF_MARKUP_UNSUPPORTED', str(by_id['image']))
             self.assertFalse((outside / 'doc.pdf').exists())
             self.assertFalse((project / 'image.pdf').exists())
 

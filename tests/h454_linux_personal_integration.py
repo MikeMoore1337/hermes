@@ -1,14 +1,17 @@
 """Explicit Linux-only integration checks; requires a disposable BRC runtime."""
 import hashlib
+import binascii
 import json
 import os
 from pathlib import Path
 import re
 import shlex
 import subprocess
+import struct
 import tempfile
 import time
 import unittest
+import zlib
 
 from device_fabric import linux_personal_worker as worker
 from device_fabric import windows_personal_commander_bundle as bundle_check
@@ -108,6 +111,72 @@ class SandboxIntegrationTests(unittest.TestCase):
 
 
 class LinuxPersonalSessionIntegrationTests(unittest.TestCase):
+    def test_pdf_page_operations_and_local_image(self):
+        class Socket:
+            def __init__(self):
+                self.sent = []
+                self.frames = [
+                    {'type': 'welcome', 'protocol': 1, 'relayVersion': 'fixture', 'serverTime': 1},
+                    {'type': 'call', 'id': 'first', 'tool': 'write_pdf', 'args': {
+                        'path': '/workspace/first.pdf', 'content': '# Первая\n\n![image](image.png)'}},
+                    {'type': 'call', 'id': 'second', 'tool': 'write_pdf', 'args': {
+                        'path': '/workspace/second.pdf', 'content': '# Вторая страница'}},
+                    {'type': 'call', 'id': 'modify', 'tool': 'write_pdf', 'args': {
+                        'path': '/workspace/first.pdf', 'outputPath': '/workspace/result.pdf', 'content': [
+                            {'type': 'insert', 'pageIndex': 1, 'sourcePdfPath': '/workspace/second.pdf'},
+                            {'type': 'insert', 'pageIndex': 1, 'markdown': '# Новая страница'},
+                            {'type': 'delete', 'pageIndexes': [0]}]}},
+                    {'type': 'call', 'id': 'read', 'tool': 'read_file', 'args': {'path': '/workspace/result.pdf'}},
+                    {'type': 'call', 'id': 'foreign', 'tool': 'write_pdf', 'args': {
+                        'path': '/workspace/first.pdf', 'outputPath': '/workspace/bad.pdf', 'content': [
+                            {'type': 'insert', 'pageIndex': 0, 'sourcePdfPath': '/etc/foreign.pdf'}]}},
+                    {'type': 'call', 'id': 'remote', 'tool': 'write_pdf', 'args': {
+                        'path': '/workspace/remote.pdf', 'content': '![image](https://example.com/image.png)'}},
+                    {'type': 'call', 'id': 'hardlink', 'tool': 'write_pdf', 'args': {
+                        'path': '/workspace/hardlink.pdf', 'content': '![image](hardlink.png)'}},
+                    {'type': 'call', 'id': 'layout', 'tool': 'write_pdf', 'args': {
+                        'path': '/workspace/layout.pdf', 'content': 'Печать',
+                        'options': {'pdf_options': {'format': 'Letter', 'landscape': True, 'margin': '1in'}}}},
+                    {'type': 'call', 'id': 'unsupported', 'tool': 'write_pdf', 'args': {
+                        'path': '/workspace/unsupported.pdf', 'content': 'text', 'options': {'css': 'body{}'}}},
+                ]
+            def __enter__(self): return self
+            def __exit__(self, *_args): return None
+            def send(self, data): self.sent.append(json.loads(data))
+            def recv(self, *, timeout):
+                if not self.frames: raise TimeoutError()
+                return json.dumps(self.frames.pop(0))
+
+        def chunk(kind, data):
+            return (struct.pack('>I', len(data)) + kind + data +
+                    struct.pack('>I', binascii.crc32(kind + data) & 0xffffffff))
+        png = (b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', 1, 1, 8, 2, 0, 0, 0)) +
+               chunk(b'IDAT', zlib.compress(b'\x00\xff\x00\x00')) + chunk(b'IEND', b''))
+        socket = Socket()
+        with tempfile.TemporaryDirectory(prefix='h454-pdf-pages-') as project:
+            (Path(project) / 'image.png').write_bytes(png)
+            (Path(project) / 'linked-source.png').write_bytes(png)
+            os.link(Path(project) / 'linked-source.png', Path(project) / 'hardlink.png')
+            result = worker.serve_once(target='yfc-vps',
+                device_id='h454-linux-personal-yfc-' + 'a' * 32, bearer='brc_dev_' + 'b' * 64,
+                project=project, bundle=os.environ['H454_TEST_BRC_RUNTIME'], connector=lambda *_a, **_k: socket,
+                is_active=lambda: True, claim_call=lambda _ident: True, verify_bundle=lambda: True)
+            self.assertEqual(result, 'idle_timeout')
+            self.assertTrue((Path(project) / 'result.pdf').read_bytes().startswith(b'%PDF-'))
+            self.assertFalse((Path(project) / 'bad.pdf').exists())
+            self.assertFalse((Path(project) / 'remote.pdf').exists())
+            self.assertFalse((Path(project) / 'hardlink.pdf').exists())
+            self.assertFalse((Path(project) / 'unsupported.pdf').exists())
+            self.assertTrue((Path(project) / 'layout.pdf').read_bytes().startswith(b'%PDF-'))
+        results = {f['id']: f['result'] for f in socket.sent if f['type'] == 'result'}
+        for name in ('first', 'second', 'modify', 'read', 'layout'):
+            self.assertIsNot(results[name].get('isError'), True, name)
+        value = json.dumps(results['read'], ensure_ascii=False)
+        self.assertIn('Новая страница', value)
+        self.assertIn('Вторая страница', value)
+        for name in ('foreign', 'remote', 'hardlink', 'unsupported'):
+            self.assertIs(results[name].get('isError'), True, name)
+
     def test_create_pdf_from_unicode_and_refuse_overwrite_and_foreign_path(self):
         class Socket:
             def __init__(self):
