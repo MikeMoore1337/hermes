@@ -256,8 +256,15 @@ const exited=await api.sandboxProjectAction({project:'new-project'},[win],async(
 assert.equal(exited.status,'resolved');
 const listPayload={status:'catalog',projects:[output],incomplete:false};
 const listInvoke=async()=>({ok:true,result:{content:[{type:'text',text:'Process 42 exited with code 0\\nOutput:\\n'+JSON.stringify(listPayload)}]}});
+const wrap=row=>async()=>({ok:true,result:{content:[{type:'text',text:'Process 42 exited with code 0\\nOutput:\\n'+JSON.stringify(row)}]}});
 const withExtra=await api.addDiscoveredWorkspaces(api.listApprovedWorkspaces([win]),[win],listInvoke);
 assert.equal(withExtra.discovery_status,'complete'); assert.equal(withExtra.workspaces.length,6);
+const manyProjects=Array.from({length:20},(_,i)=>({...output,repository:'new-project',workspace:`many-${i}`,root:`/workspace/projects/many-${i}`,branch:'feature-'+ 'a'.repeat(220)}));
+assert.ok(JSON.stringify(manyProjects).length>8192);
+const manyResult=await api.addDiscoveredWorkspaces(api.listApprovedWorkspaces([win]),[win],wrap({status:'catalog',projects:manyProjects,incomplete:false}));
+assert.equal(manyResult.discovery_status,'complete'); assert.equal(manyResult.workspaces.length,25);
+const excessive=await api.addDiscoveredWorkspaces(api.listApprovedWorkspaces([win]),[win],wrap({status:'catalog',projects:Array(33).fill(output),incomplete:false}));
+assert.equal(excessive.discovery_status,'unavailable');
 assert.equal(withExtra.workspaces[5].name,'new-project'); assert.equal(withExtra.workspaces[5].git_verified,true);
 const worktree={...output,workspace:'feature-worktree',repository:'new-project',root:'/workspace/projects/feature-worktree',branch:'feature'};
 const worktreeInvoke=async()=>({ok:true,result:{content:[{type:'text',text:'Process 42 exited with code 0\\nOutput:\\n'+JSON.stringify(worktree)}]}});
@@ -266,7 +273,6 @@ const worktreeList=async()=>({ok:true,result:{content:[{type:'text',text:'Proces
 const worktreeResult=await api.addDiscoveredWorkspaces(api.listApprovedWorkspaces([win]),[win],worktreeList);
 assert.equal(worktreeResult.discovery_status,'complete'); assert.equal(worktreeResult.workspaces[5].name,'feature-worktree');
 const external={...output,repository:'Project_Name.v2',origin:'https://github.com/Other-Owner/Project_Name.v2.git'};
-const wrap=row=>async()=>({ok:true,result:{content:[{type:'text',text:'Process 42 exited with code 0\\nOutput:\\n'+JSON.stringify(row)}]}});
 assert.equal((await api.sandboxProjectAction({project:'new-project'},[win],wrap(external))).status,'resolved');
 const externalCatalog=await api.addDiscoveredWorkspaces(api.listApprovedWorkspaces([win]),[win],wrap({status:'catalog',projects:[external],incomplete:false}));
 assert.equal(externalCatalog.workspaces[5].origin,external.origin);

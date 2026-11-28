@@ -430,7 +430,7 @@ export async function addDiscoveredWorkspaces(catalog: Record<string, unknown>,
   if (!outer || outer.ok !== true || !outer.result || outer.result.isError === true || !Array.isArray(outer.result.content))
     return fallback('unavailable');
   const first = outer.result.content[0] as { type?: unknown; text?: unknown } | undefined;
-  if (!first || first.type !== 'text' || typeof first.text !== 'string' || first.text.length > 8192)
+  if (!first || first.type !== 'text' || typeof first.text !== 'string' || first.text.length > 65536)
     return fallback('unavailable');
   const marker = first.text.includes('Initial output:\n') ? 'Initial output:\n' : 'Output:\n';
   const offset = first.text.indexOf(marker);
@@ -439,7 +439,7 @@ export async function addDiscoveredWorkspaces(catalog: Record<string, unknown>,
     try { data = JSON.parse(first.text.slice(offset + marker.length).trim()); } catch { /* still running */ }
   }
   if (!data) return fallback(/^Process started with PID \d+\b/.test(first.text) ? 'pending' : 'unavailable');
-  if (data.status !== 'catalog' || !Array.isArray(data.projects) || data.projects.length > 16 || typeof data.incomplete !== 'boolean')
+  if (data.status !== 'catalog' || !Array.isArray(data.projects) || data.projects.length > 32 || typeof data.incomplete !== 'boolean')
     return fallback('unavailable');
   const entries = [...catalog.workspaces];
   const known = new Set(entries.map((value: unknown) => (value as { name?: unknown }).name));
