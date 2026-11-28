@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import subprocess
 import tempfile
 import time
@@ -107,6 +108,52 @@ class SandboxIntegrationTests(unittest.TestCase):
 
 
 class LinuxPersonalSessionIntegrationTests(unittest.TestCase):
+    def test_termination_stops_detached_descendant(self):
+        class Socket:
+            def __init__(self, project):
+                self.project, self.sent, self.step = Path(project), [], 0
+            def __enter__(self): return self
+            def __exit__(self, *_args): return None
+            def send(self, data): self.sent.append(json.loads(data))
+            def recv(self, *, timeout):
+                self.step += 1
+                if self.step == 1:
+                    frame = {'type': 'welcome', 'protocol': 1, 'relayVersion': 'fixture', 'serverTime': 1}
+                elif self.step == 2:
+                    child = ("import os,time;from pathlib import Path;os.setsid();"
+                             "Path('/workspace/ready').write_text('ready');time.sleep(4);"
+                             "Path('/workspace/escaped').write_text('escaped')")
+                    parent = ("import subprocess,sys,time;"
+                              f"subprocess.Popen([sys.executable,'-c',{child!r}]);"
+                              "print('STARTED',flush=True);time.sleep(20)")
+                    frame = {'type': 'call', 'id': 'start', 'tool': 'start_process',
+                             'args': {'command': 'python3 -u -c ' + shlex.quote(parent), 'timeout_ms': 1000}}
+                elif self.step == 3:
+                    match = re.search(r'Process (?:started with PID )?(\d+)', json.dumps(self.sent[-1].get('result', {})))
+                    if not match: raise ValueError('fixture process id absent')
+                    deadline = time.monotonic() + 5
+                    while not (self.project / 'ready').exists() and time.monotonic() < deadline:
+                        time.sleep(0.01)
+                    if not (self.project / 'ready').exists(): raise ValueError('child not started')
+                    frame = {'type': 'call', 'id': 'terminate', 'tool': 'force_terminate',
+                             'args': {'pid': int(match.group(1))}}
+                else:
+                    time.sleep(4.5)
+                    self.escaped = (self.project / 'escaped').exists()
+                    raise TimeoutError()
+                return json.dumps(frame)
+
+        runtime = os.environ['H454_TEST_BRC_RUNTIME']
+        with tempfile.TemporaryDirectory(prefix='h454-tree-e2e-') as project:
+            socket = Socket(project)
+            self.assertEqual(worker.serve_once(target='yfc-vps',
+                device_id='h454-linux-personal-yfc-' + 'a' * 32, bearer='brc_dev_' + 'b' * 64,
+                project=project, bundle=runtime, connector=lambda *_a, **_k: socket,
+                is_active=lambda: True, claim_call=lambda _ident: True, verify_bundle=lambda: True), 'idle_timeout')
+            self.assertFalse(socket.escaped, 'detached descendant survived terminal termination')
+        results = {frame['id']: frame['result'] for frame in socket.sent if frame['type'] == 'result'}
+        self.assertIsNot(results['terminate'].get('isError'), True)
+
     def test_interactive_exit_without_output_returns_completion_before_timeout(self):
         class Socket:
             def __init__(self):
