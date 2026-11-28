@@ -108,6 +108,47 @@ class SandboxIntegrationTests(unittest.TestCase):
 
 
 class LinuxPersonalSessionIntegrationTests(unittest.TestCase):
+    def test_create_pdf_from_unicode_and_refuse_overwrite_and_foreign_path(self):
+        class Socket:
+            def __init__(self):
+                self.sent = []
+                self.frames = [
+                    {'type': 'welcome', 'protocol': 1, 'relayVersion': 'fixture', 'serverTime': 1},
+                    {'type': 'call', 'id': 'create', 'tool': 'write_pdf', 'args': {
+                        'path': '/workspace/fixture.pdf', 'content': '# Привет\n\nH454 PDF проверка'}},
+                    {'type': 'call', 'id': 'read', 'tool': 'read_file', 'args': {
+                        'path': '/workspace/fixture.pdf'}},
+                    {'type': 'call', 'id': 'overwrite', 'tool': 'write_pdf', 'args': {
+                        'path': '/workspace/fixture.pdf', 'content': 'replacement'}},
+                    {'type': 'call', 'id': 'outside', 'tool': 'write_pdf', 'args': {
+                        'path': '/workspace/fixture2.pdf', 'outputPath': '/etc/fixture.pdf', 'content': 'denied'}},
+                    {'type': 'call', 'id': 'image', 'tool': 'write_pdf', 'args': {
+                        'path': '/workspace/image.pdf', 'content': '![image](image.png)'}},
+                ]
+            def __enter__(self): return self
+            def __exit__(self, *_args): return None
+            def send(self, data): self.sent.append(json.loads(data))
+            def recv(self, *, timeout):
+                if not self.frames: raise TimeoutError()
+                return json.dumps(self.frames.pop(0))
+
+        socket = Socket()
+        with tempfile.TemporaryDirectory(prefix='h454-pdf-e2e-') as project:
+            outcome = worker.serve_once(target='yfc-vps',
+                device_id='h454-linux-personal-yfc-' + 'a' * 32, bearer='brc_dev_' + 'b' * 64,
+                project=project, bundle=os.environ['H454_TEST_BRC_RUNTIME'], connector=lambda *_a, **_k: socket,
+                is_active=lambda: True, claim_call=lambda _ident: True, verify_bundle=lambda: True)
+            self.assertEqual(outcome, 'idle_timeout')
+            self.assertTrue((Path(project) / 'fixture.pdf').read_bytes().startswith(b'%PDF-'))
+            self.assertFalse((Path(project) / 'fixture2.pdf').exists())
+            self.assertFalse((Path(project) / 'image.pdf').exists())
+        results = {frame['id']: frame['result'] for frame in socket.sent if frame['type'] == 'result'}
+        self.assertIsNot(results['create'].get('isError'), True)
+        self.assertIsNot(results['read'].get('isError'), True)
+        self.assertIn('H454 PDF', json.dumps(results['read'], ensure_ascii=False))
+        for name in ('overwrite', 'outside', 'image'):
+            self.assertIs(results[name].get('isError'), True, name)
+
     def test_termination_stops_detached_descendant(self):
         class Socket:
             def __init__(self, project):
