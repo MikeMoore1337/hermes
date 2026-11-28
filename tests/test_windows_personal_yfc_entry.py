@@ -91,3 +91,26 @@ if os.name == "nt":
                 attach.assert_called_once_with()
                 self.assertEqual(run.call_count, 2)
                 sleep.assert_called_once_with(60)
+
+        def test_failed_dispatcher_starts_fresh_worker_and_revocation_stops(self):
+            package = types.ModuleType("websockets")
+            package.__path__ = []
+            sync = types.ModuleType("websockets.sync")
+            sync.__path__ = []
+            client = types.ModuleType("websockets.sync.client")
+            client.connect = lambda *_a, **_k: None
+            replay = types.SimpleNamespace(claim=lambda _id: True)
+            modules = {"websockets": package, "websockets.sync": sync, "websockets.sync.client": client}
+            with patch.dict(sys.modules, modules), patch.object(sys, "path", list(sys.path)), \
+                 patch.object(entry, "load_ca", return_value=CA), patch.object(entry.bundle, "verify", return_value=DIGEST), \
+                 patch.object(entry.private_tls, "private_websocket_connector", return_value=lambda *_a, **_k: None), \
+                 patch.object(entry, "PersonalReplay", return_value=replay), \
+                 patch.object(entry, "attach_current_worker") as attach, \
+                 patch.object(entry, "run", side_effect=("dispatcher_failed", "grant_inactive")) as run, \
+                 patch.object(entry.time, "sleep") as sleep:
+                self.assertEqual(entry.main(["--run"]), 0)
+                attach.assert_called_once_with()
+                self.assertEqual(run.call_count, 2)
+                self.assertIs(run.call_args_list[0].kwargs['claim_call'], replay.claim)
+                self.assertIs(run.call_args_list[1].kwargs['claim_call'], replay.claim)
+                sleep.assert_called_once_with(60)
