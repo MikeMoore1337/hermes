@@ -70,8 +70,7 @@ class RegistrationTests(unittest.TestCase):
         self.assertEqual(self.call('execute')[1]['reason'], 'configuration_changed')
         self.assertEqual(self.calls, [])
 
-    @unittest.skipUnless(os.name == 'nt', 'Windows ACLs required')
-    def test_real_private_backup_and_compare_before_replace(self):
+    def _real_private_backup_and_compare_before_replace(self):
         from scripts.h454_windows_personal_worker import current_sid
         with tempfile.TemporaryDirectory(prefix='h454-hot-registration-') as folder:
             private = Path(folder).resolve()
@@ -86,6 +85,10 @@ class RegistrationTests(unittest.TestCase):
                 commit_config(private, current_sid(), b'old', b'another')
             self.assertEqual(path.read_bytes(), b'new')
 
+
+if os.name == 'nt':
+    RegistrationTests.test_real_private_backup_and_compare_before_replace = (
+        RegistrationTests._real_private_backup_and_compare_before_replace)
 
 if __name__ == '__main__':
     unittest.main()
