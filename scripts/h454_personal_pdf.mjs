@@ -152,9 +152,15 @@ async function boundedRead(file, maximum = MAX_INPUT) {
     const current = await handle.stat();
     if (!current.isFile() || current.nlink !== 1 || current.dev !== before.dev || current.ino !== before.ino || current.size > maximum)
       throw new Error('H454_PDF_INPUT_UNSUPPORTED');
-    const data = await handle.readFile();
-    if (data.length > maximum) throw new Error('H454_PDF_TOO_LARGE');
-    return data;
+    const data = Buffer.allocUnsafe(maximum + 1);
+    let offset = 0;
+    while (offset < data.length) {
+      const { bytesRead } = await handle.read(data, offset, data.length - offset, null);
+      if (!bytesRead) break;
+      offset += bytesRead;
+    }
+    if (offset > maximum) throw new Error('H454_PDF_TOO_LARGE');
+    return data.subarray(0, offset);
   } finally { await handle.close(); }
 }
 
@@ -166,7 +172,7 @@ async function render(value, base, PDFDocument, fontkit, fontBytes, pageLayout) 
   let page, y, pages = 0;
   function nextPage() {
     if (++pages > MAX_PAGES) throw new Error('H454_PDF_TOO_LARGE');
-    page = doc.addPage([pageLayout.width, pageLayout.height]); y = pageLayout.height - pageLayout.top;
+    page = doc.addPage([pageLayout.width, pageLayout.height]); y = pageLayout.height - pageLayout.top - 16;
   }
   function draw(text, size) {
     const step = size * 1.35;
