@@ -52,6 +52,20 @@ class PersonalLinuxRuntimeTests(unittest.TestCase):
         replay.close.assert_called_once_with()
         self.assertEqual(str(error.exception), 'personal_linux_runtime_denied')
 
+    def test_failed_worker_with_active_grant_exits_for_supervisor_restart(self):
+        replay = MagicMock()
+        self.options.update(keep_available=True, sleep=lambda _delay: None)
+        with patch.object(runtime.private, 'load_private_relay'), \
+             patch.object(runtime.private, 'private_websocket_connector'), \
+             patch.object(runtime, 'LinuxReadReplay', return_value=replay), \
+             patch.object(runtime.linux_personal_status, 'bearer_state', return_value=True), \
+             patch.object(runtime.linux_personal_worker, 'serve_once',
+                          side_effect=runtime.linux_personal_worker.LinuxPersonalWorkerDenied('failure')) as serve:
+            with self.assertRaises(runtime.PersonalLinuxRuntimeDenied):
+                runtime.run_once(**self.options)
+        serve.assert_called_once()
+        replay.close.assert_called_once()
+
     def test_grant_loss_closes_session_and_waits_for_fresh_active_status(self):
         replay = MagicMock()
         delays, events = [], []

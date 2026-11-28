@@ -43,14 +43,25 @@ def serve_once(*, target: str, device_id: str, bearer: str, project: str, bundle
         else:
             process = start(project, bundle, ['/opt/commander/run'])
         bridge = PersonalCommanderPipe(process, ['/workspace'] + ['/projects/' + name for name, _ in additional_projects])
+        dispatcher_failed = False
+        def dispatch(name: str, args: dict) -> dict:
+            nonlocal dispatcher_failed
+            try:
+                return dispatch_alias(name, args, bridge.dispatch)
+            except Exception:
+                # The pipe closes itself on failure. Reconnecting that same
+                # closed pipe cannot recover; let the service supervisor
+                # restart the worker without repeating the claimed call.
+                dispatcher_failed = True
+                raise
         while True:
             try:
                 result = run_session(target=target, device_id=device_id, bearer=bearer,
                                      tools=advertised_tools(bridge.tools), connector=connector,
-                                     dispatch=lambda name, args: dispatch_alias(name, args, bridge.dispatch), is_active=is_active,
+                                     dispatch=dispatch, is_active=is_active,
                                      claim_call=claim_call)
             except PersonalTransportDenied:
-                if grant_state is None:
+                if grant_state is None or dispatcher_failed:
                     raise
                 result = 'disconnected'
             if grant_state is None:
