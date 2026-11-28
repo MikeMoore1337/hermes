@@ -66,6 +66,15 @@ class VpsRegistrationTests(unittest.TestCase):
         self.assertEqual(self.value(result), {'status': 'unknown', 'reason': 'connection_interrupted'})
         self.run.assert_called_once()
 
+    def test_unparseable_post_execution_result_is_unknown_and_never_retried(self):
+        for output in (b'\xff', b'H454_LINUX_PROJECT=TASK_STARTED REMOTE_ACCESS=NOT_VERIFIED BACKUP=bad'):
+            with self.subTest(output=output):
+                self.run.reset_mock()
+                self.run.return_value = self.result(stdout=output)
+                result = self.broker.dispatch({**self.args, 'mode': 'execute'})
+                self.assertEqual(self.value(result), {'status': 'unknown', 'reason': 'unrecognized_operator_result'})
+                self.run.assert_called_once()
+
     def test_rollback_failure_is_distinguished_and_output_is_redacted(self):
         self.run.return_value = self.result(returncode=2, stdout=b'',
                                             stderr=b'H454_LINUX_PROJECT=HOLD ROLLBACK=FAILED\nsecret')

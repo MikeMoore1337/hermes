@@ -91,6 +91,7 @@ class VpsProjectRegistration:
         self._run = run
 
     def dispatch(self, args: dict) -> dict:
+        attempted = False
         try:
             if (type(args) is not dict or set(args) != {'target', 'name', 'path', 'mode'}
                     or args['target'] not in self._aliases or type(args['name']) is not str
@@ -107,6 +108,7 @@ class VpsProjectRegistration:
             encoded = base64.b64encode(self._source).decode('ascii')
             command = "python3 -I -B -c 'import base64;exec(compile(base64.b64decode(\"" + encoded + "\"),\"operator\",\"exec\"))'"
             try:
+                attempted = True
                 result = self._run([self._ssh, '-T', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes',
                     '-o', 'ConnectTimeout=10', '-o', 'ServerAliveInterval=10', self._aliases[args['target']], command],
                     input=request, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=90,
@@ -115,8 +117,11 @@ class VpsProjectRegistration:
                 # An interrupted SSH command can have changed the remote host.
                 return self._reply({'status': 'unknown', 'reason': 'connection_interrupted'}, error=True)
             if type(result.stdout) is not bytes or type(result.stderr) is not bytes or len(result.stdout) > 4096 or len(result.stderr) > 4096:
-                raise ValueError()
-            out = result.stdout.decode('ascii', 'strict').strip()
+                return self._reply({'status': 'unknown', 'reason': 'unrecognized_operator_result'}, error=True)
+            try:
+                out = result.stdout.decode('ascii', 'strict').strip()
+            except UnicodeError:
+                return self._reply({'status': 'unknown', 'reason': 'unrecognized_operator_result'}, error=True)
             if result.returncode == 255:
                 return self._reply({'status': 'unknown', 'reason': 'connection_interrupted'}, error=True)
             if result.returncode == 0 and out == 'H454_LINUX_PROJECT=PLAN_PASS' and args['mode'] == 'plan':
@@ -127,7 +132,7 @@ class VpsProjectRegistration:
             if result.returncode == 0 and args['mode'] == 'execute' and out.startswith(prefix):
                 backup = out[len(prefix):]
                 if BACKUP.fullmatch(backup) is None:
-                    raise ValueError()
+                    return self._reply({'status': 'unknown', 'reason': 'unrecognized_operator_result'}, error=True)
                 return self._reply({'status': 'applied', 'backup': backup, 'verification_required': True})
             if b'ROLLBACK=FAILED' in result.stderr:
                 return self._reply({'status': 'failed', 'reason': 'rollback_failed'}, error=True)
@@ -136,6 +141,8 @@ class VpsProjectRegistration:
                 return self._reply({'status': 'failed', 'reason': 'registration_denied'}, error=True)
             return self._reply({'status': 'unknown', 'reason': 'unrecognized_operator_result'}, error=True)
         except Exception:
+            if attempted:
+                return self._reply({'status': 'unknown', 'reason': 'unrecognized_operator_result'}, error=True)
             return self._reply({'status': 'refused', 'reason': 'invalid_request'}, error=True)
 
     @staticmethod
