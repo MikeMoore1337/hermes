@@ -19,13 +19,15 @@ from device_fabric.windows_appcontainer_terminal import (
     _StartupEx, _apis,
 )
 from device_fabric.windows_personal_job import _Extended
+from device_fabric.windows_personal_project_limits import MAX_PROJECT_ROOTS
 
 
 def build_spec(root: str, *, writable: tuple[str, ...] = (), readonly: tuple[str, ...] = (),
                denied: tuple[str, ...] = ()) -> bytes:
     """Encode PSEC schema 1.0 with distinct writable and read-only roots."""
     if (type(writable) is not tuple or type(readonly) is not tuple or type(denied) is not tuple
-            or len(writable) + len(readonly) > 7 or len(denied) > 5):
+            or len(writable) + len(readonly) > MAX_PROJECT_ROOTS + 2
+            or len(denied) > MAX_PROJECT_ROOTS):
         raise TerminalDenied("psec_terminal_denied")
     paths = (root, *writable, *readonly)
     for index, path in enumerate(paths):

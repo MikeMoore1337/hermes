@@ -150,6 +150,11 @@ const yfcOriginal={name:'H454 YFC VPS personal Commander',deviceId:'h454-linux-p
 const winRoots=['D:/Pet-projects/yfc-dev','D:/Pet-projects/financial-horizon','D:/Pet-projects/hermes','D:/Pet-projects/your-fitness-coach'];
 const winEnv=roots=>`Process 42 exited with code 0\\nGIT_CONFIG_COUNT=${roots.length}\\n`+
  roots.map((root,i)=>`GIT_CONFIG_KEY_${i}=safe.directory\\nGIT_CONFIG_VALUE_${i}=${root}\\n`).join('');
+const manyWinRoots=['D:/Pet-projects/yfc-dev',...Array.from({length:15},(_,i)=>'D:/Pet-projects/project-'+String(i).padStart(2,'0'))];
+const manyWinInvoke=async()=>({ok:true,result:{content:[{type:'text',text:winEnv(manyWinRoots)}]}});
+assert.equal((await api.discoveredPersonalWorkspaceAction({project:'project-14-windows'},[personal],manyWinInvoke)).status,'resolved');
+const tooManyWinInvoke=async()=>({ok:true,result:{content:[{type:'text',text:winEnv([...manyWinRoots,'D:/Pet-projects/project-15'])}]}});
+assert.equal((await api.discoveredPersonalWorkspaceAction({project:'project-14-windows'},[personal],tooManyWinInvoke)).reason,'personal_discovery_unavailable');
 const personalDevices=[personal,hermesOriginal,yfcOriginal], discoveryCalls=[];
 const discoveryInvoke=async(tool,args)=>{
  discoveryCalls.push({tool,args});

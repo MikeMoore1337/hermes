@@ -14,6 +14,7 @@ from typing import Any
 from device_fabric.windows_appcontainer_terminal import AppContainerTerminal, MAX_WRITE
 from device_fabric.windows_personal_commander_transport import MAX_FRAME, ADAPTER_TOOLS as TOOLS, _unique
 from device_fabric.windows_personal_commander_pipe import PersonalPipeDenied
+from device_fabric.windows_personal_project_limits import MAX_PROJECT_ROOTS
 
 
 class PersonalAppContainerPipe:
@@ -21,7 +22,7 @@ class PersonalAppContainerPipe:
 
     def __init__(self, process: AppContainerTerminal, roots: list[str], *, timeout: float = 15.0):
         if (not isinstance(process, AppContainerTerminal)
-            or type(roots) is not list or not 1 <= len(roots) <= 5
+            or type(roots) is not list or not 1 <= len(roots) <= MAX_PROJECT_ROOTS
             or any(type(root) is not str or not 1 <= len(root) <= 2048 for root in roots)
             or type(timeout) not in (int, float) or not 1 <= timeout <= 120):
             raise PersonalPipeDenied("personal_pipe_denied")

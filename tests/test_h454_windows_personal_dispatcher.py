@@ -49,6 +49,27 @@ class PersonalDispatcherTests(unittest.TestCase):
         self.assertEqual(process.returncode, 0, process.stderr)
         return [json.loads(line) for line in process.stdout.splitlines()]
 
+    def test_sixteenth_project_is_usable_and_seventeenth_is_refused(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary).resolve()
+            roots = [base / f'project-{i:02}' for i in range(17)]
+            for root in roots:
+                root.mkdir()
+            target = roots[15] / 'fixture.txt'
+            frames = [{'type': 'initialize', 'roots': [str(p) for p in roots[:16]]},
+                      {'type': 'call', 'id': 'write-last', 'name': 'write_file',
+                       'args': {'path': str(target), 'content': 'synthetic'}}]
+            result = self.run_adapter(base, frames)
+            self.assertEqual(result[0]['type'], 'ready')
+            self.assertFalse(result[1]['result']['isError'])
+            self.assertEqual(target.read_text(), 'synthetic')
+            entry = base / 'bundle' / 'dispatcher.js'
+            rejected = subprocess.run([shutil.which('node'), str(ADAPTER), str(entry)],
+                input=json.dumps({'type': 'initialize', 'roots': [str(p) for p in roots]}) + '\n',
+                capture_output=True, text=True, timeout=20, creationflags=subprocess.CREATE_NO_WINDOW)
+            self.assertEqual(rejected.returncode, 2)
+            self.assertEqual(rejected.stdout, '')
+
     def test_write_is_confined_and_sensitive_paths_are_denied(self):
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary).resolve()

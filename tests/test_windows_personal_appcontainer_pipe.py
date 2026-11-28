@@ -62,6 +62,15 @@ class PersonalAppContainerPipeTests(unittest.TestCase):
         self.assertLessEqual(max(self.terminal.sizes), channel.MAX_WRITE)
         self.assertEqual(self.terminal.frames[-1]["args"]["content"], "x" * 9000)
 
+    def test_multiple_roots_are_forwarded_with_the_same_bound(self):
+        terminal = Terminal()
+        roots = [f'root-{i}' for i in range(16)]
+        pipe = channel.PersonalAppContainerPipe(terminal, roots, timeout=1)
+        self.assertEqual(terminal.frames[0]['roots'], roots)
+        pipe.close()
+        with self.assertRaises(PersonalPipeDenied):
+            channel.PersonalAppContainerPipe(Terminal(), roots + ['extra'], timeout=1)
+
     def test_mismatched_reply_closes_channel_and_never_retries(self):
         self.terminal.bad_reply = True
         with self.assertRaises(PersonalPipeDenied):

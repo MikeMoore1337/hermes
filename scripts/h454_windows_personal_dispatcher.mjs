@@ -145,7 +145,7 @@ async function main() {
     try { frame = JSON.parse(line); } catch { throw new Error('FRAME_INVALID'); }
     if (roots === null) {
       if (!frame || Object.keys(frame).sort().join(',') !== 'roots,type' || frame.type !== 'initialize'
-          || !Array.isArray(frame.roots) || frame.roots.length < 1 || frame.roots.length > 5) throw new Error('INIT_DENIED');
+          || !Array.isArray(frame.roots) || frame.roots.length < 1 || frame.roots.length > 16) throw new Error('INIT_DENIED');
       roots = [];
       for (const item of frame.roots) {
         const root = cleanAbsolute(item);

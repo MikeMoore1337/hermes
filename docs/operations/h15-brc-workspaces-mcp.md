@@ -78,8 +78,9 @@ For an authorized owner request, Codex can use
 `scripts/h454_linux_personal_add_project.py` as the local root operator on the
 appropriate VPS. Each has a non-mutating plan and a separate execution mode;
 it retains protected configuration backups for rollback. The caller checks
-device reconnection and the intended directory through MCP afterwards. Windows
-supports at most five selected roots. The VPS operator accepts at most four
+device reconnection and the intended directory through MCP afterwards. The
+Windows source supports up to sixteen selected roots; an installed release may
+still have the previous five-root limit until it is updated. The VPS operator accepts at most four
 additional roots and refuses directories the service identity cannot already
 traverse and write; it does not grant ACLs or change owners. Private Second
 Brain vault access remains excluded. These host operators are not currently a
