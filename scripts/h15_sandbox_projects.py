@@ -100,7 +100,7 @@ def inspect(name: str, root: Path = ROOT, *, git_timeout: float = 10) -> dict:
             'verification_required_before_write': True}
 
 
-def discover(root: Path = ROOT, *, max_entries: int = 128, max_projects: int = 16,
+def discover(root: Path = ROOT, *, max_entries: int = 128, max_projects: int = 32,
              seconds: float = 3) -> dict:
     if root.is_symlink() or not root.is_dir():
         raise ProjectError('sandbox_root_missing')

@@ -39,7 +39,16 @@ branch, refuses to overwrite an existing project, and leaves sandbox networking
 unchanged. Subprocesses do not create Windows console windows. A failed import
 can leave its marked staging directory or an incomplete new target for operator
 inspection; it does not delete an existing checkout. It does not support private
-repositories or automatic import initiated solely by the ChatGPT MCP client.
+repositories.
+
+The live `import_public_project` MCP tool also lets ChatGPT request this
+public-repository import without running a host command. On 2026-11-28,
+ChatGPT imported `MikeMoore1337/crypto-ema-bot` into the Windows sandbox and
+Codex resolved the resulting clean checkout on `master` at
+`61a0ff6884f9707d38609b0eb5918d5cbb690621`. This is a sandbox copy, not
+registration of an original host directory. Imports must not overwrite an
+existing project and remain subject to the helper's public-repository and
+size checks.
 
 The live import of `reminder-bot` on 2026-11-25 returned a clean `master` at
 `4e89a2ab2f0c3070f6ab873cb3651556d2dfb57b`; both clients subsequently

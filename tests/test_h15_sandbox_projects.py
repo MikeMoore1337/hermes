@@ -3,6 +3,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from scripts.h15_sandbox_projects import ProjectError, discover, inspect
 
@@ -94,6 +95,15 @@ class SandboxProjectTests(unittest.TestCase):
         result = discover(self.root, max_entries=1)
         self.assertTrue(result['incomplete'])
         self.assertLessEqual(len(result['projects']), 1)
+
+    def test_discover_handles_more_than_sixteen_projects_and_remains_bounded(self):
+        for index in range(33):
+            (self.root / f'project-{index:02}').mkdir()
+        with patch('scripts.h15_sandbox_projects.inspect',
+                   side_effect=lambda name, root, git_timeout: {'workspace': name}):
+            result = discover(self.root, seconds=10)
+        self.assertEqual(len(result['projects']), 32)
+        self.assertTrue(result['incomplete'])
 
     def test_discover_reports_unexamined_worktree(self):
         project = self.root / 'linked-project'
