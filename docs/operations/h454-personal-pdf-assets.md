@@ -18,7 +18,9 @@ the selected archive members before adding them to a disposable release's
 `third_party` directory. The normal release manifest must cover the resulting
 files. Staging does not download dependencies or execute package hooks.
 
-The initial tool supports creating a **new** PDF from text or basic Markdown.
-It rejects overwrites, images, HTML markup, custom PDF options, unsupported
-glyphs and PDF modification operations. It does not render HTML/CSS or fetch resources. These
-are explicit feature limits, not full `write_pdf` parity.
+The tool creates a **new** PDF from basic Markdown and approved local PNG or
+JPEG images. It can insert or delete pages in an existing PDF into a distinct,
+new output file, and supports page size, margins and landscape orientation.
+It rejects overwrites, unsupported glyphs, HTML/CSS and network resources.
+Other browser print options and HTML/CSS rendering remain unsupported; this is
+not full `write_pdf` parity.

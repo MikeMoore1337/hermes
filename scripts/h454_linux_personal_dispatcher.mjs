@@ -54,7 +54,7 @@ async function authorize(name, args) {
   if (name === 'read_multiple_files') paths = args.paths;
   if (name === 'edit_block') paths = [args.file_path];
   if (name === 'move_file') paths = [args.source, args.destination];
-  if (name === 'write_pdf') paths = [args.path, args.outputPath ?? args.path];
+  if (name === 'write_pdf') paths = (await import('./scripts/h454_personal_pdf.mjs')).personalPdfPaths(args);
   if (!Array.isArray(paths) || paths.length > 32 || (name === 'read_file' && args.isUrl === true))
     throw Error('CALL_DENIED');
   for (const item of paths) await checkPath(item);
@@ -87,7 +87,7 @@ async function main() {
       await configManager.setValue('telemetryEnabled', false);
       await configManager.setValue('allowedDirectories', roots);
       const tools = listTools().filter(tool => allowed.has(tool.name)).map(tool => tool.name === 'write_pdf'
-        ? { ...tool, description: 'Create a new PDF from text or basic Markdown without a browser. Existing files are not overwritten. Images, custom options and modifying PDFs are not supported.' }
+        ? { ...tool, description: 'Create or modify a PDF from basic Markdown and local PNG/JPEG images without a browser. Page insertion and deletion require a new output file. Supports page format, dimensions, margins and landscape; HTML/CSS and other options are not supported.' }
         : tool);
       if (tools.length !== allowed.size || new Set(tools.map(tool => tool.name)).size !== tools.length)
         throw Error('TOOLS_DENIED');
