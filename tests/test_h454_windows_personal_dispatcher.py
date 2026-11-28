@@ -13,13 +13,33 @@ from device_fabric.windows_personal_commander_pipe import PersonalCommanderPipe,
 
 ROOT = Path(__file__).resolve().parents[1]
 ADAPTER = ROOT / "scripts/h454_windows_personal_dispatcher.mjs"
-TOOLS = ["read_file", "read_multiple_files", "write_file", "edit_block", "create_directory",
+TOOLS = ["read_file", "read_multiple_files", "write_file", "write_pdf", "edit_block", "create_directory",
          "list_directory", "move_file", "get_file_info", "start_process", "read_process_output",
          "interact_with_process", "force_terminate", "list_sessions", "start_search",
          "get_more_search_results", "stop_search", "list_searches"]
 
 
 class PersonalDispatcherTests(unittest.TestCase):
+    def test_pdf_rejects_unapproved_output_and_unsupported_markup(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary).resolve()
+            project, outside = base / 'project', base / 'outside'
+            project.mkdir()
+            outside.mkdir()
+            frames = [{'type': 'initialize', 'roots': [str(project)]},
+                      {'type': 'call', 'id': 'foreign', 'name': 'write_pdf', 'args': {
+                          'path': str(project / 'doc.pdf'), 'outputPath': str(outside / 'doc.pdf'),
+                          'content': 'fixture'}},
+                      {'type': 'call', 'id': 'image', 'name': 'write_pdf', 'args': {
+                          'path': str(project / 'image.pdf'), 'content': '![image](image.png)'}}]
+            result = self.run_adapter(base, frames)
+            by_id = {item['id']: item['result'] for item in result[1:]}
+            self.assertTrue(by_id['foreign']['isError'])
+            self.assertTrue(by_id['image']['isError'])
+            self.assertIn('H454_PDF_MARKUP_UNSUPPORTED', str(by_id['image']))
+            self.assertFalse((outside / 'doc.pdf').exists())
+            self.assertFalse((project / 'image.pdf').exists())
+
     def make_bundle(self, base: Path):
         bundle = base / "bundle"
         core = bundle / "core"

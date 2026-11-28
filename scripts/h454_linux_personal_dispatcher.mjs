@@ -12,7 +12,7 @@ const MAX_FRAME = 1024 * 1024;
 const ROOT = '/workspace';
 let roots = null;
 const allowed = new Set([
-  'read_file', 'read_multiple_files', 'write_file', 'edit_block',
+  'read_file', 'read_multiple_files', 'write_file', 'write_pdf', 'edit_block',
   'create_directory', 'list_directory', 'move_file', 'get_file_info',
   'start_search', 'get_more_search_results', 'stop_search', 'list_searches',
   'start_process', 'read_process_output', 'interact_with_process',
@@ -54,6 +54,7 @@ async function authorize(name, args) {
   if (name === 'read_multiple_files') paths = args.paths;
   if (name === 'edit_block') paths = [args.file_path];
   if (name === 'move_file') paths = [args.source, args.destination];
+  if (name === 'write_pdf') paths = [args.path, args.outputPath ?? args.path];
   if (!Array.isArray(paths) || paths.length > 32 || (name === 'read_file' && args.isUrl === true))
     throw Error('CALL_DENIED');
   for (const item of paths) await checkPath(item);
@@ -85,7 +86,9 @@ async function main() {
       await configManager.init();
       await configManager.setValue('telemetryEnabled', false);
       await configManager.setValue('allowedDirectories', roots);
-      const tools = listTools().filter(tool => allowed.has(tool.name));
+      const tools = listTools().filter(tool => allowed.has(tool.name)).map(tool => tool.name === 'write_pdf'
+        ? { ...tool, description: 'Create a new PDF from text or basic Markdown without a browser. Existing files are not overwritten. Images, custom options and modifying PDFs are not supported.' }
+        : tool);
       if (tools.length !== allowed.size || new Set(tools.map(tool => tool.name)).size !== tools.length)
         throw Error('TOOLS_DENIED');
       send({ type: 'ready', tools });
@@ -97,10 +100,14 @@ async function main() {
       throw Error('FRAME_DENIED');
     try {
       const args = await authorize(frame.name, frame.args);
-      send({ type: 'result', id: frame.id, result: await callTool(frame.name, args) });
-    } catch {
+      const result = frame.name === 'write_pdf'
+        ? await (await import('./scripts/h454_personal_pdf.mjs')).createPersonalPdf(args)
+        : await callTool(frame.name, args);
+      send({ type: 'result', id: frame.id, result });
+    } catch (error) {
       send({ type: 'result', id: frame.id, result: { isError: true,
-        content: [{ type: 'text', text: 'H454_PERSONAL_CALL_DENIED' }] } });
+        content: [{ type: 'text', text: error?.message?.startsWith('H454_PDF_')
+          ? error.message : 'H454_PERSONAL_CALL_DENIED' }] } });
     }
   }
 }
