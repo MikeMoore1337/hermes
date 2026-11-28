@@ -50,6 +50,17 @@ class PersonalLinuxConfigTests(unittest.TestCase):
             with self.subTest(projects=projects), self.assertRaises(config.PersonalLinuxConfigDenied):
                 config.parse(encode({**data, 'projects': projects}), target='yfc-vps')
 
+    def test_more_than_four_roots_survive_config_parsing_and_dispatch_limit(self):
+        from device_fabric.linux_personal_sandbox import MAX_ADDITIONAL_PROJECTS
+        projects = [{'name': f'p{i:02}', 'path': f'/opt/project{i:02}'}
+                    for i in range(MAX_ADDITIONAL_PROJECTS)]
+        data = {**self.data, 'schema': config.MULTI_SCHEMA, 'projects': projects}
+        result = config.parse(encode(data), target='yfc-vps')
+        self.assertEqual(len(result.additional_projects), MAX_ADDITIONAL_PROJECTS)
+        data['projects'] = projects + [{'name': 'pz', 'path': '/opt/extra'}]
+        with self.assertRaises(config.PersonalLinuxConfigDenied):
+            config.parse(encode(data), target='yfc-vps')
+
 
 if __name__ == '__main__':
     unittest.main()

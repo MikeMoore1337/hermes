@@ -76,7 +76,7 @@ async function main() {
     if (!initialized) {
       if (!frame || Object.keys(frame).sort().join(',') !== 'roots,type' ||
           frame.type !== 'initialize' || !Array.isArray(frame.roots) ||
-          frame.roots.length < 1 || frame.roots.length > 5 || frame.roots[0] !== ROOT ||
+          frame.roots.length < 1 || frame.roots.length > 16 || frame.roots[0] !== ROOT ||
           frame.roots.slice(1).some(root => typeof root !== 'string' ||
             !/^\/projects\/[a-z][a-z0-9-]{0,63}$/.test(root)) ||
           new Set(frame.roots).size !== frame.roots.length) throw Error('INIT_DENIED');

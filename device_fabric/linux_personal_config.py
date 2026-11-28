@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import json
 import re
 
-from device_fabric.linux_personal_sandbox import _project_path, validate_projects
+from device_fabric.linux_personal_sandbox import MAX_ADDITIONAL_PROJECTS, _project_path, validate_projects
 from device_fabric.linux_personal_status import IDENTITIES
 from device_fabric.native_brc_enrollment import _unique
 
@@ -60,7 +60,7 @@ def parse(raw: bytes, *, target: str) -> PersonalLinuxConfig:
         additional = ()
         if data['schema'] == MULTI_SCHEMA:
             items = data['projects']
-            if (type(items) is not list or not 1 <= len(items) <= 4 or
+            if (type(items) is not list or not 1 <= len(items) <= MAX_ADDITIONAL_PROJECTS or
                     any(type(item) is not dict or set(item) != {'name', 'path'} for item in items)):
                 raise ValueError()
             additional = tuple((item['name'], item['path']) for item in items)
