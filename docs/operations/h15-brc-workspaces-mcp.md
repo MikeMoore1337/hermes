@@ -54,6 +54,28 @@ folders or reach either production VPS host. The returned
 `verification_required_before_write=true` remains deliberate: a catalog
 entry alone does not attest the current working-tree state.
 
+## Original personal projects
+
+The personal-device source also supports separately authorized original
+projects. Once a directory is registered on the device, discovery reports
+aliases such as `financial-horizon-windows`, `<name>-hermes-vps`, and
+`<name>-yfc-vps`. These names are device-specific; they do not replace the
+existing sandbox aliases. A discovered entry is not proof of its Git branch,
+origin, or clean state. A list request starts a short-lived confined terminal
+on each online personal device and may take longer on Windows.
+
+For an authorized owner request, Codex can use
+`scripts/h454_windows_personal_add_project.py` on the Windows owner host or
+`scripts/h454_linux_personal_add_project.py` as the local root operator on the
+appropriate VPS. Each has a non-mutating plan and a separate execution mode;
+it retains protected configuration backups for rollback. The caller checks
+device reconnection and the intended directory through MCP afterwards. Windows
+supports at most five selected roots. The VPS operator accepts at most four
+additional roots and refuses directories the service identity cannot already
+traverse and write; it does not grant ACLs or change owners. Private Second
+Brain vault access remains excluded. These host operators are not currently a
+ChatGPT-only self-service registration flow.
+
 ## Safe use in ChatGPT or Codex
 
 1. In a fresh client session, call `list_workspaces`, then
