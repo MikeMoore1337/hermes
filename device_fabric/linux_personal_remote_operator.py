@@ -14,8 +14,8 @@ import runpy
 import stat
 import sys
 
-RELEASE = 'efc34636626765f0274422f18651daa38e358af1'
-MANIFEST_SHA256 = 'da5af6f2dcb593680c891c97e2e766ebb45ee23914550f5d631c736b3f324b60'
+RELEASE = 'f53f9afec2c163ceca2bd41e958a077155655575'
+MANIFEST_SHA256 = '59d2a5e47c48e76c8a21f9ac6a71a450801f5ab9ed7f3a4a8c2c07e30ec6f86b'
 ROOT = Path('/opt/hermes-commander-personal/admin-releases') / ('main-' + RELEASE)
 NAME = re.compile(r'[a-z][a-z0-9-]{0,63}\Z')
 
