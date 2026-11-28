@@ -161,6 +161,7 @@ assert.equal((await api.discoveredPersonalWorkspaceAction({project:'random'},per
 for (const bad of [winEnv(['D:/Pet-projects/yfc-dev','D:/Pet-projects/second-brain-workspace']),
  winEnv(['D:/Pet-projects/yfc-dev','D:/Pet-projects/yfc-dev/sub']),
  winEnv(['D:/Pet-projects/yfc-dev','D:/Pet-projects/vault']),
+ winEnv(['D:/Pet-projects/yfc-dev','D:/Pet-projects/hermes/.artifacts']),
  winEnv(['D:/Pet-projects/yfc-dev','D:/Pet-projects/financial-horizon']).replace('safe.directory','unsafe'),
  winEnv(['D:/Pet-projects/yfc-dev','D:/Pet-projects/financial-horizon'])+'GIT_CONFIG_COUNT=2\\n']) {
  const response=async()=>({ok:true,result:{content:[{type:'text',text:bad}]}});

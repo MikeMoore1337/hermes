@@ -33,13 +33,13 @@ const ID = /^[A-Za-z0-9_-]{8,128}$/;
 const PROJECT_NAME = /^[a-z][a-z0-9-]{1,79}$/;
 export const LIST_WORKSPACES_TOOL = {
   name: 'list_workspaces',
-  description: 'List approved development workspaces and actual device connectivity. Does not verify Git.',
+  description: 'List approved workspaces and actual device connectivity. Discovery runs short read-only terminal commands. Does not verify Git.',
   inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   annotations: { title: 'List Hermes workspaces', readOnlyHint: true },
 };
 export const RESOLVE_WORKSPACE_TOOL = {
   name: 'resolve_workspace',
-  description: 'Find an approved project by name. Original Windows aliases: hermes-windows and yfc-windows. Original VPS projects have explicit aliases; VPS dev aliases are separate sandbox copies. Check Git before writing.',
+  description: 'Find an approved project by name. Original aliases use <project>-windows, <project>-hermes-vps, or <project>-yfc-vps; VPS dev aliases are sandbox copies. Check Git before writing.',
   inputSchema: { type: 'object', properties: {
     project: { type: 'string', minLength: 1, maxLength: 100 } },
     required: ['project'], additionalProperties: false },
@@ -305,7 +305,7 @@ function windowsOriginalRoot(value: string): string | null {
   const parts=match[1].split('/');
   if (parts.some(p => !p || p==='.' || p==='..' || /[\\:*?"<>|\x00-\x1f]/.test(p)
       || /[ .]$/.test(p) || /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i.test(p)
-      || /second-brain|vault/i.test(p) || /^(?:\.ssh|\.aws|\.gnupg|\.kube|secrets|credentials)$/i.test(p))) return null;
+      || /second-brain|vault/i.test(p) || /^(?:\.ssh|\.aws|\.gnupg|\.kube|\.artifacts|\.codex|\.agents|secrets|credentials)$/i.test(p))) return null;
   return value.replace(/\//g,'\\');
 }
 function rootsFromTerminal(target:PersonalTarget, reply:unknown): string[] | null {
