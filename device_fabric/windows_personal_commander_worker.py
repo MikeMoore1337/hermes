@@ -111,7 +111,12 @@ def serve(raw_config: bytes, *, current_sid: Callable[[], str], ca: bytes,
                 failures = 0
                 pause(1)
             except PersonalTransportDenied:
-                if failed:
+                # The dispatcher can also die while no call is in flight. In
+                # that case the isolation check fails before dispatch is ever
+                # entered, so detect its observed exit separately. A fresh run
+                # revalidates the bundle, grant, roots and confinement.
+                poll = getattr(process, "poll", None)
+                if failed or (callable(poll) and poll() is not None):
                     return "dispatcher_failed"
                 if isolation_verified() is not True:
                     return "isolation_lost"

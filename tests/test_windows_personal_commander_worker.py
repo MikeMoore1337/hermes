@@ -104,6 +104,19 @@ class PersonalWorkerTests(unittest.TestCase):
         self.assertEqual(run.call_count, 1)
         self.assertTrue(self.bridge.closed)
 
+    def test_idle_dispatcher_exit_requests_fresh_worker_without_replaying(self):
+        class ExitedProcess:
+            def poll(self):
+                return 1
+        states = iter((True, False))
+        self.args["isolation_verified"] = lambda: next(states)
+        self.args["start_dispatcher"] = lambda: ExitedProcess()
+        with patch.object(worker, "PersonalCommanderPipe", return_value=self.bridge), \
+             patch.object(worker, "run_session", side_effect=PersonalTransportDenied("synthetic")) as run:
+            self.assertEqual(worker.serve(self.raw, **self.args), "dispatcher_failed")
+        self.assertEqual(run.call_count, 1)
+        self.assertTrue(self.bridge.closed)
+
     def test_import_call_is_advertised_and_dispatched_to_owned_broker(self):
         class Broker:
             closed = False
