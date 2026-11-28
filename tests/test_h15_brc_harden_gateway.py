@@ -93,8 +93,9 @@ class GatewayPolicyTests(unittest.TestCase):
         code = """const assert=require('node:assert/strict'), p=require(process.argv[1]);
 assert.equal(p.isPermittedRemoteTool('import_public_project',{deviceId:'h454-win-personal-'+'a'.repeat(32)}),true);
 assert.equal(p.isPermittedRemoteTool('connect_original_vps_project',{deviceId:'h454-win-personal-'+'a'.repeat(32)}),true);
+assert.equal(p.isPermittedRemoteTool('connect_original_windows_project',{deviceId:'h454-win-personal-'+'a'.repeat(32)}),true);
 for(const args of [{},{deviceId:'h15-win-'+'a'.repeat(12)},{deviceId:'h454-win-native-'+'a'.repeat(32)}])
-  for(const name of ['import_public_project','connect_original_vps_project'])
+  for(const name of ['import_public_project','connect_original_vps_project','connect_original_windows_project'])
     assert.equal(p.isPermittedRemoteTool(name,args),false);
 """
         result = subprocess.run([node, '-e', code, str(module)], capture_output=True, text=True, timeout=15)

@@ -114,3 +114,76 @@ if os.name == "nt":
                 self.assertIs(run.call_args_list[0].kwargs['claim_call'], replay.claim)
                 self.assertIs(run.call_args_list[1].kwargs['claim_call'], replay.claim)
                 sleep.assert_called_once_with(60)
+
+        def test_registration_reloads_changed_config_and_restores_on_startup_failure(self):
+            package = types.ModuleType('websockets'); package.__path__ = []
+            sync = types.ModuleType('websockets.sync'); sync.__path__ = []
+            client = types.ModuleType('websockets.sync.client'); client.connect = lambda *_a, **_k: None
+            modules = {'websockets': package, 'websockets.sync': sync, 'websockets.sync.client': client}
+            private = self.base / entry.APP_NAME / 'worker-private'
+            config_path = private / 'device.json'
+            old_raw = config_path.read_bytes()
+            paired = Paired('windows-personal', DEVICE, TOKEN, 'wss://hermes.mikemoore.top/ws')
+            next_raw = config.prepare_config(paired, owner_sid=SID, release_sha='d' * 40, ca=CA,
+                bundle_sha256=DIGEST, now=1000, profile='owner-projects',
+                roots=(r'D:\Pet-projects\yfc-dev', r'D:\Pet-projects\example'), seal=lambda *_a, **_k: b's' * 64)
+            seen = []
+            def fake_run(raw, **_kwargs):
+                seen.append(raw)
+                if len(seen) == 1:
+                    config_path.write_bytes(next_raw)
+                    return 'reload_requested'
+                if len(seen) == 2:
+                    raise ValueError('synthetic startup failure')
+                return 'grant_inactive'
+            def restore(_private, _sid, current, previous):
+                self.assertEqual(config_path.read_bytes(), current)
+                config_path.write_bytes(previous)
+                return 'project-registration-' + 'a' * 32
+            with patch.dict(sys.modules, modules), patch.object(sys, 'path', list(sys.path)), \
+                 patch.object(entry, 'load_ca', return_value=CA), patch.object(entry.bundle, 'verify', return_value=DIGEST), \
+                 patch.object(entry.private_tls, 'private_websocket_connector', return_value=lambda *_a, **_k: None), \
+                 patch.object(entry, 'PersonalReplay', return_value=types.SimpleNamespace(claim=lambda _id: True)), \
+                 patch.object(entry, 'current_sid', return_value=SID), patch.object(entry.config, 'unseal', return_value=TOKEN), \
+                 patch.object(entry, 'attach_current_worker'), patch.object(entry, 'commit_config', side_effect=restore) as rollback, \
+                 patch.object(entry, 'run', side_effect=fake_run), patch.object(entry.time, 'sleep'):
+                self.assertEqual(entry.main(['--run']), 0)
+            self.assertEqual(seen, [old_raw, next_raw, old_raw])
+            rollback.assert_called_once_with(private, SID, next_raw, old_raw)
+            self.assertEqual(config_path.read_bytes(), old_raw)
+
+        def test_registration_transaction_reloads_the_persisted_config(self):
+            from device_fabric.windows_personal_project_hot_registration import WindowsProjectRegistration, commit_config
+            from scripts.h454_windows_personal_worker import current_sid
+            package = types.ModuleType('websockets'); package.__path__ = []
+            sync = types.ModuleType('websockets.sync'); sync.__path__ = []
+            client = types.ModuleType('websockets.sync.client'); client.connect = lambda *_a, **_k: None
+            modules = {'websockets': package, 'websockets.sync': sync, 'websockets.sync.client': client}
+            private = self.base / entry.APP_NAME / 'worker-private'
+            path = private / 'device.json'
+            old_raw = path.read_bytes()
+            paired = Paired('windows-personal', DEVICE, TOKEN, 'wss://hermes.mikemoore.top/ws')
+            next_raw = config.prepare_config(paired, owner_sid=SID, release_sha='d' * 40, ca=CA,
+                bundle_sha256=DIGEST, now=1000, profile='owner-projects',
+                roots=(r'D:\Pet-projects\yfc-dev', r'D:\Pet-projects\example'), seal=lambda *_a, **_k: b's' * 64)
+            actual_sid, seen, replies = current_sid(), [], []
+            project = WindowsProjectRegistration(old_raw, prepare=lambda *_a: next_raw, validate=lambda _v: None,
+                commit=lambda old, new: commit_config(private, actual_sid, old, new),
+                read_current=path.read_bytes, has_sessions=lambda: False)
+            def fake_run(raw, **_kwargs):
+                seen.append(raw)
+                if len(seen) == 1:
+                    replies.append(project.dispatch({'path': r'D:\Pet-projects\example', 'mode': 'execute'}))
+                    self.assertTrue(project.reload_pending())
+                    return 'reload_requested'
+                return 'grant_inactive'
+            with patch.dict(sys.modules, modules), patch.object(sys, 'path', list(sys.path)), \
+                 patch.object(entry, 'load_ca', return_value=CA), patch.object(entry.bundle, 'verify', return_value=DIGEST), \
+                 patch.object(entry.private_tls, 'private_websocket_connector', return_value=lambda *_a, **_k: None), \
+                 patch.object(entry, 'PersonalReplay', return_value=types.SimpleNamespace(claim=lambda _id: True)), \
+                 patch.object(entry, 'current_sid', return_value=SID), patch.object(entry.config, 'unseal', return_value=TOKEN), \
+                 patch.object(entry, 'attach_current_worker'), patch.object(entry, 'run', side_effect=fake_run):
+                self.assertEqual(entry.main(['--run']), 0)
+            self.assertEqual(seen, [old_raw, next_raw])
+            self.assertFalse(replies[0]['isError'])
+            self.assertEqual(path.read_bytes(), next_raw)

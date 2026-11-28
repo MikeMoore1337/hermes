@@ -18,6 +18,7 @@ from device_fabric.windows_personal_appcontainer_pipe import PersonalAppContaine
 from device_fabric.windows_personal_project_scan import scan
 from device_fabric.windows_personal_project_import import PublicProjectImport
 from device_fabric.windows_personal_vps_registration import from_owner_state as load_vps_registration
+from device_fabric.windows_personal_project_hot_registration import WindowsProjectRegistration, commit_config
 from device_fabric.windows_personal_terminal_sessions import PersonalTerminalSessions
 from device_fabric.windows_personal_yfc_psec import APP_NAME, GIT_ROOT, YFC_DEV, YfcDevPsecTerminal
 
@@ -116,6 +117,39 @@ def run(raw_config: bytes, *, ca: bytes, expected_manifest: bytes,
                 return False
         broker = PersonalTerminalSessions(1, roots[0],
             factory=lambda _sid, _root, command: terminal(command))
+        private = base / 'worker-private'
+        def read_config():
+            # Lazy import avoids an entry -> runner -> entry import cycle.
+            from scripts.h454_windows_personal_yfc_entry import _read_private
+            return _read_private(private, 'device.json', config.MAX_CONFIG_BYTES)
+        def prepare_project(raw, path):
+            options = {'decrypt': decrypt} if decrypt is not None else {}
+            return config.add_project(raw, path, owner_sid=current_sid(), ca=ca,
+                                      bundle_sha256=candidate.bundle_sha256, **options)
+        def validate_project(raw):
+            proposed = config.parse_config(raw)
+            options = {'decrypt': decrypt} if decrypt is not None else {}
+            config.unseal(proposed, owner_sid=current_sid(), ca=ca,
+                          bundle_sha256=candidate.bundle_sha256, **options)
+            proposed_roots = config.roots_for(proposed.profile, roots=proposed.roots)
+            test = YfcDevPsecTerminal(proposed_roots[0], command='exit /b 0',
+                writable=(str(state), *proposed_roots[1:]), readonly=(str(release), str(GIT_ROOT)),
+                project_roots=proposed_roots)
+            try:
+                deadline = time.monotonic() + 10
+                while test.poll() is None and time.monotonic() < deadline:
+                    pause(0.02)
+                if test.poll() != 0:
+                    raise ValueError()
+            finally:
+                test.close()
+        def has_sessions():
+            result = broker.dispatch('list_sessions', {})
+            return result.get('isError') is not False or result.get('content') != [
+                {'type': 'text', 'text': 'No active sessions'}]
+        project_registration = WindowsProjectRegistration(raw_config, prepare=prepare_project,
+            validate=validate_project, commit=lambda old, new: commit_config(private, current_sid(), old, new),
+            read_current=read_config, has_sessions=has_sessions)
         importer = PublicProjectImport(release / 'code' / 'scripts' / 'h15_offline_project_import.py')
         try:
             vps_registration = load_vps_registration(base / 'worker-private', release,
@@ -130,7 +164,7 @@ def run(raw_config: bytes, *, ca: bytes, expected_manifest: bytes,
             attach_job=attach_job, start_dispatcher=start_dispatcher,
             connector=connector, status_factory=status_factory, claim_call=claim_call,
             pause=pause, terminal_broker=broker, bridge_factory=PersonalAppContainerPipe, import_broker=importer,
-            vps_broker=vps_registration,
+            vps_broker=vps_registration, project_broker=project_registration,
             **options)
     except Exception:
         raise YfcRunnerDenied("yfc_runner_denied") from None

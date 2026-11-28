@@ -72,6 +72,13 @@ export const CONNECT_ORIGINAL_VPS_TOOL = {
   },required:['target','name','path','mode'],additionalProperties:false},
   annotations:{title:'Connect an original VPS project',readOnlyHint:false},
 };
+export const CONNECT_ORIGINAL_WINDOWS_TOOL = {
+  name:'connect_original_windows_project',
+  description:'Plan or register an existing original Windows project folder. Execution reconnects the personal device and must be verified afterwards; interrupted calls must not be repeated automatically.',
+  inputSchema:{type:'object',properties:{path:{type:'string',minLength:1,maxLength:2048},
+    mode:{type:'string',enum:['plan','execute']}},required:['path','mode'],additionalProperties:false},
+  annotations:{title:'Connect an original Windows project',readOnlyHint:false},
+};
 function ownerDevice(devices: unknown): Device | null {
   if (!Array.isArray(devices) || devices.length > 25) return null;
   const matches = devices.filter(d => d && typeof d === 'object' && d.name === DEVICE_NAME);
@@ -102,6 +109,35 @@ function personalVpsDevice(devices: unknown, name: string, id: RegExp): Device |
 }
 function isReady(d: Device | null): boolean {
   return !!d && d.online === true && d.paused === false;
+}
+export async function connectOriginalWindowsProject(args:unknown,devices:unknown,
+  invoke:(tool:string,input:Record<string,unknown>)=>Promise<unknown>):Promise<Record<string,unknown>> {
+  if (!args || typeof args!=='object' || Array.isArray(args)) return {schema:1,status:'refused',reason:'invalid_arguments'};
+  const data=args as Record<string,unknown>;
+  const path=typeof data.path==='string' ? windowsOriginalRoot(data.path.replace(/\\/g,'/')) : null;
+  if (Object.keys(data).sort().join(',')!=='mode,path' || typeof data.path!=='string'
+      || !path || (data.mode!=='plan' && data.mode!=='execute'))
+    return {schema:1,status:'refused',reason:'invalid_arguments'};
+  const device=personalDevice(devices);
+  if (!isReady(device)) return {schema:1,status:'refused',reason:'personal_device_unavailable'};
+  try {
+    const response=await invoke('connect_original_windows_project',{...data,path,deviceId:device!.deviceId});
+    const outer=response as {ok?:unknown;result?:{content?:unknown}};
+    if (!outer || outer.ok!==true || !outer.result || !Array.isArray(outer.result.content) || outer.result.content.length!==1) throw Error();
+    const first=outer.result.content[0] as {type?:unknown;text?:unknown};
+    if (!first || first.type!=='text' || typeof first.text!=='string' || first.text.length>4096) throw Error();
+    const result=JSON.parse(first.text) as Record<string,unknown>;
+    if (!result || typeof result!=='object' || Array.isArray(result)) throw Error();
+    if (result.status==='plan_pass' && data.mode==='plan') return {schema:1,status:'plan_pass'};
+    if (result.status==='already_configured') return {schema:1,status:'already_configured',verification_required:true};
+    if (result.status==='applied' && data.mode==='execute' && typeof result.backup==='string'
+        && /^project-registration-[a-f0-9]{32}$/.test(result.backup))
+      return {schema:1,status:'applied',backup:result.backup,device_reconnecting:true,verification_required:true};
+    if (result.status==='unknown') return {schema:1,status:'unknown',reason:'operation_unconfirmed_do_not_retry'};
+    if (result.status==='refused') return {schema:1,status:'refused',
+      reason:result.reason==='active_sessions' ? 'active_sessions' : 'registration_denied'};
+    throw Error();
+  } catch { return {schema:1,status:'unknown',reason:'operation_unconfirmed_do_not_retry'}; }
 }
 export async function connectOriginalVpsProject(args:unknown,devices:unknown,
   invoke:(tool:string,input:Record<string,unknown>)=>Promise<unknown>):Promise<Record<string,unknown>> {

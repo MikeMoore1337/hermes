@@ -19,7 +19,7 @@ MODULE = BASE / "hermes-native-read-gate.ts"
 TEMPLATE = Path(__file__).resolve().parents[1] / "deploy/h15/hermes-native-read-gate.template.ts"
 
 from scripts.h15_brc_workspace_gateway import NEWIMP as SERVER_IMPORT
-SERVER_LIST = "      LIST_WORKSPACES_TOOL, RESOLVE_WORKSPACE_TOOL, CONNECT_SANDBOX_TOOL, IMPORT_PUBLIC_TOOL, CONNECT_ORIGINAL_VPS_TOOL] };"
+SERVER_LIST = "      LIST_WORKSPACES_TOOL, RESOLVE_WORKSPACE_TOOL, CONNECT_SANDBOX_TOOL, IMPORT_PUBLIC_TOOL, CONNECT_ORIGINAL_VPS_TOOL, CONNECT_ORIGINAL_WINDOWS_TOOL] };"
 INVOKE_IMPORT = "import { isPermittedRemoteTool } from './hermes-policy.js';"
 GATE = "  if (!isPermittedRemoteTool(tool, args)) {"
 PAUSED_START = "  if (store.getDevice(deviceId)?.paused) return { ok: false, status: 423, message: "
@@ -65,7 +65,7 @@ def apply(root: Path, sha: str = UPSTREAM_SHA) -> dict:
     new_server = server.replace(SERVER_IMPORT, SERVER_IMPORT +
         "\nimport { originalWindowsReadToolCatalog } from './hermes-native-read-gate.js';")
     new_server = new_server.replace(SERVER_LIST,
-        "      LIST_WORKSPACES_TOOL, RESOLVE_WORKSPACE_TOOL, CONNECT_SANDBOX_TOOL, IMPORT_PUBLIC_TOOL, CONNECT_ORIGINAL_VPS_TOOL,\n"
+        "      LIST_WORKSPACES_TOOL, RESOLVE_WORKSPACE_TOOL, CONNECT_SANDBOX_TOOL, IMPORT_PUBLIC_TOOL, CONNECT_ORIGINAL_VPS_TOOL, CONNECT_ORIGINAL_WINDOWS_TOOL,\n"
         "      ...originalWindowsReadToolCatalog()] };")
     new_invoke = invoke.replace(INVOKE_IMPORT, INVOKE_IMPORT +
         "\nimport { isNativeOriginalReadTool, nativeDeviceId,"
