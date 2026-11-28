@@ -148,9 +148,10 @@ const winPlan=async(tool,args)=>{winCalls.push({tool,args});return {ok:true,resu
 assert.equal((await api.connectOriginalWindowsProject(winArgs,[personal],winPlan)).status,'plan_pass');
 assert.equal(winCalls[0].tool,'connect_original_windows_project'); assert.equal(winCalls[0].args.deviceId,personal.deviceId);
 assert.equal(winCalls[0].args.path,'D:\\\\Pet-projects\\\\example');
+assert.equal((await api.connectOriginalWindowsProject({...winArgs,path:'D:\\\\Pet-projects\\\\example'},[personal],winPlan)).status,'plan_pass');
 assert.equal((await api.connectOriginalWindowsProject({...winArgs,path:'D:/Pet-projects/vault'},[personal],winPlan)).status,'refused');
 assert.equal((await api.connectOriginalWindowsProject(winArgs,[{...personal,online:false}],winPlan)).reason,'personal_device_unavailable');
-assert.equal(winCalls.length,1);
+assert.equal(winCalls.length,2);
 const winApplied=async()=>({ok:true,result:{content:[{type:'text',text:JSON.stringify({status:'applied',backup:'project-registration-'+'a'.repeat(32)})}]}});
 const winResult=await api.connectOriginalWindowsProject({...winArgs,mode:'execute'},[personal],winApplied);
 assert.equal(winResult.status,'applied'); assert.equal(winResult.device_reconnecting,true); assert.equal(winResult.verification_required,true);

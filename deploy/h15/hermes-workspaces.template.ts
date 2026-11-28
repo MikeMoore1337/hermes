@@ -114,7 +114,7 @@ export async function connectOriginalWindowsProject(args:unknown,devices:unknown
   invoke:(tool:string,input:Record<string,unknown>)=>Promise<unknown>):Promise<Record<string,unknown>> {
   if (!args || typeof args!=='object' || Array.isArray(args)) return {schema:1,status:'refused',reason:'invalid_arguments'};
   const data=args as Record<string,unknown>;
-  const path=typeof data.path==='string' ? windowsOriginalRoot(data.path) : null;
+  const path=typeof data.path==='string' ? windowsOriginalRoot(data.path.replace(/\\/g,'/')) : null;
   if (Object.keys(data).sort().join(',')!=='mode,path' || typeof data.path!=='string'
       || !path || (data.mode!=='plan' && data.mode!=='execute'))
     return {schema:1,status:'refused',reason:'invalid_arguments'};
