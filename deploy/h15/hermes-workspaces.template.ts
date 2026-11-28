@@ -33,13 +33,13 @@ const ID = /^[A-Za-z0-9_-]{8,128}$/;
 const PROJECT_NAME = /^[a-z][a-z0-9-]{1,79}$/;
 export const LIST_WORKSPACES_TOOL = {
   name: 'list_workspaces',
-  description: 'List approved development workspaces and actual device connectivity. Does not verify Git.',
+  description: 'List approved workspaces and actual device connectivity. Discovery runs short read-only terminal commands. Does not verify Git.',
   inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   annotations: { title: 'List Hermes workspaces', readOnlyHint: true },
 };
 export const RESOLVE_WORKSPACE_TOOL = {
   name: 'resolve_workspace',
-  description: 'Find an approved project by name. Original Windows aliases: hermes-windows and yfc-windows. Original VPS projects have explicit aliases; VPS dev aliases are separate sandbox copies. Check Git before writing.',
+  description: 'Find an approved project by name. Original aliases use <project>-windows, <project>-hermes-vps, or <project>-yfc-vps; VPS dev aliases are sandbox copies. Check Git before writing.',
   inputSchema: { type: 'object', properties: {
     project: { type: 'string', minLength: 1, maxLength: 100 } },
     required: ['project'], additionalProperties: false },
@@ -281,6 +281,138 @@ export async function addPersonalWindowsWorkspaces(catalog: Record<string, unkno
     known.add(workspace.name);
   }
   return {...catalog, workspaces:entries};
+}
+
+// The confined terminal is started with its verified allowed roots in the
+// GIT_CONFIG_VALUE_n environment. Query only those fixed variables; never
+// derive access from arbitrary project files or a caller-provided path.
+const WINDOWS_ROOTS_COMMAND = 'set GIT_CONFIG';
+const LINUX_ROOTS_COMMAND = `printf 'H454_ROOTS=%s|%s|%s|%s|%s|%s\\n' "$GIT_CONFIG_COUNT" "$GIT_CONFIG_VALUE_0" "$GIT_CONFIG_VALUE_1" "$GIT_CONFIG_VALUE_2" "$GIT_CONFIG_VALUE_3" "$GIT_CONFIG_VALUE_4"`;
+type PersonalTarget = { device:Device; kind:'windows'|'hermes-vps'|'yfc-vps' };
+function personalTargets(devices:unknown): PersonalTarget[] {
+  const output:PersonalTarget[] = [], win=personalDevice(devices);
+  if (isReady(win)) output.push({device:win!,kind:'windows'});
+  for (const [index, kind] of [[0,'hermes-vps'],[1,'yfc-vps']] as const) {
+    const spec=PERSONAL_VPS_WORKSPACES[index];
+    const device=personalVpsDevice(devices,spec.deviceName,spec.deviceId);
+    if (isReady(device)) output.push({device:device!,kind});
+  }
+  return output;
+}
+function windowsOriginalRoot(value: string): string | null {
+  const match=/^D:\/Pet-projects\/(.+)$/i.exec(value);
+  if (!match || value.length>2048) return null;
+  const parts=match[1].split('/');
+  if (parts.some(p => !p || p==='.' || p==='..' || /[\\:*?"<>|\x00-\x1f]/.test(p)
+      || /[ .]$/.test(p) || /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i.test(p)
+      || /second-brain|vault/i.test(p) || /^(?:\.ssh|\.aws|\.gnupg|\.kube|\.artifacts|\.codex|\.agents|secrets|credentials)$/i.test(p))) return null;
+  return value.replace(/\//g,'\\');
+}
+function rootsFromTerminal(target:PersonalTarget, reply:unknown): string[] | null {
+  try {
+    const outer=reply as {ok?:unknown;result?:{isError?:unknown;content?:unknown}};
+    if (!outer || outer.ok!==true || !outer.result || outer.result.isError===true ||
+        !Array.isArray(outer.result.content) || outer.result.content.length!==1) throw Error();
+    const content=outer.result.content[0] as {type?:unknown;text?:unknown};
+    if (!content || content.type!=='text' || typeof content.text!=='string' || content.text.length>16384) throw Error();
+    let values:string[]=[];
+    if (target.kind==='windows') {
+      const fields:Record<string,string>={};
+      for (const line of content.text.split(/\r?\n/)) {
+        const match=/^GIT_CONFIG_(COUNT|KEY_[0-4]|VALUE_[0-4])=(.*)$/.exec(line);
+        if (!match) continue;
+        if (Object.prototype.hasOwnProperty.call(fields,match[1])) throw Error();
+        fields[match[1]]=match[2];
+      }
+      if (!/^[1-5]$/.test(fields.COUNT ?? '')) throw Error();
+      for (let i=0;i<Number(fields.COUNT);i++) {
+        if (fields['KEY_'+i]!=='safe.directory') throw Error();
+        const root=windowsOriginalRoot(fields['VALUE_'+i] ?? '');
+        if (!root) throw Error();
+        values.push(root);
+      }
+      if (values[0].toLowerCase()!==PERSONAL_ROOT.toLowerCase()) throw Error();
+      const lower=values.map(v=>v.toLowerCase());
+      if (lower.some((v,i)=>lower.some((w,j)=>i!==j && (v===w || v.startsWith(w+'\\'))))) throw Error();
+    } else {
+      const matches=[...content.text.matchAll(/^H454_ROOTS=([^\r\n]*)\r?$/gm)];
+      if (matches.length!==1) throw Error();
+      const fields=matches[0][1].split('|');
+      if (fields.length!==6 || !/^[1-5]$/.test(fields[0])) throw Error();
+      const count=Number(fields[0]); values=fields.slice(1,count+1);
+      if (values[0]!=='/workspace' || values.slice(1).some(v=>!/^\/projects\/[a-z][a-z0-9-]{0,63}$/.test(v)) ||
+          new Set(values).size!==values.length || fields.slice(count+1).some(Boolean)) throw Error();
+    }
+    return values;
+  } catch { return null; }
+}
+async function discoveredPersonal(target:PersonalTarget,
+  invoke:(tool:string,input:Record<string,unknown>)=>Promise<unknown>): Promise<Record<string,unknown>[] | null> {
+  try {
+    const response=await invoke('start_process',{deviceId:target.device.deviceId,
+      command:target.kind==='windows' ? WINDOWS_ROOTS_COMMAND : LINUX_ROOTS_COMMAND, timeout_ms:5000});
+    const roots=rootsFromTerminal(target,response);
+    if (!roots) return null;
+    const candidates:Record<string,unknown>[]=[];
+    for (const root of roots.slice(1)) {
+      let name:string, aliases:string[];
+      if (target.kind==='windows') {
+        const fixed=WINDOWS_ORIGINALS.find(w=>w.root.toLowerCase()===root.toLowerCase());
+        if (fixed) { name=fixed.name; aliases=[...fixed.aliases]; }
+        else {
+          const stem=root.split('\\').pop()!.toLowerCase();
+          if (!/^[a-z][a-z0-9-]{0,63}$/.test(stem)) continue;
+          name=stem+'-windows-original'; aliases=[name,stem+'-windows'];
+        }
+      } else {
+        const stem=root.slice('/projects/'.length);
+        name=stem+'-'+target.kind+'-original'; aliases=[name,stem+'-'+target.kind];
+      }
+      candidates.push({name,aliases,root,origin:null,branch:null,scope:'native-personal',
+        device_status:'online',deviceId:target.device.deviceId,git_verified:false,process_execution_verified:false});
+    }
+    return candidates;
+  } catch { return null; }
+}
+export async function addDiscoveredPersonalWorkspaces(catalog:Record<string,unknown>, devices:unknown,
+  invoke:(tool:string,input:Record<string,unknown>)=>Promise<unknown>): Promise<Record<string,unknown>> {
+  if (!Array.isArray(catalog.workspaces)) return catalog;
+  const targets=personalTargets(devices), results=await Promise.all(targets.map(t=>discoveredPersonal(t,invoke)));
+  let result=catalog;
+  const winIndex=targets.findIndex(t=>t.kind==='windows');
+  if (winIndex>=0 && results[winIndex]===null) result=await addPersonalWindowsWorkspaces(result,devices,invoke);
+  const entries=[...(result.workspaces as unknown[])];
+  const known=new Set(entries.map((entry:unknown)=>(entry as {name?:unknown})?.name));
+  for (const rows of results) if (rows) for (const row of rows) {
+    // Never advertise an alias that could select more than one root.
+    if (rows.filter(other=>other.name===row.name).length===1 && !known.has(row.name)) {
+      entries.push(row); known.add(row.name);
+    }
+  }
+  const configured=[personalDevice(devices),...PERSONAL_VPS_WORKSPACES.map(w=>personalVpsDevice(devices,w.deviceName,w.deviceId))].filter(Boolean);
+  const state=targets.length===0?'unavailable':(configured.length!==targets.length || results.some(r=>r===null))?'incomplete':'complete';
+  return {...result,workspaces:entries,personal_discovery:state};
+}
+export async function discoveredPersonalWorkspaceAction(args:unknown,devices:unknown,
+  invoke:(tool:string,input:Record<string,unknown>)=>Promise<unknown>):Promise<Record<string,unknown>> {
+  if (!args || typeof args!=='object' || Array.isArray(args)) return {schema:1,status:'refused',reason:'invalid_arguments'};
+  const row=args as Record<string,unknown>;
+  if (Object.keys(row).length!==1 || typeof row.project!=='string' || row.project.length>100)
+    return {schema:1,status:'refused',reason:'invalid_arguments'};
+  const query=norm(row.project);
+  const kinds=['windows','hermes-vps','yfc-vps'] as const;
+  const requested=kinds.filter(k=>query.endsWith('-'+k) || query.endsWith('-'+k+'-original'));
+  if (requested.length!==1) return {schema:1,status:'refused',reason:'unknown_workspace'};
+  const target=personalTargets(devices).find(t=>t.kind===requested[0]);
+  if (!target) return {schema:1,status:'refused',reason:'personal_device_unavailable'};
+  const results=await discoveredPersonal(target,invoke);
+  if (!results) return {schema:1,status:'refused',reason:'personal_discovery_unavailable'};
+  const found=results.filter(item=>Array.isArray(item.aliases) && item.aliases.some(a=>typeof a==='string' && norm(a)===query));
+  if (found.length!==1) return {schema:1,status:'refused',reason:found.length>1?'ambiguous_workspace':'personal_project_unavailable'};
+  const item=found[0];
+  return {schema:1,status:'resolved',workspace:item.name,root:item.root,origin:null,branch:null,
+    scope:item.scope,deviceId:item.deviceId,device_status:'online',git_verified:false,
+    process_execution_verified:false,verification_required_before_write:true};
 }
 
 // Keep the built-in catalog available even if the sandbox is offline or slow.

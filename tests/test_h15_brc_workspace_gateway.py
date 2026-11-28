@@ -135,6 +135,49 @@ const hermesVps={name:'H15 Hermes VPS sandbox',deviceId:'h15-hermes-'+'b'.repeat
 const yfcVps={...other,platform:'linux/docker'};
 const hermesOriginal={name:'H454 Hermes VPS personal Commander',deviceId:'h454-linux-personal-hermes-'+'c'.repeat(32),platform:'linux',online:true,paused:false};
 const yfcOriginal={name:'H454 YFC VPS personal Commander',deviceId:'h454-linux-personal-yfc-'+'d'.repeat(32),platform:'linux',online:true,paused:false};
+const winRoots=['D:/Pet-projects/yfc-dev','D:/Pet-projects/financial-horizon','D:/Pet-projects/hermes','D:/Pet-projects/your-fitness-coach'];
+const winEnv=roots=>`Process 42 exited with code 0\\nGIT_CONFIG_COUNT=${roots.length}\\n`+
+ roots.map((root,i)=>`GIT_CONFIG_KEY_${i}=safe.directory\\nGIT_CONFIG_VALUE_${i}=${root}\\n`).join('');
+const personalDevices=[personal,hermesOriginal,yfcOriginal], discoveryCalls=[];
+const discoveryInvoke=async(tool,args)=>{
+ discoveryCalls.push({tool,args});
+ const text=args.deviceId===personal.deviceId ? winEnv(winRoots)
+   : args.deviceId===hermesOriginal.deviceId ? 'Process started with PID 9 (shell: /bin/sh)\\nInitial output:\\nH454_ROOTS=2|/workspace|/projects/demo|||\\n'
+   : 'Process started with PID 10 (shell: /bin/sh)\\nInitial output:\\nH454_ROOTS=2|/workspace|/projects/coach|||\\n';
+ return {ok:true,result:{content:[{type:'text',text}]}};
+};
+const personalDiscovered=await api.addDiscoveredPersonalWorkspaces(api.listApprovedWorkspaces(personalDevices),personalDevices,discoveryInvoke);
+assert.equal(personalDiscovered.personal_discovery,'complete');
+for (const expected of ['financial-horizon-windows-original','hermes-windows-original','yfc-windows-original',
+                        'demo-hermes-vps-original','coach-yfc-vps-original'])
+ assert.ok(personalDiscovered.workspaces.find(w=>w.name===expected),expected);
+assert.equal(discoveryCalls.length,3);
+assert.equal(discoveryCalls.find(call=>call.args.deviceId===personal.deviceId).args.command,'set GIT_CONFIG');
+let dynamic=await api.discoveredPersonalWorkspaceAction({project:'financial-horizon-windows'},personalDevices,discoveryInvoke);
+assert.equal(dynamic.root,'D:\\\\Pet-projects\\\\financial-horizon'); assert.equal(dynamic.git_verified,false);
+dynamic=await api.discoveredPersonalWorkspaceAction({project:'demo-hermes-vps'},personalDevices,discoveryInvoke);
+assert.equal(dynamic.root,'/projects/demo'); assert.equal(dynamic.deviceId,hermesOriginal.deviceId);
+assert.equal((await api.discoveredPersonalWorkspaceAction({project:'random'},personalDevices,discoveryInvoke)).reason,'unknown_workspace');
+for (const bad of [winEnv(['D:/Pet-projects/yfc-dev','D:/Pet-projects/second-brain-workspace']),
+ winEnv(['D:/Pet-projects/yfc-dev','D:/Pet-projects/yfc-dev/sub']),
+ winEnv(['D:/Pet-projects/yfc-dev','D:/Pet-projects/vault']),
+ winEnv(['D:/Pet-projects/yfc-dev','D:/Pet-projects/hermes/.artifacts']),
+ winEnv(['D:/Pet-projects/yfc-dev','D:/Pet-projects/financial-horizon']).replace('safe.directory','unsafe'),
+ winEnv(['D:/Pet-projects/yfc-dev','D:/Pet-projects/financial-horizon'])+'GIT_CONFIG_COUNT=2\\n']) {
+ const response=async()=>({ok:true,result:{content:[{type:'text',text:bad}]}});
+ assert.equal((await api.discoveredPersonalWorkspaceAction({project:'financial-horizon-windows'},[personal],response)).reason,'personal_discovery_unavailable');
+}
+const badLinux=async()=>({ok:true,result:{content:[{type:'text',text:'H454_ROOTS=2|/workspace|/projects/../private|||\\n'}]}});
+assert.equal((await api.discoveredPersonalWorkspaceAction({project:'demo-hermes-vps'},[hermesOriginal],badLinux)).reason,'personal_discovery_unavailable');
+const ambiguousRoots=winEnv(['D:/Pet-projects/yfc-dev','D:/Pet-projects/team1/demo','D:/Pet-projects/team2/demo']);
+const ambiguousInvoke=async()=>({ok:true,result:{content:[{type:'text',text:ambiguousRoots}]}});
+assert.equal((await api.discoveredPersonalWorkspaceAction({project:'demo-windows'},[personal],ambiguousInvoke)).reason,'ambiguous_workspace');
+const ambiguousCatalog=await api.addDiscoveredPersonalWorkspaces(api.listApprovedWorkspaces([personal]),[personal],ambiguousInvoke);
+assert.ok(!ambiguousCatalog.workspaces.some(w=>w.name==='demo-windows-original'));
+assert.equal((await api.discoveredPersonalWorkspaceAction({project:'demo-hermes-vps'},[{...hermesOriginal,online:false}],discoveryInvoke)).reason,'personal_device_unavailable');
+assert.equal((await api.discoveredPersonalWorkspaceAction({project:'missing-windows'},[personal],discoveryInvoke)).reason,'personal_project_unavailable');
+const unavailable=await api.addDiscoveredPersonalWorkspaces(api.listApprovedWorkspaces([]),[],async()=>{throw Error('unexpected')});
+assert.equal(unavailable.personal_discovery,'unavailable');
 for (const [alias,device,workspace] of [
  ['reminder-bot',hermesOriginal,'reminder-bot-vps-original'],
  ['fit-mini-app',yfcOriginal,'fit-mini-app-vps-original']]) {
