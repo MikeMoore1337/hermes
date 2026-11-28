@@ -90,7 +90,11 @@ def main(argv: list[str] | None = None) -> int:
             outcome = run(raw, ca=ca, expected_manifest=expected, current_sid=current_sid,
                 connector=connector, status_factory=status_factory, claim_call=replay.claim,
                 attach_job=lambda: None)
-            if outcome != "reconnect_exhausted":
+            # A dead dispatcher cannot be reused. Its job-owned process and
+            # active sessions were closed by run(); start a fresh worker after
+            # the same bounded delay used for relay outages. Replay claims are
+            # retained in the same durable journal and calls are never retried.
+            if outcome not in ("reconnect_exhausted", "dispatcher_failed"):
                 return 0
             time.sleep(60)
     except Exception:
