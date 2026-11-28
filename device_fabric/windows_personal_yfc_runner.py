@@ -17,6 +17,7 @@ from device_fabric import windows_personal_commander_worker as worker
 from device_fabric.windows_personal_appcontainer_pipe import PersonalAppContainerPipe
 from device_fabric.windows_personal_project_scan import scan
 from device_fabric.windows_personal_project_import import PublicProjectImport
+from device_fabric.windows_personal_vps_registration import from_owner_state as load_vps_registration
 from device_fabric.windows_personal_terminal_sessions import PersonalTerminalSessions
 from device_fabric.windows_personal_yfc_psec import APP_NAME, GIT_ROOT, YFC_DEV, YfcDevPsecTerminal
 
@@ -116,12 +117,20 @@ def run(raw_config: bytes, *, ca: bytes, expected_manifest: bytes,
         broker = PersonalTerminalSessions(1, roots[0],
             factory=lambda _sid, _root, command: terminal(command))
         importer = PublicProjectImport(release / 'code' / 'scripts' / 'h15_offline_project_import.py')
+        try:
+            vps_registration = load_vps_registration(base / 'worker-private', release,
+                                                   system_root=os.environ.get('SystemRoot', ''))
+        except Exception:
+            # An invalid optional owner mapping must not take existing
+            # personal workspaces offline; the new tool stays unavailable.
+            vps_registration = None
         options = {"decrypt": decrypt} if decrypt is not None else {}
         return worker.serve(raw_config, ca=ca, current_sid=current_sid,
             verify_bundle=verify_bundle, isolation_verified=isolation_verified,
             attach_job=attach_job, start_dispatcher=start_dispatcher,
             connector=connector, status_factory=status_factory, claim_call=claim_call,
             pause=pause, terminal_broker=broker, bridge_factory=PersonalAppContainerPipe, import_broker=importer,
+            vps_broker=vps_registration,
             **options)
     except Exception:
         raise YfcRunnerDenied("yfc_runner_denied") from None

@@ -12,14 +12,16 @@ BASE = Path("packages/relay/src/mcp")
 IMP = "import { pinnedToolCatalog } from './hermes-tool-catalog.js';"
 LIST = "      ...pinnedToolCatalog().map(t => ({ ...t, inputSchema: withDeviceId(t.inputSchema) }))] };"
 CALL = "    const out = await invokeTool(hub, store, ctx, name, args as Record<string, unknown> | undefined);"
-NEWIMP = "import { LIST_WORKSPACES_TOOL, RESOLVE_WORKSPACE_TOOL, CONNECT_SANDBOX_TOOL, IMPORT_PUBLIC_TOOL, listApprovedWorkspaces, resolveApprovedWorkspace, addDiscoveredWorkspaces, addDiscoveredPersonalWorkspaces, discoveredPersonalWorkspaceAction, sandboxProjectAction, importPublicProject, personalWindowsProjectAction } from './hermes-workspaces.js';"
+NEWIMP = "import { LIST_WORKSPACES_TOOL, RESOLVE_WORKSPACE_TOOL, CONNECT_SANDBOX_TOOL, IMPORT_PUBLIC_TOOL, CONNECT_ORIGINAL_VPS_TOOL, listApprovedWorkspaces, resolveApprovedWorkspace, addDiscoveredWorkspaces, addDiscoveredPersonalWorkspaces, discoveredPersonalWorkspaceAction, sandboxProjectAction, importPublicProject, connectOriginalVpsProject, personalWindowsProjectAction } from './hermes-workspaces.js';"
 NEWLIST = ("      ...pinnedToolCatalog().map(t => ({ ...t, inputSchema: withDeviceId(t.inputSchema) })),\n"
-           "      LIST_WORKSPACES_TOOL, RESOLVE_WORKSPACE_TOOL, CONNECT_SANDBOX_TOOL, IMPORT_PUBLIC_TOOL] };")
-NEWCALL = """    if (name === 'list_workspaces' || name === 'resolve_workspace' || name === 'connect_sandbox_project' || name === 'import_public_project') {
+           "      LIST_WORKSPACES_TOOL, RESOLVE_WORKSPACE_TOOL, CONNECT_SANDBOX_TOOL, IMPORT_PUBLIC_TOOL, CONNECT_ORIGINAL_VPS_TOOL] };")
+NEWCALL = """    if (name === 'list_workspaces' || name === 'resolve_workspace' || name === 'connect_sandbox_project' || name === 'import_public_project' || name === 'connect_original_vps_project') {
       // Owner-authenticated relay only; never dispatch these tools to an agent.
       const devices = listUserDevices(hub, store, ctx.userId);
       let result: Record<string, unknown> = name === 'list_workspaces'
-        ? listApprovedWorkspaces(devices) : name === 'import_public_project'
+        ? listApprovedWorkspaces(devices) : name === 'connect_original_vps_project'
+          ? await connectOriginalVpsProject(args, devices, (tool, input) => invokeTool(hub, store, ctx, tool, input))
+          : name === 'import_public_project'
           ? await importPublicProject(args, devices, (tool, input) => invokeTool(hub, store, ctx, tool, input))
           : resolveApprovedWorkspace(args, devices);
       if (name === 'list_workspaces') {
@@ -37,7 +39,7 @@ NEWCALL = """    if (name === 'list_workspaces' || name === 'resolve_workspace' 
         result = await sandboxProjectAction(args, devices, (tool, input) => invokeTool(hub, store, ctx, tool, input));
       }
       return { content: [{ type: 'text', text: JSON.stringify(result) }],
-               isError: result.status === 'refused' || result.status === 'failed' || result.status === 'busy' };
+               isError: result.status === 'refused' || result.status === 'failed' || result.status === 'busy' || result.status === 'unknown' };
     }
 """
 

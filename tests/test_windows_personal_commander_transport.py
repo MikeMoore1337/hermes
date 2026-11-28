@@ -98,6 +98,25 @@ class PersonalTransportTests(unittest.TestCase):
                 is_active=lambda: True, claim_call=lambda _id: True)
         self.assertEqual(calls, [])
 
+    def test_vps_registration_can_only_be_advertised_by_windows_personal_device(self):
+        from device_fabric.windows_personal_vps_registration import SCHEMA
+        tools = TOOLS + [SCHEMA]
+        frame = {'type': 'call', 'id': 'project-1', 'tool': SCHEMA['name'], 'args': {}}
+        for target, device in (('windows', DEVICE),
+                               ('yfc-vps', 'h454-linux-personal-yfc-' + 'a' * 32)):
+            calls, socket = [], Socket([WELCOME, frame])
+            def run():
+                return transport.run_session(target=target, device_id=device, bearer=TOKEN, tools=tools,
+                    connector=lambda *_a, **_k: socket,
+                    dispatch=lambda name, args: calls.append(name) or {'content': []},
+                    is_active=lambda: True, claim_call=lambda _id: True)
+            if target == 'windows':
+                self.assertEqual(run(), 'idle_timeout')
+                self.assertEqual(calls, [SCHEMA['name']])
+            else:
+                with self.assertRaises(transport.PersonalTransportDenied): run()
+                self.assertEqual(calls, [])
+
     def test_bearer_never_returns_in_an_agent_result(self):
         frame = {"type": "call", "id": "call-1", "tool": "read_file", "args": {}}
         with self.assertRaises(transport.PersonalTransportDenied) as error:

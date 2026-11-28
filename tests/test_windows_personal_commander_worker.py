@@ -125,6 +125,25 @@ class PersonalWorkerTests(unittest.TestCase):
         self.assertEqual(len(broker.calls), worker.MAX_RECONNECTS)
         self.assertTrue(broker.closed)
 
+    def test_vps_registration_is_advertised_only_with_owned_broker(self):
+        class Broker:
+            def __init__(self): self.calls, self.closed = [], False
+            def dispatch(self, args):
+                self.calls.append(args)
+                return {'content': [{'type': 'text', 'text': 'plan_pass'}], 'isError': False}
+            def close(self): self.closed = True
+        broker = Broker()
+        self.args['vps_broker'] = broker
+        def session(**kwargs):
+            self.assertIn('connect_original_vps_project', {tool['name'] for tool in kwargs['tools']})
+            self.assertEqual(kwargs['dispatch']('connect_original_vps_project', {'mode': 'plan'})['content'][0]['text'], 'plan_pass')
+            raise PersonalTransportDenied('synthetic')
+        with patch.object(worker, 'PersonalCommanderPipe', return_value=self.bridge), \
+             patch.object(worker, 'run_session', side_effect=session):
+            self.assertEqual(worker.serve(self.raw, **self.args), 'reconnect_exhausted')
+        self.assertEqual(len(broker.calls), worker.MAX_RECONNECTS)
+        self.assertTrue(broker.closed)
+
     def test_terminal_calls_use_only_the_owned_broker_and_close_it(self):
         class Broker:
             def __init__(self):

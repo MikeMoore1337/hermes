@@ -85,6 +85,23 @@ traverse and write; it does not grant ACLs or change owners. Private Second
 Brain vault access remains excluded. These host operators are not currently a
 ChatGPT-only self-service registration flow.
 
+The source includes an optional `connect_original_vps_project` MCP tool for
+owner-selected existing VPS directories. It uses the personal Windows worker
+and the owner's existing key-authenticated SSH configuration to call the
+already installed, pinned root operator. Local `worker-private/vps-registration.json`
+contains only the two host aliases; it is not a credential and is not part of
+the repository. Missing or invalid optional configuration leaves the existing
+Windows workspaces usable and the new operation unavailable. This source is
+not proof that the tool has been installed or activated.
+
+Use `mode: plan` before `mode: execute`; execution restarts only the selected
+personal VPS service and preserves a protected configuration backup. It refuses
+`/tmp` roots and paths that the service identity cannot already traverse and
+write. A successful response still requires resolving the new workspace and
+checking it through MCP. An interrupted or unrecognized response is `unknown`:
+inspect the live service and workspace before doing anything further, and do
+not automatically repeat the operation. It does not register Windows folders.
+
 ## Safe use in ChatGPT or Codex
 
 1. In a fresh client session, call `list_workspaces`, then
