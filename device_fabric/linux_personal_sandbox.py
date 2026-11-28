@@ -14,6 +14,11 @@ import subprocess
 import sys
 from typing import Sequence
 
+from device_fabric.windows_personal_project_limits import MAX_PROJECT_ROOTS
+
+# The shared dispatcher also receives the primary /workspace root.
+MAX_ADDITIONAL_PROJECTS = MAX_PROJECT_ROOTS - 1
+
 
 class SandboxDenied(ValueError):
     """A sanitized refusal without project paths or process output."""
@@ -68,7 +73,7 @@ def open_project(value: str) -> int:
 def validate_projects(project: str, additional: tuple[tuple[str, str], ...]) -> tuple[tuple[str, str], ...]:
     """Validate independent host roots before any namespace is created."""
     root = _project_path(project)
-    if type(additional) is not tuple or len(additional) > 4:
+    if type(additional) is not tuple or len(additional) > MAX_ADDITIONAL_PROJECTS:
         raise SandboxDenied('linux_personal_sandbox_denied')
     names, paths = set(), [PurePosixPath(root)]
     for item in additional:

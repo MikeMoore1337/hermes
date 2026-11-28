@@ -107,16 +107,16 @@ class SandboxIntegrationTests(unittest.TestCase):
 
 
 class LinuxPersonalSessionIntegrationTests(unittest.TestCase):
-    def test_second_original_project_is_read_write_via_the_real_dispatcher(self):
+    def test_fifteenth_original_project_is_read_write_via_the_real_dispatcher(self):
         class Socket:
             def __init__(self):
                 self.sent = []
                 self.frames = [
                     {'type': 'welcome', 'protocol': 1, 'relayVersion': 'fixture', 'serverTime': 1},
                     {'type': 'call', 'id': 'write-second', 'tool': 'write_file', 'args': {
-                        'path': '/projects/alpha/fixture.txt', 'content': 'second-project', 'mode': 'rewrite'}},
+                        'path': '/projects/p14/fixture.txt', 'content': 'second-project', 'mode': 'rewrite'}},
                     {'type': 'call', 'id': 'read-second', 'tool': 'read_file', 'args': {
-                        'path': '/projects/alpha/fixture.txt'}},
+                        'path': '/projects/p14/fixture.txt'}},
                     {'type': 'call', 'id': 'foreign', 'tool': 'write_file', 'args': {
                         'path': '/projects/other/fixture.txt', 'content': 'denied', 'mode': 'rewrite'}},
                 ]
@@ -129,15 +129,18 @@ class LinuxPersonalSessionIntegrationTests(unittest.TestCase):
 
         runtime, socket = os.environ['H454_TEST_BRC_RUNTIME'], Socket()
         with tempfile.TemporaryDirectory(prefix='h454-project-multi-') as base:
-            first, second = Path(base) / 'first', Path(base) / 'second'
-            first.mkdir(); second.mkdir()
+            first = Path(base) / 'first'
+            first.mkdir()
+            projects = tuple((f'p{index:02}', str(Path(base) / f'p{index:02}')) for index in range(15))
+            for _, path in projects:
+                Path(path).mkdir()
             outcome = worker.serve_once(target='yfc-vps',
                 device_id='h454-linux-personal-yfc-' + 'a' * 32, bearer='brc_dev_' + 'b' * 64,
-                project=str(first), bundle=runtime, additional_projects=(('alpha', str(second)),),
+                project=str(first), bundle=runtime, additional_projects=projects,
                 connector=lambda *_a, **_k: socket, is_active=lambda: True,
                 claim_call=lambda _ident: True, verify_bundle=lambda: True)
             self.assertEqual(outcome, 'idle_timeout')
-            self.assertEqual((second / 'fixture.txt').read_text(), 'second-project')
+            self.assertEqual((Path(projects[-1][1]) / 'fixture.txt').read_text(), 'second-project')
         results = {frame['id']: frame['result'] for frame in socket.sent if frame['type'] == 'result'}
         self.assertIsNot(results['write-second'].get('isError'), True)
         self.assertIn('second-project', json.dumps(results['read-second']))

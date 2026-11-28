@@ -1,7 +1,8 @@
 """Project selection and real namespace checks for the personal executor."""
 import unittest
 
-from device_fabric.linux_personal_sandbox import SandboxDenied, _project_path, start, validate_projects
+from device_fabric.linux_personal_sandbox import (MAX_ADDITIONAL_PROJECTS, SandboxDenied,
+                                                    _project_path, start, validate_projects)
 
 
 class ProjectSelectionTests(unittest.TestCase):
@@ -26,9 +27,12 @@ class ProjectSelectionTests(unittest.TestCase):
         for extra in ((('one', '/srv/a/code'),), (('one', '/srv/a/code/nested'),),
                       (('one', '/srv/a'),), (('../escape', '/srv/b/code'),),
                       (('one', '/srv/second-brain/second-brain-vault'),),
-                      tuple(('p' + str(i), '/srv/p' + str(i)) for i in range(5))):
+                      tuple(('p' + str(i), '/srv/p' + str(i)) for i in range(MAX_ADDITIONAL_PROJECTS + 1))):
             with self.subTest(extra=extra), self.assertRaises(SandboxDenied):
                 validate_projects('/srv/a/code', extra)
+
+        maximum = tuple(('p' + str(i), '/srv/p' + str(i)) for i in range(MAX_ADDITIONAL_PROJECTS))
+        self.assertEqual(validate_projects('/srv/a/code', maximum), maximum)
 
 
 if __name__ == '__main__':

@@ -37,6 +37,17 @@ class ProjectRegistrationTests(unittest.TestCase):
             with self.subTest(name=name), self.assertRaises(registration.ProjectRegistrationDenied):
                 registration.prepare(raw, unit, target=self.target, name=name, project=path)
 
+    def test_registers_past_four_until_shared_dispatcher_limit(self):
+        from device_fabric.linux_personal_sandbox import MAX_ADDITIONAL_PROJECTS
+        raw, unit = self.raw, self.unit
+        for index in range(MAX_ADDITIONAL_PROJECTS):
+            name, path = f'p{index:02}', f'/opt/project{index:02}'
+            raw, unit = registration.prepare(raw, unit, target=self.target, name=name, project=path)
+            self.assertEqual(len(config.parse(raw, target=self.target).additional_projects), index + 1)
+            self.assertIn(('"' + path + '"').encode(), unit)
+        with self.assertRaises(registration.ProjectRegistrationDenied):
+            registration.prepare(raw, unit, target=self.target, name='pz', project='/opt/extra')
+
     def test_rejects_unsafe_paths_and_modified_unit(self):
         for name, path in [('private', '/srv/second-brain'), ('bad/name', '/opt/example'),
                            ('nested', '/opt/reminder-bot/subdir'), ('root', '/opt')]:
