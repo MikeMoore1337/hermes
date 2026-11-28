@@ -107,6 +107,43 @@ class SandboxIntegrationTests(unittest.TestCase):
 
 
 class LinuxPersonalSessionIntegrationTests(unittest.TestCase):
+    def test_interactive_exit_without_output_returns_completion_before_timeout(self):
+        class Socket:
+            def __init__(self):
+                self.sent, self.step, self.elapsed = [], 0, None
+            def __enter__(self): return self
+            def __exit__(self, *_args): return None
+            def send(self, data): self.sent.append(json.loads(data))
+            def recv(self, *, timeout):
+                self.step += 1
+                if self.step == 1:
+                    frame = {'type': 'welcome', 'protocol': 1, 'relayVersion': 'fixture', 'serverTime': 1}
+                elif self.step == 2:
+                    frame = {'type': 'call', 'id': 'start', 'tool': 'start_process',
+                             'args': {'command': 'python3 -u -i', 'timeout_ms': 1000}}
+                elif self.step == 3:
+                    match = re.search(r'Process (\d+)', json.dumps(self.sent[-1].get('result', {})))
+                    if not match: raise ValueError('fixture process id absent')
+                    self.started = time.monotonic()
+                    frame = {'type': 'call', 'id': 'exit', 'tool': 'interact_with_process',
+                             'args': {'pid': int(match.group(1)), 'input': 'exit()', 'timeout_ms': 5000}}
+                else:
+                    self.elapsed = time.monotonic() - self.started
+                    raise TimeoutError()
+                return json.dumps(frame)
+
+        runtime, socket = os.environ['H454_TEST_BRC_RUNTIME'], Socket()
+        with tempfile.TemporaryDirectory(prefix='h454-exit-e2e-') as project:
+            self.assertEqual(worker.serve_once(target='yfc-vps',
+                device_id='h454-linux-personal-yfc-' + 'a' * 32, bearer='brc_dev_' + 'b' * 64,
+                project=project, bundle=runtime, connector=lambda *_a, **_k: socket,
+                is_active=lambda: True, claim_call=lambda _ident: True, verify_bundle=lambda: True), 'idle_timeout')
+        results = {frame['id']: frame['result'] for frame in socket.sent if frame['type'] == 'result'}
+        self.assertIsNot(results['exit'].get('isError'), True)
+        self.assertIn('has finished execution', json.dumps(results['exit']))
+        self.assertNotIn('timeout reached', json.dumps(results['exit']))
+        self.assertLess(socket.elapsed, 3.0)
+
     def test_fifteenth_original_project_is_read_write_via_the_real_dispatcher(self):
         class Socket:
             def __init__(self):
