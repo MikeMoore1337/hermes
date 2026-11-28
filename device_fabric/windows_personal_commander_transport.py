@@ -24,6 +24,7 @@ ADAPTER_TOOLS = frozenset({"read_file", "read_multiple_files", "write_file", "ed
 TOOLS = ADAPTER_TOOLS | {"import_public_project"}
 ALIASED_TOOLS = ADAPTER_TOOLS | {"kill_process"}
 ALIASED_IMPORT_TOOLS = TOOLS | {"kill_process"}
+VPS_REGISTRATION_TOOL = "connect_original_vps_project"
 
 
 class PersonalTransportDenied(ValueError):
@@ -87,12 +88,15 @@ def run_session(*, device_id: str, bearer: str, tools: list[dict[str, Any]],
         if system == 'linux':
             arch = {'x86_64': 'x64', 'amd64': 'x64', 'aarch64': 'arm64',
                     'arm64': 'arm64'}.get(platform.machine().lower())
+        allowed_tool_sets = (ADAPTER_TOOLS, TOOLS, ALIASED_TOOLS, ALIASED_IMPORT_TOOLS)
+        if target == 'windows':
+            allowed_tool_sets += tuple(group | {VPS_REGISTRATION_TOOL} for group in allowed_tool_sets)
         if (arch not in ('x64', 'arm64') or type(device_id) is not str or pattern.fullmatch(device_id) is None
             or type(bearer) is not str or TOKEN.fullmatch(bearer) is None
             or type(tools) is not list
             or any(type(tool) is not dict or type(tool.get("name")) is not str for tool in tools)
             or len({tool["name"] for tool in tools}) != len(tools)
-            or {tool["name"] for tool in tools} not in (ADAPTER_TOOLS, TOOLS, ALIASED_TOOLS, ALIASED_IMPORT_TOOLS)
+            or {tool["name"] for tool in tools} not in allowed_tool_sets
             or len(json.dumps(tools, ensure_ascii=True).encode("ascii")) > MAX_FRAME
             or not all(callable(value) for value in (connector, dispatch, is_active, claim_call))):
             raise ValueError()

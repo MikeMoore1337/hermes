@@ -131,6 +131,18 @@ const statusInvoke=async()=>({ok:true,result:{content:[{type:'text',text:JSON.st
 assert.equal((await api.importPublicProject({action:'status',job_id:job},[personal],statusInvoke)).status,'installed');
 const spoofInvoke=async()=>({ok:true,result:{content:[{type:'text',text:JSON.stringify({status:'installed',job_id:job,workspace:'../escape',head:'b'.repeat(40),branch:'main'})}]}});
 assert.equal((await api.importPublicProject({action:'status',job_id:job},[personal],spoofInvoke)).reason,'import_call_failed');
+const vpsArgs={target:'yfc-vps',name:'fixture',path:'/opt/fixture',mode:'plan'}, vpsCalls=[];
+const vpsPlan=async(tool,args)=>{vpsCalls.push({tool,args});return {ok:true,result:{content:[{type:'text',text:JSON.stringify({status:'plan_pass'})}]}};};
+assert.equal((await api.connectOriginalVpsProject(vpsArgs,[personal],vpsPlan)).status,'plan_pass');
+assert.equal(vpsCalls[0].tool,'connect_original_vps_project'); assert.equal(vpsCalls[0].args.deviceId,personal.deviceId);
+assert.equal((await api.connectOriginalVpsProject({...vpsArgs,name:'../bad'},[personal],vpsPlan)).status,'refused');
+assert.equal((await api.connectOriginalVpsProject(vpsArgs,[{...personal,online:false}],vpsPlan)).reason,'personal_device_unavailable');
+assert.equal(vpsCalls.length,1);
+const vpsApplied=async()=>({ok:true,result:{content:[{type:'text',text:JSON.stringify({status:'applied',backup:'project-registration-'+'a'.repeat(32)})}]}});
+const applied=await api.connectOriginalVpsProject({...vpsArgs,mode:'execute'},[personal],vpsApplied);
+assert.equal(applied.status,'applied'); assert.equal(applied.workspace,'fixture-yfc-vps-original'); assert.equal(applied.verification_required,true);
+const vpsInterrupted=async()=>{throw Error('network interrupted');};
+assert.equal((await api.connectOriginalVpsProject({...vpsArgs,mode:'execute'},[personal],vpsInterrupted)).reason,'operation_unconfirmed_do_not_retry');
 const hermesVps={name:'H15 Hermes VPS sandbox',deviceId:'h15-hermes-'+'b'.repeat(12),platform:'linux/docker',online:true,paused:false};
 const yfcVps={...other,platform:'linux/docker'};
 const hermesOriginal={name:'H454 Hermes VPS personal Commander',deviceId:'h454-linux-personal-hermes-'+'c'.repeat(32),platform:'linux',online:true,paused:false};

@@ -64,11 +64,13 @@ if os.name == "nt":
                 child.close()
                 self.assertFalse(kwargs["isolation_verified"]())
                 self.assertIsNotNone(kwargs["import_broker"])
+                self.assertIsNone(kwargs["vps_broker"])
                 kwargs["import_broker"].close()
                 kwargs["terminal_broker"].close()
                 return "synthetic"
             with patch.object(runner.bundle, "verify", return_value=DIGEST), \
                  patch.object(runner, "scan"), patch.object(runner, "YfcDevPsecTerminal", Process), \
+                 patch.object(runner, "load_vps_registration", side_effect=ValueError('invalid optional config')), \
                  patch.object(runner.worker, "serve", side_effect=serve):
                 self.assertEqual(runner.run(self.raw, **self.args), "synthetic")
             self.assertEqual(len(calls), 2)
